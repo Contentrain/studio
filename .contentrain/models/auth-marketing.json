@@ -1,0 +1,25 @@
+{
+  "id": "auth-marketing",
+  "name": "Auth Marketing",
+  "kind": "singleton",
+  "domain": "system",
+  "i18n": true,
+  "description": "Auth page right panel marketing content — headline, tagline, and illustration",
+  "fields": {
+    "headline": {
+      "description": "Main heading on the auth page right panel",
+      "required": true,
+      "type": "string"
+    },
+    "illustration": {
+      "description": "Illustration shown on the auth page right panel",
+      "required": false,
+      "type": "image"
+    },
+    "tagline": {
+      "description": "Supporting description below the headline",
+      "required": false,
+      "type": "text"
+    }
+  }
+}
