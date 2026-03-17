@@ -1,8 +1,9 @@
+import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint'],
+  modules: ['@nuxt/eslint', '@nuxt/image'],
 
   devtools: { enabled: true },
 
@@ -23,10 +24,9 @@ export default defineNuxtConfig({
   },
 
   alias: {
-    '#contentrain': './.contentrain/client/index.mjs',
+    '#contentrain': resolve(__dirname, '.contentrain/client/index.mjs'),
   },
   compatibilityDate: '2025-07-15',
-
   vite: {
     plugins: [tailwindcss()],
   },

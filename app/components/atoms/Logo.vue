@@ -35,23 +35,23 @@ const resolvedSrc = computed(() => {
 
 <template>
   <template v-if="color === 'auto'">
-    <img
+    <NuxtImg
       v-bind="$attrs"
       :src="srcLight"
       alt="Contentrain"
       class="block dark:hidden"
-    >
-    <img
+    />
+    <NuxtImg
       v-bind="$attrs"
       :src="srcDark"
       alt="Contentrain"
       class="hidden dark:block"
-    >
+    />
   </template>
-  <img
+  <NuxtImg
     v-else
     v-bind="$attrs"
     :src="resolvedSrc"
     alt="Contentrain"
-  >
+  />
 </template>

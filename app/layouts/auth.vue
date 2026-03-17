@@ -24,13 +24,13 @@ const isSignin = computed(() =>
     </div>
 
     <!-- Right: Marketing visual -->
-    <div class="relative hidden w-0 flex-1 bg-gray-50 lg:block dark:bg-gray-900">
+    <div class="relative hidden w-0 flex-1 bg-[--color-surface] lg:block">
       <div class="flex h-full items-center justify-center px-16">
         <div class="max-w-md text-center">
-          <h2 class="text-xl font-medium text-gray-900 dark:text-gray-100">
+          <h2 class="text-xl font-medium text-[--color-heading]">
             {{ isSignin ? t('auth.marketing_welcome') : t('auth.marketing_get_started') }}
           </h2>
-          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          <p class="mt-2 text-sm text-[--color-text-muted]">
             {{ isSignin ? t('auth.marketing_signin_desc') : t('auth.marketing_signup_desc') }}
           </p>
         </div>
