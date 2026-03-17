@@ -10,9 +10,15 @@
     "postinstall": "nuxt prepare",
     "prepare": "husky",
     "release": "changelogen --release",
-    "changelog": "changelogen"
+    "changelog": "changelogen",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "lint-staged": {
+    "*.{js,ts,mjs,vue}": "eslint --fix"
   },
   "dependencies": {
+    "@nuxt/eslint": "1.15.2",
     "nuxt": "^4.4.2",
     "vue": "^3.5.30",
     "vue-router": "^5.0.3"
@@ -21,6 +27,7 @@
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
     "changelogen": "^0.6.2",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
   }
 }

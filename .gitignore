@@ -22,6 +22,10 @@ logs
 .fleet
 .idea
 
+# Agent local configs (per-user, not shared)
+.claude/
+.windsurf/
+
 # Local env files
 .env
 .env.*
