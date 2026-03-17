@@ -20,9 +20,9 @@ const marketing = singleton('auth-marketing').locale('en').get()
       </div>
     </div>
 
-    <!-- Right: Marketing visual -->
-    <div class="hidden w-0 flex-1 flex-col overflow-hidden bg-secondary-900 lg:flex">
-      <!-- Illustration: fills available space, min-h-0 prevents flex overflow -->
+    <!-- Right: Marketing visual — sticky so it never causes page scroll -->
+    <div class="sticky top-0 hidden h-screen w-0 flex-1 flex-col overflow-hidden bg-secondary-900 lg:flex">
+      <!-- Illustration: fills available space -->
       <div class="flex min-h-0 flex-1 items-center justify-center p-10 pb-0">
         <NuxtImg
           v-if="marketing?.illustration"

@@ -17,6 +17,9 @@ defineEmits<{
       {{ description }}
     </p>
     <AtomsGhostButton block size="md" @click="$emit('click')">
+      <template #prepend>
+        <span class="icon-[annon--email] text-base" />
+      </template>
       {{ label }}
     </AtomsGhostButton>
   </div>
