@@ -1,15 +1,32 @@
 import type { H3Event } from 'h3'
-import { getHeader } from 'h3'
+import { getCookie, getHeader } from 'h3'
 import type { AuthProvider, AuthSession, AuthUser, OAuthRedirectResult } from './auth'
 
 export function createSupabaseAuthProvider(): AuthProvider {
   return {
     async getSession(event: H3Event): Promise<AuthSession | null> {
+      let accessToken: string | null = null
+
       const authorization = getHeader(event, 'authorization')
-      if (!authorization?.startsWith('Bearer '))
+      if (authorization?.startsWith('Bearer '))
+        accessToken = authorization.slice(7)
+
+      if (!accessToken) {
+        const sessionCookie = getCookie(event, 'auth-session')
+        if (sessionCookie) {
+          try {
+            const parsed = JSON.parse(sessionCookie)
+            accessToken = parsed.accessToken ?? null
+          }
+          catch (e) {
+            void e
+          }
+        }
+      }
+
+      if (!accessToken)
         return null
 
-      const accessToken = authorization.slice(7)
       const admin = useSupabaseAdmin()
       const { data, error } = await admin.auth.getUser(accessToken)
 

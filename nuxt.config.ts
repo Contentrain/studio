@@ -16,10 +16,6 @@ export default defineNuxtConfig({
     },
     public: {
       siteUrl: 'http://localhost:3000',
-      supabase: {
-        url: '',
-        anonKey: '',
-      },
     },
   },
 
@@ -29,9 +25,6 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   vite: {
     plugins: [tailwindcss()],
-    optimizeDeps: {
-      include: ['@supabase/supabase-js'],
-    },
   },
 
   eslint: {

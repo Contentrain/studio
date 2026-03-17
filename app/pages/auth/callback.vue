@@ -5,18 +5,40 @@ definePageMeta({
 
 const { t } = useContent()
 const router = useRouter()
+const route = useRoute()
 const error = ref('')
 
 onMounted(async () => {
-  const { $supabase } = useNuxtApp()
-  const { data, error: authError } = await $supabase.auth.getSession()
+  try {
+    const code = route.query.code as string | undefined
 
-  if (authError || !data.session) {
-    error.value = authError?.message || t('auth.failed')
-    return
+    const hashParams = new URLSearchParams(window.location.hash.slice(1))
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
+
+    if (code) {
+      await $fetch('/api/auth/verify', {
+        method: 'POST',
+        body: { code },
+      })
+    }
+    else if (accessToken) {
+      await $fetch('/api/auth/verify', {
+        method: 'POST',
+        body: { accessToken, refreshToken },
+      })
+    }
+    else {
+      throw new Error(t('auth.failed'))
+    }
+
+    const { init } = useAuth()
+    await init()
+    await router.replace('/')
   }
-
-  await router.replace('/')
+  catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : t('auth.failed')
+  }
 })
 </script>
 

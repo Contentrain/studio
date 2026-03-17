@@ -37,26 +37,32 @@ const email = ref('')
     <div v-if="!magicLinkSent" class="mt-6">
       <form class="space-y-4" @submit.prevent="$emit('submit', email)">
         <div>
-          <label for="email" class="block text-sm font-medium text-secondary-900 dark:text-secondary-100">
-            {{ t('auth.email_label') }}
-          </label>
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            required
-            :placeholder="t('auth.email_placeholder')"
-            autocomplete="email"
-            class="mt-2 block w-full rounded-lg border border-secondary-200 dark:border-secondary-800 bg-white dark:bg-secondary-900 px-4 py-2.5 text-sm text-secondary-900 dark:text-secondary-100 placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          >
+          <AtomsFormLabel
+            for="email"
+            :text="t('auth.email_label')"
+            size="sm"
+            bold
+          />
+          <div class="mt-2">
+            <AtomsFormInput
+              id="email"
+              v-model="email"
+              type="email"
+              name="email"
+              required
+              :placeholder="t('auth.email_placeholder')"
+            />
+          </div>
         </div>
-        <button
+        <!-- TODO: add AtomsFilledButton / AtomsPrimaryButton atom; using GhostButton with primary overrides for now -->
+        <AtomsGhostButton
           type="submit"
           :disabled="loading || !email"
-          class="w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50 dark:bg-primary-500 dark:hover:bg-primary-400"
+          block
+          class="bg-primary-600 border-primary-600 text-white hover:bg-primary-700 dark:bg-primary-500 dark:border-primary-500 dark:hover:bg-primary-400 dark:text-white"
         >
           {{ t('auth.send_magic_link') }}
-        </button>
+        </AtomsGhostButton>
       </form>
 
       <!-- Provider buttons below -->

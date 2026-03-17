@@ -4,5 +4,6 @@ const authProvider = createSupabaseAuthProvider()
 
 export default defineEventHandler(async (event) => {
   await authProvider.signOut(event)
+  deleteCookie(event, 'auth-session', { path: '/' })
   return { ok: true }
 })

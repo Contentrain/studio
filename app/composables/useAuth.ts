@@ -1,82 +1,58 @@
-import type { Session, User } from '@supabase/supabase-js'
+interface AuthUser {
+  id: string
+  email: string | null
+  avatarUrl: string | null
+  provider: string | null
+}
 
 interface AuthState {
-  user: User | null
-  session: Session | null
+  user: AuthUser | null
   loading: boolean
 }
 
 export function useAuth() {
-  const { $supabase } = useNuxtApp()
   const router = useRouter()
 
   const state = useState<AuthState>('auth', () => ({
     user: null,
-    session: null,
     loading: true,
   }))
 
-  const isAuthenticated = computed(() => !!state.value.session)
+  const isAuthenticated = computed(() => !!state.value.user)
 
   async function init() {
     state.value.loading = true
-
-    const { data: { session } } = await $supabase.auth.getSession()
-
-    if (session) {
-      state.value.session = session
-      state.value.user = session.user
+    try {
+      const { user } = await $fetch<{ user: AuthUser }>('/api/auth/me')
+      state.value.user = user
     }
-
-    state.value.loading = false
-
-    // Listen for auth state changes (login, logout, token refresh)
-    $supabase.auth.onAuthStateChange((_event, session) => {
-      state.value.session = session
-      state.value.user = session?.user ?? null
-    })
+    catch {
+      state.value.user = null
+    }
+    finally {
+      state.value.loading = false
+    }
   }
 
   async function signInWithOAuth(provider: 'github' | 'google') {
-    const { error } = await $supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: provider === 'github' ? 'read:user user:email' : undefined,
-      },
+    const { url } = await $fetch<{ url: string }>('/api/auth/login', {
+      method: 'POST',
+      body: { provider, redirectTo: '/auth/callback' },
     })
-
-    if (error)
-      throw error
+    window.location.href = url
   }
 
   async function signInWithMagicLink(email: string) {
-    const { error } = await $supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+    await $fetch('/api/auth/magic-link', {
+      method: 'POST',
+      body: { email },
     })
-
-    if (error)
-      throw error
   }
 
   async function signOut() {
-    const { error } = await $supabase.auth.signOut()
-    if (error)
-      throw error
-
+    await $fetch('/api/auth/logout', { method: 'POST' })
     state.value.user = null
-    state.value.session = null
     await router.push('/auth/login')
-  }
-
-  /**
-   * Get the current access token for API calls
-   */
-  function getAccessToken(): string | null {
-    return state.value.session?.access_token ?? null
   }
 
   return {
@@ -86,6 +62,5 @@ export function useAuth() {
     signInWithOAuth,
     signInWithMagicLink,
     signOut,
-    getAccessToken,
   }
 }
