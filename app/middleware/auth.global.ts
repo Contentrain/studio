@@ -1,19 +1,21 @@
 const PUBLIC_ROUTES = ['/auth/login', '/auth/callback']
 
-export default defineNuxtRouteMiddleware((to) => {
+export default defineNuxtRouteMiddleware(async (to) => {
   // Only run on client
   if (import.meta.server)
     return
 
   const { isAuthenticated, state } = useAuth()
 
-  // Wait for auth to initialize
-  if (state.value.loading)
+  // Wait for auth to initialize before making decisions
+  if (state.value.loading) {
+    // Auth still loading — let the page render (auth plugin will resolve)
     return
+  }
 
   const isPublic = PUBLIC_ROUTES.some(route => to.path.startsWith(route))
 
-  // Redirect authenticated users away from auth pages
+  // Redirect authenticated users away from auth pages to dashboard
   if (isPublic && isAuthenticated.value)
     return navigateTo('/')
 
