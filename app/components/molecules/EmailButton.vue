@@ -18,7 +18,7 @@ defineEmits<{
     </p>
     <AtomsGhostButton block size="md" @click="$emit('click')">
       <template #prepend>
-        <span class="icon-[annon--email] text-base" />
+        <span class="icon-[annon--email] block size-5" />
       </template>
       {{ label }}
     </AtomsGhostButton>
