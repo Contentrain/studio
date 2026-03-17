@@ -24,7 +24,7 @@ const sizeClass = computed(() => ({
 <template>
   <component
     :is="tag"
-    class="font-medium tracking-tight text-secondary-900 dark:text-secondary-100"
+    class="font-display font-semibold tracking-tight text-secondary-900 dark:text-secondary-100"
     :class="sizeClass"
   >
     <slot />

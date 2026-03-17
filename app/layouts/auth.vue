@@ -34,7 +34,7 @@ const marketing = singleton('auth-marketing').locale('en').get()
       </div>
       <!-- Text: sits naturally below illustration -->
       <div class="shrink-0 px-12 pb-12 pt-8">
-        <h2 class="text-xl font-semibold text-secondary-100">
+        <h2 class="font-display text-xl font-semibold text-secondary-100">
           {{ marketing?.headline }}
         </h2>
         <p class="mt-2 max-w-md text-sm leading-relaxed text-secondary-400">
