@@ -23,7 +23,7 @@ onMounted(async () => {
 <template>
   <div class="flex min-h-screen items-center justify-center bg-white dark:bg-secondary-950">
     <div v-if="error" class="max-w-sm px-4 text-center">
-      <p class="text-sm text-red-600 dark:text-red-400">
+      <p class="text-sm text-danger-600 dark:text-danger-400">
         {{ error }}
       </p>
       <NuxtLink

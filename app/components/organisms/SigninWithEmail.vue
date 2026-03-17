@@ -28,7 +28,7 @@ const email = ref('')
     <!-- Error -->
     <div
       v-if="error"
-      class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400"
+      class="mt-4 rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-600 dark:border-danger-900 dark:bg-danger-950/50 dark:text-danger-400"
     >
       {{ error }}
     </div>
