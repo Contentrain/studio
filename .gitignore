@@ -30,3 +30,7 @@ logs
 .env
 .env.*
 !.env.example
+
+# Contentrain
+.contentrain/.cache/
+.contentrain/client/
