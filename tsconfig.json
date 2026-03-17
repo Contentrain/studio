@@ -1,5 +1,10 @@
 {
   // https://nuxt.com/docs/guide/concepts/typescript
+  "compilerOptions": {
+    "paths": {
+      "#contentrain": ["./.contentrain/client/index.d.ts"]
+    }
+  },
   "files": [],
   "references": [
     {

@@ -20,7 +20,9 @@
   "dependencies": {
     "@nuxt/eslint": "1.15.2",
     "@supabase/supabase-js": "^2.99.2",
+    "@tailwindcss/vite": "^4.2.1",
     "nuxt": "^4.4.2",
+    "tailwindcss": "^4.2.1",
     "vue": "^3.5.30",
     "vue-router": "^5.0.3"
   },
@@ -32,5 +34,19 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "typescript": "^5.9.3"
+  },
+  "imports": {
+    "#contentrain": {
+      "types": "./.contentrain/client/index.d.ts",
+      "import": "./.contentrain/client/index.mjs",
+      "require": "./.contentrain/client/index.cjs",
+      "default": "./.contentrain/client/index.mjs"
+    },
+    "#contentrain/*": {
+      "types": "./.contentrain/client/*.d.ts",
+      "import": "./.contentrain/client/*.mjs",
+      "require": "./.contentrain/client/*.cjs",
+      "default": "./.contentrain/client/*.mjs"
+    }
   }
 }
