@@ -21,19 +21,23 @@ const marketing = singleton('auth-marketing').locale('en').get()
     </div>
 
     <!-- Right: Marketing visual -->
-    <div class="relative hidden w-0 flex-1 bg-secondary-900 lg:block">
-      <div class="flex h-full flex-col items-start justify-center px-12 xl:px-16">
+    <div class="relative hidden w-0 flex-1 overflow-hidden bg-secondary-900 lg:block">
+      <!-- Illustration fills the panel -->
+      <div class="absolute inset-0 flex items-center justify-center p-10 pb-36">
         <NuxtImg
           v-if="marketing?.illustration"
           :src="marketing.illustration"
           alt=""
-          class="mb-12 w-full max-w-lg"
+          class="h-full w-full object-contain"
           aria-hidden="true"
         />
-        <h2 class="max-w-sm text-2xl font-semibold text-secondary-100">
+      </div>
+      <!-- Text pinned to bottom with gradient -->
+      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-secondary-900 via-secondary-900/80 to-transparent px-12 pb-12 pt-20">
+        <h2 class="text-xl font-semibold text-secondary-100">
           {{ marketing?.headline }}
         </h2>
-        <p class="mt-3 max-w-sm text-sm leading-relaxed text-secondary-400">
+        <p class="mt-2 max-w-md text-sm leading-relaxed text-secondary-400">
           {{ marketing?.tagline }}
         </p>
       </div>
