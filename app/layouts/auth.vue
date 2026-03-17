@@ -7,7 +7,7 @@ const marketing = singleton('auth-marketing').locale('en').get()
 <template>
   <div class="flex min-h-screen">
     <!-- Left: Auth form -->
-    <div class="flex flex-1 flex-col px-4 py-12 sm:px-6 lg:flex-none lg:px-20 xl:px-24">
+    <div class="flex flex-1 flex-col bg-white px-4 py-12 dark:bg-secondary-950 sm:px-6 lg:flex-none lg:px-20 xl:px-24">
       <div class="mb-4">
         <NuxtLink to="/">
           <AtomsLogo variant="icon-text" class="h-8" />
@@ -21,23 +21,21 @@ const marketing = singleton('auth-marketing').locale('en').get()
     </div>
 
     <!-- Right: Marketing visual -->
-    <div class="relative hidden w-0 flex-1 bg-secondary-50 dark:bg-secondary-900 lg:block">
-      <div class="flex h-full flex-col items-center justify-center px-16">
-        <div class="w-full max-w-md">
-          <NuxtImg
-            v-if="marketing?.illustration"
-            :src="marketing.illustration"
-            alt=""
-            class="mb-10 w-full"
-            aria-hidden="true"
-          />
-          <h2 class="text-xl font-semibold text-secondary-900 dark:text-secondary-100">
-            {{ marketing?.headline }}
-          </h2>
-          <p class="mt-3 text-sm leading-relaxed text-body">
-            {{ marketing?.tagline }}
-          </p>
-        </div>
+    <div class="relative hidden w-0 flex-1 bg-secondary-900 lg:block">
+      <div class="flex h-full flex-col items-start justify-center px-12 xl:px-16">
+        <NuxtImg
+          v-if="marketing?.illustration"
+          :src="marketing.illustration"
+          alt=""
+          class="mb-12 w-full max-w-lg"
+          aria-hidden="true"
+        />
+        <h2 class="max-w-sm text-2xl font-semibold text-secondary-100">
+          {{ marketing?.headline }}
+        </h2>
+        <p class="mt-3 max-w-sm text-sm leading-relaxed text-secondary-400">
+          {{ marketing?.tagline }}
+        </p>
       </div>
     </div>
   </div>
