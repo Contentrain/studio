@@ -13,7 +13,7 @@ defineEmits<{
 
 <template>
   <div class="pt-10 text-center">
-    <p class="mb-3 text-center text-sm text-gray-500 dark:text-gray-400">
+    <p class="mb-3 text-center text-sm text-muted">
       {{ description }}
     </p>
     <AtomsGhostButton block size="md" @click="$emit('click')">

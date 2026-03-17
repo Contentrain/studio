@@ -18,7 +18,7 @@ withDefaults(defineProps<Props>(), {
   <Primitive
     as="button"
     :disabled="disabled"
-    class="inline-flex items-center justify-center gap-2 rounded-lg border border-[--color-border-default] bg-[--color-surface] font-medium text-[--color-heading] transition-colors hover:bg-[--color-surface-raised] disabled:cursor-not-allowed disabled:opacity-50"
+    class="inline-flex items-center justify-center gap-2 rounded-lg border border-secondary-200 dark:border-secondary-800 bg-white dark:bg-secondary-950 font-medium text-secondary-900 dark:text-secondary-100 transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-800 disabled:cursor-not-allowed disabled:opacity-50"
     :class="[
       block ? 'w-full' : '',
       {

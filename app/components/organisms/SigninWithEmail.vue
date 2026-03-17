@@ -37,7 +37,7 @@ const email = ref('')
     <div v-if="!magicLinkSent" class="mt-6">
       <form class="space-y-4" @submit.prevent="$emit('submit', email)">
         <div>
-          <label for="email" class="block text-sm font-medium text-gray-900 dark:text-gray-100">
+          <label for="email" class="block text-sm font-medium text-secondary-900 dark:text-secondary-100">
             {{ t('auth.email_label') }}
           </label>
           <input
@@ -47,13 +47,13 @@ const email = ref('')
             required
             :placeholder="t('auth.email_placeholder')"
             autocomplete="email"
-            class="mt-2 block w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500"
+            class="mt-2 block w-full rounded-lg border border-secondary-200 dark:border-secondary-800 bg-white dark:bg-secondary-900 px-4 py-2.5 text-sm text-secondary-900 dark:text-secondary-100 placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
         </div>
         <button
           type="submit"
           :disabled="loading || !email"
-          class="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
+          class="w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50 dark:bg-primary-500 dark:hover:bg-primary-400"
         >
           {{ t('auth.send_magic_link') }}
         </button>
@@ -61,7 +61,7 @@ const email = ref('')
 
       <!-- Provider buttons below -->
       <div class="mt-10">
-        <p class="mb-3 text-center text-sm text-gray-500 dark:text-gray-400">
+        <p class="mb-3 text-center text-sm text-muted">
           {{ t('auth.or_providers') }}
         </p>
         <MoleculesProviderButtons class="hidden lg:block" @provider="$emit('provider', $event)" />
@@ -71,18 +71,16 @@ const email = ref('')
 
     <!-- Magic link sent -->
     <div v-else class="mt-8 py-8 text-center">
-      <div class="mb-4 text-4xl">
-        ✉️
-      </div>
-      <p class="text-sm text-gray-600 dark:text-gray-300">
+      <span class="icon-[annon--email] text-primary-500 text-4xl mb-4" />
+      <p class="text-sm text-secondary-600 dark:text-secondary-300">
         {{ t('auth.magic_link_sent_description') }}
-        <strong class="text-gray-900 dark:text-gray-100">{{ sentEmail }}</strong>
+        <strong class="text-secondary-900 dark:text-secondary-100">{{ sentEmail }}</strong>
       </p>
-      <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+      <p class="mt-2 text-sm text-muted">
         {{ t('auth.magic_link_sent_instruction') }}
       </p>
       <button
-        class="mt-4 text-sm text-blue-600 hover:underline dark:text-blue-400"
+        class="mt-4 text-sm text-primary-500 hover:underline dark:text-primary-400"
         @click="$emit('reset')"
       >
         {{ t('auth.try_different_email') }}

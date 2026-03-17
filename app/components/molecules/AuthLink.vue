@@ -10,12 +10,12 @@ defineProps<Props>()
 
 <template>
   <div class="pt-6 text-center">
-    <p class="mb-2 text-sm text-gray-500 dark:text-gray-400">
+    <p class="mb-2 text-sm text-muted">
       {{ description }}
     </p>
     <NuxtLink
       :to="to"
-      class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+      class="text-sm font-medium text-primary-500 hover:underline dark:text-primary-400"
     >
       {{ label }}
     </NuxtLink>

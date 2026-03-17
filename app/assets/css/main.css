@@ -9,7 +9,18 @@
 /*
  * Contentrain Studio — Design Tokens
  * Tailwind CSS 4 theme configuration
- * Adapted from old Contentrain CMS tailwind-preset
+ * Exact match of old Contentrain CMS tailwind-preset
+ *
+ * Color naming:
+ *   primary (brand blue), secondary (slate/neutral), success, warning, danger, info
+ *   heading, body, muted, label, disabled, border, error — single-value semantic tokens
+ *
+ * Usage:
+ *   text-heading, text-body, text-muted, text-label, text-disabled
+ *   border-border (dividers), bg-error (error backgrounds)
+ *   text-primary-500, bg-secondary-50, border-danger-100 etc.
+ *   bg-white / dark:bg-secondary-950 for page backgrounds
+ *   bg-secondary-50 / dark:bg-secondary-900 for raised surfaces
  */
 
 @theme {
@@ -28,7 +39,7 @@
   --color-primary-800: #011465;
   --color-primary-900: #010A32;
 
-  /* Secondary (slate alias — mirrors Tailwind slate) */
+  /* Secondary (slate — all neutral UI) */
   --color-secondary-50: #f8fafc;
   --color-secondary-100: #f1f5f9;
   --color-secondary-200: #e2e8f0;
@@ -41,7 +52,7 @@
   --color-secondary-900: #0f172a;
   --color-secondary-950: #020617;
 
-  /* Success (green alias) */
+  /* Success (green) */
   --color-success-50: #f0fdf4;
   --color-success-100: #dcfce7;
   --color-success-200: #bbf7d0;
@@ -53,7 +64,7 @@
   --color-success-800: #166534;
   --color-success-900: #14532d;
 
-  /* Warning (amber alias) */
+  /* Warning (amber) */
   --color-warning-50: #fffbeb;
   --color-warning-100: #fef3c7;
   --color-warning-200: #fde68a;
@@ -65,7 +76,7 @@
   --color-warning-800: #92400e;
   --color-warning-900: #78350f;
 
-  /* Danger (red alias) */
+  /* Danger (red) */
   --color-danger-50: #fef2f2;
   --color-danger-100: #fee2e2;
   --color-danger-200: #fecaca;
@@ -89,38 +100,22 @@
   --color-info-800: #22184E;
   --color-info-900: #110C27;
 
+  /*
+   * Semantic single-value colors (exact match of old CMS)
+   * These generate: text-heading, text-body, text-muted, text-label,
+   *                 text-disabled, border-border, bg-error
+   * Dark mode: use dark: prefix with secondary-* equivalents
+   */
+  --color-heading: #0f172a;
+  --color-body: #475569;
+  --color-muted: #94a3b8;
+  --color-label: #64748b;
+  --color-disabled: #cbd5e1;
+  --color-border: #e2e8f0;
+  --color-error: #fee2e2;
+
   /* Shimmer animation */
   --animate-shimmer: shimmer 2s infinite linear;
-}
-
-/*
- * Semantic color tokens — light & dark
- * Usage: text-[--color-heading], bg-[--color-surface], border-[--color-border-default]
- */
-@layer base {
-  :root {
-    --color-heading: var(--color-slate-900);
-    --color-body: var(--color-slate-600);
-    --color-muted: var(--color-slate-400);
-    --color-label: var(--color-slate-500);
-    --color-disabled: var(--color-slate-300);
-    --color-border-default: var(--color-slate-200);
-    --color-error: var(--color-danger-100);
-    --color-surface: #ffffff;
-    --color-surface-raised: var(--color-slate-50);
-  }
-
-  .dark {
-    --color-heading: var(--color-slate-100);
-    --color-body: var(--color-slate-300);
-    --color-muted: var(--color-slate-500);
-    --color-label: var(--color-slate-400);
-    --color-disabled: var(--color-slate-600);
-    --color-border-default: var(--color-slate-800);
-    --color-error: var(--color-danger-900);
-    --color-surface: var(--color-slate-950);
-    --color-surface-raised: var(--color-slate-900);
-  }
 }
 
 /*
@@ -132,40 +127,40 @@
   }
 
   .sidebar-gradient {
-    background: linear-gradient(to bottom, var(--color-secondary-100) 0%, var(--color-surface) 100%);
+    background: linear-gradient(to bottom, var(--color-secondary-100) 0%, white 100%);
   }
 
   .dark .sidebar-gradient {
-    background: linear-gradient(to bottom, var(--color-secondary-900) 0%, var(--color-surface) 100%);
+    background: linear-gradient(to bottom, var(--color-secondary-900) 0%, var(--color-secondary-950) 100%);
   }
 
   .card-gradient-primary {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-primary-50) 60%, transparent) 10%, var(--color-surface) 40%);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-primary-50) 60%, transparent) 10%, white 40%);
     border: 1px solid var(--color-primary-100);
   }
 
   .card-gradient-success {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-success-50) 60%, transparent) 10%, var(--color-surface) 40%);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-success-50) 60%, transparent) 10%, white 40%);
     border: 1px solid var(--color-success-100);
   }
 
   .card-gradient-danger {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-danger-50) 60%, transparent) 10%, var(--color-surface) 40%);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-danger-50) 60%, transparent) 10%, white 40%);
     border: 1px solid var(--color-danger-100);
   }
 
   .card-gradient-warning {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-warning-50) 60%, transparent) 10%, var(--color-surface) 40%);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-warning-50) 60%, transparent) 10%, white 40%);
     border: 1px solid var(--color-warning-100);
   }
 
   .card-gradient-info {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-info-50) 60%, transparent) 10%, var(--color-surface) 40%);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-info-50) 60%, transparent) 10%, white 40%);
     border: 1px solid var(--color-info-100);
   }
 
   .card-gradient-secondary {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-secondary-50) 60%, transparent) 10%, var(--color-surface) 40%);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-secondary-50) 60%, transparent) 10%, white 40%);
     border: 1px solid var(--color-secondary-100);
   }
 }

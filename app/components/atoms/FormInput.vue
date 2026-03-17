@@ -42,9 +42,9 @@ function onInput(event: Event) {
       :required="required"
       :aria-invalid="state === 'error'"
       :aria-describedby="description && id ? `${id}-description` : undefined"
-      class="w-full rounded-lg border px-3 py-2 text-sm bg-[--color-surface] text-[--color-heading] placeholder:text-[--color-muted] transition-colors outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:text-[--color-disabled]"
+      class="w-full rounded-lg border px-3 py-2 text-sm bg-white dark:bg-secondary-900 text-secondary-900 dark:text-secondary-100 placeholder:text-muted transition-colors outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:text-secondary-300 dark:disabled:text-secondary-600"
       :class="{
-        'border-[--color-border-default] focus:border-primary-500': state === 'default',
+        'border-secondary-200 dark:border-secondary-800 focus:border-primary-500': state === 'default',
         'border-danger-500 focus:border-danger-500 focus:ring-danger-500/30': state === 'error',
         'border-success-500 focus:border-success-500 focus:ring-success-500/30': state === 'success',
       }"
@@ -55,7 +55,7 @@ function onInput(event: Event) {
       :id="id ? `${id}-description` : undefined"
       class="text-xs"
       :class="{
-        'text-[--color-muted]': state === 'default',
+        'text-muted': state === 'default',
         'text-danger-500': state === 'error',
         'text-success-500': state === 'success',
       }"

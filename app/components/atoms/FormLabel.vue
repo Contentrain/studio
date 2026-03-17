@@ -21,7 +21,7 @@ withDefaults(defineProps<Props>(), {
 <template>
   <Label
     :for="$props.for"
-    class="inline-flex items-center gap-1 text-[--color-label]"
+    class="inline-flex items-center gap-1 text-label"
     :class="[
       {
         'text-xs': size === 'xs',
@@ -34,6 +34,6 @@ withDefaults(defineProps<Props>(), {
     <span v-if="text">{{ text }}</span>
     <slot v-else />
     <span v-if="required" class="text-danger-500" aria-hidden="true">*</span>
-    <span v-if="optional" class="text-[--color-muted] text-xs">(optional)</span>
+    <span v-if="optional" class="text-muted text-xs">(optional)</span>
   </Label>
 </template>

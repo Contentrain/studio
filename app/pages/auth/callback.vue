@@ -21,21 +21,21 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-white dark:bg-gray-950">
+  <div class="flex min-h-screen items-center justify-center bg-white dark:bg-secondary-950">
     <div v-if="error" class="max-w-sm px-4 text-center">
       <p class="text-sm text-red-600 dark:text-red-400">
         {{ error }}
       </p>
       <NuxtLink
         to="/auth/login"
-        class="mt-4 inline-block text-sm text-blue-600 hover:underline dark:text-blue-400"
+        class="mt-4 inline-block text-sm text-primary-500 hover:underline dark:text-primary-400"
       >
         {{ t('auth.back_to_login') }}
       </NuxtLink>
     </div>
     <div v-else class="text-center">
-      <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-gray-700 dark:border-t-gray-100" />
-      <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">
+      <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-secondary-200 dark:border-secondary-800 border-t-secondary-900 dark:border-t-secondary-100" />
+      <p class="mt-3 text-sm text-muted">
         {{ t('auth.signing_in') }}
       </p>
     </div>
