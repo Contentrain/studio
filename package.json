@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@nuxt/eslint": "1.15.2",
+    "@supabase/supabase-js": "^2.99.2",
     "nuxt": "^4.4.2",
     "vue": "^3.5.30",
     "vue-router": "^5.0.3"
@@ -26,8 +27,10 @@
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
+    "@contentrain/mcp": "^1.0.3",
     "changelogen": "^0.6.2",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0"
+    "lint-staged": "^16.4.0",
+    "typescript": "^5.9.3"
   }
 }
