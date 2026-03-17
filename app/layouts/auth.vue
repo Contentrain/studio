@@ -1,10 +1,7 @@
 <script setup lang="ts">
-const { t } = useContent()
-const route = useRoute()
+import { singleton } from '#contentrain'
 
-const isSignin = computed(() =>
-  route.path.includes('login') || route.path.includes('forgot-password'),
-)
+const marketing = singleton('auth-marketing').locale('en').get()
 </script>
 
 <template>
@@ -25,13 +22,20 @@ const isSignin = computed(() =>
 
     <!-- Right: Marketing visual -->
     <div class="relative hidden w-0 flex-1 bg-secondary-50 dark:bg-secondary-900 lg:block">
-      <div class="flex h-full items-center justify-center px-16">
-        <div class="max-w-md text-center">
-          <h2 class="text-xl font-medium text-secondary-900 dark:text-secondary-100">
-            {{ isSignin ? t('auth.marketing_welcome') : t('auth.marketing_get_started') }}
+      <div class="flex h-full flex-col items-center justify-center px-16">
+        <div class="w-full max-w-md">
+          <NuxtImg
+            v-if="marketing?.illustration"
+            :src="marketing.illustration"
+            alt=""
+            class="mb-10 w-full"
+            aria-hidden="true"
+          />
+          <h2 class="text-xl font-semibold text-secondary-900 dark:text-secondary-100">
+            {{ marketing?.headline }}
           </h2>
-          <p class="mt-2 text-sm text-muted">
-            {{ isSignin ? t('auth.marketing_signin_desc') : t('auth.marketing_signup_desc') }}
+          <p class="mt-3 text-sm leading-relaxed text-body">
+            {{ marketing?.tagline }}
           </p>
         </div>
       </div>

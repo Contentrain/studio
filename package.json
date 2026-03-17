@@ -38,5 +38,19 @@
     "lint-staged": "^16.4.0",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3"
+  },
+  "imports": {
+    "#contentrain": {
+      "types": "./.contentrain/client/index.d.ts",
+      "import": "./.contentrain/client/index.mjs",
+      "require": "./.contentrain/client/index.cjs",
+      "default": "./.contentrain/client/index.mjs"
+    },
+    "#contentrain/*": {
+      "types": "./.contentrain/client/*.d.ts",
+      "import": "./.contentrain/client/*.mjs",
+      "require": "./.contentrain/client/*.cjs",
+      "default": "./.contentrain/client/*.mjs"
+    }
   }
 }
