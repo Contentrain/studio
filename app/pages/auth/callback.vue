@@ -3,6 +3,7 @@ definePageMeta({
   layout: false,
 })
 
+const { t } = useContent()
 const router = useRouter()
 const error = ref('')
 
@@ -11,7 +12,7 @@ onMounted(async () => {
   const { data, error: authError } = await $supabase.auth.getSession()
 
   if (authError || !data.session) {
-    error.value = authError?.message || 'Authentication failed'
+    error.value = authError?.message || t('auth.failed')
     return
   }
 
@@ -20,25 +21,22 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-white dark:bg-gray-950">
-    <div v-if="error" class="text-center max-w-sm px-4">
-      <div class="text-4xl mb-4">
-        ⚠️
-      </div>
+  <div class="flex min-h-screen items-center justify-center bg-white dark:bg-gray-950">
+    <div v-if="error" class="max-w-sm px-4 text-center">
       <p class="text-sm text-red-600 dark:text-red-400">
         {{ error }}
       </p>
       <NuxtLink
         to="/auth/login"
-        class="mt-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        class="mt-4 inline-block text-sm text-blue-600 hover:underline dark:text-blue-400"
       >
-        Back to login
+        {{ t('auth.back_to_login') }}
       </NuxtLink>
     </div>
     <div v-else class="text-center">
-      <div class="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-gray-700 dark:border-t-gray-100 mx-auto" />
+      <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-gray-700 dark:border-t-gray-100" />
       <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">
-        Signing you in...
+        {{ t('auth.signing_in') }}
       </p>
     </div>
   </div>

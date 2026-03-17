@@ -10,6 +10,8 @@ withDefaults(defineProps<Props>(), {
 defineEmits<{
   provider: [provider: 'github' | 'google']
 }>()
+
+const { t } = useContent()
 </script>
 
 <template>
@@ -23,7 +25,7 @@ defineEmits<{
           />
         </svg>
       </template>
-      <span v-if="!mobile">Continue with GitHub</span>
+      <span v-if="!mobile">{{ t('auth.continue_github') }}</span>
     </AtomsGhostButton>
 
     <AtomsGhostButton block size="md" @click="$emit('provider', 'google')">
@@ -32,10 +34,11 @@ defineEmits<{
           <path d="M10.204 8.182v3.873h5.492a5.06 5.06 0 01-2.2 3.318l3.312 2.518c1.93-1.745 3.128-4.509 3.128-7.555 0-.734-.065-1.416-.18-2.07L10.204 8.182z" fill="#4285F4" />
           <path d="M4.486 11.903A5.986 5.986 0 014.165 10c0-.664.118-1.3.326-1.9L1.095 5.518A9.98 9.98 0 000 10c0 1.618.399 3.136 1.095 4.482l3.39-2.579z" fill="#FBBC05" />
           <path d="M10.204 3.982c1.503 0 2.839.509 3.906 1.49l2.922-2.863C15.26.99 12.96 0 10.204 0 6.215 0 2.774 2.245 1.095 5.518l3.39 2.582c.808-2.364 3.062-4.118 5.719-4.118z" fill="#EA4335" />
-          <path d="M4.486 11.903c-.807-2.36-3.062-4.118 5.718-4.118C7.55 16.027 5.297 14.273 4.49 11.909l-3.394 2.573C2.774 17.755 6.215 20 10.204 20c2.755 0 5.065-.982 6.753-2.664l-3.312-2.518c-.981.66-2.236 1.06-3.441 1.06-2.657 0-4.911-1.727-5.718-4.093v.118z" fill="#34A853" />
+          <path d="M4.486 11.903c-.204-.6-.321-1.24-.321-1.903s.117-1.303.321-1.903L1.095 5.518A9.98 9.98 0 000 10c0 1.618.399 3.136 1.095 4.482l3.39-2.579z" fill="#FBBC05" />
+          <path d="M10.204 16.018c-2.657 0-4.911-1.754-5.718-4.115l-3.39 2.579C2.774 17.755 6.215 20 10.204 20c2.756 0 5.066-.982 6.753-2.664l-3.312-2.518c-.935.627-2.134.999-3.441 1.2z" fill="#34A853" />
         </svg>
       </template>
-      <span v-if="!mobile">Continue with Google</span>
+      <span v-if="!mobile">{{ t('auth.continue_google') }}</span>
     </AtomsGhostButton>
   </div>
 </template>

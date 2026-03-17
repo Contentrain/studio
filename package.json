@@ -18,11 +18,11 @@
     "*.{js,ts,mjs,vue}": "eslint --fix"
   },
   "dependencies": {
+    "@contentrain/query": "^5.0.0",
     "@nuxt/eslint": "1.15.2",
     "@supabase/supabase-js": "^2.99.2",
-    "@tailwindcss/vite": "^4.2.1",
     "nuxt": "^4.4.2",
-    "tailwindcss": "^4.2.1",
+    "radix-vue": "^1.9.17",
     "vue": "^3.5.30",
     "vue-router": "^5.0.3"
   },
@@ -30,23 +30,12 @@
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
     "@contentrain/mcp": "^1.0.3",
+    "@iconify/tailwind4": "^1.2.3",
+    "@tailwindcss/vite": "^4.2.1",
     "changelogen": "^0.6.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
+    "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3"
-  },
-  "imports": {
-    "#contentrain": {
-      "types": "./.contentrain/client/index.d.ts",
-      "import": "./.contentrain/client/index.mjs",
-      "require": "./.contentrain/client/index.cjs",
-      "default": "./.contentrain/client/index.mjs"
-    },
-    "#contentrain/*": {
-      "types": "./.contentrain/client/*.d.ts",
-      "import": "./.contentrain/client/*.mjs",
-      "require": "./.contentrain/client/*.cjs",
-      "default": "./.contentrain/client/*.mjs"
-    }
   }
 }

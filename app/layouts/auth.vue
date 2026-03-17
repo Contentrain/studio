@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { t } = useContent()
 const route = useRoute()
 
 const isSignin = computed(() =>
@@ -12,7 +13,7 @@ const isSignin = computed(() =>
     <div class="flex flex-1 flex-col px-4 py-12 sm:px-6 lg:flex-none lg:px-20 xl:px-24">
       <div class="mb-4">
         <NuxtLink to="/" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          Contentrain Studio
+          {{ t('app.name') }}
         </NuxtLink>
       </div>
       <div class="flex h-full flex-col justify-center">
@@ -23,19 +24,14 @@ const isSignin = computed(() =>
     </div>
 
     <!-- Right: Marketing visual -->
-    <div class="relative hidden w-0 flex-1 bg-gray-50 dark:bg-gray-900 lg:block">
+    <div class="relative hidden w-0 flex-1 bg-gray-50 lg:block dark:bg-gray-900">
       <div class="flex h-full items-center justify-center px-16">
         <div class="max-w-md text-center">
-          <div class="text-5xl mb-6">
-            {{ isSignin ? '👋' : '🚀' }}
-          </div>
           <h2 class="text-xl font-medium text-gray-900 dark:text-gray-100">
-            {{ isSignin ? 'Welcome back' : 'Get started' }}
+            {{ isSignin ? t('auth.marketing_welcome') : t('auth.marketing_get_started') }}
           </h2>
           <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            {{ isSignin
-              ? 'Manage your content with conversation-first workflows.'
-              : 'Set up your project and start managing content in seconds.' }}
+            {{ isSignin ? t('auth.marketing_signin_desc') : t('auth.marketing_signup_desc') }}
           </p>
         </div>
       </div>

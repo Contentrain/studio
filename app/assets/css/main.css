@@ -1,6 +1,11 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap");
 @import "tailwindcss";
 
+/* Annon icon set — custom Contentrain icons via Iconify */
+@plugin "@iconify/tailwind4" {
+  icon-sets: from-json(annon, "./app/assets/icons/annon.json");
+}
+
 /*
  * Contentrain Studio — Design Tokens
  * Tailwind CSS 4 theme configuration
