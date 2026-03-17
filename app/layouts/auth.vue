@@ -12,8 +12,8 @@ const isSignin = computed(() =>
     <!-- Left: Auth form -->
     <div class="flex flex-1 flex-col px-4 py-12 sm:px-6 lg:flex-none lg:px-20 xl:px-24">
       <div class="mb-4">
-        <NuxtLink to="/" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {{ t('app.name') }}
+        <NuxtLink to="/">
+          <AtomsLogo variant="icon-text" class="h-8" />
         </NuxtLink>
       </div>
       <div class="flex h-full flex-col justify-center">

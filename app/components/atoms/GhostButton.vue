@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import { Primitive } from 'radix-vue'
+
 interface Props {
   block?: boolean
   disabled?: boolean
@@ -13,9 +15,10 @@ withDefaults(defineProps<Props>(), {
 </script>
 
 <template>
-  <button
+  <Primitive
+    as="button"
     :disabled="disabled"
-    class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+    class="inline-flex items-center justify-center gap-2 rounded-lg border border-[--color-border-default] bg-[--color-surface] font-medium text-[--color-heading] transition-colors hover:bg-[--color-surface-raised] disabled:cursor-not-allowed disabled:opacity-50"
     :class="[
       block ? 'w-full' : '',
       {
@@ -32,5 +35,5 @@ withDefaults(defineProps<Props>(), {
     <span v-if="$slots.append" class="shrink-0">
       <slot name="append" />
     </span>
-  </button>
+  </Primitive>
 </template>
