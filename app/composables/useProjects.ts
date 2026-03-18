@@ -14,12 +14,11 @@ interface Project {
 export function useProjects() {
   const projects = useState<Project[]>('projects', () => [])
   const loading = useState('projects-loading', () => false)
-  const { apiFetch } = useApi()
 
   async function fetchProjects() {
     loading.value = true
     try {
-      projects.value = await apiFetch<Project[]>('/api/projects')
+      projects.value = await $fetch<Project[]>('/api/projects')
     }
     finally {
       loading.value = false
@@ -33,7 +32,7 @@ export function useProjects() {
     detectedStack?: string
     githubInstallationId?: number
   }) {
-    const project = await apiFetch<Project>('/api/projects', {
+    const project = await $fetch<Project>('/api/projects', {
       method: 'POST',
       body: data,
     })

@@ -1,5 +1,3 @@
-import { useSupabaseAdmin } from '~~/server/utils/supabase'
-
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
     code?: string
@@ -7,47 +5,26 @@ export default defineEventHandler(async (event) => {
     refreshToken?: string
   }>(event)
 
-  const admin = useSupabaseAdmin()
-  let accessToken: string | null = null
-  let refreshToken: string | null = null
+  const authProvider = useAuthProvider()
+  let session
 
   if (body.code) {
-    const { data, error } = await admin.auth.exchangeCodeForSession(body.code)
-    if (error || !data.session)
-      throw createError({ statusCode: 401, message: 'Invalid code' })
-    accessToken = data.session.access_token
-    refreshToken = data.session.refresh_token
+    session = await authProvider.exchangeCode(body.code)
   }
   else if (body.accessToken) {
-    accessToken = body.accessToken
-    refreshToken = body.refreshToken ?? null
+    session = await authProvider.exchangeTokens(body.accessToken, body.refreshToken ?? undefined)
   }
   else {
     throw createError({ statusCode: 400, message: 'code or accessToken required' })
   }
 
-  const { data: userData, error: userError } = await admin.auth.getUser(accessToken)
-  if (userError || !userData.user)
-    throw createError({ statusCode: 401, message: 'Invalid token' })
-
-  setCookie(event, 'auth-session', JSON.stringify({ accessToken, refreshToken }), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7,
+  // Store tokens in encrypted httpOnly cookie — never exposed to client
+  await setServerSession(event, {
+    userId: session.user.id,
+    accessToken: session.tokens.accessToken,
+    refreshToken: session.tokens.refreshToken,
+    expiresAt: session.tokens.expiresAt,
   })
 
-  const u = userData.user
-  const provider = (u.app_metadata?.provider ?? null) as string | null
-
-  return {
-    user: {
-      id: u.id,
-      email: u.email ?? null,
-      avatarUrl: u.user_metadata?.avatar_url ?? null,
-      provider,
-      providerAccountId: u.user_metadata?.provider_id ?? null,
-    },
-  }
+  return { user: session.user }
 })

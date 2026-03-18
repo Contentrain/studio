@@ -1,7 +1,3 @@
-import { createSupabaseAuthProvider } from '~~/server/providers/supabase-auth'
-
-const authProvider = createSupabaseAuthProvider()
-
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const projectId = getRouterParam(event, 'id')
@@ -33,7 +29,8 @@ export default defineEventHandler(async (event) => {
   if (!project || project.owner_id !== session.user.id)
     throw createError({ statusCode: 403, message: 'Only the project owner can invite members' })
 
-  // Invite user via Supabase Auth (creates account if not exists, sends magic link)
+  // Invite user via auth provider (creates account if not exists, sends magic link)
+  const authProvider = useAuthProvider()
   let userId: string | null = null
   try {
     const result = await authProvider.inviteUserByEmail(body.email)

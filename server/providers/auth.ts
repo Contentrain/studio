@@ -1,4 +1,20 @@
-import type { H3Event } from 'h3'
+/**
+ * Provider-agnostic auth interface.
+ *
+ * Session management (encrypted cookies, refresh orchestration) lives in
+ * server/utils/session.ts — NOT here.
+ *
+ * AuthProvider is responsible only for:
+ *  - Validating tokens (is this token still good?)
+ *  - Refreshing tokens (give me new ones)
+ *  - OAuth redirect URL generation
+ *  - Token exchange (code → session data)
+ *  - Magic link / invite
+ *  - User lookup
+ *
+ * Current impl: Supabase (server/providers/supabase-auth.ts)
+ * Future impls: AuthJS, Clerk, plain OAuth + JWT, etc.
+ */
 
 export interface AuthUser {
   id: string
@@ -8,10 +24,15 @@ export interface AuthUser {
   providerAccountId: string | null
 }
 
-export interface AuthSession {
-  user: AuthUser
+export interface AuthTokens {
   accessToken: string
   refreshToken: string | null
+  expiresAt: number // Unix timestamp in seconds
+}
+
+export interface AuthSession {
+  user: AuthUser
+  tokens: AuthTokens
 }
 
 export interface OAuthRedirectResult {
@@ -20,37 +41,44 @@ export interface OAuthRedirectResult {
 
 export interface AuthProvider {
   /**
-   * Get the current session from request headers
+   * Validate an access token and return the associated user.
+   * Returns null if the token is expired or invalid.
    */
-  getSession: (event: H3Event) => Promise<AuthSession | null>
+  validateToken: (accessToken: string) => Promise<AuthUser | null>
 
   /**
-   * Generate OAuth redirect URL for a given provider
+   * Refresh an expired session using a refresh token.
+   * Returns new token set, or null if refresh is not possible.
+   */
+  refreshSession: (refreshToken: string) => Promise<AuthTokens | null>
+
+  /**
+   * Generate OAuth redirect URL for a given provider.
    */
   getOAuthRedirectUrl: (provider: 'github' | 'google', redirectTo: string) => Promise<OAuthRedirectResult>
 
   /**
-   * Exchange OAuth callback code for session
+   * Exchange an OAuth authorization code for a full session.
    */
-  handleOAuthCallback: (event: H3Event) => Promise<AuthSession>
+  exchangeCode: (code: string) => Promise<AuthSession>
 
   /**
-   * Send magic link email
+   * Exchange raw tokens (from OAuth hash callback) for a full session.
+   */
+  exchangeTokens: (accessToken: string, refreshToken?: string) => Promise<AuthSession>
+
+  /**
+   * Send magic link email.
    */
   sendMagicLink: (email: string, redirectTo: string) => Promise<void>
 
   /**
-   * Sign out and invalidate session
-   */
-  signOut: (event: H3Event) => Promise<void>
-
-  /**
-   * Invite a user by email (creates account if not exists)
+   * Invite a user by email (creates account if not exists).
    */
   inviteUserByEmail: (email: string) => Promise<{ userId: string }>
 
   /**
-   * Get user by ID
+   * Look up a user by their ID.
    */
   getUserById: (userId: string) => Promise<AuthUser | null>
 }

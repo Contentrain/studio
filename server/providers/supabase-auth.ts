@@ -1,51 +1,34 @@
-import type { H3Event } from 'h3'
-import { getCookie, getHeader } from 'h3'
-import type { AuthProvider, AuthSession, AuthUser, OAuthRedirectResult } from './auth'
+import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult } from './auth'
 
+/**
+ * Supabase implementation of AuthProvider.
+ *
+ * Uses Supabase Admin client (service_role key) for all operations.
+ * Token validation, refresh, and user lookup all go through Supabase Auth API.
+ */
 export function createSupabaseAuthProvider(): AuthProvider {
   return {
-    async getSession(event: H3Event): Promise<AuthSession | null> {
-      let accessToken: string | null = null
-
-      const authorization = getHeader(event, 'authorization')
-      if (authorization?.startsWith('Bearer '))
-        accessToken = authorization.slice(7)
-
-      if (!accessToken) {
-        const sessionCookie = getCookie(event, 'auth-session')
-        if (sessionCookie) {
-          try {
-            const parsed = JSON.parse(sessionCookie)
-            accessToken = parsed.accessToken ?? null
-          }
-          catch (e) {
-            void e
-          }
-        }
-      }
-
-      if (!accessToken)
-        return null
-
+    async validateToken(accessToken: string): Promise<AuthUser | null> {
       const admin = useSupabaseAdmin()
       const { data, error } = await admin.auth.getUser(accessToken)
 
       if (error || !data.user)
         return null
 
-      const user = data.user
-      const provider = user.app_metadata?.provider as AuthUser['provider'] ?? null
+      return mapSupabaseUser(data.user)
+    },
+
+    async refreshSession(refreshToken: string): Promise<AuthTokens | null> {
+      const admin = useSupabaseAdmin()
+      const { data, error } = await admin.auth.refreshSession({ refresh_token: refreshToken })
+
+      if (error || !data.session)
+        return null
 
       return {
-        user: {
-          id: user.id,
-          email: user.email ?? null,
-          avatarUrl: user.user_metadata?.avatar_url ?? null,
-          provider,
-          providerAccountId: user.user_metadata?.provider_id ?? null,
-        },
-        accessToken,
-        refreshToken: null,
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token ?? null,
+        expiresAt: data.session.expires_at ?? Math.floor(Date.now() / 1000) + 3600,
       }
     },
 
@@ -68,31 +51,38 @@ export function createSupabaseAuthProvider(): AuthProvider {
       return { url: data.url }
     },
 
-    async handleOAuthCallback(event: H3Event): Promise<AuthSession> {
-      const query = getQuery(event) as { access_token?: string, refresh_token?: string }
-
-      if (!query.access_token)
-        throw createError({ statusCode: 400, message: 'Missing access_token in callback' })
-
+    async exchangeCode(code: string): Promise<AuthSession> {
       const admin = useSupabaseAdmin()
-      const { data, error } = await admin.auth.getUser(query.access_token)
+      const { data, error } = await admin.auth.exchangeCodeForSession(code)
 
-      if (error || !data.user)
-        throw createError({ statusCode: 401, message: `Auth callback failed: ${error?.message}` })
-
-      const user = data.user
-      const provider = user.app_metadata?.provider as AuthUser['provider'] ?? null
+      if (error || !data.session)
+        throw createError({ statusCode: 401, message: `Code exchange failed: ${error?.message}` })
 
       return {
-        user: {
-          id: user.id,
-          email: user.email ?? null,
-          avatarUrl: user.user_metadata?.avatar_url ?? null,
-          provider,
-          providerAccountId: user.user_metadata?.provider_id ?? null,
+        user: mapSupabaseUser(data.user),
+        tokens: {
+          accessToken: data.session.access_token,
+          refreshToken: data.session.refresh_token ?? null,
+          expiresAt: data.session.expires_at ?? Math.floor(Date.now() / 1000) + 3600,
         },
-        accessToken: query.access_token,
-        refreshToken: query.refresh_token ?? null,
+      }
+    },
+
+    async exchangeTokens(accessToken: string, refreshToken?: string): Promise<AuthSession> {
+      const admin = useSupabaseAdmin()
+      const { data, error } = await admin.auth.getUser(accessToken)
+
+      if (error || !data.user)
+        throw createError({ statusCode: 401, message: `Token validation failed: ${error?.message}` })
+
+      return {
+        user: mapSupabaseUser(data.user),
+        tokens: {
+          accessToken,
+          refreshToken: refreshToken ?? null,
+          // Supabase JWTs default to 1 hour; without decoding we estimate conservatively
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        },
       }
     },
 
@@ -111,21 +101,8 @@ export function createSupabaseAuthProvider(): AuthProvider {
         throw createError({ statusCode: 500, message: `Magic link failed: ${error.message}` })
     },
 
-    async signOut(event: H3Event): Promise<void> {
-      const authorization = getHeader(event, 'authorization')
-      if (!authorization?.startsWith('Bearer '))
-        return
-
-      const admin = useSupabaseAdmin()
-      // Supabase admin can revoke a user's session via their JWT
-      // For now, client-side sign out is sufficient
-      // Server just acknowledges
-      void admin
-    },
-
     async inviteUserByEmail(email: string): Promise<{ userId: string }> {
       const admin = useSupabaseAdmin()
-
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email)
 
       if (error)
@@ -136,22 +113,25 @@ export function createSupabaseAuthProvider(): AuthProvider {
 
     async getUserById(userId: string): Promise<AuthUser | null> {
       const admin = useSupabaseAdmin()
-
       const { data, error } = await admin.auth.admin.getUserById(userId)
 
       if (error || !data.user)
         return null
 
-      const user = data.user
-      const provider = user.app_metadata?.provider as AuthUser['provider'] ?? null
-
-      return {
-        id: user.id,
-        email: user.email ?? null,
-        avatarUrl: user.user_metadata?.avatar_url ?? null,
-        provider,
-        providerAccountId: user.user_metadata?.provider_id ?? null,
-      }
+      return mapSupabaseUser(data.user)
     },
+  }
+}
+
+/**
+ * Map Supabase User object to our AuthUser shape.
+ */
+function mapSupabaseUser(user: { id: string, email?: string, app_metadata?: Record<string, unknown>, user_metadata?: Record<string, unknown> }): AuthUser {
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    avatarUrl: (user.user_metadata?.avatar_url as string) ?? null,
+    provider: (user.app_metadata?.provider as AuthUser['provider']) ?? null,
+    providerAccountId: (user.user_metadata?.provider_id as string) ?? null,
   }
 }

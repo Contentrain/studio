@@ -1,7 +1,3 @@
-import { createSupabaseAuthProvider } from '~~/server/providers/supabase-auth'
-
-const authProvider = createSupabaseAuthProvider()
-
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ email: string, redirectTo?: string }>(event)
 
@@ -12,6 +8,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const authProvider = useAuthProvider()
   await authProvider.sendMagicLink(
     body.email,
     body.redirectTo || '/auth/callback',

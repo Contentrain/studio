@@ -1,7 +1,3 @@
-import { createSupabaseAuthProvider } from '~~/server/providers/supabase-auth'
-
-const authProvider = createSupabaseAuthProvider()
-
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ provider: 'github' | 'google', redirectTo?: string }>(event)
 
@@ -12,10 +8,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const result = await authProvider.getOAuthRedirectUrl(
+  const authProvider = useAuthProvider()
+  return authProvider.getOAuthRedirectUrl(
     body.provider,
     body.redirectTo || '/auth/callback',
   )
-
-  return result
 })

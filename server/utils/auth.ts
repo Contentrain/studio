@@ -1,19 +1,26 @@
 import type { H3Event } from 'h3'
-import type { AuthSession } from '../providers/auth'
+import type { AuthUser } from '../providers/auth'
+
+export interface RequestAuth {
+  user: AuthUser
+  accessToken: string
+}
 
 /**
  * Get the authenticated session from event context.
  * Throws 401 if not authenticated.
+ *
+ * Must be called after the auth middleware has run.
  */
-export function requireAuth(event: H3Event): AuthSession {
-  const session = event.context.auth as AuthSession | undefined
+export function requireAuth(event: H3Event): RequestAuth {
+  const auth = event.context.auth as RequestAuth | undefined
 
-  if (!session) {
+  if (!auth) {
     throw createError({
       statusCode: 401,
       message: 'Unauthorized',
     })
   }
 
-  return session
+  return auth
 }

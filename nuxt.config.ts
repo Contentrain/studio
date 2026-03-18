@@ -10,9 +10,11 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
+    sessionSecret: '', // NUXT_SESSION_SECRET — min 32 chars, AES-256 cookie encryption
     supabase: {
       url: '',
       serviceRoleKey: '',
+      anonKey: '',
     },
     public: {
       siteUrl: 'http://localhost:3000',
