@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, DialogTrigger } from 'radix-vue'
+import { toast } from 'vue-sonner'
 
 const { t } = useContent()
 const { activeWorkspace } = useWorkspaces()
@@ -120,11 +121,15 @@ async function connectRepo() {
       },
     })
 
-    // Refresh projects list
     const { fetchProjects } = useProjects()
     await fetchProjects(activeWorkspace.value.id)
 
+    toast.success(t('projects.connected_success'))
     open.value = false
+  }
+  catch (e: unknown) {
+    const message = e instanceof Error ? e.message : t('projects.connected_error')
+    toast.error(message)
   }
   finally {
     connecting.value = false

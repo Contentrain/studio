@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'radix-vue'
+import { toast } from 'vue-sonner'
 
 definePageMeta({
   layout: 'default',
@@ -34,7 +35,17 @@ async function saveOverview() {
   if (!activeWorkspace.value || !hasChanges.value) return
   saving.value = true
   try {
-    // TODO: API endpoint for workspace update (PATCH /api/workspaces/:id)
+    await $fetch(`/api/workspaces/${activeWorkspace.value.id}`, {
+      method: 'PATCH',
+      body: { name: workspaceName.value },
+    })
+    // Update local state
+    await fetchWorkspaces()
+    toast.success(t('settings.save_success'))
+  }
+  catch (e: unknown) {
+    const message = e instanceof Error ? e.message : t('settings.save_error')
+    toast.error(message)
   }
   finally {
     saving.value = false
