@@ -3,11 +3,13 @@ const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
+const { models, hasContentrain } = useSnapshot()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
 const connectDialogOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
+const isInsideProject = computed(() => !!currentProjectId.value)
 
 const sidebarLinks = computed(() => {
   if (!activeWorkspace.value) return []
@@ -69,6 +71,31 @@ const sidebarLinks = computed(() => {
           </button>
         </li>
       </ul>
+
+      <!-- Models section (when inside a project) -->
+      <template v-if="isInsideProject && hasContentrain">
+        <div class="mb-1.5 mt-5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Models
+        </div>
+        <ul class="space-y-0.5">
+          <li v-for="model in models" :key="model.id">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-body transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-400 dark:hover:bg-secondary-900"
+            >
+              <span
+                :class="model.type === 'singleton' ? 'icon-[annon--file]' : 'icon-[annon--list-unordered]'"
+                class="size-4 shrink-0 text-muted"
+                aria-hidden="true"
+              />
+              <span class="min-w-0 truncate">{{ model.name }}</span>
+              <AtomsBadge v-if="model.fields.length" variant="secondary" size="sm" class="ml-auto shrink-0">
+                {{ model.fields.length }}
+              </AtomsBadge>
+            </button>
+          </li>
+        </ul>
+      </template>
     </nav>
 
     <!-- Footer -->
