@@ -3,7 +3,7 @@ const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
-const { models, hasContentrain, refreshing } = useSnapshot()
+const { models, hasContentrain, refreshing, snapshot } = useSnapshot()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
@@ -23,6 +23,28 @@ const sidebarLinks = computed(() => {
     active: p.id === currentProjectId.value,
   }))
 })
+
+// Group models by domain
+const modelsByDomain = computed(() => {
+  const groups: Record<string, typeof models.value> = {}
+  for (const model of models.value) {
+    const domain = (model as { domain?: string }).domain ?? 'other'
+    if (!groups[domain]) groups[domain] = []
+    groups[domain].push(model)
+  }
+  return groups
+})
+
+// Get entry count for a model from snapshot content summary
+function getModelEntryCount(modelId: string): number | null {
+  const content = snapshot.value?.content?.[modelId]
+  if (!content) return null
+  return content.count
+}
+
+function selectModel(modelId: string) {
+  router.replace({ query: { ...route.query, model: modelId } })
+}
 </script>
 
 <template>
@@ -74,8 +96,7 @@ const sidebarLinks = computed(() => {
         </li>
       </ul>
 
-      <!-- Models section (when inside a project) -->
-      <!-- Back to dashboard -->
+      <!-- Back to dashboard (when inside a project) -->
       <div v-if="isInsideProject && activeWorkspace" class="mt-4 mb-1">
         <NuxtLink
           :to="`/w/${activeWorkspace.slug}`"
@@ -86,39 +107,59 @@ const sidebarLinks = computed(() => {
         </NuxtLink>
       </div>
 
+      <!-- Models grouped by domain (when inside a project) -->
       <template v-if="isInsideProject && hasContentrain">
-        <div class="mb-1.5 mt-3 flex items-center gap-2 px-2">
-          <span class="text-[11px] font-semibold uppercase tracking-wider text-muted">
-            Models
-          </span>
-          <div
-            v-if="refreshing"
-            class="size-3 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
-          />
+        <div
+          v-for="(domainModels, domain) in modelsByDomain"
+          :key="domain"
+          class="mt-3"
+        >
+          <!-- Domain header -->
+          <div class="mb-1 flex items-center gap-2 px-2">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+              {{ domain }}
+            </span>
+            <div
+              v-if="refreshing"
+              class="size-2.5 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
+            />
+          </div>
+
+          <!-- Models in domain -->
+          <ul class="space-y-0.5">
+            <li v-for="model in domainModels" :key="model.id">
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                :class="activeModelId === model.id
+                  ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
+                  : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
+                "
+                @click="selectModel(model.id)"
+              >
+                <span
+                  :class="getModelKindIcon(model.kind ?? model.type)"
+                  class="size-3.5 shrink-0"
+                  :style="activeModelId === model.id ? {} : { opacity: 0.5 }"
+                  aria-hidden="true"
+                />
+                <span class="min-w-0 flex-1 truncate text-left">{{ model.name }}</span>
+                <!-- i18n indicator -->
+                <span
+                  v-if="(model as any).i18n"
+                  class="icon-[annon--globe] size-3 shrink-0 text-muted"
+                  :style="{ opacity: 0.4 }"
+                  aria-hidden="true"
+                  title="i18n enabled"
+                />
+                <!-- Entry count -->
+                <span v-if="getModelEntryCount(model.id) !== null" class="shrink-0 text-[10px] tabular-nums text-disabled">
+                  {{ getModelEntryCount(model.id) }}
+                </span>
+              </button>
+            </li>
+          </ul>
         </div>
-        <ul class="space-y-0.5">
-          <li v-for="model in models" :key="model.id">
-            <button
-              type="button"
-              class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-              :class="activeModelId === model.id
-                ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
-                : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
-              "
-              @click="router.replace({ query: { ...route.query, model: model.id } })"
-            >
-              <span
-                :class="getModelKindIcon(model.kind ?? model.type)"
-                class="size-4 shrink-0 text-muted"
-                aria-hidden="true"
-              />
-              <span class="min-w-0 truncate">{{ model.name }}</span>
-              <AtomsBadge v-if="model.fields.length" variant="secondary" size="sm" class="ml-auto shrink-0">
-                {{ model.fields.length }}
-              </AtomsBadge>
-            </button>
-          </li>
-        </ul>
       </template>
     </nav>
 
