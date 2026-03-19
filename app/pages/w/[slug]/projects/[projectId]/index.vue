@@ -73,6 +73,30 @@ function backToOverview() {
   delete query.model
   router.replace({ query })
 }
+
+/**
+ * Get the field type from model schema. Falls back to 'string' for unknown fields.
+ */
+function getFieldType(fieldId: string): string {
+  if (!activeModel.value?.fields) return 'string'
+  const fields = activeModel.value.fields as Record<string, { type?: string }>
+  return fields[fieldId]?.type ?? 'string'
+}
+
+/**
+ * Get a human-readable title from an entry (first string field with common title-like names).
+ */
+function getEntryTitle(entry: Record<string, unknown>): string {
+  const titleKeys = ['title', 'name', 'label', 'heading', 'question', 'subject']
+  for (const key of titleKeys) {
+    if (entry[key] && typeof entry[key] === 'string') return entry[key] as string
+  }
+  // Fallback: first string value
+  for (const value of Object.values(entry)) {
+    if (typeof value === 'string' && value.length > 0 && value.length < 100) return value
+  }
+  return ''
+}
 </script>
 
 <template>
@@ -190,8 +214,8 @@ function backToOverview() {
         <!-- MODEL CONTENT STATE -->
         <template v-else-if="panelState === 'model'">
           <!-- Loading -->
-          <div v-if="modelContentLoading" class="space-y-2 p-5">
-            <AtomsSkeleton v-for="i in 6" :key="i" variant="line" />
+          <div v-if="modelContentLoading" class="space-y-3 p-5">
+            <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
           </div>
 
           <!-- No content -->
@@ -204,40 +228,98 @@ function backToOverview() {
           </div>
 
           <!-- Content entries -->
-          <div v-else class="p-5">
-            <!-- Array content (collection) -->
-            <template v-if="Array.isArray(modelContent)">
-              <div class="space-y-2">
-                <div
-                  v-for="(entry, idx) in modelContent"
-                  :key="idx"
-                  class="rounded-lg border border-secondary-200 p-3 dark:border-secondary-800"
+          <div v-else>
+            <!-- Collection: object-map { id: { ...fields } } -->
+            <template v-if="activeModel?.type === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)">
+              <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
+                <details
+                  v-for="(entry, entryId) in (modelContent as Record<string, Record<string, unknown>>)"
+                  :key="String(entryId)"
+                  class="group"
                 >
-                  <div v-for="(value, key) in (entry as Record<string, unknown>)" :key="String(key)" class="flex items-start gap-2 py-1">
-                    <span class="shrink-0 text-[11px] font-medium uppercase tracking-wider text-muted">
-                      {{ String(key) }}
+                  <summary class="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
+                    <span class="icon-[annon--chevron-right] size-3.5 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
+                      {{ getEntryTitle(entry) || String(entryId) }}
                     </span>
-                    <span class="ml-auto text-right text-sm text-heading dark:text-secondary-100">
-                      {{ typeof value === 'object' ? JSON.stringify(value) : String(value) }}
+                    <span class="shrink-0 font-mono text-[10px] text-disabled">
+                      {{ String(entryId).substring(0, 8) }}
                     </span>
+                  </summary>
+                  <div class="space-y-3 px-5 pb-4 pt-1">
+                    <div v-for="(value, fieldId) in entry" :key="String(fieldId)">
+                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        {{ String(fieldId) }}
+                      </div>
+                      <div class="mt-0.5">
+                        <AtomsContentFieldDisplay
+                          :type="getFieldType(String(fieldId))"
+                          :value="value"
+                          :field-id="String(fieldId)"
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </details>
               </div>
-              <p class="mt-3 text-xs text-muted">
-                {{ (modelContent as unknown[]).length }} entries
-              </p>
+              <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
+                <span class="text-xs text-muted">
+                  {{ Object.keys(modelContent as object).length }} entries
+                </span>
+              </div>
             </template>
 
-            <!-- Object content (singleton) -->
-            <template v-else-if="typeof modelContent === 'object' && modelContent !== null">
-              <div class="space-y-3">
-                <div v-for="(value, key) in (modelContent as Record<string, unknown>)" :key="String(key)">
-                  <div class="text-[11px] font-medium uppercase tracking-wider text-muted">
-                    {{ String(key) }}
+            <!-- Collection: array format [{ ...fields }] -->
+            <template v-else-if="Array.isArray(modelContent)">
+              <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
+                <details
+                  v-for="(entry, idx) in (modelContent as Record<string, unknown>[])"
+                  :key="idx"
+                  class="group"
+                >
+                  <summary class="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
+                    <span class="icon-[annon--chevron-right] size-3.5 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
+                      {{ getEntryTitle(entry) || `Entry ${idx + 1}` }}
+                    </span>
+                  </summary>
+                  <div class="space-y-3 px-5 pb-4 pt-1">
+                    <div v-for="(value, fieldId) in entry" :key="String(fieldId)">
+                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        {{ String(fieldId) }}
+                      </div>
+                      <div class="mt-0.5">
+                        <AtomsContentFieldDisplay
+                          :type="getFieldType(String(fieldId))"
+                          :value="value"
+                          :field-id="String(fieldId)"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <p class="mt-0.5 break-words text-sm text-heading dark:text-secondary-100">
-                    {{ typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value) }}
-                  </p>
+                </details>
+              </div>
+              <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
+                <span class="text-xs text-muted">
+                  {{ (modelContent as unknown[]).length }} entries
+                </span>
+              </div>
+            </template>
+
+            <!-- Singleton: flat { field: value } -->
+            <template v-else-if="typeof modelContent === 'object' && modelContent !== null">
+              <div class="space-y-4 p-5">
+                <div v-for="(value, fieldId) in (modelContent as Record<string, unknown>)" :key="String(fieldId)">
+                  <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                    {{ String(fieldId) }}
+                  </div>
+                  <div class="mt-1">
+                    <AtomsContentFieldDisplay
+                      :type="getFieldType(String(fieldId))"
+                      :value="value"
+                      :field-id="String(fieldId)"
+                    />
+                  </div>
                 </div>
               </div>
             </template>
