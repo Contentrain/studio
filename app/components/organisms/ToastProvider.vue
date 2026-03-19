@@ -10,6 +10,10 @@ import {
 
 const { toasts, dismiss } = useToast()
 
+function getStyle(variant: string) {
+  return variantStyles[variant] ?? variantStyles.info
+}
+
 const variantStyles: Record<string, { container: string, icon: string, iconClass: string }> = {
   success: {
     container: 'border-success-200 bg-success-50 dark:border-success-800 dark:bg-success-950',
@@ -39,10 +43,10 @@ const variantStyles: Record<string, { container: string, icon: string, iconClass
     <ToastRoot
       v-for="toast in toasts" :key="toast.id"
       class="group pointer-events-auto flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg transition-all data-[state=open]:animate-in data-[state=open]:slide-in-from-right-full data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right-full data-[swipe=end]:animate-out data-[swipe=end]:slide-out-to-right-full"
-      :class="variantStyles[toast.variant].container" @update:open="(open) => { if (!open) dismiss(toast.id) }"
+      :class="getStyle(toast.variant).container" @update:open="(open: boolean) => { if (!open) dismiss(toast.id) }"
     >
       <span
-        :class="[variantStyles[toast.variant].icon, variantStyles[toast.variant].iconClass]"
+        :class="[getStyle(toast.variant).icon, getStyle(toast.variant).iconClass]"
         class="mt-0.5 size-5 shrink-0" aria-hidden="true"
       />
       <div class="min-w-0 flex-1">
