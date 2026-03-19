@@ -1,6 +1,7 @@
 # Internal / temp
 .internal/
 .tmp/
+.temp/
 
 # Nuxt dev/build outputs
 .output
