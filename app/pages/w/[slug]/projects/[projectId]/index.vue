@@ -175,9 +175,9 @@ function getEntryTitle(entry: Record<string, unknown>): string {
                   {{ model.name }}
                 </div>
                 <div class="flex items-center gap-2 text-xs text-muted">
-                  <span>{{ model.type }}</span>
-                  <span v-if="snapshot?.content?.[model.id]">
-                    · {{ snapshot.content[model.id].locales.length }} {{ snapshot.content[model.id].locales.length === 1
+                  <span>{{ model.kind ?? model.type }}</span>
+                  <span v-if="snapshot?.content?.[model.id]?.locales">
+                    · {{ snapshot.content[model.id]!.locales.length }} {{ snapshot.content[model.id]!.locales.length === 1
                       ? 'locale' : 'locales' }}
                   </span>
                 </div>
