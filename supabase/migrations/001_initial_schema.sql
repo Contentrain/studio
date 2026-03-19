@@ -192,15 +192,16 @@ create policy "Users can update own profile"
   on public.profiles for update
   using (auth.uid() = id);
 
--- Allow reading profiles of workspace co-members (for member lists)
+-- Allow reading profiles of workspace co-members (via workspaces table, avoids recursion)
 create policy "Workspace co-members can view profiles"
   on public.profiles for select
   using (
-    exists (
-      select 1 from public.workspace_members wm1
-      join public.workspace_members wm2 on wm1.workspace_id = wm2.workspace_id
-      where wm1.user_id = auth.uid()
-      and wm2.user_id = profiles.id
+    id = auth.uid()
+    or exists (
+      select 1 from public.workspaces w
+      join public.workspace_members wm on wm.workspace_id = w.id
+      where w.owner_id = auth.uid()
+      and wm.user_id = profiles.id
     )
   );
 
@@ -231,27 +232,12 @@ create policy "Owner can delete workspace"
 
 -- --- WORKSPACE MEMBERS ---
 
-create policy "Members can view workspace members"
+-- Workspace Members: user sees own memberships + all members in owned workspaces
+-- Uses workspaces table to avoid self-referencing recursion
+create policy "Users can view own memberships"
   on public.workspace_members for select
   using (
-    exists (
-      select 1 from public.workspace_members as wm
-      where wm.workspace_id = workspace_members.workspace_id
-      and wm.user_id = auth.uid()
-    )
-  );
-
--- Owner/Admin can add workspace members
--- Also allows workspace owner (via workspaces table) for bootstrapping
-create policy "Owner/Admin can add workspace members"
-  on public.workspace_members for insert
-  with check (
-    exists (
-      select 1 from public.workspace_members as wm
-      where wm.workspace_id = workspace_members.workspace_id
-      and wm.user_id = auth.uid()
-      and wm.role in ('owner', 'admin')
-    )
+    user_id = auth.uid()
     or exists (
       select 1 from public.workspaces
       where workspaces.id = workspace_members.workspace_id
@@ -259,25 +245,34 @@ create policy "Owner/Admin can add workspace members"
     )
   );
 
-create policy "Owner/Admin can update workspace members"
-  on public.workspace_members for update
-  using (
+-- Workspace Members: only workspace owner can manage (via workspaces table)
+create policy "Owner can add workspace members"
+  on public.workspace_members for insert
+  with check (
     exists (
-      select 1 from public.workspace_members as wm
-      where wm.workspace_id = workspace_members.workspace_id
-      and wm.user_id = auth.uid()
-      and wm.role in ('owner', 'admin')
+      select 1 from public.workspaces
+      where workspaces.id = workspace_members.workspace_id
+      and workspaces.owner_id = auth.uid()
     )
   );
 
-create policy "Owner/Admin can remove workspace members"
+create policy "Owner can update workspace members"
+  on public.workspace_members for update
+  using (
+    exists (
+      select 1 from public.workspaces
+      where workspaces.id = workspace_members.workspace_id
+      and workspaces.owner_id = auth.uid()
+    )
+  );
+
+create policy "Owner can remove workspace members"
   on public.workspace_members for delete
   using (
     exists (
-      select 1 from public.workspace_members as wm
-      where wm.workspace_id = workspace_members.workspace_id
-      and wm.user_id = auth.uid()
-      and wm.role in ('owner', 'admin')
+      select 1 from public.workspaces
+      where workspaces.id = workspace_members.workspace_id
+      and workspaces.owner_id = auth.uid()
     )
   );
 
