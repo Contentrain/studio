@@ -4,6 +4,7 @@ const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
 const route = useRoute()
+const { isDark, toggle: toggleTheme } = useTheme()
 
 const connectDialogOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
@@ -93,6 +94,16 @@ const sidebarLinks = computed(() => {
         <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
         <span>{{ t('common.settings') }}</span>
       </NuxtLink>
+
+      <!-- Theme toggle -->
+      <button
+        type="button"
+        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+        @click="toggleTheme"
+      >
+        <span :class="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'" class="size-4 shrink-0" aria-hidden="true" />
+        <span>{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
+      </button>
 
       <!-- User -->
       <div class="mt-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5">

@@ -1,12 +1,10 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
-  image?: string
   icon?: string
   title: string
   description?: string
 }>(), {
-  image: undefined,
-  icon: undefined,
+  icon: 'icon-[annon--box]',
   description: undefined,
 })
 </script>
@@ -14,15 +12,9 @@ withDefaults(defineProps<{
 <template>
   <div class="flex flex-col items-center py-12 text-center">
     <!-- Illustration or icon -->
-    <NuxtImg
-      v-if="image"
-      :src="image"
-      :alt="title"
-      class="size-20 dark:brightness-90 dark:contrast-75 dark:hue-rotate-180 dark:invert"
-    />
     <div
-      v-else-if="icon"
-      class="flex size-16 items-center justify-center rounded-2xl bg-secondary-50 dark:bg-secondary-900"
+      v-if="icon"
+      class="flex size-14 items-center justify-center rounded-2xl border border-secondary-200 bg-secondary-50 dark:border-secondary-800 dark:bg-secondary-900"
     >
       <span :class="[icon, 'text-2xl text-muted']" aria-hidden="true" />
     </div>

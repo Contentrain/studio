@@ -2,15 +2,34 @@
 import { PopoverAnchor, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 
 const { t } = useContent()
-const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, createWorkspace } = useWorkspaces()
 const router = useRouter()
 
 const open = ref(false)
+const showCreate = ref(false)
+const newName = ref('')
+const creating = ref(false)
 
 async function switchWorkspace(id: string, slug: string) {
   setActiveWorkspace(id)
   open.value = false
   await router.push(`/w/${slug}`)
+}
+
+async function handleCreate() {
+  if (!newName.value.trim()) return
+  creating.value = true
+  try {
+    const slug = newName.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
+    const ws = await createWorkspace({ name: newName.value.trim(), slug })
+    open.value = false
+    showCreate.value = false
+    newName.value = ''
+    await router.push(`/w/${ws.slug}`)
+  }
+  finally {
+    creating.value = false
+  }
 }
 
 onMounted(() => {
@@ -57,6 +76,48 @@ onMounted(() => {
           </span>
           <span class="truncate">{{ ws.name }}</span>
           <span v-if="ws.id === activeWorkspace?.id" class="icon-[annon--check] ml-auto size-4 shrink-0" aria-hidden="true" />
+        </button>
+
+        <!-- Divider + Create -->
+        <div class="my-1 border-t border-secondary-200 dark:border-secondary-800" />
+
+        <template v-if="showCreate">
+          <div class="p-2">
+            <input
+              v-model="newName"
+              type="text"
+              :placeholder="t('workspace.create_placeholder')"
+              class="w-full rounded-md border border-secondary-200 bg-white px-2.5 py-1.5 text-sm text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+              @keydown.enter="handleCreate"
+            >
+            <div class="mt-2 flex gap-1.5">
+              <AtomsBaseButton
+                variant="primary"
+                size="sm"
+                :disabled="!newName.trim() || creating"
+                class="flex-1"
+                @click="handleCreate"
+              >
+                <span>{{ t('common.create') }}</span>
+              </AtomsBaseButton>
+              <AtomsBaseButton
+                size="sm"
+                class="shrink-0"
+                @click="showCreate = false; newName = ''"
+              >
+                <span>{{ t('common.cancel') }}</span>
+              </AtomsBaseButton>
+            </div>
+          </div>
+        </template>
+        <button
+          v-else
+          type="button"
+          class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+          @click="showCreate = true"
+        >
+          <span class="icon-[annon--plus] size-4 shrink-0" aria-hidden="true" />
+          <span>{{ t('workspace.create_new') }}</span>
         </button>
       </PopoverContent>
     </PopoverPortal>

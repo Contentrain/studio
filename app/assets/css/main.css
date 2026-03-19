@@ -1,6 +1,9 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Syne:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
+/* Enable class-based dark mode toggle (Tailwind CSS 4) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Annon icon set — custom Contentrain icons via Iconify */
 @plugin "@iconify/tailwind4" {
   icon-sets: from-json(annon, "./app/assets/icons/annon.json");
