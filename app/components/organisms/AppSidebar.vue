@@ -3,7 +3,7 @@ const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
-const { models, hasContentrain } = useSnapshot()
+const { models, hasContentrain, refreshing } = useSnapshot()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
@@ -75,9 +75,26 @@ const sidebarLinks = computed(() => {
       </ul>
 
       <!-- Models section (when inside a project) -->
+      <!-- Back to dashboard -->
+      <div v-if="isInsideProject && activeWorkspace" class="mt-4 mb-1">
+        <NuxtLink
+          :to="`/w/${activeWorkspace.slug}`"
+          class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+        >
+          <span class="icon-[annon--arrow-left] size-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ t('projects.title') }}</span>
+        </NuxtLink>
+      </div>
+
       <template v-if="isInsideProject && hasContentrain">
-        <div class="mb-1.5 mt-5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-          Models
+        <div class="mb-1.5 mt-3 flex items-center gap-2 px-2">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Models
+          </span>
+          <div
+            v-if="refreshing"
+            class="size-3 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
+          />
         </div>
         <ul class="space-y-0.5">
           <li v-for="model in models" :key="model.id">

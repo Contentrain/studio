@@ -30,6 +30,10 @@ export default defineNuxtConfig({
   alias: {
     '#contentrain': resolve(__dirname, '.contentrain/client/index.mjs'),
   },
+  experimental: {
+    viewTransition: true,
+  },
+
   compatibilityDate: '2025-07-15',
   vite: {
     plugins: [tailwindcss()],
