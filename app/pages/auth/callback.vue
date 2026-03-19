@@ -55,11 +55,6 @@ onMounted(async () => {
         {{ t('auth.back_to_login') }}
       </NuxtLink>
     </div>
-    <div v-else class="text-center">
-      <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-secondary-200 dark:border-secondary-800 border-t-secondary-900 dark:border-t-secondary-100" />
-      <p class="mt-3 text-sm text-muted">
-        {{ t('auth.signing_in') }}
-      </p>
-    </div>
+    <AtomsSpinner v-else :label="t('auth.signing_in')" />
   </div>
 </template>

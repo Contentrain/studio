@@ -18,7 +18,7 @@ withDefaults(defineProps<{
       v-if="image"
       :src="image"
       :alt="title"
-      class="size-20"
+      class="size-20 dark:brightness-90 dark:contrast-75 dark:hue-rotate-180 dark:invert"
     />
     <div
       v-else-if="icon"

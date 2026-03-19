@@ -22,11 +22,6 @@ onMounted(async () => {
 
 <template>
   <div class="flex h-full items-center justify-center">
-    <div class="text-center">
-      <div class="mx-auto size-6 animate-spin rounded-full border-2 border-secondary-200 border-t-primary-500 dark:border-secondary-800 dark:border-t-primary-400" />
-      <p class="mt-3 text-sm text-muted">
-        {{ t('common.loading_workspace') }}
-      </p>
-    </div>
+    <AtomsSpinner :label="t('common.loading_workspace')" />
   </div>
 </template>

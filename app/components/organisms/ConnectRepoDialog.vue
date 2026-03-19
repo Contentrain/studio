@@ -212,7 +212,7 @@ function installGitHubApp() {
           <div class="flex-1 overflow-y-auto px-3 py-2">
             <!-- Loading -->
             <div v-if="reposLoading" class="space-y-2 px-3 py-2">
-              <div v-for="i in 5" :key="i" class="h-14 animate-pulse rounded-lg bg-secondary-50 dark:bg-secondary-900" />
+              <AtomsSkeleton v-for="i in 5" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
             </div>
 
             <!-- Empty -->
@@ -269,7 +269,7 @@ function installGitHubApp() {
           <div class="mt-5 space-y-3">
             <!-- Loading -->
             <div v-if="scanLoading" class="space-y-3">
-              <div v-for="i in 3" :key="i" class="h-8 animate-pulse rounded-lg bg-secondary-50 dark:bg-secondary-900" />
+              <AtomsSkeleton v-for="i in 3" :key="i" variant="custom" class="h-8 w-full rounded-lg" />
             </div>
 
             <!-- Results -->
@@ -319,13 +319,10 @@ function installGitHubApp() {
               :disabled="!scanResult || connecting"
               @click="connectRepo"
             >
-              <template v-if="connecting">
-                <span class="mr-2 inline-block size-4 animate-spin rounded-full border-2 border-secondary-200 border-t-primary-500" />
-                {{ t('common.connecting') }}
+              <template v-if="connecting" #prepend>
+                <div class="size-4 animate-spin rounded-full border-2 border-secondary-300 border-t-secondary-600" />
               </template>
-              <template v-else>
-                {{ t('common.connect') }}
-              </template>
+              <span>{{ connecting ? t('common.connecting') : t('common.connect') }}</span>
             </AtomsBaseButton>
           </div>
         </div>
