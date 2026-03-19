@@ -3,7 +3,7 @@ const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
-const { models, hasContentrain, refreshing, snapshot } = useSnapshot()
+const { models, hasContentrain, snapshot } = useSnapshot()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
@@ -24,7 +24,6 @@ const sidebarLinks = computed(() => {
   }))
 })
 
-// Group models by domain
 const modelsByDomain = computed(() => {
   const groups: Record<string, typeof models.value> = {}
   for (const model of models.value) {
@@ -36,9 +35,7 @@ const modelsByDomain = computed(() => {
 })
 
 function getModelEntryCount(modelId: string): number | null {
-  const content = snapshot.value?.content?.[modelId]
-  if (!content) return null
-  return content.count
+  return snapshot.value?.content?.[modelId]?.count ?? null
 }
 
 function selectModel(modelId: string) {
@@ -52,20 +49,17 @@ function selectModel(modelId: string) {
   >
     <!-- Brand + Workspace -->
     <div class="shrink-0 px-3 pt-3 pb-2">
-      <!-- Logo mark -->
       <NuxtLink to="/" class="mb-1 flex items-center gap-2 px-2 focus-visible:outline-none">
         <AtomsLogo variant="icon" color="auto" class="h-5 w-auto" />
         <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Studio</span>
       </NuxtLink>
-      <!-- Workspace switcher -->
       <MoleculesWorkspaceSwitcher />
     </div>
 
     <!-- Scrollable nav -->
     <nav class="flex-1 overflow-y-auto px-3 py-1">
-      <!-- PROJECT VIEW: models grouped by domain -->
+      <!-- PROJECT VIEW -->
       <template v-if="isInsideProject">
-        <!-- Models grouped by domain -->
         <template v-if="hasContentrain">
           <details
             v-for="(domainModels, domain) in modelsByDomain"
@@ -75,55 +69,36 @@ function selectModel(modelId: string) {
           >
             <summary class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900">
               <span class="icon-[annon--chevron-right] size-3 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true" />
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                {{ domain }}
-              </span>
-              <span class="ml-auto text-[10px] tabular-nums text-disabled">
-                {{ domainModels.length }}
-              </span>
-              <div
-                v-if="refreshing"
-                class="size-2.5 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
-              />
+              <AtomsSectionLabel :label="String(domain)" :count="domainModels.length" class="flex-1 py-0" />
             </summary>
-            <ul class="space-y-px py-0.5">
+            <ul class="space-y-px py-0.5 pl-4">
               <li v-for="model in domainModels" :key="model.id">
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 rounded-md px-2 py-1 pl-6 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  :class="activeModelId === model.id
-                    ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
-                    : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
-                  "
+                <MoleculesSidebarItem
+                  :icon="getModelKindIcon(model.kind ?? model.type)"
+                  :label="model.name"
+                  :active="activeModelId === model.id"
+                  :count="getModelEntryCount(model.id)"
+                  compact
                   @click="selectModel(model.id)"
                 >
-                  <span
-                    :class="getModelKindIcon(model.kind ?? model.type)"
-                    class="size-3.5 shrink-0 opacity-50"
-                    aria-hidden="true"
-                  />
-                  <span class="min-w-0 flex-1 truncate text-left">{{ model.name }}</span>
-                  <span
-                    v-if="(model as any).i18n"
-                    class="icon-[annon--globe] size-3 shrink-0 opacity-30"
-                    aria-hidden="true"
-                    title="i18n"
-                  />
-                  <span v-if="getModelEntryCount(model.id) !== null" class="shrink-0 text-[10px] tabular-nums text-disabled">
-                    {{ getModelEntryCount(model.id) }}
-                  </span>
-                </button>
+                  <template #trailing>
+                    <span
+                      v-if="(model as any).i18n"
+                      class="icon-[annon--globe] size-3 shrink-0 opacity-30"
+                      aria-hidden="true"
+                      title="i18n"
+                    />
+                  </template>
+                </MoleculesSidebarItem>
               </li>
             </ul>
           </details>
         </template>
       </template>
 
-      <!-- DASHBOARD VIEW: show project list -->
+      <!-- DASHBOARD VIEW -->
       <template v-else>
-        <div class="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
-          {{ t('sidebar.projects') }}
-        </div>
+        <AtomsSectionLabel :label="t('sidebar.projects')" class="mb-1" />
         <ul class="space-y-px">
           <li v-for="link in sidebarLinks" :key="link.id">
             <NuxtLink
@@ -139,14 +114,11 @@ function selectModel(modelId: string) {
             </NuxtLink>
           </li>
           <li v-if="activeWorkspace">
-            <button
-              type="button"
-              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+            <MoleculesSidebarItem
+              icon="icon-[annon--plus-circle]"
+              :label="t('sidebar.connect_repo')"
               @click="connectDialogOpen = true"
-            >
-              <span class="icon-[annon--plus-circle] size-4 shrink-0" aria-hidden="true" />
-              <span>{{ t('sidebar.connect_repo') }}</span>
-            </button>
+            />
           </li>
         </ul>
       </template>
@@ -154,55 +126,38 @@ function selectModel(modelId: string) {
 
     <!-- Footer -->
     <div class="shrink-0 space-y-0.5 border-t border-secondary-200 p-2 dark:border-secondary-800">
-      <button
-        type="button"
-        class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-      >
-        <span class="icon-[annon--search] size-4 shrink-0" aria-hidden="true" />
-        <span>{{ t('common.search') }}</span>
-        <kbd class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800">
-          ⌘K
-        </kbd>
-      </button>
+      <MoleculesSidebarItem icon="icon-[annon--search]" :label="t('common.search')">
+        <template #trailing>
+          <kbd class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800">
+            ⌘K
+          </kbd>
+        </template>
+      </MoleculesSidebarItem>
 
       <NuxtLink
         v-if="activeWorkspace"
         :to="`/w/${activeWorkspace.slug}/settings`"
-        class="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+        class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
       >
         <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
         <span>{{ t('common.settings') }}</span>
       </NuxtLink>
 
-      <button
-        type="button"
-        class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+      <MoleculesSidebarItem
+        :icon="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'"
+        :label="isDark ? 'Light mode' : 'Dark mode'"
         @click="toggleTheme"
-      >
-        <span :class="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'" class="size-4 shrink-0" aria-hidden="true" />
-        <span>{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
-      </button>
+      />
 
       <!-- User -->
       <div class="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-        <AtomsAvatar
-          :src="authState.user?.avatarUrl"
-          :name="authState.user?.email"
-          size="sm"
-        />
+        <AtomsAvatar :src="authState.user?.avatarUrl" :name="authState.user?.email" size="sm" />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
             {{ authState.user?.email?.split('@')[0] }}
           </div>
         </div>
-        <button
-          type="button"
-          class="shrink-0 rounded p-1 text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-          @click="signOut"
-        >
-          <span class="icon-[annon--log-out] block size-4" aria-hidden="true" />
-          <span class="sr-only">{{ t('common.sign_out') }}</span>
-        </button>
+        <AtomsIconButton icon="icon-[annon--log-out]" :label="t('common.sign_out')" @click="signOut" />
       </div>
     </div>
 
