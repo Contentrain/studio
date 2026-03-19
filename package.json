@@ -21,6 +21,8 @@
     "@contentrain/query": "^5.0.0",
     "@nuxt/eslint": "1.15.2",
     "@nuxt/image": "2.0.0",
+    "@octokit/auth-app": "^8.2.0",
+    "@octokit/rest": "^22.0.1",
     "@supabase/supabase-js": "^2.99.2",
     "nuxt": "^4.4.2",
     "radix-vue": "^1.9.17",

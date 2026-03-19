@@ -24,9 +24,10 @@ const sidebarLinks = computed(() => {
     class="flex h-screen w-60 flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
   >
     <!-- Logo -->
-    <div class="flex h-14 shrink-0 items-center px-4">
-      <NuxtLink to="/" class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded">
-        <AtomsLogo variant="icon-text" color="auto" />
+    <div class="flex shrink-0 items-end gap-2.5 px-4 pb-3 pt-5">
+      <NuxtLink to="/" class="flex items-end gap-2.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50">
+        <AtomsLogo variant="icon" color="white" class="h-8 w-auto" />
+        <span class="mb-0.5 text-sm font-semibold uppercase tracking-[0.25em] text-secondary-400">Studio</span>
       </NuxtLink>
     </div>
 

@@ -11,6 +11,12 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     sessionSecret: '', // NUXT_SESSION_SECRET — min 32 chars, AES-256 cookie encryption
+    github: {
+      appId: '',
+      clientId: '',
+      clientSecret: '',
+      privateKey: '', // base64 encoded .pem
+    },
     supabase: {
       url: '',
       serviceRoleKey: '',
