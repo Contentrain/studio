@@ -16,6 +16,11 @@ onMounted(async () => {
     const accessToken = hashParams.get('access_token')
     const refreshToken = hashParams.get('refresh_token')
 
+    // Clear sensitive tokens from URL immediately
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+
     if (code) {
       await $fetch('/api/auth/verify', {
         method: 'POST',
