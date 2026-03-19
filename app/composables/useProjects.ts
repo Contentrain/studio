@@ -1,12 +1,10 @@
 interface Project {
   id: string
-  owner_id: string
-  provider: string
+  workspace_id: string
   repo_full_name: string
   default_branch: string
   content_root: string
   detected_stack: string | null
-  github_installation_id: number | null
   status: string
   created_at: string
 }
@@ -15,24 +13,23 @@ export function useProjects() {
   const projects = useState<Project[]>('projects', () => [])
   const loading = useState('projects-loading', () => false)
 
-  async function fetchProjects() {
+  async function fetchProjects(workspaceId: string) {
     loading.value = true
     try {
-      projects.value = await $fetch<Project[]>('/api/projects')
+      projects.value = await $fetch<Project[]>(`/api/workspaces/${workspaceId}/projects`)
     }
     finally {
       loading.value = false
     }
   }
 
-  async function createProject(data: {
+  async function createProject(workspaceId: string, data: {
     repoFullName: string
     defaultBranch?: string
     contentRoot?: string
     detectedStack?: string
-    githubInstallationId?: number
   }) {
-    const project = await $fetch<Project>('/api/projects', {
+    const project = await $fetch<Project>(`/api/workspaces/${workspaceId}/projects`, {
       method: 'POST',
       body: data,
     })

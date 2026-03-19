@@ -3,12 +3,12 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
 
   const { data, error } = await client
-    .from('projects')
+    .from('workspaces')
     .select(`
       *,
-      project_members!inner(role)
+      workspace_members!inner(role)
     `)
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: true })
 
   if (error)
     throw createError({ statusCode: 500, message: error.message })

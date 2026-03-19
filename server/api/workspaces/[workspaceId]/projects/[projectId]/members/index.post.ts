@@ -1,6 +1,7 @@
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
-  const projectId = getRouterParam(event, 'id')
+  const workspaceId = getRouterParam(event, 'workspaceId')
+  const projectId = getRouterParam(event, 'projectId')
   const body = await readBody<{
     email: string
     role: 'editor' | 'reviewer' | 'viewer'
@@ -8,8 +9,8 @@ export default defineEventHandler(async (event) => {
     allowedModels?: string[]
   }>(event)
 
-  if (!projectId)
-    throw createError({ statusCode: 400, message: 'Project ID is required' })
+  if (!workspaceId || !projectId)
+    throw createError({ statusCode: 400, message: 'Workspace ID and Project ID are required' })
 
   if (!body.email || !body.role)
     throw createError({ statusCode: 400, message: 'email and role are required' })
@@ -19,17 +20,18 @@ export default defineEventHandler(async (event) => {
 
   const client = useSupabaseUserClient(session.accessToken)
 
-  // Verify caller is owner
-  const { data: project } = await client
-    .from('projects')
-    .select('owner_id')
-    .eq('id', projectId)
+  // Verify caller is workspace owner/admin
+  const { data: callerMembership } = await client
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', session.user.id)
     .single()
 
-  if (!project || project.owner_id !== session.user.id)
-    throw createError({ statusCode: 403, message: 'Only the project owner can invite members' })
+  if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role))
+    throw createError({ statusCode: 403, message: 'Only workspace owner/admin can assign project members' })
 
-  // Invite user via auth provider (creates account if not exists, sends magic link)
+  // Invite user via auth provider (creates account if needed)
   const authProvider = useAuthProvider()
   let userId: string | null = null
   try {
@@ -37,11 +39,34 @@ export default defineEventHandler(async (event) => {
     userId = result.userId
   }
   catch {
-    // User might already exist — look up by email
     const admin = useSupabaseAdmin()
     const { data: users } = await admin.auth.admin.listUsers()
     const existing = users?.users?.find(u => u.email === body.email)
     userId = existing?.id ?? null
+  }
+
+  // Ensure user is a workspace member first (auto-add as 'member' if not)
+  if (userId) {
+    const { data: existingWsMember } = await client
+      .from('workspace_members')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', userId)
+      .single()
+
+    if (!existingWsMember) {
+      // Use admin client to bypass RLS for this insert
+      const admin = useSupabaseAdmin()
+      await admin
+        .from('workspace_members')
+        .insert({
+          workspace_id: workspaceId,
+          user_id: userId,
+          role: 'member',
+          invited_email: body.email,
+          accepted_at: new Date().toISOString(),
+        })
+    }
   }
 
   // Create project member record

@@ -45,18 +45,33 @@ Any new provider implementation must satisfy the same interface — zero applica
 ### Auth
 - Owner: GitHub OAuth (needs repo access)
 - Invited users: Google OAuth or Magic Link (no password)
-- 4 roles: Owner, Editor, Reviewer, Viewer
+- Session: h3 useSession() AES-256 encrypted httpOnly cookie, auto-refresh
+- Provider factory: `useAuthProvider()` singleton via `server/utils/providers.ts`
+- Two-tier roles:
+  - Workspace: Owner, Admin, Member
+  - Project: Editor, Reviewer, Viewer
 - Model-specific access: `specificModels` + `allowedModels` on project_members
 - Chat agent security: permissions in system prompt + API-level enforcement
+
+### Workspace Hierarchy
+```
+User → Workspace (billing entity) → Project (connected repo)
+```
+- Signup auto-creates personal workspace (type: primary)
+- Workspace Owner/Admin → implicit access to all projects
+- Workspace Member → needs explicit project_members assignment
+- GitHub App installation lives on workspace (not project)
 
 ### Route Structure
 This is an AGPL product — no marketing pages. All routes are authenticated:
 ```
 /auth/login ............... Auth (public)
 /auth/callback ............ Auth callback (public)
-/ ......................... Dashboard — project list
-/projects/new ............. Connect repository
-/projects/:id ............. Project workspace (three-panel)
+/ ......................... Workspace list (or redirect to default)
+/w/:slug .................. Workspace dashboard — project list
+/w/:slug/projects/new ..... Connect repository
+/w/:slug/projects/:id ..... Project workspace (three-panel)
+/w/:slug/settings ......... Workspace settings, members, billing
 /settings ................. User/account settings
 ```
 

@@ -1,9 +1,10 @@
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
-  const projectId = getRouterParam(event, 'id')
+  const workspaceId = getRouterParam(event, 'workspaceId')
+  const projectId = getRouterParam(event, 'projectId')
 
-  if (!projectId)
-    throw createError({ statusCode: 400, message: 'Project ID is required' })
+  if (!workspaceId || !projectId)
+    throw createError({ statusCode: 400, message: 'Workspace ID and Project ID are required' })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -12,10 +13,12 @@ export default defineEventHandler(async (event) => {
     .select(`
       *,
       project_members(
-        id, role, user_id, specific_models, allowed_models, invited_email, accepted_at
+        id, role, user_id, specific_models, allowed_models, invited_email, accepted_at,
+        profiles:user_id(id, display_name, email, avatar_url)
       )
     `)
     .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
     .single()
 
   if (error)
