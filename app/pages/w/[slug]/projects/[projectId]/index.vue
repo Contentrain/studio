@@ -47,26 +47,26 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Context panel placeholder -->
-    <div class="hidden w-96 shrink-0 flex-col lg:flex">
-      <div class="flex h-14 shrink-0 items-center border-b border-secondary-200 px-6 dark:border-secondary-800">
+    <!-- Context panel -->
+    <div class="hidden w-80 min-w-0 shrink-0 border-l border-secondary-200 lg:flex lg:flex-col xl:w-96 dark:border-secondary-800">
+      <div class="flex h-14 shrink-0 items-center px-5">
         <h3 class="text-sm font-semibold text-heading dark:text-secondary-100">
           Overview
         </h3>
       </div>
-      <div class="flex-1 overflow-y-auto p-6">
+      <div class="flex-1 overflow-y-auto px-5 pb-6">
         <template v-if="project">
-          <div class="space-y-4">
+          <div class="space-y-5">
             <div>
-              <div class="text-xs font-medium uppercase tracking-wider text-muted">
+              <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Repository
               </div>
-              <p class="mt-1 text-sm text-heading dark:text-secondary-100">
+              <p class="mt-1 truncate text-sm text-heading dark:text-secondary-100">
                 {{ project.repo_full_name }}
               </p>
             </div>
             <div>
-              <div class="text-xs font-medium uppercase tracking-wider text-muted">
+              <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Stack
               </div>
               <p class="mt-1 text-sm text-heading dark:text-secondary-100">
@@ -74,7 +74,7 @@ onMounted(async () => {
               </p>
             </div>
             <div>
-              <div class="text-xs font-medium uppercase tracking-wider text-muted">
+              <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Branch
               </div>
               <p class="mt-1 text-sm text-heading dark:text-secondary-100">
@@ -82,7 +82,7 @@ onMounted(async () => {
               </p>
             </div>
             <div>
-              <div class="text-xs font-medium uppercase tracking-wider text-muted">
+              <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Status
               </div>
               <AtomsBadge

@@ -1,0 +1,21 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow" x="-4" y="-2" width="88" height="88" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <linearGradient id="bg" x1="40" y1="0" x2="40" y2="80" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="4" y="2" width="72" height="72" rx="16" fill="url(#bg)" stroke="#E9F0F9" stroke-width="1"/>
+  </g>
+  <!-- Grid/dashboard icon -->
+  <rect x="26" y="28" width="12" height="12" rx="2" stroke="#CBD5E1" stroke-width="1.5" fill="none"/>
+  <rect x="42" y="28" width="12" height="12" rx="2" stroke="#CBD5E1" stroke-width="1.5" fill="none"/>
+  <rect x="26" y="44" width="12" height="12" rx="2" stroke="#CBD5E1" stroke-width="1.5" fill="none"/>
+  <rect x="42" y="44" width="12" height="12" rx="2" stroke="#CBD5E1" stroke-width="1.5" fill="none"/>
+  <!-- Plus in last cell -->
+  <path d="M48 47v6M45 50h6" stroke="#CBD5E1" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
