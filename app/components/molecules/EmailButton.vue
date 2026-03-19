@@ -16,11 +16,11 @@ defineEmits<{
     <p class="mb-3 text-center text-sm text-muted">
       {{ description }}
     </p>
-    <AtomsGhostButton block size="md" @click="$emit('click')">
+    <AtomsBaseButton block size="md" @click="$emit('click')">
       <template #prepend>
         <span class="icon-[annon--email] block size-5" />
       </template>
       {{ label }}
-    </AtomsGhostButton>
+    </AtomsBaseButton>
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DialogClose, DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, DialogTrigger } from 'radix-vue'
+import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, DialogTrigger } from 'radix-vue'
 
 const { t } = useContent()
 const { activeWorkspace } = useWorkspaces()
@@ -156,6 +156,9 @@ function installGitHubApp() {
           <DialogTitle class="text-base font-semibold text-heading dark:text-secondary-100">
             {{ t('projects.connect_repo') }}
           </DialogTitle>
+          <DialogDescription class="sr-only">
+            {{ t('projects.empty_description') }}
+          </DialogDescription>
           <DialogClose
             class="rounded-lg p-1.5 text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
           >
@@ -175,7 +178,7 @@ function installGitHubApp() {
           <p class="mt-2 text-sm text-muted">
             {{ t('github.install_description') }}
           </p>
-          <AtomsGhostButton
+          <AtomsBaseButton
             size="md"
             class="mt-6"
             @click="installGitHubApp"
@@ -184,7 +187,7 @@ function installGitHubApp() {
               <span class="icon-[annon--external-link] size-4" aria-hidden="true" />
             </template>
             {{ t('github.install_button') }}
-          </AtomsGhostButton>
+          </AtomsBaseButton>
           <p class="mt-4 text-xs text-muted">
             {{ t('github.install_hint') }}
           </p>
@@ -311,7 +314,7 @@ function installGitHubApp() {
               <span class="icon-[annon--arrow-left] size-4" aria-hidden="true" />
               {{ t('common.back') }}
             </button>
-            <AtomsGhostButton
+            <AtomsBaseButton
               size="md"
               :disabled="!scanResult || connecting"
               @click="connectRepo"
@@ -323,7 +326,7 @@ function installGitHubApp() {
               <template v-else>
                 {{ t('common.connect') }}
               </template>
-            </AtomsGhostButton>
+            </AtomsBaseButton>
           </div>
         </div>
       </DialogContent>

@@ -139,7 +139,7 @@ Atomic design from old Contentrain CMS, refactored for Radix Vue + Tailwind 4:
 
 ```
 app/components/
-  atoms/          — Radix Vue primitives + Tailwind (HeadingText, GhostButton, FormInput, FormLabel, Logo)
+  atoms/          — Radix Vue primitives + Tailwind (HeadingText, BaseButton, FormInput, FormLabel, Logo, Avatar, Badge)
   molecules/      — Composed atoms (ProviderButtons, AuthLink, EmailButton)
   organisms/      — Business logic components (SigninWithProvider, SigninWithEmail)
   templates/      — Page-level wrappers (if needed)
@@ -163,7 +163,7 @@ W3C + WCAG compliance for all interactive elements. NEVER violate these rules:
 - ALL `<button>` elements MUST have an explicit `type` attribute
 - Default: `type="button"` — prevents accidental form submission
 - Only use `type="submit"` inside `<form>` elements for the primary submit action
-- GhostButton atom has `type` prop (default: `"button"`)
+- BaseButton atom has `type` prop (default: `"button"`) and `variant` prop (ghost/primary/danger/secondary)
 
 **Focus visibility (keyboard navigation):**
 - ALL interactive elements MUST have `focus-visible` styles for keyboard accessibility
@@ -189,8 +189,21 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 ## Layouts
 
 - `auth` — split panel (form left, marketing right)
-- `default` — sticky header + content area (project list, settings)
-- `workspace` — three-panel (sidebar 240px, main, context 400px)
+- `default` — sidebar-first (AppSidebar 240px + full-width main). No header.
+- `workspace` — three-panel (sidebar 240px, chat, context 400px)
+
+## Deferred TODOs
+
+See `.internal/PHASE-1.md` → "Deferred TODOs" section for tracked items.
+Key items:
+- GitHub webhook for installation lifecycle (Phase 2)
+- GitProvider write operations — stubs now, Phase 2
+- ⌘K Command palette (Phase 2)
+- Team workspace + personal GitHub account warning (Phase 4)
+- Workspace ownership transfer before deletion (Phase 4)
+- Admin RLS for workspace_members management (Phase 4)
+- Sidebar mobile responsive (hamburger + slide-over)
+- Supabase JWT decode for accurate token expiry
 
 ## Dev Tooling
 

@@ -46,7 +46,7 @@ watch(slug, async (newSlug) => {
           {{ projects.length }} {{ projects.length === 1 ? t('projects.count_singular') : t('projects.count_plural') }}
         </p>
       </div>
-      <AtomsGhostButton
+      <AtomsBaseButton
         v-if="activeWorkspace"
         size="sm"
         @click="connectDialogOpen = true"
@@ -55,7 +55,7 @@ watch(slug, async (newSlug) => {
           <span class="icon-[annon--plus] size-4" aria-hidden="true" />
         </template>
         {{ t('projects.connect_repo') }}
-      </AtomsGhostButton>
+      </AtomsBaseButton>
     </div>
 
     <!-- Loading -->
@@ -84,7 +84,7 @@ watch(slug, async (newSlug) => {
       <p class="mt-2 max-w-sm text-sm text-muted">
         {{ t('projects.empty_description') }}
       </p>
-      <AtomsGhostButton
+      <AtomsBaseButton
         v-if="activeWorkspace"
         size="md"
         class="mt-6"
@@ -94,7 +94,7 @@ watch(slug, async (newSlug) => {
           <span class="icon-[annon--plus] size-4" aria-hidden="true" />
         </template>
         {{ t('projects.connect_repo') }}
-      </AtomsGhostButton>
+      </AtomsBaseButton>
     </div>
 
     <!-- Connect Repo Dialog -->

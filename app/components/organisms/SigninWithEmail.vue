@@ -54,15 +54,14 @@ const email = ref('')
             />
           </div>
         </div>
-        <!-- TODO: add AtomsFilledButton / AtomsPrimaryButton atom; using GhostButton with primary overrides for now -->
-        <AtomsGhostButton
+        <AtomsBaseButton
+          variant="primary"
           type="submit"
           :disabled="loading || !email"
           block
-          class="bg-primary-600 border-primary-600 text-white hover:bg-primary-700 dark:bg-primary-500 dark:border-primary-500 dark:hover:bg-primary-400 dark:text-white"
         >
           {{ t('auth.send_magic_link') }}
-        </AtomsGhostButton>
+        </AtomsBaseButton>
       </form>
 
       <!-- Provider buttons below -->

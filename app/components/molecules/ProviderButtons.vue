@@ -16,7 +16,7 @@ const { t } = useContent()
 
 <template>
   <div :class="mobile ? 'flex gap-2 lg:hidden' : 'space-y-3'">
-    <AtomsGhostButton block size="md" @click="$emit('provider', 'github')">
+    <AtomsBaseButton block size="md" @click="$emit('provider', 'github')">
       <template #prepend>
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path
@@ -26,9 +26,9 @@ const { t } = useContent()
         </svg>
       </template>
       <span v-if="!mobile">{{ t('auth.continue_github') }}</span>
-    </AtomsGhostButton>
+    </AtomsBaseButton>
 
-    <AtomsGhostButton block size="md" @click="$emit('provider', 'google')">
+    <AtomsBaseButton block size="md" @click="$emit('provider', 'google')">
       <template #prepend>
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M10.204 8.182v3.873h5.492a5.06 5.06 0 01-2.2 3.318l3.312 2.518c1.93-1.745 3.128-4.509 3.128-7.555 0-.734-.065-1.416-.18-2.07L10.204 8.182z" fill="#4285F4" />
@@ -39,6 +39,6 @@ const { t } = useContent()
         </svg>
       </template>
       <span v-if="!mobile">{{ t('auth.continue_google') }}</span>
-    </AtomsGhostButton>
+    </AtomsBaseButton>
   </div>
 </template>
