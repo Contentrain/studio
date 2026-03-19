@@ -71,17 +71,19 @@ export default defineEventHandler(async (event) => {
   }
 
   // Read models
-  const models: Array<{ id: string, name: string, type: string, fields: unknown[] }> = []
+  const models: Array<{ id: string, name: string, kind: string, type: string, fields: unknown[] }> = []
   try {
     const modelFiles = await git.listDirectory(modelsDir)
     for (const file of modelFiles) {
       if (!file.endsWith('.json')) continue
       try {
         const modelContent = JSON.parse(await git.readFile(`${modelsDir}/${file}`))
+        const kind = modelContent.kind ?? 'collection'
         models.push({
           id: file.replace('.json', ''),
           name: modelContent.name ?? file.replace('.json', ''),
-          type: modelContent.type ?? 'collection',
+          kind,
+          type: kind, // backward compat
           fields: modelContent.fields ?? [],
         })
       }

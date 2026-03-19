@@ -126,9 +126,9 @@ const ratingStars = computed(() => {
       </AtomsBadge>
     </div>
 
-    <!-- Rich text / long text (truncated preview) -->
+    <!-- Rich text / long text (stripped preview) -->
     <p v-else-if="isRichText" class="line-clamp-3 text-sm text-body dark:text-secondary-300">
-      {{ String(displayValue).replace(/[#*_`~\[\]]/g, '').substring(0, 200) }}
+      {{ String(displayValue).replace(/<[^>]*>/g, '').replace(/[#*_`~\[\]]/g, '').replace(/\s+/g, ' ').trim().substring(0, 200) }}
     </p>
 
     <!-- Default: string / unknown -->

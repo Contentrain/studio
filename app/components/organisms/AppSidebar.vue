@@ -108,7 +108,7 @@ const sidebarLinks = computed(() => {
               @click="router.replace({ query: { ...route.query, model: model.id } })"
             >
               <span
-                :class="model.type === 'singleton' ? 'icon-[annon--file]' : 'icon-[annon--list-unordered]'"
+                :class="getModelKindIcon(model.kind ?? model.type)"
                 class="size-4 shrink-0 text-muted"
                 aria-hidden="true"
               />

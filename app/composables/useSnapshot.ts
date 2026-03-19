@@ -3,7 +3,8 @@ import { get, set, del } from 'idb-keyval'
 interface ModelSummary {
   id: string
   name: string
-  type: string
+  kind: string
+  type: string // backward compat
   fields: unknown[]
 }
 

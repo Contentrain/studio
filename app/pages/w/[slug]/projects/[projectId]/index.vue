@@ -135,7 +135,7 @@ function getEntryTitle(entry: Record<string, unknown>): string {
           {{ panelState === 'model' && activeModel ? activeModel.name : 'Content' }}
         </h3>
         <AtomsBadge v-if="panelState === 'model' && activeModel" variant="secondary" size="sm" class="ml-auto shrink-0">
-          {{ activeModel.type }}
+          {{ activeModel.kind ?? activeModel.type }}
         </AtomsBadge>
       </div>
 
@@ -167,7 +167,7 @@ function getEntryTitle(entry: Record<string, unknown>): string {
             >
               <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary-100 dark:bg-secondary-800">
                 <span
-                  :class="model.type === 'singleton' ? 'icon-[annon--file]' : 'icon-[annon--list-unordered]'"
+                  :class="getModelKindIcon(model.kind ?? model.type)"
                   class="size-4 text-muted"
                   aria-hidden="true"
                 />

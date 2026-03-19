@@ -1,3 +1,5 @@
+import matter from 'gray-matter'
+
 /**
  * Read content for a specific model.
  *
@@ -5,7 +7,7 @@
  * - singleton: flat object from .contentrain/content/{domain}/{model}/{locale}.json
  * - collection: object-map from .contentrain/content/{domain}/{model}/{locale}.json
  * - dictionary: key-value pairs from .contentrain/content/{domain}/{model}/{locale}.json
- * - document: frontmatter + markdown from {content_path}/{slug}/{locale}.md
+ * - document: frontmatter + markdown from {content_path}/{slug}.md or {slug}/{locale}.md
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -51,7 +53,7 @@ export default defineEventHandler(async (event) => {
   const contentBase = contentRoot ? `${contentRoot}/.contentrain/content` : '.contentrain/content'
 
   // Read model definition to determine kind, domain, content_path
-  let modelDef: { kind?: string, domain?: string, content_path?: string } = {}
+  let modelDef: { kind?: string, domain?: string, content_path?: string, i18n?: boolean } = {}
   try {
     modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`))
   }
@@ -62,42 +64,34 @@ export default defineEventHandler(async (event) => {
   const kind = modelDef.kind ?? 'collection'
   const domain = modelDef.domain
 
-  // Document kind: read from content_path (outside .contentrain/content/)
+  // Document kind: content_path points directly to the directory containing .md files
+  // Structure: {content_path}/{slug}.md (non-i18n) or {content_path}/{slug}/{locale}.md (i18n)
   if (kind === 'document' && modelDef.content_path) {
     const docPath = contentRoot ? `${contentRoot}/${modelDef.content_path}` : modelDef.content_path
     const entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }> = []
+    const isI18n = modelDef.i18n ?? false
 
     try {
-      // Documents are stored as: {content_path}/{model}/{slug}/{locale}.md
-      const modelDir = `${docPath}/${modelId}`
-      let slugDirs: string[] = []
+      const items = await git.listDirectory(docPath)
 
-      try {
-        slugDirs = await git.listDirectory(modelDir)
-      }
-      catch {
-        // Try without modelId subdirectory: {content_path}/{slug}/{locale}.md
-        slugDirs = await git.listDirectory(docPath)
-      }
-
-      for (const slugDir of slugDirs) {
-        const mdPath = `${modelDir}/${slugDir}/${locale}.md`
-        try {
-          const raw = await git.readFile(mdPath)
-          const { frontmatter, body } = parseFrontmatter(raw)
-          entries.push({ slug: slugDir, frontmatter, body })
-        }
-        catch {
-          // Try non-localized: {content_path}/{model}/{slug}.md
+      for (const item of items) {
+        // Non-i18n: {content_path}/{slug}.md
+        if (!isI18n && item.endsWith('.md')) {
           try {
-            const altPath = `${modelDir}/${slugDir}.md`
-            const raw = await git.readFile(altPath)
-            const { frontmatter, body } = parseFrontmatter(raw)
-            entries.push({ slug: slugDir.replace('.md', ''), frontmatter, body })
+            const raw = await git.readFile(`${docPath}/${item}`)
+            const parsed = matter(raw)
+            entries.push({ slug: item.replace('.md', ''), frontmatter: parsed.data, body: parsed.content })
           }
-          catch {
-            // Skip
+          catch { /* skip */ }
+        }
+        // i18n: {content_path}/{slug}/{locale}.md
+        else if (isI18n && !item.includes('.')) {
+          try {
+            const raw = await git.readFile(`${docPath}/${item}/${locale}.md`)
+            const parsed = matter(raw)
+            entries.push({ slug: item, frontmatter: parsed.data, body: parsed.content })
           }
+          catch { /* skip */ }
         }
       }
     }
@@ -146,28 +140,4 @@ export default defineEventHandler(async (event) => {
   return { modelId, locale, kind, data: contentData }
 })
 
-/**
- * Parse markdown frontmatter (YAML between --- delimiters).
- * Simple parser — handles key: value pairs, not nested YAML.
- */
-function parseFrontmatter(raw: string): { frontmatter: Record<string, unknown>, body: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
-  if (!match) return { frontmatter: {}, body: raw }
-
-  const fm: Record<string, unknown> = {}
-  for (const line of match[1].split('\n')) {
-    const idx = line.indexOf(':')
-    if (idx === -1) continue
-    const key = line.substring(0, idx).trim()
-    let value: unknown = line.substring(idx + 1).trim()
-    // Simple type coercion
-    if (value === 'true') value = true
-    else if (value === 'false') value = false
-    else if (!Number.isNaN(Number(value)) && value !== '') value = Number(value)
-    // Remove quotes
-    else if (typeof value === 'string' && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1)
-    fm[key] = value
-  }
-
-  return { frontmatter: fm, body: match[2] }
-}
+// gray-matter handles all frontmatter edge cases: nested YAML, arrays, quotes, multiline
