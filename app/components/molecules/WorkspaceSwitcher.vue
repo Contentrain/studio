@@ -40,12 +40,10 @@ onMounted(() => {
   <PopoverRoot v-model:open="open">
     <PopoverAnchor />
     <PopoverTrigger
-      class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-heading transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100 dark:hover:bg-secondary-900"
+      class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm font-medium text-heading transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100 dark:hover:bg-secondary-900"
       type="button"
     >
-      <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary-600 text-[10px] font-bold text-white">
-        {{ activeWorkspace?.name?.charAt(0)?.toUpperCase() ?? 'W' }}
-      </span>
+      <AtomsLogo variant="icon" color="auto" class="h-6 w-auto shrink-0" />
       <span class="min-w-0 flex-1 truncate">
         {{ activeWorkspace?.name ?? t('workspace.default_name') }}
       </span>

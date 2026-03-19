@@ -13,6 +13,10 @@ const currentProjectId = computed(() => route.params.projectId as string | undef
 const isInsideProject = computed(() => !!currentProjectId.value)
 const activeModelId = computed(() => route.query.model as string | undefined)
 
+const activeProject = computed(() =>
+  projects.value.find(p => p.id === currentProjectId.value) ?? null,
+)
+
 const sidebarLinks = computed(() => {
   if (!activeWorkspace.value) return []
   const slug = activeWorkspace.value.slug
@@ -35,7 +39,6 @@ const modelsByDomain = computed(() => {
   return groups
 })
 
-// Get entry count for a model from snapshot content summary
 function getModelEntryCount(modelId: string): number | null {
   const content = snapshot.value?.content?.[modelId]
   if (!content) return null
@@ -51,124 +54,120 @@ function selectModel(modelId: string) {
   <aside
     class="flex h-screen w-60 flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
   >
-    <!-- Logo -->
-    <div class="flex shrink-0 items-end gap-2.5 px-4 pb-3 pt-5">
-      <NuxtLink to="/" class="flex items-end gap-2.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50">
-        <AtomsLogo variant="icon" color="auto" class="h-8 w-auto" />
-        <span class="mb-0.5 text-sm font-semibold uppercase tracking-[0.25em] text-secondary-400">Studio</span>
-      </NuxtLink>
-    </div>
-
-    <!-- Workspace Switcher -->
-    <div class="px-3 pb-1">
+    <!-- Workspace switcher (replaces separate logo + switcher) -->
+    <div class="shrink-0 px-3 pt-3 pb-2">
       <MoleculesWorkspaceSwitcher />
     </div>
 
     <!-- Scrollable nav -->
-    <nav class="flex-1 overflow-y-auto px-3 py-3">
-      <!-- Projects section -->
-      <div class="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        {{ t('sidebar.projects') }}
-      </div>
-      <ul class="space-y-0.5">
-        <li v-for="link in sidebarLinks" :key="link.id">
+    <nav class="flex-1 overflow-y-auto px-3 py-1">
+      <!-- PROJECT VIEW: show project name + models grouped by domain -->
+      <template v-if="isInsideProject">
+        <!-- Active project header with back nav -->
+        <div class="mb-2">
           <NuxtLink
-            :to="link.to"
-            class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :class="link.active
-              ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
-              : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
-            "
+            v-if="activeWorkspace"
+            :to="`/w/${activeWorkspace.slug}`"
+            class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
           >
-            <span class="icon-[annon--folder] size-4 shrink-0" aria-hidden="true" />
-            <span class="min-w-0 truncate">{{ link.label }}</span>
+            <span class="icon-[annon--arrow-left] size-3 shrink-0" aria-hidden="true" />
+            <span>{{ t('sidebar.projects') }}</span>
           </NuxtLink>
-        </li>
-        <li v-if="activeWorkspace">
-          <button
-            type="button"
-            class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
-            @click="connectDialogOpen = true"
-          >
-            <span class="icon-[annon--plus-circle] size-4 shrink-0" aria-hidden="true" />
-            <span>{{ t('sidebar.connect_repo') }}</span>
-          </button>
-        </li>
-      </ul>
-
-      <!-- Back to dashboard (when inside a project) -->
-      <div v-if="isInsideProject && activeWorkspace" class="mt-4 mb-1">
-        <NuxtLink
-          :to="`/w/${activeWorkspace.slug}`"
-          class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
-        >
-          <span class="icon-[annon--arrow-left] size-3.5 shrink-0" aria-hidden="true" />
-          <span>{{ t('projects.title') }}</span>
-        </NuxtLink>
-      </div>
-
-      <!-- Models grouped by domain (when inside a project) -->
-      <template v-if="isInsideProject && hasContentrain">
-        <div
-          v-for="(domainModels, domain) in modelsByDomain"
-          :key="domain"
-          class="mt-3"
-        >
-          <!-- Domain header -->
-          <div class="mb-1 flex items-center gap-2 px-2">
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-              {{ domain }}
+          <div v-if="activeProject" class="mt-1 flex items-center gap-2 px-2 py-1">
+            <span class="icon-[annon--folder] size-4 shrink-0 text-primary-500" aria-hidden="true" />
+            <span class="min-w-0 truncate text-sm font-semibold text-heading dark:text-secondary-100">
+              {{ activeProject.repo_full_name }}
             </span>
-            <div
-              v-if="refreshing"
-              class="size-2.5 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
-            />
           </div>
-
-          <!-- Models in domain -->
-          <ul class="space-y-0.5">
-            <li v-for="model in domainModels" :key="model.id">
-              <button
-                type="button"
-                class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                :class="activeModelId === model.id
-                  ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
-                  : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
-                "
-                @click="selectModel(model.id)"
-              >
-                <span
-                  :class="getModelKindIcon(model.kind ?? model.type)"
-                  class="size-3.5 shrink-0"
-                  :style="activeModelId === model.id ? {} : { opacity: 0.5 }"
-                  aria-hidden="true"
-                />
-                <span class="min-w-0 flex-1 truncate text-left">{{ model.name }}</span>
-                <!-- i18n indicator -->
-                <span
-                  v-if="(model as any).i18n"
-                  class="icon-[annon--globe] size-3 shrink-0 text-muted"
-                  :style="{ opacity: 0.4 }"
-                  aria-hidden="true"
-                  title="i18n enabled"
-                />
-                <!-- Entry count -->
-                <span v-if="getModelEntryCount(model.id) !== null" class="shrink-0 text-[10px] tabular-nums text-disabled">
-                  {{ getModelEntryCount(model.id) }}
-                </span>
-              </button>
-            </li>
-          </ul>
         </div>
+
+        <!-- Models grouped by domain -->
+        <template v-if="hasContentrain">
+          <div
+            v-for="(domainModels, domain) in modelsByDomain"
+            :key="domain"
+            class="mt-2"
+          >
+            <div class="mb-0.5 flex items-center gap-1.5 px-2 py-1">
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                {{ domain }}
+              </span>
+              <div
+                v-if="refreshing"
+                class="size-2.5 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
+              />
+            </div>
+            <ul class="space-y-px">
+              <li v-for="model in domainModels" :key="model.id">
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  :class="activeModelId === model.id
+                    ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
+                    : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
+                  "
+                  @click="selectModel(model.id)"
+                >
+                  <span
+                    :class="getModelKindIcon(model.kind ?? model.type)"
+                    class="size-3.5 shrink-0 opacity-50"
+                    aria-hidden="true"
+                  />
+                  <span class="min-w-0 flex-1 truncate text-left">{{ model.name }}</span>
+                  <span
+                    v-if="(model as any).i18n"
+                    class="icon-[annon--globe] size-3 shrink-0 opacity-30"
+                    aria-hidden="true"
+                    title="i18n"
+                  />
+                  <span v-if="getModelEntryCount(model.id) !== null" class="shrink-0 text-[10px] tabular-nums text-disabled">
+                    {{ getModelEntryCount(model.id) }}
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </template>
+      </template>
+
+      <!-- DASHBOARD VIEW: show project list -->
+      <template v-else>
+        <div class="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
+          {{ t('sidebar.projects') }}
+        </div>
+        <ul class="space-y-px">
+          <li v-for="link in sidebarLinks" :key="link.id">
+            <NuxtLink
+              :to="link.to"
+              class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :class="link.active
+                ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
+                : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
+              "
+            >
+              <span class="icon-[annon--folder] size-4 shrink-0" aria-hidden="true" />
+              <span class="min-w-0 truncate">{{ link.label }}</span>
+            </NuxtLink>
+          </li>
+          <li v-if="activeWorkspace">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+              @click="connectDialogOpen = true"
+            >
+              <span class="icon-[annon--plus-circle] size-4 shrink-0" aria-hidden="true" />
+              <span>{{ t('sidebar.connect_repo') }}</span>
+            </button>
+          </li>
+        </ul>
       </template>
     </nav>
 
     <!-- Footer -->
-    <div class="shrink-0 border-t border-secondary-200 p-3 dark:border-secondary-800">
-      <!-- Search shortcut -->
+    <div class="shrink-0 space-y-0.5 border-t border-secondary-200 p-2 dark:border-secondary-800">
       <button
         type="button"
-        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+        class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
       >
         <span class="icon-[annon--search] size-4 shrink-0" aria-hidden="true" />
         <span>{{ t('common.search') }}</span>
@@ -177,20 +176,18 @@ function selectModel(modelId: string) {
         </kbd>
       </button>
 
-      <!-- Settings -->
       <NuxtLink
         v-if="activeWorkspace"
         :to="`/w/${activeWorkspace.slug}/settings`"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+        class="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
       >
         <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
         <span>{{ t('common.settings') }}</span>
       </NuxtLink>
 
-      <!-- Theme toggle -->
       <button
         type="button"
-        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+        class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
         @click="toggleTheme"
       >
         <span :class="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'" class="size-4 shrink-0" aria-hidden="true" />
@@ -198,7 +195,7 @@ function selectModel(modelId: string) {
       </button>
 
       <!-- User -->
-      <div class="mt-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+      <div class="flex items-center gap-2.5 rounded-md px-2 py-1.5">
         <AtomsAvatar
           :src="authState.user?.avatarUrl"
           :name="authState.user?.email"
@@ -207,9 +204,6 @@ function selectModel(modelId: string) {
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
             {{ authState.user?.email?.split('@')[0] }}
-          </div>
-          <div class="truncate text-[11px] text-muted">
-            {{ authState.user?.email }}
           </div>
         </div>
         <button
@@ -222,7 +216,7 @@ function selectModel(modelId: string) {
         </button>
       </div>
     </div>
-    <!-- Connect Repo Dialog -->
+
     <OrganismsConnectRepoDialog v-model:open="connectDialogOpen" />
   </aside>
 </template>
