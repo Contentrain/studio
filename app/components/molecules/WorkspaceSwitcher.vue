@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PopoverAnchor, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 
+const { t } = useContent()
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const router = useRouter()
 
@@ -28,7 +29,7 @@ onMounted(() => {
         {{ activeWorkspace?.name?.charAt(0)?.toUpperCase() ?? 'W' }}
       </span>
       <span class="min-w-0 flex-1 truncate">
-        {{ activeWorkspace?.name ?? 'Workspace' }}
+        {{ activeWorkspace?.name ?? t('workspace.default_name') }}
       </span>
       <span class="icon-[annon--chevron-down] size-4 shrink-0 text-muted" aria-hidden="true" />
     </PopoverTrigger>
@@ -41,7 +42,7 @@ onMounted(() => {
         class="z-50 w-56 rounded-lg border border-secondary-200 bg-white p-1 shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
       >
         <div class="px-2 py-1.5 text-xs font-medium text-muted">
-          Workspaces
+          {{ t('workspace.switcher_title') }}
         </div>
         <button
           v-for="ws in workspaces"

@@ -41,7 +41,7 @@ watch(slug, async (newSlug) => {
           {{ t('projects.title') }}
         </AtomsHeadingText>
         <p v-if="activeWorkspace" class="mt-1 text-sm text-muted">
-          {{ projects.length }} {{ projects.length === 1 ? 'project' : 'projects' }}
+          {{ projects.length }} {{ projects.length === 1 ? t('projects.count_singular') : t('projects.count_plural') }}
         </p>
       </div>
       <AtomsGhostButton

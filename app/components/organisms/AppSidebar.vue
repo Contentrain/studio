@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
@@ -38,7 +39,7 @@ const sidebarLinks = computed(() => {
     <nav class="flex-1 overflow-y-auto px-3 py-3">
       <!-- Projects section -->
       <div class="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        Projects
+        {{ t('sidebar.projects') }}
       </div>
       <ul class="space-y-0.5">
         <li v-for="link in sidebarLinks" :key="link.id">
@@ -60,7 +61,7 @@ const sidebarLinks = computed(() => {
             class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
           >
             <span class="icon-[annon--plus-circle] size-4 shrink-0" aria-hidden="true" />
-            <span>Connect repo</span>
+            <span>{{ t('sidebar.connect_repo') }}</span>
           </NuxtLink>
         </li>
       </ul>
@@ -74,7 +75,7 @@ const sidebarLinks = computed(() => {
         class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
       >
         <span class="icon-[annon--search] size-4 shrink-0" aria-hidden="true" />
-        <span>Search</span>
+        <span>{{ t('common.search') }}</span>
         <kbd class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800">
           ⌘K
         </kbd>
@@ -87,7 +88,7 @@ const sidebarLinks = computed(() => {
         class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
       >
         <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
-        <span>Settings</span>
+        <span>{{ t('common.settings') }}</span>
       </NuxtLink>
 
       <!-- User -->
@@ -111,7 +112,7 @@ const sidebarLinks = computed(() => {
           @click="signOut"
         >
           <span class="icon-[annon--log-out] block size-4" aria-hidden="true" />
-          <span class="sr-only">Sign out</span>
+          <span class="sr-only">{{ t('common.sign_out') }}</span>
         </button>
       </div>
     </div>

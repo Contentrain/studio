@@ -7,6 +7,7 @@ definePageMeta({
   layout: 'default',
 })
 
+const { t } = useContent()
 const { workspaces, activeWorkspace, fetchWorkspaces } = useWorkspaces()
 
 onMounted(async () => {
@@ -24,7 +25,7 @@ onMounted(async () => {
     <div class="text-center">
       <div class="mx-auto size-6 animate-spin rounded-full border-2 border-secondary-200 border-t-primary-500 dark:border-secondary-800 dark:border-t-primary-400" />
       <p class="mt-3 text-sm text-muted">
-        Loading workspace...
+        {{ t('common.loading_workspace') }}
       </p>
     </div>
   </div>

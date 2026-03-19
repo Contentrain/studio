@@ -28,6 +28,9 @@
   "auth.welcome_back": "Welcome back",
   "common.go_home": "Go to Dashboard",
   "common.loading": "Loading...",
+  "common.loading_workspace": "Loading workspace...",
+  "common.search": "Search",
+  "common.settings": "Settings",
   "common.sign_out": "Sign out",
   "common.try_again": "Try again",
   "error.403_description": "You don't have permission to access this page.",
@@ -39,8 +42,17 @@
   "error.generic_description": "An unexpected error occurred.",
   "error.generic_title": "Oops!",
   "projects.connect_repo": "Connect repository",
+  "projects.count_singular": "project",
+  "projects.count_plural": "projects",
   "projects.empty_description": "Connect a GitHub repository to start managing content.",
   "projects.empty_title": "No projects yet",
   "projects.title": "Projects",
-  "projects.unknown_stack": "Unknown stack"
+  "projects.unknown_stack": "Unknown stack",
+  "sidebar.connect_repo": "Connect repo",
+  "sidebar.projects": "Projects",
+  "workspace.default_name": "Workspace",
+  "workspace.switcher_title": "Workspaces",
+  "time.minutes_ago": "{count}m ago",
+  "time.hours_ago": "{count}h ago",
+  "time.days_ago": "{count}d ago"
 }

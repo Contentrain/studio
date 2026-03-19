@@ -10,14 +10,16 @@ const props = defineProps<{
   workspaceSlug: string
 }>()
 
+const { t } = useContent()
+
 const timeAgo = computed(() => {
   const diff = Date.now() - new Date(props.project.created_at).getTime()
   const minutes = Math.floor(diff / 60000)
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) return t('time.minutes_ago').replace('{count}', String(minutes))
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return t('time.hours_ago').replace('{count}', String(hours))
   const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  return t('time.days_ago').replace('{count}', String(days))
 })
 
 const stackLabel = computed(() => {
