@@ -10,6 +10,8 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = use
 const { projects, loading, fetchProjects } = useProjects()
 const { t } = useContent()
 
+const connectDialogOpen = ref(false)
+
 // Ensure workspace data is loaded and active workspace is set
 onMounted(async () => {
   if (workspaces.value.length === 0)
@@ -47,7 +49,7 @@ watch(slug, async (newSlug) => {
       <AtomsGhostButton
         v-if="activeWorkspace"
         size="sm"
-        @click="$router.push(`/w/${activeWorkspace.slug}/projects/new`)"
+        @click="connectDialogOpen = true"
       >
         <template #prepend>
           <span class="icon-[annon--plus] size-4" aria-hidden="true" />
@@ -86,7 +88,7 @@ watch(slug, async (newSlug) => {
         v-if="activeWorkspace"
         size="md"
         class="mt-6"
-        @click="$router.push(`/w/${activeWorkspace.slug}/projects/new`)"
+        @click="connectDialogOpen = true"
       >
         <template #prepend>
           <span class="icon-[annon--plus] size-4" aria-hidden="true" />
@@ -94,5 +96,8 @@ watch(slug, async (newSlug) => {
         {{ t('projects.connect_repo') }}
       </AtomsGhostButton>
     </div>
+
+    <!-- Connect Repo Dialog -->
+    <OrganismsConnectRepoDialog v-model:open="connectDialogOpen" />
   </div>
 </template>

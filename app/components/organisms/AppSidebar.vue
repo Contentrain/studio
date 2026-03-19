@@ -5,6 +5,7 @@ const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
 const route = useRoute()
 
+const connectDialogOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 
 const sidebarLinks = computed(() => {
@@ -57,13 +58,14 @@ const sidebarLinks = computed(() => {
           </NuxtLink>
         </li>
         <li v-if="activeWorkspace">
-          <NuxtLink
-            :to="`/w/${activeWorkspace.slug}/projects/new`"
-            class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+          <button
+            type="button"
+            class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+            @click="connectDialogOpen = true"
           >
             <span class="icon-[annon--plus-circle] size-4 shrink-0" aria-hidden="true" />
             <span>{{ t('sidebar.connect_repo') }}</span>
-          </NuxtLink>
+          </button>
         </li>
       </ul>
     </nav>
@@ -117,5 +119,7 @@ const sidebarLinks = computed(() => {
         </button>
       </div>
     </div>
+    <!-- Connect Repo Dialog -->
+    <OrganismsConnectRepoDialog v-model:open="connectDialogOpen" />
   </aside>
 </template>
