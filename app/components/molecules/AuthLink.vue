@@ -15,7 +15,7 @@ defineProps<Props>()
     </p>
     <NuxtLink
       :to="to"
-      class="text-sm font-medium text-primary-500 hover:underline dark:text-primary-400"
+      class="rounded text-sm font-medium text-primary-500 hover:underline dark:text-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
     >
       {{ label }}
     </NuxtLink>

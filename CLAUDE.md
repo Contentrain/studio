@@ -136,6 +136,32 @@ app/components/
 - NuxtImg for all images (not <img>)
 - Icons via `icon-[annon--name]` class (not inline SVG, except brand logos)
 
+### Accessibility & Interactive Elements — CRITICAL
+
+W3C + WCAG compliance for all interactive elements. NEVER violate these rules:
+
+**Cursor:**
+- Global `cursor: pointer` is set in `main.css` `@layer base` for `button`, `[role="button"]`, `a[href]`, `summary`, `select` — do NOT add `cursor-pointer` class to these elements individually
+- `disabled:cursor-not-allowed` on disabled interactive elements (already handled in atoms)
+
+**Button type attribute:**
+- ALL `<button>` elements MUST have an explicit `type` attribute
+- Default: `type="button"` — prevents accidental form submission
+- Only use `type="submit"` inside `<form>` elements for the primary submit action
+- GhostButton atom has `type` prop (default: `"button"`)
+
+**Focus visibility (keyboard navigation):**
+- ALL interactive elements MUST have `focus-visible` styles for keyboard accessibility
+- Standard pattern: `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50`
+- Add `rounded` to inline links/buttons so the focus ring follows the shape
+- Inputs use `focus:ring` (not `focus-visible`) — mouse focus indication is correct for form fields
+
+**ARIA attributes:**
+- Inputs with error state: `aria-invalid="true"`
+- Inputs with description text: `aria-describedby` linking to description element
+- Decorative icons (required asterisk, etc.): `aria-hidden="true"`
+- NEVER use raw `<button>` without accessibility attributes in organisms — prefer atom components
+
 ## Icons
 
 Annon icon set (800+ custom icons) via @iconify/tailwind4:

@@ -170,6 +170,19 @@
  * Scrollbar — gradient style from old CMS, with dark mode
  */
 @layer base {
+  /*
+   * Interactive elements — cursor & focus accessibility
+   * Tailwind CSS 4 preflight does NOT set cursor: pointer on buttons/links.
+   * W3C + WCAG: interactive elements must have visible focus indicator.
+   */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a[href],
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: #e2e8f0 #f8fafc;
