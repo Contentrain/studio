@@ -331,23 +331,10 @@ create policy "Owner/Admin can delete projects"
 
 -- --- PROJECT MEMBERS ---
 
--- Visible to workspace owner/admin or project members
-create policy "Can view project members"
+-- Project Members: terminal policy — no cross-table references to avoid recursion
+create policy "Users can view own project memberships"
   on public.project_members for select
-  using (
-    exists (
-      select 1 from public.projects p
-      join public.workspace_members wm on wm.workspace_id = p.workspace_id
-      where p.id = project_members.project_id
-      and wm.user_id = auth.uid()
-      and wm.role in ('owner', 'admin')
-    )
-    or exists (
-      select 1 from public.project_members as pm
-      where pm.project_id = project_members.project_id
-      and pm.user_id = auth.uid()
-    )
-  );
+  using (user_id = auth.uid());
 
 -- Only workspace owner/admin can manage project members
 create policy "Owner/Admin can add project members"
