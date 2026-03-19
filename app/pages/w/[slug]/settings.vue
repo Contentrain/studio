@@ -36,30 +36,40 @@ const hasChanges = computed(() => {
     || workspaceSlug.value !== activeWorkspace.value.slug
 })
 
-function sanitizeSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-}
+const slugError = computed(() => {
+  if (!workspaceSlug.value) return null
+  const sanitized = slugify(workspaceSlug.value)
+  if (sanitized !== workspaceSlug.value) return null // will be auto-sanitized
+  const result = validateSlug(workspaceSlug.value)
+  return result.valid ? null : result.error
+})
+
+const canSave = computed(() =>
+  hasChanges.value && !slugError.value && workspaceName.value.trim().length > 0,
+)
 
 async function saveOverview() {
-  if (!activeWorkspace.value || !hasChanges.value) return
+  if (!activeWorkspace.value || !canSave.value) return
   saving.value = true
 
-  const newSlug = sanitizeSlug(workspaceSlug.value)
+  const newSlug = slugify(workspaceSlug.value)
   workspaceSlug.value = newSlug
+
+  const validation = validateSlug(newSlug)
+  if (!validation.valid) {
+    toast.error(validation.error ?? t('settings.save_error'))
+    saving.value = false
+    return
+  }
 
   try {
     await $fetch(`/api/workspaces/${activeWorkspace.value.id}`, {
       method: 'PATCH',
-      body: { name: workspaceName.value, slug: newSlug },
+      body: { name: workspaceName.value.trim(), slug: newSlug },
     })
     await fetchWorkspaces()
     toast.success(t('settings.save_success'))
 
-    // Redirect if slug changed
     if (newSlug !== slug.value) {
       await router.replace(`/w/${newSlug}/settings`)
     }
@@ -132,7 +142,7 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
           <AtomsBaseButton
             variant="primary"
             size="md"
-            :disabled="!hasChanges || saving"
+            :disabled="!canSave || saving"
             @click="saveOverview"
           >
             <span>{{ t('common.save_changes') }}</span>

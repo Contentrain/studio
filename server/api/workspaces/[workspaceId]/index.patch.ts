@@ -12,14 +12,9 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
 
   const updates: Record<string, unknown> = {}
-  if (body.name !== undefined) updates.name = body.name
+  if (body.name !== undefined) updates.name = body.name.trim()
   if (body.slug !== undefined) {
-    // Sanitize slug
-    const slug = body.slug
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
+    const slug = slugify(body.slug)
 
     if (slug.length < 2)
       throw createError({ statusCode: 400, message: 'Slug must be at least 2 characters' })
@@ -38,7 +33,6 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (error) {
-    // Unique constraint violation on slug
     if (error.code === '23505')
       throw createError({ statusCode: 409, message: 'This slug is already taken' })
     throw createError({ statusCode: 500, message: error.message })

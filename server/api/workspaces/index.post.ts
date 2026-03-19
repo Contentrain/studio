@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     .from('workspaces')
     .insert({
       name: body.name,
-      slug: body.slug.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+      slug: slugify(body.slug),
       type: 'secondary',
       owner_id: session.user.id,
     })

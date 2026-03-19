@@ -20,8 +20,7 @@ async function handleCreate() {
   if (!newName.value.trim()) return
   creating.value = true
   try {
-    const slug = newName.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
-    const ws = await createWorkspace({ name: newName.value.trim(), slug })
+    const ws = await createWorkspace({ name: newName.value.trim(), slug: slugify(newName.value) })
     open.value = false
     showCreate.value = false
     newName.value = ''

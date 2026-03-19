@@ -26,6 +26,7 @@
     "@supabase/supabase-js": "^2.99.2",
     "nuxt": "^4.4.2",
     "radix-vue": "^1.9.17",
+    "slugify": "^1.6.8",
     "vue": "^3.5.30",
     "vue-router": "^5.0.3"
   },
