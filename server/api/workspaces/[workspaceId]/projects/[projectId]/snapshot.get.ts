@@ -1,10 +1,11 @@
+import type { ContentrainConfig, ModelDefinition, ModelKind } from '@contentrain/types'
+
 /**
  * Content Snapshot API.
  *
  * Reads .contentrain/ directory from the repository via GitProvider.
  * Returns models, config, and content entries as a single JSON payload.
- *
- * Client caches this in memory (Phase 1) or IndexedDB (Phase 6+).
+ * Uses @contentrain/types as the contract for model/config shapes.
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -62,29 +63,30 @@ export default defineEventHandler(async (event) => {
   }
 
   // Read config
-  let config = null
+  let config: ContentrainConfig | null = null
   try {
-    config = JSON.parse(await git.readFile(configPath))
+    config = JSON.parse(await git.readFile(configPath)) as ContentrainConfig
   }
   catch {
     config = null
   }
 
   // Read models
-  const models: Array<{ id: string, name: string, kind: string, type: string, fields: unknown[] }> = []
+  const models: Array<{ id: string, name: string, kind: ModelKind, type: ModelKind, fields: Record<string, unknown>, domain: string, i18n: boolean }> = []
   try {
     const modelFiles = await git.listDirectory(modelsDir)
     for (const file of modelFiles) {
       if (!file.endsWith('.json')) continue
       try {
-        const modelContent = JSON.parse(await git.readFile(`${modelsDir}/${file}`))
-        const kind = modelContent.kind ?? 'collection'
+        const def = JSON.parse(await git.readFile(`${modelsDir}/${file}`)) as ModelDefinition
         models.push({
-          id: file.replace('.json', ''),
-          name: modelContent.name ?? file.replace('.json', ''),
-          kind,
-          type: kind, // backward compat
-          fields: modelContent.fields ?? [],
+          id: def.id ?? file.replace('.json', ''),
+          name: def.name ?? file.replace('.json', ''),
+          kind: def.kind ?? 'collection',
+          type: def.kind ?? 'collection',
+          fields: (def.fields ?? {}) as Record<string, unknown>,
+          domain: def.domain ?? '',
+          i18n: def.i18n ?? false,
         })
       }
       catch {

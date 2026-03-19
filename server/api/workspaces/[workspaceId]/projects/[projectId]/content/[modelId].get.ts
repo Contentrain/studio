@@ -1,3 +1,4 @@
+import type { ModelDefinition } from '@contentrain/types'
 import matter from 'gray-matter'
 
 /**
@@ -53,7 +54,7 @@ export default defineEventHandler(async (event) => {
   const contentBase = contentRoot ? `${contentRoot}/.contentrain/content` : '.contentrain/content'
 
   // Read model definition to determine kind, domain, content_path
-  let modelDef: { kind?: string, domain?: string, content_path?: string, i18n?: boolean } = {}
+  let modelDef: Partial<ModelDefinition> = {}
   try {
     modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`))
   }

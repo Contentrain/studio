@@ -11,6 +11,9 @@ importers:
       '@contentrain/query':
         specifier: ^5.0.0
         version: 5.0.0
+      '@contentrain/types':
+        specifier: 0.2.0
+        version: 0.2.0
       '@nuxt/eslint':
         specifier: 1.15.2
         version: 1.15.2(@typescript-eslint/utils@8.57.1(eslint@10.0.3(jiti@2.6.1))(typescript@5.9.3))(@vue/compiler-sfc@3.5.30)(eslint@10.0.3(jiti@2.6.1))(magicast@0.5.2)(typescript@5.9.3)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.1)(yaml@2.8.2))
@@ -318,6 +321,9 @@ packages:
 
   '@contentrain/types@0.1.0':
     resolution: {integrity: sha512-fXiMmtkHJ1EoonGoO+M2I+YOxEJ+aMMNA1B4LzQXUOII6/p4REcU/QKlZHVEfR8Ouf2ucQIT9Ja47RP2epr0Nw==}
+
+  '@contentrain/types@0.2.0':
+    resolution: {integrity: sha512-tjql7ZQQelzXU69CqId9NcYX4Fa07HXRLa9zdAJjjT/gptJ5VKNRQBCuGEU86w41gzmhpZH/I+br/s+qVLhIbg==}
 
   '@conventional-changelog/git-client@2.6.0':
     resolution: {integrity: sha512-T+uPDciKf0/ioNNDpMGc8FDsehJClZP0yR3Q5MN6wE/Y/1QZ7F+80OgznnTCOlMEG4AV0LvH2UJi3C/nBnaBUg==}
@@ -5568,6 +5574,8 @@ snapshots:
       '@contentrain/types': 0.1.0
 
   '@contentrain/types@0.1.0': {}
+
+  '@contentrain/types@0.2.0': {}
 
   '@conventional-changelog/git-client@2.6.0(conventional-commits-parser@6.3.0)':
     dependencies:

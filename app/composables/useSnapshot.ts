@@ -1,11 +1,14 @@
+import type { ModelKind } from '@contentrain/types'
 import { get, set, del } from 'idb-keyval'
 
 interface ModelSummary {
   id: string
   name: string
-  kind: string
-  type: string // backward compat
-  fields: unknown[]
+  kind: ModelKind
+  type: ModelKind
+  fields: Record<string, unknown>
+  domain: string
+  i18n: boolean
 }
 
 interface ContentSummary {

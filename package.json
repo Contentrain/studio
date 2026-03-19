@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@contentrain/query": "^5.0.0",
+    "@contentrain/types": "0.2.0",
     "@nuxt/eslint": "1.15.2",
     "@nuxt/image": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
