@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, DialogTrigger } from 'radix-vue'
-import { toast } from 'vue-sonner'
 
 const { t } = useContent()
 const { activeWorkspace } = useWorkspaces()
+const toast = useToast()
 
 const open = defineModel<boolean>('open', { default: false })
 

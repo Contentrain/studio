@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'radix-vue'
-import { toast } from 'vue-sonner'
 
 definePageMeta({
   layout: 'default',
@@ -11,6 +10,7 @@ const slug = computed(() => route.params.slug as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { t } = useContent()
+const toast = useToast()
 
 const activeTab = ref('overview')
 const saving = ref(false)
