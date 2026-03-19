@@ -21,6 +21,7 @@ const router = useRouter()
 const activeModelId = computed(() => route.query.model as string | undefined ?? null)
 const panelState = computed(() => activeModelId.value ? 'model' : 'overview')
 const modelContent = ref<unknown>(null)
+const modelContentKind = ref<string>('collection')
 const modelContentLoading = ref(false)
 
 const activeModel = computed(() =>
@@ -53,8 +54,9 @@ watch(activeModelId, async (modelId) => {
   if (!ws) return
 
   try {
-    const result = await $fetch<{ data: unknown }>(`/api/workspaces/${ws.id}/projects/${projectId.value}/content/${modelId}`)
+    const result = await $fetch<{ data: unknown, kind?: string }>(`/api/workspaces/${ws.id}/projects/${projectId.value}/content/${modelId}`)
     modelContent.value = result.data
+    modelContentKind.value = result.kind ?? 'collection'
   }
   catch {
     modelContent.value = null
@@ -229,8 +231,81 @@ function getEntryTitle(entry: Record<string, unknown>): string {
 
           <!-- Content entries -->
           <div v-else>
+            <!-- Dictionary: flat key-value pairs -->
+            <template v-if="modelContentKind === 'dictionary' && typeof modelContent === 'object' && !Array.isArray(modelContent)">
+              <div class="max-h-[60vh] overflow-y-auto">
+                <table class="w-full text-sm">
+                  <thead class="sticky top-0 bg-white dark:bg-secondary-950">
+                    <tr class="border-b border-secondary-200 dark:border-secondary-800">
+                      <th class="px-5 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        Key
+                      </th>
+                      <th class="px-5 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        Value
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-secondary-100 dark:divide-secondary-800">
+                    <tr v-for="(value, key) in (modelContent as Record<string, unknown>)" :key="String(key)" class="hover:bg-secondary-50 dark:hover:bg-secondary-900">
+                      <td class="px-5 py-2 font-mono text-xs text-muted">
+                        {{ String(key) }}
+                      </td>
+                      <td class="px-5 py-2 text-heading dark:text-secondary-100">
+                        {{ String(value) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
+                <span class="text-xs text-muted">{{ Object.keys(modelContent as object).length }} keys</span>
+              </div>
+            </template>
+
+            <!-- Document: frontmatter + markdown entries -->
+            <template v-else-if="modelContentKind === 'document' && Array.isArray(modelContent)">
+              <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
+                <details
+                  v-for="doc in (modelContent as Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>)"
+                  :key="doc.slug"
+                  class="group"
+                >
+                  <summary class="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
+                    <span class="icon-[annon--chevron-right] size-3.5 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true" />
+                    <span class="icon-[annon--file] size-4 shrink-0 text-muted" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
+                      {{ (doc.frontmatter.title as string) || doc.slug }}
+                    </span>
+                  </summary>
+                  <div class="space-y-3 px-5 pb-4 pt-1">
+                    <!-- Frontmatter fields -->
+                    <div v-for="(value, key) in doc.frontmatter" :key="String(key)">
+                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        {{ String(key) }}
+                      </div>
+                      <div class="mt-0.5">
+                        <AtomsContentFieldDisplay :type="getFieldType(String(key))" :value="value" :field-id="String(key)" />
+                      </div>
+                    </div>
+                    <!-- Markdown body preview -->
+                    <div v-if="doc.body">
+                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                        Body
+                      </div>
+                      <p class="mt-1 line-clamp-4 rounded-lg bg-secondary-50 p-3 font-mono text-xs text-body dark:bg-secondary-900 dark:text-secondary-300">
+                        {{ doc.body.substring(0, 300) }}{{ doc.body.length > 300 ? '...' : '' }}
+                      </p>
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
+                <span class="text-xs text-muted">{{ (modelContent as unknown[]).length }} documents</span>
+              </div>
+            </template>
+
             <!-- Collection: object-map { id: { ...fields } } -->
-            <template v-if="activeModel?.type === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)">
+            <template v-else-if="typeof modelContent === 'object' && !Array.isArray(modelContent)">
               <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
                 <details
                   v-for="(entry, entryId) in (modelContent as Record<string, Record<string, unknown>>)"
