@@ -12,9 +12,11 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = use
 const { t } = useContent()
 const toast = useToast()
 
+const router = useRouter()
 const activeTab = ref('overview')
 const saving = ref(false)
 const workspaceName = ref('')
+const workspaceSlug = ref('')
 
 onMounted(async () => {
   if (workspaces.value.length === 0)
@@ -24,24 +26,43 @@ onMounted(async () => {
   if (ws) {
     setActiveWorkspace(ws.id)
     workspaceName.value = ws.name
+    workspaceSlug.value = ws.slug
   }
 })
 
-const hasChanges = computed(() =>
-  activeWorkspace.value && workspaceName.value !== activeWorkspace.value.name,
-)
+const hasChanges = computed(() => {
+  if (!activeWorkspace.value) return false
+  return workspaceName.value !== activeWorkspace.value.name
+    || workspaceSlug.value !== activeWorkspace.value.slug
+})
+
+function sanitizeSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 async function saveOverview() {
   if (!activeWorkspace.value || !hasChanges.value) return
   saving.value = true
+
+  const newSlug = sanitizeSlug(workspaceSlug.value)
+  workspaceSlug.value = newSlug
+
   try {
     await $fetch(`/api/workspaces/${activeWorkspace.value.id}`, {
       method: 'PATCH',
-      body: { name: workspaceName.value },
+      body: { name: workspaceName.value, slug: newSlug },
     })
-    // Update local state
     await fetchWorkspaces()
     toast.success(t('settings.save_success'))
+
+    // Redirect if slug changed
+    if (newSlug !== slug.value) {
+      await router.replace(`/w/${newSlug}/settings`)
+    }
   }
   catch (e: unknown) {
     const message = e instanceof Error ? e.message : t('settings.save_error')
@@ -91,10 +112,16 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
             />
           </div>
           <div>
-            <AtomsFormLabel :text="t('settings.slug_label')" size="sm" />
-            <p class="mt-1.5 text-sm text-muted">
-              {{ activeWorkspace?.slug }}
-            </p>
+            <AtomsFormLabel for="ws-slug" :text="t('settings.slug_label')" size="sm" />
+            <div class="mt-1.5 flex items-center gap-1 text-sm text-muted">
+              <span>/w/</span>
+              <AtomsFormInput
+                id="ws-slug"
+                v-model="workspaceSlug"
+                type="text"
+                placeholder="my-workspace"
+              />
+            </div>
           </div>
           <div>
             <AtomsFormLabel :text="t('settings.plan_label')" size="sm" />

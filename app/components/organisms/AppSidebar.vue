@@ -7,9 +7,11 @@ const { models, hasContentrain } = useSnapshot()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
+const router = useRouter()
 const connectDialogOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 const isInsideProject = computed(() => !!currentProjectId.value)
+const activeModelId = computed(() => route.query.model as string | undefined)
 
 const sidebarLinks = computed(() => {
   if (!activeWorkspace.value) return []
@@ -81,7 +83,12 @@ const sidebarLinks = computed(() => {
           <li v-for="model in models" :key="model.id">
             <button
               type="button"
-              class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-body transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-400 dark:hover:bg-secondary-900"
+              class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :class="activeModelId === model.id
+                ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
+                : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
+              "
+              @click="router.replace({ query: { ...route.query, model: model.id } })"
             >
               <span
                 :class="model.type === 'singleton' ? 'icon-[annon--file]' : 'icon-[annon--list-unordered]'"
