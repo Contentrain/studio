@@ -13,10 +13,6 @@ const currentProjectId = computed(() => route.params.projectId as string | undef
 const isInsideProject = computed(() => !!currentProjectId.value)
 const activeModelId = computed(() => route.query.model as string | undefined)
 
-const activeProject = computed(() =>
-  projects.value.find(p => p.id === currentProjectId.value) ?? null,
-)
-
 const sidebarLinks = computed(() => {
   if (!activeWorkspace.value) return []
   const slug = activeWorkspace.value.slug
@@ -67,23 +63,8 @@ function selectModel(modelId: string) {
 
     <!-- Scrollable nav -->
     <nav class="flex-1 overflow-y-auto px-3 py-1">
-      <!-- PROJECT VIEW: show project name + models grouped by domain -->
+      <!-- PROJECT VIEW: models grouped by domain -->
       <template v-if="isInsideProject">
-        <!-- Active project + back nav (single compact row) -->
-        <div class="mb-2 flex items-center gap-1.5 px-2">
-          <NuxtLink
-            v-if="activeWorkspace"
-            :to="`/w/${activeWorkspace.slug}`"
-            class="shrink-0 rounded p-0.5 text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-            :title="t('sidebar.projects')"
-          >
-            <span class="icon-[annon--arrow-left] block size-3.5" aria-hidden="true" />
-          </NuxtLink>
-          <span v-if="activeProject" class="min-w-0 truncate text-[13px] font-semibold text-heading dark:text-secondary-100">
-            {{ activeProject.repo_full_name }}
-          </span>
-        </div>
-
         <!-- Models grouped by domain -->
         <template v-if="hasContentrain">
           <div
