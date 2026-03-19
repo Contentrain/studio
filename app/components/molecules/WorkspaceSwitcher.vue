@@ -43,7 +43,9 @@ onMounted(() => {
       class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm font-medium text-heading transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100 dark:hover:bg-secondary-900"
       type="button"
     >
-      <AtomsLogo variant="icon" color="auto" class="h-6 w-auto shrink-0" />
+      <span class="flex size-5 shrink-0 items-center justify-center rounded bg-primary-600 text-[9px] font-bold text-white">
+        {{ activeWorkspace?.name?.charAt(0)?.toUpperCase() ?? 'W' }}
+      </span>
       <span class="min-w-0 flex-1 truncate">
         {{ activeWorkspace?.name ?? t('workspace.default_name') }}
       </span>

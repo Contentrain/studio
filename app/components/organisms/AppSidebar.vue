@@ -54,8 +54,14 @@ function selectModel(modelId: string) {
   <aside
     class="flex h-screen w-60 flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
   >
-    <!-- Workspace switcher (replaces separate logo + switcher) -->
+    <!-- Brand + Workspace -->
     <div class="shrink-0 px-3 pt-3 pb-2">
+      <!-- Logo mark -->
+      <NuxtLink to="/" class="mb-1 flex items-center gap-2 px-2 focus-visible:outline-none">
+        <AtomsLogo variant="icon" color="auto" class="h-5 w-auto" />
+        <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Studio</span>
+      </NuxtLink>
+      <!-- Workspace switcher -->
       <MoleculesWorkspaceSwitcher />
     </div>
 
@@ -63,22 +69,19 @@ function selectModel(modelId: string) {
     <nav class="flex-1 overflow-y-auto px-3 py-1">
       <!-- PROJECT VIEW: show project name + models grouped by domain -->
       <template v-if="isInsideProject">
-        <!-- Active project header with back nav -->
-        <div class="mb-2">
+        <!-- Active project + back nav (single compact row) -->
+        <div class="mb-2 flex items-center gap-1.5 px-2">
           <NuxtLink
             v-if="activeWorkspace"
             :to="`/w/${activeWorkspace.slug}`"
-            class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
+            class="shrink-0 rounded p-0.5 text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+            :title="t('sidebar.projects')"
           >
-            <span class="icon-[annon--arrow-left] size-3 shrink-0" aria-hidden="true" />
-            <span>{{ t('sidebar.projects') }}</span>
+            <span class="icon-[annon--arrow-left] block size-3.5" aria-hidden="true" />
           </NuxtLink>
-          <div v-if="activeProject" class="mt-1 flex items-center gap-2 px-2 py-1">
-            <span class="icon-[annon--folder] size-4 shrink-0 text-primary-500" aria-hidden="true" />
-            <span class="min-w-0 truncate text-sm font-semibold text-heading dark:text-secondary-100">
-              {{ activeProject.repo_full_name }}
-            </span>
-          </div>
+          <span v-if="activeProject" class="min-w-0 truncate text-[13px] font-semibold text-heading dark:text-secondary-100">
+            {{ activeProject.repo_full_name }}
+          </span>
         </div>
 
         <!-- Models grouped by domain -->
