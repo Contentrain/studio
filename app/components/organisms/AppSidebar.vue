@@ -67,25 +67,30 @@ function selectModel(modelId: string) {
       <template v-if="isInsideProject">
         <!-- Models grouped by domain -->
         <template v-if="hasContentrain">
-          <div
+          <details
             v-for="(domainModels, domain) in modelsByDomain"
             :key="domain"
-            class="mt-2"
+            class="group mt-1"
+            open
           >
-            <div class="mb-0.5 flex items-center gap-1.5 px-2 py-1">
+            <summary class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900">
+              <span class="icon-[annon--chevron-right] size-3 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true" />
               <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
                 {{ domain }}
+              </span>
+              <span class="ml-auto text-[10px] tabular-nums text-disabled">
+                {{ domainModels.length }}
               </span>
               <div
                 v-if="refreshing"
                 class="size-2.5 animate-spin rounded-full border border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
               />
-            </div>
-            <ul class="space-y-px">
+            </summary>
+            <ul class="space-y-px py-0.5">
               <li v-for="model in domainModels" :key="model.id">
                 <button
                   type="button"
-                  class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1 pl-6 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                   :class="activeModelId === model.id
                     ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
                     : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
@@ -110,7 +115,7 @@ function selectModel(modelId: string) {
                 </button>
               </li>
             </ul>
-          </div>
+          </details>
         </template>
       </template>
 

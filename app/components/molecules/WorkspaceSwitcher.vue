@@ -134,15 +134,20 @@ onMounted(() => {
     <!-- Project row (child of workspace, shown when inside a project) -->
     <div v-if="activeProject" class="flex items-center gap-1 pl-2">
       <span class="text-secondary-300 dark:text-secondary-700" aria-hidden="true">└</span>
-      <NuxtLink
-        v-if="activeWorkspace"
-        :to="`/w/${activeWorkspace.slug}`"
-        class="group flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-      >
+      <div class="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1">
         <span class="icon-[annon--folder] size-3.5 shrink-0 text-primary-500" aria-hidden="true" />
         <span class="min-w-0 truncate text-[13px] font-medium text-heading dark:text-secondary-100">
           {{ activeProject.repo_full_name }}
         </span>
+      </div>
+      <!-- Back to dashboard -->
+      <NuxtLink
+        v-if="activeWorkspace"
+        :to="`/w/${activeWorkspace.slug}`"
+        class="shrink-0 rounded p-1 text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+        :title="t('sidebar.projects')"
+      >
+        <span class="icon-[annon--cross] block size-3" aria-hidden="true" />
       </NuxtLink>
     </div>
   </div>
