@@ -17,6 +17,9 @@ export default defineNuxtConfig({
       clientSecret: '',
       privateKey: '', // base64 encoded .pem
     },
+    anthropic: {
+      apiKey: '', // NUXT_ANTHROPIC_API_KEY — Studio-hosted agent key
+    },
     supabase: {
       url: '',
       serviceRoleKey: '',
