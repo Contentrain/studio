@@ -28,6 +28,7 @@ const isSelect = computed(() => props.type === 'select')
 const isRating = computed(() => props.type === 'rating')
 const isNumber = computed(() => ['number', 'integer', 'decimal', 'percent'].includes(props.type))
 const isArray = computed(() => props.type === 'array' || Array.isArray(props.value))
+const isObject = computed(() => typeof props.value === 'object' && props.value !== null && !Array.isArray(props.value) && !isColor.value && !isDate.value)
 const isRichText = computed(() => ['markdown', 'richtext', 'text', 'code'].includes(props.type))
 const isImage = computed(() => props.type === 'image')
 
@@ -118,14 +119,33 @@ const ratingStars = computed(() => {
       {{ displayValue }}{{ props.type === 'percent' ? '%' : '' }}
     </span>
 
-    <!-- Array / Tags -->
-    <div v-else-if="isArray && Array.isArray(displayValue)" class="flex flex-wrap gap-1">
-      <AtomsBadge v-for="(item, i) in (displayValue as unknown[]).slice(0, 5)" :key="i" variant="secondary" size="sm">
-        {{ typeof item === 'object' ? JSON.stringify(item) : String(item) }}
+    <!-- Array of primitives (tags) -->
+    <div v-else-if="isArray && Array.isArray(displayValue) && displayValue.length > 0 && typeof displayValue[0] !== 'object'" class="flex flex-wrap gap-1">
+      <AtomsBadge v-for="(item, i) in (displayValue as unknown[]).slice(0, 8)" :key="i" variant="secondary" size="sm">
+        {{ String(item) }}
       </AtomsBadge>
-      <AtomsBadge v-if="(displayValue as unknown[]).length > 5" variant="secondary" size="sm">
-        +{{ (displayValue as unknown[]).length - 5 }}
+      <AtomsBadge v-if="(displayValue as unknown[]).length > 8" variant="secondary" size="sm">
+        +{{ (displayValue as unknown[]).length - 8 }}
       </AtomsBadge>
+    </div>
+
+    <!-- Array of objects -->
+    <div v-else-if="isArray && Array.isArray(displayValue) && displayValue.length > 0 && typeof displayValue[0] === 'object'" class="space-y-1.5">
+      <div
+        v-for="(item, i) in (displayValue as Record<string, unknown>[]).slice(0, 5)"
+        :key="i"
+        class="rounded-lg border border-secondary-200 p-2 dark:border-secondary-800"
+      >
+        <div v-for="(val, key) in item" :key="String(key)" class="flex items-start gap-2 py-0.5">
+          <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ String(key) }}</span>
+          <span class="ml-auto max-w-[60%] truncate text-right text-xs text-heading dark:text-secondary-100">
+            {{ typeof val === 'object' ? JSON.stringify(val) : String(val) }}
+          </span>
+        </div>
+      </div>
+      <span v-if="(displayValue as unknown[]).length > 5" class="text-xs text-muted">
+        +{{ (displayValue as unknown[]).length - 5 }} more
+      </span>
     </div>
 
     <!-- Markdown preview -->
@@ -146,6 +166,16 @@ const ratingStars = computed(() => {
     <p v-else-if="isRichText" class="line-clamp-3 text-sm text-body dark:text-secondary-300">
       {{ String(displayValue).substring(0, 200) }}
     </p>
+
+    <!-- Nested object (e.g. frontmatter hero: { title, subtitle }) -->
+    <div v-else-if="isObject" class="space-y-1 rounded-lg border border-secondary-200 p-2.5 dark:border-secondary-800">
+      <div v-for="(val, key) in (displayValue as Record<string, unknown>)" :key="String(key)" class="flex items-start gap-2 py-0.5">
+        <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ String(key) }}</span>
+        <span class="ml-auto max-w-[60%] text-right text-xs text-heading dark:text-secondary-100" :class="typeof val === 'string' && val.length > 50 ? 'truncate' : ''">
+          {{ typeof val === 'object' ? JSON.stringify(val) : String(val) }}
+        </span>
+      </div>
+    </div>
 
     <!-- Default: string / unknown -->
     <span v-else class="text-sm text-heading dark:text-secondary-100">
