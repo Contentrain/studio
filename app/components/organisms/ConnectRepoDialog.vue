@@ -118,6 +118,7 @@ async function connectRepo() {
         repoFullName: selectedRepo.value.fullName,
         defaultBranch: scanResult.value?.defaultBranch ?? selectedRepo.value.defaultBranch,
         detectedStack: scanResult.value?.stack ?? null,
+        hasContentrain: scanResult.value?.hasContentDir ?? false,
       },
     })
 

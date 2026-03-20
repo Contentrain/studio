@@ -3,6 +3,7 @@ const props = defineProps<{
   workspaceId: string
   projectId: string
   projectName: string
+  projectStatus?: string
 }>()
 
 const emit = defineEmits<{
@@ -60,10 +61,30 @@ watch(error, (err) => {
 
     <!-- Messages -->
     <div class="flex-1 overflow-y-auto">
-      <!-- Empty state -->
-      <div v-if="messages.length === 0" class="flex h-full items-center justify-center p-8">
+      <!-- Empty state: setup project (no .contentrain/) -->
+      <div v-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center gap-4 p-8">
         <AtomsEmptyState
-          icon="icon-[annon--comment-2-plus]" :title="t('chat.empty_title')"
+          icon="icon-[annon--box]"
+          :title="t('content.not_found_title')"
+          :description="t('content.not_found_description')"
+        />
+        <AtomsBaseButton
+          variant="primary"
+          size="md"
+          @click="handleSend('Initialize my project — detect the framework and set up content structure.')"
+        >
+          <template #prepend>
+            <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
+          </template>
+          <span>Initialize project</span>
+        </AtomsBaseButton>
+      </div>
+
+      <!-- Empty state: active project -->
+      <div v-else-if="messages.length === 0" class="flex h-full items-center justify-center p-8">
+        <AtomsEmptyState
+          icon="icon-[annon--comment-2-plus]"
+          :title="t('chat.empty_title')"
           :description="t('chat.empty_description')"
         />
       </div>

@@ -1,4 +1,4 @@
-import type { ModelDefinition, ValidationResult } from '@contentrain/types'
+import type { ModelDefinition, ContentrainConfig, ValidationResult } from '@contentrain/types'
 import type { GitProvider, Commit, Branch, FileDiff, MergeResult, CommitAuthor } from '../providers/git'
 
 /**
@@ -231,6 +231,111 @@ export function createContentEngine(ctx: ContentEngineContext) {
      */
     async rejectBranch(branch: string): Promise<void> {
       await git.deleteBranch(branch)
+    },
+
+    /**
+     * Initialize .contentrain/ structure in a repo that doesn't have one.
+     * Creates config, context, vocabulary, and empty directories.
+     */
+    async initProject(
+      stack: string,
+      locales: string[],
+      domains: string[],
+      models: ModelDefinition[],
+      userEmail: string,
+    ): Promise<WriteResult> {
+      const prefix = contentRoot ? `${contentRoot}/` : ''
+
+      // Build config
+      const config: ContentrainConfig = {
+        version: 1,
+        stack: stack as ContentrainConfig['stack'],
+        workflow: 'auto-merge',
+        locales: {
+          default: locales[0] ?? 'en',
+          supported: locales,
+        },
+        domains,
+      }
+
+      // Build context
+      const context = {
+        version: '1',
+        lastOperation: {
+          tool: 'init_project',
+          model: '',
+          locale: locales[0] ?? 'en',
+          timestamp: new Date().toISOString(),
+          source: 'mcp-studio',
+        },
+        stats: {
+          models: models.length,
+          entries: 0,
+          locales,
+          lastSync: new Date().toISOString(),
+        },
+      }
+
+      // Build vocabulary
+      const vocabulary = { version: 1, terms: {} }
+
+      // Collect all files to commit
+      const files: Array<{ path: string, content: string }> = [
+        { path: `${prefix}.contentrain/config.json`, content: serializeCanonical(config) },
+        { path: `${prefix}.contentrain/context.json`, content: serializeCanonical(context) },
+        { path: `${prefix}.contentrain/vocabulary.json`, content: serializeCanonical(vocabulary) },
+      ]
+
+      // Add model files
+      for (const model of models) {
+        files.push({
+          path: `${prefix}.contentrain/models/${model.id}.json`,
+          content: serializeCanonical(model),
+        })
+
+        // Create empty content file for each locale (collections/singletons)
+        if (model.kind !== 'document') {
+          for (const locale of locales) {
+            const contentPath = resolveContentPath(pathCtx, model, locale)
+            const emptyContent = model.kind === 'singleton' ? {} : {}
+            files.push({
+              path: contentPath,
+              content: serializeCanonical(emptyContent),
+            })
+          }
+        }
+
+        // Create empty meta file
+        for (const locale of locales) {
+          const metaPath = resolveMetaPath(pathCtx, model, locale)
+          files.push({
+            path: metaPath,
+            content: serializeCanonical({}),
+          })
+        }
+      }
+
+      // Create branch and commit
+      const branchName = `contentrain/init-${generateBranchId()}`
+      await git.createBranch(branchName)
+
+      const message = `contentrain: initialize project\n\nStack: ${stack}\nLocales: ${locales.join(', ')}\nDomains: ${domains.join(', ')}\nModels: ${models.map(m => m.id).join(', ')}\n\nCo-Authored-By: ${userEmail}`
+
+      const commit = await git.commitFiles(
+        branchName,
+        files.map(f => ({ path: f.path, content: f.content })),
+        message,
+        BOT_AUTHOR,
+      )
+
+      const diff = await git.getBranchDiff(branchName)
+
+      return {
+        branch: branchName,
+        commit,
+        diff,
+        validation: { valid: true, errors: [] },
+      }
     },
   }
 }

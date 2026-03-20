@@ -94,6 +94,7 @@ async function handleContentChanged() {
         :workspace-id="activeWorkspace.id"
         :project-id="projectId"
         :project-name="project?.repo_full_name ?? t('common.loading')"
+        :project-status="project?.status"
         @content-changed="handleContentChanged"
       />
     </div>

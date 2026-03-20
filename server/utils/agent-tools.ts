@@ -116,13 +116,29 @@ export const STUDIO_TOOLS: AITool[] = [
   },
   {
     name: 'init_project',
-    description: 'Initialize a .contentrain/ structure in a repository that doesn\'t have one yet.',
+    description: 'Initialize a .contentrain/ structure in a repository. Creates config.json, context.json, vocabulary.json, and optionally initial models with empty content files. Ask the user which locales and content types they want.',
     inputSchema: {
       type: 'object',
       properties: {
-        stack: { type: 'string', description: 'Detected or specified framework (nuxt, next, astro, etc.)' },
-        locales: { type: 'array', items: { type: 'string' }, description: 'Supported locale codes' },
+        stack: { type: 'string', description: 'Framework (nuxt, next, astro, vue, react, flutter, other)' },
+        locales: { type: 'array', items: { type: 'string' }, description: 'Locale codes (e.g., ["en", "tr"])' },
         domains: { type: 'array', items: { type: 'string' }, description: 'Content domains (e.g., ["marketing", "system"])' },
+        models: {
+          type: 'array',
+          description: 'Initial models to create',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'kebab-case ID' },
+              name: { type: 'string', description: 'Display name' },
+              kind: { type: 'string', enum: ['singleton', 'collection', 'document', 'dictionary'] },
+              domain: { type: 'string' },
+              i18n: { type: 'boolean' },
+              fields: { type: 'object', description: '{ fieldId: { type, required?, ... } }' },
+            },
+            required: ['id', 'name', 'kind', 'domain'],
+          },
+        },
       },
       required: ['stack', 'locales', 'domains'],
     },

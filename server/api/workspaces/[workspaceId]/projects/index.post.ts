@@ -6,6 +6,7 @@ export default defineEventHandler(async (event) => {
     defaultBranch?: string
     contentRoot?: string
     detectedStack?: string
+    hasContentrain?: boolean
   }>(event)
 
   if (!workspaceId)
@@ -24,6 +25,7 @@ export default defineEventHandler(async (event) => {
       default_branch: body.defaultBranch || 'main',
       content_root: body.contentRoot || '/',
       detected_stack: body.detectedStack || null,
+      status: body.hasContentrain === false ? 'setup' : 'active',
     })
     .select()
     .single()

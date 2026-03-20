@@ -420,9 +420,26 @@ async function executeTool(
       return { rejected: true }
     }
 
-    case 'init_project':
-      // TODO: implement project initialization
-      return { error: 'Project initialization coming soon' }
+    case 'init_project': {
+      const initModels: import('@contentrain/types').ModelDefinition[] = []
+      if (params.models && Array.isArray(params.models)) {
+        for (const m of params.models as Record<string, unknown>[]) {
+          initModels.push(m as unknown as import('@contentrain/types').ModelDefinition)
+        }
+      }
+      const initResult = await engine.initProject(
+        (params.stack as string) ?? 'other',
+        (params.locales as string[]) ?? ['en'],
+        (params.domains as string[]) ?? ['marketing'],
+        initModels,
+        userEmail,
+      )
+      return {
+        branch: initResult.branch,
+        commitSha: initResult.commit.sha,
+        filesCreated: initResult.diff.length,
+      }
+    }
 
     default:
       return { error: `Unknown tool: ${name}` }
