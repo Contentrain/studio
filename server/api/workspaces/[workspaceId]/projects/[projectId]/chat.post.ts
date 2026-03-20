@@ -150,7 +150,27 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* no models */ }
 
-  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions)
+  // Build project state for intelligent system prompt
+  let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
+  try {
+    pendingBranches = await git.listBranches('contentrain/')
+  }
+  catch { /* no branches */ }
+
+  // Get project status from DB
+  const { data: projectRecord } = await client
+    .from('projects')
+    .select('status')
+    .eq('id', projectId)
+    .single()
+
+  const projectState = {
+    initialized: !!projectConfig,
+    pendingBranches,
+    projectStatus: projectRecord?.status ?? 'active',
+  }
+
+  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState)
   const tools = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools)
 
   const model = usageSource === 'studio'

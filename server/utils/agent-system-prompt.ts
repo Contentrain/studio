@@ -1,17 +1,26 @@
 import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
+import type { Branch } from '../providers/git'
 import type { AgentPermissions } from './agent-permissions'
 
 /**
  * Build the system prompt dynamically per chat request.
  *
- * Includes: role definition, project schema, permissions, rules.
- * The agent uses this context to make informed tool calls.
+ * Includes: role, project state, schema, permissions, rules.
+ * Project state (pending branches, init status) prevents the agent
+ * from making redundant tool calls or losing context.
  */
+
+export interface ProjectState {
+  initialized: boolean
+  pendingBranches: Branch[]
+  projectStatus: string // 'active' | 'setup' | 'error'
+}
 
 export function buildSystemPrompt(
   config: ContentrainConfig | null,
   models: ModelDefinition[],
   permissions: AgentPermissions,
+  state: ProjectState,
 ): string {
   const sections: string[] = []
 
@@ -19,18 +28,41 @@ export function buildSystemPrompt(
   sections.push(`You are a content management assistant for Contentrain Studio.
 You help users create, edit, and manage structured content using the provided tools.
 You MUST use tools for all content operations — never output raw JSON for the user to copy.
-Every content change creates a Git branch for review.`)
+Every content change creates a Git branch for review.
+Respond in the user's language.`)
 
-  // 2. Project context
+  // 2. Project state — critical context to prevent redundant actions
+  const stateLines: string[] = []
+  stateLines.push(`- Contentrain initialized: ${state.initialized ? 'YES' : 'NO'}`)
+  stateLines.push(`- Project status: ${state.projectStatus}`)
+
+  if (state.pendingBranches.length > 0) {
+    stateLines.push(`- Pending branches (${state.pendingBranches.length}):`)
+    for (const b of state.pendingBranches.slice(0, 5)) {
+      stateLines.push(`  - ${b.name}`)
+    }
+  }
+  else {
+    stateLines.push('- Pending branches: none')
+  }
+
+  sections.push(`## Current Project State\n${stateLines.join('\n')}`)
+
+  // 3. Project config
   if (config) {
-    sections.push(`## Project
+    sections.push(`## Project Configuration
 - Stack: ${config.stack}
 - Locales: ${config.locales.supported.join(', ')} (default: ${config.locales.default})
 - Domains: ${config.domains.join(', ')}
 - Workflow: ${config.workflow}`)
   }
+  else if (!state.initialized) {
+    sections.push(`## Project Configuration
+This project has no .contentrain/ directory yet. Use init_project to create one.
+If there are pending init branches, offer to merge them first.`)
+  }
 
-  // 3. Models schema
+  // 4. Models schema
   if (models.length > 0) {
     const modelSummaries = models.map((m) => {
       const fieldList = m.fields
@@ -50,8 +82,11 @@ ${fieldList}`
 
     sections.push(`## Content Models\n\n${modelSummaries}`)
   }
+  else if (state.initialized) {
+    sections.push('## Content Models\nNo models defined yet. Use save_model to create one.')
+  }
 
-  // 4. Permissions
+  // 5. Permissions
   const roleDisplay = permissions.projectRole
     ? `${permissions.workspaceRole} (workspace) / ${permissions.projectRole} (project)`
     : `${permissions.workspaceRole} (workspace)`
@@ -64,16 +99,18 @@ ${fieldList}`
     : ''
 }`)
 
-  // 5. Rules
+  // 6. Rules
   sections.push(`## Rules
 - Always use the default locale (${config?.locales.default ?? 'en'}) unless the user specifies another.
 - For collections, generate entry IDs as 12-character lowercase hex strings.
 - Sort object keys alphabetically in content data.
 - Do not include null values or default values in content.
 - When creating content, validate all required fields are present.
-- When the user asks to translate, use copy_locale or save_content with the target locale.
-- After saving, tell the user which branch was created and how to review/merge it.
-- Be concise and helpful. Don't explain technical details unless asked.`)
+- After saving content or initializing, IMMEDIATELY call merge_branch to apply the changes.
+- Do NOT ask the user to merge manually — merge automatically unless the workflow is "review".
+- If there are pending branches from previous operations, offer to merge them.
+- Be concise. Don't explain technical details unless asked.
+- Never repeat tool calls that already returned results in this conversation.`)
 
   return sections.join('\n\n')
 }
