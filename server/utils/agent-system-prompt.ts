@@ -24,12 +24,10 @@ export function buildSystemPrompt(
 ): string {
   const sections: string[] = []
 
-  // 1. Role definition
-  sections.push(`You are a content management assistant for Contentrain Studio.
-You help users create, edit, and manage structured content using the provided tools.
-You MUST use tools for all content operations — never output raw JSON for the user to copy.
-Every content change creates a Git branch for review.
-Respond in the user's language.`)
+  // 1. Role definition — concise, no product marketing
+  sections.push(`You are a content assistant. You manage structured content in this Git repository using the tools provided.
+Use tools for all operations. Every change creates a Git branch, then auto-merge.
+Respond in the user's language. Be concise — no unnecessary explanations about what Contentrain is.`)
 
   // 2. Project state — critical context to prevent redundant actions
   const stateLines: string[] = []
