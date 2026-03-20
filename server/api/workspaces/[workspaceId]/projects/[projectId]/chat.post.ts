@@ -158,8 +158,8 @@ export default defineEventHandler(async (event) => {
 
   // Select model based on plan
   const model = usageSource === 'studio'
-    ? (workspace.plan === 'free' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-5-20250514')
-    : 'claude-sonnet-4-5-20250514' // BYOA users get best model
+    ? (workspace.plan === 'free' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514')
+    : 'claude-sonnet-4-20250514' // BYOA users get best model
 
   // Create SSE stream
   const eventStream = createEventStream(event)
@@ -316,10 +316,20 @@ export default defineEventHandler(async (event) => {
     }
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chat error'
-      await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
+      try {
+        await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
+      }
+      catch {
+        // Stream already closed
+      }
     }
     finally {
-      await eventStream.close()
+      try {
+        await eventStream.close()
+      }
+      catch {
+        // Already closed
+      }
     }
   }
 
