@@ -221,8 +221,8 @@ Internal spec: `.internal/STUDIO-SPEC.md` — planning document, not part of cod
 
 ## Current Phase
 
-**Phase 1** is active. See `.internal/PHASE-1.md` for the full spec.
-Current focus: **Adım 2 — Auth akışları** (GitHub OAuth, Google OAuth, Magic Link, session management, protected routes).
+**Phase 2** is active. See `.internal/PHASE-2.md` for the full spec.
+Phase 1 completed. Current focus: **Chat Engine + Content Editing** — conversation-first content management.
 
 ## Reference Codebase
 

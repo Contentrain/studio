@@ -27,7 +27,7 @@ const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
         </summary>
         <div class="space-y-3 px-5 pb-4 pt-1">
           <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
-            <div v-if="fieldId in entry">
+            <div v-if="typeof entry === 'object' && entry !== null && fieldId in entry">
               <AtomsSectionLabel :label="fieldId" class="px-0 py-0" />
               <div class="mt-0.5">
                 <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />

@@ -170,7 +170,7 @@ provide('getUserFieldIds', getUserFieldIds)
           />
           <!-- Collection (object-map) -->
           <OrganismsContentCollectionView
-            v-else-if="typeof modelContent === 'object' && !Array.isArray(modelContent)"
+            v-else-if="modelContentKind === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
             :content="(modelContent as Record<string, Record<string, unknown>>)"
           />
           <!-- Collection (array) -->
