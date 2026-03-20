@@ -75,9 +75,15 @@ function backToOverview() {
 
 async function handleContentChanged() {
   const { invalidateCache } = useSnapshot()
+  const { invalidateProjectContent } = useModelContent()
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
+
+  // Invalidate all caches (snapshot + model content)
   await invalidateCache(projectId.value)
+  await invalidateProjectContent(projectId.value)
+
+  // Re-fetch fresh data from GitHub
   await fetchSnapshot(ws.id, projectId.value)
   if (activeModelId.value) {
     await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)

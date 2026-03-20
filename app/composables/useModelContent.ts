@@ -82,11 +82,40 @@ export function useModelContent() {
     kind.value = 'collection'
   }
 
+  /**
+   * Invalidate all cached content for a project.
+   * Call after content changes (save, delete, merge).
+   */
+  async function invalidateProjectContent(projectId: string) {
+    // Clear memory cache entries for this project
+    for (const key of memoryCache.keys()) {
+      if (key.startsWith(`${CACHE_PREFIX}${projectId}:`)) {
+        memoryCache.delete(key)
+      }
+    }
+    // Clear IndexedDB cache entries
+    if (import.meta.client) {
+      try {
+        const { keys } = await import('idb-keyval')
+        const allKeys = await keys()
+        for (const key of allKeys) {
+          if (typeof key === 'string' && key.startsWith(`${CACHE_PREFIX}${projectId}:`)) {
+            await del(key)
+          }
+        }
+      }
+      catch { /* not critical */ }
+    }
+    // Clear current content
+    content.value = null
+  }
+
   return {
     content: readonly(content),
     kind: readonly(kind),
     loading: readonly(loading),
     fetchContent,
     clearContent,
+    invalidateProjectContent,
   }
 }
