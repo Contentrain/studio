@@ -162,10 +162,8 @@ export default defineEventHandler(async (event) => {
     : 'claude-sonnet-4-20250514' // BYOA users get best model
 
   // Create SSE stream
+  console.log('[chat] Creating SSE stream, model:', model, 'tools:', tools.length)
   const eventStream = createEventStream(event)
-
-  // Send conversation ID
-  await eventStream.push(JSON.stringify({ type: 'conversation', id: conversationId }))
 
   // Content Engine for tool execution
   const contentEngine = createContentEngine({ git, contentRoot })
@@ -173,14 +171,17 @@ export default defineEventHandler(async (event) => {
   // AI provider
   const aiProvider = useAIProvider()
 
-  // Process in background (don't await — SSE streams)
+  // Process chat in background — push events after send() returns the stream
   const processChat = async () => {
+    // Send conversation ID as first event
+    await eventStream.push(JSON.stringify({ type: 'conversation', id: conversationId }))
+    console.log('[chat] Sent conversation ID:', conversationId)
     let totalInputTokens = 0
     let totalOutputTokens = 0
     let assistantContent: AIContentBlock[] = []
 
     try {
-      // Stream first response
+      console.log('[chat] Starting Anthropic stream...')
       let currentToolCalls: Array<{ id: string, name: string, input: unknown }> = []
 
       for await (const streamEvent of aiProvider.streamCompletion(
@@ -316,6 +317,7 @@ export default defineEventHandler(async (event) => {
     }
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chat error'
+      console.error('[chat] Error:', msg, e)
       try {
         await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
       }
