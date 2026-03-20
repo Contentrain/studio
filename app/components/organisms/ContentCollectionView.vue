@@ -1,11 +1,52 @@
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   content: Record<string, Record<string, unknown>>
+  workspaceId?: string
+  projectId?: string
+  modelId?: string
+  locale?: string
+  editable?: boolean
+}>()
+
+const emit = defineEmits<{
+  saved: []
 }>()
 
 const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => 'string')
 const getEntryTitle = inject<(entry: Record<string, unknown>, fallback: string) => string>('getEntryTitle', (_e, f) => f)
 const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
+
+const { editingField, editValue, saving, startEdit, cancelEdit, saveField } = useContentEditor()
+
+// Track which entry is being edited
+const editingEntryId = ref<string | null>(null)
+
+function startFieldEdit(entryId: string, fieldId: string, value: unknown) {
+  editingEntryId.value = entryId
+  startEdit(fieldId, value)
+}
+
+function handleCancel() {
+  editingEntryId.value = null
+  cancelEdit()
+}
+
+async function handleSave(entryId: string, fieldId: string) {
+  if (!props.workspaceId || !props.projectId || !props.modelId) return
+  const success = await saveField(
+    props.workspaceId,
+    props.projectId,
+    props.modelId,
+    props.locale ?? 'en',
+    entryId,
+    fieldId,
+    editValue.value,
+  )
+  if (success) {
+    editingEntryId.value = null
+    emit('saved')
+  }
+}
 </script>
 
 <template>
@@ -30,7 +71,24 @@ const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
             <div v-if="typeof entry === 'object' && entry !== null && fieldId in entry">
               <AtomsSectionLabel :label="fieldId" class="px-0 py-0" />
               <div class="mt-0.5">
-                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />
+                <!-- Edit mode -->
+                <AtomsContentFieldEditor
+                  v-if="editable && editingEntryId === String(entryId) && editingField === fieldId"
+                  v-model="editValue"
+                  :type="getFieldType(fieldId)"
+                  :field-id="fieldId"
+                  :saving="saving"
+                  @save="handleSave(String(entryId), fieldId)"
+                  @cancel="handleCancel"
+                />
+                <!-- Display mode -->
+                <div
+                  v-else
+                  :class="editable ? 'cursor-pointer rounded-md px-1 -mx-1 py-0.5 transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900' : ''"
+                  @click="editable ? startFieldEdit(String(entryId), fieldId, entry[fieldId]) : undefined"
+                >
+                  <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />
+                </div>
               </div>
             </div>
           </template>

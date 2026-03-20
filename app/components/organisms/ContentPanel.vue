@@ -27,6 +27,9 @@ const props = defineProps<{
   modelContentKind: string
   modelContentLoading: boolean
   activeModelId: string | null
+  workspaceId?: string
+  projectId?: string
+  editable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -172,16 +175,34 @@ provide('getUserFieldIds', getUserFieldIds)
           <OrganismsContentCollectionView
             v-else-if="modelContentKind === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
             :content="(modelContent as Record<string, Record<string, unknown>>)"
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+            :model-id="activeModelId ?? undefined"
+            :locale="currentLocale"
+            :editable="editable"
+            @saved="emit('back')"
           />
           <!-- Collection (array) -->
           <OrganismsContentCollectionView
             v-else-if="Array.isArray(modelContent)"
             :content="arrayToObjectMap(modelContent as Record<string, unknown>[])"
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+            :model-id="activeModelId ?? undefined"
+            :locale="currentLocale"
+            :editable="editable"
+            @saved="emit('back')"
           />
           <!-- Singleton -->
           <OrganismsContentSingletonView
             v-else-if="typeof modelContent === 'object'"
             :content="(modelContent as Record<string, unknown>)"
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+            :model-id="activeModelId ?? undefined"
+            :locale="currentLocale"
+            :editable="editable"
+            @saved="emit('back')"
           />
         </template>
       </template>

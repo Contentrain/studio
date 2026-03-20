@@ -109,6 +109,9 @@ async function handleContentChanged() {
         :model-content-kind="modelContentKind"
         :model-content-loading="modelContentLoading"
         :active-model-id="activeModelId"
+        :workspace-id="activeWorkspace?.id"
+        :project-id="projectId"
+        editable
         @select-model="selectModel"
         @back="backToOverview"
       />
