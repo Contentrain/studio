@@ -73,20 +73,33 @@ function backToOverview() {
   router.replace({ query })
 }
 
-async function handleContentChanged() {
+// Chat UI context — tells the agent what the user is looking at
+const chatContext = computed(() => ({
+  activeModelId: activeModelId.value,
+  activeLocale: activeLocale.value,
+  activeEntryId: null as string | null,
+  panelState: (activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch',
+  activeBranch: null as string | null,
+}))
+
+// Targeted cache invalidation from tool execution results
+async function handleContentChanged(affected: { models: string[], locales: string[], snapshotChanged: boolean }) {
   const { invalidateCache } = useSnapshot()
   const { invalidateProjectContent } = useModelContent()
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
 
-  // Invalidate all caches (snapshot + model content)
-  await invalidateCache(projectId.value)
-  await invalidateProjectContent(projectId.value)
+  // Invalidate only what changed
+  if (affected.snapshotChanged) {
+    await invalidateCache(projectId.value)
+    await fetchSnapshot(ws.id, projectId.value)
+  }
 
-  // Re-fetch fresh data from GitHub
-  await fetchSnapshot(ws.id, projectId.value)
-  if (activeModelId.value) {
-    await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
+  if (affected.models.length > 0) {
+    await invalidateProjectContent(projectId.value)
+    if (activeModelId.value && affected.models.includes(activeModelId.value)) {
+      await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
+    }
   }
 }
 </script>
@@ -101,6 +114,7 @@ async function handleContentChanged() {
         :project-id="projectId"
         :project-name="project?.repo_full_name ?? t('common.loading')"
         :project-status="project?.status"
+        :context="chatContext"
         @content-changed="handleContentChanged"
       />
     </div>

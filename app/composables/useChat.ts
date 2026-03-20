@@ -19,13 +19,32 @@ export interface ChatMessage {
   createdAt: string
 }
 
-export function useChat() {
+/** UI context sent with each message */
+export interface ChatUIContext {
+  activeModelId: string | null
+  activeLocale: string
+  activeEntryId: string | null
+  panelState: 'overview' | 'model' | 'branch'
+  activeBranch: string | null
+}
+
+/** Affected resources from tool execution */
+export interface AffectedResources {
+  models: string[]
+  locales: string[]
+  snapshotChanged: boolean
+  branchesChanged: boolean
+}
+
+export function useChat(options?: {
+  onContentChanged?: (affected: AffectedResources) => void
+}) {
   const messages = useState<ChatMessage[]>('chat-messages', () => [])
   const conversationId = useState<string | null>('chat-conversation-id', () => null)
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
 
-  async function sendMessage(workspaceId: string, projectId: string, text: string) {
+  async function sendMessage(workspaceId: string, projectId: string, text: string, context?: ChatUIContext) {
     if (!text.trim() || isStreaming.value) return
 
     error.value = null
@@ -61,6 +80,13 @@ export function useChat() {
           body: JSON.stringify({
             message: text,
             conversationId: conversationId.value,
+            context: context ?? {
+              activeModelId: null,
+              activeLocale: 'en',
+              activeEntryId: null,
+              panelState: 'overview',
+              activeBranch: null,
+            },
           }),
         },
       )
@@ -141,8 +167,13 @@ export function useChat() {
         break
       }
 
-      case 'done':
+      case 'done': {
+        const affected = event.affected as AffectedResources | undefined
+        if (affected && options?.onContentChanged) {
+          options.onContentChanged(affected)
+        }
         break
+      }
 
       case 'error':
         error.value = event.message as string

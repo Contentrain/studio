@@ -1,38 +1,46 @@
 import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
 import type { AIMessage, AIContentBlock } from '~~/server/providers/ai'
+import type { ChatRequest, AffectedResources } from '~~/server/utils/agent-types'
 import { createEventStream } from 'h3'
+import { emptyAffected, mergeAffected, toAITools } from '~~/server/utils/agent-types'
+import { deriveProjectPhase, checkStateTransition } from '~~/server/utils/agent-state-machine'
+import { classifyIntent } from '~~/server/utils/agent-context'
 
 /**
- * Chat SSE endpoint.
+ * Chat SSE endpoint — Bounded Task Executor.
  *
- * Optimizations applied:
- * 1. Token-budgeted history (not message count)
- * 2. Recursive tool loop (max 5 iterations)
- * 3. Tool result truncation (prevent token explosion)
- * 4. Schema cached per conversation (not re-fetched per message)
- * 5. Adaptive maxTokens based on context
+ * Flow: context enrichment → state machine → intent → bounded prompt → tool loop → affected resources
  */
 
 const MAX_TOOL_ITERATIONS = 5
-const MAX_TOOL_RESULT_LENGTH = 2000 // chars, prevents huge JSON in context
-const HISTORY_TOKEN_BUDGET = 8000 // approximate token budget for history
+const MAX_TOOL_RESULT_LENGTH = 2000
+const HISTORY_TOKEN_BUDGET = 8000
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
-  const body = await readBody<{ message: string, conversationId?: string }>(event)
+  const body = await readBody<ChatRequest>(event)
 
   if (!workspaceId || !projectId || !body.message)
     throw createError({ statusCode: 400, message: 'workspaceId, projectId, and message are required' })
 
+  // Default context if not provided (backward compat)
+  const uiContext = body.context ?? {
+    activeModelId: null,
+    activeLocale: 'en',
+    activeEntryId: null,
+    panelState: 'overview' as const,
+    activeBranch: null,
+  }
+
   const client = useSupabaseUserClient(session.accessToken)
   const admin = useSupabaseAdmin()
 
-  // Get project + workspace
+  // === RESOLVE PROJECT + WORKSPACE ===
   const { data: project } = await client
     .from('projects')
-    .select('repo_full_name, content_root, workspace_id')
+    .select('repo_full_name, content_root, workspace_id, status')
     .eq('id', projectId)
     .eq('workspace_id', workspaceId)
     .single()
@@ -49,16 +57,13 @@ export default defineEventHandler(async (event) => {
   if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: 'GitHub App not installed' })
 
-  // Resolve permissions
-  const permissions = await resolveAgentPermissions(
-    session.user.id, workspaceId, projectId, session.accessToken,
-  )
-
+  // === PERMISSIONS ===
+  const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.availableTools.length === 0)
-    throw createError({ statusCode: 403, message: 'No chat permissions for this project' })
+    throw createError({ statusCode: 403, message: 'No chat permissions' })
 
-  // Resolve API key
-  const config = useRuntimeConfig()
+  // === API KEY ===
+  const runtimeConfig = useRuntimeConfig()
   let apiKey: string
   let usageSource: 'byoa' | 'studio' = 'studio'
 
@@ -71,17 +76,17 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (byoaKey?.encrypted_key) {
-    apiKey = decryptApiKey(byoaKey.encrypted_key, config.sessionSecret)
+    apiKey = decryptApiKey(byoaKey.encrypted_key, runtimeConfig.sessionSecret)
     usageSource = 'byoa'
   }
-  else if (config.anthropic.apiKey) {
-    apiKey = config.anthropic.apiKey
+  else if (runtimeConfig.anthropic.apiKey) {
+    apiKey = runtimeConfig.anthropic.apiKey
   }
   else {
     throw createError({ statusCode: 400, message: 'No API key configured.' })
   }
 
-  // Get or create conversation
+  // === CONVERSATION ===
   let conversationId = body.conversationId
   if (!conversationId) {
     const { data: conv } = await client
@@ -91,19 +96,17 @@ export default defineEventHandler(async (event) => {
       .single()
     conversationId = conv?.id
   }
-
   if (!conversationId)
     throw createError({ statusCode: 500, message: 'Failed to create conversation' })
 
-  // Load history with token budget (not message count)
+  // === HISTORY ===
   const { data: historyRows } = await client
     .from('messages')
     .select('role, content, tool_calls')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(50) // fetch more, then trim by token budget
+    .limit(50)
 
-  // Reverse to chronological, trim by token budget
   const allHistory = (historyRows ?? []).reverse()
   const messages: AIMessage[] = []
   let historyTokens = 0
@@ -111,19 +114,13 @@ export default defineEventHandler(async (event) => {
   for (const row of allHistory) {
     const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
     const tokenEstimate = typeof content === 'string' ? Math.ceil(content.length / 4) : Math.ceil(JSON.stringify(content).length / 4)
-
     if (historyTokens + tokenEstimate > HISTORY_TOKEN_BUDGET) break
-
-    messages.push({
-      role: row.role as 'user' | 'assistant',
-      content,
-    })
+    messages.push({ role: row.role as 'user' | 'assistant', content })
     historyTokens += tokenEstimate
   }
-
   messages.push({ role: 'user', content: body.message })
 
-  // Load schema — cache per conversation (only first message loads from GitHub)
+  // === LOAD SCHEMA ===
   const [owner, repo] = project.repo_full_name.split('/')
   const git = useGitProvider({ installationId: workspace.github_installation_id, owner, repo })
   const contentRoot = normalizeContentRoot(project.content_root)
@@ -150,32 +147,37 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* no models */ }
 
-  // Build project state for intelligent system prompt
+  // === STATE MACHINE ===
   let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
   try {
     pendingBranches = await git.listBranches('contentrain/')
   }
   catch { /* no branches */ }
 
-  // Get project status from DB
-  const { data: projectRecord } = await client
-    .from('projects')
-    .select('status')
-    .eq('id', projectId)
-    .single()
+  const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status)
 
+  // === INTENT CLASSIFICATION ===
+  const intent = classifyIntent(body.message, uiContext, phase)
+
+  // === BUILD SYSTEM PROMPT (bounded, context-aware) ===
   const projectState = {
     initialized: !!projectConfig,
     pendingBranches,
-    projectStatus: projectRecord?.status ?? 'active',
+    projectStatus: project.status,
+    phase,
   }
 
-  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState)
-  const tools = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools)
+  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent)
+
+  // === FILTER TOOLS by permissions + phase ===
+  const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
+  const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
+  const aiTools = toAITools(phaseFiltered)
 
   const model = 'claude-sonnet-4-20250514'
+  const workflow = projectConfig?.workflow ?? 'auto-merge'
 
-  // Create SSE stream
+  // === SSE STREAM ===
   const eventStream = createEventStream(event)
   const contentEngine = createContentEngine({ git, contentRoot })
   const aiProvider = useAIProvider()
@@ -186,22 +188,20 @@ export default defineEventHandler(async (event) => {
     let totalInputTokens = 0
     let totalOutputTokens = 0
     let lastAssistantContent: AIContentBlock[] = []
+    let accumulatedAffected: AffectedResources = emptyAffected()
 
     try {
-      // Recursive tool loop — max iterations to prevent infinite loops
       let iteration = 0
 
       while (iteration < MAX_TOOL_ITERATIONS) {
         iteration++
         const isFirstIteration = iteration === 1
-
         const currentToolCalls: Array<{ id: string, name: string, input: unknown }> = []
         let stopReason: string | undefined
 
         if (isFirstIteration) {
-          // First iteration: stream response for UX
           for await (const streamEvent of aiProvider.streamCompletion(
-            { model, system: systemPrompt, messages, tools, maxTokens: 4096 },
+            { model, system: systemPrompt, messages, tools: aiTools, maxTokens: 4096 },
             apiKey,
           )) {
             switch (streamEvent.type) {
@@ -230,9 +230,8 @@ export default defineEventHandler(async (event) => {
           }
         }
         else {
-          // Subsequent iterations: non-streaming (tool continuation)
           const response = await aiProvider.createCompletion(
-            { model, system: systemPrompt, messages, tools, maxTokens: 2048 },
+            { model, system: systemPrompt, messages, tools: aiTools, maxTokens: 2048 },
             apiKey,
           )
           totalInputTokens += response.usage.inputTokens
@@ -255,12 +254,9 @@ export default defineEventHandler(async (event) => {
           lastAssistantContent = response.content
         }
 
-        // No tool calls — done
-        if (stopReason !== 'tool_use' || currentToolCalls.length === 0) {
-          break
-        }
+        if (stopReason !== 'tool_use' || currentToolCalls.length === 0) break
 
-        // Execute tools
+        // === TOOL EXECUTION with state guard + workflow-aware auto-merge ===
         const assistantBlocks: AIContentBlock[] = currentToolCalls.map(tc => ({
           type: 'tool_use' as const,
           id: tc.id,
@@ -269,37 +265,49 @@ export default defineEventHandler(async (event) => {
         }))
 
         const toolResultBlocks: AIContentBlock[] = []
-        for (const tc of currentToolCalls) {
-          const result = await executeTool(tc.name, tc.input, contentEngine, git, session.user.email ?? '')
 
-          // Truncate large tool results
-          let resultStr = JSON.stringify(result)
+        for (const tc of currentToolCalls) {
+          // State machine guard
+          const stateCheck = checkStateTransition(phase, tc.name)
+          if (!stateCheck.allowed) {
+            const errorResult = { error: stateCheck.reason, suggestion: stateCheck.suggestion }
+            await eventStream.push(JSON.stringify({ type: 'tool_result', id: tc.id, name: tc.name, result: errorResult }))
+            toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(errorResult) })
+            continue
+          }
+
+          // Execute tool
+          const result = await executeToolWithAutoMerge(
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', workflow,
+          )
+
+          // Accumulate affected resources
+          accumulatedAffected = mergeAffected(accumulatedAffected, result.affected)
+
+          // Truncate for context
+          let resultStr = JSON.stringify(result.result)
           if (resultStr.length > MAX_TOOL_RESULT_LENGTH) {
             resultStr = resultStr.substring(0, MAX_TOOL_RESULT_LENGTH) + '...(truncated)'
           }
 
-          await eventStream.push(JSON.stringify({ type: 'tool_result', id: tc.id, name: tc.name, result }))
+          await eventStream.push(JSON.stringify({ type: 'tool_result', id: tc.id, name: tc.name, result: result.result }))
           toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr })
         }
 
-        // Add to messages for next iteration
         messages.push({ role: 'assistant', content: assistantBlocks })
         messages.push({ role: 'user', content: toolResultBlocks })
         lastAssistantContent = assistantBlocks
       }
 
-      // Done
+      // === DONE with affected resources ===
       await eventStream.push(JSON.stringify({
         type: 'done',
         usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+        affected: accumulatedAffected,
       }))
 
-      // Save to DB
-      await admin.from('messages').insert({
-        conversation_id: conversationId,
-        role: 'user',
-        content: body.message,
-      })
+      // === SAVE TO DB ===
+      await admin.from('messages').insert({ conversation_id: conversationId, role: 'user', content: body.message })
 
       const assistantText = lastAssistantContent
         .filter(b => b.type === 'text')
@@ -316,7 +324,6 @@ export default defineEventHandler(async (event) => {
         model,
       })
 
-      // Update usage
       const month = new Date().toISOString().substring(0, 7)
       await admin.from('agent_usage').upsert({
         workspace_id: workspaceId,
@@ -332,6 +339,7 @@ export default defineEventHandler(async (event) => {
     }
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chat error'
+      // eslint-disable-next-line no-console
       console.error('[chat] Error:', msg)
       try {
         await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
@@ -352,18 +360,22 @@ export default defineEventHandler(async (event) => {
 })
 
 /**
- * Execute a Studio agent tool with error handling.
+ * Execute tool with workflow-aware auto-merge and affected resources.
  */
-async function executeTool(
+async function executeToolWithAutoMerge(
   name: string,
   input: unknown,
   engine: ReturnType<typeof createContentEngine>,
   git: ReturnType<typeof useGitProvider>,
-  userEmail: string,
-): Promise<unknown> {
+  _userEmail: string,
+  workflow: string,
+): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
+  const affected: AffectedResources = emptyAffected()
 
   try {
+    let result: unknown
+
     switch (name) {
       case 'list_models': {
         const modelsDir = '.contentrain/models'
@@ -376,7 +388,8 @@ async function executeTool(
           }
           catch { /* skip */ }
         }
-        return { models: modelsList }
+        result = { models: modelsList }
+        break
       }
 
       case 'get_content': {
@@ -387,70 +400,130 @@ async function executeTool(
         const contentPath = resolveContentPath({ contentRoot: '' }, modelDef, locale)
         try {
           const data = JSON.parse(await git.readFile(contentPath))
-          // Summarize large content to save tokens
-          if (typeof data === 'object' && !Array.isArray(data)) {
+          if (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length > 10) {
             const keys = Object.keys(data)
-            if (keys.length > 10) {
-              const sample = Object.fromEntries(keys.slice(0, 5).map(k => [k, data[k]]))
-              return { modelId, locale, totalEntries: keys.length, sample, note: `Showing 5 of ${keys.length} entries` }
-            }
+            const sample = Object.fromEntries(keys.slice(0, 5).map(k => [k, data[k]]))
+            result = { modelId, locale, totalEntries: keys.length, sample, note: `Showing 5 of ${keys.length}` }
           }
-          return { modelId, locale, data }
+          else {
+            result = { modelId, locale, data }
+          }
         }
-        catch { return { modelId, locale, data: null, error: 'Content not found' } }
+        catch {
+          result = { modelId, locale, data: null, error: 'Content not found' }
+        }
+        break
       }
 
-      case 'save_content':
-        return summarizeWriteResult(await engine.saveContent(
-          params.model as string, (params.locale as string) ?? 'en', params.data as Record<string, unknown>, userEmail,
-        ))
+      case 'save_content': {
+        const modelId = params.model as string
+        const locale = (params.locale as string) ?? 'en'
+        const writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail)
+        affected.models.push(modelId)
+        affected.locales.push(locale)
+        affected.branchesChanged = true
 
-      case 'delete_content':
-        return summarizeWriteResult(await engine.deleteContent(
-          params.model as string, (params.locale as string) ?? 'en', params.entryIds as string[], userEmail,
-        ))
+        // Workflow-aware auto-merge
+        if (workflow === 'auto-merge') {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, workflow }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, workflow, reviewBranch: writeResult.branch }
+        }
+        break
+      }
 
-      case 'save_model':
-        return summarizeWriteResult(await engine.saveModel(params as unknown as ModelDefinition, userEmail))
+      case 'delete_content': {
+        const modelId = params.model as string
+        const locale = (params.locale as string) ?? 'en'
+        const writeResult = await engine.deleteContent(modelId, locale, params.entryIds as string[], userEmail)
+        affected.models.push(modelId)
+        affected.locales.push(locale)
+        affected.branchesChanged = true
+
+        if (workflow === 'auto-merge') {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+        }
+        break
+      }
+
+      case 'save_model': {
+        const writeResult = await engine.saveModel(params as unknown as ModelDefinition, userEmail)
+        affected.snapshotChanged = true
+        affected.branchesChanged = true
+
+        if (workflow === 'auto-merge') {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+        }
+        break
+      }
 
       case 'validate':
-        return { valid: true, errors: [] }
+        result = { valid: true, errors: [] }
+        break
 
       case 'list_branches':
-        return { branches: await engine.listContentBranches() }
+        result = { branches: await engine.listContentBranches() }
+        break
 
-      case 'merge_branch':
-        return engine.mergeBranch(params.branch as string)
+      case 'merge_branch': {
+        const mergeResult = await engine.mergeBranch(params.branch as string)
+        affected.snapshotChanged = true
+        affected.branchesChanged = true
+        result = mergeResult
+        break
+      }
 
       case 'reject_branch':
         await engine.rejectBranch(params.branch as string)
-        return { rejected: true }
+        affected.branchesChanged = true
+        result = { rejected: true }
+        break
 
       case 'init_project': {
-        const initModels: import('@contentrain/types').ModelDefinition[] = []
+        const initModels: ModelDefinition[] = []
         if (params.models && Array.isArray(params.models)) {
           for (const m of params.models as Record<string, unknown>[]) {
-            initModels.push(m as unknown as import('@contentrain/types').ModelDefinition)
+            initModels.push(m as unknown as ModelDefinition)
           }
         }
-        return summarizeWriteResult(await engine.initProject(
-          (params.stack as string) ?? 'other', (params.locales as string[]) ?? ['en'],
-          (params.domains as string[]) ?? ['marketing'], initModels, userEmail,
-        ))
+        const initResult = await engine.initProject(
+          (params.stack as string) ?? 'other',
+          (params.locales as string[]) ?? ['en'],
+          (params.domains as string[]) ?? ['marketing'],
+          initModels, userEmail,
+        )
+        affected.snapshotChanged = true
+        affected.branchesChanged = true
+
+        // Init always auto-merges
+        const mergeResult = await engine.mergeBranch(initResult.branch)
+        result = { ...summarizeWriteResult(initResult), merged: mergeResult.merged }
+        break
       }
 
       default:
-        return { error: `Unknown tool: ${name}` }
+        result = { error: `Unknown tool: ${name}` }
     }
+
+    return { result, affected }
   }
   catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Tool execution failed'
-    return { error: msg }
+    return { result: { error: msg }, affected }
   }
 }
 
-/** Compact write result for token efficiency */
-function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }): unknown {
+function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }): Record<string, unknown> {
   return {
     branch: result.branch,
     commitSha: result.commit.sha,

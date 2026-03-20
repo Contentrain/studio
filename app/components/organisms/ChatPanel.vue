@@ -1,31 +1,31 @@
 <script setup lang="ts">
+import type { ChatUIContext, AffectedResources } from '~/composables/useChat'
+
 const props = defineProps<{
   workspaceId: string
   projectId: string
   projectName: string
   projectStatus?: string
+  context?: ChatUIContext
 }>()
 
 const emit = defineEmits<{
-  contentChanged: []
+  contentChanged: [affected: AffectedResources]
 }>()
 
 const { t } = useContent()
-const { messages, isStreaming, error, sendMessage, clearChat } = useChat()
+const { messages, isStreaming, error, sendMessage, clearChat } = useChat({
+  onContentChanged: (affected) => {
+    emit('contentChanged', affected)
+  },
+})
 const toast = useToast()
 const messagesEndRef = ref<HTMLElement | null>(null)
 
 async function handleSend(text: string) {
-  await sendMessage(props.workspaceId, props.projectId, text)
-
-  // Check if content was modified (tool calls with save/delete/merge)
-  const lastMsg = messages.value[messages.value.length - 1]
-  if (lastMsg?.toolCalls.some(tc =>
-    ['save_content', 'delete_content', 'save_model', 'merge_branch'].includes(tc.name)
-    && tc.status === 'complete',
-  )) {
-    emit('contentChanged')
-  }
+  await sendMessage(props.workspaceId, props.projectId, text, props.context)
+  // contentChanged is now emitted via useChat's onContentChanged callback
+  // triggered by the 'done' SSE event with affected resources
 }
 
 // Auto-scroll to bottom on new messages
