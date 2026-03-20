@@ -11,17 +11,14 @@ const projectId = computed(() => route.params.projectId as string)
 const { workspaces, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot } = useSnapshot()
+const { content: modelContent, kind: modelContentKind, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
 const { t } = useContent()
 
 const project = computed(() =>
   projects.value.find(p => p.id === projectId.value) ?? null,
 )
 
-// Content panel state via URL query param
 const activeModelId = computed(() => route.query.model as string ?? null)
-const modelContent = ref<unknown>(null)
-const modelContentKind = ref<string>('collection')
-const modelContentLoading = ref(false)
 
 onMounted(async () => {
   if (workspaces.value.length === 0)
@@ -38,20 +35,12 @@ onMounted(async () => {
 
 watch(activeModelId, async (modelId) => {
   if (!modelId) {
-    modelContent.value = null
+    clearContent()
     return
   }
-  modelContentLoading.value = true
-  modelContent.value = null
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
-  try {
-    const result = await $fetch<{ data: unknown, kind?: string }>(`/api/workspaces/${ws.id}/projects/${projectId.value}/content/${modelId}`)
-    modelContent.value = result.data
-    modelContentKind.value = result.kind ?? 'collection'
-  }
-  catch { modelContent.value = null }
-  finally { modelContentLoading.value = false }
+  await fetchContent(ws.id, projectId.value, modelId)
 }, { immediate: true })
 
 function selectModel(modelId: string) {
