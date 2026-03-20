@@ -8,7 +8,7 @@ const router = useRouter()
 const slug = computed(() => route.params.slug as string)
 const projectId = computed(() => route.params.projectId as string)
 
-const { workspaces, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
@@ -72,20 +72,30 @@ function backToOverview() {
   delete query.model
   router.replace({ query })
 }
+
+async function handleContentChanged() {
+  const { invalidateCache } = useSnapshot()
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws) return
+  await invalidateCache(projectId.value)
+  await fetchSnapshot(ws.id, projectId.value)
+  if (activeModelId.value) {
+    await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
+  }
+}
 </script>
 
 <template>
   <div class="flex h-full">
     <!-- Chat panel -->
     <div class="flex min-w-0 flex-1 flex-col">
-      <div class="flex h-14 shrink-0 items-center border-b border-secondary-200 px-6 dark:border-secondary-800">
-        <h2 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
-          {{ project?.repo_full_name ?? t('common.loading') }}
-        </h2>
-      </div>
-      <div class="flex flex-1 items-center justify-center">
-        <AtomsEmptyState icon="icon-[annon--comment-2-plus]" :title="t('chat.title')" :description="t('chat.coming_soon')" />
-      </div>
+      <OrganismsChatPanel
+        v-if="activeWorkspace"
+        :workspace-id="activeWorkspace.id"
+        :project-id="projectId"
+        :project-name="project?.repo_full_name ?? t('common.loading')"
+        @content-changed="handleContentChanged"
+      />
     </div>
 
     <!-- Context panel -->

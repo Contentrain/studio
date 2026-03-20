@@ -108,7 +108,12 @@
   "content.no_matches_title": "No matches",
   "content.no_matches_description": "Try a different search term.",
   "content.keys_count": "keys",
+  "chat.empty_description": "Ask the agent to create, edit, or manage your content.",
+  "chat.empty_title": "Start a conversation",
+  "chat.new_conversation": "New conversation",
+  "chat.placeholder": "Ask about your content...",
+  "chat.send": "Send",
+  "chat.thinking": "Thinking...",
   "chat.title": "Chat",
-  "chat.coming_soon": "Conversation-first content management. Coming in Phase 2.",
   "settings.slug_placeholder": "my-workspace"
 }
