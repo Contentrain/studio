@@ -17,8 +17,8 @@ export function useModelContent() {
   const kind = useState<string>('model-content-kind', () => 'collection')
   const loading = useState('model-content-loading', () => false)
 
-  async function fetchContent(workspaceId: string, projectId: string, modelId: string) {
-    const cacheKey = `${CACHE_PREFIX}${projectId}:${modelId}`
+  async function fetchContent(workspaceId: string, projectId: string, modelId: string, locale: string = 'en') {
+    const cacheKey = `${CACHE_PREFIX}${projectId}:${modelId}:${locale}`
 
     // 1. Memory cache (instant)
     const mem = memoryCache.get(cacheKey)
@@ -47,6 +47,7 @@ export function useModelContent() {
     try {
       const result = await $fetch<{ data: unknown, kind?: string }>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`,
+        { params: { locale } },
       )
       content.value = result.data
       kind.value = result.kind ?? 'collection'

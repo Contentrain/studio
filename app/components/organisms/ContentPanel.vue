@@ -28,9 +28,18 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  selectModel: [modelId: string]
-  back: []
+  'selectModel': [modelId: string]
+  'back': []
+  'update:locale': [locale: string]
 }>()
+
+// Locale from config
+const supportedLocales = computed(() => {
+  const config = props.snapshot?.config as { locales?: { supported?: string[], default?: string } } | null
+  return config?.locales?.supported ?? ['en']
+})
+
+const currentLocale = defineModel<string>('locale', { default: 'en' })
 
 const activeModel = computed(() =>
   props.snapshot?.models.find(m => m.id === props.activeModelId) ?? null,
@@ -99,9 +108,22 @@ provide('getUserFieldIds', getUserFieldIds)
       <h3 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
         {{ panelState === 'model' && activeModel ? activeModel.name : 'Content' }}
       </h3>
-      <AtomsBadge v-if="panelState === 'model' && activeModel" variant="secondary" size="sm" class="ml-auto shrink-0">
-        {{ activeModel.kind ?? activeModel.type }}
-      </AtomsBadge>
+      <div v-if="panelState === 'model'" class="ml-auto flex shrink-0 items-center gap-2">
+        <!-- Locale switcher -->
+        <select
+          v-if="supportedLocales.length > 1"
+          :value="currentLocale"
+          class="rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-heading focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+          @change="currentLocale = ($event.target as HTMLSelectElement).value"
+        >
+          <option v-for="loc in supportedLocales" :key="loc" :value="loc">
+            {{ loc.toUpperCase() }}
+          </option>
+        </select>
+        <AtomsBadge v-if="activeModel" variant="secondary" size="sm">
+          {{ activeModel.kind ?? activeModel.type }}
+        </AtomsBadge>
+      </div>
     </div>
 
     <!-- Body -->

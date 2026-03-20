@@ -19,6 +19,7 @@ const project = computed(() =>
 )
 
 const activeModelId = computed(() => route.query.model as string ?? null)
+const activeLocale = ref('en')
 
 onMounted(async () => {
   if (workspaces.value.length === 0)
@@ -31,9 +32,12 @@ onMounted(async () => {
       await fetchProjects(ws.id)
     await fetchSnapshot(ws.id, projectId.value)
 
-    // Load model content if ?model= query param exists on page load
+    // Set default locale from config
+    const config = snapshot.value?.config as { locales?: { default?: string } } | null
+    if (config?.locales?.default) activeLocale.value = config.locales.default
+
     if (activeModelId.value) {
-      await fetchContent(ws.id, projectId.value, activeModelId.value)
+      await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
     }
   }
 })
@@ -48,7 +52,15 @@ watch(activeModelId, async (modelId, oldModelId) => {
   }
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
-  await fetchContent(ws.id, projectId.value, modelId)
+  await fetchContent(ws.id, projectId.value, modelId, activeLocale.value)
+})
+
+// Locale change — re-fetch current model content
+watch(activeLocale, async (locale) => {
+  if (!activeModelId.value) return
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws) return
+  await fetchContent(ws.id, projectId.value, activeModelId.value, locale)
 })
 
 function selectModel(modelId: string) {
@@ -79,6 +91,7 @@ function backToOverview() {
     <!-- Context panel -->
     <div class="hidden w-80 min-w-0 shrink-0 border-l border-secondary-200 lg:flex lg:flex-col xl:w-96 dark:border-secondary-800">
       <OrganismsContentPanel
+        v-model:locale="activeLocale"
         :snapshot="(snapshot as any)"
         :snapshot-loading="snapshotLoading"
         :model-content="modelContent"
