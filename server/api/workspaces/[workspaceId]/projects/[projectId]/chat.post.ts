@@ -173,9 +173,7 @@ export default defineEventHandler(async (event) => {
   const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState)
   const tools = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools)
 
-  const model = usageSource === 'studio'
-    ? (workspace.plan === 'free' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6-20250514')
-    : 'claude-sonnet-4-6-20250514'
+  const model = 'claude-sonnet-4-6-20250514'
 
   // Create SSE stream
   const eventStream = createEventStream(event)
