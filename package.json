@@ -26,6 +26,7 @@
     "@octokit/rest": "^22.0.1",
     "@supabase/supabase-js": "^2.99.2",
     "@tailwindcss/typography": "^0.5.19",
+    "dompurify": "^3.3.3",
     "gray-matter": "^4.0.3",
     "idb-keyval": "^6.2.2",
     "marked": "^17.0.4",
@@ -44,6 +45,7 @@
     "changelogen": "^0.6.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
+    "nuxt-mcp-dev": "^0.3.2",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3"
   },

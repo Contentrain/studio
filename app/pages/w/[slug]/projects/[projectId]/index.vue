@@ -84,7 +84,7 @@ function backToOverview() {
         </h2>
       </div>
       <div class="flex flex-1 items-center justify-center">
-        <AtomsEmptyState icon="icon-[annon--comment-2-plus]" title="Chat" description="Conversation-first content management. Coming in Phase 2." />
+        <AtomsEmptyState icon="icon-[annon--comment-2-plus]" :title="t('chat.title')" :description="t('chat.coming_soon')" />
       </div>
     </div>
 

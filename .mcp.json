@@ -2,7 +2,17 @@
   "mcpServers": {
     "contentrain": {
       "command": "npx",
-      "args": ["@contentrain/mcp"]
+      "args": [
+        "@contentrain/mcp"
+      ]
+    },
+    "nuxt": {
+      "type": "sse",
+      "url": "http://localhost:3000/__mcp/sse"
+    },
+    "nuxt-docs": {
+      "type": "sse",
+      "url": "https://nuxt.com/mcp"
     }
   }
 }

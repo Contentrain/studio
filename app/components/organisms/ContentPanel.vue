@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { FieldDef } from '@contentrain/types'
 
+const { t } = useContent()
+
 interface SnapshotModel {
   readonly id: string
   readonly name: string
@@ -102,11 +104,11 @@ provide('getUserFieldIds', getUserFieldIds)
       <AtomsIconButton
         v-if="panelState === 'model'"
         icon="icon-[annon--arrow-left]"
-        label="Back"
+        :label="t('common.back')"
         @click="emit('back')"
       />
       <h3 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
-        {{ panelState === 'model' && activeModel ? activeModel.name : 'Content' }}
+        {{ panelState === 'model' && activeModel ? activeModel.name : t('content.title') }}
       </h3>
       <div v-if="panelState === 'model'" class="ml-auto flex shrink-0 items-center gap-2">
         <!-- Locale switcher -->
@@ -134,7 +136,7 @@ provide('getUserFieldIds', getUserFieldIds)
           <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-10 w-full rounded-lg" />
         </div>
         <div v-else-if="!snapshot?.exists" class="p-5">
-          <AtomsEmptyState icon="icon-[annon--folder-open]" title=".contentrain/ not found" description="Initialize content structure via chat in Phase 2." />
+          <AtomsEmptyState icon="icon-[annon--folder-open]" :title="t('content.not_found_title')" :description="t('content.not_found_description')" />
         </div>
         <OrganismsContentModelList
           v-else-if="snapshot && snapshot.models.length > 0"
@@ -143,7 +145,7 @@ provide('getUserFieldIds', getUserFieldIds)
           @select="emit('selectModel', $event)"
         />
         <div v-else class="p-5">
-          <AtomsEmptyState icon="icon-[annon--box]" title="No models yet" description="Create models via chat in Phase 2." />
+          <AtomsEmptyState icon="icon-[annon--box]" :title="t('content.no_models_title')" :description="t('content.no_models_description')" />
         </div>
       </template>
 
@@ -153,7 +155,7 @@ provide('getUserFieldIds', getUserFieldIds)
           <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
         </div>
         <div v-else-if="!modelContent" class="p-5">
-          <AtomsEmptyState icon="icon-[annon--file]" title="No content" description="This model has no content entries yet." />
+          <AtomsEmptyState icon="icon-[annon--file]" :title="t('content.no_content_title')" :description="t('content.no_content_description')" />
         </div>
         <template v-else>
           <!-- Dictionary -->

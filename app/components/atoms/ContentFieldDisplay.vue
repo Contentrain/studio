@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 
+const { sanitize } = useSanitize()
+
 /**
  * Renders a content field value based on its type.
  * Read-only display — not an editor.
@@ -152,14 +154,14 @@ const ratingStars = computed(() => {
     <div
       v-else-if="props.type === 'markdown'"
       class="prose prose-sm prose-secondary max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-      v-html="marked.parse(String(displayValue).substring(0, 500), { async: false })"
+      v-html="sanitize(marked.parse(String(displayValue).substring(0, 500), { async: false }) as string)"
     />
 
     <!-- Richtext (HTML) preview -->
     <div
       v-else-if="props.type === 'richtext'"
       class="prose prose-sm prose-secondary max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-      v-html="String(displayValue).substring(0, 500)"
+      v-html="sanitize(String(displayValue).substring(0, 500))"
     />
 
     <!-- Long text (plain) -->

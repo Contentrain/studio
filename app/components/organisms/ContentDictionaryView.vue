@@ -3,6 +3,7 @@ const props = defineProps<{
   content: Record<string, unknown>
 }>()
 
+const { t } = useContent()
 const searchQuery = ref('')
 
 const filteredEntries = computed(() => {
@@ -24,7 +25,7 @@ const filteredEntries = computed(() => {
         <input
           v-model="searchQuery"
           type="search"
-          placeholder="Filter keys..."
+          :placeholder="t('content.filter_keys')"
           class="w-full rounded-md border border-secondary-200 bg-white py-1.5 pl-8 pr-3 text-xs text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-800 dark:bg-secondary-900 dark:text-secondary-100"
         >
       </div>
@@ -36,10 +37,10 @@ const filteredEntries = computed(() => {
         <thead class="sticky top-0 bg-white dark:bg-secondary-950">
           <tr class="border-b border-secondary-200 dark:border-secondary-800">
             <th class="px-5 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
-              Key
+              {{ t('content.key_column') }}
             </th>
             <th class="px-5 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
-              Value
+              {{ t('content.value_column') }}
             </th>
           </tr>
         </thead>
@@ -59,14 +60,14 @@ const filteredEntries = computed(() => {
         </tbody>
       </table>
       <div v-if="filteredEntries.length === 0" class="p-5">
-        <AtomsEmptyState icon="icon-[annon--search]" title="No matches" description="Try a different search term." />
+        <AtomsEmptyState icon="icon-[annon--search]" :title="t('content.no_matches_title')" :description="t('content.no_matches_description')" />
       </div>
     </div>
 
     <!-- Footer -->
     <div class="shrink-0 border-t border-secondary-200 px-5 py-2 dark:border-secondary-800">
       <span class="text-xs text-muted">
-        {{ filteredEntries.length }}{{ searchQuery ? ` / ${Object.keys(content).length}` : '' }} keys
+        {{ filteredEntries.length }}{{ searchQuery ? ` / ${Object.keys(content).length}` : '' }} {{ t('content.keys_count') }}
       </span>
     </div>
   </div>

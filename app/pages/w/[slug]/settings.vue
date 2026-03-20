@@ -129,7 +129,7 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
                 id="ws-slug"
                 v-model="workspaceSlug"
                 type="text"
-                placeholder="my-workspace"
+                :placeholder="t('settings.slug_placeholder')"
               />
             </div>
           </div>

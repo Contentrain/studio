@@ -86,7 +86,7 @@ function selectModel(modelId: string) {
                       v-if="(model as any).i18n"
                       class="icon-[annon--globe] size-3 shrink-0 opacity-30"
                       aria-hidden="true"
-                      title="i18n"
+                      :title="t('common.i18n')"
                     />
                   </template>
                 </MoleculesSidebarItem>
@@ -145,7 +145,7 @@ function selectModel(modelId: string) {
 
       <MoleculesSidebarItem
         :icon="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'"
-        :label="isDark ? 'Light mode' : 'Dark mode'"
+        :label="isDark ? t('common.light_mode') : t('common.dark_mode')"
         @click="toggleTheme"
       />
 
