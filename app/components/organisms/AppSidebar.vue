@@ -4,6 +4,7 @@ const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
 const { models, hasContentrain, snapshot } = useSnapshot()
+const { branches, fetchBranches } = useBranches()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
@@ -12,6 +13,13 @@ const connectDialogOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 const isInsideProject = computed(() => !!currentProjectId.value)
 const activeModelId = computed(() => route.query.model as string | undefined)
+
+// Fetch branches when inside a project
+watch(isInsideProject, async (inside) => {
+  if (inside && activeWorkspace.value && currentProjectId.value) {
+    await fetchBranches(activeWorkspace.value.id, currentProjectId.value)
+  }
+}, { immediate: true })
 
 const sidebarLinks = computed(() => {
   if (!activeWorkspace.value) return []
@@ -94,6 +102,20 @@ function selectModel(modelId: string) {
             </ul>
           </details>
         </template>
+
+        <!-- Pending branches -->
+        <div v-if="branches.length > 0" class="mt-3">
+          <AtomsSectionLabel label="Pending Changes" :count="branches.length" class="mb-0.5" />
+          <ul class="space-y-px">
+            <li v-for="branch in branches" :key="branch.name">
+              <MoleculesSidebarItem
+                icon="icon-[annon--arrow-swap]"
+                :label="branch.name.replace('contentrain/', '')"
+                compact
+              />
+            </li>
+          </ul>
+        </div>
       </template>
 
       <!-- DASHBOARD VIEW -->
