@@ -30,10 +30,18 @@ onMounted(async () => {
     if (projects.value.length === 0)
       await fetchProjects(ws.id)
     await fetchSnapshot(ws.id, projectId.value)
+
+    // Load model content if ?model= query param exists on page load
+    if (activeModelId.value) {
+      await fetchContent(ws.id, projectId.value, activeModelId.value)
+    }
   }
 })
 
-watch(activeModelId, async (modelId) => {
+// Watch for model changes AFTER initial load (user clicks in sidebar)
+watch(activeModelId, async (modelId, oldModelId) => {
+  // Skip initial — handled by onMounted above
+  if (oldModelId === undefined) return
   if (!modelId) {
     clearContent()
     return
@@ -41,7 +49,7 @@ watch(activeModelId, async (modelId) => {
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
   await fetchContent(ws.id, projectId.value, modelId)
-}, { immediate: true })
+})
 
 function selectModel(modelId: string) {
   router.replace({ query: { ...route.query, model: modelId } })
