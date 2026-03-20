@@ -77,7 +77,8 @@ function backToOverview() {
 }
 
 /**
- * Get the field type from model schema. Falls back to 'string' for unknown fields.
+ * Get field type from model schema. Returns 'string' for unknown fields.
+ * Model fields come from @contentrain/types FieldDef.
  */
 function getFieldType(fieldId: string): string {
   if (!activeModel.value?.fields) return 'string'
@@ -86,18 +87,50 @@ function getFieldType(fieldId: string): string {
 }
 
 /**
- * Get a human-readable title from an entry (first string field with common title-like names).
+ * Get the primary display field ID from model schema.
+ * Priority: first required string → first string → first field → null.
+ * Does NOT rely on hardcoded field names — fully schema-driven.
  */
-function getEntryTitle(entry: Record<string, unknown>): string {
-  const titleKeys = ['title', 'name', 'label', 'heading', 'question', 'subject']
-  for (const key of titleKeys) {
-    if (entry[key] && typeof entry[key] === 'string') return entry[key] as string
+function getPrimaryFieldId(): string | null {
+  if (!activeModel.value?.fields) return null
+  const fields = activeModel.value.fields as Record<string, { type?: string, required?: boolean }>
+
+  // 1. First required string field
+  for (const [key, def] of Object.entries(fields)) {
+    if (def.required && (def.type === 'string' || def.type === 'slug')) return key
   }
-  // Fallback: first string value
+  // 2. Any string field
+  for (const [key, def] of Object.entries(fields)) {
+    if (def.type === 'string' || def.type === 'slug') return key
+  }
+  // 3. First field
+  const firstKey = Object.keys(fields)[0]
+  return firstKey ?? null
+}
+
+/**
+ * Get display title from an entry using the primary field.
+ * Falls back to entry ID if primary field has no value.
+ */
+function getEntryTitle(entry: Record<string, unknown>, entryId?: string): string {
+  const primaryField = getPrimaryFieldId()
+  if (primaryField && entry[primaryField] && typeof entry[primaryField] === 'string') {
+    return entry[primaryField] as string
+  }
+  // Fallback: first string value under 100 chars
   for (const value of Object.values(entry)) {
     if (typeof value === 'string' && value.length > 0 && value.length < 100) return value
   }
-  return ''
+  return entryId ?? ''
+}
+
+/**
+ * Get ordered user-defined field IDs from model schema.
+ * Excludes system fields (id, slug, status etc are not in model.fields).
+ */
+function getUserFieldIds(): string[] {
+  if (!activeModel.value?.fields) return []
+  return Object.keys(activeModel.value.fields as Record<string, unknown>)
 }
 </script>
 
@@ -288,23 +321,33 @@ function getEntryTitle(entry: Record<string, unknown>): string {
                     </span>
                   </summary>
                   <div class="space-y-3 px-5 pb-4 pt-1">
-                    <!-- Frontmatter fields -->
-                    <div v-for="(value, key) in doc.frontmatter" :key="String(key)">
-                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                        {{ String(key) }}
+                    <!-- Frontmatter fields in schema order -->
+                    <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
+                      <div v-if="fieldId in doc.frontmatter">
+                        <AtomsSectionLabel :label="fieldId" class="px-0 py-0" />
+                        <div class="mt-0.5">
+                          <AtomsContentFieldDisplay
+                            :type="getFieldType(fieldId)" :value="doc.frontmatter[fieldId]"
+                            :field-id="fieldId"
+                          />
+                        </div>
                       </div>
-                      <div class="mt-0.5">
-                        <AtomsContentFieldDisplay
-                          :type="getFieldType(String(key))" :value="value"
-                          :field-id="String(key)"
-                        />
+                    </template>
+                    <!-- Extra frontmatter fields not in schema (e.g. slug from filename) -->
+                    <template v-for="(value, key) in doc.frontmatter" :key="'extra-' + String(key)">
+                      <div v-if="!getUserFieldIds().includes(String(key))">
+                        <AtomsSectionLabel :label="String(key)" class="px-0 py-0" />
+                        <div class="mt-0.5">
+                          <AtomsContentFieldDisplay
+                            :type="'string'" :value="value"
+                            :field-id="String(key)"
+                          />
+                        </div>
                       </div>
-                    </div>
+                    </template>
                     <!-- Markdown body preview -->
                     <div v-if="doc.body">
-                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                        Body
-                      </div>
+                      <AtomsSectionLabel label="body" class="px-0 py-0" />
                       <p
                         class="mt-1 line-clamp-4 rounded-lg bg-secondary-50 p-3 font-mono text-xs text-body dark:bg-secondary-900 dark:text-secondary-300"
                       >
@@ -334,23 +377,29 @@ function getEntryTitle(entry: Record<string, unknown>): string {
                       aria-hidden="true"
                     />
                     <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
-                      {{ getEntryTitle(entry) || String(entryId) }}
+                      {{ getEntryTitle(entry, String(entryId)) }}
                     </span>
                     <span class="shrink-0 font-mono text-[10px] text-disabled">
                       {{ String(entryId).substring(0, 8) }}
                     </span>
                   </summary>
                   <div class="space-y-3 px-5 pb-4 pt-1">
-                    <div v-for="(value, fieldId) in entry" :key="String(fieldId)">
-                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                        {{ String(fieldId) }}
+                    <!-- Render fields in model schema order -->
+                    <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
+                      <div v-if="fieldId in entry">
+                        <AtomsSectionLabel :label="fieldId" class="px-0 py-0" />
+                        <div class="mt-0.5">
+                          <AtomsContentFieldDisplay
+                            :type="getFieldType(fieldId)" :value="entry[fieldId]"
+                            :field-id="fieldId"
+                          />
+                        </div>
                       </div>
-                      <div class="mt-0.5">
-                        <AtomsContentFieldDisplay
-                          :type="getFieldType(String(fieldId))" :value="value"
-                          :field-id="String(fieldId)"
-                        />
-                      </div>
+                    </template>
+                    <!-- Entry ID (system) -->
+                    <div class="border-t border-secondary-100 pt-2 dark:border-secondary-800">
+                      <AtomsSectionLabel label="ID" class="px-0 py-0" />
+                      <span class="font-mono text-xs text-disabled">{{ String(entryId) }}</span>
                     </div>
                   </div>
                 </details>
@@ -374,21 +423,21 @@ function getEntryTitle(entry: Record<string, unknown>): string {
                       aria-hidden="true"
                     />
                     <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
-                      {{ getEntryTitle(entry) || `Entry ${idx + 1}` }}
+                      {{ getEntryTitle(entry, `Entry ${idx + 1}`) }}
                     </span>
                   </summary>
                   <div class="space-y-3 px-5 pb-4 pt-1">
-                    <div v-for="(value, fieldId) in entry" :key="String(fieldId)">
-                      <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                        {{ String(fieldId) }}
+                    <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
+                      <div v-if="fieldId in entry">
+                        <AtomsSectionLabel :label="fieldId" class="px-0 py-0" />
+                        <div class="mt-0.5">
+                          <AtomsContentFieldDisplay
+                            :type="getFieldType(fieldId)" :value="entry[fieldId]"
+                            :field-id="fieldId"
+                          />
+                        </div>
                       </div>
-                      <div class="mt-0.5">
-                        <AtomsContentFieldDisplay
-                          :type="getFieldType(String(fieldId))" :value="value"
-                          :field-id="String(fieldId)"
-                        />
-                      </div>
-                    </div>
+                    </template>
                   </div>
                 </details>
               </div>
@@ -399,20 +448,21 @@ function getEntryTitle(entry: Record<string, unknown>): string {
               </div>
             </template>
 
-            <!-- Singleton: flat { field: value } -->
+            <!-- Singleton: flat { field: value } — render in schema order -->
             <template v-else-if="typeof modelContent === 'object' && modelContent !== null">
               <div class="space-y-4 p-5">
-                <div v-for="(value, fieldId) in (modelContent as Record<string, unknown>)" :key="String(fieldId)">
-                  <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                    {{ String(fieldId) }}
+                <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
+                  <div v-if="fieldId in (modelContent as Record<string, unknown>)">
+                    <AtomsSectionLabel :label="fieldId" class="px-0 py-0" />
+                    <div class="mt-1">
+                      <AtomsContentFieldDisplay
+                        :type="getFieldType(fieldId)"
+                        :value="(modelContent as Record<string, unknown>)[fieldId]"
+                        :field-id="fieldId"
+                      />
+                    </div>
                   </div>
-                  <div class="mt-1">
-                    <AtomsContentFieldDisplay
-                      :type="getFieldType(String(fieldId))" :value="value"
-                      :field-id="String(fieldId)"
-                    />
-                  </div>
-                </div>
+                </template>
               </div>
             </template>
           </div>
