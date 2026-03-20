@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { marked } from 'marked'
+
 /**
  * Renders a content field value based on its type.
  * Read-only display — not an editor.
@@ -126,9 +128,23 @@ const ratingStars = computed(() => {
       </AtomsBadge>
     </div>
 
-    <!-- Rich text / long text (stripped preview) -->
+    <!-- Markdown preview -->
+    <div
+      v-else-if="props.type === 'markdown'"
+      class="prose prose-sm prose-secondary max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      v-html="marked.parse(String(displayValue).substring(0, 500), { async: false })"
+    />
+
+    <!-- Richtext (HTML) preview -->
+    <div
+      v-else-if="props.type === 'richtext'"
+      class="prose prose-sm prose-secondary max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      v-html="String(displayValue).substring(0, 500)"
+    />
+
+    <!-- Long text (plain) -->
     <p v-else-if="isRichText" class="line-clamp-3 text-sm text-body dark:text-secondary-300">
-      {{ String(displayValue).replace(/<[^>]*>/g, '').replace(/[#*_`~\[\]]/g, '').replace(/\s+/g, ' ').trim().substring(0, 200) }}
+      {{ String(displayValue).substring(0, 200) }}
     </p>
 
     <!-- Default: string / unknown -->

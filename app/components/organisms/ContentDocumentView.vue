@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import { marked } from 'marked'
+
 defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
 }>()
 
 const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => 'string')
 const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
+
+function renderMarkdown(md: string): string {
+  return marked.parse(md, { async: false }) as string
+}
 </script>
 
 <template>
@@ -41,12 +47,13 @@ const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
               </div>
             </div>
           </template>
-          <!-- Body preview -->
+          <!-- Rendered markdown body -->
           <div v-if="doc.body">
             <AtomsSectionLabel label="body" class="px-0 py-0" />
-            <p class="mt-1 line-clamp-4 rounded-lg bg-secondary-50 p-3 font-mono text-xs text-body dark:bg-secondary-900 dark:text-secondary-300">
-              {{ doc.body.substring(0, 300) }}{{ doc.body.length > 300 ? '...' : '' }}
-            </p>
+            <div
+              class="prose prose-sm prose-secondary mt-1 max-w-none rounded-lg bg-secondary-50 p-4 dark:prose-invert dark:bg-secondary-900"
+              v-html="renderMarkdown(doc.body)"
+            />
           </div>
         </div>
       </details>

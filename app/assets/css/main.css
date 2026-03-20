@@ -4,6 +4,9 @@
 /* Enable class-based dark mode toggle (Tailwind CSS 4) */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Typography plugin for prose/markdown rendering */
+@plugin "@tailwindcss/typography";
+
 /* Annon icon set — custom Contentrain icons via Iconify */
 @plugin "@iconify/tailwind4" {
   icon-sets: from-json(annon, "./app/assets/icons/annon.json");
