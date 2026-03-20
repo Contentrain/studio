@@ -205,16 +205,7 @@ function installGitHubApp() {
         <div v-else-if="state === 'select'" class="flex max-h-[60vh] flex-col">
           <!-- Search -->
           <div class="border-b border-secondary-200 px-6 py-3 dark:border-secondary-800">
-            <div class="relative">
-              <span
-                class="icon-[annon--search] absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
-                aria-hidden="true"
-              />
-              <input
-                v-model="searchQuery" type="search" :placeholder="t('common.search')"
-                class="w-full rounded-lg border border-secondary-200 bg-white py-2 pl-9 pr-3 text-sm text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-800 dark:bg-secondary-900 dark:text-secondary-100"
-              >
-            </div>
+            <AtomsFormInput v-model="searchQuery" type="search" :placeholder="t('common.search')" />
           </div>
 
           <!-- Repo list -->

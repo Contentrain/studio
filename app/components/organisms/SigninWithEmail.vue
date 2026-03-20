@@ -84,13 +84,9 @@ const email = ref('')
       <p class="mt-2 text-sm text-muted">
         {{ t('auth.magic_link_sent_instruction') }}
       </p>
-      <button
-        type="button"
-        class="mt-4 rounded text-sm text-primary-500 hover:underline dark:text-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-        @click="$emit('reset')"
-      >
-        {{ t('auth.try_different_email') }}
-      </button>
+      <AtomsBaseButton variant="ghost" size="sm" class="mt-4" @click="$emit('reset')">
+        <span>{{ t('auth.try_different_email') }}</span>
+      </AtomsBaseButton>
     </div>
 
     <MoleculesAuthLink

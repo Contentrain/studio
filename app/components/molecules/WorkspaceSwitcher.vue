@@ -91,13 +91,12 @@ onMounted(() => {
 
           <template v-if="showCreate">
             <div class="p-2">
-              <input
+              <AtomsFormInput
                 v-model="newName"
                 type="text"
                 :placeholder="t('workspace.create_placeholder')"
-                class="w-full rounded-md border border-secondary-200 bg-white px-2.5 py-1.5 text-sm text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
                 @keydown.enter="handleCreate"
-              >
+              />
               <div class="mt-2 flex gap-1.5">
                 <AtomsBaseButton
                   variant="primary"

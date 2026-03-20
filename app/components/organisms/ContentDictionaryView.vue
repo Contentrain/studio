@@ -20,15 +20,7 @@ const filteredEntries = computed(() => {
   <div class="flex h-full flex-col">
     <!-- Search -->
     <div class="shrink-0 border-b border-secondary-200 px-5 py-2 dark:border-secondary-800">
-      <div class="relative">
-        <span class="icon-[annon--search] absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-        <input
-          v-model="searchQuery"
-          type="search"
-          :placeholder="t('content.filter_keys')"
-          class="w-full rounded-md border border-secondary-200 bg-white py-1.5 pl-8 pr-3 text-xs text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-800 dark:bg-secondary-900 dark:text-secondary-100"
-        >
-      </div>
+      <AtomsFormInput v-model="searchQuery" type="search" :placeholder="t('content.filter_keys')" />
     </div>
 
     <!-- Table -->
