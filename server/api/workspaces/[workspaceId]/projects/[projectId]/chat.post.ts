@@ -357,103 +357,110 @@ async function executeTool(
 ): Promise<unknown> {
   const params = (input ?? {}) as Record<string, unknown>
 
-  switch (name) {
-    case 'list_models': {
-      const modelsDir = '.contentrain/models'
-      const files = await git.listDirectory(modelsDir)
-      const models = []
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue
+  try {
+    switch (name) {
+      case 'list_models': {
+        const modelsDir = '.contentrain/models'
+        const files = await git.listDirectory(modelsDir)
+        const models = []
+        for (const file of files) {
+          if (!file.endsWith('.json')) continue
+          try {
+            models.push(JSON.parse(await git.readFile(`${modelsDir}/${file}`)))
+          }
+          catch { /* skip */ }
+        }
+        return { models }
+      }
+
+      case 'get_content': {
+        const modelId = params.model as string
+        const locale = (params.locale as string) ?? 'en'
+        const modelsDir = '.contentrain/models'
+        const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
+        const contentPath = resolveContentPath(
+          { contentRoot: '' },
+          modelDef,
+          locale,
+        )
         try {
-          models.push(JSON.parse(await git.readFile(`${modelsDir}/${file}`)))
+          const content = JSON.parse(await git.readFile(contentPath))
+          return { modelId, locale, data: content }
         }
-        catch { /* skip */ }
+        catch {
+          return { modelId, locale, data: null, error: 'Content not found' }
+        }
       }
-      return { models }
-    }
 
-    case 'get_content': {
-      const modelId = params.model as string
-      const locale = (params.locale as string) ?? 'en'
-      const modelsDir = '.contentrain/models'
-      const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
-      const contentPath = resolveContentPath(
-        { contentRoot: '' },
-        modelDef,
-        locale,
-      )
-      try {
-        const content = JSON.parse(await git.readFile(contentPath))
-        return { modelId, locale, data: content }
+      case 'save_content': {
+        const result = await engine.saveContent(
+          params.model as string,
+          (params.locale as string) ?? 'en',
+          params.data as Record<string, unknown>,
+          userEmail,
+        )
+        return {
+          branch: result.branch,
+          commitSha: result.commit.sha,
+          validation: result.validation,
+          filesChanged: result.diff.length,
+        }
       }
-      catch {
-        return { modelId, locale, data: null, error: 'Content not found' }
-      }
-    }
 
-    case 'save_content': {
-      const result = await engine.saveContent(
-        params.model as string,
-        (params.locale as string) ?? 'en',
-        params.data as Record<string, unknown>,
-        userEmail,
-      )
-      return {
-        branch: result.branch,
-        commitSha: result.commit.sha,
-        validation: result.validation,
-        filesChanged: result.diff.length,
-      }
-    }
+      case 'delete_content':
+        return engine.deleteContent(
+          params.model as string,
+          (params.locale as string) ?? 'en',
+          params.entryIds as string[],
+          userEmail,
+        )
 
-    case 'delete_content':
-      return engine.deleteContent(
-        params.model as string,
-        (params.locale as string) ?? 'en',
-        params.entryIds as string[],
-        userEmail,
-      )
+      case 'save_model':
+        return engine.saveModel(params as unknown as ModelDefinition, userEmail)
 
-    case 'save_model':
-      return engine.saveModel(params as unknown as ModelDefinition, userEmail)
-
-    case 'validate':
+      case 'validate':
       // TODO: implement full validation across models
-      return { valid: true, errors: [] }
+        return { valid: true, errors: [] }
 
-    case 'list_branches':
-      return { branches: await engine.listContentBranches() }
+      case 'list_branches':
+        return { branches: await engine.listContentBranches() }
 
-    case 'merge_branch':
-      return engine.mergeBranch(params.branch as string)
+      case 'merge_branch':
+        return engine.mergeBranch(params.branch as string)
 
-    case 'reject_branch': {
-      await engine.rejectBranch(params.branch as string)
-      return { rejected: true }
-    }
+      case 'reject_branch': {
+        await engine.rejectBranch(params.branch as string)
+        return { rejected: true }
+      }
 
-    case 'init_project': {
-      const initModels: import('@contentrain/types').ModelDefinition[] = []
-      if (params.models && Array.isArray(params.models)) {
-        for (const m of params.models as Record<string, unknown>[]) {
-          initModels.push(m as unknown as import('@contentrain/types').ModelDefinition)
+      case 'init_project': {
+        const initModels: import('@contentrain/types').ModelDefinition[] = []
+        if (params.models && Array.isArray(params.models)) {
+          for (const m of params.models as Record<string, unknown>[]) {
+            initModels.push(m as unknown as import('@contentrain/types').ModelDefinition)
+          }
+        }
+        const initResult = await engine.initProject(
+          (params.stack as string) ?? 'other',
+          (params.locales as string[]) ?? ['en'],
+          (params.domains as string[]) ?? ['marketing'],
+          initModels,
+          userEmail,
+        )
+        return {
+          branch: initResult.branch,
+          commitSha: initResult.commit.sha,
+          filesCreated: initResult.diff.length,
         }
       }
-      const initResult = await engine.initProject(
-        (params.stack as string) ?? 'other',
-        (params.locales as string[]) ?? ['en'],
-        (params.domains as string[]) ?? ['marketing'],
-        initModels,
-        userEmail,
-      )
-      return {
-        branch: initResult.branch,
-        commitSha: initResult.commit.sha,
-        filesCreated: initResult.diff.length,
-      }
-    }
 
-    default:
-      return { error: `Unknown tool: ${name}` }
+      default:
+        return { error: `Unknown tool: ${name}` }
+    }
+  }
+  catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Tool execution failed'
+    console.error(`[chat] Tool ${name} error:`, msg)
+    return { error: msg }
   }
 }
