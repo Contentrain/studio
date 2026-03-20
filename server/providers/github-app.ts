@@ -167,34 +167,210 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
       return result
     },
 
-    // --- Write operations (stubs — Phase 2) ---
+    // --- Write operations ---
 
-    async createBranch(_name: string, _fromRef?: string): Promise<void> {
-      throw createError({ statusCode: 501, message: 'Branch creation available in Phase 2' })
+    async createBranch(name: string, fromRef?: string): Promise<void> {
+      // Get SHA to branch from
+      let sha: string
+      if (fromRef) {
+        const { data } = await octokit.git.getRef({ owner, repo, ref: `heads/${fromRef}` })
+        sha = data.object.sha
+      }
+      else {
+        const defaultBranch = await this.getDefaultBranch()
+        const { data } = await octokit.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` })
+        sha = data.object.sha
+      }
+
+      await octokit.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${name}`,
+        sha,
+      })
     },
 
-    async getBranchDiff(_branch: string, _base?: string): Promise<FileDiff[]> {
-      throw createError({ statusCode: 501, message: 'Branch diff available in Phase 2' })
+    async getBranchDiff(branch: string, base?: string): Promise<FileDiff[]> {
+      const baseBranch = base ?? await this.getDefaultBranch()
+
+      const { data } = await octokit.repos.compareCommits({
+        owner,
+        repo,
+        base: baseBranch,
+        head: branch,
+      })
+
+      return (data.files ?? []).map((file) => {
+        const statusMap: Record<string, FileDiff['status']> = {
+          added: 'added',
+          removed: 'removed',
+          modified: 'modified',
+          renamed: 'modified',
+          changed: 'modified',
+        }
+        return {
+          path: file.filename,
+          status: statusMap[file.status] ?? 'modified',
+          before: file.status === 'added' ? null : (file.patch ?? null),
+          after: file.status === 'removed' ? null : (file.patch ?? null),
+        }
+      })
     },
 
-    async mergeBranch(_branch: string, _into: string): Promise<MergeResult> {
-      throw createError({ statusCode: 501, message: 'Branch merge available in Phase 2' })
+    async mergeBranch(branch: string, into: string): Promise<MergeResult> {
+      try {
+        const { data } = await octokit.repos.merge({
+          owner,
+          repo,
+          base: into,
+          head: branch,
+          commit_message: `Merge ${branch} into ${into}`,
+        })
+        return {
+          merged: true,
+          sha: data.sha,
+          pullRequestUrl: null,
+        }
+      }
+      catch (e: unknown) {
+        // Merge conflict
+        if (e && typeof e === 'object' && 'status' in e && e.status === 409) {
+          return { merged: false, sha: null, pullRequestUrl: null }
+        }
+        throw e
+      }
     },
 
-    async deleteBranch(_branch: string): Promise<void> {
-      throw createError({ statusCode: 501, message: 'Branch delete available in Phase 2' })
+    async deleteBranch(branch: string): Promise<void> {
+      await octokit.git.deleteRef({
+        owner,
+        repo,
+        ref: `heads/${branch}`,
+      })
     },
 
-    async commitFiles(_branch: string, _files: FileChange[], _message: string, _author: CommitAuthor): Promise<Commit> {
-      throw createError({ statusCode: 501, message: 'Commits available in Phase 2' })
+    async commitFiles(branch: string, files: FileChange[], message: string, author: CommitAuthor): Promise<Commit> {
+      // Multi-file atomic commit via Git Data API:
+      // 1. Get branch HEAD
+      // 2. Get base tree
+      // 3. Create blobs for each file
+      // 4. Create new tree
+      // 5. Create commit
+      // 6. Update branch ref
+
+      // 1. Get HEAD sha
+      const { data: refData } = await octokit.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${branch}`,
+      })
+      const headSha = refData.object.sha
+
+      // 2. Get base tree
+      const { data: commitData } = await octokit.git.getCommit({
+        owner,
+        repo,
+        commit_sha: headSha,
+      })
+      const baseTreeSha = commitData.tree.sha
+
+      // 3. Create blobs + build tree entries
+      const treeEntries: Array<{
+        path: string
+        mode: '100644'
+        type: 'blob'
+        sha?: string | null
+      }> = []
+
+      for (const file of files) {
+        if (file.content === null) {
+          // Delete: set sha to null (remove from tree)
+          treeEntries.push({
+            path: file.path,
+            mode: '100644',
+            type: 'blob',
+            sha: null,
+          })
+        }
+        else {
+          // Create/update: create blob first
+          const { data: blob } = await octokit.git.createBlob({
+            owner,
+            repo,
+            content: file.content,
+            encoding: 'utf-8',
+          })
+          treeEntries.push({
+            path: file.path,
+            mode: '100644',
+            type: 'blob',
+            sha: blob.sha,
+          })
+        }
+      }
+
+      // 4. Create new tree
+      const { data: newTree } = await octokit.git.createTree({
+        owner,
+        repo,
+        base_tree: baseTreeSha,
+        tree: treeEntries as Parameters<typeof octokit.git.createTree>[0]['tree'],
+      })
+
+      // 5. Create commit
+      const { data: newCommit } = await octokit.git.createCommit({
+        owner,
+        repo,
+        message,
+        tree: newTree.sha,
+        parents: [headSha],
+        author: {
+          name: author.name,
+          email: author.email,
+          date: new Date().toISOString(),
+        },
+      })
+
+      // 6. Update branch ref
+      await octokit.git.updateRef({
+        owner,
+        repo,
+        ref: `heads/${branch}`,
+        sha: newCommit.sha,
+      })
+
+      return {
+        sha: newCommit.sha,
+        message: newCommit.message,
+        author: {
+          name: newCommit.author?.name ?? author.name,
+          email: newCommit.author?.email ?? author.email,
+        },
+        timestamp: newCommit.author?.date ?? new Date().toISOString(),
+      }
     },
 
-    async createPR(_head: string, _base: string, _title: string, _body: string): Promise<{ id: string, url: string }> {
-      throw createError({ statusCode: 501, message: 'PR creation available in Phase 2' })
+    async createPR(head: string, base: string, title: string, body: string): Promise<{ id: string, url: string }> {
+      const { data } = await octokit.pulls.create({
+        owner,
+        repo,
+        head,
+        base,
+        title,
+        body,
+      })
+      return {
+        id: String(data.number),
+        url: data.html_url,
+      }
     },
 
-    async mergePR(_id: string): Promise<void> {
-      throw createError({ statusCode: 501, message: 'PR merge available in Phase 2' })
+    async mergePR(id: string): Promise<void> {
+      await octokit.pulls.merge({
+        owner,
+        repo,
+        pull_number: Number(id),
+      })
     },
 
     async getPermissions(): Promise<RepoPermissions> {
