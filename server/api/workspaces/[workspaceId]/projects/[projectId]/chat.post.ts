@@ -158,8 +158,8 @@ export default defineEventHandler(async (event) => {
 
   // Select model based on plan
   const model = usageSource === 'studio'
-    ? (workspace.plan === 'free' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514')
-    : 'claude-sonnet-4-20250514' // BYOA users get best model
+    ? (workspace.plan === 'free' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6-20250514')
+    : 'claude-sonnet-4-6-20250514' // BYOA users get best model
 
   // Create SSE stream
   console.log('[chat] Creating SSE stream, model:', model, 'tools:', tools.length)
@@ -205,7 +205,9 @@ export default defineEventHandler(async (event) => {
             currentToolCalls.push({
               id: streamEvent.toolId!,
               name: streamEvent.toolName!,
-              input: streamEvent.toolInput,
+              input: (typeof streamEvent.toolInput === 'object' && streamEvent.toolInput !== null)
+                ? streamEvent.toolInput
+                : {},
             })
             break
 
@@ -218,10 +220,16 @@ export default defineEventHandler(async (event) => {
               // Build assistant content blocks
               assistantContent = []
               for (const tc of currentToolCalls) {
-                assistantContent.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.input })
+                assistantContent.push({
+                  type: 'tool_use' as const,
+                  id: tc.id,
+                  name: tc.name,
+                  input: (typeof tc.input === 'object' && tc.input !== null) ? tc.input : {},
+                })
               }
 
-              // Execute each tool
+              // Execute each tool and collect results
+              const toolResults: Array<{ type: 'tool_result', toolUseId: string, content: string }> = []
               for (const tc of currentToolCalls) {
                 const result = await executeTool(tc.name, tc.input, contentEngine, git, session.user.email ?? '')
                 await eventStream.push(JSON.stringify({
@@ -230,36 +238,49 @@ export default defineEventHandler(async (event) => {
                   name: tc.name,
                   result,
                 }))
-
-                // Add tool result to messages for continuation
-                messages.push({
-                  role: 'assistant',
-                  content: assistantContent,
-                })
-                messages.push({
-                  role: 'user',
-                  content: [{ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(result) }],
+                toolResults.push({
+                  type: 'tool_result',
+                  toolUseId: tc.id,
+                  content: JSON.stringify(result),
                 })
               }
+
+              // Add assistant + all tool results to messages for continuation
+              messages.push({
+                role: 'assistant',
+                content: assistantContent,
+              })
+              messages.push({
+                role: 'user',
+                content: toolResults,
+              })
 
               // Continue conversation with tool results (non-streaming for simplicity)
-              const continuation = await aiProvider.createCompletion(
-                { model, system: systemPrompt, messages, tools, maxTokens: 4096 },
-                apiKey,
-              )
+              console.log('[chat] Continuing with tool results, messages:', messages.length)
+              try {
+                const continuation = await aiProvider.createCompletion(
+                  { model, system: systemPrompt, messages, tools, maxTokens: 4096 },
+                  apiKey,
+                )
 
-              totalInputTokens += continuation.usage.inputTokens
-              totalOutputTokens += continuation.usage.outputTokens
+                totalInputTokens += continuation.usage.inputTokens
+                totalOutputTokens += continuation.usage.outputTokens
 
-              // Send continuation text
-              for (const block of continuation.content) {
-                if (block.type === 'text') {
-                  await eventStream.push(JSON.stringify({ type: 'text', content: block.text }))
+                // Send continuation text
+                for (const block of continuation.content) {
+                  if (block.type === 'text') {
+                    await eventStream.push(JSON.stringify({ type: 'text', content: block.text }))
+                  }
                 }
-              }
 
-              assistantContent = continuation.content
-              currentToolCalls = []
+                assistantContent = continuation.content
+                currentToolCalls = []
+                console.log('[chat] Continuation done, blocks:', continuation.content.length)
+              }
+              catch (contErr: unknown) {
+                console.error('[chat] Continuation error:', contErr instanceof Error ? contErr.message : contErr)
+                await eventStream.push(JSON.stringify({ type: 'text', content: '\n\n*Tool sonucu işlendi ancak devam yanıtı alınamadı.*' }))
+              }
             }
             break
 
