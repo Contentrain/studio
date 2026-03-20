@@ -105,9 +105,7 @@ provide('getUserFieldIds', getUserFieldIds)
     <!-- Header -->
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
       <AtomsIconButton
-        v-if="panelState === 'model'"
-        icon="icon-[annon--arrow-left]"
-        :label="t('common.back')"
+        v-if="panelState === 'model'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
       <h3 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
@@ -115,16 +113,11 @@ provide('getUserFieldIds', getUserFieldIds)
       </h3>
       <div v-if="panelState === 'model'" class="ml-auto flex shrink-0 items-center gap-2">
         <!-- Locale switcher -->
-        <select
-          v-if="supportedLocales.length > 1"
-          :value="currentLocale"
-          class="rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-heading focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
-          @change="currentLocale = ($event.target as HTMLSelectElement).value"
-        >
-          <option v-for="loc in supportedLocales" :key="loc" :value="loc">
-            {{ loc.toUpperCase() }}
-          </option>
-        </select>
+        <AtomsFormSelect
+          v-if="supportedLocales.length > 1" :model-value="currentLocale"
+          :options="supportedLocales.map(l => ({ value: l, label: l.toUpperCase() }))" size="sm"
+          @update:model-value="currentLocale = $event"
+        />
         <AtomsBadge v-if="activeModel" variant="secondary" size="sm">
           {{ activeModel.kind ?? activeModel.type }}
         </AtomsBadge>
@@ -139,16 +132,20 @@ provide('getUserFieldIds', getUserFieldIds)
           <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-10 w-full rounded-lg" />
         </div>
         <div v-else-if="!snapshot?.exists" class="p-5">
-          <AtomsEmptyState icon="icon-[annon--folder-open]" :title="t('content.not_found_title')" :description="t('content.not_found_description')" />
+          <AtomsEmptyState
+            icon="icon-[annon--folder-open]" :title="t('content.not_found_title')"
+            :description="t('content.not_found_description')"
+          />
         </div>
         <OrganismsContentModelList
-          v-else-if="snapshot && snapshot.models.length > 0"
-          :models="snapshot.models"
-          :content="snapshot.content"
-          @select="emit('selectModel', $event)"
+          v-else-if="snapshot && snapshot.models.length > 0" :models="snapshot.models"
+          :content="snapshot.content" @select="emit('selectModel', $event)"
         />
         <div v-else class="p-5">
-          <AtomsEmptyState icon="icon-[annon--box]" :title="t('content.no_models_title')" :description="t('content.no_models_description')" />
+          <AtomsEmptyState
+            icon="icon-[annon--box]" :title="t('content.no_models_title')"
+            :description="t('content.no_models_description')"
+          />
         </div>
       </template>
 
@@ -158,7 +155,10 @@ provide('getUserFieldIds', getUserFieldIds)
           <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
         </div>
         <div v-else-if="!modelContent" class="p-5">
-          <AtomsEmptyState icon="icon-[annon--file]" :title="t('content.no_content_title')" :description="t('content.no_content_description')" />
+          <AtomsEmptyState
+            icon="icon-[annon--file]" :title="t('content.no_content_title')"
+            :description="t('content.no_content_description')"
+          />
         </div>
         <template v-else>
           <!-- Dictionary -->
@@ -174,35 +174,22 @@ provide('getUserFieldIds', getUserFieldIds)
           <!-- Collection (object-map) -->
           <OrganismsContentCollectionView
             v-else-if="modelContentKind === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
-            :content="(modelContent as Record<string, Record<string, unknown>>)"
-            :workspace-id="workspaceId"
-            :project-id="projectId"
-            :model-id="activeModelId ?? undefined"
-            :locale="currentLocale"
-            :editable="editable"
+            :content="(modelContent as Record<string, Record<string, unknown>>)" :workspace-id="workspaceId"
+            :project-id="projectId" :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable"
             @saved="emit('back')"
           />
           <!-- Collection (array) -->
           <OrganismsContentCollectionView
             v-else-if="Array.isArray(modelContent)"
-            :content="arrayToObjectMap(modelContent as Record<string, unknown>[])"
-            :workspace-id="workspaceId"
-            :project-id="projectId"
-            :model-id="activeModelId ?? undefined"
-            :locale="currentLocale"
-            :editable="editable"
+            :content="arrayToObjectMap(modelContent as Record<string, unknown>[])" :workspace-id="workspaceId"
+            :project-id="projectId" :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable"
             @saved="emit('back')"
           />
           <!-- Singleton -->
           <OrganismsContentSingletonView
             v-else-if="typeof modelContent === 'object'"
-            :content="(modelContent as Record<string, unknown>)"
-            :workspace-id="workspaceId"
-            :project-id="projectId"
-            :model-id="activeModelId ?? undefined"
-            :locale="currentLocale"
-            :editable="editable"
-            @saved="emit('back')"
+            :content="(modelContent as Record<string, unknown>)" :workspace-id="workspaceId" :project-id="projectId"
+            :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable" @saved="emit('back')"
           />
         </template>
       </template>

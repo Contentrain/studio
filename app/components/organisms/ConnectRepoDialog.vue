@@ -152,13 +152,17 @@ function installGitHubApp() {
     </DialogTrigger>
 
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+      <DialogOverlay
+        class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0"
+      />
 
       <DialogContent
         class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-secondary-200 bg-white shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
       >
         <!-- Header -->
-        <div class="flex items-center justify-between border-b border-secondary-200 px-6 py-4 dark:border-secondary-800">
+        <div
+          class="flex items-center justify-between border-b border-secondary-200 px-6 py-4 dark:border-secondary-800"
+        >
           <DialogTitle class="text-base font-semibold text-heading dark:text-secondary-100">
             {{ t('projects.connect_repo') }}
           </DialogTitle>
@@ -175,7 +179,9 @@ function installGitHubApp() {
 
         <!-- STATE 1: Install GitHub App -->
         <div v-if="state === 'install'" class="px-6 py-12 text-center">
-          <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-secondary-50 dark:bg-secondary-900">
+          <div
+            class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-secondary-50 dark:bg-secondary-900"
+          >
             <span class="icon-[annon--link-1] text-2xl text-muted" aria-hidden="true" />
           </div>
           <h3 class="mt-5 text-sm font-semibold text-heading dark:text-secondary-100">
@@ -184,11 +190,7 @@ function installGitHubApp() {
           <p class="mt-2 text-sm text-muted">
             {{ t('github.install_description') }}
           </p>
-          <AtomsBaseButton
-            size="md"
-            class="mt-6"
-            @click="installGitHubApp"
-          >
+          <AtomsBaseButton size="md" class="mt-6" @click="installGitHubApp">
             <template #prepend>
               <span class="icon-[annon--external-link] size-4" aria-hidden="true" />
             </template>
@@ -204,11 +206,12 @@ function installGitHubApp() {
           <!-- Search -->
           <div class="border-b border-secondary-200 px-6 py-3 dark:border-secondary-800">
             <div class="relative">
-              <span class="icon-[annon--search] absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+              <span
+                class="icon-[annon--search] absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
               <input
-                v-model="searchQuery"
-                type="search"
-                :placeholder="t('common.search')"
+                v-model="searchQuery" type="search" :placeholder="t('common.search')"
                 class="w-full rounded-lg border border-secondary-200 bg-white py-2 pl-9 pr-3 text-sm text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-secondary-800 dark:bg-secondary-900 dark:text-secondary-100"
               >
             </div>
@@ -228,10 +231,7 @@ function installGitHubApp() {
 
             <!-- List -->
             <button
-              v-for="repo in filteredRepos"
-              v-else
-              :key="repo.id"
-              type="button"
+              v-for="repo in filteredRepos" v-else :key="repo.id" type="button"
               class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
               @click="selectRepo(repo)"
             >
@@ -283,14 +283,15 @@ function installGitHubApp() {
               <div class="flex items-center gap-2.5 rounded-lg bg-secondary-50 px-3 py-2 dark:bg-secondary-900">
                 <span class="icon-[annon--check-circle] size-4 text-success-500" aria-hidden="true" />
                 <span class="text-sm text-body dark:text-secondary-300">
-                  {{ scanResult.stack === 'unknown' ? t('github.unknown_framework') : t('github.framework_detected').replace('{stack}', scanResult.stack.charAt(0).toUpperCase() + scanResult.stack.slice(1)) }}
+                  {{ scanResult.stack === 'unknown' ? t('github.unknown_framework')
+                    : t('github.framework_detected').replace('{stack}', scanResult.stack.charAt(0).toUpperCase()
+                      + scanResult.stack.slice(1)) }}
                 </span>
               </div>
               <div class="flex items-center gap-2.5 rounded-lg bg-secondary-50 px-3 py-2 dark:bg-secondary-900">
                 <span
                   :class="scanResult.hasContentDir ? 'icon-[annon--check-circle] text-success-500' : 'icon-[annon--alert-circle] text-warning-500'"
-                  class="size-4"
-                  aria-hidden="true"
+                  class="size-4" aria-hidden="true"
                 />
                 <span class="text-sm text-body dark:text-secondary-300">
                   {{ scanResult.hasContentDir ? t('github.contentrain_found') : t('github.contentrain_missing') }}
@@ -305,26 +306,23 @@ function installGitHubApp() {
             </template>
 
             <!-- Scan failed -->
-            <div v-else class="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700 dark:bg-danger-900/20 dark:text-danger-400">
+            <div
+              v-else
+              class="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700 dark:bg-danger-900/20 dark:text-danger-400"
+            >
               {{ t('github.scan_failed') }}
             </div>
           </div>
 
           <!-- Actions -->
           <div class="mt-6 flex items-center justify-between">
-            <button
-              type="button"
-              class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-              @click="goBack"
-            >
-              <span class="icon-[annon--arrow-left] size-4" aria-hidden="true" />
-              {{ t('common.back') }}
-            </button>
-            <AtomsBaseButton
-              size="md"
-              :disabled="!scanResult || connecting"
-              @click="connectRepo"
-            >
+            <AtomsBaseButton size="sm" @click="goBack">
+              <template #prepend>
+                <span class="icon-[annon--arrow-left] size-4" aria-hidden="true" />
+              </template>
+              <span>{{ t('common.back') }}</span>
+            </AtomsBaseButton>
+            <AtomsBaseButton size="md" :disabled="!scanResult || connecting" @click="connectRepo">
               <template v-if="connecting" #prepend>
                 <div class="size-4 animate-spin rounded-full border-2 border-secondary-300 border-t-secondary-600" />
               </template>

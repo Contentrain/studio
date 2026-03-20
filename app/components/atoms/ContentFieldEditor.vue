@@ -1,9 +1,16 @@
 <script setup lang="ts">
+const { t } = useContent()
+
 /**
- * Inline field editor — type-specific input for each of 27 field types.
+ * Inline field editor — uses atom components for each field type.
  * Companion to ContentFieldDisplay (read mode).
  */
-const props = defineProps<{
+const {
+  type,
+  modelValue,
+  options,
+  saving = false,
+} = defineProps<{
   type: string
   modelValue: unknown
   fieldId: string
@@ -18,11 +25,13 @@ const emit = defineEmits<{
 }>()
 
 const localValue = computed({
-  get: () => props.modelValue,
+  get: () => modelValue,
   set: (v: unknown) => emit('update:modelValue', v),
 })
 
-const inputClass = 'w-full rounded-md border border-primary-300 bg-white px-3 py-1.5 text-sm text-heading focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-primary-700 dark:bg-secondary-900 dark:text-secondary-100'
+const isStringType = computed(() => ['string', 'email', 'url', 'slug', 'phone', 'icon', 'color'].includes(type))
+const isTextType = computed(() => ['text', 'markdown', 'richtext', 'code'].includes(type))
+const isNumberType = computed(() => ['number', 'integer', 'decimal', 'percent', 'rating'].includes(type))
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -33,102 +42,94 @@ function handleKeydown(e: KeyboardEvent) {
     emit('cancel')
   }
 }
+
+const inputType = computed(() => {
+  if (type === 'email') return 'email'
+  if (type === 'url') return 'url'
+  if (type === 'color') return 'color'
+  return 'text'
+})
 </script>
 
 <template>
   <div class="space-y-2">
     <!-- String types -->
-    <input
-      v-if="['string', 'email', 'url', 'slug', 'phone', 'icon', 'color'].includes(type)"
-      v-model="localValue"
-      :type="type === 'email' ? 'email' : type === 'url' ? 'url' : type === 'color' ? 'color' : 'text'"
-      :class="inputClass"
+    <AtomsFormInput
+      v-if="isStringType"
+      :model-value="String(localValue ?? '')"
+      :type="inputType"
+      @update:model-value="localValue = $event"
       @keydown="handleKeydown"
-    >
+    />
 
     <!-- Text / Markdown / Richtext / Code -->
-    <textarea
-      v-else-if="['text', 'markdown', 'richtext', 'code'].includes(type)"
-      v-model="localValue"
-      rows="4"
-      :class="[inputClass, 'resize-y']"
+    <AtomsFormTextarea
+      v-else-if="isTextType"
+      :model-value="String(localValue ?? '')"
+      :rows="4"
+      @update:model-value="localValue = $event"
       @keydown.escape="emit('cancel')"
     />
 
     <!-- Number types -->
-    <input
-      v-else-if="['number', 'integer', 'decimal', 'percent', 'rating'].includes(type)"
-      v-model.number="localValue"
+    <AtomsFormInput
+      v-else-if="isNumberType"
+      :model-value="String(localValue ?? '')"
       type="number"
-      :step="type === 'integer' || type === 'rating' ? '1' : '0.01'"
-      :min="type === 'percent' ? '0' : type === 'rating' ? '1' : undefined"
-      :max="type === 'percent' ? '100' : type === 'rating' ? '5' : undefined"
-      :class="inputClass"
+      @update:model-value="localValue = Number($event)"
       @keydown="handleKeydown"
-    >
+    />
 
     <!-- Boolean -->
-    <label v-else-if="type === 'boolean'" class="flex items-center gap-2">
-      <input
-        v-model="localValue"
-        type="checkbox"
-        class="size-4 rounded border-secondary-300 text-primary-600 focus:ring-primary-500 dark:border-secondary-600"
-      >
-      <span class="text-sm text-heading dark:text-secondary-100">{{ localValue ? 'Yes' : 'No' }}</span>
-    </label>
+    <AtomsFormSwitch
+      v-else-if="type === 'boolean'"
+      :model-value="!!localValue"
+      :label="localValue ? 'Yes' : 'No'"
+      @update:model-value="localValue = $event"
+    />
 
-    <!-- Date / Datetime -->
-    <input
+    <!-- Date -->
+    <AtomsFormInput
       v-else-if="type === 'date'"
-      v-model="localValue"
+      :model-value="String(localValue ?? '')"
       type="date"
-      :class="inputClass"
+      @update:model-value="localValue = $event"
       @keydown="handleKeydown"
-    >
-    <input
+    />
+
+    <!-- Datetime -->
+    <AtomsFormInput
       v-else-if="type === 'datetime'"
-      v-model="localValue"
+      :model-value="String(localValue ?? '')"
       type="datetime-local"
-      :class="inputClass"
+      @update:model-value="localValue = $event"
       @keydown="handleKeydown"
-    >
+    />
 
     <!-- Select -->
-    <select
+    <AtomsFormSelect
       v-else-if="type === 'select' && options"
-      v-model="localValue"
-      :class="inputClass"
-    >
-      <option v-for="opt in options" :key="opt" :value="opt">
-        {{ opt }}
-      </option>
-    </select>
+      :model-value="String(localValue ?? '')"
+      :options="options"
+      size="md"
+      @update:model-value="localValue = $event"
+    />
 
-    <!-- Fallback: text input -->
-    <input
+    <!-- Fallback -->
+    <AtomsFormInput
       v-else
-      v-model="localValue"
-      type="text"
-      :class="inputClass"
+      :model-value="String(localValue ?? '')"
+      @update:model-value="localValue = $event"
       @keydown="handleKeydown"
-    >
+    />
 
     <!-- Action buttons -->
     <div class="flex items-center gap-1.5">
-      <AtomsBaseButton
-        variant="primary"
-        size="sm"
-        :disabled="saving"
-        @click="emit('save')"
-      >
-        <span>{{ saving ? 'Saving...' : 'Save' }}</span>
+      <AtomsBaseButton variant="primary" size="sm" :disabled="saving" @click="emit('save')">
+        <span>{{ saving ? t('common.connecting') : t('common.save_changes') }}</span>
       </AtomsBaseButton>
-      <AtomsBaseButton
-        size="sm"
-        :disabled="saving"
-        @click="emit('cancel')"
-      >
-        <span>Cancel</span>
+      <AtomsBaseButton size="sm" :disabled="saving" @click="emit('cancel')">
+        <span>{{ t('common.cancel') }}</span>
       </AtomsBaseButton>
     </div>
   </div>

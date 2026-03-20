@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 interface Props {
   modelValue?: string
-  type?: 'text' | 'email' | 'password' | 'url' | 'search'
+  type?: 'text' | 'email' | 'password' | 'url' | 'search' | 'number' | 'date' | 'datetime-local' | 'color' | 'tel'
   placeholder?: string
   disabled?: boolean
   required?: boolean

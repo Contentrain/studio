@@ -14,12 +14,7 @@
         <AtomsLogo variant="icon" color="auto" class="h-6 w-auto" />
         <span class="text-xs font-semibold uppercase tracking-[0.2em] text-secondary-400">Studio</span>
       </NuxtLink>
-      <button
-        type="button"
-        class="rounded-lg p-2 text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-      >
-        <span class="icon-[annon--menu] block size-5" aria-hidden="true" />
-      </button>
+      <AtomsIconButton icon="icon-[annon--menu]" label="Menu" />
     </div>
 
     <!-- Main content (with top padding on mobile for fixed header) -->
