@@ -367,7 +367,7 @@ async function executeToolWithAutoMerge(
   input: unknown,
   engine: ReturnType<typeof createContentEngine>,
   git: ReturnType<typeof useGitProvider>,
-  _userEmail: string,
+  userEmail: string,
   workflow: string,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
