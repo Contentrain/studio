@@ -1,3 +1,7 @@
+<script setup lang="ts">
+const { t } = useContent()
+</script>
+
 <template>
   <div class="flex h-screen overflow-hidden bg-white dark:bg-secondary-950">
     <!-- Sidebar with SSR fallback skeleton (same dimensions, no content flash) -->
@@ -14,7 +18,7 @@
         <AtomsLogo variant="icon" color="auto" class="h-6 w-auto" />
         <span class="text-xs font-semibold uppercase tracking-[0.2em] text-secondary-400">Studio</span>
       </NuxtLink>
-      <AtomsIconButton icon="icon-[annon--menu]" label="Menu" />
+      <AtomsIconButton icon="icon-[annon--menu]" :label="t('common.menu')" />
     </div>
 
     <!-- Main content (with top padding on mobile for fixed header) -->

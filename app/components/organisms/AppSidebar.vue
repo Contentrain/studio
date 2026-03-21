@@ -105,7 +105,7 @@ function selectModel(modelId: string) {
 
         <!-- Pending branches -->
         <div v-if="branches.length > 0" class="mt-3">
-          <AtomsSectionLabel label="Pending Changes" :count="branches.length" class="mb-0.5" />
+          <AtomsSectionLabel :label="t('sidebar.pending_changes')" :count="branches.length" class="mb-0.5" />
           <ul class="space-y-px">
             <li v-for="branch in branches" :key="branch.name">
               <MoleculesSidebarItem

@@ -77,12 +77,12 @@ watch(error, (err) => {
         <AtomsBaseButton
           variant="primary"
           size="md"
-          @click="handleSend('Initialize my project — detect the framework and set up content structure.')"
+          @click="handleSend(t('chat.init_prompt'))"
         >
           <template #prepend>
             <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
           </template>
-          <span>Initialize project</span>
+          <span>{{ t('chat.init_project') }}</span>
         </AtomsBaseButton>
       </div>
 

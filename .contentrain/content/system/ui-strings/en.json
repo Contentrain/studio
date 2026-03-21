@@ -140,5 +140,9 @@
   "content.delete_entry": "Delete entry",
   "content.delete_model": "Delete model",
   "content.confirm_delete_entry": "Delete \"{title}\" from {model}?",
-  "content.confirm_delete_model": "Delete the {model} model and all its content?"
+  "content.confirm_delete_model": "Delete the {model} model and all its content?",
+  "sidebar.pending_changes": "Pending Changes",
+  "common.menu": "Menu",
+  "chat.init_project": "Initialize project",
+  "chat.init_prompt": "Initialize my project — detect the framework and set up content structure."
 }
