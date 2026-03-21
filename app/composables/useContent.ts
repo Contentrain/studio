@@ -12,8 +12,14 @@ export function useContent() {
     dictionary('ui-strings').locale(locale.value).get(),
   )
 
-  function t(key: string): string {
-    return strings.value?.[key] ?? key
+  function t(key: string, params?: Record<string, string | number>): string {
+    let value = strings.value?.[key] ?? key
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        value = value.replaceAll(`{${k}}`, String(v))
+      }
+    }
+    return value
   }
 
   return { t, locale }

@@ -162,9 +162,18 @@ provide('sendChatPrompt', sendChatPrompt)
         v-if="panelState === 'model'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
-      <h3 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
+      <h3 class="flex-1 truncate text-sm font-semibold text-heading dark:text-secondary-100">
         {{ panelState === 'model' && activeModel ? activeModel.name : t('content.title') }}
       </h3>
+      <!-- Overview actions -->
+      <div v-if="panelState === 'overview' && editable && snapshot?.exists" class="ml-auto">
+        <AtomsIconButton
+          icon="icon-[annon--plus]"
+          :label="t('content.add_model')"
+          size="sm"
+          @click="addModel"
+        />
+      </div>
       <div v-if="panelState === 'model'" class="ml-auto flex shrink-0 items-center gap-2">
         <!-- Add entry (collection only) -->
         <AtomsIconButton
@@ -266,21 +275,6 @@ provide('sendChatPrompt', sendChatPrompt)
               </TooltipRoot>
             </div>
           </TooltipProvider>
-
-          <!-- Model list header -->
-          <div v-if="editable" class="flex items-center justify-between border-b border-secondary-100 px-5 py-2 dark:border-secondary-800/50">
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
-              Models
-            </span>
-            <button
-              type="button"
-              class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted transition-colors hover:bg-secondary-50 hover:text-primary-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
-              @click="addModel"
-            >
-              <span class="icon-[annon--plus] size-3" aria-hidden="true" />
-              <span>{{ t('content.add_model') }}</span>
-            </button>
-          </div>
 
           <!-- Model list -->
           <OrganismsContentModelList

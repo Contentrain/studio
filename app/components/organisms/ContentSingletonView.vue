@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
   content: Record<string, unknown>
   workspaceId?: string
   projectId?: string
@@ -16,21 +16,19 @@ const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => '
 const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
 const modelMeta = inject<ComputedRef<{ id: string, name: string, kind: string } | null>>('activeModelMeta', computed(() => null))
 
-const { editingField, editValue, saving, startEdit, cancelEdit, saveField } = useContentEditor()
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
+const { t } = useContent()
+const getModelFields = inject<() => Record<string, unknown>>('getModelFields', () => ({}))
 
-async function handleSave(fieldId: string) {
-  if (!props.workspaceId || !props.projectId || !props.modelId) return
-  const success = await saveField(
-    props.workspaceId,
-    props.projectId,
-    props.modelId,
-    props.locale ?? 'en',
-    undefined,
-    fieldId,
-    editValue.value,
-  )
-  if (success) emit('saved')
+// Modal edit state
+const editModalOpen = ref(false)
+
+function openEditModal() {
+  editModalOpen.value = true
+}
+
+function handleModalSaved() {
+  emit('saved')
 }
 
 function pinField(e: Event, fieldId: string, value: unknown) {
@@ -65,6 +63,16 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
 
 <template>
   <div class="space-y-4 p-5">
+    <!-- Edit all button -->
+    <div v-if="editable" class="flex justify-end">
+      <AtomsBaseButton size="sm" @click="openEditModal">
+        <template #prepend>
+          <span class="icon-[annon--edit-2] size-3.5" aria-hidden="true" />
+        </template>
+        <span>{{ t('content.edit_content') }}</span>
+      </AtomsBaseButton>
+    </div>
+
     <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
       <div
         v-if="fieldId in content"
@@ -88,26 +96,24 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
           </button>
         </div>
         <div class="mt-1">
-          <!-- Edit mode -->
-          <AtomsContentFieldEditor
-            v-if="editable && editingField === fieldId"
-            v-model="editValue"
-            :type="getFieldType(fieldId)"
-            :field-id="fieldId"
-            :saving="saving"
-            @save="handleSave(fieldId)"
-            @cancel="cancelEdit"
-          />
-          <!-- Display mode (click to edit) -->
-          <div
-            v-else
-            :class="editable ? 'cursor-pointer rounded-md px-1 -mx-1 py-0.5 transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900' : ''"
-            @click="editable ? startEdit(fieldId, content[fieldId]) : undefined"
-          >
-            <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" />
-          </div>
+          <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" />
         </div>
       </div>
     </template>
+
+    <!-- Edit modal -->
+    <OrganismsContentEditModal
+      v-if="editable"
+      v-model:open="editModalOpen"
+      :model-name="modelMeta?.name ?? ''"
+      model-kind="singleton"
+      :fields="(getModelFields() as Record<string, any>)"
+      :entry-data="content"
+      :workspace-id="workspaceId ?? ''"
+      :project-id="projectId ?? ''"
+      :model-id="modelId ?? ''"
+      :locale="locale ?? 'en'"
+      @saved="handleModalSaved"
+    />
   </div>
 </template>

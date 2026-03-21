@@ -134,5 +134,11 @@
   "common.yes": "Yes",
   "common.no": "No",
   "common.discard": "Discard",
-  "content.vocabulary": "Vocabulary"
+  "content.vocabulary": "Vocabulary",
+  "content.add_entry": "Add entry",
+  "content.add_model": "Add model",
+  "content.delete_entry": "Delete entry",
+  "content.delete_model": "Delete model",
+  "content.confirm_delete_entry": "Delete \"{title}\" from {model}?",
+  "content.confirm_delete_model": "Delete the {model} model and all its content?"
 }

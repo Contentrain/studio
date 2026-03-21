@@ -9,6 +9,12 @@ const emit = defineEmits<{
 }>()
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
+const sendChatPrompt = inject<(text: string) => void>('sendChatPrompt', () => {})
+
+function onDelete(e: Event, model: { id: string, name: string }) {
+  e.stopPropagation()
+  sendChatPrompt(`Delete the ${model.name} model (ID: ${model.id}) and all its content.`)
+}
 
 function onPin(e: Event, model: { id: string, name: string, kind: string }) {
   e.stopPropagation()
@@ -62,6 +68,14 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
           </div>
         </div>
         <span class="icon-[annon--chevron-right] size-4 shrink-0 text-muted" aria-hidden="true" />
+      </button>
+      <!-- Delete model -->
+      <button
+        type="button"
+        class="shrink-0 rounded-md p-1 text-muted opacity-0 transition-all hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+        @click="onDelete($event, model)"
+      >
+        <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
       </button>
       <!-- Pin to context -->
       <button

@@ -32,6 +32,8 @@ async function handleSend(text: string) {
   await sendMessage(props.workspaceId, props.projectId, text, enrichedContext as ChatUIContext)
 }
 
+defineExpose({ handleSend })
+
 // Auto-scroll to bottom on new messages
 watch(
   () => messages.value.length,
