@@ -271,7 +271,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         // Single meta for singleton/dictionary
         updatedMeta = {
           ...existingMeta,
-          status: (existingMeta as EntryMeta).status ?? 'draft',
+          status: (existingMeta as unknown as EntryMeta).status ?? 'draft',
           source: 'agent' as const,
           updated_by: userEmail,
         }
@@ -411,7 +411,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       catch { /* no existing meta */ }
       const updatedMeta = {
         ...existingMeta,
-        status: (existingMeta as EntryMeta).status ?? 'draft',
+        status: (existingMeta as unknown as EntryMeta).status ?? 'draft',
         source: 'agent' as const,
         updated_by: userEmail,
       }

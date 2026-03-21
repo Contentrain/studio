@@ -103,8 +103,8 @@ export function parseMarkdownFrontmatter(raw: string): { frontmatter: Record<str
     return { frontmatter: {}, body: raw }
   }
 
-  const yamlBlock = match[1]
-  const body = match[2]
+  const yamlBlock = match[1] ?? ''
+  const body = match[2] ?? ''
 
   // Simple YAML parser (key: value, arrays with - prefix)
   const frontmatter: Record<string, unknown> = {}
