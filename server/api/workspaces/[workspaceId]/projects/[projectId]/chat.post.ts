@@ -127,6 +127,7 @@ export default defineEventHandler(async (event) => {
 
   let projectConfig: ContentrainConfig | null = null
   const models: ModelDefinition[] = []
+  let vocabulary: Record<string, Record<string, string>> | null = null
 
   try {
     const cfgPath = contentRoot ? `${contentRoot}/.contentrain/config.json` : '.contentrain/config.json'
@@ -147,6 +148,21 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* no models */ }
 
+  // Load vocabulary + context from .contentrain/
+  let contentContext: Record<string, unknown> | null = null
+  try {
+    const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'
+    const vocabData = JSON.parse(await git.readFile(vocabPath)) as { terms?: Record<string, Record<string, string>> }
+    vocabulary = vocabData.terms ?? null
+  }
+  catch { /* no vocabulary */ }
+
+  try {
+    const ctxPath = contentRoot ? `${contentRoot}/.contentrain/context.json` : '.contentrain/context.json'
+    contentContext = JSON.parse(await git.readFile(ctxPath)) as Record<string, unknown>
+  }
+  catch { /* no context */ }
+
   // === STATE MACHINE ===
   let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
   try {
@@ -165,9 +181,10 @@ export default defineEventHandler(async (event) => {
     pendingBranches,
     projectStatus: project.status,
     phase,
+    contentContext,
   }
 
-  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent)
+  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary)
 
   // === FILTER TOOLS by permissions + phase ===
   const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]

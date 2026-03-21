@@ -29,12 +29,26 @@ export function resolveContentPath(
   locale: string,
   slug?: string,
 ): string {
-  // Document kind with custom content_path: files live OUTSIDE .contentrain/
-  if (model.kind === 'document' && model.content_path) {
+  // Custom content_path override — files live OUTSIDE .contentrain/
+  if (model.content_path) {
     const basePath = prefixed(ctx.contentRoot, model.content_path)
-    if (model.i18n && slug) return `${basePath}/${slug}/${locale}.md`
-    if (slug) return `${basePath}/${slug}.md`
-    return basePath
+    if (model.kind === 'document') {
+      if (model.i18n && slug) return `${basePath}/${slug}/${locale}.md`
+      if (slug) return `${basePath}/${slug}.md`
+      return basePath
+    }
+    // JSON kinds with content_path override
+    if (!model.i18n) return `${basePath}/data.json`
+    return `${basePath}/${locale}.json`
+  }
+
+  // i18n: false → uses noLocale pattern (data.json)
+  if (!model.i18n && model.kind !== 'document') {
+    const pattern = PATH_PATTERNS.content.noLocale as string
+    const resolved = pattern
+      .replace('{domain}', model.domain)
+      .replace('{modelId}', model.id)
+    return prefixed(ctx.contentRoot, resolved)
   }
 
   // Standard path from PATH_PATTERNS
@@ -65,6 +79,14 @@ export function resolveMetaPath(
     .replace('{slug}', slug ?? '')
 
   return prefixed(ctx.contentRoot, resolved)
+}
+
+export function resolveVocabularyPath(ctx: PathContext): string {
+  return prefixed(ctx.contentRoot, PATH_PATTERNS.vocabulary)
+}
+
+export function resolveContextPath(ctx: PathContext): string {
+  return prefixed(ctx.contentRoot, PATH_PATTERNS.context)
 }
 
 export function resolveModelsDir(ctx: PathContext): string {

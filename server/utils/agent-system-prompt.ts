@@ -15,6 +15,8 @@ export interface ProjectState {
   pendingBranches: Branch[]
   projectStatus: string
   phase: ProjectPhase
+  /** .contentrain/context.json — last operation, stats */
+  contentContext?: Record<string, unknown> | null
 }
 
 export function buildSystemPrompt(
@@ -24,6 +26,7 @@ export function buildSystemPrompt(
   state: ProjectState,
   uiContext: ChatUIContext,
   intent: ClassifiedIntent,
+  vocabulary?: Record<string, Record<string, string>> | null,
 ): string {
   const sections: string[] = []
 
@@ -67,6 +70,18 @@ CONSTRAINTS:
     }
   }
 
+  // Context.json — last operation tracking
+  if (state.contentContext) {
+    const lastOp = state.contentContext.lastOperation as { tool?: string, model?: string, locale?: string, timestamp?: string } | undefined
+    const stats = state.contentContext.stats as { models?: number, entries?: number, locales?: string[] } | undefined
+    if (lastOp?.tool) {
+      stateLines.push(`- Last operation: ${lastOp.tool}${lastOp.model ? ` on ${lastOp.model}` : ''}${lastOp.locale ? ` [${lastOp.locale}]` : ''}`)
+    }
+    if (stats) {
+      stateLines.push(`- Content stats: ${stats.models ?? 0} models, ${stats.entries ?? 0} entries, ${(stats.locales ?? []).length} locales`)
+    }
+  }
+
   if (state.phase === 'uninitialized') {
     stateLines.push('\nThis project needs initialization. Use init_project to create .contentrain/ structure.')
   }
@@ -94,6 +109,21 @@ CONSTRAINTS:
   const relationGraph = buildRelationGraph(models)
   if (relationGraph) {
     sections.push(relationGraph)
+  }
+
+  // 9. VOCABULARY — shared terminology across locales
+  if (vocabulary && Object.keys(vocabulary).length > 0) {
+    const termCount = Object.keys(vocabulary).length
+    const sampleTerms = Object.entries(vocabulary).slice(0, 10)
+    const termLines = sampleTerms.map(([key, translations]) => {
+      const locales = Object.entries(translations).map(([l, v]) => `${l}: "${v}"`).join(', ')
+      return `  - ${key}: ${locales}`
+    })
+    let vocabSection = `## Vocabulary (${termCount} terms)\nShared terminology from .contentrain/vocabulary.json:\n${termLines.join('\n')}`
+    if (termCount > 10) {
+      vocabSection += `\n  ... and ${termCount - 10} more terms`
+    }
+    sections.push(vocabSection)
   }
 
   // 9. PERMISSIONS
