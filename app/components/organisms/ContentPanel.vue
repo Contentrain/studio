@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FieldDef } from '@contentrain/types'
+import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from 'radix-vue'
 
 const { t } = useContent()
 
@@ -171,20 +172,63 @@ provide('getModelFields', getModelFields)
         </div>
         <template v-else-if="snapshot && snapshot.models.length > 0">
           <!-- Project stats bar -->
-          <div v-if="stats" class="flex items-center gap-3 border-b border-secondary-100 px-5 py-2.5 dark:border-secondary-800/50">
-            <div class="flex items-center gap-1.5 text-xs text-muted">
-              <span class="icon-[annon--layers] size-3.5" aria-hidden="true" />
-              <span class="font-medium">{{ stats.models }}</span>
+          <TooltipProvider v-if="stats" :delay-duration="300">
+            <div class="flex items-center gap-3 border-b border-secondary-100 px-5 py-2.5 dark:border-secondary-800/50">
+              <TooltipRoot>
+                <TooltipTrigger as-child>
+                  <div class="flex items-center gap-1.5 text-xs text-muted">
+                    <span class="icon-[annon--layers] size-3.5" aria-hidden="true" />
+                    <span class="font-medium">{{ stats.models }}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent
+                    :side-offset="6"
+                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
+                  >
+                    {{ stats.models }} {{ stats.models === 1 ? 'model' : 'models' }}
+                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
+                  </TooltipContent>
+                </TooltipPortal>
+              </TooltipRoot>
+
+              <TooltipRoot>
+                <TooltipTrigger as-child>
+                  <div class="flex items-center gap-1.5 text-xs text-muted">
+                    <span class="icon-[annon--file-text] size-3.5" aria-hidden="true" />
+                    <span class="font-medium">{{ stats.entries }}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent
+                    :side-offset="6"
+                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
+                  >
+                    {{ stats.entries }} {{ stats.entries === 1 ? 'entry' : 'entries' }}
+                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
+                  </TooltipContent>
+                </TooltipPortal>
+              </TooltipRoot>
+
+              <TooltipRoot v-if="stats.locales.length > 0">
+                <TooltipTrigger as-child>
+                  <div class="flex items-center gap-1.5 text-xs text-muted">
+                    <span class="icon-[annon--globe] size-3.5" aria-hidden="true" />
+                    <span class="font-medium">{{ stats.locales.map(l => l.toUpperCase()).join(', ') }}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent
+                    :side-offset="6"
+                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
+                  >
+                    {{ stats.locales.length }} {{ stats.locales.length === 1 ? 'locale' : 'locales' }}: {{ stats.locales.join(', ') }}
+                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
+                  </TooltipContent>
+                </TooltipPortal>
+              </TooltipRoot>
             </div>
-            <div class="flex items-center gap-1.5 text-xs text-muted">
-              <span class="icon-[annon--file-text] size-3.5" aria-hidden="true" />
-              <span class="font-medium">{{ stats.entries }}</span>
-            </div>
-            <div v-if="stats.locales.length > 0" class="flex items-center gap-1.5 text-xs text-muted">
-              <span class="icon-[annon--globe] size-3.5" aria-hidden="true" />
-              <span class="font-medium">{{ stats.locales.map(l => l.toUpperCase()).join(', ') }}</span>
-            </div>
-          </div>
+          </TooltipProvider>
 
           <!-- Model list -->
           <OrganismsContentModelList
