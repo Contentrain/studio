@@ -34,6 +34,34 @@ function generateBranchId(): string {
     .join('')
 }
 
+/**
+ * Normalize content data to object-map format.
+ * Contentrain MCP stores collections as arrays: [{id: "abc", ...}, ...]
+ * Studio uses object-maps: { "abc": { ... } }
+ * This function converts arrays to object-maps for consistent handling.
+ */
+function toObjectMap(data: unknown): Record<string, unknown> {
+  if (Array.isArray(data)) {
+    const map: Record<string, unknown> = {}
+    for (let i = 0; i < data.length; i++) {
+      const entry = data[i]
+      if (typeof entry === 'object' && entry !== null) {
+        const id = (entry as Record<string, unknown>).id
+          ?? (entry as Record<string, unknown>).ID
+          ?? `entry-${i}`
+        // Remove id from entry fields (it's the key now)
+        const { id: _id, ID: _ID, ...fields } = entry as Record<string, unknown>
+        map[String(id)] = fields
+      }
+    }
+    return map
+  }
+  if (typeof data === 'object' && data !== null) {
+    return data as Record<string, unknown>
+  }
+  return {}
+}
+
 export function createContentEngine(ctx: ContentEngineContext) {
   const { git, contentRoot } = ctx
   const pathCtx = { contentRoot }
@@ -89,7 +117,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const contentPath = resolveContentPath(pathCtx, modelDef, locale)
       let existingContent: Record<string, unknown> = {}
       try {
-        existingContent = JSON.parse(await git.readFile(contentPath))
+        const raw = JSON.parse(await git.readFile(contentPath))
+        existingContent = modelDef.kind === 'collection' ? toObjectMap(raw) : (raw as Record<string, unknown>)
       }
       catch {
         // File doesn't exist yet — creating new
@@ -98,8 +127,10 @@ export function createContentEngine(ctx: ContentEngineContext) {
       // 4. Merge data
       let finalContent: unknown
       if (modelDef.kind === 'collection') {
+        // Normalize incoming data (agent might send array or object-map)
+        const normalizedData = toObjectMap(data)
         // Merge entries into existing object-map
-        finalContent = { ...existingContent, ...data }
+        finalContent = { ...existingContent, ...normalizedData }
       }
       else {
         // Singleton/dictionary: replace entirely
@@ -144,8 +175,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
       const contentPath = resolveContentPath(pathCtx, modelDef, locale)
 
-      // Read existing
-      const existing = JSON.parse(await git.readFile(contentPath)) as Record<string, unknown>
+      // Read existing (normalize array → object-map)
+      const raw = JSON.parse(await git.readFile(contentPath))
+      const existing = toObjectMap(raw)
 
       // Remove entries by rebuilding without deleted IDs
       const filtered = Object.fromEntries(

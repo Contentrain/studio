@@ -399,10 +399,21 @@ async function executeToolWithAutoMerge(
         const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
         const contentPath = resolveContentPath({ contentRoot: '' }, modelDef, locale)
         try {
-          const data = JSON.parse(await git.readFile(contentPath))
+          let data = JSON.parse(await git.readFile(contentPath))
+          // Normalize array → object-map for collections so agent sees entry IDs as keys
+          if (modelDef.kind === 'collection' && Array.isArray(data)) {
+            const map: Record<string, unknown> = {}
+            for (let i = 0; i < data.length; i++) {
+              const entry = data[i] as Record<string, unknown>
+              const id = String(entry.id ?? entry.ID ?? `entry-${i}`)
+              const { id: _id, ID: _ID, ...fields } = entry
+              map[id] = fields
+            }
+            data = map
+          }
           if (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length > 10) {
             const keys = Object.keys(data)
-            const sample = Object.fromEntries(keys.slice(0, 5).map(k => [k, data[k]]))
+            const sample = Object.fromEntries(keys.slice(0, 5).map(k => [k, (data as Record<string, unknown>)[k]]))
             result = { modelId, locale, totalEntries: keys.length, sample, note: `Showing 5 of ${keys.length}` }
           }
           else {
