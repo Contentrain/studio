@@ -73,10 +73,10 @@ const typeColors: Record<string, string> = {
         <span v-if="chip.sublabel" class="truncate opacity-60">· {{ chip.sublabel }}</span>
         <button
           type="button"
-          class="ml-0.5 shrink-0 rounded-sm opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current"
+          class="-mr-0.5 ml-1 flex shrink-0 items-center justify-center rounded-full p-0.5 transition-colors hover:bg-black/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current dark:hover:bg-white/10"
           @click="remove(chip.id)"
         >
-          <span class="icon-[annon--close] size-3" aria-hidden="true" />
+          <span class="icon-[annon--cross] block size-3" aria-hidden="true" />
           <span class="sr-only">{{ t('common.remove') }}</span>
         </button>
       </div>
