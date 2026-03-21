@@ -1,4 +1,4 @@
-import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
+import type { ModelDefinition, ContentrainConfig, FieldDef } from '@contentrain/types'
 import type { Branch } from '../providers/git'
 import type { AgentPermissions } from './agent-permissions'
 import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-types'
@@ -6,7 +6,7 @@ import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-type
 /**
  * Bounded Task Executor system prompt.
  *
- * Structure: Role → UI Context → Intent → State → Schema → Permissions → Rules
+ * Structure: Role → Contentrain Architecture → UI Context → Intent → State → Schema → Permissions → Rules
  * Each section is purpose-built to constrain the agent's behavior.
  */
 
@@ -28,7 +28,7 @@ export function buildSystemPrompt(
   const sections: string[] = []
 
   // 1. ROLE — strict, bounded
-  sections.push(`You are a content management executor. You perform structured content operations on this Git repository using the tools provided.
+  sections.push(`You are a Contentrain content management executor. You perform structured content operations on this Git-backed repository using the tools provided.
 
 CONSTRAINTS:
 - Execute content tasks using tools. Never output raw JSON for users to copy.
@@ -37,10 +37,13 @@ CONSTRAINTS:
 - Respond in the user's language. Be concise — 1-2 sentences for confirmations.
 - If a request is outside content management, respond with ONE sentence redirecting to content tasks.`)
 
-  // 2. UI CONTEXT — what the user is looking at RIGHT NOW
+  // 2. CONTENTRAIN ARCHITECTURE — the agent must know this to work correctly
+  sections.push(buildArchitectureSection())
+
+  // 3. UI CONTEXT — what the user is looking at RIGHT NOW
   sections.push(buildContextSection(uiContext, models, config))
 
-  // 3. INFERRED INTENT
+  // 4. INFERRED INTENT
   if (intent.category !== 'out_of_scope') {
     const inferredLines: string[] = [`## Inferred Intent: ${intent.category}`]
     if (intent.inferred.modelId) inferredLines.push(`Default model: ${intent.inferred.modelId}`)
@@ -52,7 +55,7 @@ CONSTRAINTS:
     sections.push(inferredLines.join('\n'))
   }
 
-  // 4. PROJECT STATE
+  // 5. PROJECT STATE
   const stateLines: string[] = ['## Project State']
   stateLines.push(`- Phase: ${state.phase}`)
   stateLines.push(`- Initialized: ${state.initialized ? 'YES' : 'NO'}`)
@@ -73,7 +76,7 @@ CONSTRAINTS:
 
   sections.push(stateLines.join('\n'))
 
-  // 5. PROJECT CONFIG
+  // 6. PROJECT CONFIG
   if (config) {
     sections.push(`## Configuration
 - Stack: ${config.stack}
@@ -82,42 +85,18 @@ CONSTRAINTS:
 - Workflow: ${config.workflow}`)
   }
 
-  // 6. SCHEMA — only active model in detail, others as summary
+  // 7. SCHEMA — full detail for all models with relation graph
   if (models.length > 0) {
-    const activeModel = uiContext.activeModelId
-      ? models.find(m => m.id === uiContext.activeModelId)
-      : null
-
-    if (activeModel && activeModel.fields) {
-      const fieldList = Object.entries(activeModel.fields).map(([id, def]) => {
-        const flags = [
-          def.required ? 'required' : '',
-          def.unique ? 'unique' : '',
-          def.options ? `options: [${def.options.join(', ')}]` : '',
-        ].filter(Boolean).join(', ')
-        return `  - ${id}: ${def.type}${flags ? ` (${flags})` : ''}`
-      }).join('\n')
-
-      sections.push(`## Active Model: ${activeModel.name}
-Kind: ${activeModel.kind}, domain: ${activeModel.domain}, i18n: ${activeModel.i18n}
-Fields:
-${fieldList}`)
-
-      // Other models as summary
-      const others = models.filter(m => m.id !== activeModel.id)
-      if (others.length > 0) {
-        const summaryList = others.map(m => `  - ${m.id}: ${m.name} (${m.kind})`).join('\n')
-        sections.push(`## Other Models\n${summaryList}`)
-      }
-    }
-    else {
-      // No active model — show all as summary
-      const summaryList = models.map(m => `  - ${m.id}: ${m.name} (${m.kind}, ${Object.keys(m.fields ?? {}).length} fields)`).join('\n')
-      sections.push(`## Models\n${summaryList}`)
-    }
+    sections.push(buildSchemaSection(models, uiContext))
   }
 
-  // 7. PERMISSIONS
+  // 8. RELATION GRAPH — cross-model references
+  const relationGraph = buildRelationGraph(models)
+  if (relationGraph) {
+    sections.push(relationGraph)
+  }
+
+  // 9. PERMISSIONS
   const roleDisplay = permissions.projectRole
     ? `${permissions.workspaceRole} / ${permissions.projectRole}`
     : permissions.workspaceRole
@@ -130,37 +109,190 @@ ${fieldList}`)
     : ''
 }`)
 
-  // 8. RULES — hardened, workflow-aware
-  const workflow = config?.workflow ?? 'auto-merge'
-
-  const rules = [
-    'Use the inferred model/locale/entry from context unless user explicitly overrides.',
-    'For NEW collection entries, generate entry IDs as 12-character lowercase hex strings.',
-    'To UPDATE existing content, use the EXISTING entry ID from get_content. NEVER generate a new ID for updates — this causes duplicates.',
-    'save_content MERGES with existing data. Only send the fields that changed, not all fields.',
-    'Sort object keys alphabetically. Omit null values and defaults.',
-    'Never ask questions you can infer from context.',
-    'Never repeat tool calls that already returned results in this conversation.',
-  ]
-
-  if (workflow === 'auto-merge') {
-    rules.push('After save_content/save_model/init_project, changes are auto-merged. Report the result directly.')
-  }
-  else {
-    rules.push('After save_content/save_model, a review branch is created. Tell the user which branch to review.')
-    rules.push('Do NOT call merge_branch automatically. Wait for user to explicitly approve.')
-  }
-
-  if (intent.category === 'out_of_scope') {
-    rules.push('This message appears off-topic. Respond with ONE sentence redirecting to content management tasks.')
-  }
-
-  sections.push(`## Rules\n${rules.map(r => `- ${r}`).join('\n')}`)
+  // 10. RULES — hardened, workflow-aware, architecture-aware
+  sections.push(buildRulesSection(config, intent))
 
   return sections.join('\n\n')
 }
 
-/** Build UI context section (extracted for reuse) */
+// ─── Architecture Section ───
+
+function buildArchitectureSection(): string {
+  return `## Contentrain Architecture
+
+### Four Content Kinds
+| Kind | Storage | Entries | ID | Use Case |
+|---|---|---|---|---|
+| singleton | JSON object | 1 per locale | model = identity | Hero, nav, config |
+| collection | JSON object-map (ID→data) | N per locale | 12-char hex auto-generated | Blog, products, team, FAQ |
+| document | Markdown + YAML frontmatter | N (each = directory) | slug (URL-safe) | Blog posts, docs |
+| dictionary | JSON flat key-value | Free key-value | key = identity | Error messages, UI strings |
+
+### 27 Field Types
+**String:** string, text, email, url, slug, color, phone, code, icon
+**Rich text:** markdown, richtext
+**Number:** number, integer, decimal, percent, rating (1-5)
+**Primitive:** boolean, date (YYYY-MM-DD), datetime (ISO 8601)
+**Media:** image, video, file — all store relative path (string), NO upload
+**Relation:** relation (single ref → entry ID or slug), relations (array of refs)
+**Structural:** select (enum from options[]), array (items), object (nested fields)
+
+### Field Properties
+- \`required\`: field must be present
+- \`unique\`: value must be unique across entries (collection)
+- \`min/max\`: string length, number range, or array size
+- \`pattern\`: regex validation
+- \`options\`: enum values for select type
+- \`model\`: target model ID(s) for relation/relations — string or string[]
+- \`items\`: array item type (string type name or FieldDef object)
+- \`fields\`: nested fields for object type (max 2 levels deep)
+- \`default\`: default value (omitted from storage when matches)
+- \`accept\`: MIME types for media fields
+- \`description\`: field documentation
+
+### Relation System
+- \`relation\` → stores single entry ID (collection target) or slug (document target)
+- \`relations\` → stores string[] of IDs/slugs
+- Polymorphic: when \`model\` is string[], value is \`{ model: "target-model", ref: "id-or-slug" }\`
+- Self-referencing allowed: model can reference itself (e.g., categories.parent → categories)
+- Singletons and dictionaries CANNOT be relation targets
+
+### Localization Rules
+- \`i18n: true\` → separate file per locale: en.json, tr.json
+- \`i18n: false\` → single file: data.json
+- Collections: ALL locales must have the SAME entry ID set
+- Dictionaries: ALL locales should have the SAME key set
+- Entry IDs and slugs are locale-agnostic (same across all locales)
+
+### System Fields (auto-managed, never set manually)
+- \`id\`: collection entry ID (12-char hex) — the object-map key
+- \`slug\`: document identifier — the directory name
+- \`status\`: draft | in_review | published | rejected | archived (in meta file)
+- \`source\`: agent | human | import (in meta file)
+- \`updated_by\`: who made the last change (in meta file)
+- Temporal data: createdAt/updatedAt from git history
+
+### Content Storage Format
+- Collections: \`{ "entryId": { field: value, ... }, ... }\` — keys sorted lexicographically
+- Singletons: \`{ field: value, ... }\`
+- Dictionaries: \`{ "key": "value", ... }\` — all values are strings
+- Documents: Markdown with YAML frontmatter (slug, fields in frontmatter, body in markdown)
+- Canonical JSON: 2-space indent, sorted keys, omit null/defaults, trailing newline`
+}
+
+// ─── Schema Section ───
+
+function buildSchemaSection(models: ModelDefinition[], uiContext: ChatUIContext): string {
+  const activeModel = uiContext.activeModelId
+    ? models.find(m => m.id === uiContext.activeModelId)
+    : null
+
+  const lines: string[] = ['## Content Schema']
+
+  // Show ALL models with full field details (not just active one)
+  for (const model of models) {
+    const isActive = model.id === activeModel?.id
+    const prefix = isActive ? '### ▶ ' : '### '
+
+    lines.push(`${prefix}${model.name} (\`${model.id}\`)`)
+    lines.push(`Kind: ${model.kind}, domain: ${model.domain}, i18n: ${model.i18n}`)
+
+    if (model.fields && Object.keys(model.fields).length > 0) {
+      const fieldLines = Object.entries(model.fields).map(([id, def]) =>
+        `  - ${id}: ${formatFieldDef(def)}`,
+      )
+      lines.push(`Fields:\n${fieldLines.join('\n')}`)
+    }
+    else if (model.kind === 'dictionary') {
+      lines.push('Fields: none (free key-value, all string values)')
+    }
+
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+/** Format a field definition with all constraints for the system prompt */
+function formatFieldDef(def: FieldDef, depth: number = 0): string {
+  const parts: string[] = [def.type]
+  const flags: string[] = []
+
+  if (def.required) flags.push('required')
+  if (def.unique) flags.push('unique')
+  if (def.min !== undefined) flags.push(`min: ${def.min}`)
+  if (def.max !== undefined) flags.push(`max: ${def.max}`)
+  if (def.pattern) flags.push(`pattern: ${def.pattern}`)
+  if (def.default !== undefined) flags.push(`default: ${JSON.stringify(def.default)}`)
+  if (def.description) flags.push(`"${def.description}"`)
+
+  // Relation target
+  if (def.model) {
+    const target = Array.isArray(def.model) ? def.model.join(' | ') : def.model
+    flags.push(`→ ${target}`)
+  }
+
+  // Select options
+  if (def.options) {
+    flags.push(`options: [${def.options.join(', ')}]`)
+  }
+
+  // Array items
+  if (def.items) {
+    if (typeof def.items === 'string') {
+      flags.push(`items: ${def.items}`)
+    }
+    else {
+      flags.push(`items: ${formatFieldDef(def.items, depth + 1)}`)
+    }
+  }
+
+  // Media
+  if (def.accept) flags.push(`accept: ${def.accept}`)
+
+  if (flags.length > 0) {
+    parts.push(`(${flags.join(', ')})`)
+  }
+
+  // Nested object fields
+  if (def.fields && depth < 2) {
+    const nested = Object.entries(def.fields).map(([id, nestedDef]) =>
+      `${'    '.repeat(depth + 1)}- ${id}: ${formatFieldDef(nestedDef, depth + 1)}`,
+    ).join('\n')
+    return `${parts.join(' ')}\n${nested}`
+  }
+
+  return parts.join(' ')
+}
+
+// ─── Relation Graph ───
+
+function buildRelationGraph(models: ModelDefinition[]): string | null {
+  const edges: string[] = []
+
+  for (const model of models) {
+    if (!model.fields) continue
+    for (const [fieldId, def] of Object.entries(model.fields)) {
+      if (def.type === 'relation' || def.type === 'relations') {
+        const targets = Array.isArray(def.model) ? def.model : (def.model ? [def.model] : [])
+        const cardinality = def.type === 'relation' ? 'one' : 'many'
+        for (const target of targets) {
+          const targetModel = models.find(m => m.id === target)
+          const targetKind = targetModel?.kind ?? 'unknown'
+          const refKey = targetKind === 'document' ? 'slug' : 'id'
+          edges.push(`- ${model.id}.${fieldId} → ${target} (${cardinality}, ref by ${refKey})`)
+        }
+      }
+    }
+  }
+
+  if (edges.length === 0) return null
+
+  return `## Relation Graph\n${edges.join('\n')}\n\nWhen creating/updating relation fields, use existing entry IDs or slugs from the target model. Call get_content on the target model first if you need to look up valid references.`
+}
+
+// ─── Context Section ───
+
 function buildContextSection(
   uiContext: ChatUIContext,
   models: ModelDefinition[],
@@ -182,5 +314,84 @@ function buildContextSection(
     lines.push('User is viewing the project overview (model list).')
   }
 
+  if (uiContext.panelState === 'branch' && uiContext.activeBranch) {
+    lines.push(`The user is reviewing branch: ${uiContext.activeBranch}`)
+  }
+
+  // Pinned context items
+  if (uiContext.contextItems && uiContext.contextItems.length > 0) {
+    lines.push('')
+    lines.push('### Pinned Context')
+    lines.push('The user has pinned these items. Use them as primary targets:')
+    for (const item of uiContext.contextItems) {
+      switch (item.type) {
+        case 'model':
+          lines.push(`- Model: ${item.modelName ?? item.modelId}`)
+          break
+        case 'entry':
+          lines.push(`- Entry "${item.entryId}" from ${item.modelName ?? item.modelId}${item.data ? `: ${JSON.stringify(item.data).substring(0, 200)}` : ''}`)
+          break
+        case 'field':
+          lines.push(`- Field "${item.fieldId}" from ${item.modelName ?? item.modelId}${item.entryId ? ` (entry: ${item.entryId})` : ''} = ${JSON.stringify(item.data).substring(0, 200)}`)
+          break
+      }
+    }
+  }
+
   return lines.join('\n')
+}
+
+// ─── Rules Section ───
+
+function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent): string {
+  const workflow = config?.workflow ?? 'auto-merge'
+
+  const rules = [
+    // Context inference
+    'Use the inferred model/locale/entry from context unless user explicitly overrides.',
+    'Never ask questions you can infer from context.',
+    'Never repeat tool calls that already returned results in this conversation.',
+
+    // Content creation
+    'For NEW collection entries, generate entry IDs as 12-character lowercase hex strings (e.g., a1b2c3d4e5f6).',
+    'For NEW document entries, generate a slug from the title (kebab-case, lowercase, alphanumeric + hyphens).',
+    'Dictionary entries are free key-value pairs — ALL values must be strings.',
+
+    // Content updates
+    'To UPDATE existing content, use the EXISTING entry ID from get_content. NEVER generate a new ID for updates — this causes duplicates.',
+    'save_content MERGES with existing data. Only send the fields that changed, not all fields.',
+
+    // Relations
+    'For relation fields, the value must be an existing entry ID (for collection targets) or slug (for document targets) from the target model.',
+    'For polymorphic relations (model is string[]), store as { "model": "target-model", "ref": "id-or-slug" }.',
+    'Before setting a relation value, verify the target entry exists by calling get_content on the target model.',
+
+    // Validation
+    'Respect field constraints: required fields must be present, unique values must not duplicate, min/max bounds enforced.',
+    'For select fields, value MUST be one of the defined options.',
+
+    // i18n
+    'When creating collection entries in i18n models, the same entry ID must exist in ALL supported locales.',
+    'When creating dictionary entries in i18n models, the same keys should exist in ALL supported locales.',
+
+    // Serialization
+    'Sort object keys alphabetically. Omit null values and default values.',
+    'System fields (id, slug, status, source, updated_by) are auto-managed — NEVER include them in content data.',
+  ]
+
+  // Workflow rules
+  if (workflow === 'auto-merge') {
+    rules.push('After save_content/save_model/init_project, changes are auto-merged. Report the result directly.')
+  }
+  else {
+    rules.push('After save_content/save_model, a review branch is created. Tell the user which branch to review.')
+    rules.push('Do NOT call merge_branch automatically. Wait for user to explicitly approve.')
+  }
+
+  // Out of scope
+  if (intent.category === 'out_of_scope') {
+    rules.push('This message appears off-topic. Respond with ONE sentence redirecting to content management tasks.')
+  }
+
+  return `## Rules\n${rules.map(r => `- ${r}`).join('\n')}`
 }
