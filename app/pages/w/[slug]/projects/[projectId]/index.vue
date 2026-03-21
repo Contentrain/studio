@@ -10,13 +10,19 @@ const projectId = computed(() => route.params.projectId as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
-const { snapshot, loading: snapshotLoading, fetchSnapshot } = useSnapshot()
+const { snapshot, loading: snapshotLoading, fetchSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
 const { t } = useContent()
 
 const project = computed(() =>
   projects.value.find(p => p.id === projectId.value) ?? null,
 )
+
+// Derive real project status: if snapshot shows .contentrain/ exists, project is active regardless of DB status
+const effectiveProjectStatus = computed(() => {
+  if (hasContentrain.value) return 'active'
+  return project.value?.status ?? 'setup'
+})
 
 const activeModelId = computed(() => route.query.model as string ?? null)
 const activeLocale = ref('en')
@@ -113,7 +119,7 @@ async function handleContentChanged(affected: { models: string[], locales: strin
         :workspace-id="activeWorkspace.id"
         :project-id="projectId"
         :project-name="project?.repo_full_name ?? t('common.loading')"
-        :project-status="project?.status"
+        :project-status="effectiveProjectStatus"
         :context="chatContext"
         @content-changed="handleContentChanged"
       />
