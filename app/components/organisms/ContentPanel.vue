@@ -18,6 +18,8 @@ interface SnapshotData {
   readonly config: unknown
   readonly models: readonly SnapshotModel[]
   readonly content: Readonly<Record<string, { count: number, locales: string[] }>>
+  readonly vocabulary?: Readonly<Record<string, Record<string, string>>> | null
+  readonly contentContext?: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null
 }
 
 const props = defineProps<{
@@ -51,6 +53,24 @@ const activeModel = computed(() =>
 )
 
 const panelState = computed(() => props.activeModelId ? 'model' : 'overview')
+
+// Project stats from context.json or computed from snapshot
+const stats = computed(() => {
+  if (!props.snapshot?.exists) return null
+  const ctx = props.snapshot.contentContext?.stats
+  return {
+    models: ctx?.models ?? props.snapshot.models.length,
+    entries: ctx?.entries ?? Object.values(props.snapshot.content).reduce((sum, c) => sum + c.count, 0),
+    locales: ctx?.locales ?? [],
+  }
+})
+
+// Vocabulary terms
+const vocabularyTerms = computed(() => {
+  const vocab = props.snapshot?.vocabulary
+  if (!vocab) return []
+  return Object.entries(vocab)
+})
 
 // Schema-aware field utilities
 function getFieldType(fieldId: string): string {
@@ -101,10 +121,15 @@ const activeModelMeta = computed(() => activeModel.value
   : null,
 )
 
+function getModelFields(): Record<string, unknown> {
+  return (activeModel.value?.fields ?? {}) as Record<string, unknown>
+}
+
 provide('getFieldType', getFieldType)
 provide('getEntryTitle', getEntryTitle)
 provide('getUserFieldIds', getUserFieldIds)
 provide('activeModelMeta', activeModelMeta)
+provide('getModelFields', getModelFields)
 </script>
 
 <template>
@@ -144,10 +169,61 @@ provide('activeModelMeta', activeModelMeta)
             :description="t('content.not_found_description')"
           />
         </div>
-        <OrganismsContentModelList
-          v-else-if="snapshot && snapshot.models.length > 0" :models="snapshot.models"
-          :content="snapshot.content" @select="emit('selectModel', $event)"
-        />
+        <template v-else-if="snapshot && snapshot.models.length > 0">
+          <!-- Project stats bar -->
+          <div v-if="stats" class="flex items-center gap-3 border-b border-secondary-100 px-5 py-2.5 dark:border-secondary-800/50">
+            <div class="flex items-center gap-1.5 text-xs text-muted">
+              <span class="icon-[annon--layers] size-3.5" aria-hidden="true" />
+              <span class="font-medium">{{ stats.models }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-muted">
+              <span class="icon-[annon--file-text] size-3.5" aria-hidden="true" />
+              <span class="font-medium">{{ stats.entries }}</span>
+            </div>
+            <div v-if="stats.locales.length > 0" class="flex items-center gap-1.5 text-xs text-muted">
+              <span class="icon-[annon--globe] size-3.5" aria-hidden="true" />
+              <span class="font-medium">{{ stats.locales.map(l => l.toUpperCase()).join(', ') }}</span>
+            </div>
+          </div>
+
+          <!-- Model list -->
+          <OrganismsContentModelList
+            :models="snapshot.models"
+            :content="snapshot.content" @select="emit('selectModel', $event)"
+          />
+
+          <!-- Vocabulary section -->
+          <div v-if="vocabularyTerms.length > 0" class="border-t border-secondary-200 dark:border-secondary-800">
+            <details class="group">
+              <summary class="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
+                <span class="icon-[annon--book-library] size-3.5" aria-hidden="true" />
+                <span>{{ t('content.vocabulary') }}</span>
+                <AtomsBadge variant="secondary" size="sm" class="ml-auto">
+                  {{ vocabularyTerms.length }}
+                </AtomsBadge>
+                <span class="icon-[annon--chevron-right] size-3 transition-transform group-open:rotate-90" aria-hidden="true" />
+              </summary>
+              <div class="max-h-48 overflow-y-auto">
+                <table class="w-full text-xs">
+                  <tbody class="divide-y divide-secondary-100 dark:divide-secondary-800">
+                    <tr
+                      v-for="[term, translations] in vocabularyTerms"
+                      :key="term"
+                      class="hover:bg-secondary-50 dark:hover:bg-secondary-900"
+                    >
+                      <td class="px-5 py-1.5 font-mono text-muted">
+                        {{ term }}
+                      </td>
+                      <td class="px-2 py-1.5 text-heading dark:text-secondary-100">
+                        {{ translations[currentLocale] ?? translations[Object.keys(translations)[0]] ?? '' }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </template>
         <div v-else class="p-5">
           <AtomsEmptyState
             icon="icon-[annon--box]" :title="t('content.no_models_title')"

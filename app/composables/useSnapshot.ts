@@ -16,11 +16,18 @@ interface ContentSummary {
   locales: string[]
 }
 
+interface ContentContext {
+  lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }
+  stats?: { models?: number, entries?: number, locales?: string[] }
+}
+
 interface Snapshot {
   exists: boolean
   config: unknown
   models: ModelSummary[]
   content: Record<string, ContentSummary>
+  vocabulary?: Record<string, Record<string, string>> | null
+  contentContext?: ContentContext | null
 }
 
 interface CachedSnapshot {
@@ -128,11 +135,26 @@ export function useSnapshot() {
 
   const models = computed(() => snapshot.value?.models ?? [])
   const hasContentrain = computed(() => snapshot.value?.exists ?? false)
+  const vocabulary = computed(() => snapshot.value?.vocabulary ?? null)
+  const contentContext = computed(() => snapshot.value?.contentContext ?? null)
+  const projectStats = computed(() => {
+    if (!snapshot.value?.exists) return null
+    const ctx = snapshot.value.contentContext?.stats
+    return {
+      modelCount: ctx?.models ?? snapshot.value.models.length,
+      entryCount: ctx?.entries ?? Object.values(snapshot.value.content).reduce((sum, c) => sum + c.count, 0),
+      localeCount: ctx?.locales?.length ?? 0,
+      locales: ctx?.locales ?? [],
+    }
+  })
 
   return {
     snapshot: readonly(snapshot),
     models,
     hasContentrain,
+    vocabulary,
+    contentContext,
+    projectStats,
     loading: readonly(loading),
     refreshing: readonly(refreshing),
     error: readonly(error),

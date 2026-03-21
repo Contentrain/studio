@@ -131,10 +131,29 @@ export default defineEventHandler(async (event) => {
     // No content directory
   }
 
+  // Read vocabulary
+  let vocabulary: Record<string, Record<string, string>> | null = null
+  try {
+    const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'
+    const vocabData = JSON.parse(await git.readFile(vocabPath)) as { version?: number, terms?: Record<string, Record<string, string>> }
+    vocabulary = vocabData.terms ?? null
+  }
+  catch { /* no vocabulary */ }
+
+  // Read context.json (last operation + stats)
+  let contentContext: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null = null
+  try {
+    const ctxPath = contentRoot ? `${contentRoot}/.contentrain/context.json` : '.contentrain/context.json'
+    contentContext = JSON.parse(await git.readFile(ctxPath))
+  }
+  catch { /* no context */ }
+
   return {
     exists: true,
     config,
     models,
     content,
+    vocabulary,
+    contentContext,
   }
 })

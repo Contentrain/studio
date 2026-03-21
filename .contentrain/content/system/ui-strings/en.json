@@ -118,5 +118,21 @@
   "chat.title": "Chat",
   "common.clear_all": "Clear all",
   "common.remove": "Remove",
-  "settings.slug_placeholder": "my-workspace"
+  "settings.slug_placeholder": "my-workspace",
+  "content.edit_entry": "Edit entry",
+  "content.edit_content": "Edit content",
+  "content.unsaved_changes": "You have unsaved changes. Discard them?",
+  "content.dirty_count": "{count} field(s) changed",
+  "content.field_required": "This field is required",
+  "content.save_all": "Save changes",
+  "content.enter_path": "Enter file path or URL",
+  "content.add_item": "Add item",
+  "content.slug_hint": "Lowercase letters, numbers, and hyphens only",
+  "content.no_entries": "No entries found",
+  "content.select_entry": "Select an entry",
+  "content.complex_hint": "Edit complex structures via chat",
+  "common.yes": "Yes",
+  "common.no": "No",
+  "common.discard": "Discard",
+  "content.vocabulary": "Vocabulary"
 }
