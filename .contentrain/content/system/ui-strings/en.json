@@ -113,7 +113,10 @@
   "chat.new_conversation": "New conversation",
   "chat.placeholder": "Ask about your content...",
   "chat.send": "Send",
+  "chat.drop_context": "Drop here to add context",
   "chat.thinking": "Thinking...",
   "chat.title": "Chat",
+  "common.clear_all": "Clear all",
+  "common.remove": "Remove",
   "settings.slug_placeholder": "my-workspace"
 }

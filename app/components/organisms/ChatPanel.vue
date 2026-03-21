@@ -19,13 +19,17 @@ const { messages, isStreaming, error, sendMessage, clearChat } = useChat({
     emit('contentChanged', affected)
   },
 })
+const { toContextItems } = useChatContext()
 const toast = useToast()
 const messagesEndRef = ref<HTMLElement | null>(null)
 
 async function handleSend(text: string) {
-  await sendMessage(props.workspaceId, props.projectId, text, props.context)
-  // contentChanged is now emitted via useChat's onContentChanged callback
-  // triggered by the 'done' SSE event with affected resources
+  // Merge explicit context items into the UI context
+  const contextItems = toContextItems()
+  const enrichedContext = props.context
+    ? { ...props.context, contextItems }
+    : undefined
+  await sendMessage(props.workspaceId, props.projectId, text, enrichedContext as ChatUIContext)
 }
 
 // Auto-scroll to bottom on new messages
@@ -116,6 +120,9 @@ watch(error, (err) => {
         <div ref="messagesEndRef" />
       </div>
     </div>
+
+    <!-- Context bar (pinned items + drop zone) -->
+    <MoleculesChatContextBar />
 
     <!-- Input -->
     <MoleculesChatInput :disabled="isStreaming" @send="handleSend" />

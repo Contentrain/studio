@@ -95,9 +95,16 @@ function arrayToObjectMap(arr: Record<string, unknown>[]): Record<string, Record
   return map
 }
 
+// Model metadata for context chips
+const activeModelMeta = computed(() => activeModel.value
+  ? { id: activeModel.value.id, name: activeModel.value.name, kind: activeModel.value.kind }
+  : null,
+)
+
 provide('getFieldType', getFieldType)
 provide('getEntryTitle', getEntryTitle)
 provide('getUserFieldIds', getUserFieldIds)
+provide('activeModelMeta', activeModelMeta)
 </script>
 
 <template>

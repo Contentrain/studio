@@ -13,6 +13,16 @@ import type { AITool } from '../providers/ai'
 
 // ─── UI Context (client → server) ───
 
+/** Explicitly pinned context item from the content panel */
+export interface ContextItem {
+  type: 'model' | 'entry' | 'field'
+  modelId: string
+  modelName?: string
+  entryId?: string
+  fieldId?: string
+  data?: unknown
+}
+
 /** What the user is currently looking at in the three-panel UI */
 export interface ChatUIContext {
   /** Selected model in context panel (null = overview) */
@@ -25,6 +35,8 @@ export interface ChatUIContext {
   panelState: 'overview' | 'model' | 'branch'
   /** If viewing a branch, which one */
   activeBranch: string | null
+  /** Explicitly pinned context items from the content panel */
+  contextItems?: ContextItem[]
 }
 
 /** Full chat request body */

@@ -5,6 +5,8 @@ const props = defineProps<{
 
 const { t } = useContent()
 const searchQuery = ref('')
+const modelMeta = inject<ComputedRef<{ id: string, name: string, kind: string } | null>>('activeModelMeta', computed(() => null))
+const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 
 const filteredEntries = computed(() => {
   const entries = Object.entries(props.content)
@@ -14,6 +16,35 @@ const filteredEntries = computed(() => {
     key.toLowerCase().includes(q) || String(value).toLowerCase().includes(q),
   )
 })
+
+function pinKey(e: Event, key: string, value: unknown) {
+  e.stopPropagation()
+  const meta = modelMeta.value
+  if (!meta) return
+  toggle({
+    type: 'field',
+    label: key,
+    sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
+    modelId: meta.id,
+    modelName: meta.name,
+    fieldId: key,
+    data: value,
+  })
+}
+
+function onRowDragStart(e: DragEvent, key: string, value: unknown) {
+  const meta = modelMeta.value
+  if (!meta) return
+  startDrag(e, {
+    type: 'field',
+    label: key,
+    sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
+    modelId: meta.id,
+    modelName: meta.name,
+    fieldId: key,
+    data: value,
+  })
+}
 </script>
 
 <template>
@@ -34,19 +65,35 @@ const filteredEntries = computed(() => {
             <th class="px-5 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
               {{ t('content.value_column') }}
             </th>
+            <th class="w-8" />
           </tr>
         </thead>
         <tbody class="divide-y divide-secondary-100 dark:divide-secondary-800">
           <tr
             v-for="[key, value] in filteredEntries"
             :key="key"
-            class="hover:bg-secondary-50 dark:hover:bg-secondary-900"
+            class="group hover:bg-secondary-50 dark:hover:bg-secondary-900"
+            draggable="true"
+            @dragstart="onRowDragStart($event, key, value)"
+            @dragend="endDrag"
           >
             <td class="max-w-40 truncate px-5 py-2 font-mono text-xs text-muted" :title="key">
               {{ key }}
             </td>
             <td class="max-w-48 truncate px-5 py-2 text-heading dark:text-secondary-100" :title="String(value)">
               {{ String(value) }}
+            </td>
+            <td class="pr-3">
+              <button
+                type="button"
+                class="shrink-0 rounded-md p-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                :class="isPinned('field', modelMeta?.id ?? '', undefined, key)
+                  ? 'text-info-500 opacity-100'
+                  : 'text-muted opacity-0 hover:opacity-100 group-hover:opacity-60'"
+                @click="pinKey($event, key, value)"
+              >
+                <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+              </button>
             </td>
           </tr>
         </tbody>

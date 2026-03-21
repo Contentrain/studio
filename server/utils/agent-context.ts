@@ -40,6 +40,26 @@ export function buildContextSection(
     lines.push(`The user is reviewing branch: ${uiContext.activeBranch}`)
   }
 
+  // Pinned context items — user explicitly selected these
+  if (uiContext.contextItems && uiContext.contextItems.length > 0) {
+    lines.push('')
+    lines.push('## Pinned Context')
+    lines.push('The user has pinned these items for reference. Use them as primary targets when the user refers to content:')
+    for (const item of uiContext.contextItems) {
+      switch (item.type) {
+        case 'model':
+          lines.push(`- Model: ${item.modelName ?? item.modelId}`)
+          break
+        case 'entry':
+          lines.push(`- Entry "${item.entryId}" from ${item.modelName ?? item.modelId}${item.data ? `: ${JSON.stringify(item.data).substring(0, 200)}` : ''}`)
+          break
+        case 'field':
+          lines.push(`- Field "${item.fieldId}" from ${item.modelName ?? item.modelId}${item.entryId ? ` (entry: ${item.entryId})` : ''} = ${JSON.stringify(item.data).substring(0, 200)}`)
+          break
+      }
+    }
+  }
+
   return lines.join('\n')
 }
 

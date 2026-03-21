@@ -26,6 +26,15 @@ export interface ChatUIContext {
   activeEntryId: string | null
   panelState: 'overview' | 'model' | 'branch'
   activeBranch: string | null
+  /** Explicitly pinned context items from the content panel */
+  contextItems?: Array<{
+    type: 'model' | 'entry' | 'field'
+    modelId: string
+    modelName?: string
+    entryId?: string
+    fieldId?: string
+    data?: unknown
+  }>
 }
 
 /** Affected resources from tool execution */
