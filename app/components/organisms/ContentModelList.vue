@@ -63,7 +63,7 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
           <div class="flex items-center gap-2 text-xs text-muted">
             <span>{{ model.kind ?? model.type }}</span>
             <span v-if="content[model.id]?.locales">
-              · {{ content[model.id].locales.length }} {{ content[model.id].locales.length === 1 ? 'locale' : 'locales' }}
+              · {{ content[model.id]!.locales.length }} {{ content[model.id]!.locales.length === 1 ? 'locale' : 'locales' }}
             </span>
           </div>
         </div>

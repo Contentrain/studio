@@ -305,7 +305,7 @@ provide('sendChatPrompt', sendChatPrompt)
                         {{ term }}
                       </td>
                       <td class="px-2 py-1.5 text-heading dark:text-secondary-100">
-                        {{ translations[currentLocale] ?? translations[Object.keys(translations)[0]] ?? '' }}
+                        {{ translations[currentLocale] ?? (Object.keys(translations).length > 0 ? translations[Object.keys(translations)[0]!] : '') }}
                       </td>
                     </tr>
                   </tbody>
