@@ -3,6 +3,7 @@ import { get, set, del } from 'idb-keyval'
 interface CachedModelContent {
   data: unknown
   kind: string
+  meta: Record<string, unknown> | null
   timestamp: number
 }
 
@@ -15,6 +16,7 @@ const memoryCache = new Map<string, CachedModelContent>()
 export function useModelContent() {
   const content = useState<unknown>('model-content', () => null)
   const kind = useState<string>('model-content-kind', () => 'collection')
+  const meta = useState<Record<string, unknown> | null>('model-content-meta', () => null)
   const loading = useState('model-content-loading', () => false)
 
   async function fetchContent(workspaceId: string, projectId: string, modelId: string, locale: string = 'en') {
@@ -25,6 +27,7 @@ export function useModelContent() {
     if (mem && Date.now() - mem.timestamp < STALE_MS) {
       content.value = mem.data
       kind.value = mem.kind
+      meta.value = mem.meta
       return
     }
 
@@ -35,6 +38,7 @@ export function useModelContent() {
         if (cached && Date.now() - cached.timestamp < STALE_MS) {
           content.value = cached.data
           kind.value = cached.kind
+          meta.value = cached.meta ?? null
           memoryCache.set(cacheKey, cached)
           return
         }
@@ -45,17 +49,19 @@ export function useModelContent() {
     // 3. API fetch (slow — GitHub API)
     loading.value = true
     try {
-      const result = await $fetch<{ data: unknown, kind?: string }>(
+      const result = await $fetch<{ data: unknown, kind?: string, meta?: Record<string, unknown> | null }>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`,
         { params: { locale } },
       )
       content.value = result.data
       kind.value = result.kind ?? 'collection'
+      meta.value = result.meta ?? null
 
       // Cache in memory + IndexedDB
       const entry: CachedModelContent = {
         data: result.data,
         kind: result.kind ?? 'collection',
+        meta: result.meta ?? null,
         timestamp: Date.now(),
       }
       memoryCache.set(cacheKey, entry)
@@ -80,6 +86,7 @@ export function useModelContent() {
   function clearContent() {
     content.value = null
     kind.value = 'collection'
+    meta.value = null
   }
 
   /**
@@ -113,6 +120,7 @@ export function useModelContent() {
   return {
     content: readonly(content),
     kind: readonly(kind),
+    meta: readonly(meta),
     loading: readonly(loading),
     fetchContent,
     clearContent,

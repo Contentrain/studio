@@ -28,6 +28,7 @@ const props = defineProps<{
   snapshotLoading: boolean
   modelContent: unknown
   modelContentKind: string
+  modelContentMeta?: Record<string, unknown> | null
   modelContentLoading: boolean
   activeModelId: string | null
   workspaceId?: string
@@ -39,6 +40,7 @@ const emit = defineEmits<{
   'selectModel': [modelId: string]
   'back': []
   'update:locale': [locale: string]
+  'sendChatPrompt': [text: string]
 }>()
 
 // Locale from config
@@ -126,11 +128,30 @@ function getModelFields(): Record<string, unknown> {
   return (activeModel.value?.fields ?? {}) as Record<string, unknown>
 }
 
+function sendChatPrompt(text: string) {
+  emit('sendChatPrompt', text)
+}
+
+function addEntry() {
+  if (!activeModel.value) return
+  sendChatPrompt(`Create a new entry for the ${activeModel.value.name} model with default values.`)
+}
+
+function deleteModel() {
+  if (!activeModel.value) return
+  sendChatPrompt(`Delete the ${activeModel.value.name} model (ID: ${activeModel.value.id}) and all its content.`)
+}
+
+function addModel() {
+  sendChatPrompt('Create a new content model. Ask me what kind of content I want to manage.')
+}
+
 provide('getFieldType', getFieldType)
 provide('getEntryTitle', getEntryTitle)
 provide('getUserFieldIds', getUserFieldIds)
 provide('activeModelMeta', activeModelMeta)
 provide('getModelFields', getModelFields)
+provide('sendChatPrompt', sendChatPrompt)
 </script>
 
 <template>
@@ -145,6 +166,22 @@ provide('getModelFields', getModelFields)
         {{ panelState === 'model' && activeModel ? activeModel.name : t('content.title') }}
       </h3>
       <div v-if="panelState === 'model'" class="ml-auto flex shrink-0 items-center gap-2">
+        <!-- Add entry (collection only) -->
+        <AtomsIconButton
+          v-if="editable && activeModel && (activeModel.kind === 'collection' || activeModel.type === 'collection')"
+          icon="icon-[annon--plus]"
+          :label="t('content.add_entry')"
+          size="sm"
+          @click="addEntry"
+        />
+        <!-- Delete model -->
+        <AtomsIconButton
+          v-if="editable && activeModel"
+          icon="icon-[annon--trash]"
+          :label="t('content.delete_model')"
+          size="sm"
+          @click="deleteModel"
+        />
         <!-- Locale switcher -->
         <AtomsFormSelect
           v-if="supportedLocales.length > 1" :model-value="currentLocale"
@@ -230,6 +267,21 @@ provide('getModelFields', getModelFields)
             </div>
           </TooltipProvider>
 
+          <!-- Model list header -->
+          <div v-if="editable" class="flex items-center justify-between border-b border-secondary-100 px-5 py-2 dark:border-secondary-800/50">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+              Models
+            </span>
+            <button
+              type="button"
+              class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted transition-colors hover:bg-secondary-50 hover:text-primary-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+              @click="addModel"
+            >
+              <span class="icon-[annon--plus] size-3" aria-hidden="true" />
+              <span>{{ t('content.add_model') }}</span>
+            </button>
+          </div>
+
           <!-- Model list -->
           <OrganismsContentModelList
             :models="snapshot.models"
@@ -301,9 +353,9 @@ provide('getModelFields', getModelFields)
           <!-- Collection (object-map) -->
           <OrganismsContentCollectionView
             v-else-if="modelContentKind === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
-            :content="(modelContent as Record<string, Record<string, unknown>>)" :workspace-id="workspaceId"
-            :project-id="projectId" :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable"
-            @saved="emit('back')"
+            :content="(modelContent as Record<string, Record<string, unknown>>)" :meta="modelContentMeta"
+            :workspace-id="workspaceId" :project-id="projectId" :model-id="activeModelId ?? undefined"
+            :locale="currentLocale" :editable="editable" @saved="emit('back')"
           />
           <!-- Collection (array) -->
           <OrganismsContentCollectionView

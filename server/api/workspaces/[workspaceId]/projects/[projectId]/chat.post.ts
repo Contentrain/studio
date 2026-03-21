@@ -482,18 +482,32 @@ async function executeToolWithAutoMerge(
       case 'save_content': {
         const modelId = params.model as string
         const locale = (params.locale as string) ?? 'en'
-        const writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail)
+        let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }
+
+        // Document kind: expects { slug, frontmatter/data, body }
+        if (params.slug && typeof params.slug === 'string') {
+          const frontmatter = (params.data ?? params.frontmatter ?? {}) as Record<string, unknown>
+          const body = (params.body as string) ?? ''
+          writeResult = await engine.saveDocument(modelId, locale, params.slug as string, frontmatter, body, userEmail)
+        }
+        else {
+          writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail)
+        }
+
         affected.models.push(modelId)
         affected.locales.push(locale)
         affected.branchesChanged = true
 
         // Workflow-aware auto-merge
-        if (workflow === 'auto-merge') {
+        if (workflow === 'auto-merge' && writeResult.branch) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, workflow }
         }
-        else {
+        else if (writeResult.branch) {
           result = { ...summarizeWriteResult(writeResult), merged: false, workflow, reviewBranch: writeResult.branch }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, workflow }
         }
         break
       }

@@ -11,7 +11,7 @@ const projectId = computed(() => route.params.projectId as string)
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, hasContentrain } = useSnapshot()
-const { content: modelContent, kind: modelContentKind, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
+const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -69,6 +69,8 @@ watch(activeLocale, async (locale) => {
   await fetchContent(ws.id, projectId.value, activeModelId.value, locale)
 })
 
+const chatPanelRef = ref<{ handleSend: (text: string) => void } | null>(null)
+
 function selectModel(modelId: string) {
   router.replace({ query: { ...route.query, model: modelId } })
 }
@@ -116,6 +118,7 @@ async function handleContentChanged(affected: { models: string[], locales: strin
     <div class="flex min-w-0 flex-1 flex-col">
       <OrganismsChatPanel
         v-if="activeWorkspace"
+        ref="chatPanelRef"
         :workspace-id="activeWorkspace.id"
         :project-id="projectId"
         :project-name="project?.repo_full_name ?? t('common.loading')"
@@ -133,6 +136,7 @@ async function handleContentChanged(affected: { models: string[], locales: strin
         :snapshot-loading="snapshotLoading"
         :model-content="modelContent"
         :model-content-kind="modelContentKind"
+        :model-content-meta="modelContentMeta"
         :model-content-loading="modelContentLoading"
         :active-model-id="activeModelId"
         :workspace-id="activeWorkspace?.id"
@@ -140,6 +144,7 @@ async function handleContentChanged(affected: { models: string[], locales: strin
         editable
         @select-model="selectModel"
         @back="backToOverview"
+        @send-chat-prompt="chatPanelRef?.handleSend($event)"
       />
     </div>
   </div>

@@ -372,6 +372,75 @@ export function createContentEngine(ctx: ContentEngineContext) {
     },
 
     /**
+     * Save a document (markdown with frontmatter).
+     * Creates or updates a markdown file at the document path.
+     */
+    async saveDocument(
+      modelId: string,
+      locale: string,
+      slug: string,
+      frontmatter: Record<string, unknown>,
+      body: string,
+      userEmail: string,
+    ): Promise<WriteResult> {
+      const modelPath = resolveModelPath(pathCtx, modelId)
+      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+
+      // Validate frontmatter against model fields
+      const fields = modelDef.fields ?? {}
+      const validation = validateContent(frontmatter, fields, modelId, locale, slug)
+      if (!validation.valid) {
+        return {
+          branch: '',
+          commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+          diff: [],
+          validation,
+        }
+      }
+
+      // Resolve document path
+      const docPath = resolveContentPath(pathCtx, modelDef, locale, slug)
+      const serialized = serializeMarkdownFrontmatter({ ...frontmatter, slug }, body)
+
+      // Meta
+      const metaPath = resolveMetaPath(pathCtx, modelDef, locale, slug)
+      let existingMeta: Record<string, unknown> = {}
+      try {
+        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+      }
+      catch { /* no existing meta */ }
+      const updatedMeta = {
+        ...existingMeta,
+        status: (existingMeta as EntryMeta).status ?? 'draft',
+        source: 'agent' as const,
+        updated_by: userEmail,
+      }
+
+      // Context.json
+      const contextPath = resolveContextPath(pathCtx)
+      const projectInfo = await getProjectInfo(locale)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales)
+
+      const branchName = `contentrain/save-${generateBranchId()}`
+      await git.createBranch(branchName)
+
+      const message = `contentrain: save document ${modelId}/${slug} [${locale}]\n\nCo-Authored-By: ${userEmail}`
+      const commit = await git.commitFiles(
+        branchName,
+        [
+          { path: docPath, content: serialized },
+          { path: metaPath, content: serializeCanonical(updatedMeta) },
+          { path: contextPath, content: contextJson },
+        ],
+        message,
+        BOT_AUTHOR,
+      )
+
+      const diff = await git.getBranchDiff(branchName)
+      return { branch: branchName, commit, diff, validation }
+    },
+
+    /**
      * Save a model definition.
      */
     async saveModel(

@@ -100,7 +100,16 @@ export default defineEventHandler(async (event) => {
       // Document path not accessible
     }
 
-    return { modelId, locale, kind, data: entries }
+    // Load document meta
+    let docMeta: Record<string, unknown> | null = null
+    try {
+      const metaBase = contentRoot ? `${contentRoot}/.contentrain/meta` : '.contentrain/meta'
+      // Document meta might be per-slug or per-model
+      docMeta = JSON.parse(await git.readFile(`${metaBase}/${modelId}/${locale}.json`))
+    }
+    catch { /* no meta */ }
+
+    return { modelId, locale, kind, data: entries, meta: docMeta }
   }
 
   // JSON-based kinds: singleton, collection, dictionary
@@ -138,7 +147,15 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  return { modelId, locale, kind, data: contentData }
+  // Load meta for JSON kinds
+  let meta: Record<string, unknown> | null = null
+  try {
+    const metaBase = contentRoot ? `${contentRoot}/.contentrain/meta` : '.contentrain/meta'
+    meta = JSON.parse(await git.readFile(`${metaBase}/${modelId}/${locale}.json`))
+  }
+  catch { /* no meta */ }
+
+  return { modelId, locale, kind, data: contentData, meta }
 })
 
 // gray-matter handles all frontmatter edge cases: nested YAML, arrays, quotes, multiline

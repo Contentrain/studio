@@ -1,6 +1,7 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
   content: Record<string, Record<string, unknown>>
+  meta?: Record<string, unknown> | null
   workspaceId?: string
   projectId?: string
   modelId?: string
@@ -12,42 +13,50 @@ const emit = defineEmits<{
   saved: []
 }>()
 
+const statusVariants: Record<string, { variant: 'success' | 'warning' | 'primary' | 'secondary' | 'danger', label: string }> = {
+  published: { variant: 'success', label: 'published' },
+  draft: { variant: 'warning', label: 'draft' },
+  in_review: { variant: 'primary', label: 'review' },
+  rejected: { variant: 'danger', label: 'rejected' },
+  archived: { variant: 'secondary', label: 'archived' },
+}
+
+function getEntryStatus(entryId: string, metaData: Record<string, unknown> | null | undefined): string | null {
+  if (!metaData) return null
+  const entryMeta = metaData[entryId] as { status?: string } | undefined
+  return entryMeta?.status ?? null
+}
+
 const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => 'string')
 const getEntryTitle = inject<(entry: Record<string, unknown>, fallback: string) => string>('getEntryTitle', (_e, f) => f)
 const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
 const modelMeta = inject<ComputedRef<{ id: string, name: string, kind: string } | null>>('activeModelMeta', computed(() => null))
+const getModelFields = inject<() => Record<string, unknown>>('getModelFields', () => ({}))
 
-const { editingField, editValue, saving, startEdit, cancelEdit, saveField } = useContentEditor()
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
+const sendChatPrompt = inject<(text: string) => void>('sendChatPrompt', () => {})
 
-// Track which entry is being edited
-const editingEntryId = ref<string | null>(null)
-
-function startFieldEdit(entryId: string, fieldId: string, value: unknown) {
-  editingEntryId.value = entryId
-  startEdit(fieldId, value)
+function deleteEntry(entryId: string, entry: Record<string, unknown>) {
+  const title = getEntryTitle(entry, entryId.substring(0, 8))
+  const model = modelMeta.value?.name ?? ''
+  sendChatPrompt(`Delete entry "${title}" (ID: ${entryId}) from the ${model} model.`)
 }
 
-function handleCancel() {
-  editingEntryId.value = null
-  cancelEdit()
+// Modal edit state
+const editModalOpen = ref(false)
+const editModalEntryId = ref<string | null>(null)
+const editModalEntryData = ref<Record<string, unknown>>({})
+const editModalEntryTitle = ref<string | undefined>()
+
+function openEditModal(entryId: string, entry: Record<string, unknown>) {
+  editModalEntryId.value = entryId
+  editModalEntryData.value = entry
+  editModalEntryTitle.value = getEntryTitle(entry, entryId.substring(0, 8))
+  editModalOpen.value = true
 }
 
-async function handleSave(entryId: string, fieldId: string) {
-  if (!props.workspaceId || !props.projectId || !props.modelId) return
-  const success = await saveField(
-    props.workspaceId,
-    props.projectId,
-    props.modelId,
-    props.locale ?? 'en',
-    entryId,
-    fieldId,
-    editValue.value,
-  )
-  if (success) {
-    editingEntryId.value = null
-    emit('saved')
-  }
+function handleModalSaved() {
+  emit('saved')
 }
 
 // Context pin helpers
@@ -129,6 +138,24 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
             {{ getEntryTitle(entry, String(entryId)) }}
           </span>
+          <!-- Edit entry (modal) -->
+          <button
+            v-if="editable"
+            type="button"
+            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-all hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            @click.prevent="openEditModal(String(entryId), entry)"
+          >
+            <span class="icon-[annon--edit-2] size-3" aria-hidden="true" />
+          </button>
+          <!-- Delete entry -->
+          <button
+            v-if="editable"
+            type="button"
+            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-all hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            @click.prevent="deleteEntry(String(entryId), entry)"
+          >
+            <span class="icon-[annon--trash] size-3" aria-hidden="true" />
+          </button>
           <!-- Pin entry -->
           <button
             type="button"
@@ -140,6 +167,15 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           >
             <span class="icon-[annon--pin] size-3" aria-hidden="true" />
           </button>
+          <!-- Status badge -->
+          <AtomsBadge
+            v-if="getEntryStatus(String(entryId), meta)"
+            :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
+            size="sm"
+            class="shrink-0"
+          >
+            {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId), meta) }}
+          </AtomsBadge>
           <span class="shrink-0 font-mono text-[10px] text-disabled">
             {{ String(entryId).substring(0, 8) }}
           </span>
@@ -168,24 +204,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
                 </button>
               </div>
               <div class="mt-0.5">
-                <!-- Edit mode -->
-                <AtomsContentFieldEditor
-                  v-if="editable && editingEntryId === String(entryId) && editingField === fieldId"
-                  v-model="editValue"
-                  :type="getFieldType(fieldId)"
-                  :field-id="fieldId"
-                  :saving="saving"
-                  @save="handleSave(String(entryId), fieldId)"
-                  @cancel="handleCancel"
-                />
-                <!-- Display mode -->
-                <div
-                  v-else
-                  :class="editable ? 'cursor-pointer rounded-md px-1 -mx-1 py-0.5 transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900' : ''"
-                  @click="editable ? startFieldEdit(String(entryId), fieldId, entry[fieldId]) : undefined"
-                >
-                  <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />
-                </div>
+                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />
               </div>
             </div>
           </template>
@@ -199,5 +218,22 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
     <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
       <span class="text-xs text-muted">{{ Object.keys(content).length }} entries</span>
     </div>
+
+    <!-- Edit modal -->
+    <OrganismsContentEditModal
+      v-if="editable && editModalEntryId"
+      v-model:open="editModalOpen"
+      :model-name="modelMeta?.name ?? ''"
+      model-kind="collection"
+      :fields="(getModelFields() as Record<string, any>)"
+      :entry-id="editModalEntryId"
+      :entry-data="editModalEntryData"
+      :entry-title="editModalEntryTitle"
+      :workspace-id="workspaceId ?? ''"
+      :project-id="projectId ?? ''"
+      :model-id="modelId ?? ''"
+      :locale="locale ?? 'en'"
+      @saved="handleModalSaved"
+    />
   </div>
 </template>
