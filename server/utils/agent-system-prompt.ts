@@ -135,7 +135,9 @@ ${fieldList}`)
 
   const rules = [
     'Use the inferred model/locale/entry from context unless user explicitly overrides.',
-    'For collections, generate entry IDs as 12-character lowercase hex strings.',
+    'For NEW collection entries, generate entry IDs as 12-character lowercase hex strings.',
+    'To UPDATE existing content, use the EXISTING entry ID from get_content. NEVER generate a new ID for updates — this causes duplicates.',
+    'save_content MERGES with existing data. Only send the fields that changed, not all fields.',
     'Sort object keys alphabetically. Omit null values and defaults.',
     'Never ask questions you can infer from context.',
     'Never repeat tool calls that already returned results in this conversation.',

@@ -113,7 +113,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         }
       }
 
-      // 3. Read existing content (merge for collections)
+      // 3. Read existing content
       const contentPath = resolveContentPath(pathCtx, modelDef, locale)
       let existingContent: Record<string, unknown> = {}
       try {
@@ -124,17 +124,28 @@ export function createContentEngine(ctx: ContentEngineContext) {
         // File doesn't exist yet — creating new
       }
 
-      // 4. Merge data
+      // 4. Merge data (always merge — never replace)
       let finalContent: unknown
       if (modelDef.kind === 'collection') {
         // Normalize incoming data (agent might send array or object-map)
         const normalizedData = toObjectMap(data)
-        // Merge entries into existing object-map
-        finalContent = { ...existingContent, ...normalizedData }
+        // Deep merge: for each entry, merge fields (preserves unchanged fields)
+        const merged = { ...existingContent }
+        for (const [entryId, entryData] of Object.entries(normalizedData)) {
+          const existing = merged[entryId]
+          if (existing && typeof existing === 'object' && typeof entryData === 'object') {
+            // Merge fields within the entry (update only changed fields)
+            merged[entryId] = { ...(existing as Record<string, unknown>), ...(entryData as Record<string, unknown>) }
+          }
+          else {
+            merged[entryId] = entryData
+          }
+        }
+        finalContent = merged
       }
       else {
-        // Singleton/dictionary: replace entirely
-        finalContent = data
+        // Singleton/dictionary: merge fields (preserves unchanged fields)
+        finalContent = { ...existingContent, ...data }
       }
 
       // 5. Serialize to canonical JSON

@@ -35,13 +35,13 @@ export const STUDIO_TOOLS: StudioTool[] = [
   },
   {
     name: 'save_content',
-    description: 'Save content entries. For collections: { entryId: { fields } }. For singletons: { field: value }.',
+    description: 'Create or update content. Merges with existing data — only send changed fields. For collections: { existingEntryId: { changedFields } }. For singletons: { changedField: newValue }. IMPORTANT: To update, use the EXISTING entry ID from get_content. Only generate new IDs for NEW entries.',
     inputSchema: {
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
         locale: { type: 'string', description: 'Locale code' },
-        data: { type: 'object', description: 'Content data' },
+        data: { type: 'object', description: 'Content data — only include fields that changed' },
       },
       required: ['model', 'data'],
     },
