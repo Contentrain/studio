@@ -63,9 +63,69 @@ function toObjectMap(data: unknown): Record<string, unknown> {
   return {}
 }
 
+/**
+ * Build updated context.json content for a write operation.
+ * Reads existing context, merges with new operation data.
+ */
+async function buildContextUpdate(
+  git: GitProvider,
+  contextPath: string,
+  operation: { tool: string, model: string, locale: string, entries?: string[] },
+  modelCount: number,
+  locales: string[],
+): Promise<string> {
+  let existing: Record<string, unknown> = {}
+  try {
+    existing = JSON.parse(await git.readFile(contextPath)) as Record<string, unknown>
+  }
+  catch { /* no existing context */ }
+
+  const now = new Date().toISOString()
+  const existingStats = existing.stats as { entries?: number } | undefined
+
+  const updated = {
+    version: '1',
+    lastOperation: {
+      tool: operation.tool,
+      model: operation.model,
+      locale: operation.locale,
+      entries: operation.entries,
+      timestamp: now,
+      source: 'mcp-studio',
+    },
+    stats: {
+      models: modelCount,
+      entries: existingStats?.entries ?? 0,
+      locales,
+      lastSync: now,
+    },
+  }
+
+  return serializeCanonical(updated)
+}
+
 export function createContentEngine(ctx: ContentEngineContext) {
   const { git, contentRoot } = ctx
   const pathCtx = { contentRoot }
+
+  /** Helper: get current model count + supported locales for context.json */
+  async function getProjectInfo(fallbackLocale: string): Promise<{ modelCount: number, locales: string[] }> {
+    let modelCount = 0
+    try {
+      const files = await git.listDirectory(resolveModelsDir(pathCtx))
+      modelCount = files.filter(f => f.endsWith('.json')).length
+    }
+    catch { /* no models dir */ }
+
+    let locales = [fallbackLocale]
+    try {
+      const cfg = JSON.parse(await git.readFile(resolveConfigPath(pathCtx))) as ContentrainConfig
+      locales = cfg.locales?.supported ?? [fallbackLocale]
+    }
+    catch { /* no config */ }
+
+    return { modelCount, locales }
+  }
 
   return {
     /**
@@ -217,23 +277,30 @@ export function createContentEngine(ctx: ContentEngineContext) {
         }
       }
 
-      // 7. Create branch
+      // 7. Build context.json update
+      const contextPath = resolveContextPath(pathCtx)
+      const entryIds = modelDef.kind === 'collection' ? Object.keys(toObjectMap(data)) : undefined
+      const projectInfo = await getProjectInfo(locale)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales)
+
+      // 8. Create branch
       const branchName = `contentrain/save-${generateBranchId()}`
       await git.createBranch(branchName)
 
-      // 8. Commit content + meta
+      // 9. Commit content + meta + context
       const message = `contentrain: save ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
         branchName,
         [
           { path: contentPath, content: serialized },
           { path: metaPath, content: serializeCanonical(updatedMeta) },
+          { path: contextPath, content: contextJson },
         ],
         message,
         BOT_AUTHOR,
       )
 
-      // 8. Get diff
+      // 10. Get diff
       const diff = await git.getBranchDiff(branchName)
 
       return { branch: branchName, commit, diff, validation }
@@ -262,13 +329,34 @@ export function createContentEngine(ctx: ContentEngineContext) {
       )
 
       const serialized = serializeCanonical(filtered)
+
+      // Clean meta entries too
+      const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
+      let existingMeta: Record<string, unknown> = {}
+      try {
+        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+      }
+      catch { /* no meta */ }
+      const filteredMeta = Object.fromEntries(
+        Object.entries(existingMeta).filter(([key]) => !entryIds.includes(key)),
+      )
+
+      // Context.json update
+      const contextPath = resolveContextPath(pathCtx)
+      const projectInfo = await getProjectInfo(locale)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales)
+
       const branchName = `contentrain/delete-${generateBranchId()}`
       await git.createBranch(branchName)
 
       const message = `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
         branchName,
-        [{ path: contentPath, content: serialized }],
+        [
+          { path: contentPath, content: serialized },
+          { path: metaPath, content: serializeCanonical(filteredMeta) },
+          { path: contextPath, content: contextJson },
+        ],
         message,
         BOT_AUTHOR,
       )
@@ -293,13 +381,29 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const modelPath = resolveModelPath(pathCtx, definition.id)
       const serialized = serializeCanonical(definition)
 
+      // Context.json update
+      const contextPath = resolveContextPath(pathCtx)
+      const projectInfo = await getProjectInfo('en')
+      // +1 if this is a new model
+      let isNew = false
+      try {
+        await git.readFile(modelPath)
+      }
+      catch {
+        isNew = true
+      }
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales)
+
       const branchName = `contentrain/model-${generateBranchId()}`
       await git.createBranch(branchName)
 
       const message = `contentrain: save model ${definition.id}\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
         branchName,
-        [{ path: modelPath, content: serialized }],
+        [
+          { path: modelPath, content: serialized },
+          { path: contextPath, content: contextJson },
+        ],
         message,
         BOT_AUTHOR,
       )
