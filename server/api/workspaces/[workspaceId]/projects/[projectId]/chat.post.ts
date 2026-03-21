@@ -414,10 +414,46 @@ async function executeToolWithAutoMerge(
         const locale = (params.locale as string) ?? 'en'
         const modelsDir = '.contentrain/models'
         const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
-        const contentPath = resolveContentPath({ contentRoot: '' }, modelDef, locale)
+        const pathCtx = { contentRoot: '' }
+
+        // Load meta (status, source, updated_by)
+        let meta: Record<string, unknown> | null = null
+        try {
+          const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
+          meta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+        }
+        catch { /* no meta */ }
+
+        // Document kind: read markdown files
+        if (modelDef.kind === 'document') {
+          try {
+            const contentDir = resolveContentPath(pathCtx, modelDef, locale)
+            // contentDir is the base directory for documents; list slug directories
+            const basePath = contentDir.replace(`/${locale}.md`, '')
+            const slugDirs = await git.listDirectory(basePath)
+            const documents: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }> = []
+            for (const slug of slugDirs) {
+              try {
+                const mdPath = `${basePath}/${slug}/${locale}.md`
+                const raw = await git.readFile(mdPath)
+                const { frontmatter, body } = parseMarkdownFrontmatter(raw)
+                documents.push({ slug, frontmatter, body: body.substring(0, 500) })
+              }
+              catch { /* skip */ }
+            }
+            result = { modelId, locale, kind: 'document', data: documents, meta }
+          }
+          catch {
+            result = { modelId, locale, kind: 'document', data: [], meta, error: 'Content not found' }
+          }
+          break
+        }
+
+        // JSON kinds (collection, singleton, dictionary)
+        const contentPath = resolveContentPath(pathCtx, modelDef, locale)
         try {
           let data = JSON.parse(await git.readFile(contentPath))
-          // Normalize array → object-map for collections so agent sees entry IDs as keys
+          // Normalize array → object-map for collections
           if (modelDef.kind === 'collection' && Array.isArray(data)) {
             const map: Record<string, unknown> = {}
             for (let i = 0; i < data.length; i++) {
@@ -431,14 +467,14 @@ async function executeToolWithAutoMerge(
           if (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length > 10) {
             const keys = Object.keys(data)
             const sample = Object.fromEntries(keys.slice(0, 5).map(k => [k, (data as Record<string, unknown>)[k]]))
-            result = { modelId, locale, totalEntries: keys.length, sample, note: `Showing 5 of ${keys.length}` }
+            result = { modelId, locale, kind: modelDef.kind, totalEntries: keys.length, sample, meta, note: `Showing 5 of ${keys.length}` }
           }
           else {
-            result = { modelId, locale, data }
+            result = { modelId, locale, kind: modelDef.kind, data, meta }
           }
         }
         catch {
-          result = { modelId, locale, data: null, error: 'Content not found' }
+          result = { modelId, locale, kind: modelDef.kind, data: null, meta, error: 'Content not found' }
         }
         break
       }

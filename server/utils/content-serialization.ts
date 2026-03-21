@@ -92,3 +92,91 @@ export function generateEntryId(): string {
   crypto.getRandomValues(bytes)
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
+
+/**
+ * Parse markdown frontmatter (YAML between --- delimiters).
+ * Returns { frontmatter, body } where frontmatter is a parsed object.
+ */
+export function parseMarkdownFrontmatter(raw: string): { frontmatter: Record<string, unknown>, body: string } {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/)
+  if (!match) {
+    return { frontmatter: {}, body: raw }
+  }
+
+  const yamlBlock = match[1]
+  const body = match[2]
+
+  // Simple YAML parser (key: value, arrays with - prefix)
+  const frontmatter: Record<string, unknown> = {}
+  let currentKey: string | null = null
+  let currentArray: string[] | null = null
+
+  for (const line of yamlBlock.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    // Array item
+    if (trimmed.startsWith('- ') && currentKey) {
+      if (!currentArray) currentArray = []
+      currentArray.push(trimmed.slice(2).trim())
+      continue
+    }
+
+    // Flush previous array
+    if (currentKey && currentArray) {
+      frontmatter[currentKey] = currentArray
+      currentArray = null
+    }
+
+    // Key: value pair
+    const colonIdx = trimmed.indexOf(':')
+    if (colonIdx > 0) {
+      currentKey = trimmed.slice(0, colonIdx).trim()
+      const val = trimmed.slice(colonIdx + 1).trim()
+      if (val === '') {
+        // Might be an array or empty value — wait for next line
+        continue
+      }
+      // Parse value types
+      if (val === 'true') frontmatter[currentKey] = true
+      else if (val === 'false') frontmatter[currentKey] = false
+      else if (val === 'null') frontmatter[currentKey] = null
+      else if (/^-?\d+$/.test(val)) frontmatter[currentKey] = Number.parseInt(val)
+      else if (/^-?\d+\.\d+$/.test(val)) frontmatter[currentKey] = Number.parseFloat(val)
+      else frontmatter[currentKey] = val
+    }
+  }
+
+  // Flush final array
+  if (currentKey && currentArray) {
+    frontmatter[currentKey] = currentArray
+  }
+
+  return { frontmatter, body }
+}
+
+/**
+ * Serialize frontmatter + body to markdown string.
+ */
+export function serializeMarkdownFrontmatter(frontmatter: Record<string, unknown>, body: string): string {
+  const lines: string[] = ['---']
+
+  for (const [key, value] of Object.entries(frontmatter).sort(([a], [b]) => a.localeCompare(b))) {
+    if (value === null || value === undefined) continue
+    if (Array.isArray(value)) {
+      lines.push(`${key}:`)
+      for (const item of value) {
+        lines.push(`  - ${String(item)}`)
+      }
+    }
+    else {
+      lines.push(`${key}: ${String(value)}`)
+    }
+  }
+
+  lines.push('---')
+  lines.push('')
+  lines.push(body)
+
+  return lines.join('\n')
+}

@@ -1,5 +1,6 @@
-import type { ModelDefinition, ContentrainConfig, ValidationResult } from '@contentrain/types'
+import type { ModelDefinition, ContentrainConfig, ValidationResult, EntryMeta } from '@contentrain/types'
 import type { GitProvider, Commit, Branch, FileDiff, MergeResult, CommitAuthor } from '../providers/git'
+import type { ValidationContext } from './content-validation'
 
 /**
  * Content Engine — Studio's write path for content operations.
@@ -81,26 +82,55 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
 
-      // 2. Validate
+      // 2. Read existing content for validation context (unique checks)
       const fields = modelDef.fields ?? {}
+      let existingForValidation: Record<string, Record<string, unknown>> = {}
+      if (modelDef.kind === 'collection') {
+        try {
+          const rawExisting = JSON.parse(await git.readFile(resolveContentPath(pathCtx, modelDef, locale)))
+          existingForValidation = toObjectMap(rawExisting) as Record<string, Record<string, unknown>>
+        }
+        catch { /* no existing content */ }
+      }
+
+      // 3. Validate
       let validation: ValidationResult = { valid: true, errors: [] }
 
       if (modelDef.kind === 'collection') {
-        // data is object-map: { entryId: { fields } }
-        for (const [entryId, entry] of Object.entries(data)) {
+        const normalizedData = toObjectMap(data)
+        // Build merged entries map for unique validation
+        const mergedEntries = { ...existingForValidation }
+        for (const [eid, edata] of Object.entries(normalizedData)) {
+          mergedEntries[eid] = { ...(mergedEntries[eid] as Record<string, unknown> ?? {}), ...(edata as Record<string, unknown>) }
+        }
+
+        for (const entryId of Object.keys(normalizedData)) {
+          const valCtx: ValidationContext = {
+            allEntries: mergedEntries,
+            currentEntryId: entryId,
+          }
+          // Validate the merged entry (not partial) so required fields from existing content pass
           const entryValidation = validateContent(
-            entry as Record<string, unknown>,
+            mergedEntries[entryId] as Record<string, unknown>,
             fields,
             modelId,
             locale,
             entryId,
+            valCtx,
           )
           validation.errors.push(...entryValidation.errors)
           if (!entryValidation.valid) validation.valid = false
         }
       }
       else if (modelDef.kind === 'singleton') {
-        validation = validateContent(data, fields, modelId, locale)
+        // Merge with existing before validating singleton too
+        let existingSingleton: Record<string, unknown> = {}
+        try {
+          existingSingleton = JSON.parse(await git.readFile(resolveContentPath(pathCtx, modelDef, locale))) as Record<string, unknown>
+        }
+        catch { /* no existing */ }
+        const mergedSingleton = { ...existingSingleton, ...data }
+        validation = validateContent(mergedSingleton, fields, modelId, locale)
       }
       // Dictionary: no field-level validation (free-form key-value)
 
@@ -154,15 +184,51 @@ export function createContentEngine(ctx: ContentEngineContext) {
         modelDef.kind !== 'dictionary' ? fields : undefined,
       )
 
-      // 6. Create branch
+      // 6. Build meta file
+      const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
+      let existingMeta: Record<string, unknown> = {}
+      try {
+        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+      }
+      catch { /* no existing meta */ }
+
+      let updatedMeta: unknown
+      if (modelDef.kind === 'collection') {
+        // Per-entry meta
+        const metaMap = { ...existingMeta } as Record<string, EntryMeta>
+        const normalizedData = toObjectMap(data)
+        for (const entryId of Object.keys(normalizedData)) {
+          metaMap[entryId] = {
+            ...(metaMap[entryId] ?? {}),
+            status: metaMap[entryId]?.status ?? 'draft',
+            source: 'agent',
+            updated_by: userEmail,
+          } as EntryMeta
+        }
+        updatedMeta = metaMap
+      }
+      else {
+        // Single meta for singleton/dictionary
+        updatedMeta = {
+          ...existingMeta,
+          status: (existingMeta as EntryMeta).status ?? 'draft',
+          source: 'agent' as const,
+          updated_by: userEmail,
+        }
+      }
+
+      // 7. Create branch
       const branchName = `contentrain/save-${generateBranchId()}`
       await git.createBranch(branchName)
 
-      // 7. Commit
+      // 8. Commit content + meta
       const message = `contentrain: save ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
         branchName,
-        [{ path: contentPath, content: serialized }],
+        [
+          { path: contentPath, content: serialized },
+          { path: metaPath, content: serializeCanonical(updatedMeta) },
+        ],
         message,
         BOT_AUTHOR,
       )
