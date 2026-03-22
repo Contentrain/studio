@@ -16,6 +16,7 @@ export default defineNuxtConfig({
       clientId: '',
       clientSecret: '',
       privateKey: '', // base64 encoded .pem
+      webhookSecret: '', // NUXT_GITHUB_WEBHOOK_SECRET — HMAC-SHA256 verification
     },
     anthropic: {
       apiKey: '', // NUXT_ANTHROPIC_API_KEY — Studio-hosted agent key

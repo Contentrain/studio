@@ -12,6 +12,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = use
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
+const { branchDiff, diffLoading, fetchBranchDiff, clearBranchDiff, fetchBranches, mergeBranch, rejectBranch } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -25,6 +26,10 @@ const effectiveProjectStatus = computed(() => {
 })
 
 const activeModelId = computed(() => route.query.model as string ?? null)
+const activeBranch = computed(() => {
+  const b = (route.query as Record<string, string | undefined>).branch
+  return b ? decodeURIComponent(b) : null
+})
 const activeLocale = ref('en')
 
 onMounted(async () => {
@@ -69,6 +74,18 @@ watch(activeLocale, async (locale) => {
   await fetchContent(ws.id, projectId.value, activeModelId.value, locale)
 })
 
+// Branch selection — fetch diff
+watch(activeBranch, async (branch, oldBranch) => {
+  if (oldBranch === undefined) return
+  if (!branch) {
+    clearBranchDiff()
+    return
+  }
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws) return
+  await fetchBranchDiff(ws.id, projectId.value, branch)
+})
+
 const chatPanelRef = ref<{ handleSend: (text: string) => void } | null>(null)
 
 function selectModel(modelId: string) {
@@ -78,7 +95,9 @@ function selectModel(modelId: string) {
 function backToOverview() {
   const query = { ...route.query }
   delete query.model
+  delete query.branch
   router.replace({ query })
+  clearBranchDiff()
 }
 
 // Chat UI context — tells the agent what the user is looking at
@@ -86,12 +105,44 @@ const chatContext = computed(() => ({
   activeModelId: activeModelId.value,
   activeLocale: activeLocale.value,
   activeEntryId: null as string | null,
-  panelState: (activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch',
-  activeBranch: null as string | null,
+  panelState: (activeBranch.value ? 'branch' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch',
+  activeBranch: activeBranch.value,
 }))
 
+// Branch merge/reject handlers
+async function handleBranchMerge() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  const merged = await mergeBranch(ws.id, projectId.value, activeBranch.value)
+  if (merged) {
+    // Clear branch query and refresh
+    const query = { ...route.query }
+    delete query.branch
+    router.replace({ query })
+    clearBranchDiff()
+    await fetchBranches(ws.id, projectId.value)
+    // Refresh snapshot + content since merged content changed main
+    const { invalidateCache } = useSnapshot()
+    await invalidateCache(projectId.value)
+    await fetchSnapshot(ws.id, projectId.value)
+  }
+}
+
+async function handleBranchReject() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  const rejected = await rejectBranch(ws.id, projectId.value, activeBranch.value)
+  if (rejected) {
+    const query = { ...route.query }
+    delete query.branch
+    router.replace({ query })
+    clearBranchDiff()
+    await fetchBranches(ws.id, projectId.value)
+  }
+}
+
 // Targeted cache invalidation from tool execution results
-async function handleContentChanged(affected: { models: string[], locales: string[], snapshotChanged: boolean }) {
+async function handleContentChanged(affected: { models: string[], locales: string[], snapshotChanged: boolean, branchesChanged?: boolean }) {
   const { invalidateCache } = useSnapshot()
   const { invalidateProjectContent } = useModelContent()
   const ws = workspaces.value.find(w => w.slug === slug.value)
@@ -108,6 +159,11 @@ async function handleContentChanged(affected: { models: string[], locales: strin
     if (activeModelId.value && affected.models.includes(activeModelId.value)) {
       await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
     }
+  }
+
+  // Refresh branch list when branches change
+  if (affected.branchesChanged) {
+    await fetchBranches(ws.id, projectId.value)
   }
 }
 </script>
@@ -139,12 +195,18 @@ async function handleContentChanged(affected: { models: string[], locales: strin
         :model-content-meta="modelContentMeta"
         :model-content-loading="modelContentLoading"
         :active-model-id="activeModelId"
+        :active-branch="activeBranch"
+        :branch-diff="(branchDiff as any)"
+        :branch-diff-loading="diffLoading"
+        :can-manage-branches="true"
         :workspace-id="activeWorkspace?.id"
         :project-id="projectId"
         editable
         @select-model="selectModel"
         @back="backToOverview"
         @send-chat-prompt="chatPanelRef?.handleSend($event)"
+        @branch-merge="handleBranchMerge"
+        @branch-reject="handleBranchReject"
       />
     </div>
   </div>

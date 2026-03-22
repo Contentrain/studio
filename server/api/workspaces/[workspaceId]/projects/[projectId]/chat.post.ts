@@ -1,6 +1,7 @@
 import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
 import type { AIMessage, AIContentBlock } from '~~/server/providers/ai'
 import type { ChatRequest, AffectedResources } from '~~/server/utils/agent-types'
+import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import { createEventStream } from 'h3'
 import { emptyAffected, mergeAffected, toAITools } from '~~/server/utils/agent-types'
 import { deriveProjectPhase, checkStateTransition } from '~~/server/utils/agent-state-machine'
@@ -295,7 +296,7 @@ export default defineEventHandler(async (event) => {
 
           // Execute tool
           const result = await executeToolWithAutoMerge(
-            tc.name, tc.input, contentEngine, git, session.user.email ?? '', workflow,
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', workflow, permissions,
           )
 
           // Accumulate affected resources
@@ -386,6 +387,7 @@ async function executeToolWithAutoMerge(
   git: ReturnType<typeof useGitProvider>,
   userEmail: string,
   workflow: string,
+  permissions: AgentPermissions,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
   const affected: AffectedResources = emptyAffected()
@@ -498,8 +500,8 @@ async function executeToolWithAutoMerge(
         affected.locales.push(locale)
         affected.branchesChanged = true
 
-        // Workflow-aware auto-merge
-        if (workflow === 'auto-merge' && writeResult.branch) {
+        // Role-aware auto-merge
+        if (shouldAutoMerge(workflow, permissions) && writeResult.branch) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, workflow }
         }
@@ -520,7 +522,7 @@ async function executeToolWithAutoMerge(
         affected.locales.push(locale)
         affected.branchesChanged = true
 
-        if (workflow === 'auto-merge') {
+        if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
@@ -535,7 +537,7 @@ async function executeToolWithAutoMerge(
         affected.snapshotChanged = true
         affected.branchesChanged = true
 
-        if (workflow === 'auto-merge') {
+        if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
@@ -609,4 +611,16 @@ function summarizeWriteResult(result: { branch: string, commit: { sha: string },
     valid: result.validation.valid,
     errors: result.validation.errors.map(e => e.message),
   }
+}
+
+/**
+ * Determine whether to auto-merge based on workflow config + user role.
+ *
+ * auto-merge workflow → always auto-merge
+ * review workflow → Owner/Admin auto-merge (they're authorized), Editor → no merge (needs review)
+ */
+function shouldAutoMerge(workflow: string, permissions: AgentPermissions): boolean {
+  if (workflow === 'auto-merge') return true
+  // In review workflow, only Owner/Admin can auto-merge
+  return permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
 }

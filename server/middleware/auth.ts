@@ -12,6 +12,7 @@ const PUBLIC_PATHS = [
   '/api/auth/magic-link',
   '/api/auth/verify',
   '/api/health',
+  '/api/webhooks/',
 ]
 
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures

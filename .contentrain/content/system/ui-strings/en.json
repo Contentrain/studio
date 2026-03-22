@@ -144,5 +144,15 @@
   "sidebar.pending_changes": "Pending Changes",
   "common.menu": "Menu",
   "chat.init_project": "Initialize project",
-  "chat.init_prompt": "Initialize my project — detect the framework and set up content structure."
+  "chat.init_prompt": "Initialize my project — detect the framework and set up content structure.",
+  "branch.files_changed": "{count} files changed",
+  "branch.added": "added",
+  "branch.modified": "modified",
+  "branch.removed": "removed",
+  "branch.approve_merge": "Approve & Merge",
+  "branch.reject": "Reject",
+  "branch.no_changes": "No changes found",
+  "branch.loading": "Loading diff...",
+  "branch.confirm_reject": "Reject this branch? All changes will be discarded.",
+  "branch.field_changed": "changed"
 }

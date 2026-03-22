@@ -1,5 +1,6 @@
 /**
  * Reject (delete) a content branch.
+ * Requires reviewer, admin, or owner role.
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -9,6 +10,11 @@ export default defineEventHandler(async (event) => {
 
   if (!workspaceId || !projectId || !branch)
     throw createError({ statusCode: 400, message: 'workspaceId, projectId, and branch are required' })
+
+  // Role check: only reviewer+ can reject
+  const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
+  if (!permissions.availableTools.includes('reject_branch'))
+    throw createError({ statusCode: 403, message: 'Insufficient permissions to reject branches' })
 
   const client = useSupabaseUserClient(session.accessToken)
 

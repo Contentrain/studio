@@ -139,8 +139,8 @@ CONSTRAINTS:
     : ''
 }`)
 
-  // 10. RULES — hardened, workflow-aware, architecture-aware
-  sections.push(buildRulesSection(config, intent))
+  // 10. RULES — hardened, workflow-aware, architecture-aware, role-aware
+  sections.push(buildRulesSection(config, intent, permissions))
 
   return sections.join('\n\n')
 }
@@ -373,8 +373,9 @@ function buildContextSection(
 
 // ─── Rules Section ───
 
-function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent): string {
+function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent, permissions: AgentPermissions): string {
   const workflow = config?.workflow ?? 'auto-merge'
+  const isPrivileged = permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
 
   const rules = [
     // Context inference
@@ -409,13 +410,16 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
     'System fields (id, slug, status, source, updated_by) are auto-managed — NEVER include them in content data.',
   ]
 
-  // Workflow rules
+  // Workflow + role rules
   if (workflow === 'auto-merge') {
     rules.push('After save_content/save_model/init_project, changes are auto-merged. Report the result directly.')
   }
+  else if (isPrivileged) {
+    rules.push('After save_content/save_model, changes are auto-merged (you have admin/owner privileges). Report the result directly.')
+  }
   else {
-    rules.push('After save_content/save_model, a review branch is created. Tell the user which branch to review.')
-    rules.push('Do NOT call merge_branch automatically. Wait for user to explicitly approve.')
+    rules.push('After save_content/save_model, a review branch is created. Tell the user which branch was created and that it needs approval from a reviewer or admin.')
+    rules.push('Do NOT call merge_branch automatically. Wait for a reviewer/admin to approve.')
   }
 
   // Out of scope

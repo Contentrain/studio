@@ -23,6 +23,12 @@ interface SnapshotData {
   readonly contentContext?: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null
 }
 
+interface BranchDiffData {
+  branch: string
+  files: Array<{ path: string, status: 'added' | 'modified' | 'removed' }>
+  contents: Record<string, { before: unknown, after: unknown }>
+}
+
 const props = defineProps<{
   snapshot: SnapshotData | null
   snapshotLoading: boolean
@@ -31,6 +37,10 @@ const props = defineProps<{
   modelContentMeta?: Record<string, unknown> | null
   modelContentLoading: boolean
   activeModelId: string | null
+  activeBranch?: string | null
+  branchDiff?: BranchDiffData | null
+  branchDiffLoading?: boolean
+  canManageBranches?: boolean
   workspaceId?: string
   projectId?: string
   editable?: boolean
@@ -41,6 +51,8 @@ const emit = defineEmits<{
   'back': []
   'update:locale': [locale: string]
   'sendChatPrompt': [text: string]
+  'branchMerge': []
+  'branchReject': []
 }>()
 
 // Locale from config
@@ -55,7 +67,15 @@ const activeModel = computed(() =>
   props.snapshot?.models.find(m => m.id === props.activeModelId) ?? null,
 )
 
-const panelState = computed(() => props.activeModelId ? 'model' : 'overview')
+const panelState = computed(() => {
+  if (props.activeBranch) return 'branch'
+  if (props.activeModelId) return 'model'
+  return 'overview'
+})
+
+function branchDisplayName(branch: string): string {
+  return branch.replace('contentrain/', '')
+}
 
 // Project stats from context.json or computed from snapshot
 const stats = computed(() => {
@@ -159,12 +179,25 @@ provide('sendChatPrompt', sendChatPrompt)
     <!-- Header -->
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
       <AtomsIconButton
-        v-if="panelState === 'model'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
+        v-if="panelState === 'model' || panelState === 'branch'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
       <h3 class="flex-1 truncate text-sm font-semibold text-heading dark:text-secondary-100">
-        {{ panelState === 'model' && activeModel ? activeModel.name : t('content.title') }}
+        <template v-if="panelState === 'branch' && activeBranch">
+          {{ branchDisplayName(activeBranch) }}
+        </template>
+        <template v-else-if="panelState === 'model' && activeModel">
+          {{ activeModel.name }}
+        </template>
+        <template v-else>
+          {{ t('content.title') }}
+        </template>
       </h3>
+      <!-- Branch badge -->
+      <AtomsBadge v-if="panelState === 'branch'" variant="warning" size="sm" class="ml-auto">
+        <span class="icon-[annon--arrow-swap] mr-1 size-3" aria-hidden="true" />
+        review
+      </AtomsBadge>
       <!-- Overview actions -->
       <div v-if="panelState === 'overview' && editable && snapshot?.exists" class="ml-auto">
         <AtomsIconButton
@@ -205,8 +238,25 @@ provide('sendChatPrompt', sendChatPrompt)
 
     <!-- Body -->
     <div class="flex-1 overflow-y-auto">
+      <!-- BRANCH DIFF -->
+      <template v-if="panelState === 'branch'">
+        <div v-if="branchDiffLoading" class="space-y-3 p-5">
+          <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
+        </div>
+        <OrganismsBranchDetailView
+          v-else-if="branchDiff"
+          :diff="branchDiff"
+          :can-manage="canManageBranches ?? false"
+          @merge="emit('branchMerge')"
+          @reject="emit('branchReject')"
+        />
+        <div v-else class="p-5">
+          <AtomsEmptyState icon="icon-[annon--arrow-swap]" :title="t('branch.no_changes')" />
+        </div>
+      </template>
+
       <!-- OVERVIEW -->
-      <template v-if="panelState === 'overview'">
+      <template v-else-if="panelState === 'overview'">
         <div v-if="snapshotLoading" class="space-y-2 p-5">
           <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-10 w-full rounded-lg" />
         </div>

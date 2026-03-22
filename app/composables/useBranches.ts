@@ -1,6 +1,6 @@
 /**
  * Branch management composable.
- * Lists contentrain/* branches, merge/reject.
+ * Lists contentrain/* branches, merge/reject, and branch diff.
  */
 
 interface BranchSummary {
@@ -9,9 +9,22 @@ interface BranchSummary {
   protected: boolean
 }
 
+interface FileDiff {
+  path: string
+  status: 'added' | 'modified' | 'removed'
+}
+
+interface BranchDiffData {
+  branch: string
+  files: FileDiff[]
+  contents: Record<string, { before: unknown, after: unknown }>
+}
+
 export function useBranches() {
   const branches = useState<BranchSummary[]>('branches', () => [])
   const loading = useState('branches-loading', () => false)
+  const branchDiff = useState<BranchDiffData | null>('branch-diff', () => null)
+  const diffLoading = useState('branch-diff-loading', () => false)
   const toast = useToast()
 
   async function fetchBranches(workspaceId: string, projectId: string) {
@@ -28,6 +41,25 @@ export function useBranches() {
     finally {
       loading.value = false
     }
+  }
+
+  async function fetchBranchDiff(workspaceId: string, projectId: string, branch: string) {
+    diffLoading.value = true
+    try {
+      branchDiff.value = await $fetch<BranchDiffData>(
+        `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}/diff`,
+      )
+    }
+    catch {
+      branchDiff.value = null
+    }
+    finally {
+      diffLoading.value = false
+    }
+  }
+
+  function clearBranchDiff() {
+    branchDiff.value = null
   }
 
   async function mergeBranch(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
@@ -69,7 +101,11 @@ export function useBranches() {
   return {
     branches: readonly(branches),
     loading: readonly(loading),
+    branchDiff: readonly(branchDiff),
+    diffLoading: readonly(diffLoading),
     fetchBranches,
+    fetchBranchDiff,
+    clearBranchDiff,
     mergeBranch,
     rejectBranch,
   }

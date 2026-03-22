@@ -13,6 +13,10 @@ const connectDialogOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 const isInsideProject = computed(() => !!currentProjectId.value)
 const activeModelId = computed(() => route.query.model as string | undefined)
+const activeBranch = computed(() => {
+  const b = (route.query as Record<string, string | undefined>).branch
+  return b ? decodeURIComponent(b) : null
+})
 
 // Fetch branches when inside a project
 watch(isInsideProject, async (inside) => {
@@ -47,7 +51,13 @@ function getModelEntryCount(modelId: string): number | null {
 }
 
 function selectModel(modelId: string) {
-  router.replace({ query: { ...route.query, model: modelId } })
+  const query: Record<string, string> = { model: modelId }
+  router.replace({ query })
+}
+
+function selectBranch(branchName: string) {
+  const query: Record<string, string> = { branch: encodeURIComponent(branchName) }
+  router.replace({ query })
 }
 </script>
 
@@ -111,7 +121,9 @@ function selectModel(modelId: string) {
               <MoleculesSidebarItem
                 icon="icon-[annon--arrow-swap]"
                 :label="branch.name.replace('contentrain/', '')"
+                :active="activeBranch === branch.name"
                 compact
+                @click="selectBranch(branch.name)"
               />
             </li>
           </ul>
