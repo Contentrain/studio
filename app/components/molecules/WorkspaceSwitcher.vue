@@ -71,6 +71,7 @@ onMounted(() => {
           v-if="activeWorkspace"
           :variant="planBadge[getWorkspacePlan(activeWorkspace)]?.variant ?? 'secondary'"
           size="sm"
+          class="font-display"
         >
           {{ planBadge[getWorkspacePlan(activeWorkspace)]?.label ?? 'Free' }}
         </AtomsBadge>
@@ -105,7 +106,7 @@ onMounted(() => {
             <AtomsBadge
               :variant="planBadge[getWorkspacePlan(ws)]?.variant ?? 'secondary'"
               size="sm"
-              class="shrink-0"
+              class="shrink-0 font-display"
             >
               {{ planBadge[getWorkspacePlan(ws)]?.label ?? 'Free' }}
             </AtomsBadge>

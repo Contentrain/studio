@@ -8,7 +8,7 @@ const router = useRouter()
 const slug = computed(() => route.params.slug as string)
 const projectId = computed(() => route.params.projectId as string)
 
-const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLastPath } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
@@ -35,6 +35,11 @@ const activeBranch = computed(() => {
 const activeVocabulary = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
 const activeCDN = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
 const activeLocale = ref('en')
+
+// Persist current path for session resume
+watch(() => route.fullPath, (path) => {
+  saveLastPath(path)
+}, { immediate: true })
 
 onMounted(async () => {
   if (workspaces.value.length === 0)

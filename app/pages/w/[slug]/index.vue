@@ -6,11 +6,14 @@ definePageMeta({
 const route = useRoute()
 const slug = computed(() => route.params.slug as string)
 
-const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLastPath } = useWorkspaces()
 const { projects, loading, fetchProjects } = useProjects()
 const { t } = useContent()
 
 const connectDialogOpen = ref(false)
+
+// Persist current path
+watch(() => route.fullPath, path => saveLastPath(path), { immediate: true })
 
 onMounted(async () => {
   if (workspaces.value.length === 0)

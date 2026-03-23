@@ -8,12 +8,20 @@ definePageMeta({
 })
 
 const { t } = useContent()
-const { workspaces, activeWorkspace, fetchWorkspaces } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, getLastPath } = useWorkspaces()
 
 onMounted(async () => {
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
 
+  // Resume last session — redirect to last visited path
+  const lastPath = getLastPath()
+  if (lastPath && lastPath !== '/') {
+    await navigateTo(lastPath, { replace: true })
+    return
+  }
+
+  // Fallback: primary workspace dashboard
   if (activeWorkspace.value) {
     await navigateTo(`/w/${activeWorkspace.value.slug}`, { replace: true })
   }
