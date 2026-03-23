@@ -28,16 +28,22 @@ const domains = ref<string[]>([])
 const defaultLocale = ref('en')
 const supportedLocales = ref<string[]>(['en'])
 const newDomain = ref('')
-const localeSearch = ref('')
 const saving = ref(false)
 
 // Available locales = ISO list minus already selected
 const availableLocales = computed(() =>
-  ISO_LOCALES.filter(l =>
-    !supportedLocales.value.includes(l.code)
-    && (localeSearch.value === '' || l.name.toLowerCase().includes(localeSearch.value.toLowerCase()) || l.code.includes(localeSearch.value.toLowerCase())),
-  ),
+  ISO_LOCALES.filter(l => !supportedLocales.value.includes(l.code)),
 )
+
+// Custom filter: match by code OR name
+function filterLocales(options: string[], term: string): string[] {
+  if (!term) return options
+  const q = term.toLowerCase()
+  return options.filter((code) => {
+    const locale = ISO_LOCALES.find(l => l.code === code)
+    return code.toLowerCase().includes(q) || (locale?.name.toLowerCase().includes(q) ?? false)
+  })
+}
 
 // Sync from props when modal opens
 watch(open, (isOpen) => {
@@ -73,7 +79,6 @@ function addLocale(code: string) {
   if (code && !supportedLocales.value.includes(code)) {
     supportedLocales.value.push(code)
   }
-  localeSearch.value = ''
 }
 
 function removeLocale(locale: string) {
@@ -224,13 +229,12 @@ async function save() {
             <ComboboxRoot
               class="relative mt-2"
               :model-value="''"
-              :filter-function="(_items: string[]) => _items"
+              :filter-function="filterLocales"
               @update:model-value="addLocale($event as string)"
             >
               <ComboboxAnchor class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900">
                 <span class="icon-[annon--search] size-3.5 shrink-0 text-muted" aria-hidden="true" />
                 <ComboboxInput
-                  v-model="localeSearch"
                   :placeholder="t('project_settings.locale_placeholder')"
                   class="h-8 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none dark:text-secondary-100"
                 />
