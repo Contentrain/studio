@@ -203,8 +203,15 @@ function formatConversationDate(dateStr: string): string {
 
     <!-- Messages -->
     <div class="flex-1 overflow-y-auto">
+      <!-- Initial loading skeleton -->
+      <div v-if="messages.length === 0 && !projectStatus" class="flex h-full flex-col items-center justify-center gap-3 p-8">
+        <AtomsSkeleton variant="custom" class="size-12 rounded-full" />
+        <AtomsSkeleton variant="custom" class="h-4 w-40 rounded" />
+        <AtomsSkeleton variant="custom" class="h-3 w-56 rounded" />
+      </div>
+
       <!-- Empty state: setup project (no .contentrain/) -->
-      <div v-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center gap-4 p-8">
+      <div v-else-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center gap-4 p-8">
         <AtomsEmptyState
           icon="icon-[annon--box]"
           :title="t('content.not_found_title')"

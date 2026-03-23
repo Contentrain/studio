@@ -3,7 +3,7 @@ const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
-const { models, hasContentrain, snapshot, fetchSnapshot, invalidateCache } = useSnapshot()
+const { models, hasContentrain, snapshot, loading: snapshotLoading, fetchSnapshot, invalidateCache } = useSnapshot()
 const { branches, fetchBranches } = useBranches()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
@@ -121,7 +121,15 @@ async function onSettingsSaved() {
           />
         </div>
 
-        <template v-if="hasContentrain">
+        <!-- Sidebar skeleton while loading -->
+        <div v-if="snapshotLoading" class="space-y-2 px-1 py-1">
+          <AtomsSkeleton variant="custom" class="h-3 w-20 rounded" />
+          <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-7 w-full rounded-md" />
+          <AtomsSkeleton variant="custom" class="mt-3 h-3 w-24 rounded" />
+          <AtomsSkeleton v-for="i in 2" :key="`b${i}`" variant="custom" class="h-7 w-full rounded-md" />
+        </div>
+
+        <template v-else-if="hasContentrain">
           <details
             v-for="(domainModels, domain) in modelsByDomain"
             :key="domain"
