@@ -21,16 +21,20 @@ onMounted(async () => {
       window.history.replaceState(null, '', window.location.pathname)
     }
 
+    // Retrieve stored auth state for CSRF protection
+    const state = sessionStorage.getItem('contentrain-auth-state')
+    sessionStorage.removeItem('contentrain-auth-state')
+
     if (code) {
       await $fetch('/api/auth/verify', {
         method: 'POST',
-        body: { code },
+        body: { code, state },
       })
     }
     else if (accessToken) {
       await $fetch('/api/auth/verify', {
         method: 'POST',
-        body: { accessToken, refreshToken },
+        body: { accessToken, refreshToken, state },
       })
     }
     else {

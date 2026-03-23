@@ -35,11 +35,15 @@ export function useAuth() {
   }
 
   async function signInWithOAuth(provider: 'github' | 'google') {
-    const { url } = await $fetch<{ url: string }>('/api/auth/login', {
+    const result = await $fetch<{ url: string, state?: string }>('/api/auth/login', {
       method: 'POST',
       body: { provider, redirectTo: '/auth/callback' },
     })
-    window.location.href = url
+    // Store state for CSRF validation on callback
+    if (result.state) {
+      sessionStorage.setItem('contentrain-auth-state', result.state)
+    }
+    window.location.href = result.url
   }
 
   async function signInWithMagicLink(email: string) {

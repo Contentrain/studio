@@ -50,3 +50,47 @@ export async function clearServerSession(event: H3Event): Promise<void> {
 
   await session.clear()
 }
+
+// ─── OAuth State (CSRF Protection) ───
+
+const AUTH_STATE_NAME = 'contentrain-auth-state'
+const AUTH_STATE_MAX_AGE = 60 * 10 // 10 minutes
+
+interface AuthStateData {
+  state: string
+  createdAt: number
+}
+
+/** Generate and store a random state token for OAuth CSRF protection. */
+export async function setAuthState(event: H3Event): Promise<string> {
+  const { randomBytes } = await import('node:crypto')
+  const state = randomBytes(32).toString('hex')
+
+  const session = await useSession<AuthStateData>(event, {
+    password: getSessionPassword(),
+    name: AUTH_STATE_NAME,
+    maxAge: AUTH_STATE_MAX_AGE,
+  })
+
+  await session.update({ state, createdAt: Date.now() })
+  return state
+}
+
+/** Validate that the provided state matches the stored one. Clears after check. */
+export async function validateAuthState(event: H3Event, state: string): Promise<boolean> {
+  const session = await useSession<AuthStateData>(event, {
+    password: getSessionPassword(),
+    name: AUTH_STATE_NAME,
+  })
+
+  const stored = session.data?.state
+  await session.clear() // One-time use
+
+  if (!stored || stored !== state) return false
+
+  // Check expiry (10 min max)
+  const age = Date.now() - (session.data?.createdAt ?? 0)
+  if (age > AUTH_STATE_MAX_AGE * 1000) return false
+
+  return true
+}
