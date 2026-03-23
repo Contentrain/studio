@@ -335,6 +335,13 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
 /**
  * Build document model — handles slug directories and markdown → HTML.
+ *
+ * CRITICAL: Documents can live in custom content_path (e.g. "docs/")
+ * outside .contentrain/. Uses getModelContentDir() for correct base path.
+ *
+ * Directory structure:
+ *   i18n=true:  {contentDir}/{slug}/{locale}.md
+ *   i18n=false: {contentDir}/{slug}.md (flat files, not directories)
  */
 async function buildDocumentModel(
   projectId: string,
@@ -345,27 +352,39 @@ async function buildDocumentModel(
   locale: string,
   branch: string,
 ): Promise<void> {
-  // Resolve the content directory for this document model
-  const contentPath = resolveContentPath(ctx, model, locale)
-  // contentPath for documents is like: .contentrain/content/{domain}/{slug}/{locale}.md
-  // We need the parent directory to list slugs
-  const baseDir = contentPath.replace(`/{locale}.md`, '').replace(`/${locale}.md`, '')
-  const parentDir = baseDir.substring(0, baseDir.lastIndexOf('/'))
+  // Get the content directory — handles content_path override
+  const contentDir = getModelContentDir(ctx, model)
+  if (!contentDir) return
 
-  let slugDirs: string[] = []
+  // Remove trailing slash for clean path
+  const baseDir = contentDir.replace(/\/$/, '')
+
+  let entries: string[] = []
   try {
-    slugDirs = await git.listDirectory(parentDir.includes('{slug}') ? getModelContentDir(ctx, model) ?? '' : parentDir, branch)
+    entries = await git.listDirectory(baseDir, branch)
   }
   catch { return }
 
   const indexEntries: Array<Record<string, unknown>> = []
 
-  for (const slug of slugDirs) {
+  for (const entry of entries) {
     try {
-      const mdPath = resolveContentPath(ctx, model, locale, slug)
-      const raw = await git.readFile(mdPath, branch)
+      let slug: string
+      let mdPath: string
 
-      // Parse frontmatter
+      if (model.i18n) {
+        // i18n: slug directories containing {locale}.md
+        slug = entry
+        mdPath = `${baseDir}/${slug}/${locale}.md`
+      }
+      else {
+        // non-i18n: flat .md files (slug = filename without extension)
+        if (!entry.endsWith('.md')) continue
+        slug = entry.replace(/\.md$/, '')
+        mdPath = `${baseDir}/${entry}`
+      }
+
+      const raw = await git.readFile(mdPath, branch)
       const { frontmatter, body } = parseMarkdownFrontmatter(raw)
 
       // Check meta
@@ -380,8 +399,9 @@ async function buildDocumentModel(
       const html = marked.parse(body, { async: false }) as string
 
       // Upload individual document
+      const cdnLocale = model.i18n ? locale : 'data'
       const docData = JSON.stringify({ frontmatter: { ...frontmatter, slug }, body, html }, null, 2)
-      await cdn.putObject(projectId, `documents/${model.id}/${slug}/${locale}.json`, docData, 'application/json')
+      await cdn.putObject(projectId, `documents/${model.id}/${slug}/${cdnLocale}.json`, docData, 'application/json')
 
       // Add to index
       indexEntries.push({
@@ -394,6 +414,7 @@ async function buildDocumentModel(
   }
 
   // Upload document index
+  const cdnLocale = model.i18n ? locale : 'data'
   const indexData = JSON.stringify(indexEntries, null, 2)
-  await cdn.putObject(projectId, `documents/${model.id}/_index/${locale}.json`, indexData, 'application/json')
+  await cdn.putObject(projectId, `documents/${model.id}/_index/${cdnLocale}.json`, indexData, 'application/json')
 }
