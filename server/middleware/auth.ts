@@ -26,7 +26,14 @@ export default defineEventHandler(async (event) => {
   if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)))
     return
 
-  const sessionData = await getServerSession(event)
+  let sessionData
+  try {
+    sessionData = await getServerSession(event)
+  }
+  catch {
+    // Cookie exists but is corrupted/undecryptable — treat as no session
+    await clearServerSession(event)
+  }
 
   if (!sessionData) {
     throw createError({
