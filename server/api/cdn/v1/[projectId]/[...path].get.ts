@@ -7,11 +7,18 @@
  */
 export default defineEventHandler(async (event) => {
   const authHeader = getHeader(event, 'authorization')
-  const { projectId, keyId } = await validateCDNKey(authHeader)
+  const { projectId, keyId, rateLimitPerHour, allowedOrigins } = await validateCDNKey(authHeader)
 
   const routeProjectId = getRouterParam(event, 'projectId')
   if (routeProjectId !== projectId)
     throw createError({ statusCode: 403, message: 'API key does not match project' })
+
+  // CORS origin check (if allowed_origins configured)
+  if (allowedOrigins.length > 0) {
+    const origin = getHeader(event, 'origin')
+    if (origin && !allowedOrigins.includes(origin))
+      throw createError({ statusCode: 403, message: 'Origin not allowed' })
+  }
 
   // Plan check
   const admin = useSupabaseAdmin()
@@ -36,8 +43,8 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
     throw createError({ statusCode: 403, message: 'CDN delivery requires Pro plan or higher' })
 
-  // Rate limiting per-key
-  const rateCheck = checkRateLimit(`cdn:${keyId}`, 1000, 3600_000) // 1000 req/hour
+  // Rate limiting per-key (uses stored limit from DB)
+  const rateCheck = checkRateLimit(`cdn:${keyId}`, rateLimitPerHour, 3600_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: 'Rate limit exceeded' })
   setResponseHeader(event, 'X-RateLimit-Remaining', String(rateCheck.remaining))

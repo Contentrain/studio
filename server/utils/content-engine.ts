@@ -233,8 +233,22 @@ export function createContentEngine(ctx: ContentEngineContext) {
         }
         finalContent = merged
       }
+      else if (modelDef.kind === 'dictionary') {
+        // Dictionary: all values must be strings
+        for (const [key, val] of Object.entries(data)) {
+          if (typeof val !== 'string') {
+            return {
+              branch: '',
+              commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+              diff: [],
+              validation: { valid: false, errors: [{ field: key, message: `Dictionary value for "${key}" must be a string, got ${typeof val}`, severity: 'error' as const }] },
+            }
+          }
+        }
+        finalContent = { ...existingContent, ...data }
+      }
       else {
-        // Singleton/dictionary: merge fields (preserves unchanged fields)
+        // Singleton: merge fields
         finalContent = { ...existingContent, ...data }
       }
 

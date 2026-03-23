@@ -4,11 +4,11 @@ import matter from 'gray-matter'
 /**
  * Read content for a specific model.
  *
- * Handles all 4 kinds:
- * - singleton: flat object from .contentrain/content/{domain}/{model}/{locale}.json
- * - collection: object-map from .contentrain/content/{domain}/{model}/{locale}.json
- * - dictionary: key-value pairs from .contentrain/content/{domain}/{model}/{locale}.json
- * - document: frontmatter + markdown from {content_path}/{slug}.md or {slug}/{locale}.md
+ * Uses resolveContentPath() for correct path resolution including:
+ * - contentRoot prefix (monorepo)
+ * - content_path overrides (custom paths outside .contentrain/)
+ * - i18n vs non-i18n (locale.json vs data.json)
+ * - Document kind (slug directories or flat .md files)
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -26,96 +26,93 @@ export default defineEventHandler(async (event) => {
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,
   )
 
-  const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
-  const contentBase = contentRoot ? `${contentRoot}/.contentrain/content` : '.contentrain/content'
+  const ctx = { contentRoot }
 
-  // Read model definition to determine kind, domain, content_path
-  let modelDef: Partial<ModelDefinition> = {}
+  // Read model definition
+  let modelDef: ModelDefinition
   try {
-    modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`))
+    modelDef = JSON.parse(await git.readFile(resolveModelPath(ctx, modelId))) as ModelDefinition
   }
   catch {
-    // Model definition not found — try reading content anyway
+    throw createError({ statusCode: 404, message: `Model "${modelId}" not found` })
   }
 
   const kind = modelDef.kind ?? 'collection'
-  const domain = modelDef.domain
+  const effectiveLocale = modelDef.i18n ? locale : 'data'
 
-  // Document kind: content_path points directly to the directory containing .md files
-  if (kind === 'document' && modelDef.content_path) {
-    const docPath = contentRoot ? `${contentRoot}/${modelDef.content_path}` : modelDef.content_path
-    const entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }> = []
-    const isI18n = modelDef.i18n ?? false
-
-    try {
-      const items = await git.listDirectory(docPath)
-
-      for (const item of items) {
-        if (!isI18n && item.endsWith('.md')) {
-          try {
-            const raw = await git.readFile(`${docPath}/${item}`)
-            const parsed = matter(raw)
-            entries.push({ slug: item.replace('.md', ''), frontmatter: parsed.data, body: parsed.content })
-          }
-          catch { /* skip */ }
-        }
-        else if (isI18n && !item.includes('.')) {
-          try {
-            const raw = await git.readFile(`${docPath}/${item}/${locale}.md`)
-            const parsed = matter(raw)
-            entries.push({ slug: item, frontmatter: parsed.data, body: parsed.content })
-          }
-          catch { /* skip */ }
-        }
-      }
-    }
-    catch {
-      // Document path not accessible
-    }
-
-    // Load document meta
-    let docMeta: Record<string, unknown> | null = null
-    try {
-      const metaBase = contentRoot ? `${contentRoot}/.contentrain/meta` : '.contentrain/meta'
-      docMeta = JSON.parse(await git.readFile(`${metaBase}/${modelId}/${locale}.json`))
-    }
-    catch { /* no meta */ }
-
-    return { modelId, locale, kind, data: entries, meta: docMeta }
+  // Document kind
+  if (kind === 'document') {
+    return readDocumentContent(git, ctx, modelDef, locale)
   }
 
-  // JSON-based kinds: singleton, collection, dictionary
+  // JSON kinds: singleton, collection, dictionary
+  const contentPath = resolveContentPath(ctx, modelDef, effectiveLocale === 'data' ? 'data' : locale)
   let contentData: unknown = null
 
-  if (domain) {
-    try {
-      contentData = JSON.parse(await git.readFile(`${contentBase}/${domain}/${modelId}/${locale}.json`))
-    }
-    catch { /* Not found at domain path */ }
+  try {
+    contentData = JSON.parse(await git.readFile(contentPath))
   }
-
-  if (!contentData) {
-    try {
-      const domains = await git.listDirectory(contentBase)
-      for (const d of domains) {
-        if (d.startsWith('.')) continue
-        try {
-          contentData = JSON.parse(await git.readFile(`${contentBase}/${d}/${modelId}/${locale}.json`))
-          break
-        }
-        catch { continue }
-      }
-    }
-    catch { /* Content base not accessible */ }
-  }
+  catch { /* content not found */ }
 
   // Load meta
   let meta: Record<string, unknown> | null = null
   try {
-    const metaBase = contentRoot ? `${contentRoot}/.contentrain/meta` : '.contentrain/meta'
-    meta = JSON.parse(await git.readFile(`${metaBase}/${modelId}/${locale}.json`))
+    const metaPath = resolveMetaPath(ctx, modelDef, effectiveLocale === 'data' ? locale : locale)
+    meta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
   }
   catch { /* no meta */ }
 
   return { modelId, locale, kind, data: contentData, meta }
 })
+
+/**
+ * Read document model content — handles content_path override, i18n/non-i18n.
+ */
+async function readDocumentContent(
+  git: ReturnType<typeof useGitProvider>,
+  ctx: { contentRoot: string },
+  model: ModelDefinition,
+  locale: string,
+) {
+  const contentDir = model.content_path
+    ? (ctx.contentRoot ? `${ctx.contentRoot}/${model.content_path}` : model.content_path)
+    : `${ctx.contentRoot ? `${ctx.contentRoot}/` : ''}.contentrain/content/${model.domain}/${model.id}`
+
+  const entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }> = []
+
+  try {
+    const items = await git.listDirectory(contentDir)
+
+    for (const item of items) {
+      if (!model.i18n && item.endsWith('.md')) {
+        // Non-i18n: flat .md files
+        try {
+          const raw = await git.readFile(`${contentDir}/${item}`)
+          const parsed = matter(raw)
+          entries.push({ slug: item.replace('.md', ''), frontmatter: parsed.data, body: parsed.content })
+        }
+        catch { /* skip */ }
+      }
+      else if (model.i18n && !item.includes('.')) {
+        // i18n: slug directories with {locale}.md
+        try {
+          const raw = await git.readFile(`${contentDir}/${item}/${locale}.md`)
+          const parsed = matter(raw)
+          entries.push({ slug: item, frontmatter: parsed.data, body: parsed.content })
+        }
+        catch { /* skip */ }
+      }
+    }
+  }
+  catch { /* directory not accessible */ }
+
+  // Load meta
+  let meta: Record<string, unknown> | null = null
+  try {
+    const metaPath = resolveMetaPath(ctx, model, locale)
+    meta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+  }
+  catch { /* no meta */ }
+
+  return { modelId: model.id, locale, kind: 'document', data: entries, meta }
+}

@@ -297,7 +297,7 @@ export default defineEventHandler(async (event) => {
 
           // Execute tool
           const result = await executeToolWithAutoMerge(
-            tc.name, tc.input, contentEngine, git, session.user.email ?? '', workflow, permissions,
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions,
           )
 
           // Accumulate affected resources
@@ -368,6 +368,7 @@ async function executeToolWithAutoMerge(
   engine: ReturnType<typeof createContentEngine>,
   git: ReturnType<typeof useGitProvider>,
   userEmail: string,
+  contentRoot: string,
   workflow: string,
   permissions: AgentPermissions,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
@@ -379,7 +380,7 @@ async function executeToolWithAutoMerge(
 
     switch (name) {
       case 'list_models': {
-        const modelsDir = '.contentrain/models'
+        const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
         const files = await git.listDirectory(modelsDir)
         const modelsList = []
         for (const file of files) {
@@ -396,9 +397,9 @@ async function executeToolWithAutoMerge(
       case 'get_content': {
         const modelId = params.model as string
         const locale = (params.locale as string) ?? 'en'
-        const modelsDir = '.contentrain/models'
+        const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
         const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
-        const pathCtx = { contentRoot: '' }
+        const pathCtx = { contentRoot }
 
         // Load meta (status, source, updated_by)
         let meta: Record<string, unknown> | null = null
@@ -529,9 +530,36 @@ async function executeToolWithAutoMerge(
         break
       }
 
-      case 'validate':
-        result = { valid: true, errors: [] }
+      case 'validate': {
+        // Basic validation: check that models have content files
+        const valModelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
+        const valErrors: string[] = []
+        try {
+          const valFiles = await git.listDirectory(valModelsDir)
+          for (const file of valFiles) {
+            if (!file.endsWith('.json')) continue
+            try {
+              const def = JSON.parse(await git.readFile(`${valModelsDir}/${file}`)) as ModelDefinition
+              if (def.kind !== 'document') {
+                const valPathCtx = { contentRoot }
+                const contentPath = resolveContentPath(valPathCtx, def, def.i18n ? 'en' : 'data')
+                try {
+                  await git.readFile(contentPath)
+                }
+                catch {
+                  valErrors.push(`Model "${def.id}": content file missing at ${contentPath}`)
+                }
+              }
+            }
+            catch { /* skip invalid model file */ }
+          }
+        }
+        catch {
+          valErrors.push('Models directory not found')
+        }
+        result = { valid: valErrors.length === 0, errors: valErrors }
         break
+      }
 
       case 'list_branches':
         result = { branches: await engine.listContentBranches() }

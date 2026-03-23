@@ -48,7 +48,7 @@ export async function validateCDNKey(
   const admin = useSupabaseAdmin()
   const { data: apiKey } = await admin
     .from('cdn_api_keys')
-    .select('id, project_id, rate_limit_per_hour, revoked_at, expires_at')
+    .select('id, project_id, rate_limit_per_hour, allowed_origins, revoked_at, expires_at')
     .eq('key_hash', keyHash)
     .is('revoked_at', null)
     .single()
@@ -69,5 +69,10 @@ export async function validateCDNKey(
       if (error) console.warn('[cdn-keys] last_used_at update failed:', error.message)
     })
 
-  return { projectId: apiKey.project_id, keyId: apiKey.id }
+  return {
+    projectId: apiKey.project_id,
+    keyId: apiKey.id,
+    rateLimitPerHour: apiKey.rate_limit_per_hour ?? 1000,
+    allowedOrigins: (apiKey.allowed_origins as string[] | null) ?? [],
+  }
 }
