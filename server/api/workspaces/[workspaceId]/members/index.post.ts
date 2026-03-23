@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
       user_id: userId,
       role: body.role,
       invited_email: body.email,
-      accepted_at: userId ? new Date().toISOString() : null,
+      accepted_at: null, // Pending until user logs in and accesses workspace
     })
     .select()
     .single()

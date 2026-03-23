@@ -60,26 +60,52 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* no models directory */ }
 
-  // Read content summaries
+  // Read content summaries — uses model definitions for correct path resolution
   const content: Record<string, { count: number, locales: string[] }> = {}
-  try {
-    const domains = await git.listDirectory(contentDir)
-    for (const domain of domains) {
-      try {
-        const modelDirs = await git.listDirectory(`${contentDir}/${domain}`)
-        for (const modelDir of modelDirs) {
-          try {
-            const files = await git.listDirectory(`${contentDir}/${domain}/${modelDir}`)
-            const jsonFiles = files.filter(f => f.endsWith('.json'))
-            content[modelDir] = { count: jsonFiles.length, locales: jsonFiles.map(f => f.replace('.json', '')) }
-          }
-          catch { /* skip */ }
-        }
+  const ctx = { contentRoot }
+  const defaultLocale = config?.locales?.default ?? 'en'
+  const supportedLocales = config?.locales?.supported ?? [defaultLocale]
+
+  for (const model of models) {
+    try {
+      if (model.kind === 'document') {
+        // Documents: count slugs in content directory
+        const contentDirPath = (model as { content_path?: string }).content_path
+          ? (contentRoot ? `${contentRoot}/${(model as { content_path?: string }).content_path}` : (model as { content_path?: string }).content_path!)
+          : `${contentDir}/${model.domain}/${model.id}`
+        const items = await git.listDirectory(contentDirPath)
+        const slugs = model.i18n ? items.filter(i => !i.includes('.')) : items.filter(i => i.endsWith('.md'))
+        content[model.id] = { count: slugs.length, locales: model.i18n ? supportedLocales : [defaultLocale] }
       }
-      catch { /* domain might be a file */ }
+      else {
+        // JSON kinds: count entries by reading locale files
+        const locales: string[] = []
+        let entryCount = 0
+
+        for (const locale of (model.i18n ? supportedLocales : ['data'])) {
+          try {
+            const filePath = resolveContentPath(ctx, model as unknown as ModelDefinition, locale)
+            const raw = await git.readFile(filePath)
+            const data = JSON.parse(raw)
+            locales.push(locale === 'data' ? defaultLocale : locale)
+            if (model.kind === 'collection' && typeof data === 'object' && !Array.isArray(data)) {
+              entryCount = Math.max(entryCount, Object.keys(data).length)
+            }
+            else if (model.kind === 'collection' && Array.isArray(data)) {
+              entryCount = Math.max(entryCount, data.length)
+            }
+            else {
+              entryCount = 1
+            }
+          }
+          catch { /* locale not found */ }
+        }
+
+        content[model.id] = { count: entryCount, locales }
+      }
     }
+    catch { /* skip model */ }
   }
-  catch { /* no content directory */ }
 
   // Read vocabulary
   let vocabulary: Record<string, Record<string, string>> | null = null

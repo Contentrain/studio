@@ -273,7 +273,7 @@ export async function ensureWorkspaceMember(
       role,
       invited_email: email,
       invited_at: new Date().toISOString(),
-      accepted_at: new Date().toISOString(),
+      accepted_at: null,
     })
 }
 

@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
       specific_models: body.specificModels ?? false,
       allowed_models: body.allowedModels ?? [],
       invited_email: body.email,
-      accepted_at: userId ? new Date().toISOString() : null,
+      accepted_at: null, // Pending until user accesses project
     })
     .select()
     .single()
