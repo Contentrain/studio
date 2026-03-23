@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
+import { ComboboxAnchor, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxItemIndicator, ComboboxPortal, ComboboxRoot, ComboboxViewport, DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
+import { ISO_LOCALES, getLocaleName } from '~/utils/locales'
 
 const { t } = useContent()
 const toast = useToast()
@@ -27,8 +28,16 @@ const domains = ref<string[]>([])
 const defaultLocale = ref('en')
 const supportedLocales = ref<string[]>(['en'])
 const newDomain = ref('')
-const newLocale = ref('')
+const localeSearch = ref('')
 const saving = ref(false)
+
+// Available locales = ISO list minus already selected
+const availableLocales = computed(() =>
+  ISO_LOCALES.filter(l =>
+    !supportedLocales.value.includes(l.code)
+    && (localeSearch.value === '' || l.name.toLowerCase().includes(localeSearch.value.toLowerCase()) || l.code.includes(localeSearch.value.toLowerCase())),
+  ),
+)
 
 // Sync from props when modal opens
 watch(open, (isOpen) => {
@@ -60,12 +69,11 @@ function removeDomain(domain: string) {
   domains.value = domains.value.filter(d => d !== domain)
 }
 
-function addLocale() {
-  const l = newLocale.value.trim().toLowerCase()
-  if (l && !supportedLocales.value.includes(l)) {
-    supportedLocales.value.push(l)
+function addLocale(code: string) {
+  if (code && !supportedLocales.value.includes(code)) {
+    supportedLocales.value.push(code)
   }
-  newLocale.value = ''
+  localeSearch.value = ''
 }
 
 function removeLocale(locale: string) {
@@ -184,7 +192,7 @@ async function save() {
             <AtomsFormLabel :text="t('project_settings.default_locale')" size="sm" />
             <AtomsFormSelect
               :model-value="defaultLocale"
-              :options="supportedLocales.map(l => ({ value: l, label: l.toUpperCase() }))"
+              :options="supportedLocales.map(l => ({ value: l, label: `${l.toUpperCase()} — ${getLocaleName(l)}` }))"
               size="md"
               class="mt-1.5"
               @update:model-value="defaultLocale = $event"
@@ -201,6 +209,7 @@ async function save() {
                 class="inline-flex items-center gap-1 rounded-md bg-secondary-100 px-2 py-1 text-xs font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
               >
                 {{ locale.toUpperCase() }}
+                <span class="text-[10px] font-normal text-muted">{{ getLocaleName(locale) }}</span>
                 <button
                   v-if="supportedLocales.length > 1"
                   type="button"
@@ -211,17 +220,46 @@ async function save() {
                 </button>
               </span>
             </div>
-            <form class="mt-2 flex items-center gap-2" @submit.prevent="addLocale">
-              <AtomsFormInput
-                v-model="newLocale"
-                type="text"
-                :placeholder="t('project_settings.locale_placeholder')"
-                class="w-24"
-              />
-              <AtomsBaseButton type="submit" variant="ghost" size="sm" :disabled="!newLocale.trim()">
-                <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
-              </AtomsBaseButton>
-            </form>
+            <!-- Searchable locale picker -->
+            <ComboboxRoot
+              class="relative mt-2"
+              :model-value="''"
+              @update:model-value="addLocale($event as string)"
+            >
+              <ComboboxAnchor class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900">
+                <span class="icon-[annon--search] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+                <ComboboxInput
+                  v-model="localeSearch"
+                  :placeholder="t('project_settings.locale_placeholder')"
+                  class="h-8 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none dark:text-secondary-100"
+                />
+              </ComboboxAnchor>
+              <ComboboxPortal>
+                <ComboboxContent
+                  position="popper"
+                  :side-offset="4"
+                  class="z-[100] max-h-48 w-[var(--radix-combobox-trigger-width)] overflow-hidden rounded-lg border border-secondary-200 bg-white shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
+                >
+                  <ComboboxViewport class="p-1">
+                    <ComboboxEmpty class="px-3 py-2 text-xs text-muted">
+                      No matching language
+                    </ComboboxEmpty>
+                    <ComboboxItem
+                      v-for="locale in availableLocales"
+                      :key="locale.code"
+                      :value="locale.code"
+                      class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
+                    >
+                      <span class="w-7 shrink-0 text-xs font-medium text-muted">{{ locale.code.toUpperCase() }}</span>
+                      <span>{{ locale.name }}</span>
+                      <ComboboxItemIndicator class="ml-auto">
+                        <span class="icon-[annon--check] size-3.5 text-primary-500" aria-hidden="true" />
+                      </ComboboxItemIndicator>
+                    </ComboboxItem>
+                  </ComboboxViewport>
+                </ComboboxContent>
+              </ComboboxPortal>
+            </ComboboxRoot>
           </div>
 
           <!-- Domains -->
