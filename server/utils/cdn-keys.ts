@@ -59,12 +59,15 @@ export async function validateCDNKey(
   if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date())
     throw createError({ statusCode: 401, message: 'API key expired' })
 
-  // Update last_used_at (non-blocking)
+  // Update last_used_at (non-blocking, fire-and-forget with error logging)
   admin
     .from('cdn_api_keys')
     .update({ last_used_at: new Date().toISOString() })
     .eq('id', apiKey.id)
-    .then(() => {})
+    .then(({ error }) => {
+      // eslint-disable-next-line no-console
+      if (error) console.warn('[cdn-keys] last_used_at update failed:', error.message)
+    })
 
   return { projectId: apiKey.project_id, keyId: apiKey.id }
 }

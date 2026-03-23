@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'workspaceId and keyId are required' })
 
   const client = useSupabaseUserClient(session.accessToken)
+  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const { error } = await client
     .from('cdn_api_keys')

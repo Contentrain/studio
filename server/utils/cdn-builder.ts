@@ -14,6 +14,20 @@ import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import { marked } from 'marked'
 
+// Configure marked for safe HTML output — escape user HTML input
+const safeMarked = new marked.Marked({
+  renderer: {
+    // Override HTML block/inline to escape raw HTML
+    html(token) {
+      // Escape raw HTML blocks to prevent XSS
+      return token.text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+    },
+  },
+})
+
 export interface BuildResult {
   projectId: string
   buildId: string
@@ -396,7 +410,7 @@ async function buildDocumentModel(
       catch { /* no meta = include */ }
 
       // Render HTML
-      const html = marked.parse(body, { async: false }) as string
+      const html = safeMarked.parse(body, { async: false }) as string
 
       // Upload individual document
       const cdnLocale = model.i18n ? locale : 'data'

@@ -13,8 +13,9 @@ export default defineEventHandler(async (event) => {
   if (!body.name?.trim())
     throw createError({ statusCode: 400, message: 'name is required' })
 
-  // Plan check
+  // Role + plan check
   const client = useSupabaseUserClient(session.accessToken)
+  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
   const { data: workspace } = await client
     .from('workspaces')
     .select('plan')

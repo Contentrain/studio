@@ -36,6 +36,12 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
     throw createError({ statusCode: 403, message: 'CDN delivery requires Pro plan or higher' })
 
+  // Rate limiting per-key
+  const rateCheck = checkRateLimit(`cdn:${keyId}`, 1000, 3600_000) // 1000 req/hour
+  if (!rateCheck.allowed)
+    throw createError({ statusCode: 429, message: 'Rate limit exceeded' })
+  setResponseHeader(event, 'X-RateLimit-Remaining', String(rateCheck.remaining))
+
   // Get content from CDN storage
   const cdn = useCDNProvider()
   if (!cdn)
