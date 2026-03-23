@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { GitProvider } from '../providers/git'
+import { normalizeContentRoot } from './content-paths'
 
 /**
  * Database helper layer.
@@ -392,6 +393,3 @@ export async function getBYOAKey(
 
   return data?.encrypted_key ?? null
 }
-
-// Re-export normalizeContentRoot from content-paths (single source of truth)
-export { normalizeContentRoot } from './content-paths'

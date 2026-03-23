@@ -51,7 +51,7 @@ const contextTypeIcons: Record<string, string> = {
           :key="idx"
           class="inline-flex items-center gap-1 rounded-md bg-secondary-100 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:bg-secondary-800"
         >
-          <span :class="contextTypeIcons[item.type] ?? 'icon-[annon--hash]'" class="size-2.5" aria-hidden="true" />
+          <span :class="contextTypeIcons[item.type] ?? 'icon-[annon--code]'" class="size-2.5" aria-hidden="true" />
           <span class="truncate">{{ item.label }}</span>
           <span v-if="item.sublabel" class="truncate opacity-60">· {{ item.sublabel }}</span>
         </span>
