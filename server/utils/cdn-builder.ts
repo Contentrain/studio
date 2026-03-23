@@ -36,6 +36,15 @@ export interface BuildOptions {
   branch: string
   changedPaths?: string[]
   fullRebuild?: boolean
+  onProgress?: (event: BuildProgressEvent) => void
+}
+
+export interface BuildProgressEvent {
+  phase: 'init' | 'model' | 'upload' | 'done'
+  message: string
+  current?: number
+  total?: number
+  modelId?: string
 }
 
 interface EntryMeta {
@@ -127,6 +136,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
   const start = Date.now()
   const { projectId, buildId, git, cdn, contentRoot, commitSha, branch } = options
   const ctx = { contentRoot }
+  const progress = options.onProgress ?? (() => {})
 
   let filesUploaded = 0
   let totalSizeBytes = 0
@@ -134,6 +144,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
   try {
     // 1. Load project config
+    progress({ phase: 'init', message: 'Loading project config...' })
     const configPath = resolveConfigPath(ctx)
     let config: ContentrainConfig
     try {
@@ -150,6 +161,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     const locales = config.locales?.supported ?? [config.locales?.default ?? 'en']
 
     // 2. Load all model definitions
+    progress({ phase: 'init', message: 'Loading model definitions...' })
     const modelsDir = resolveModelsDir(ctx)
     const modelFiles = await git.listDirectory(modelsDir, branch)
     const models: ModelDefinition[] = []
@@ -174,6 +186,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     changedModelIds.push(...targetModels.map(m => m.id))
 
     // 4. Upload manifest
+    progress({ phase: 'upload', message: 'Uploading manifest...', current: 0, total: targetModels.length })
     const manifest = {
       version: '1',
       commitSha,
@@ -219,7 +232,10 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     }
 
     // 6. Build content for each target model
+    let modelIndex = 0
     for (const model of targetModels) {
+      modelIndex++
+      progress({ phase: 'model', message: `Building ${model.name}...`, current: modelIndex, total: targetModels.length, modelId: model.id })
       for (const locale of locales) {
         // Skip non-i18n models for secondary locales
         if (!model.i18n && locale !== locales[0]) continue
@@ -288,6 +304,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     }
 
     // 7. Purge edge cache
+    progress({ phase: 'done', message: `Build complete — ${filesUploaded} files uploaded`, current: targetModels.length, total: targetModels.length })
     await cdn.purgeCache(projectId)
 
     return {

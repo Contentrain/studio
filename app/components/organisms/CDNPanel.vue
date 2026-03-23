@@ -25,6 +25,9 @@ const loading = ref(true)
 
 const activeKeys = computed(() => keys.value.filter(k => !k.revoked_at))
 
+// Build progress state
+const buildProgress = ref<{ phase: string, message: string, current?: number, total?: number } | null>(null)
+
 const buildStatusVariant: Record<string, 'success' | 'danger' | 'warning' | 'secondary'> = {
   success: 'success',
   failed: 'danger',
@@ -113,16 +116,58 @@ async function revokeKey(keyId: string) {
 
 async function triggerRebuild() {
   rebuilding.value = true
+  buildProgress.value = { phase: 'init', message: 'Starting build...' }
+
   try {
-    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds/trigger`, { method: 'POST' })
-    toast.success(t('cdn.rebuild_triggered'))
-    builds.value = await $fetch<CDNBuild[]>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`)
+    const response = await fetch(
+      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds/trigger`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    )
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('No stream')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const event = JSON.parse(line.slice(6))
+          buildProgress.value = event
+
+          if (event.phase === 'complete') {
+            toast.success(event.message)
+            builds.value = await $fetch<CDNBuild[]>(
+              `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`,
+            )
+          }
+          else if (event.phase === 'error') {
+            toast.error(event.message)
+          }
+        }
+        catch { /* skip */ }
+      }
+    }
   }
   catch {
     toast.error(t('project_settings.save_error'))
   }
   finally {
     rebuilding.value = false
+    buildProgress.value = null
   }
 }
 
@@ -247,6 +292,25 @@ function copyKey() {
               <span class="icon-[annon--arrow-swap] size-3.5" :class="rebuilding ? 'animate-spin' : ''" aria-hidden="true" />
               {{ rebuilding ? t('cdn.rebuilding') : t('cdn.rebuild') }}
             </AtomsBaseButton>
+          </div>
+
+          <!-- Build progress -->
+          <div v-if="buildProgress" class="mb-3 rounded-lg border border-primary-200 bg-primary-50 p-3 dark:border-primary-500/20 dark:bg-primary-500/10">
+            <div class="flex items-center gap-2">
+              <div class="size-3 animate-spin rounded-full border-2 border-primary-300 border-t-primary-600" />
+              <span class="flex-1 text-xs font-medium text-primary-700 dark:text-primary-300">
+                {{ buildProgress.message }}
+              </span>
+              <span v-if="buildProgress.total" class="text-[10px] text-primary-500">
+                {{ buildProgress.current }}/{{ buildProgress.total }}
+              </span>
+            </div>
+            <div v-if="buildProgress.total" class="mt-2 h-1.5 overflow-hidden rounded-full bg-primary-200 dark:bg-primary-800">
+              <div
+                class="h-full rounded-full bg-primary-500 transition-all duration-300"
+                :style="{ width: `${Math.round(((buildProgress.current ?? 0) / buildProgress.total) * 100)}%` }"
+              />
+            </div>
           </div>
 
           <div v-if="builds.length > 0" class="space-y-1">

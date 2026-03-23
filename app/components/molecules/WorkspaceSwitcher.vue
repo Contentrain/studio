@@ -39,6 +39,17 @@ async function handleCreate() {
   }
 }
 
+const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary', label: string }> = {
+  free: { variant: 'secondary', label: 'Free' },
+  pro: { variant: 'primary', label: 'Pro' },
+  business: { variant: 'info', label: 'Business' },
+  enterprise: { variant: 'warning', label: 'Enterprise' },
+}
+
+function getWorkspacePlan(ws: { plan?: string | null, workspace_members?: unknown }): string {
+  return (ws as { plan?: string }).plan ?? 'free'
+}
+
 onMounted(() => {
   if (workspaces.value.length === 0) fetchWorkspaces()
 })
@@ -56,6 +67,13 @@ onMounted(() => {
         <span class="min-w-0 flex-1 truncate">
           {{ activeWorkspace?.name ?? t('workspace.default_name') }}
         </span>
+        <AtomsBadge
+          v-if="activeWorkspace"
+          :variant="planBadge[getWorkspacePlan(activeWorkspace)]?.variant ?? 'secondary'"
+          size="sm"
+        >
+          {{ planBadge[getWorkspacePlan(activeWorkspace)]?.label ?? 'Free' }}
+        </AtomsBadge>
         <span class="icon-[annon--chevron-down] size-3.5 shrink-0 text-muted" aria-hidden="true" />
       </PopoverTrigger>
 
@@ -83,8 +101,15 @@ onMounted(() => {
             >
               {{ ws.name.charAt(0).toUpperCase() }}
             </span>
-            <span class="truncate">{{ ws.name }}</span>
-            <span v-if="ws.id === activeWorkspace?.id" class="icon-[annon--check] ml-auto size-4 shrink-0" aria-hidden="true" />
+            <span class="min-w-0 flex-1 truncate">{{ ws.name }}</span>
+            <AtomsBadge
+              :variant="planBadge[getWorkspacePlan(ws)]?.variant ?? 'secondary'"
+              size="sm"
+              class="shrink-0"
+            >
+              {{ planBadge[getWorkspacePlan(ws)]?.label ?? 'Free' }}
+            </AtomsBadge>
+            <span v-if="ws.id === activeWorkspace?.id" class="icon-[annon--check] size-4 shrink-0" aria-hidden="true" />
           </button>
 
           <div class="my-1 border-t border-secondary-200 dark:border-secondary-800" />

@@ -1,6 +1,8 @@
 /**
- * Manually trigger a CDN rebuild.
+ * Manually trigger a CDN rebuild with SSE progress streaming.
  */
+import { createEventStream } from 'h3'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -68,30 +70,67 @@ export default defineEventHandler(async (event) => {
   if (buildError || !build)
     throw createError({ statusCode: 500, message: `Failed to create build record: ${buildError?.message ?? 'unknown'}` })
 
-  // Execute build (async — don't block response)
-  executeCDNBuild({
-    projectId,
-    buildId: build.id,
-    git,
-    cdn,
-    contentRoot,
-    commitSha,
-    branch,
-    fullRebuild: true,
-  }).then(async (result) => {
-    await admin
-      .from('cdn_builds')
-      .update({
-        status: result.error ? 'failed' : 'success',
-        file_count: result.filesUploaded,
-        total_size_bytes: result.totalSizeBytes,
-        changed_models: result.changedModels,
-        build_duration_ms: result.durationMs,
-        error_message: result.error ?? null,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', build.id)
-  })
+  // SSE stream for progress
+  const eventStream = createEventStream(event)
 
-  return { buildId: build.id, status: 'building' }
+  const processBuild = async () => {
+    try {
+      const result = await executeCDNBuild({
+        projectId,
+        buildId: build.id,
+        git,
+        cdn,
+        contentRoot,
+        commitSha,
+        branch,
+        fullRebuild: true,
+        onProgress: (progressEvent) => {
+          eventStream.push(JSON.stringify(progressEvent))
+        },
+      })
+
+      // Update build record
+      await admin
+        .from('cdn_builds')
+        .update({
+          status: result.error ? 'failed' : 'success',
+          file_count: result.filesUploaded,
+          total_size_bytes: result.totalSizeBytes,
+          changed_models: result.changedModels,
+          build_duration_ms: result.durationMs,
+          error_message: result.error ?? null,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', build.id)
+
+      await eventStream.push(JSON.stringify({
+        phase: 'complete',
+        message: result.error ? `Build failed: ${result.error}` : `Build complete — ${result.filesUploaded} files in ${result.durationMs}ms`,
+        result: {
+          buildId: build.id,
+          filesUploaded: result.filesUploaded,
+          totalSizeBytes: result.totalSizeBytes,
+          durationMs: result.durationMs,
+          error: result.error,
+        },
+      }))
+    }
+    catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Build failed'
+      try {
+        await eventStream.push(JSON.stringify({ phase: 'error', message: msg }))
+      }
+      catch { /* stream closed */ }
+    }
+    finally {
+      try {
+        await eventStream.close()
+      }
+      catch { /* already closed */ }
+    }
+  }
+
+  processBuild()
+  eventStream.onClosed(() => { /* client disconnected */ })
+  return eventStream.send()
 })
