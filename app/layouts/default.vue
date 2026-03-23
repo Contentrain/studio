@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { t } = useContent()
+const commandPaletteOpen = ref(false)
 </script>
 
 <template>
@@ -25,5 +26,10 @@ const { t } = useContent()
     <main class="flex-1 overflow-y-auto pt-14 md:pt-0">
       <slot />
     </main>
+
+    <!-- Command palette (⌘K) -->
+    <ClientOnly>
+      <OrganismsCommandPalette v-model:open="commandPaletteOpen" />
+    </ClientOnly>
   </div>
 </template>

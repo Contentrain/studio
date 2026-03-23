@@ -95,9 +95,9 @@ export default defineEventHandler(async (event) => {
   }
 
   // === CONVERSATION ===
-  let conversationId = body.conversationId
+  let conversationId: string | undefined = body.conversationId
   if (!conversationId) {
-    conversationId = await createConversation(client, projectId, session.user.id, body.message)
+    conversationId = (await createConversation(client, projectId, session.user.id, body.message)) ?? undefined
   }
   if (!conversationId)
     throw createError({ statusCode: 500, message: 'Failed to create conversation' })
@@ -164,7 +164,7 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* no branches */ }
 
-  const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status)
+  const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
 
   // === INTENT CLASSIFICATION ===
   const intent = classifyIntent(body.message, uiContext, phase)
@@ -173,7 +173,7 @@ export default defineEventHandler(async (event) => {
   const projectState = {
     initialized: !!projectConfig,
     pendingBranches,
-    projectStatus: project.status,
+    projectStatus: project.status ?? 'active',
     phase,
     contentContext,
   }
@@ -550,6 +550,28 @@ async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         result = { rejected: true }
         break
+
+      case 'copy_locale': {
+        const writeResult = await engine.copyLocale(
+          params.model as string, params.from as string, params.to as string, userEmail,
+        )
+        if (!writeResult.validation.valid) {
+          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          break
+        }
+        affected.models.push(params.model as string)
+        affected.locales.push(params.to as string)
+        affected.branchesChanged = true
+
+        if (shouldAutoMerge(workflow, permissions)) {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+        }
+        break
+      }
 
       case 'init_project': {
         const initModels: ModelDefinition[] = []

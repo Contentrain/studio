@@ -197,6 +197,22 @@ Provide initial models with full field definitions using Contentrain's 27 type s
     defaultAffects: { snapshotChanged: true, branchesChanged: true },
     workflowBehavior: 'auto-merge',
   },
+  {
+    name: 'copy_locale',
+    description: 'Copy content from one locale to another for a model. Useful for bootstrapping translations — copies all entries from source locale to target locale. Existing target content is NOT overwritten.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Model ID' },
+        from: { type: 'string', description: 'Source locale code (e.g., "en")' },
+        to: { type: 'string', description: 'Target locale code (e.g., "tr")' },
+      },
+      required: ['model', 'from', 'to'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { branchesChanged: true, snapshotChanged: false },
+    workflowBehavior: 'workflow-dependent',
+  },
 ]
 
 /**

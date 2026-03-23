@@ -32,6 +32,7 @@ const TOOL_ROLES: Record<string, string[]> = {
   merge_branch: ['reviewer', 'admin', 'owner'],
   reject_branch: ['reviewer', 'admin', 'owner'],
   init_project: ['admin', 'owner'],
+  copy_locale: ['editor', 'admin', 'owner'],
 }
 
 export async function resolveAgentPermissions(
