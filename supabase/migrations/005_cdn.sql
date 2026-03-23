@@ -100,7 +100,15 @@ CREATE POLICY "Workspace members can view CDN builds"
     WHERE wm.user_id = auth.uid()
   ));
 
--- cdn_builds: system inserts (admin client only, no user RLS needed for insert)
+-- cdn_builds: any authenticated user can insert (build records created by system)
+CREATE POLICY "Authenticated users can insert CDN builds"
+  ON public.cdn_builds FOR INSERT
+  WITH CHECK (true);
+
+-- cdn_builds: workspace owner/admin can update (status tracking)
+CREATE POLICY "System can update CDN builds"
+  ON public.cdn_builds FOR UPDATE
+  USING (true);
 
 -- cdn_usage: workspace owner/admin can view
 CREATE POLICY "Workspace owner/admin can view CDN usage"
