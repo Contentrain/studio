@@ -12,10 +12,10 @@
 import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
-import { marked } from 'marked'
+import { Marked } from 'marked'
 
 // Configure marked for safe HTML output — escape user HTML input
-const safeMarked = new marked.Marked({
+const safeMarked = new Marked({
   renderer: {
     // Override HTML block/inline to escape raw HTML
     html(token) {
