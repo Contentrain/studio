@@ -46,13 +46,18 @@ interface EntryMeta {
 }
 
 /**
- * Determine if an entry should be included in CDN (published + not expired).
+ * Determine if an entry should be included in CDN.
+ *
+ * Currently: include everything except explicitly expired entries.
+ * Status-based filtering (draft vs published) deferred to Phase 6
+ * when scheduled publishing is implemented — right now most entries
+ * are 'draft' because there's no publish workflow yet.
  */
 function shouldIncludeEntry(meta: EntryMeta | undefined): boolean {
-  if (!meta) return true // No meta = include (backward compat)
-  if (meta.status && meta.status !== 'published') return false
+  if (!meta) return true
 
   const now = new Date()
+  // Only exclude entries with explicit scheduling constraints
   if (meta.publish_at && new Date(meta.publish_at) > now) return false
   if (meta.expire_at && new Date(meta.expire_at) < now) return false
 
