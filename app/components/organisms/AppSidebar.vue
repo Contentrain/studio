@@ -16,6 +16,11 @@ const isInsideProject = computed(() => !!currentProjectId.value)
 const currentProject = computed(() => projects.value.find(p => p.id === currentProjectId.value) ?? null)
 const projectConfig = computed(() => snapshot.value?.config as Record<string, unknown> | null)
 const activeModelId = computed(() => route.query.model as string | undefined)
+const isVocabularyActive = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
+const vocabularyCount = computed(() => {
+  const vocab = snapshot.value?.vocabulary as Record<string, unknown> | null | undefined
+  return vocab ? Object.keys(vocab).length : 0
+})
 const activeBranch = computed(() => {
   const b = (route.query as Record<string, string | undefined>).branch
   return b ? decodeURIComponent(b) : null
@@ -61,6 +66,10 @@ function selectModel(modelId: string) {
 function selectBranch(branchName: string) {
   const query: Record<string, string> = { branch: encodeURIComponent(branchName) }
   router.replace({ query })
+}
+
+function selectVocabulary() {
+  router.replace({ query: { vocabulary: 'true' } })
 }
 
 function backToWorkspace() {
@@ -146,6 +155,18 @@ async function onSettingsSaved() {
             </ul>
           </details>
         </template>
+
+        <!-- Vocabulary -->
+        <div v-if="hasContentrain" class="mt-2">
+          <MoleculesSidebarItem
+            icon="icon-[annon--book-library]"
+            :label="t('content.vocabulary')"
+            :active="isVocabularyActive"
+            :count="vocabularyCount"
+            compact
+            @click="selectVocabulary"
+          />
+        </div>
 
         <!-- Pending branches -->
         <div v-if="branches.length > 0" class="mt-3">

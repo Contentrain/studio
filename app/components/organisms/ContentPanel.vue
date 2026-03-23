@@ -38,6 +38,7 @@ const props = defineProps<{
   modelContentLoading: boolean
   activeModelId: string | null
   activeBranch?: string | null
+  activeVocabulary?: boolean
   branchDiff?: BranchDiffData | null
   branchDiffLoading?: boolean
   canManageBranches?: boolean
@@ -70,6 +71,7 @@ const activeModel = computed(() =>
 
 const panelState = computed(() => {
   if (props.activeBranch) return 'branch'
+  if (props.activeVocabulary) return 'vocabulary'
   if (props.activeModelId) return 'model'
   return 'overview'
 })
@@ -197,12 +199,15 @@ provide('sendChatPrompt', sendChatPrompt)
     <!-- Header -->
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
       <AtomsIconButton
-        v-if="panelState === 'model' || panelState === 'branch'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
+        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
       <h3 class="flex-1 truncate text-sm font-semibold text-heading dark:text-secondary-100">
         <template v-if="panelState === 'branch' && activeBranch">
           {{ branchDisplayName(activeBranch) }}
+        </template>
+        <template v-else-if="panelState === 'vocabulary'">
+          {{ t('content.vocabulary') }}
         </template>
         <template v-else-if="panelState === 'model' && activeModel">
           {{ activeModel.name }}
@@ -211,6 +216,19 @@ provide('sendChatPrompt', sendChatPrompt)
           {{ t('content.title') }}
         </template>
       </h3>
+      <!-- Vocabulary header: locale + count -->
+      <template v-if="panelState === 'vocabulary'">
+        <AtomsBadge variant="secondary" size="sm" class="ml-auto">
+          {{ vocabularyTerms.length }}
+        </AtomsBadge>
+        <AtomsFormSelect
+          v-if="supportedLocales.length > 1"
+          :model-value="currentLocale"
+          :options="supportedLocales.map(l => ({ value: l, label: l.toUpperCase() }))"
+          size="sm"
+          @update:model-value="currentLocale = $event"
+        />
+      </template>
       <!-- Branch badge -->
       <AtomsBadge v-if="panelState === 'branch'" variant="warning" size="sm" class="ml-auto">
         <span class="icon-[annon--arrow-swap] mr-1 size-3" aria-hidden="true" />
@@ -271,6 +289,75 @@ provide('sendChatPrompt', sendChatPrompt)
         <div v-else class="p-5">
           <AtomsEmptyState icon="icon-[annon--arrow-swap]" :title="t('branch.no_changes')" />
         </div>
+      </template>
+
+      <!-- VOCABULARY -->
+      <template v-else-if="panelState === 'vocabulary'">
+        <div v-if="vocabularyTerms.length === 0 && !editable" class="p-5">
+          <AtomsEmptyState icon="icon-[annon--book-library]" :title="t('content.vocabulary')" />
+        </div>
+        <template v-else>
+          <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
+            <div
+              v-for="[term, translations] in vocabularyTerms"
+              :key="term"
+              class="group/row flex items-center gap-3 px-5 py-2.5 hover:bg-secondary-50 dark:hover:bg-secondary-900"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="font-mono text-xs font-medium text-label">
+                  {{ term }}
+                </div>
+                <div class="mt-0.5 text-sm text-heading dark:text-secondary-100">
+                  {{ translations[currentLocale] ?? (Object.keys(translations).length > 0 ? translations[Object.keys(translations)[0]!] : '—') }}
+                </div>
+                <div v-if="Object.keys(translations).length > 1" class="mt-0.5 flex gap-1.5">
+                  <span
+                    v-for="(val, loc) in translations"
+                    :key="loc"
+                    class="text-[10px] text-muted"
+                    :class="{ 'font-medium text-primary-500': loc === currentLocale }"
+                  >
+                    {{ String(loc).toUpperCase() }}
+                  </span>
+                </div>
+              </div>
+              <button
+                v-if="editable"
+                type="button"
+                class="shrink-0 rounded p-1 text-muted opacity-0 transition-all hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                :title="t('vocabulary.delete_term')"
+                @click="vocabDeleteTerm(term)"
+              >
+                <span class="icon-[annon--trash] block size-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <!-- Add term -->
+          <div v-if="editable" class="sticky bottom-0 border-t border-secondary-200 bg-white px-5 py-3 dark:border-secondary-800 dark:bg-secondary-950">
+            <form class="flex items-center gap-2" @submit.prevent="vocabAddTerm">
+              <input
+                v-model="vocabNewKey"
+                type="text"
+                :placeholder="t('vocabulary.key_placeholder')"
+                class="h-8 w-24 shrink-0 rounded-lg border border-secondary-200 bg-white px-2.5 text-xs font-mono text-heading placeholder:text-disabled focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+              >
+              <input
+                v-model="vocabNewValue"
+                type="text"
+                :placeholder="t('vocabulary.value_placeholder')"
+                class="h-8 flex-1 rounded-lg border border-secondary-200 bg-white px-2.5 text-sm text-heading placeholder:text-disabled focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+              >
+              <AtomsBaseButton
+                type="submit"
+                variant="primary"
+                size="sm"
+                :disabled="!vocabNewKey.trim() || !vocabNewValue.trim()"
+              >
+                <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
+              </AtomsBaseButton>
+            </form>
+          </div>
+        </template>
       </template>
 
       <!-- OVERVIEW -->
@@ -349,72 +436,6 @@ provide('sendChatPrompt', sendChatPrompt)
             :models="snapshot.models"
             :content="snapshot.content" @select="emit('selectModel', $event)"
           />
-
-          <!-- Vocabulary section -->
-          <div v-if="vocabularyTerms.length > 0 || editable" class="border-t border-secondary-200 dark:border-secondary-800">
-            <details class="group">
-              <summary class="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
-                <span class="icon-[annon--book-library] size-3.5" aria-hidden="true" />
-                <span>{{ t('content.vocabulary') }}</span>
-                <AtomsBadge variant="secondary" size="sm" class="ml-auto">
-                  {{ vocabularyTerms.length }}
-                </AtomsBadge>
-                <span class="icon-[annon--chevron-right] size-3 transition-transform group-open:rotate-90" aria-hidden="true" />
-              </summary>
-              <div class="max-h-60 overflow-y-auto">
-                <table class="w-full text-xs">
-                  <tbody class="divide-y divide-secondary-100 dark:divide-secondary-800">
-                    <tr
-                      v-for="[term, translations] in vocabularyTerms"
-                      :key="term"
-                      class="group/row hover:bg-secondary-50 dark:hover:bg-secondary-900"
-                    >
-                      <td class="px-5 py-1.5 font-mono text-muted">
-                        {{ term }}
-                      </td>
-                      <td class="px-2 py-1.5 text-heading dark:text-secondary-100">
-                        {{ translations[currentLocale] ?? (Object.keys(translations).length > 0 ? translations[Object.keys(translations)[0]!] : '') }}
-                      </td>
-                      <td v-if="editable" class="w-8 pr-2">
-                        <button
-                          type="button"
-                          class="rounded p-0.5 text-muted opacity-0 transition-all hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                          :title="t('vocabulary.delete_term')"
-                          @click="vocabDeleteTerm(term)"
-                        >
-                          <span class="icon-[annon--trash] block size-3" aria-hidden="true" />
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <!-- Add term -->
-              <div v-if="editable" class="border-t border-secondary-100 px-5 py-2 dark:border-secondary-800/50">
-                <form class="flex items-center gap-1.5" @submit.prevent="vocabAddTerm">
-                  <input
-                    v-model="vocabNewKey"
-                    type="text"
-                    :placeholder="t('vocabulary.key_placeholder')"
-                    class="h-6 w-20 rounded border border-secondary-200 bg-white px-1.5 text-[11px] font-mono text-heading placeholder:text-disabled focus:outline-none focus:ring-1 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
-                  >
-                  <input
-                    v-model="vocabNewValue"
-                    type="text"
-                    :placeholder="t('vocabulary.value_placeholder')"
-                    class="h-6 flex-1 rounded border border-secondary-200 bg-white px-1.5 text-[11px] text-heading placeholder:text-disabled focus:outline-none focus:ring-1 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
-                  >
-                  <button
-                    type="submit"
-                    :disabled="!vocabNewKey.trim() || !vocabNewValue.trim()"
-                    class="shrink-0 rounded p-0.5 text-primary-500 transition-colors hover:text-primary-600 disabled:text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  >
-                    <span class="icon-[annon--plus-circle] block size-4" aria-hidden="true" />
-                  </button>
-                </form>
-              </div>
-            </details>
-          </div>
         </template>
         <div v-else class="p-5">
           <AtomsEmptyState

@@ -30,6 +30,7 @@ const activeBranch = computed(() => {
   const b = (route.query as Record<string, string | undefined>).branch
   return b ? decodeURIComponent(b) : null
 })
+const activeVocabulary = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
 const activeLocale = ref('en')
 
 onMounted(async () => {
@@ -93,10 +94,7 @@ function selectModel(modelId: string) {
 }
 
 function backToOverview() {
-  const query = { ...route.query }
-  delete query.model
-  delete query.branch
-  router.replace({ query })
+  router.replace({ query: {} })
   clearBranchDiff()
 }
 
@@ -105,7 +103,7 @@ const chatContext = computed(() => ({
   activeModelId: activeModelId.value,
   activeLocale: activeLocale.value,
   activeEntryId: null as string | null,
-  panelState: (activeBranch.value ? 'branch' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch',
+  panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch',
   activeBranch: activeBranch.value,
 }))
 
@@ -216,6 +214,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         :model-content-loading="modelContentLoading"
         :active-model-id="activeModelId"
         :active-branch="activeBranch"
+        :active-vocabulary="activeVocabulary"
         :branch-diff="(branchDiff as any)"
         :branch-diff-loading="diffLoading"
         :can-manage-branches="true"
