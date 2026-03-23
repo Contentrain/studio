@@ -103,7 +103,7 @@ const chatContext = computed(() => ({
   activeModelId: activeModelId.value,
   activeLocale: activeLocale.value,
   activeEntryId: null as string | null,
-  panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch',
+  panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch' | 'vocabulary',
   activeBranch: activeBranch.value,
 }))
 

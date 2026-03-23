@@ -24,7 +24,7 @@ export interface ChatUIContext {
   activeModelId: string | null
   activeLocale: string
   activeEntryId: string | null
-  panelState: 'overview' | 'model' | 'branch'
+  panelState: 'overview' | 'model' | 'branch' | 'vocabulary'
   activeBranch: string | null
   /** Explicitly pinned context items from the content panel */
   contextItems?: Array<{

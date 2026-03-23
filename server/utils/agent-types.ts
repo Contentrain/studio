@@ -32,7 +32,7 @@ export interface ChatUIContext {
   /** Expanded entry ID in context panel (null = no entry focused) */
   activeEntryId: string | null
   /** What the context panel is showing */
-  panelState: 'overview' | 'model' | 'branch'
+  panelState: 'overview' | 'model' | 'branch' | 'vocabulary'
   /** If viewing a branch, which one */
   activeBranch: string | null
   /** Explicitly pinned context items from the content panel */

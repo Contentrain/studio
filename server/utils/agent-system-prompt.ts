@@ -348,6 +348,10 @@ function buildContextSection(
     lines.push(`The user is reviewing branch: ${uiContext.activeBranch}`)
   }
 
+  if (uiContext.panelState === 'vocabulary') {
+    lines.push('The user is viewing the vocabulary panel. They may want to add, edit, or discuss terminology.')
+  }
+
   // Pinned context items
   if (uiContext.contextItems && uiContext.contextItems.length > 0) {
     lines.push('')
