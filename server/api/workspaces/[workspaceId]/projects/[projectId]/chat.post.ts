@@ -42,6 +42,28 @@ export default defineEventHandler(async (event) => {
   const { project, workspace, git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
   const plan = getWorkspacePlan(workspace)
 
+  // === RATE LIMIT ===
+  const rateKey = `chat:${session.user.id}`
+  const rateCheck = checkRateLimit(rateKey)
+  if (!rateCheck.allowed)
+    throw createError({ statusCode: 429, message: `Rate limit exceeded. Try again in ${Math.ceil(rateCheck.retryAfterMs / 1000)}s` })
+
+  // === MONTHLY LIMIT ===
+  const monthlyLimit = getMonthlyMessageLimit(plan)
+  if (monthlyLimit !== Infinity) {
+    const month = new Date().toISOString().substring(0, 7)
+    const { data: usage } = await admin
+      .from('agent_usage')
+      .select('message_count')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', session.user.id)
+      .eq('month', month)
+      .single()
+    const currentCount = usage?.message_count ?? 0
+    if (currentCount >= monthlyLimit)
+      throw createError({ statusCode: 429, message: `Monthly message limit reached (${monthlyLimit} messages). Upgrade your plan for more.` })
+  }
+
   // === PERMISSIONS ===
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.availableTools.length === 0)

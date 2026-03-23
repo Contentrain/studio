@@ -90,9 +90,11 @@ async function onSettingsSaved() {
   >
     <!-- Brand + Workspace -->
     <div class="shrink-0 px-3 pt-3 pb-2">
-      <NuxtLink to="/" class="mb-1 flex items-center gap-2 px-2 focus-visible:outline-none">
+      <NuxtLink to="/" class="mb-1 flex items-end gap-2 px-2 focus-visible:outline-none">
         <AtomsLogo variant="icon" color="auto" class="h-5 w-auto" />
-        <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Studio</span>
+        <span
+          class="font-display text-[11px] leading-none font-semibold uppercase tracking-[0.2em] text-secondary-400"
+        >Studio</span>
       </NuxtLink>
       <MoleculesWorkspaceSwitcher />
     </div>

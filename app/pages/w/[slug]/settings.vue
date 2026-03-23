@@ -35,6 +35,13 @@ const assigning = ref(false)
 // Member removal confirmation
 const confirmRemoveId = ref<string | null>(null)
 
+// AI Keys state
+interface AIKeyInfo { id: string, provider: string, key_hint: string | null, created_at: string }
+const aiKeys = ref<AIKeyInfo[]>([])
+const aiKeyInput = ref('')
+const aiKeySaving = ref(false)
+const canByoa = computed(() => hasFeature(activeWorkspace.value?.plan, 'ai.byoa'))
+
 onMounted(async () => {
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
@@ -47,6 +54,11 @@ onMounted(async () => {
     await fetchMembers(ws.id)
     if (projects.value.length === 0)
       await fetchProjects(ws.id)
+    // Fetch AI keys
+    try {
+      aiKeys.value = await $fetch<AIKeyInfo[]>(`/api/workspaces/${ws.id}/ai-keys`)
+    }
+    catch { aiKeys.value = [] }
   }
 })
 
@@ -185,6 +197,39 @@ const roleVariant: Record<string, 'primary' | 'success' | 'warning' | 'info' | '
   viewer: 'secondary',
 }
 
+async function handleSaveAIKey() {
+  if (!activeWorkspace.value || !aiKeyInput.value.trim()) return
+  aiKeySaving.value = true
+  try {
+    const saved = await $fetch<AIKeyInfo>(`/api/workspaces/${activeWorkspace.value.id}/ai-keys`, {
+      method: 'POST',
+      body: { provider: 'anthropic', apiKey: aiKeyInput.value.trim() },
+    })
+    aiKeys.value = aiKeys.value.filter(k => k.provider !== 'anthropic')
+    aiKeys.value.push(saved)
+    aiKeyInput.value = ''
+    toast.success(t('ai_keys.save_success'))
+  }
+  catch {
+    toast.error(t('ai_keys.save_error'))
+  }
+  finally {
+    aiKeySaving.value = false
+  }
+}
+
+async function handleDeleteAIKey(keyId: string) {
+  if (!activeWorkspace.value) return
+  try {
+    await $fetch(`/api/workspaces/${activeWorkspace.value.id}/ai-keys/${keyId}`, { method: 'DELETE' })
+    aiKeys.value = aiKeys.value.filter(k => k.id !== keyId)
+    toast.success(t('ai_keys.delete_success'))
+  }
+  catch {
+    toast.error(t('ai_keys.save_error'))
+  }
+}
+
 const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
 </script>
 
@@ -207,6 +252,9 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         </TabsTrigger>
         <TabsTrigger value="github" :class="tabTriggerClass">
           {{ t('settings.github_tab') }}
+        </TabsTrigger>
+        <TabsTrigger value="ai-keys" :class="tabTriggerClass">
+          {{ t('settings.ai_tab') }}
         </TabsTrigger>
       </TabsList>
 
@@ -454,6 +502,75 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
               </p>
             </div>
           </div>
+        </div>
+      </TabsContent>
+
+      <!-- AI Keys -->
+      <TabsContent value="ai-keys" class="mt-6">
+        <div class="max-w-md space-y-5">
+          <div>
+            <AtomsHeadingText :level="3" size="xs">
+              {{ t('ai_keys.title') }}
+            </AtomsHeadingText>
+            <p class="mt-1 text-sm text-muted">
+              {{ t('ai_keys.description') }}
+            </p>
+          </div>
+
+          <!-- Pro required badge -->
+          <div v-if="!canByoa" class="rounded-lg border border-info-200 bg-info-50 p-4 dark:border-info-500/20 dark:bg-info-500/10">
+            <div class="flex items-center gap-2">
+              <AtomsBadge variant="info" size="sm">
+                Pro
+              </AtomsBadge>
+              <span class="text-sm text-info-700 dark:text-info-400">{{ t('ai_keys.pro_required') }}</span>
+            </div>
+          </div>
+
+          <!-- Existing keys -->
+          <ul
+            v-if="aiKeys.length > 0"
+            class="divide-y divide-secondary-100 rounded-lg border border-secondary-200 dark:divide-secondary-800 dark:border-secondary-800"
+          >
+            <li v-for="key in aiKeys" :key="key.id" class="flex items-center gap-3 px-4 py-3">
+              <span class="icon-[annon--key] size-4 text-muted" aria-hidden="true" />
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-heading dark:text-secondary-100">
+                  {{ key.provider }}
+                </div>
+                <div v-if="key.key_hint" class="text-xs text-muted">
+                  {{ t('ai_keys.hint') }} {{ key.key_hint }}
+                </div>
+              </div>
+              <AtomsIconButton icon="icon-[annon--trash]" label="Delete" size="sm" @click="handleDeleteAIKey(key.id)" />
+            </li>
+          </ul>
+          <div v-else-if="canByoa">
+            <AtomsEmptyState icon="icon-[annon--key]" :title="t('ai_keys.no_keys')" :description="t('ai_keys.no_keys_description')" />
+          </div>
+
+          <!-- Add key form -->
+          <form v-if="canByoa" class="space-y-3" @submit.prevent="handleSaveAIKey">
+            <div>
+              <AtomsFormLabel :text="t('ai_keys.provider')" size="sm" />
+              <AtomsBadge variant="secondary" size="md" class="mt-1.5">
+                Anthropic
+              </AtomsBadge>
+            </div>
+            <div>
+              <AtomsFormLabel for="ai-key" :text="t('ai_keys.add_key')" size="sm" />
+              <AtomsFormInput
+                id="ai-key"
+                v-model="aiKeyInput"
+                type="password"
+                :placeholder="t('ai_keys.placeholder')"
+                class="mt-1.5"
+              />
+            </div>
+            <AtomsBaseButton type="submit" variant="primary" size="md" :disabled="!aiKeyInput.trim() || aiKeySaving">
+              {{ aiKeySaving ? t('ai_keys.saving') : t('ai_keys.add_key') }}
+            </AtomsBaseButton>
+          </form>
         </div>
       </TabsContent>
     </TabsRoot>

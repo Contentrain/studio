@@ -208,5 +208,19 @@
   "chat.confirm_delete": "Delete this conversation?",
   "chat.load_error": "Failed to load conversation",
   "chat.model": "Model",
-  "chat.untitled": "Untitled conversation"
+  "chat.untitled": "Untitled conversation",
+  "settings.ai_tab": "AI Keys",
+  "ai_keys.title": "API Keys",
+  "ai_keys.description": "Use your own Anthropic API key for chat. Your key is encrypted and never stored in plaintext.",
+  "ai_keys.add_key": "Add API Key",
+  "ai_keys.placeholder": "sk-ant-api03-...",
+  "ai_keys.provider": "Provider",
+  "ai_keys.saving": "Saving...",
+  "ai_keys.save_success": "API key saved",
+  "ai_keys.save_error": "Failed to save API key",
+  "ai_keys.delete_success": "API key deleted",
+  "ai_keys.no_keys": "No API keys configured",
+  "ai_keys.no_keys_description": "Add your own API key to use advanced models.",
+  "ai_keys.pro_required": "Pro plan required",
+  "ai_keys.hint": "Key ending in"
 }
