@@ -108,17 +108,10 @@ async function onSettingsSaved() {
             {{ currentProject?.repo_full_name?.split('/')[1] ?? currentProjectId }}
           </span>
           <AtomsIconButton
-            icon="icon-[annon--gear]"
-            :label="t('project_settings.title')"
-            size="sm"
+            icon="icon-[annon--gear]" :label="t('project_settings.title')" size="sm"
             @click="settingsModalOpen = true"
           />
-          <AtomsIconButton
-            icon="icon-[annon--cross]"
-            :label="t('common.back')"
-            size="sm"
-            @click="backToWorkspace"
-          />
+          <AtomsIconButton icon="icon-[annon--cross]" :label="t('common.back')" size="sm" @click="backToWorkspace" />
         </div>
 
         <!-- Sidebar skeleton while loading (snapshotLoading OR no snapshot yet) -->
@@ -130,32 +123,27 @@ async function onSettingsSaved() {
         </div>
 
         <template v-else-if="hasContentrain">
-          <details
-            v-for="(domainModels, domain) in modelsByDomain"
-            :key="domain"
-            class="group mt-1"
-            open
-          >
-            <summary class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900">
-              <span class="icon-[annon--chevron-right] size-3 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true" />
+          <details v-for="(domainModels, domain) in modelsByDomain" :key="domain" class="group mt-1" open>
+            <summary
+              class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+            >
+              <span
+                class="icon-[annon--chevron-right] size-3 shrink-0 text-muted transition-transform group-open:rotate-90"
+                aria-hidden="true"
+              />
               <AtomsSectionLabel :label="String(domain)" :count="domainModels.length" class="flex-1 py-0" />
             </summary>
             <ul class="space-y-px py-0.5 pl-4">
               <li v-for="model in domainModels" :key="model.id">
                 <MoleculesSidebarItem
-                  :icon="getModelKindIcon(model.kind ?? model.type)"
-                  :label="model.name"
-                  :active="activeModelId === model.id"
-                  :count="getModelEntryCount(model.id)"
-                  compact
+                  :icon="getModelKindIcon(model.kind ?? model.type)" :label="model.name"
+                  :active="activeModelId === model.id" :count="getModelEntryCount(model.id)" compact
                   @click="selectModel(model.id)"
                 >
                   <template #trailing>
                     <span
-                      v-if="(model as any).i18n"
-                      class="icon-[annon--globe] size-3 shrink-0 opacity-30"
-                      aria-hidden="true"
-                      :title="t('common.i18n')"
+                      v-if="(model as any).i18n" class="icon-[annon--globe] size-3 shrink-0 opacity-30"
+                      aria-hidden="true" :title="t('common.i18n')"
                     />
                   </template>
                 </MoleculesSidebarItem>
@@ -167,12 +155,8 @@ async function onSettingsSaved() {
         <!-- Vocabulary -->
         <div v-if="hasContentrain" class="mt-2">
           <MoleculesSidebarItem
-            icon="icon-[annon--book-library]"
-            :label="t('content.vocabulary')"
-            :active="isVocabularyActive"
-            :count="vocabularyCount"
-            compact
-            @click="selectVocabulary"
+            icon="icon-[annon--book-library]" :label="t('content.vocabulary')"
+            :active="isVocabularyActive" :count="vocabularyCount" compact @click="selectVocabulary"
           />
         </div>
 
@@ -182,11 +166,8 @@ async function onSettingsSaved() {
           <ul class="space-y-px">
             <li v-for="branch in branches" :key="branch.name">
               <MoleculesSidebarItem
-                icon="icon-[annon--arrow-swap]"
-                :label="branch.name.replace('contentrain/', '')"
-                :active="activeBranch === branch.name"
-                compact
-                @click="selectBranch(branch.name)"
+                icon="icon-[annon--arrow-swap]" :label="branch.name.replace('contentrain/', '')"
+                :active="activeBranch === branch.name" compact @click="selectBranch(branch.name)"
               />
             </li>
           </ul>
@@ -212,8 +193,7 @@ async function onSettingsSaved() {
           </li>
           <li v-if="activeWorkspace">
             <MoleculesSidebarItem
-              icon="icon-[annon--plus-circle]"
-              :label="t('sidebar.connect_repo')"
+              icon="icon-[annon--plus-circle]" :label="t('sidebar.connect_repo')"
               @click="connectDialogOpen = true"
             />
           </li>
@@ -225,15 +205,16 @@ async function onSettingsSaved() {
     <div class="shrink-0 space-y-0.5 border-t border-secondary-200 p-2 dark:border-secondary-800">
       <MoleculesSidebarItem icon="icon-[annon--search]" :label="t('common.search')">
         <template #trailing>
-          <kbd class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800">
+          <kbd
+            class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800"
+          >
             ⌘K
           </kbd>
         </template>
       </MoleculesSidebarItem>
 
       <NuxtLink
-        v-if="activeWorkspace"
-        :to="`/w/${activeWorkspace.slug}/settings`"
+        v-if="activeWorkspace" :to="`/w/${activeWorkspace.slug}/settings`"
         class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
       >
         <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
@@ -242,8 +223,7 @@ async function onSettingsSaved() {
 
       <MoleculesSidebarItem
         :icon="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'"
-        :label="isDark ? t('common.light_mode') : t('common.dark_mode')"
-        @click="toggleTheme"
+        :label="isDark ? t('common.light_mode') : t('common.dark_mode')" @click="toggleTheme"
       />
 
       <!-- User -->
@@ -262,11 +242,8 @@ async function onSettingsSaved() {
 
     <OrganismsProjectSettingsModal
       v-if="isInsideProject && activeWorkspace && currentProjectId"
-      v-model:open="settingsModalOpen"
-      :workspace-id="activeWorkspace.id"
-      :project-id="currentProjectId"
-      :config="(projectConfig as any)"
-      @saved="onSettingsSaved"
+      v-model:open="settingsModalOpen" :workspace-id="activeWorkspace.id" :project-id="currentProjectId"
+      :config="(projectConfig as any)" @saved="onSettingsSaved"
     />
   </aside>
 </template>
