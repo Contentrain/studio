@@ -4,7 +4,13 @@
  * Two-tier: workspace role → project role.
  * Workspace owner/admin → full access to all tools.
  * Workspace member → check project_members for project-level role.
+ *
+ * EE gating: reviewer/viewer roles and specificModels require
+ * 'roles.reviewer' / 'roles.viewer' / 'roles.specific_models' features.
+ * Free tier degrades gracefully: reviewer/viewer → editor.
  */
+
+import { getWorkspacePlan, hasFeature } from './license'
 
 export interface AgentPermissions {
   workspaceRole: 'owner' | 'admin' | 'member'
@@ -36,7 +42,7 @@ export async function resolveAgentPermissions(
 ): Promise<AgentPermissions> {
   const client = useSupabaseUserClient(accessToken)
 
-  // Get workspace role
+  // Get workspace role + plan
   const { data: wsMember } = await client
     .from('workspace_members')
     .select('role')
@@ -46,7 +52,7 @@ export async function resolveAgentPermissions(
 
   const workspaceRole = (wsMember?.role ?? 'member') as AgentPermissions['workspaceRole']
 
-  // Workspace owner/admin → full access
+  // Workspace owner/admin → full access (regardless of plan)
   if (workspaceRole === 'owner' || workspaceRole === 'admin') {
     return {
       workspaceRole,
@@ -66,7 +72,6 @@ export async function resolveAgentPermissions(
     .single()
 
   if (!projMember) {
-    // No project access
     return {
       workspaceRole,
       projectRole: null,
@@ -76,19 +81,44 @@ export async function resolveAgentPermissions(
     }
   }
 
-  const projectRole = projMember.role as AgentPermissions['projectRole']
+  // Resolve workspace plan for EE feature gating
+  const { data: workspace } = await client
+    .from('workspaces')
+    .select('plan')
+    .eq('id', workspaceId)
+    .single()
+
+  const plan = getWorkspacePlan(workspace ?? {})
+
+  // EE gating: degrade reviewer/viewer to editor on free plan
+  let projectRole = projMember.role as AgentPermissions['projectRole']
+  if (projectRole === 'reviewer' && !hasFeature(plan, 'roles.reviewer')) {
+    projectRole = 'editor'
+  }
+  if (projectRole === 'viewer' && !hasFeature(plan, 'roles.viewer')) {
+    projectRole = 'editor'
+  }
+
   const effectiveRole = projectRole ?? 'viewer'
 
-  // Filter tools by role
+  // Filter tools by effective role
   const availableTools = Object.entries(TOOL_ROLES)
     .filter(([_, roles]) => roles.includes(effectiveRole))
     .map(([name]) => name)
 
+  // EE gating: specificModels only on plans that support it
+  const specificModels = hasFeature(plan, 'roles.specific_models')
+    ? (projMember.specific_models ?? false)
+    : false
+  const allowedModels = specificModels
+    ? (projMember.allowed_models ?? [])
+    : []
+
   return {
     workspaceRole,
     projectRole,
-    specificModels: projMember.specific_models ?? false,
-    allowedModels: projMember.allowed_models ?? [],
+    specificModels,
+    allowedModels,
     availableTools,
   }
 }

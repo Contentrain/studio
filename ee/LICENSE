@@ -1,0 +1,20 @@
+Contentrain Enterprise Edition License
+
+Copyright (c) 2026 Contentrain, Inc.
+
+This directory and all files within it ("Enterprise Edition") are
+proprietary software of Contentrain, Inc.
+
+Use of the Enterprise Edition requires a valid Contentrain Pro,
+Business, or Enterprise subscription license.
+
+You may NOT:
+- Use, copy, or distribute this software without a valid license
+- Modify this software for use outside a licensed Contentrain instance
+- Sublicense, sell, or transfer this software to third parties
+- Remove or alter this license notice
+
+The Enterprise Edition is NOT licensed under the AGPL-3.0 that covers
+the rest of the Contentrain Studio codebase.
+
+For licensing inquiries: license@contentrain.io

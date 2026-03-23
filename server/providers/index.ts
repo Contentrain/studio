@@ -14,3 +14,4 @@ export type {
   RepoPermissions,
   FrameworkDetection,
 } from './git'
+export type { ConnectorProvider, ConnectorItem, ConnectorContent } from './connector'

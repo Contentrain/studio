@@ -39,23 +39,31 @@ export default defineEventHandler(async (event) => {
   const admin = useSupabaseAdmin()
 
   // === RESOLVE PROJECT + WORKSPACE ===
-  const { project, git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
+  const { project, workspace, git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
+  const plan = getWorkspacePlan(workspace)
 
   // === PERMISSIONS ===
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.availableTools.length === 0)
     throw createError({ statusCode: 403, message: 'No chat permissions' })
 
-  // === API KEY ===
+  // === API KEY (BYOA is ee/ feature — free uses studio key only) ===
   const runtimeConfig = useRuntimeConfig()
   let apiKey: string
   let usageSource: 'byoa' | 'studio' = 'studio'
 
-  const encryptedByoaKey = await getBYOAKey(client, workspaceId, session.user.id)
-
-  if (encryptedByoaKey) {
-    apiKey = decryptApiKey(encryptedByoaKey, runtimeConfig.sessionSecret)
-    usageSource = 'byoa'
+  if (hasFeature(plan, 'ai.byoa')) {
+    const encryptedByoaKey = await getBYOAKey(client, workspaceId, session.user.id)
+    if (encryptedByoaKey) {
+      apiKey = decryptApiKey(encryptedByoaKey, runtimeConfig.sessionSecret)
+      usageSource = 'byoa'
+    }
+    else if (runtimeConfig.anthropic.apiKey) {
+      apiKey = runtimeConfig.anthropic.apiKey
+    }
+    else {
+      throw createError({ statusCode: 400, message: 'No API key configured.' })
+    }
   }
   else if (runtimeConfig.anthropic.apiKey) {
     apiKey = runtimeConfig.anthropic.apiKey
