@@ -25,6 +25,8 @@ const activeBranch = computed(() => {
   const b = (route.query as Record<string, string | undefined>).branch
   return b ? decodeURIComponent(b) : null
 })
+const isCDNActive = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
+const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
 
 // Fetch branches when inside a project
 watch(isInsideProject, async (inside) => {
@@ -70,6 +72,10 @@ function selectBranch(branchName: string) {
 
 function selectVocabulary() {
   router.replace({ query: { vocabulary: 'true' } })
+}
+
+function selectCDN() {
+  router.replace({ query: { cdn: 'true' } })
 }
 
 function backToWorkspace() {
@@ -154,12 +160,40 @@ async function onSettingsSaved() {
           </details>
         </template>
 
-        <!-- Vocabulary -->
-        <div v-if="hasContentrain" class="mt-2">
+        <!-- Project resources -->
+        <div v-if="hasContentrain" class="mt-2 space-y-px">
           <MoleculesSidebarItem
             icon="icon-[annon--book-library]" :label="t('content.vocabulary')"
             :active="isVocabularyActive" :count="vocabularyCount" compact @click="selectVocabulary"
           />
+
+          <!-- CDN (Pro feature) -->
+          <div :class="!isPro ? 'opacity-60' : ''">
+            <MoleculesSidebarItem
+              icon="icon-[annon--globe]" :label="t('cdn.title')"
+              :active="isCDNActive" compact @click="selectCDN"
+            >
+              <template #trailing>
+                <AtomsBadge v-if="!isPro" variant="info" size="sm" class="text-[9px] px-1 py-0">
+                  Pro
+                </AtomsBadge>
+              </template>
+            </MoleculesSidebarItem>
+          </div>
+
+          <!-- Assets (Phase 4 — placeholder, always shows Pro badge for now) -->
+          <div class="opacity-60">
+            <MoleculesSidebarItem
+              icon="icon-[annon--image]" label="Assets"
+              compact :disabled="true"
+            >
+              <template #trailing>
+                <AtomsBadge variant="info" size="sm" class="text-[9px] px-1 py-0">
+                  Pro
+                </AtomsBadge>
+              </template>
+            </MoleculesSidebarItem>
+          </div>
         </div>
 
         <!-- Pending branches -->
@@ -245,7 +279,7 @@ async function onSettingsSaved() {
     <OrganismsProjectSettingsModal
       v-if="isInsideProject && activeWorkspace && currentProjectId"
       v-model:open="settingsModalOpen" :workspace-id="activeWorkspace.id" :project-id="currentProjectId"
-      :config="(projectConfig as any)" :cdn-enabled="(currentProject as any)?.cdn_enabled ?? false" @saved="onSettingsSaved"
+      :config="(projectConfig as any)" @saved="onSettingsSaved"
     />
   </aside>
 </template>

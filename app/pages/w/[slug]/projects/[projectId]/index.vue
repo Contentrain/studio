@@ -33,6 +33,7 @@ const activeBranch = computed(() => {
   return b ? decodeURIComponent(b) : null
 })
 const activeVocabulary = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
+const activeCDN = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
 const activeLocale = ref('en')
 
 onMounted(async () => {
@@ -105,7 +106,7 @@ const chatContext = computed(() => ({
   activeModelId: activeModelId.value,
   activeLocale: activeLocale.value,
   activeEntryId: null as string | null,
-  panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch' | 'vocabulary',
+  panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeCDN.value ? 'overview' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch' | 'vocabulary',
   activeBranch: activeBranch.value,
 }))
 
@@ -217,6 +218,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         :active-model-id="activeModelId"
         :active-branch="activeBranch"
         :active-vocabulary="activeVocabulary"
+        :active-cdn="activeCDN"
         :branch-diff="(branchDiff as any)"
         :branch-diff-loading="diffLoading"
         :can-manage-branches="hasFeature(activeWorkspace?.plan, 'workflow.review')"
