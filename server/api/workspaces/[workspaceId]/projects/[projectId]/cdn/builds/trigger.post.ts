@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
   catch { /* use 'manual' */ }
 
   // Create build record
-  const { data: build } = await admin
+  const { data: build, error: buildError } = await admin
     .from('cdn_builds')
     .insert({
       project_id: projectId,
@@ -65,8 +65,8 @@ export default defineEventHandler(async (event) => {
     .select('id')
     .single()
 
-  if (!build)
-    throw createError({ statusCode: 500, message: 'Failed to create build record' })
+  if (buildError || !build)
+    throw createError({ statusCode: 500, message: `Failed to create build record: ${buildError?.message ?? 'unknown'}` })
 
   // Execute build (async — don't block response)
   executeCDNBuild({
