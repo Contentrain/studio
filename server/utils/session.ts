@@ -17,7 +17,11 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7 // 7 days
 
 function getSessionPassword(): string {
   const config = useRuntimeConfig()
-  return config.sessionSecret
+  const secret = config.sessionSecret
+  if (!secret || secret.length < 32) {
+    throw new Error('NUXT_SESSION_SECRET must be at least 32 characters. Server cannot start with weak/missing secret.')
+  }
+  return secret
 }
 
 export async function getServerSession(event: H3Event): Promise<ServerSessionData | null> {

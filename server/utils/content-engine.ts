@@ -704,14 +704,15 @@ export function createContentEngine(ctx: ContentEngineContext) {
           content: serializeCanonical(model),
         })
 
-        // Create empty content file for each locale (collections/singletons)
+        // Create empty content file (non-i18n: single data.json, i18n: per locale)
         if (model.kind !== 'document') {
-          for (const locale of locales) {
-            const contentPath = resolveContentPath(pathCtx, model, locale)
-            const emptyContent = model.kind === 'singleton' ? {} : {}
+          const contentLocales = model.i18n ? locales : [locales[0] ?? 'en']
+          for (const locale of contentLocales) {
+            const effectiveLocale = model.i18n ? locale : 'data'
+            const contentPath = resolveContentPath(pathCtx, model, effectiveLocale)
             files.push({
               path: contentPath,
-              content: serializeCanonical(emptyContent),
+              content: serializeCanonical({}),
             })
           }
         }

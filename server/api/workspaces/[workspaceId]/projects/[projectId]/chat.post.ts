@@ -48,19 +48,18 @@ export default defineEventHandler(async (event) => {
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: `Rate limit exceeded. Try again in ${Math.ceil(rateCheck.retryAfterMs / 1000)}s` })
 
-  // === MONTHLY LIMIT ===
+  // === MONTHLY LIMIT (aggregate across all sources: studio + byoa) ===
   const monthlyLimit = getMonthlyMessageLimit(plan)
   if (monthlyLimit !== Infinity) {
     const month = new Date().toISOString().substring(0, 7)
-    const { data: usage } = await admin
+    const { data: usageRows } = await admin
       .from('agent_usage')
       .select('message_count')
       .eq('workspace_id', workspaceId)
       .eq('user_id', session.user.id)
       .eq('month', month)
-      .single()
-    const currentCount = usage?.message_count ?? 0
-    if (currentCount >= monthlyLimit)
+    const totalCount = (usageRows ?? []).reduce((sum, r) => sum + (r.message_count ?? 0), 0)
+    if (totalCount >= monthlyLimit)
       throw createError({ statusCode: 429, message: `Monthly message limit reached (${monthlyLimit} messages). Upgrade your plan for more.` })
   }
 
@@ -96,6 +95,22 @@ export default defineEventHandler(async (event) => {
 
   // === CONVERSATION ===
   let conversationId: string | undefined = body.conversationId
+
+  // Verify ownership if continuing existing conversation
+  if (conversationId) {
+    const { data: conv } = await client
+      .from('conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .eq('user_id', session.user.id)
+      .eq('project_id', projectId)
+      .single()
+    if (!conv) {
+      // Invalid or foreign conversation — start fresh
+      conversationId = undefined
+    }
+  }
+
   if (!conversationId) {
     conversationId = (await createConversation(client, projectId, session.user.id, body.message)) ?? undefined
   }
@@ -105,16 +120,27 @@ export default defineEventHandler(async (event) => {
   // === HISTORY ===
   const historyRows = await loadConversationHistory(client, conversationId, 50)
 
-  const allHistory = (historyRows ?? []).reverse()
+  // Build message history: chronological order, newest messages prioritized within budget
+  const allHistory = historyRows ?? []
   const messages: AIMessage[] = []
-  let historyTokens = 0
 
-  for (const row of allHistory) {
+  // Walk backwards to find budget cutoff, then take from that point forward
+  const budgetStart = (() => {
+    let tokens = 0
+    for (let i = allHistory.length - 1; i >= 0; i--) {
+      const row = allHistory[i]!
+      const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
+      const estimate = typeof content === 'string' ? Math.ceil(content.length / 4) : Math.ceil(JSON.stringify(content).length / 4)
+      tokens += estimate
+      if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
+    }
+    return 0
+  })()
+
+  for (let i = budgetStart; i < allHistory.length; i++) {
+    const row = allHistory[i]!
     const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
-    const tokenEstimate = typeof content === 'string' ? Math.ceil(content.length / 4) : Math.ceil(JSON.stringify(content).length / 4)
-    if (historyTokens + tokenEstimate > HISTORY_TOKEN_BUDGET) break
     messages.push({ role: row.role as 'user' | 'assistant', content })
-    historyTokens += tokenEstimate
   }
   messages.push({ role: 'user', content: body.message })
 

@@ -117,6 +117,12 @@ export default defineEventHandler(async (event) => {
     }
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Build failed'
+      // Mark build as failed so it doesn't stay stuck in 'building'
+      await admin.from('cdn_builds').update({
+        status: 'failed',
+        error_message: msg,
+        completed_at: new Date().toISOString(),
+      }).eq('id', build.id)
       try {
         await eventStream.push(JSON.stringify({ phase: 'error', message: msg }))
       }

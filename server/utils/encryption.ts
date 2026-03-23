@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 
 /**
  * AES-256-GCM encryption for BYOA API keys.
@@ -12,11 +12,9 @@ const IV_LENGTH = 12
 const AUTH_TAG_LENGTH = 16
 
 function deriveKey(secret: string): Buffer {
-  // Ensure 32 bytes for AES-256
-  const hash = Buffer.from(secret)
-  if (hash.length >= 32) return hash.subarray(0, 32)
-  // Pad if shorter (shouldn't happen — sessionSecret is min 32 chars)
-  return Buffer.concat([hash, Buffer.alloc(32 - hash.length)])
+  // Derive 32 bytes for AES-256 using SHA-256 (deterministic KDF)
+  // This ensures consistent key length regardless of input secret length
+  return createHash('sha256').update(secret).digest()
 }
 
 export function encryptApiKey(plaintext: string, secret: string): string {

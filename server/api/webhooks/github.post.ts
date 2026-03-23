@@ -109,6 +109,14 @@ export default defineEventHandler(async (event) => {
                 error_message: result.error ?? null,
                 completed_at: new Date().toISOString(),
               }).eq('id', build.id)
+            }).catch(async (err: unknown) => {
+              // Ensure build never stays stuck in 'building'
+              const msg = err instanceof Error ? err.message : 'Build failed'
+              await admin.from('cdn_builds').update({
+                status: 'failed',
+                error_message: msg,
+                completed_at: new Date().toISOString(),
+              }).eq('id', build.id)
             })
           }
         }

@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   catch { config = null }
 
   // Read models
-  const models: Array<{ id: string, name: string, kind: ModelKind, type: ModelKind, fields: Record<string, unknown>, domain: string, i18n: boolean }> = []
+  const models: Array<{ id: string, name: string, kind: ModelKind, type: ModelKind, fields: Record<string, unknown>, domain: string, i18n: boolean, content_path?: string }> = []
   try {
     const modelFiles = await git.listDirectory(modelsDir)
     for (const file of modelFiles) {
@@ -53,6 +53,7 @@ export default defineEventHandler(async (event) => {
           fields: (def.fields ?? {}) as Record<string, unknown>,
           domain: def.domain ?? '',
           i18n: def.i18n ?? false,
+          content_path: def.content_path,
         })
       }
       catch { /* skip invalid model files */ }

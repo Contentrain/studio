@@ -11,6 +11,10 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !branch)
     throw createError({ statusCode: 400, message: 'workspaceId, projectId, and branch are required' })
 
+  // Only contentrain/* branches can be rejected through this endpoint
+  if (!branch.startsWith('contentrain/'))
+    throw createError({ statusCode: 400, message: 'Only contentrain/ branches can be rejected through Studio' })
+
   // Role check: only reviewer+ can reject
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (!permissions.availableTools.includes('reject_branch'))

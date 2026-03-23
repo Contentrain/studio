@@ -38,7 +38,16 @@ export default defineEventHandler(async (event) => {
   const userId = await inviteOrLookupUser(body.email)
 
   // Ensure user is a workspace member (auto-add as 'member' if not)
-  await ensureWorkspaceMember(client, useSupabaseAdmin(), workspaceId, userId, body.email)
+  // Check seat limit before auto-adding
+  const admin = useSupabaseAdmin()
+  const currentMembers = await listWorkspaceMembers(admin, workspaceId)
+  const isAlreadyMember = currentMembers.some(m => (m as { user_id?: string }).user_id === userId)
+  if (!isAlreadyMember) {
+    const memberLimit = getPlanLimit(plan, 'team.members')
+    if (currentMembers.length >= memberLimit)
+      throw createError({ statusCode: 403, message: `Workspace seat limit reached (${memberLimit}). Upgrade plan to add more members.` })
+  }
+  await ensureWorkspaceMember(client, admin, workspaceId, userId, body.email)
 
   // Create project member record
   const { data: member, error } = await client
