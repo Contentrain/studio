@@ -1,7 +1,8 @@
 import type { AuthProvider } from '../providers/auth'
 import type { AIProvider } from '../providers/ai'
 import type { GitProvider } from '../providers/git'
-import type { CDNProvider } from '../providers/cdn'
+import type { CDNProvider, CDNObject } from '../providers/cdn'
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createGitHubAppProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
@@ -107,9 +108,6 @@ function createR2Provider(r2Config: {
   secretAccessKey: string
   bucket: string
 }): CDNProvider {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Lazy import to avoid loading SDK when CDN is not configured
-  const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3') as typeof import('@aws-sdk/client-s3')
-
   const client = new S3Client({
     region: 'auto',
     endpoint: `https://${r2Config.accountId}.r2.cloudflarestorage.com`,
@@ -169,7 +167,7 @@ function createR2Provider(r2Config: {
 
     async listObjects(projectId, prefix?) {
       const fullPrefix = prefix ? `${projectId}/${prefix}` : `${projectId}/`
-      const objects: import('../providers/cdn').CDNObject[] = []
+      const objects: CDNObject[] = []
       let continuationToken: string | undefined
       do {
         const list = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: fullPrefix, ContinuationToken: continuationToken }))
