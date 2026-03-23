@@ -11,7 +11,7 @@ const open = defineModel<boolean>('open', { default: false })
 const props = defineProps<{
   workspaceId: string
   projectId: string
-  config: {
+  config?: {
     workflow?: string
     stack?: string
     domains?: string[]
