@@ -17,14 +17,7 @@ export default defineEventHandler(async (event) => {
   if (!query.workspaceId || !query.owner || !query.repo)
     throw createError({ statusCode: 400, message: 'workspaceId, owner, and repo are required' })
 
-  const client = useSupabaseUserClient(session.accessToken)
-
-  // Get workspace installation_id
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('github_installation_id')
-    .eq('id', query.workspaceId)
-    .single()
+  const workspace = await getWorkspace(useSupabaseUserClient(session.accessToken), query.workspaceId)
 
   if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: 'GitHub App not installed' })

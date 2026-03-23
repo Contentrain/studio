@@ -18,35 +18,10 @@ export default defineEventHandler(async (event) => {
   if (permissions.workspaceRole !== 'owner' && permissions.workspaceRole !== 'admin')
     throw createError({ statusCode: 403, message: 'Only workspace owner/admin can change project settings' })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const { git, contentRoot } = await resolveProjectContext(
+    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+  )
 
-  const { data: project } = await client
-    .from('projects')
-    .select('repo_full_name, content_root, workspace_id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
-
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('github_installation_id')
-    .eq('id', workspaceId)
-    .single()
-
-  if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
-
-  const [owner, repo] = project.repo_full_name.split('/')
-  const git = useGitProvider({
-    installationId: workspace.github_installation_id,
-    owner,
-    repo,
-  })
-
-  const contentRoot = normalizeContentRoot(project.content_root)
   const configPath = contentRoot ? `${contentRoot}/.contentrain/config.json` : '.contentrain/config.json'
 
   // Read current config
@@ -72,7 +47,7 @@ export default defineEventHandler(async (event) => {
 
   await git.commitFiles(
     branchName,
-    [{ path: configPath, content: JSON.stringify(config, null, 2) + '\n' }],
+    [{ path: configPath, content: `${JSON.stringify(config, null, 2)}\n` }],
     `contentrain: update project config\n\nChanged: ${Object.keys(body).join(', ')}`,
     { name: 'Contentrain Studio[bot]', email: 'bot@contentrain.io' },
   )

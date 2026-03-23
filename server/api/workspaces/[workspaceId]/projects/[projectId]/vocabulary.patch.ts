@@ -15,40 +15,14 @@ export default defineEventHandler(async (event) => {
   if (!body.terms || typeof body.terms !== 'object')
     throw createError({ statusCode: 400, message: 'terms object is required' })
 
-  // Only owner/admin/editor can change vocabulary
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.availableTools.length === 0)
     throw createError({ statusCode: 403, message: 'No permissions' })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const { git, contentRoot } = await resolveProjectContext(
+    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+  )
 
-  const { data: project } = await client
-    .from('projects')
-    .select('repo_full_name, content_root, workspace_id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
-
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('github_installation_id')
-    .eq('id', workspaceId)
-    .single()
-
-  if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
-
-  const [owner, repo] = project.repo_full_name.split('/')
-  const git = useGitProvider({
-    installationId: workspace.github_installation_id,
-    owner,
-    repo,
-  })
-
-  const contentRoot = normalizeContentRoot(project.content_root)
   const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'
 
   // Read current vocabulary
@@ -78,8 +52,8 @@ export default defineEventHandler(async (event) => {
 
   await git.commitFiles(
     branchName,
-    [{ path: vocabPath, content: JSON.stringify(vocabulary, null, 2) + '\n' }],
-    `contentrain: update vocabulary`,
+    [{ path: vocabPath, content: `${JSON.stringify(vocabulary, null, 2)}\n` }],
+    'contentrain: update vocabulary',
     { name: 'Contentrain Studio[bot]', email: 'bot@contentrain.io' },
   )
 

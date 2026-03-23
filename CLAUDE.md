@@ -213,6 +213,42 @@ Key items:
 - lint-staged on pre-commit (only changed files)
 - GitHub Actions CI on PRs (commit lint + build)
 
+## Enterprise Edition (ee/) — CRITICAL
+
+Studio uses **Open Core** model: AGPL core + proprietary `ee/` directory.
+Full spec: `.internal/EE-SEPARATION.md`
+
+### Rules — never violate:
+
+- **ee/ directory** has its own proprietary LICENSE — NEVER mix ee/ code into core
+- **Core must work without ee/** — free tier is a fully functional product
+- **Feature flags** via `server/utils/license.ts` → `hasFeature(plan, 'feature.name')`
+- **NEVER hardcode plan checks** — always use `hasFeature()` function
+- **Provider interfaces in core**, implementations can be in ee/ (same pattern as AuthProvider)
+- **UI conditional rendering** based on plan — use `hasFeature()` in computed properties
+- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in free tier
+- **Graceful degradation** — if ee/ feature is unavailable, degrade safely (reviewer → editor, not error)
+
+### What belongs in ee/:
+- Advanced roles (reviewer, viewer, specificModels)
+- BYOA API key management
+- Premium connectors (Canva, Figma, Recraft, Notion, Google Drive)
+- SSO (SAML, OIDC)
+- Approval chains, scheduled publish
+- Audit log, activity feed
+- White-label branding
+- Outbound webhooks, public REST API
+
+### What stays in core (AGPL):
+- All auth flows, workspace/project CRUD
+- Chat engine + all agent tools
+- Content CRUD (all 4 kinds, all 27 field types)
+- Auto-merge workflow, branch creation
+- Content editor modal, all UI components
+- Owner + Editor roles
+- URL fetch connector
+- Single + multi-locale (config-driven, not plan-gated)
+
 ## Phase Documents
 
 Implementation phases are tracked in `.internal/PHASE-1.md` (current).

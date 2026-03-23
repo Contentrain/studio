@@ -17,21 +17,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const installationId = Number(query.installation_id)
-  const client = useSupabaseUserClient(session.accessToken)
+  const workspace = await getPrimaryWorkspace(useSupabaseUserClient(session.accessToken), session.user.id)
 
-  // Find the user's workspace and save installation_id
-  // For now, save to the first workspace owned by the user
-  const { data: workspace, error } = await client
-    .from('workspaces')
-    .select('id, slug')
-    .eq('owner_id', session.user.id)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .single()
-
-  if (error || !workspace) {
+  if (!workspace)
     throw createError({ statusCode: 404, message: 'No workspace found' })
-  }
 
   // Save installation_id to workspace (using admin to bypass RLS for update)
   const admin = useSupabaseAdmin()

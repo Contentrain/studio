@@ -20,54 +20,12 @@ export default defineEventHandler(async (event) => {
 
   const client = useSupabaseUserClient(session.accessToken)
 
-  // Verify caller is workspace owner/admin
-  const { data: callerMembership } = await client
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', session.user.id)
-    .single()
+  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
-  if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role))
-    throw createError({ statusCode: 403, message: 'Only workspace owner/admin can assign project members' })
+  const userId = await inviteOrLookupUser(body.email)
 
-  // Invite user via auth provider (creates account if needed)
-  const authProvider = useAuthProvider()
-  let userId: string | null = null
-  try {
-    const result = await authProvider.inviteUserByEmail(body.email)
-    userId = result.userId
-  }
-  catch {
-    const admin = useSupabaseAdmin()
-    const { data: users } = await admin.auth.admin.listUsers()
-    const existing = users?.users?.find(u => u.email === body.email)
-    userId = existing?.id ?? null
-  }
-
-  // Ensure user is a workspace member first (auto-add as 'member' if not)
-  if (userId) {
-    const { data: existingWsMember } = await client
-      .from('workspace_members')
-      .select('id')
-      .eq('workspace_id', workspaceId)
-      .eq('user_id', userId)
-      .single()
-
-    if (!existingWsMember) {
-      // Use admin client to bypass RLS for this insert
-      const admin = useSupabaseAdmin()
-      await admin
-        .from('workspace_members')
-        .insert({
-          workspace_id: workspaceId,
-          user_id: userId,
-          role: 'member',
-          invited_email: body.email,
-          accepted_at: new Date().toISOString(),
-        })
-    }
-  }
+  // Ensure user is a workspace member (auto-add as 'member' if not)
+  await ensureWorkspaceMember(client, useSupabaseAdmin(), workspaceId, userId, body.email)
 
   // Create project member record
   const { data: member, error } = await client

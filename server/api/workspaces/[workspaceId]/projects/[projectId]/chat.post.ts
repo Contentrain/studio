@@ -39,24 +39,7 @@ export default defineEventHandler(async (event) => {
   const admin = useSupabaseAdmin()
 
   // === RESOLVE PROJECT + WORKSPACE ===
-  const { data: project } = await client
-    .from('projects')
-    .select('repo_full_name, content_root, workspace_id, status')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
-
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('github_installation_id, plan')
-    .eq('id', workspaceId)
-    .single()
-
-  if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
+  const { project, git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
 
   // === PERMISSIONS ===
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
@@ -68,16 +51,10 @@ export default defineEventHandler(async (event) => {
   let apiKey: string
   let usageSource: 'byoa' | 'studio' = 'studio'
 
-  const { data: byoaKey } = await client
-    .from('ai_keys')
-    .select('encrypted_key')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', session.user.id)
-    .eq('provider', 'anthropic')
-    .single()
+  const encryptedByoaKey = await getBYOAKey(client, workspaceId, session.user.id)
 
-  if (byoaKey?.encrypted_key) {
-    apiKey = decryptApiKey(byoaKey.encrypted_key, runtimeConfig.sessionSecret)
+  if (encryptedByoaKey) {
+    apiKey = decryptApiKey(encryptedByoaKey, runtimeConfig.sessionSecret)
     usageSource = 'byoa'
   }
   else if (runtimeConfig.anthropic.apiKey) {
@@ -90,23 +67,13 @@ export default defineEventHandler(async (event) => {
   // === CONVERSATION ===
   let conversationId = body.conversationId
   if (!conversationId) {
-    const { data: conv } = await client
-      .from('conversations')
-      .insert({ project_id: projectId, user_id: session.user.id, title: body.message.substring(0, 100) })
-      .select('id')
-      .single()
-    conversationId = conv?.id
+    conversationId = await createConversation(client, projectId, session.user.id, body.message)
   }
   if (!conversationId)
     throw createError({ statusCode: 500, message: 'Failed to create conversation' })
 
   // === HISTORY ===
-  const { data: historyRows } = await client
-    .from('messages')
-    .select('role, content, tool_calls')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: false })
-    .limit(50)
+  const historyRows = await loadConversationHistory(client, conversationId, 50)
 
   const allHistory = (historyRows ?? []).reverse()
   const messages: AIMessage[] = []
@@ -122,10 +89,6 @@ export default defineEventHandler(async (event) => {
   messages.push({ role: 'user', content: body.message })
 
   // === LOAD SCHEMA ===
-  const [owner, repo] = project.repo_full_name.split('/')
-  const git = useGitProvider({ installationId: workspace.github_installation_id, owner, repo })
-  const contentRoot = normalizeContentRoot(project.content_root)
-
   let projectConfig: ContentrainConfig | null = null
   const models: ModelDefinition[] = []
   let vocabulary: Record<string, Record<string, string>> | null = null
@@ -328,35 +291,16 @@ export default defineEventHandler(async (event) => {
       }))
 
       // === SAVE TO DB ===
-      await admin.from('messages').insert({ conversation_id: conversationId, role: 'user', content: body.message })
-
       const assistantText = lastAssistantContent
         .filter(b => b.type === 'text')
         .map(b => (b as { text: string }).text)
         .join('')
 
-      await admin.from('messages').insert({
-        conversation_id: conversationId,
-        role: 'assistant',
-        content: assistantText || '[tool calls]',
-        tool_calls: lastAssistantContent.length > 0 ? lastAssistantContent : null,
-        token_count_input: totalInputTokens,
-        token_count_output: totalOutputTokens,
-        model,
-      })
-
-      const month = new Date().toISOString().substring(0, 7)
-      await admin.from('agent_usage').upsert({
-        workspace_id: workspaceId,
-        user_id: session.user.id,
-        month,
-        source: usageSource,
-        message_count: 1,
-        input_tokens: totalInputTokens,
-        output_tokens: totalOutputTokens,
-      }, { onConflict: 'workspace_id,user_id,month,source' })
-
-      await admin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId)
+      await saveChatResult(
+        admin, conversationId, body.message, assistantText,
+        lastAssistantContent, model, totalInputTokens, totalOutputTokens,
+        workspaceId, session.user.id, usageSource,
+      )
     }
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chat error'

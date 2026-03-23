@@ -16,16 +16,7 @@ export default defineEventHandler(async (event) => {
 
   const client = useSupabaseUserClient(session.accessToken)
 
-  // Verify caller is workspace owner
-  const { data: callerMembership } = await client
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', session.user.id)
-    .single()
-
-  if (!callerMembership || callerMembership.role !== 'owner')
-    throw createError({ statusCode: 403, message: 'Only workspace owner can change roles' })
+  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner'])
 
   // Prevent changing owner role
   const { data: target } = await client

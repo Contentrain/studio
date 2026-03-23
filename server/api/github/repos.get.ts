@@ -14,19 +14,9 @@ export default defineEventHandler(async (event) => {
   if (!query.workspaceId)
     throw createError({ statusCode: 400, message: 'workspaceId is required' })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const workspace = await getWorkspace(useSupabaseUserClient(session.accessToken), query.workspaceId)
 
-  // Get workspace with installation_id
-  const { data: workspace, error } = await client
-    .from('workspaces')
-    .select('id, github_installation_id')
-    .eq('id', query.workspaceId)
-    .single()
-
-  if (error || !workspace)
-    throw createError({ statusCode: 404, message: 'Workspace not found' })
-
-  if (!workspace.github_installation_id)
+  if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: 'GitHub App not installed for this workspace' })
 
   // Create Octokit with installation auth

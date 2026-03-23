@@ -12,16 +12,7 @@ export default defineEventHandler(async (event) => {
 
   const client = useSupabaseUserClient(session.accessToken)
 
-  // Verify caller is workspace owner/admin
-  const { data: callerMembership } = await client
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', session.user.id)
-    .single()
-
-  if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role))
-    throw createError({ statusCode: 403, message: 'Only workspace owner/admin can remove members' })
+  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   // Prevent removing the owner
   const { data: target } = await client

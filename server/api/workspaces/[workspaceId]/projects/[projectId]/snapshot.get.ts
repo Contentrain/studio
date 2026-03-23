@@ -15,37 +15,10 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const { git, contentRoot } = await resolveProjectContext(
+    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+  )
 
-  // Get project + workspace installation
-  const { data: project } = await client
-    .from('projects')
-    .select('repo_full_name, default_branch, content_root, workspace_id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
-
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('github_installation_id')
-    .eq('id', workspaceId)
-    .single()
-
-  if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
-
-  const [owner, repo] = project.repo_full_name.split('/')
-  const git = useGitProvider({
-    installationId: workspace.github_installation_id,
-    owner,
-    repo,
-  })
-
-  // Read .contentrain/ tree
-  const contentRoot = project.content_root === '/' ? '' : project.content_root.replace(/^\/|\/$/g, '')
   const configPath = contentRoot ? `${contentRoot}/.contentrain/config.json` : '.contentrain/config.json'
   const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
   const contentDir = contentRoot ? `${contentRoot}/.contentrain/content` : '.contentrain/content'
@@ -54,12 +27,7 @@ export default defineEventHandler(async (event) => {
   const hasConfig = await git.fileExists(configPath)
 
   if (!hasConfig) {
-    return {
-      exists: false,
-      config: null,
-      models: [],
-      content: {},
-    }
+    return { exists: false, config: null, models: [], content: {} }
   }
 
   // Read config
@@ -67,9 +35,7 @@ export default defineEventHandler(async (event) => {
   try {
     config = JSON.parse(await git.readFile(configPath)) as ContentrainConfig
   }
-  catch {
-    config = null
-  }
+  catch { config = null }
 
   // Read models
   const models: Array<{ id: string, name: string, kind: ModelKind, type: ModelKind, fields: Record<string, unknown>, domain: string, i18n: boolean }> = []
@@ -89,58 +55,42 @@ export default defineEventHandler(async (event) => {
           i18n: def.i18n ?? false,
         })
       }
-      catch {
-        // Skip invalid model files
-      }
+      catch { /* skip invalid model files */ }
     }
   }
-  catch {
-    // No models directory
-  }
+  catch { /* no models directory */ }
 
-  // Read content entries (summary — not full content, just counts and IDs)
+  // Read content summaries
   const content: Record<string, { count: number, locales: string[] }> = {}
   try {
     const domains = await git.listDirectory(contentDir)
     for (const domain of domains) {
-      const domainPath = `${contentDir}/${domain}`
       try {
-        const modelDirs = await git.listDirectory(domainPath)
+        const modelDirs = await git.listDirectory(`${contentDir}/${domain}`)
         for (const modelDir of modelDirs) {
-          const modelPath = `${domainPath}/${modelDir}`
           try {
-            const files = await git.listDirectory(modelPath)
+            const files = await git.listDirectory(`${contentDir}/${domain}/${modelDir}`)
             const jsonFiles = files.filter(f => f.endsWith('.json'))
-            const locales = jsonFiles.map(f => f.replace('.json', ''))
-            content[modelDir] = {
-              count: jsonFiles.length,
-              locales,
-            }
+            content[modelDir] = { count: jsonFiles.length, locales: jsonFiles.map(f => f.replace('.json', '')) }
           }
-          catch {
-            // Skip
-          }
+          catch { /* skip */ }
         }
       }
-      catch {
-        // Domain might be a file, not directory
-      }
+      catch { /* domain might be a file */ }
     }
   }
-  catch {
-    // No content directory
-  }
+  catch { /* no content directory */ }
 
   // Read vocabulary
   let vocabulary: Record<string, Record<string, string>> | null = null
   try {
     const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'
-    const vocabData = JSON.parse(await git.readFile(vocabPath)) as { version?: number, terms?: Record<string, Record<string, string>> }
+    const vocabData = JSON.parse(await git.readFile(vocabPath)) as { terms?: Record<string, Record<string, string>> }
     vocabulary = vocabData.terms ?? null
   }
   catch { /* no vocabulary */ }
 
-  // Read context.json (last operation + stats)
+  // Read context.json
   let contentContext: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null = null
   try {
     const ctxPath = contentRoot ? `${contentRoot}/.contentrain/context.json` : '.contentrain/context.json'
@@ -148,12 +98,5 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* no context */ }
 
-  return {
-    exists: true,
-    config,
-    models,
-    content,
-    vocabulary,
-    contentContext,
-  }
+  return { exists: true, config, models, content, vocabulary, contentContext }
 })

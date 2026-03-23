@@ -17,33 +17,10 @@ export default defineEventHandler(async (event) => {
 
   const client = useSupabaseUserClient(session.accessToken)
 
-  // Verify caller is workspace owner/admin (RLS handles this, but explicit check for clear error)
-  const { data: callerMembership } = await client
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', session.user.id)
-    .single()
+  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
-  if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role))
-    throw createError({ statusCode: 403, message: 'Only workspace owner/admin can invite members' })
+  const userId = await inviteOrLookupUser(body.email)
 
-  // Invite user via auth provider
-  const authProvider = useAuthProvider()
-  let userId: string | null = null
-  try {
-    const result = await authProvider.inviteUserByEmail(body.email)
-    userId = result.userId
-  }
-  catch {
-    // User might already exist — look up by email
-    const admin = useSupabaseAdmin()
-    const { data: users } = await admin.auth.admin.listUsers()
-    const existing = users?.users?.find(u => u.email === body.email)
-    userId = existing?.id ?? null
-  }
-
-  // Create workspace member record
   const { data: member, error } = await client
     .from('workspace_members')
     .insert({

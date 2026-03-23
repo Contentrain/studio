@@ -21,35 +21,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'workspaceId, projectId, and modelId are required' })
 
   const locale = query.locale || 'en'
-  const client = useSupabaseUserClient(session.accessToken)
 
-  const { data: project } = await client
-    .from('projects')
-    .select('repo_full_name, content_root, workspace_id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
+  const { git, contentRoot } = await resolveProjectContext(
+    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+  )
 
-  if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
-
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('github_installation_id')
-    .eq('id', workspaceId)
-    .single()
-
-  if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
-
-  const [owner, repo] = project.repo_full_name.split('/')
-  const git = useGitProvider({
-    installationId: workspace.github_installation_id,
-    owner,
-    repo,
-  })
-
-  const contentRoot = project.content_root === '/' ? '' : project.content_root.replace(/^\/|\/$/g, '')
   const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
   const contentBase = contentRoot ? `${contentRoot}/.contentrain/content` : '.contentrain/content'
 
@@ -66,7 +42,6 @@ export default defineEventHandler(async (event) => {
   const domain = modelDef.domain
 
   // Document kind: content_path points directly to the directory containing .md files
-  // Structure: {content_path}/{slug}.md (non-i18n) or {content_path}/{slug}/{locale}.md (i18n)
   if (kind === 'document' && modelDef.content_path) {
     const docPath = contentRoot ? `${contentRoot}/${modelDef.content_path}` : modelDef.content_path
     const entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }> = []
@@ -76,7 +51,6 @@ export default defineEventHandler(async (event) => {
       const items = await git.listDirectory(docPath)
 
       for (const item of items) {
-        // Non-i18n: {content_path}/{slug}.md
         if (!isI18n && item.endsWith('.md')) {
           try {
             const raw = await git.readFile(`${docPath}/${item}`)
@@ -85,7 +59,6 @@ export default defineEventHandler(async (event) => {
           }
           catch { /* skip */ }
         }
-        // i18n: {content_path}/{slug}/{locale}.md
         else if (isI18n && !item.includes('.')) {
           try {
             const raw = await git.readFile(`${docPath}/${item}/${locale}.md`)
@@ -104,7 +77,6 @@ export default defineEventHandler(async (event) => {
     let docMeta: Record<string, unknown> | null = null
     try {
       const metaBase = contentRoot ? `${contentRoot}/.contentrain/meta` : '.contentrain/meta'
-      // Document meta might be per-slug or per-model
       docMeta = JSON.parse(await git.readFile(`${metaBase}/${modelId}/${locale}.json`))
     }
     catch { /* no meta */ }
@@ -115,39 +87,29 @@ export default defineEventHandler(async (event) => {
   // JSON-based kinds: singleton, collection, dictionary
   let contentData: unknown = null
 
-  // Try with domain: .contentrain/content/{domain}/{modelId}/{locale}.json
   if (domain) {
     try {
-      const filePath = `${contentBase}/${domain}/${modelId}/${locale}.json`
-      contentData = JSON.parse(await git.readFile(filePath))
+      contentData = JSON.parse(await git.readFile(`${contentBase}/${domain}/${modelId}/${locale}.json`))
     }
-    catch {
-      // Not found at domain path
-    }
+    catch { /* Not found at domain path */ }
   }
 
-  // Fallback: scan all domain directories
   if (!contentData) {
     try {
       const domains = await git.listDirectory(contentBase)
       for (const d of domains) {
         if (d.startsWith('.')) continue
-        const filePath = `${contentBase}/${d}/${modelId}/${locale}.json`
         try {
-          contentData = JSON.parse(await git.readFile(filePath))
+          contentData = JSON.parse(await git.readFile(`${contentBase}/${d}/${modelId}/${locale}.json`))
           break
         }
-        catch {
-          continue
-        }
+        catch { continue }
       }
     }
-    catch {
-      // Content base not accessible
-    }
+    catch { /* Content base not accessible */ }
   }
 
-  // Load meta for JSON kinds
+  // Load meta
   let meta: Record<string, unknown> | null = null
   try {
     const metaBase = contentRoot ? `${contentRoot}/.contentrain/meta` : '.contentrain/meta'
@@ -157,5 +119,3 @@ export default defineEventHandler(async (event) => {
 
   return { modelId, locale, kind, data: contentData, meta }
 })
-
-// gray-matter handles all frontmatter edge cases: nested YAML, arrays, quotes, multiline
