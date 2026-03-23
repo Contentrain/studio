@@ -166,6 +166,26 @@ async function handleContentChanged(affected: { models: string[], locales: strin
     await fetchBranches(ws.id, projectId.value)
   }
 }
+
+// Vocabulary save handler
+const toast = useToast()
+async function handleVocabularySave(terms: Record<string, Record<string, string> | null>) {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws) return
+  try {
+    await $fetch(`/api/workspaces/${ws.id}/projects/${projectId.value}/vocabulary`, {
+      method: 'PATCH',
+      body: { terms },
+    })
+    // Refresh snapshot to get updated vocabulary
+    const { invalidateCache } = useSnapshot()
+    await invalidateCache(projectId.value)
+    await fetchSnapshot(ws.id, projectId.value)
+  }
+  catch {
+    toast.error('Failed to update vocabulary')
+  }
+}
 </script>
 
 <template>
@@ -207,6 +227,7 @@ async function handleContentChanged(affected: { models: string[], locales: strin
         @send-chat-prompt="chatPanelRef?.handleSend($event)"
         @branch-merge="handleBranchMerge"
         @branch-reject="handleBranchReject"
+        @vocabulary-save="handleVocabularySave"
       />
     </div>
   </div>

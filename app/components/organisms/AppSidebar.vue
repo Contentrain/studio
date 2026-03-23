@@ -3,15 +3,18 @@ const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
-const { models, hasContentrain, snapshot } = useSnapshot()
+const { models, hasContentrain, snapshot, fetchSnapshot, invalidateCache } = useSnapshot()
 const { branches, fetchBranches } = useBranches()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
 const router = useRouter()
 const connectDialogOpen = ref(false)
+const settingsModalOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 const isInsideProject = computed(() => !!currentProjectId.value)
+const currentProject = computed(() => projects.value.find(p => p.id === currentProjectId.value) ?? null)
+const projectConfig = computed(() => snapshot.value?.config as Record<string, unknown> | null)
 const activeModelId = computed(() => route.query.model as string | undefined)
 const activeBranch = computed(() => {
   const b = (route.query as Record<string, string | undefined>).branch
@@ -59,6 +62,17 @@ function selectBranch(branchName: string) {
   const query: Record<string, string> = { branch: encodeURIComponent(branchName) }
   router.replace({ query })
 }
+
+function backToWorkspace() {
+  if (!activeWorkspace.value) return
+  router.push(`/w/${activeWorkspace.value.slug}`)
+}
+
+async function onSettingsSaved() {
+  if (!activeWorkspace.value || !currentProjectId.value) return
+  await invalidateCache(currentProjectId.value)
+  await fetchSnapshot(activeWorkspace.value.id, currentProjectId.value)
+}
 </script>
 
 <template>
@@ -78,6 +92,26 @@ function selectBranch(branchName: string) {
     <nav class="flex-1 overflow-y-auto px-3 py-1">
       <!-- PROJECT VIEW -->
       <template v-if="isInsideProject">
+        <!-- Project header -->
+        <div class="mb-1 flex items-center gap-1.5 rounded-md px-2 py-1.5">
+          <span class="icon-[annon--folder] size-4 shrink-0 text-primary-500" aria-hidden="true" />
+          <span class="min-w-0 flex-1 truncate text-sm font-medium text-heading dark:text-secondary-100">
+            {{ currentProject?.repo_full_name?.split('/')[1] ?? currentProjectId }}
+          </span>
+          <AtomsIconButton
+            icon="icon-[annon--gear]"
+            :label="t('project_settings.title')"
+            size="sm"
+            @click="settingsModalOpen = true"
+          />
+          <AtomsIconButton
+            icon="icon-[annon--cross]"
+            :label="t('common.back')"
+            size="sm"
+            @click="backToWorkspace"
+          />
+        </div>
+
         <template v-if="hasContentrain">
           <details
             v-for="(domainModels, domain) in modelsByDomain"
@@ -196,5 +230,14 @@ function selectBranch(branchName: string) {
     </div>
 
     <OrganismsConnectRepoDialog v-model:open="connectDialogOpen" />
+
+    <OrganismsProjectSettingsModal
+      v-if="isInsideProject && activeWorkspace && currentProjectId"
+      v-model:open="settingsModalOpen"
+      :workspace-id="activeWorkspace.id"
+      :project-id="currentProjectId"
+      :config="(projectConfig as any)"
+      @saved="onSettingsSaved"
+    />
   </aside>
 </template>

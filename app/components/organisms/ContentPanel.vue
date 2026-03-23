@@ -53,6 +53,7 @@ const emit = defineEmits<{
   'sendChatPrompt': [text: string]
   'branchMerge': []
   'branchReject': []
+  'vocabularySave': [terms: Record<string, Record<string, string> | null>]
 }>()
 
 // Locale from config
@@ -94,6 +95,23 @@ const vocabularyTerms = computed(() => {
   if (!vocab) return []
   return Object.entries(vocab)
 })
+
+// Vocabulary editing
+const vocabNewKey = ref('')
+const vocabNewValue = ref('')
+
+function vocabDeleteTerm(key: string) {
+  emit('vocabularySave', { [key]: null })
+}
+
+function vocabAddTerm() {
+  const key = vocabNewKey.value.trim()
+  const value = vocabNewValue.value.trim()
+  if (!key || !value) return
+  emit('vocabularySave', { [key]: { [currentLocale.value]: value } })
+  vocabNewKey.value = ''
+  vocabNewValue.value = ''
+}
 
 // Schema-aware field utilities
 function getFieldType(fieldId: string): string {
@@ -333,7 +351,7 @@ provide('sendChatPrompt', sendChatPrompt)
           />
 
           <!-- Vocabulary section -->
-          <div v-if="vocabularyTerms.length > 0" class="border-t border-secondary-200 dark:border-secondary-800">
+          <div v-if="vocabularyTerms.length > 0 || editable" class="border-t border-secondary-200 dark:border-secondary-800">
             <details class="group">
               <summary class="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
                 <span class="icon-[annon--book-library] size-3.5" aria-hidden="true" />
@@ -343,13 +361,13 @@ provide('sendChatPrompt', sendChatPrompt)
                 </AtomsBadge>
                 <span class="icon-[annon--chevron-right] size-3 transition-transform group-open:rotate-90" aria-hidden="true" />
               </summary>
-              <div class="max-h-48 overflow-y-auto">
+              <div class="max-h-60 overflow-y-auto">
                 <table class="w-full text-xs">
                   <tbody class="divide-y divide-secondary-100 dark:divide-secondary-800">
                     <tr
                       v-for="[term, translations] in vocabularyTerms"
                       :key="term"
-                      class="hover:bg-secondary-50 dark:hover:bg-secondary-900"
+                      class="group/row hover:bg-secondary-50 dark:hover:bg-secondary-900"
                     >
                       <td class="px-5 py-1.5 font-mono text-muted">
                         {{ term }}
@@ -357,9 +375,43 @@ provide('sendChatPrompt', sendChatPrompt)
                       <td class="px-2 py-1.5 text-heading dark:text-secondary-100">
                         {{ translations[currentLocale] ?? (Object.keys(translations).length > 0 ? translations[Object.keys(translations)[0]!] : '') }}
                       </td>
+                      <td v-if="editable" class="w-8 pr-2">
+                        <button
+                          type="button"
+                          class="rounded p-0.5 text-muted opacity-0 transition-all hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                          :title="t('vocabulary.delete_term')"
+                          @click="vocabDeleteTerm(term)"
+                        >
+                          <span class="icon-[annon--trash] block size-3" aria-hidden="true" />
+                        </button>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <!-- Add term -->
+              <div v-if="editable" class="border-t border-secondary-100 px-5 py-2 dark:border-secondary-800/50">
+                <form class="flex items-center gap-1.5" @submit.prevent="vocabAddTerm">
+                  <input
+                    v-model="vocabNewKey"
+                    type="text"
+                    :placeholder="t('vocabulary.key_placeholder')"
+                    class="h-6 w-20 rounded border border-secondary-200 bg-white px-1.5 text-[11px] font-mono text-heading placeholder:text-disabled focus:outline-none focus:ring-1 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+                  >
+                  <input
+                    v-model="vocabNewValue"
+                    type="text"
+                    :placeholder="t('vocabulary.value_placeholder')"
+                    class="h-6 flex-1 rounded border border-secondary-200 bg-white px-1.5 text-[11px] text-heading placeholder:text-disabled focus:outline-none focus:ring-1 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+                  >
+                  <button
+                    type="submit"
+                    :disabled="!vocabNewKey.trim() || !vocabNewValue.trim()"
+                    class="shrink-0 rounded p-0.5 text-primary-500 transition-colors hover:text-primary-600 disabled:text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  >
+                    <span class="icon-[annon--plus-circle] block size-4" aria-hidden="true" />
+                  </button>
+                </form>
               </div>
             </details>
           </div>
