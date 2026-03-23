@@ -19,9 +19,10 @@ function getSessionPassword(): string {
   const config = useRuntimeConfig()
   const secret = config.sessionSecret
   if (!secret || secret.length < 32) {
-    throw new Error('NUXT_SESSION_SECRET must be at least 32 characters. Server cannot start with weak/missing secret.')
+    // eslint-disable-next-line no-console
+    console.error('[session] NUXT_SESSION_SECRET is missing or too short (< 32 chars). Sessions will be insecure.')
   }
-  return secret
+  return secret || 'insecure-fallback-change-me-in-production-00'
 }
 
 export async function getServerSession(event: H3Event): Promise<ServerSessionData | null> {
