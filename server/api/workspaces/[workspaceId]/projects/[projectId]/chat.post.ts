@@ -156,18 +156,23 @@ export default defineEventHandler(async (event) => {
     contentContext,
   }
 
-  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary)
+  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary, plan)
 
   // === FILTER TOOLS by permissions + phase ===
   const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
   const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
   const aiTools = toAITools(phaseFiltered)
 
-  // Model: client-selected or default
-  const ALLOWED_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
+  // Model: plan-gated selection
+  const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
+  const FREE_MODELS = ['claude-haiku-4-5-20251001']
+  const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : FREE_MODELS
   const requestedModel = body.model as string | undefined
-  const model = (requestedModel && ALLOWED_MODELS.includes(requestedModel)) ? requestedModel : 'claude-sonnet-4-20250514'
-  const workflow = projectConfig?.workflow ?? 'auto-merge'
+  const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
+
+  // Workflow: free plan always auto-merges regardless of config
+  const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
+  const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
 
   // === SSE STREAM ===
   const eventStream = createEventStream(event)

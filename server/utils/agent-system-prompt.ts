@@ -27,6 +27,7 @@ export function buildSystemPrompt(
   uiContext: ChatUIContext,
   intent: ClassifiedIntent,
   vocabulary?: Record<string, Record<string, string>> | null,
+  plan?: import('./license').Plan,
 ): string {
   const sections: string[] = []
 
@@ -139,8 +140,8 @@ CONSTRAINTS:
     : ''
 }`)
 
-  // 10. RULES — hardened, workflow-aware, architecture-aware, role-aware
-  sections.push(buildRulesSection(config, intent, permissions))
+  // 10. RULES — hardened, workflow-aware, architecture-aware, role-aware, plan-aware
+  sections.push(buildRulesSection(config, intent, permissions, plan))
 
   return sections.join('\n\n')
 }
@@ -377,7 +378,8 @@ function buildContextSection(
 
 // ─── Rules Section ───
 
-function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent, permissions: AgentPermissions): string {
+function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent, permissions: AgentPermissions, plan?: import('./license').Plan): string {
+  const effectivePlan = plan ?? 'free'
   const workflow = config?.workflow ?? 'auto-merge'
   const isPrivileged = permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
 
@@ -424,6 +426,11 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
   else {
     rules.push('After save_content/save_model, a review branch is created. Tell the user which branch was created and that it needs approval from a reviewer or admin.')
     rules.push('Do NOT call merge_branch automatically. Wait for a reviewer/admin to approve.')
+  }
+
+  // Plan-aware rules
+  if (effectivePlan === 'free') {
+    rules.push('This workspace is on the FREE plan. All content changes auto-merge immediately. Review workflow, reviewer/viewer roles, and BYOA API keys are not available.')
   }
 
   // Out of scope

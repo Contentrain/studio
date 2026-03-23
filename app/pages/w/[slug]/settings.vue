@@ -158,11 +158,21 @@ const wsRoleOptions = [
   { value: 'member', label: t('members.role_member') },
 ]
 
-const projectRoleOptions = [
-  { value: 'editor', label: t('members.role_editor') },
-  { value: 'reviewer', label: t('members.role_reviewer') },
-  { value: 'viewer', label: t('members.role_viewer') },
-]
+const hasPro = computed(() => {
+  const plan = activeWorkspace.value?.plan ?? 'free'
+  return ['pro', 'business', 'enterprise'].includes(plan)
+})
+
+const projectRoleOptions = computed(() => {
+  const options = [{ value: 'editor', label: t('members.role_editor') }]
+  if (hasPro.value) {
+    options.push(
+      { value: 'reviewer', label: t('members.role_reviewer') },
+      { value: 'viewer', label: t('members.role_viewer') },
+    )
+  }
+  return options
+})
 
 const projectOptions = computed(() =>
   projects.value.map(p => ({ value: p.id, label: p.repo_full_name })),

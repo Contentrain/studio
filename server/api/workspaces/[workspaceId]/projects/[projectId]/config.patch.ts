@@ -18,9 +18,13 @@ export default defineEventHandler(async (event) => {
   if (permissions.workspaceRole !== 'owner' && permissions.workspaceRole !== 'admin')
     throw createError({ statusCode: 403, message: 'Only workspace owner/admin can change project settings' })
 
-  const { git, contentRoot } = await resolveProjectContext(
-    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
-  )
+  const client = useSupabaseUserClient(session.accessToken)
+  const { git, contentRoot, workspace } = await resolveProjectContext(client, workspaceId, projectId)
+  const plan = getWorkspacePlan(workspace)
+
+  // Plan gate: review workflow requires Pro+
+  if (body.workflow === 'review' && !hasFeature(plan, 'workflow.review'))
+    throw createError({ statusCode: 403, message: 'Review workflow requires Pro plan or higher' })
 
   const configPath = contentRoot ? `${contentRoot}/.contentrain/config.json` : '.contentrain/config.json'
 

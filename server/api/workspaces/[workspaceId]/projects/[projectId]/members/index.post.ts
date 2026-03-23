@@ -22,6 +22,19 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  // Plan-based role gating: reviewer/viewer require Pro+, specificModels requires Pro+
+  const { data: ws } = await client.from('workspaces').select('plan').eq('id', workspaceId).single()
+  const plan = getWorkspacePlan(ws ?? {})
+
+  if (body.role === 'reviewer' && !hasFeature(plan, 'roles.reviewer'))
+    throw createError({ statusCode: 403, message: 'Reviewer role requires Pro plan or higher' })
+
+  if (body.role === 'viewer' && !hasFeature(plan, 'roles.viewer'))
+    throw createError({ statusCode: 403, message: 'Viewer role requires Pro plan or higher' })
+
+  if (body.specificModels && !hasFeature(plan, 'roles.specific_models'))
+    throw createError({ statusCode: 403, message: 'Model-specific access requires Pro plan or higher' })
+
   const userId = await inviteOrLookupUser(body.email)
 
   // Ensure user is a workspace member (auto-add as 'member' if not)

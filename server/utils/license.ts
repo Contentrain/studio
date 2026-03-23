@@ -40,6 +40,12 @@ const FEATURE_MATRIX: Record<string, Plan[]> = {
   'team.audit_log': ['business', 'enterprise'],
   'team.activity_feed': ['business', 'enterprise'],
 
+  // CDN
+  'cdn.delivery': ['pro', 'business', 'enterprise'],
+  'cdn.preview_branch': ['business', 'enterprise'],
+  'cdn.custom_domain': ['enterprise'],
+  'cdn.ip_allowlist': ['business', 'enterprise'],
+
   // Enterprise
   'sso.saml': ['enterprise'],
   'sso.oidc': ['enterprise'],
@@ -74,4 +80,20 @@ export function getAvailableFeatures(plan: Plan): string[] {
   return Object.entries(FEATURE_MATRIX)
     .filter(([_, plans]) => plans.includes(plan))
     .map(([feature]) => feature)
+}
+
+/**
+ * Get numeric limit for a plan-gated resource.
+ * Returns 0 for features not available on the plan.
+ */
+const PLAN_LIMITS: Record<string, Record<Plan, number>> = {
+  'workspace.count': { free: 1, pro: 3, business: Infinity, enterprise: Infinity },
+  'team.members': { free: 2, pro: 10, business: 50, enterprise: Infinity },
+  'cdn.api_keys': { free: 0, pro: 3, business: 10, enterprise: Infinity },
+  'cdn.requests_per_month': { free: 0, pro: 100_000, business: 1_000_000, enterprise: Infinity },
+  'cdn.bandwidth_gb': { free: 0, pro: 10, business: 100, enterprise: Infinity },
+}
+
+export function getPlanLimit(plan: Plan, limit: string): number {
+  return PLAN_LIMITS[limit]?.[plan] ?? 0
 }
