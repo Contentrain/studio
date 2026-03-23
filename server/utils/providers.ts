@@ -86,24 +86,107 @@ export function useCDNProvider(): CDNProvider | null {
   // CDN not configured — graceful null
   if (!r2AccountId || !r2AccessKeyId || !r2SecretAccessKey) return null
 
-  try {
-    // Dynamic import of EE implementation
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createCloudflareR2Provider } = require('../../ee/cdn/cloudflare-cdn') as {
-      createCloudflareR2Provider: (config: { accountId: string, accessKeyId: string, secretAccessKey: string, bucket: string }) => CDNProvider
-    }
+  // Inline R2 provider creation (avoids dynamic import issues with Nitro bundler)
+  _cdnProvider = createR2Provider({
+    accountId: r2AccountId,
+    accessKeyId: r2AccessKeyId,
+    secretAccessKey: r2SecretAccessKey,
+    bucket: r2Bucket || 'contentrain-cdn',
+  })
 
-    _cdnProvider = createCloudflareR2Provider({
-      accountId: r2AccountId,
-      accessKeyId: r2AccessKeyId,
-      secretAccessKey: r2SecretAccessKey,
-      bucket: r2Bucket || 'contentrain-cdn',
-    })
+  return _cdnProvider
+}
 
-    return _cdnProvider
-  }
-  catch {
-    // EE module not available — CDN disabled
-    return null
+/**
+ * Create Cloudflare R2 CDN provider inline.
+ * Uses @aws-sdk/client-s3 for S3-compatible API.
+ */
+function createR2Provider(r2Config: {
+  accountId: string
+  accessKeyId: string
+  secretAccessKey: string
+  bucket: string
+}): CDNProvider {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Lazy import to avoid loading SDK when CDN is not configured
+  const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3') as typeof import('@aws-sdk/client-s3')
+
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${r2Config.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: r2Config.accessKeyId,
+      secretAccessKey: r2Config.secretAccessKey,
+    },
+  })
+
+  const bucket = r2Config.bucket
+
+  return {
+    async putObject(projectId, path, data, contentType) {
+      const key = `${projectId}/${path}`
+      const body = typeof data === 'string' ? Buffer.from(data, 'utf-8') : data
+
+      const result = await client.send(new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        CacheControl: 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400',
+      }))
+
+      return { path, size: body.length, contentType, etag: result.ETag ?? '' }
+    },
+
+    async getObject(projectId, path) {
+      const key = `${projectId}/${path}`
+      try {
+        const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+        if (!result.Body) return null
+        const data = Buffer.from(await result.Body.transformToByteArray())
+        return { data, contentType: result.ContentType ?? 'application/octet-stream', etag: result.ETag ?? '' }
+      }
+      catch (e: unknown) {
+        if ((e as { name?: string }).name === 'NoSuchKey') return null
+        throw e
+      }
+    },
+
+    async deleteObject(projectId, path) {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: `${projectId}/${path}` }))
+    },
+
+    async deletePrefix(projectId, prefix) {
+      const fullPrefix = prefix ? `${projectId}/${prefix}` : `${projectId}/`
+      let continuationToken: string | undefined
+      do {
+        const list = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: fullPrefix, ContinuationToken: continuationToken }))
+        if (list.Contents?.length) {
+          await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: list.Contents.map(obj => ({ Key: obj.Key! })) } }))
+        }
+        continuationToken = list.NextContinuationToken
+      } while (continuationToken)
+    },
+
+    async listObjects(projectId, prefix?) {
+      const fullPrefix = prefix ? `${projectId}/${prefix}` : `${projectId}/`
+      const objects: import('../providers/cdn').CDNObject[] = []
+      let continuationToken: string | undefined
+      do {
+        const list = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: fullPrefix, ContinuationToken: continuationToken }))
+        for (const obj of list.Contents ?? []) {
+          objects.push({ path: obj.Key?.replace(`${projectId}/`, '') ?? '', size: obj.Size ?? 0, contentType: 'application/json', etag: obj.ETag ?? '' })
+        }
+        continuationToken = list.NextContinuationToken
+      } while (continuationToken)
+      return objects
+    },
+
+    async purgeCache() {
+      // R2 uses Cache-Control headers for TTL-based invalidation
+    },
+
+    getStorageKey(projectId, path) {
+      return `${projectId}/${path}`
+    },
   }
 }
