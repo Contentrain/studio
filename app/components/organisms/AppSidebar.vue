@@ -239,7 +239,7 @@ async function onSettingsSaved() {
 
     <!-- Footer -->
     <div class="shrink-0 space-y-0.5 border-t border-secondary-200 p-2 dark:border-secondary-800">
-      <MoleculesSidebarItem icon="icon-[annon--search]" :label="t('common.search')">
+      <MoleculesSidebarItem icon="icon-[annon--search]" :label="t('common.search')" @click="window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))">
         <template #trailing>
           <kbd
             class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800"
