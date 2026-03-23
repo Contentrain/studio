@@ -224,6 +224,7 @@ async function save() {
             <ComboboxRoot
               class="relative mt-2"
               :model-value="''"
+              :filter-function="(_items: string[]) => _items"
               @update:model-value="addLocale($event as string)"
             >
               <ComboboxAnchor class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900">
