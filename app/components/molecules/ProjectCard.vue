@@ -37,9 +37,9 @@ const stackLabel = computed(() => {
     <!-- Header -->
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
+        <AtomsHeadingText :level="3" size="xs" truncate>
           {{ project.repo_full_name }}
-        </h3>
+        </AtomsHeadingText>
         <div class="mt-1 flex items-center gap-2">
           <AtomsBadge v-if="stackLabel" variant="primary" size="sm">
             {{ stackLabel }}

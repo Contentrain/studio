@@ -184,9 +184,9 @@ function installGitHubApp() {
           >
             <span class="icon-[annon--link-1] text-2xl text-muted" aria-hidden="true" />
           </div>
-          <h3 class="mt-5 text-sm font-semibold text-heading dark:text-secondary-100">
+          <AtomsHeadingText :level="3" size="xs" class="mt-5">
             {{ t('github.install_title') }}
-          </h3>
+          </AtomsHeadingText>
           <p class="mt-2 text-sm text-muted">
             {{ t('github.install_description') }}
           </p>
@@ -253,9 +253,9 @@ function installGitHubApp() {
               <span class="icon-[annon--folder] size-5 text-muted" aria-hidden="true" />
             </div>
             <div class="min-w-0 flex-1">
-              <h3 class="truncate text-sm font-semibold text-heading dark:text-secondary-100">
+              <AtomsHeadingText :level="3" size="xs" truncate>
                 {{ selectedRepo?.fullName }}
-              </h3>
+              </AtomsHeadingText>
               <p class="text-xs text-muted">
                 {{ selectedRepo?.defaultBranch }}
               </p>

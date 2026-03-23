@@ -20,9 +20,9 @@ withDefaults(defineProps<{
     </div>
 
     <!-- Text -->
-    <h3 class="mt-5 text-sm font-semibold text-heading dark:text-secondary-100">
+    <AtomsHeadingText :level="3" size="xs" class="mt-5">
       {{ title }}
-    </h3>
+    </AtomsHeadingText>
     <p v-if="description" class="mt-1.5 max-w-xs text-sm text-muted">
       {{ description }}
     </p>

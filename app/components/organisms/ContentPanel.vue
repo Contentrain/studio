@@ -202,7 +202,7 @@ provide('sendChatPrompt', sendChatPrompt)
         v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
-      <h3 class="flex-1 truncate text-sm font-semibold text-heading dark:text-secondary-100">
+      <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
         <template v-if="panelState === 'branch' && activeBranch">
           {{ branchDisplayName(activeBranch) }}
         </template>
@@ -215,7 +215,7 @@ provide('sendChatPrompt', sendChatPrompt)
         <template v-else>
           {{ t('content.title') }}
         </template>
-      </h3>
+      </AtomsHeadingText>
       <!-- Vocabulary header: locale + count -->
       <template v-if="panelState === 'vocabulary'">
         <AtomsBadge variant="secondary" size="sm" class="ml-auto">

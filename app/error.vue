@@ -34,9 +34,9 @@ function handleClear() {
       <p class="text-7xl font-bold text-secondary-200 dark:text-secondary-800">
         {{ statusCode }}
       </p>
-      <h1 class="mt-4 text-xl font-semibold text-heading dark:text-secondary-100">
+      <AtomsHeadingText :level="1" size="lg" class="mt-4">
         {{ title }}
-      </h1>
+      </AtomsHeadingText>
       <p class="mt-2 max-w-sm text-sm text-muted">
         {{ description }}
       </p>
