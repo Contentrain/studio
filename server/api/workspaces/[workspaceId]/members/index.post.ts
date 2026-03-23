@@ -19,6 +19,14 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  // Team size limit
+  const { data: ws } = await client.from('workspaces').select('plan').eq('id', workspaceId).single()
+  const plan = getWorkspacePlan(ws ?? {})
+  const currentMembers = await listWorkspaceMembers(client, workspaceId)
+  const memberLimit = getPlanLimit(plan, 'team.members')
+  if (currentMembers.length >= memberLimit)
+    throw createError({ statusCode: 403, message: `Team member limit reached (${memberLimit}). Upgrade your plan to invite more members.` })
+
   const userId = await inviteOrLookupUser(body.email)
 
   const { data: member, error } = await client

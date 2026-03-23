@@ -158,10 +158,8 @@ const wsRoleOptions = [
   { value: 'member', label: t('members.role_member') },
 ]
 
-const hasPro = computed(() => {
-  const plan = activeWorkspace.value?.plan ?? 'free'
-  return ['pro', 'business', 'enterprise'].includes(plan)
-})
+const workspacePlan = computed(() => activeWorkspace.value?.plan ?? 'free')
+const hasPro = computed(() => hasFeature(workspacePlan.value, 'roles.reviewer'))
 
 const projectRoleOptions = computed(() => {
   const options = [{ value: 'editor', label: t('members.role_editor') }]

@@ -219,7 +219,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         :active-vocabulary="activeVocabulary"
         :branch-diff="(branchDiff as any)"
         :branch-diff-loading="diffLoading"
-        :can-manage-branches="['pro', 'business', 'enterprise'].includes(activeWorkspace?.plan ?? 'free')"
+        :can-manage-branches="hasFeature(activeWorkspace?.plan, 'workflow.review')"
         :workspace-id="activeWorkspace?.id"
         :project-id="projectId"
         editable
