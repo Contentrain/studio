@@ -142,8 +142,9 @@ app/components/
   atoms/          — Radix Vue primitives + Tailwind (HeadingText, BaseButton, FormInput, FormLabel, Logo, Avatar, Badge)
   molecules/      — Composed atoms (ProviderButtons, AuthLink, EmailButton)
   organisms/      — Business logic components (SigninWithProvider, SigninWithEmail)
-  templates/      — Page-level wrappers (if needed)
 ```
+
+> **Note:** No `templates/` layer — Nuxt layouts (`app/layouts/`) handle page-level wrappers.
 
 ### Rules
 - All atoms use Radix Vue primitives where applicable
