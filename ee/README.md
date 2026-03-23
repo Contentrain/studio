@@ -6,6 +6,7 @@ This directory contains proprietary features available with Contentrain Pro, Bus
 
 ```
 ee/
+  cdn/             — CDN content delivery (Cloudflare R2, usage metering, rate limiting)
   permissions/     — Advanced roles (reviewer, viewer, model restrictions)
   connectors/      — Premium integrations (Canva, Figma, Recraft, etc.)
   ai/              — Studio-hosted AI key management + metering

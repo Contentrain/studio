@@ -21,6 +21,12 @@ export default defineNuxtConfig({
     anthropic: {
       apiKey: '', // NUXT_ANTHROPIC_API_KEY — Studio-hosted agent key
     },
+    cdn: {
+      r2AccountId: '', // NUXT_CDN_R2_ACCOUNT_ID
+      r2AccessKeyId: '', // NUXT_CDN_R2_ACCESS_KEY_ID
+      r2SecretAccessKey: '', // NUXT_CDN_R2_SECRET_ACCESS_KEY
+      r2Bucket: 'contentrain-cdn', // NUXT_CDN_R2_BUCKET
+    },
     supabase: {
       url: '',
       serviceRoleKey: '',
