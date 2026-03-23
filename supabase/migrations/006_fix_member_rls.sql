@@ -1,5 +1,5 @@
--- Fix: workspace_members RLS — terminal policies only, zero recursion
--- NEVER query workspace_members from inside workspace_members policy
+-- Fix: RLS recursion — terminal policies only, zero cross-table recursion
+-- NEVER query workspace_members from workspace_members OR workspaces policies
 
 -- Drop ALL existing workspace_members policies
 DROP POLICY IF EXISTS "Workspace owner can manage members" ON public.workspace_members;
@@ -10,6 +10,16 @@ DROP POLICY IF EXISTS "wm_select_members" ON public.workspace_members;
 DROP POLICY IF EXISTS "wm_manage_members" ON public.workspace_members;
 DROP POLICY IF EXISTS "wm_select_own" ON public.workspace_members;
 DROP POLICY IF EXISTS "wm_owner_manage" ON public.workspace_members;
+
+-- Also fix workspaces SELECT policy (was querying workspace_members → recursion)
+DROP POLICY IF EXISTS "Members can view workspaces" ON public.workspaces;
+
+CREATE POLICY "Members can view workspaces"
+  ON public.workspaces FOR SELECT
+  USING (owner_id = auth.uid());
+
+-- NOTE: Non-owner workspace access is handled via two-step query in db.ts
+-- (workspace_members → workspace IDs → workspaces by ID)
 
 -- SELECT: user sees own membership row only (terminal, no recursion)
 -- Full roster listing is done via admin client in the API layer

@@ -108,15 +108,38 @@ export async function resolveProjectContext(
  * List workspaces the user is a member of (RLS-filtered).
  */
 export async function listUserWorkspaces(client: SupabaseClient) {
+  // Two-step query to avoid RLS recursion:
+  // 1. Get user's workspace IDs from workspace_members (terminal RLS: own rows only)
+  // 2. Get workspace details by IDs
+  const { data: memberships } = await client
+    .from('workspace_members')
+    .select('workspace_id, role')
+
+  if (!memberships?.length) {
+    // Fallback: check owned workspaces directly
+    const { data, error } = await client
+      .from('workspaces')
+      .select('*')
+      .order('created_at', { ascending: true })
+    if (error) throw createError({ statusCode: 500, message: error.message })
+    return (data ?? []).map(w => ({ ...w, workspace_members: [{ role: 'owner' }] }))
+  }
+
+  const wsIds = memberships.map(m => m.workspace_id)
+  const roleMap = Object.fromEntries(memberships.map(m => [m.workspace_id, m.role]))
+
   const { data, error } = await client
     .from('workspaces')
-    .select('*, workspace_members!inner(role)')
+    .select('*')
+    .in('id', wsIds)
     .order('created_at', { ascending: true })
 
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  if (error) throw createError({ statusCode: 500, message: error.message })
 
-  return data
+  return (data ?? []).map(w => ({
+    ...w,
+    workspace_members: [{ role: roleMap[w.id] ?? 'member' }],
+  }))
 }
 
 /**
