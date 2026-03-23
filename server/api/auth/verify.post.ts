@@ -12,8 +12,8 @@ export default defineEventHandler(async (event) => {
     state?: string
   }>(event)
 
-  // Validate OAuth state (CSRF protection)
-  if (body.state) {
+  // Validate OAuth state (CSRF protection) — only if state is a non-empty string
+  if (body.state && typeof body.state === 'string' && body.state.length > 0) {
     const valid = await validateAuthState(event, body.state)
     if (!valid)
       throw createError({ statusCode: 403, message: 'Invalid or expired auth state. Please try logging in again.' })

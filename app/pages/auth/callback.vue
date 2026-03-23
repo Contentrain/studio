@@ -28,13 +28,13 @@ onMounted(async () => {
     if (code) {
       await $fetch('/api/auth/verify', {
         method: 'POST',
-        body: { code, state },
+        body: { code, ...(state ? { state } : {}) },
       })
     }
     else if (accessToken) {
       await $fetch('/api/auth/verify', {
         method: 'POST',
-        body: { accessToken, refreshToken, state },
+        body: { accessToken, refreshToken, ...(state ? { state } : {}) },
       })
     }
     else {
