@@ -229,7 +229,7 @@ function copyKey() {
           <div class="mb-2 flex items-center justify-between">
             <AtomsSectionLabel :label="t('cdn.builds_title')" :count="builds.length" />
             <AtomsBaseButton variant="ghost" size="sm" :disabled="rebuilding" @click="triggerRebuild">
-              <span class="icon-[annon--refresh] size-3.5" :class="rebuilding ? 'animate-spin' : ''" aria-hidden="true" />
+              <span class="icon-[annon--arrow-swap] size-3.5" :class="rebuilding ? 'animate-spin' : ''" aria-hidden="true" />
               {{ rebuilding ? t('cdn.rebuilding') : t('cdn.rebuild') }}
             </AtomsBaseButton>
           </div>
