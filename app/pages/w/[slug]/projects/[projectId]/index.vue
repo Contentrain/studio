@@ -20,9 +20,11 @@ const project = computed(() =>
 )
 
 // Derive real project status: if snapshot shows .contentrain/ exists, project is active regardless of DB status
+// Returns undefined while loading (before project data is available)
 const effectiveProjectStatus = computed(() => {
   if (hasContentrain.value) return 'active'
-  return project.value?.status ?? 'setup'
+  if (!project.value) return undefined
+  return project.value.status ?? 'setup'
 })
 
 const activeModelId = computed(() => route.query.model as string ?? null)

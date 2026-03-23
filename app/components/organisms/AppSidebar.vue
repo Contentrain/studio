@@ -121,8 +121,8 @@ async function onSettingsSaved() {
           />
         </div>
 
-        <!-- Sidebar skeleton while loading -->
-        <div v-if="snapshotLoading" class="space-y-2 px-1 py-1">
+        <!-- Sidebar skeleton while loading (snapshotLoading OR no snapshot yet) -->
+        <div v-if="snapshotLoading || !snapshot" class="space-y-2 px-1 py-1">
           <AtomsSkeleton variant="custom" class="h-3 w-20 rounded" />
           <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-7 w-full rounded-md" />
           <AtomsSkeleton variant="custom" class="mt-3 h-3 w-24 rounded" />

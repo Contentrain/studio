@@ -362,10 +362,11 @@ provide('sendChatPrompt', sendChatPrompt)
 
       <!-- OVERVIEW -->
       <template v-else-if="panelState === 'overview'">
-        <div v-if="snapshotLoading" class="space-y-2 p-5">
-          <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-10 w-full rounded-lg" />
+        <div v-if="snapshotLoading || !snapshot" class="space-y-2 p-5">
+          <AtomsSkeleton variant="custom" class="h-8 w-full rounded-lg" />
+          <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
         </div>
-        <div v-else-if="!snapshot?.exists" class="p-5">
+        <div v-else-if="!snapshot.exists" class="p-5">
           <AtomsEmptyState
             icon="icon-[annon--folder-open]" :title="t('content.not_found_title')"
             :description="t('content.not_found_description')"
