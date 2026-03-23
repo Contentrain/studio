@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const { t } = useContent()
-const commandPaletteOpen = ref(false)
+const { open: commandPaletteOpen } = useCommandPalette()
 </script>
 
 <template>
