@@ -43,6 +43,7 @@ export interface ChatUIContext {
 export interface ChatRequest {
   message: string
   conversationId?: string
+  model?: string
   context: ChatUIContext
 }
 

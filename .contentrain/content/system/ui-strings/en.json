@@ -201,5 +201,12 @@
   "vocabulary.cancel": "Cancel",
   "vocabulary.delete_term": "Delete term",
   "vocabulary.key_placeholder": "term-key",
-  "vocabulary.value_placeholder": "Translation"
+  "vocabulary.value_placeholder": "Translation",
+  "chat.conversations": "Conversations",
+  "chat.no_conversations": "No previous conversations",
+  "chat.delete_conversation": "Delete conversation",
+  "chat.confirm_delete": "Delete this conversation?",
+  "chat.load_error": "Failed to load conversation",
+  "chat.model": "Model",
+  "chat.untitled": "Untitled conversation"
 }

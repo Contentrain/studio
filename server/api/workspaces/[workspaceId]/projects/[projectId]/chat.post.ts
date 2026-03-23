@@ -192,7 +192,10 @@ export default defineEventHandler(async (event) => {
   const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
   const aiTools = toAITools(phaseFiltered)
 
-  const model = 'claude-sonnet-4-20250514'
+  // Model: client-selected or default
+  const ALLOWED_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
+  const requestedModel = body.model as string | undefined
+  const model = (requestedModel && ALLOWED_MODELS.includes(requestedModel)) ? requestedModel : 'claude-sonnet-4-20250514'
   const workflow = projectConfig?.workflow ?? 'auto-merge'
 
   // === SSE STREAM ===
