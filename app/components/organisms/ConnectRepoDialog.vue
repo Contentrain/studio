@@ -143,6 +143,34 @@ function installGitHubApp() {
     '_blank',
   )
 }
+
+// Auto-detect GitHub App installation when user returns to tab
+const checkingInstall = ref(false)
+
+async function onWindowFocus() {
+  // Only check when dialog is open and in install state
+  if (!open.value || state.value !== 'install' || checkingInstall.value) return
+  if (!activeWorkspace.value) return
+
+  checkingInstall.value = true
+  try {
+    // Re-fetch workspace to check if installation_id is set
+    const { fetchWorkspaces } = useWorkspaces()
+    await fetchWorkspaces()
+
+    // Check updated workspace
+    if (activeWorkspace.value?.github_installation_id) {
+      state.value = 'select'
+      await loadRepos()
+    }
+  }
+  finally {
+    checkingInstall.value = false
+  }
+}
+
+onMounted(() => window.addEventListener('focus', onWindowFocus))
+onUnmounted(() => window.removeEventListener('focus', onWindowFocus))
 </script>
 
 <template>
@@ -199,6 +227,11 @@ function installGitHubApp() {
           <p class="mt-4 text-xs text-muted">
             {{ t('github.install_hint') }}
           </p>
+          <!-- Auto-checking indicator -->
+          <div v-if="checkingInstall" class="mt-3 flex items-center justify-center gap-2 text-xs text-muted">
+            <div class="size-3 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500" />
+            <span>{{ t('common.loading') }}</span>
+          </div>
         </div>
 
         <!-- STATE 2: Select Repository -->
