@@ -17,6 +17,12 @@ export interface ChatMessage {
   text: string
   toolCalls: ToolCall[]
   createdAt: string
+  /** Context items attached to this message (user messages only) */
+  contextItems?: Array<{
+    type: 'model' | 'entry' | 'field'
+    label: string
+    sublabel?: string
+  }>
 }
 
 /** UI context sent with each message */
@@ -53,18 +59,25 @@ export function useChat(options?: {
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
 
-  async function sendMessage(workspaceId: string, projectId: string, text: string, context?: ChatUIContext) {
+  async function sendMessage(
+    workspaceId: string,
+    projectId: string,
+    text: string,
+    context?: ChatUIContext,
+    attachedChips?: Array<{ type: 'model' | 'entry' | 'field', label: string, sublabel?: string }>,
+  ) {
     if (!text.trim() || isStreaming.value) return
 
     error.value = null
 
-    // Add user message
+    // Add user message with attached context
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       text,
       toolCalls: [],
       createdAt: new Date().toISOString(),
+      contextItems: attachedChips?.length ? attachedChips : undefined,
     }
     messages.value.push(userMsg)
 

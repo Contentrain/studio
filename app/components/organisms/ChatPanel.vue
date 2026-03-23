@@ -19,20 +19,36 @@ const { messages, isStreaming, error, sendMessage, clearChat } = useChat({
     emit('contentChanged', affected)
   },
 })
-const { toContextItems } = useChatContext()
+const { chips, toContextItems, clear: clearContext } = useChatContext()
+const { state: authState } = useAuth()
 const toast = useToast()
 const messagesEndRef = ref<HTMLElement | null>(null)
 
 async function handleSend(text: string) {
-  // Merge explicit context items into the UI context
+  // Capture chips before clearing
   const contextItems = toContextItems()
+  const attachedChips = chips.value.map(c => ({ type: c.type, label: c.label, sublabel: c.sublabel }))
+
+  // Merge explicit context items into the UI context
   const enrichedContext = props.context
     ? { ...props.context, contextItems }
     : undefined
-  await sendMessage(props.workspaceId, props.projectId, text, enrichedContext as ChatUIContext)
+
+  // Clear context chips — they're now attached to the message
+  if (attachedChips.length > 0) {
+    clearContext()
+  }
+
+  await sendMessage(props.workspaceId, props.projectId, text, enrichedContext as ChatUIContext, attachedChips)
 }
 
 defineExpose({ handleSend })
+
+// Clear chat when project changes
+watch(() => props.projectId, () => {
+  clearChat()
+  clearContext()
+})
 
 // Auto-scroll to bottom on new messages
 watch(
@@ -99,7 +115,14 @@ watch(error, (err) => {
       <div v-else class="space-y-4 p-4">
         <div v-for="msg in messages" :key="msg.id">
           <!-- Chat bubble -->
-          <AtomsChatBubble v-if="msg.text" :role="msg.role" :text="msg.text" />
+          <AtomsChatBubble
+            v-if="msg.text"
+            :role="msg.role"
+            :text="msg.text"
+            :user-avatar-url="authState.user?.avatarUrl"
+            :user-name="authState.user?.email"
+            :context-items="msg.contextItems"
+          />
 
           <!-- Tool calls -->
           <div v-if="msg.toolCalls.length > 0" class="mt-2 space-y-2" :class="msg.role === 'user' ? 'ml-10' : 'ml-10'">

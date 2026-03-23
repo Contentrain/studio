@@ -36,8 +36,8 @@ const availableLocales = computed(() =>
 )
 
 // Custom filter: match by code OR name
-function filterLocales(options: string[], term: string): string[] {
-  if (!term) return options
+function filterLocales(options: readonly string[], term: string): string[] {
+  if (!term) return [...options]
   const q = term.toLowerCase()
   return options.filter((code) => {
     const locale = ISO_LOCALES.find(l => l.code === code)
