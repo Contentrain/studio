@@ -383,12 +383,23 @@ export function createContentEngine(ctx: ContentEngineContext) {
       body: string,
       userEmail: string,
     ): Promise<WriteResult> {
+      // Sanitize slug — prevent path traversal
+      const safeSlug = slug.replace(/[^a-z0-9_-]/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
+      if (!safeSlug || safeSlug.includes('..') || safeSlug.startsWith('/')) {
+        return {
+          branch: '',
+          commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+          diff: [],
+          validation: { valid: false, errors: [{ field: 'slug', message: `Invalid slug: "${slug}"`, severity: 'error' as const }] },
+        }
+      }
+
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
 
       // Validate frontmatter against model fields
       const fields = modelDef.fields ?? {}
-      const validation = validateContent(frontmatter, fields, modelId, locale, slug)
+      const validation = validateContent(frontmatter, fields, modelId, locale, safeSlug)
       if (!validation.valid) {
         return {
           branch: '',
@@ -398,12 +409,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
         }
       }
 
-      // Resolve document path
-      const docPath = resolveContentPath(pathCtx, modelDef, locale, slug)
-      const serialized = serializeMarkdownFrontmatter({ ...frontmatter, slug }, body)
+      // Resolve document path (uses sanitized slug)
+      const docPath = resolveContentPath(pathCtx, modelDef, locale, safeSlug)
+      const serialized = serializeMarkdownFrontmatter({ ...frontmatter, slug: safeSlug }, body)
 
       // Meta
-      const metaPath = resolveMetaPath(pathCtx, modelDef, locale, slug)
+      const metaPath = resolveMetaPath(pathCtx, modelDef, locale, safeSlug)
       let existingMeta: Record<string, unknown> = {}
       try {
         existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
@@ -424,7 +435,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const branchName = `contentrain/save-${generateBranchId()}`
       await git.createBranch(branchName)
 
-      const message = `contentrain: save document ${modelId}/${slug} [${locale}]\n\nCo-Authored-By: ${userEmail}`
+      const message = `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
         branchName,
         [

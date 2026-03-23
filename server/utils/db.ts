@@ -353,19 +353,36 @@ export async function saveChatResult(
     model,
   })
 
-  // Update usage
+  // Update usage — increment counters, not overwrite
   const month = new Date().toISOString().substring(0, 7)
-  await admin.from('agent_usage').upsert({
-    workspace_id: workspaceId,
-    user_id: userId,
-    month,
-    source: usageSource,
-    message_count: 1,
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-  }, {
-    onConflict: 'workspace_id,user_id,month,source',
-  })
+  const { data: existing } = await admin
+    .from('agent_usage')
+    .select('id, message_count, input_tokens, output_tokens')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .eq('month', month)
+    .eq('source', usageSource)
+    .single()
+
+  if (existing) {
+    await admin.from('agent_usage').update({
+      message_count: (existing.message_count ?? 0) + 1,
+      input_tokens: (existing.input_tokens ?? 0) + inputTokens,
+      output_tokens: (existing.output_tokens ?? 0) + outputTokens,
+      updated_at: new Date().toISOString(),
+    }).eq('id', existing.id)
+  }
+  else {
+    await admin.from('agent_usage').insert({
+      workspace_id: workspaceId,
+      user_id: userId,
+      month,
+      source: usageSource,
+      message_count: 1,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+    })
+  }
 
   // Update conversation timestamp
   await admin.from('conversations').update({

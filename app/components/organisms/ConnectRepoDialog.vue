@@ -141,6 +141,7 @@ function installGitHubApp() {
   window.open(
     'https://github.com/apps/contentrain-studio-dev/installations/new',
     '_blank',
+    'noopener,noreferrer',
   )
 }
 

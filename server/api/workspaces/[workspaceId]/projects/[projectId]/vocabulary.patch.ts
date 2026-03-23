@@ -15,9 +15,10 @@ export default defineEventHandler(async (event) => {
   if (!body.terms || typeof body.terms !== 'object')
     throw createError({ statusCode: 400, message: 'terms object is required' })
 
+  // Editor+ required to modify vocabulary (viewer/reviewer cannot write)
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
-  if (permissions.availableTools.length === 0)
-    throw createError({ statusCode: 403, message: 'No permissions' })
+  if (!permissions.availableTools.includes('save_content'))
+    throw createError({ statusCode: 403, message: 'Insufficient permissions to modify vocabulary' })
 
   const { git, contentRoot } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,

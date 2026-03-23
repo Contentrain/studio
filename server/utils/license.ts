@@ -58,9 +58,11 @@ const FEATURE_MATRIX: Record<string, Plan[]> = {
  * Extract plan from workspace row. Defaults to 'free'.
  */
 export function getWorkspacePlan(workspace: { plan?: string | null }): Plan {
-  const plan = workspace?.plan as Plan | undefined
+  const raw = workspace?.plan
+  // Normalize 'team' → 'business' (DB schema allows both, code uses 'business')
+  const plan = raw === 'team' ? 'business' : raw
   if (plan && ['free', 'pro', 'business', 'enterprise'].includes(plan)) {
-    return plan
+    return plan as Plan
   }
   return 'free'
 }
