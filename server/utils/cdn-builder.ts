@@ -211,7 +211,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     totalSizeBytes += Buffer.byteLength(manifestData)
 
     // 5. Upload model index + definitions
-    const modelIndex = models.map(m => ({
+    const modelSummaries = models.map(m => ({
       id: m.id,
       name: m.name,
       kind: m.kind,
@@ -219,7 +219,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       i18n: m.i18n,
       fieldCount: m.fields ? Object.keys(m.fields).length : 0,
     }))
-    const indexData = JSON.stringify(modelIndex, null, 2)
+    const indexData = JSON.stringify(modelSummaries, null, 2)
     await cdn.putObject(projectId, 'models/_index.json', indexData, 'application/json')
     filesUploaded++
     totalSizeBytes += Buffer.byteLength(indexData)
@@ -232,10 +232,10 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     }
 
     // 6. Build content for each target model
-    let modelIndex = 0
+    let modelStep = 0
     for (const model of targetModels) {
-      modelIndex++
-      progress({ phase: 'model', message: `Building ${model.name}...`, current: modelIndex, total: targetModels.length, modelId: model.id })
+      modelStep++
+      progress({ phase: 'model', message: `Building ${model.name}...`, current: modelStep, total: targetModels.length, modelId: model.id })
       for (const locale of locales) {
         // Skip non-i18n models for secondary locales
         if (!model.i18n && locale !== locales[0]) continue
