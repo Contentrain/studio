@@ -252,14 +252,14 @@ Full spec: `.internal/EE-SEPARATION.md`
 
 ## Phase Documents
 
-Implementation phases are tracked in `.internal/PHASE-1.md` (current).
-Each phase document is deleted when moving to the next phase.
+Implementation phases are tracked in `.internal/PHASE-2.md` (completed).
+Each phase document is kept as reference until the next phase starts.
 Internal spec: `.internal/STUDIO-SPEC.md` — planning document, not part of codebase.
 
 ## Current Phase
 
-**Phase 2** is active. See `.internal/PHASE-2.md` for the full spec.
-Phase 1 completed. Current focus: **Chat Engine + Content Editing** — conversation-first content management.
+**Phase 2 completed.** Chat Engine + Content Editing — conversation-first content management.
+Phase 3 next: **CDN Content Delivery**. See `.internal/PHASE-3.md` for spec.
 
 ## Reference Codebase
 

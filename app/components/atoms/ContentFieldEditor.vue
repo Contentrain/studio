@@ -342,14 +342,14 @@ function getRelationLabel(id: string): string {
     <!-- ═══ Object (nested fields, max depth 2) ═══ -->
     <div v-else-if="type === 'object' && fieldDef?.fields && depth < 2" class="space-y-3 rounded-lg border border-secondary-200 p-3 dark:border-secondary-800">
       <div v-for="key in objectFieldIds" :key="key">
-        <AtomsFormLabel :text="key" size="xs" :required="(fieldDef!.fields as Record<string, FieldDef>)[key]?.required" />
+        <AtomsFormLabel :text="key" size="xs" :required="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.required" />
         <div class="mt-1">
           <AtomsContentFieldEditor
-            :type="(fieldDef!.fields as Record<string, FieldDef>)[key]?.type ?? 'string'"
+            :type="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.type ?? 'string'"
             :model-value="getObjectFieldValue(key)"
             :field-id="`${fieldId}.${key}`"
-            :field-def="(fieldDef!.fields as Record<string, FieldDef>)[key]"
-            :options="(fieldDef!.fields as Record<string, FieldDef>)[key]?.options"
+            :field-def="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]"
+            :options="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.options"
             :standalone="false"
             :depth="depth + 1"
             @update:model-value="updateObjectField(key, $event)"

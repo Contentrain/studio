@@ -34,6 +34,12 @@ export function useTheme() {
     }
   }
 
+  // Track listener for cleanup
+  const mediaQuery = import.meta.client ? window.matchMedia('(prefers-color-scheme: dark)') : null
+  const onSystemChange = () => {
+    if (theme.value === 'system') applyTheme()
+  }
+
   function init() {
     if (import.meta.server) return
 
@@ -43,9 +49,11 @@ export function useTheme() {
     applyTheme()
 
     // Listen for system preference changes
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (theme.value === 'system') applyTheme()
-    })
+    mediaQuery?.addEventListener('change', onSystemChange)
+  }
+
+  function cleanup() {
+    mediaQuery?.removeEventListener('change', onSystemChange)
   }
 
   return {
@@ -54,5 +62,6 @@ export function useTheme() {
     setTheme,
     toggle,
     init,
+    cleanup,
   }
 }
