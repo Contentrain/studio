@@ -245,7 +245,7 @@ async function onSettingsSaved() {
     <OrganismsProjectSettingsModal
       v-if="isInsideProject && activeWorkspace && currentProjectId"
       v-model:open="settingsModalOpen" :workspace-id="activeWorkspace.id" :project-id="currentProjectId"
-      :config="(projectConfig as any)" @saved="onSettingsSaved"
+      :config="(projectConfig as any)" :cdn-enabled="(currentProject as any)?.cdn_enabled ?? false" @saved="onSettingsSaved"
     />
   </aside>
 </template>

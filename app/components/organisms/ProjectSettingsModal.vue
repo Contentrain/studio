@@ -6,6 +6,7 @@ const { t } = useContent()
 const toast = useToast()
 const { activeWorkspace } = useWorkspaces()
 const canReview = computed(() => hasFeature(activeWorkspace.value?.plan, 'workflow.review'))
+const canCDN = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
 
 const open = defineModel<boolean>('open', { default: false })
 
@@ -18,6 +19,7 @@ const props = defineProps<{
     domains?: string[]
     locales?: { default?: string, supported?: string[] }
   } | null
+  cdnEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +33,18 @@ const defaultLocale = ref('en')
 const supportedLocales = ref<string[]>(['en'])
 const newDomain = ref('')
 const saving = ref(false)
+
+// CDN state
+interface CDNKey { id: string, name: string, key_prefix: string, environment: string, created_at: string, revoked_at: string | null, key?: string }
+interface CDNBuild { id: string, status: string, trigger_type: string, commit_sha: string, file_count: number | null, build_duration_ms: number | null, error_message: string | null, started_at: string }
+const cdnActive = ref(false)
+const cdnKeys = ref<CDNKey[]>([])
+const cdnBuilds = ref<CDNBuild[]>([])
+const cdnKeyName = ref('')
+const cdnCreatingKey = ref(false)
+const cdnRebuilding = ref(false)
+const cdnNewKey = ref<string | null>(null)
+const cdnCopied = ref(false)
 
 // Available locales = ISO list minus already selected
 const availableLocales = computed(() =>
@@ -48,12 +62,29 @@ function filterLocales(options: readonly string[], term: string): string[] {
 }
 
 // Sync from props when modal opens
-watch(open, (isOpen) => {
+watch(open, async (isOpen) => {
   if (isOpen && props.config) {
     workflow.value = props.config.workflow ?? 'auto-merge'
     domains.value = [...(props.config.domains ?? [])]
     defaultLocale.value = props.config.locales?.default ?? 'en'
     supportedLocales.value = [...(props.config.locales?.supported ?? ['en'])]
+
+    // Load CDN data
+    cdnActive.value = props.cdnEnabled ?? false
+    if (canCDN.value) {
+      try {
+        cdnKeys.value = await $fetch<CDNKey[]>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`)
+      }
+      catch { cdnKeys.value = [] }
+
+      try {
+        cdnBuilds.value = await $fetch<CDNBuild[]>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`)
+      }
+      catch { cdnBuilds.value = [] }
+    }
+
+    cdnNewKey.value = null
+    cdnCopied.value = false
   }
 })
 
@@ -89,6 +120,90 @@ function removeLocale(locale: string) {
   if (defaultLocale.value === locale) {
     defaultLocale.value = supportedLocales.value[0] ?? 'en'
   }
+}
+
+async function toggleCDN() {
+  const newValue = !cdnActive.value
+  try {
+    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/settings`, {
+      method: 'PATCH',
+      body: { cdn_enabled: newValue },
+    })
+    cdnActive.value = newValue
+  }
+  catch {
+    toast.error(t('project_settings.save_error'))
+  }
+}
+
+async function createCDNKey() {
+  if (!cdnKeyName.value.trim()) return
+  cdnCreatingKey.value = true
+  try {
+    const result = await $fetch<CDNKey>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`, {
+      method: 'POST',
+      body: { name: cdnKeyName.value.trim() },
+    })
+    cdnKeys.value.unshift(result)
+    cdnNewKey.value = result.key ?? null
+    cdnKeyName.value = ''
+    toast.success(t('cdn.key_created'))
+  }
+  catch {
+    toast.error(t('project_settings.save_error'))
+  }
+  finally {
+    cdnCreatingKey.value = false
+  }
+}
+
+async function revokeCDNKey(keyId: string) {
+  try {
+    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys/${keyId}`, {
+      method: 'DELETE',
+    })
+    cdnKeys.value = cdnKeys.value.map(k => k.id === keyId ? { ...k, revoked_at: new Date().toISOString() } : k)
+    toast.success(t('cdn.key_revoked'))
+  }
+  catch {
+    toast.error(t('project_settings.save_error'))
+  }
+}
+
+async function triggerRebuild() {
+  cdnRebuilding.value = true
+  try {
+    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds/trigger`, {
+      method: 'POST',
+    })
+    toast.success(t('cdn.rebuild_triggered'))
+    // Refresh builds
+    cdnBuilds.value = await $fetch<CDNBuild[]>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`)
+  }
+  catch {
+    toast.error(t('project_settings.save_error'))
+  }
+  finally {
+    cdnRebuilding.value = false
+  }
+}
+
+function copyCDNKey() {
+  if (!cdnNewKey.value) return
+  navigator.clipboard.writeText(cdnNewKey.value)
+  cdnCopied.value = true
+  setTimeout(() => {
+    cdnCopied.value = false
+  }, 2000)
+}
+
+const activeKeys = computed(() => cdnKeys.value.filter(k => !k.revoked_at))
+
+const buildStatusVariant: Record<string, 'success' | 'danger' | 'warning' | 'secondary'> = {
+  success: 'success',
+  failed: 'danger',
+  building: 'warning',
+  pending: 'secondary',
 }
 
 async function save() {
@@ -303,6 +418,146 @@ async function save() {
                 <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
               </AtomsBaseButton>
             </form>
+          </div>
+
+          <!-- CDN Section -->
+          <div class="border-t border-secondary-200 pt-5 dark:border-secondary-800">
+            <div class="flex items-center justify-between">
+              <div>
+                <AtomsFormLabel :text="t('cdn.title')" size="sm" />
+                <p class="mt-0.5 text-xs text-muted">
+                  {{ t('cdn.description') }}
+                </p>
+              </div>
+              <template v-if="canCDN">
+                <button
+                  type="button"
+                  class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  :class="cdnActive ? 'bg-primary-500' : 'bg-secondary-200 dark:bg-secondary-700'"
+                  @click="toggleCDN"
+                >
+                  <span
+                    class="pointer-events-none inline-block size-5 rounded-full bg-white shadow-sm transition-transform"
+                    :class="cdnActive ? 'translate-x-5' : 'translate-x-0'"
+                  />
+                </button>
+              </template>
+              <AtomsBadge v-else variant="info" size="sm">
+                Pro
+              </AtomsBadge>
+            </div>
+
+            <!-- CDN enabled content -->
+            <template v-if="canCDN && cdnActive">
+              <!-- New key alert -->
+              <div v-if="cdnNewKey" class="mt-3 rounded-lg border border-success-200 bg-success-50 p-3 dark:border-success-500/20 dark:bg-success-500/10">
+                <p class="text-xs font-medium text-success-700 dark:text-success-400">
+                  {{ t('cdn.key_created') }}
+                </p>
+                <div class="mt-2 flex items-center gap-2">
+                  <code class="flex-1 truncate rounded bg-white px-2 py-1 font-mono text-xs text-heading dark:bg-secondary-900 dark:text-secondary-100">{{ cdnNewKey }}</code>
+                  <AtomsBaseButton variant="ghost" size="sm" @click="copyCDNKey">
+                    <span :class="cdnCopied ? 'icon-[annon--check]' : 'icon-[annon--copy]'" class="size-3.5" aria-hidden="true" />
+                    {{ cdnCopied ? t('cdn.copied') : t('cdn.copy') }}
+                  </AtomsBaseButton>
+                </div>
+              </div>
+
+              <!-- API Keys -->
+              <div class="mt-4">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-muted">{{ t('cdn.keys_title') }}</span>
+                  <AtomsBadge variant="secondary" size="sm">
+                    {{ activeKeys.length }}
+                  </AtomsBadge>
+                </div>
+
+                <ul v-if="activeKeys.length > 0" class="mt-2 divide-y divide-secondary-100 rounded-lg border border-secondary-200 dark:divide-secondary-800 dark:border-secondary-800">
+                  <li v-for="key in activeKeys" :key="key.id" class="flex items-center gap-2 px-3 py-2">
+                    <span class="icon-[annon--key] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-xs font-medium text-heading dark:text-secondary-100">
+                        {{ key.name }}
+                      </div>
+                      <div class="text-[10px] text-muted">
+                        {{ key.key_prefix }}...
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-danger-500 transition-colors hover:bg-danger-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger-500/50 dark:hover:bg-danger-900/20"
+                      @click="revokeCDNKey(key.id)"
+                    >
+                      {{ t('cdn.revoke') }}
+                    </button>
+                  </li>
+                </ul>
+                <p v-else class="mt-2 text-xs text-muted">
+                  {{ t('cdn.no_keys') }}
+                </p>
+
+                <!-- Create key form -->
+                <form class="mt-2 flex items-center gap-2" @submit.prevent="createCDNKey">
+                  <AtomsFormInput
+                    v-model="cdnKeyName"
+                    type="text"
+                    :placeholder="t('cdn.key_name_placeholder')"
+                    class="flex-1"
+                  />
+                  <AtomsBaseButton type="submit" variant="primary" size="sm" :disabled="!cdnKeyName.trim() || cdnCreatingKey">
+                    {{ t('cdn.create_key') }}
+                  </AtomsBaseButton>
+                </form>
+              </div>
+
+              <!-- Build History -->
+              <div class="mt-4">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-muted">{{ t('cdn.builds_title') }}</span>
+                  <AtomsBaseButton variant="ghost" size="sm" :disabled="cdnRebuilding" @click="triggerRebuild">
+                    <span class="icon-[annon--refresh] size-3.5" :class="cdnRebuilding ? 'animate-spin' : ''" aria-hidden="true" />
+                    {{ cdnRebuilding ? t('cdn.rebuilding') : t('cdn.rebuild') }}
+                  </AtomsBaseButton>
+                </div>
+
+                <ul v-if="cdnBuilds.length > 0" class="mt-2 space-y-1">
+                  <li v-for="build in cdnBuilds.slice(0, 5)" :key="build.id" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs">
+                    <AtomsBadge :variant="buildStatusVariant[build.status] ?? 'secondary'" size="sm">
+                      {{ t(`cdn.build_${build.status}`) }}
+                    </AtomsBadge>
+                    <span class="flex-1 truncate text-muted">
+                      {{ build.commit_sha.substring(0, 7) }}
+                      <span v-if="build.file_count"> · {{ build.file_count }} {{ t('cdn.files') }}</span>
+                      <span v-if="build.build_duration_ms"> · {{ build.build_duration_ms }}ms</span>
+                    </span>
+                    <span class="shrink-0 text-[10px] text-disabled">{{ build.trigger_type }}</span>
+                  </li>
+                </ul>
+                <p v-else class="mt-2 text-xs text-muted">
+                  {{ t('cdn.no_builds') }}
+                </p>
+              </div>
+
+              <!-- SDK Snippet -->
+              <details class="mt-4 group">
+                <summary class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:text-heading">
+                  <span class="icon-[annon--code] size-3.5" aria-hidden="true" />
+                  {{ t('cdn.snippet_title') }}
+                  <span class="icon-[annon--chevron-right] ml-auto size-3 transition-transform group-open:rotate-90" aria-hidden="true" />
+                </summary>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-secondary-50 p-3 text-[11px] text-heading dark:bg-secondary-900 dark:text-secondary-100"><code>import { createContentrain } from '@contentrain/sdk'
+
+const client = createContentrain({
+  projectId: '{{ projectId }}',
+  apiKey: 'crn_live_xxxxx',
+})
+
+const posts = await client
+  .collection('blog-posts')
+  .locale('en')
+  .get()</code></pre>
+              </details>
+            </template>
           </div>
         </div>
 
