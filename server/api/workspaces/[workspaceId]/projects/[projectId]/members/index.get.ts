@@ -9,9 +9,20 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
 
-  // Owner/admin can see all project members (RLS is self-only)
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
-  return listProjectMembers(useSupabaseAdmin(), projectId)
+  // Verify project belongs to this workspace (prevents cross-workspace leak)
+  const admin = useSupabaseAdmin()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: 'Project not found in this workspace' })
+
+  return listProjectMembers(admin, projectId)
 })
