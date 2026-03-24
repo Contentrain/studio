@@ -601,18 +601,29 @@ async function executeToolWithAutoMerge(
         break
 
       case 'merge_branch': {
-        const mergeResult = await engine.mergeBranch(params.branch as string)
+        const branchToMerge = params.branch as string
+        if (!branchToMerge.startsWith('contentrain/')) {
+          result = { error: 'Only contentrain/ branches can be merged' }
+          break
+        }
+        const mergeResult = await engine.mergeBranch(branchToMerge)
         affected.snapshotChanged = true
         affected.branchesChanged = true
         result = mergeResult
         break
       }
 
-      case 'reject_branch':
-        await engine.rejectBranch(params.branch as string)
+      case 'reject_branch': {
+        const branchToReject = params.branch as string
+        if (!branchToReject.startsWith('contentrain/')) {
+          result = { error: 'Only contentrain/ branches can be rejected' }
+          break
+        }
+        await engine.rejectBranch(branchToReject)
         affected.branchesChanged = true
         result = { rejected: true }
         break
+      }
 
       case 'copy_locale': {
         const writeResult = await engine.copyLocale(

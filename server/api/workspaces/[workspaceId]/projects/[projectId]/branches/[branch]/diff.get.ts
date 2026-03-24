@@ -11,6 +11,10 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !branch)
     throw createError({ statusCode: 400, message: 'workspaceId, projectId, and branch are required' })
 
+  // Only contentrain/* branches can be diffed through Studio
+  if (!branch.startsWith('contentrain/'))
+    throw createError({ statusCode: 400, message: 'Only contentrain/ branches can be viewed through Studio' })
+
   const { git } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,
   )
