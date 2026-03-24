@@ -17,13 +17,25 @@ export default defineEventHandler(async (event) => {
   }
 
   const installationId = Number(query.installation_id)
+  if (!installationId || Number.isNaN(installationId))
+    throw createError({ statusCode: 400, message: 'Invalid installation_id' })
+
   const workspace = await getPrimaryWorkspace(useSupabaseUserClient(session.accessToken), session.user.id)
 
   if (!workspace)
     throw createError({ statusCode: 404, message: 'No workspace found' })
 
-  // Save installation_id to workspace (using admin to bypass RLS for update)
+  // Check if another workspace already uses this installation
   const admin = useSupabaseAdmin()
+  const { data: existingWs } = await admin
+    .from('workspaces')
+    .select('id')
+    .eq('github_installation_id', installationId)
+    .neq('id', workspace.id)
+    .single()
+
+  if (existingWs)
+    throw createError({ statusCode: 409, message: 'This GitHub installation is already linked to another workspace' })
   const { error: updateError } = await admin
     .from('workspaces')
     .update({ github_installation_id: installationId })
