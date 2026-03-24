@@ -42,7 +42,7 @@ const aiKeyInput = ref('')
 const aiKeySaving = ref(false)
 const canByoa = computed(() => hasFeature(activeWorkspace.value?.plan, 'ai.byoa'))
 
-onMounted(async () => {
+async function loadSettingsData() {
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
 
@@ -52,15 +52,18 @@ onMounted(async () => {
     workspaceName.value = ws.name
     workspaceSlug.value = ws.slug
     await fetchMembers(ws.id)
-    if (projects.value.length === 0)
-      await fetchProjects(ws.id)
-    // Fetch AI keys
+    await fetchProjects(ws.id)
     try {
       aiKeys.value = await $fetch<AIKeyInfo[]>(`/api/workspaces/${ws.id}/ai-keys`)
     }
     catch { aiKeys.value = [] }
   }
-})
+}
+
+onMounted(loadSettingsData)
+
+// Reload when workspace slug changes (SPA navigation)
+watch(slug, loadSettingsData)
 
 // Fetch project members when a project is selected
 watch(assignProjectId, async (projectId) => {
@@ -262,7 +265,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
       <TabsContent value="overview" class="mt-6">
         <div class="max-w-md space-y-5">
           <div>
-            <AtomsFormLabel for="ws-name" :text="t('settings.workspace_name_label')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel for="ws-name" :text="t('settings.workspace_name_label')" size="sm" />
+              <AtomsInfoTooltip :text="t('settings.workspace_name_info')" />
+            </div>
             <AtomsFormInput
               id="ws-name"
               v-model="workspaceName"
@@ -272,7 +278,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
             />
           </div>
           <div>
-            <AtomsFormLabel for="ws-slug" :text="t('settings.slug_label')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel for="ws-slug" :text="t('settings.slug_label')" size="sm" />
+              <AtomsInfoTooltip :text="t('settings.slug_info')" />
+            </div>
             <div class="mt-1.5 flex items-center gap-1 text-sm text-muted">
               <span>/w/</span>
               <AtomsFormInput
@@ -284,7 +293,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
             </div>
           </div>
           <div>
-            <AtomsFormLabel :text="t('settings.plan_label')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('settings.plan_label')" size="sm" />
+              <AtomsInfoTooltip :text="t('settings.plan_info')" />
+            </div>
             <AtomsBadge variant="primary" size="md" class="mt-1.5">
               {{ activeWorkspace?.plan ?? 'free' }}
             </AtomsBadge>
@@ -335,7 +347,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
 
         <!-- Workspace member list -->
         <div>
-          <AtomsSectionLabel :label="t('settings.members_title')" :count="members.length" class="mb-2" />
+          <div class="mb-2 flex items-center gap-1">
+            <AtomsSectionLabel :label="t('settings.members_title')" :count="members.length" />
+            <AtomsInfoTooltip :text="t('settings.members_info')" />
+          </div>
 
           <div v-if="membersLoading" class="space-y-2">
             <AtomsSkeleton v-for="i in 3" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
@@ -398,9 +413,12 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
 
         <!-- Project Access -->
         <div v-if="projects.length > 0">
-          <AtomsHeadingText :level="3" size="sm">
-            {{ t('members.project_access') }}
-          </AtomsHeadingText>
+          <div class="flex items-center gap-1">
+            <AtomsHeadingText :level="3" size="sm">
+              {{ t('members.project_access') }}
+            </AtomsHeadingText>
+            <AtomsInfoTooltip :text="t('members.project_access_info')" />
+          </div>
           <p class="mt-1 text-xs text-muted">
             {{ t('members.project_access_description') }}
           </p>
@@ -484,7 +502,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
       <TabsContent value="github" class="mt-6">
         <div class="max-w-md space-y-5">
           <div>
-            <AtomsFormLabel :text="t('settings.github_installation')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('settings.github_installation')" size="sm" />
+              <AtomsInfoTooltip :text="t('settings.github_info')" />
+            </div>
             <div v-if="activeWorkspace?.github_installation_id" class="mt-1.5 flex items-center gap-2">
               <AtomsBadge variant="success" size="md">
                 {{ t('common.connected') }}
@@ -552,13 +573,19 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
           <!-- Add key form -->
           <form v-if="canByoa" class="space-y-3" @submit.prevent="handleSaveAIKey">
             <div>
-              <AtomsFormLabel :text="t('ai_keys.provider')" size="sm" />
+              <div class="flex items-center gap-1">
+                <AtomsFormLabel :text="t('ai_keys.provider')" size="sm" />
+                <AtomsInfoTooltip :text="t('ai_keys.provider_info')" />
+              </div>
               <AtomsBadge variant="secondary" size="md" class="mt-1.5">
                 Anthropic
               </AtomsBadge>
             </div>
             <div>
-              <AtomsFormLabel for="ai-key" :text="t('ai_keys.add_key')" size="sm" />
+              <div class="flex items-center gap-1">
+                <AtomsFormLabel for="ai-key" :text="t('ai_keys.add_key')" size="sm" />
+                <AtomsInfoTooltip :text="t('ai_keys.key_info')" />
+              </div>
               <AtomsFormInput
                 id="ai-key"
                 v-model="aiKeyInput"
