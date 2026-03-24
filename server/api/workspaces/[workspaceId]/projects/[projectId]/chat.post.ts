@@ -422,6 +422,11 @@ async function executeToolWithAutoMerge(
 
       case 'get_content': {
         const modelId = params.model as string
+        // Model-scope enforcement (not just prompt-level)
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
+          break
+        }
         const locale = (params.locale as string) ?? 'en'
         const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
         const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
@@ -492,6 +497,10 @@ async function executeToolWithAutoMerge(
 
       case 'save_content': {
         const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
+          break
+        }
         const locale = (params.locale as string) ?? 'en'
         let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }
 

@@ -22,6 +22,11 @@ export default defineEventHandler(async (event) => {
 
   const locale = query.locale || 'en'
 
+  // Model-scoped access check
+  const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
+  if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
+    throw createError({ statusCode: 403, message: `No access to model: ${modelId}` })
+
   const { git, contentRoot } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,
   )
