@@ -10,11 +10,14 @@ export default defineEventHandler(async (event) => {
 
   const client = useSupabaseUserClient(session.accessToken)
 
+  const projectId = getRouterParam(event, 'projectId')
+
   const { error } = await client
     .from('conversations')
     .delete()
     .eq('id', conversationId)
     .eq('user_id', session.user.id)
+    .eq('project_id', projectId!)
 
   if (error)
     throw createError({ statusCode: 500, message: error.message })

@@ -12,11 +12,13 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
 
   // Verify conversation belongs to user (RLS handles this, but explicit check for clear error)
+  const projectId = getRouterParam(event, 'projectId')
   const { data: conv } = await client
     .from('conversations')
     .select('id')
     .eq('id', conversationId)
     .eq('user_id', session.user.id)
+    .eq('project_id', projectId!)
     .single()
 
   if (!conv)
