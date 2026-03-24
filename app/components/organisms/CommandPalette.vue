@@ -11,7 +11,7 @@ const { isDark, toggle: toggleTheme } = useTheme()
 const router = useRouter()
 const route = useRoute()
 const { open, addRecent, parseInput, matches } = useCommandPalette()
-const { clear: clearChat } = useChat()
+const { clearChat } = useChat()
 
 const searchInput = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -73,6 +73,7 @@ interface ResultItem {
   icon: string
   group: string
   type: string
+  keywords?: string[]
   action: () => void
 }
 
@@ -102,7 +103,7 @@ const results = computed<ResultItem[]>(() => {
     const commands = getStaticCommands(isInProject)
     for (const cmd of commands) {
       if (mode === 'command' || query.length >= 2) {
-        if (matches(cmd.label, query) || cmd.keywords?.some(k => matches(k, query))) {
+        if (matches(cmd.label, query) || cmd.keywords?.some((k: string) => matches(k, query))) {
           items.push({ ...cmd, group: 'Commands' })
         }
       }
