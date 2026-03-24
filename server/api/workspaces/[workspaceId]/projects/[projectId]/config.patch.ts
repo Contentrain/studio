@@ -56,15 +56,9 @@ export default defineEventHandler(async (event) => {
     { name: 'Contentrain Studio[bot]', email: 'bot@contentrain.io' },
   )
 
-  const defaultBranch = await git.getDefaultBranch()
-  const mergeResult = await git.mergeBranch(branchName, defaultBranch)
+  // Use content engine merge (has PR fallback for protected branches)
+  const engine = createContentEngine({ git, contentRoot })
+  const mergeResult = await engine.mergeBranch(branchName)
 
-  if (mergeResult.merged) {
-    try {
-      await git.deleteBranch(branchName)
-    }
-    catch { /* auto-deleted */ }
-  }
-
-  return { config, merged: mergeResult.merged }
+  return { config, merged: mergeResult.merged, pullRequestUrl: mergeResult.pullRequestUrl }
 })
