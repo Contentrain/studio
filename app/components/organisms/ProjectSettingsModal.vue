@@ -146,7 +146,10 @@ async function save() {
         <div class="max-h-[60vh] space-y-5 overflow-y-auto px-5 py-4">
           <!-- Workflow -->
           <div>
-            <AtomsFormLabel :text="t('project_settings.workflow')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('project_settings.workflow')" size="sm" />
+              <AtomsInfoTooltip :text="t('project_settings.workflow_info')" />
+            </div>
             <div class="mt-2 flex gap-2">
               <button
                 type="button"
@@ -189,7 +192,10 @@ async function save() {
 
           <!-- Stack (read-only) -->
           <div>
-            <AtomsFormLabel :text="t('project_settings.stack')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('project_settings.stack')" size="sm" />
+              <AtomsInfoTooltip :text="t('project_settings.stack_info')" />
+            </div>
             <div class="mt-1.5">
               <AtomsBadge variant="secondary" size="md">
                 {{ config?.stack ?? 'other' }}
@@ -199,7 +205,10 @@ async function save() {
 
           <!-- Default Locale -->
           <div>
-            <AtomsFormLabel :text="t('project_settings.default_locale')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('project_settings.default_locale')" size="sm" />
+              <AtomsInfoTooltip :text="t('project_settings.default_locale_info')" />
+            </div>
             <AtomsFormSelect
               :model-value="defaultLocale"
               :options="supportedLocales.map(l => ({ value: l, label: `${l.toUpperCase()} — ${getLocaleName(l)}` }))"
@@ -212,25 +221,23 @@ async function save() {
           <!-- Supported Locales -->
           <div>
             <AtomsFormLabel :text="t('project_settings.locales')" size="sm" />
-            <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
               <span
                 v-for="locale in supportedLocales"
                 :key="locale"
-                class="inline-flex items-center gap-1 rounded-md bg-secondary-100 px-2 py-1 text-xs font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
+                class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-[11px] font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
               >
                 {{ locale.toUpperCase() }}
-                <span class="text-[10px] font-normal text-muted">{{ getLocaleName(locale) }}</span>
                 <button
                   v-if="supportedLocales.length > 1"
                   type="button"
-                  class="ml-0.5 rounded text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  class="rounded-full text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                   @click="removeLocale(locale)"
                 >
-                  <span class="icon-[annon--cross] block size-3" aria-hidden="true" />
+                  <span class="icon-[annon--cross] block size-2.5" aria-hidden="true" />
                 </button>
               </span>
             </div>
-            <!-- Searchable locale picker -->
             <ComboboxRoot
               class="relative mt-2"
               :model-value="''"
@@ -275,28 +282,28 @@ async function save() {
           <!-- Domains -->
           <div>
             <AtomsFormLabel :text="t('project_settings.domains')" size="sm" />
-            <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
               <span
                 v-for="domain in domains"
                 :key="domain"
-                class="inline-flex items-center gap-1 rounded-md bg-secondary-100 px-2 py-1 text-xs font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
+                class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-[11px] font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
               >
                 {{ domain }}
                 <button
                   type="button"
-                  class="ml-0.5 rounded text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  class="rounded-full text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                   @click="removeDomain(domain)"
                 >
-                  <span class="icon-[annon--cross] block size-3" aria-hidden="true" />
+                  <span class="icon-[annon--cross] block size-2.5" aria-hidden="true" />
                 </button>
               </span>
             </div>
-            <form class="mt-2 flex items-center gap-2" @submit.prevent="addDomain">
+            <form class="mt-1.5 flex items-center gap-1.5" @submit.prevent="addDomain">
               <AtomsFormInput
                 v-model="newDomain"
                 type="text"
                 :placeholder="t('project_settings.domains_placeholder')"
-                class="w-40"
+                class="w-36"
               />
               <AtomsBaseButton type="submit" variant="ghost" size="sm" :disabled="!newDomain.trim()">
                 <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />

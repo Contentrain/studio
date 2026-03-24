@@ -36,23 +36,27 @@ const buildStatusVariant: Record<string, 'success' | 'danger' | 'warning' | 'sec
 }
 
 async function loadCDNData() {
+  if (!props.workspaceId || !props.projectId) return
   loading.value = true
   if (!isPro.value) {
     loading.value = false
     return
   }
   try {
-    const project = await $fetch<{ cdn_enabled: boolean, cdn_branch: string | null }>(
-      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/settings`,
-    )
-    cdnActive.value = project.cdn_enabled ?? false
-
-    keys.value = await $fetch<CDNKey[]>(
-      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`,
-    )
-    builds.value = await $fetch<CDNBuild[]>(
-      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`,
-    )
+    const [settingsRes, keysRes, buildsRes] = await Promise.all([
+      $fetch<{ cdn_enabled: boolean, cdn_branch: string | null }>(
+        `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/settings`,
+      ),
+      $fetch<CDNKey[]>(
+        `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`,
+      ),
+      $fetch<CDNBuild[]>(
+        `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`,
+      ),
+    ])
+    cdnActive.value = settingsRes.cdn_enabled ?? false
+    keys.value = keysRes
+    builds.value = buildsRes
   }
   catch (e) {
     // eslint-disable-next-line no-console
@@ -63,10 +67,15 @@ async function loadCDNData() {
   }
 }
 
-onMounted(loadCDNData)
-
-// Reload when project changes
-watch(() => props.projectId, loadCDNData)
+// Load when both IDs are available — handles page refresh timing
+// (activeWorkspace is null at first render, then populated by onMounted)
+watch(
+  [() => props.workspaceId, () => props.projectId],
+  ([ws, proj]) => {
+    if (ws && proj) loadCDNData()
+  },
+  { immediate: true },
+)
 
 async function toggleCDN() {
   const newValue = !cdnActive.value
