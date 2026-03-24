@@ -227,6 +227,9 @@ function copyKey() {
         </div>
         <button
           type="button"
+          role="switch"
+          :aria-checked="cdnActive"
+          :aria-label="cdnActive ? t('cdn.disable') : t('cdn.enable')"
           class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
           :class="cdnActive ? 'bg-primary-500' : 'bg-secondary-200 dark:bg-secondary-700'"
           @click="toggleCDN"
@@ -254,7 +257,10 @@ function copyKey() {
 
         <!-- API Keys -->
         <div class="px-5 pt-4">
-          <AtomsSectionLabel :label="t('cdn.keys_title')" :count="activeKeys.length" class="mb-2" />
+          <div class="mb-2 flex items-center gap-1">
+            <AtomsSectionLabel :label="t('cdn.keys_title')" :count="activeKeys.length" />
+            <AtomsInfoTooltip :text="t('cdn.keys_info')" />
+          </div>
 
           <div v-if="activeKeys.length > 0" class="space-y-1.5">
             <div
@@ -296,7 +302,10 @@ function copyKey() {
         <!-- Build History -->
         <div class="px-5 pt-5">
           <div class="mb-2 flex items-center justify-between">
-            <AtomsSectionLabel :label="t('cdn.builds_title')" :count="builds.length" />
+            <div class="flex items-center gap-1">
+              <AtomsSectionLabel :label="t('cdn.builds_title')" :count="builds.length" />
+              <AtomsInfoTooltip :text="t('cdn.builds_info')" />
+            </div>
             <AtomsBaseButton variant="ghost" size="sm" :disabled="rebuilding" @click="triggerRebuild">
               <span class="icon-[annon--arrow-swap] size-3.5" :class="rebuilding ? 'animate-spin' : ''" aria-hidden="true" />
               {{ rebuilding ? t('cdn.rebuilding') : t('cdn.rebuild') }}
