@@ -8,6 +8,7 @@ const { branches, fetchBranches } = useBranches()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 const { toggle: openCommandPalette } = useCommandPalette()
+const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const router = useRouter()
 const connectDialogOpen = ref(false)
@@ -117,6 +118,7 @@ async function onSettingsSaved() {
             {{ currentProject?.repo_full_name?.split('/')[1] ?? currentProjectId }}
           </span>
           <AtomsIconButton
+            v-if="isOwnerOrAdmin"
             icon="icon-[annon--gear]" :label="t('project_settings.title')" size="sm"
             @click="settingsModalOpen = true"
           />
@@ -228,7 +230,7 @@ async function onSettingsSaved() {
               <span class="min-w-0 truncate">{{ link.label }}</span>
             </NuxtLink>
           </li>
-          <li v-if="activeWorkspace">
+          <li v-if="activeWorkspace && isOwnerOrAdmin">
             <MoleculesSidebarItem
               icon="icon-[annon--plus-circle]" :label="t('sidebar.connect_repo')"
               @click="connectDialogOpen = true"

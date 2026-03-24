@@ -8,6 +8,15 @@ interface Workspace {
   github_installation_id: number | null
   plan: string
   created_at: string
+  workspace_members?: Array<{ role: string }>
+}
+
+/** Get user's role in active workspace */
+export function useWorkspaceRole() {
+  const { activeWorkspace } = useWorkspaces()
+  const role = computed(() => activeWorkspace.value?.workspace_members?.[0]?.role ?? 'member')
+  const isOwnerOrAdmin = computed(() => role.value === 'owner' || role.value === 'admin')
+  return { role, isOwnerOrAdmin }
 }
 
 const STORAGE_KEY_WORKSPACE = 'cr-active-workspace'
