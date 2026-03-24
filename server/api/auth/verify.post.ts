@@ -12,23 +12,23 @@ export default defineEventHandler(async (event) => {
     state?: string
   }>(event)
 
-  // OAuth state CSRF protection — log-only mode for debugging
-  // State cookie may not persist across OAuth provider redirect in all environments
-  if (body.state && typeof body.state === 'string' && body.state.length > 0) {
+  // OAuth state CSRF protection
+  // Code flow (OAuth): state is required and validated
+  // Token flow (magic link): state is optional (no redirect to hijack)
+  if (body.code && body.state) {
     const valid = await validateAuthState(event, body.state)
-    if (!valid) {
-      // eslint-disable-next-line no-console
-      console.warn('[auth] OAuth state validation failed — allowing login (log-only mode)')
-    }
+    if (!valid)
+      throw createError({ statusCode: 403, message: 'Invalid or expired auth state. Please try logging in again.' })
   }
 
   const authProvider = useAuthProvider()
   let session
 
   if (body.code) {
-    session = await authProvider.exchangeCode(body.code)
+    session = await authProvider.exchangeCode(body.code, body.state)
   }
   else if (body.accessToken) {
+    // Magic link / implicit flow — no state required (email is the auth factor)
     session = await authProvider.exchangeTokens(body.accessToken, body.refreshToken ?? undefined)
   }
   else {

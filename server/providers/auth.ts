@@ -37,6 +37,8 @@ export interface AuthSession {
 
 export interface OAuthRedirectResult {
   url: string
+  /** Provider-managed state token for CSRF protection. */
+  state?: string
 }
 
 export interface AuthProvider {
@@ -59,8 +61,9 @@ export interface AuthProvider {
 
   /**
    * Exchange an OAuth authorization code for a full session.
+   * State is provider-managed — validated by provider if applicable.
    */
-  exchangeCode: (code: string) => Promise<AuthSession>
+  exchangeCode: (code: string, state?: string) => Promise<AuthSession>
 
   /**
    * Exchange raw tokens (from OAuth hash callback) for a full session.

@@ -14,14 +14,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Generate OAuth state token for CSRF protection
-  const state = await setAuthState(event)
-
   const authProvider = useAuthProvider()
   const result = await authProvider.getOAuthRedirectUrl(
     body.provider,
     body.redirectTo || '/auth/callback',
   )
 
-  return { ...result, state }
+  // Store provider-generated state in encrypted cookie for validation on callback
+  if (result.state) {
+    await setAuthState(event, result.state)
+  }
+
+  return result
 })

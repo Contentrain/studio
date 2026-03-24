@@ -65,11 +65,8 @@ interface AuthStateData {
   createdAt: number
 }
 
-/** Generate and store a random state token for OAuth CSRF protection. */
-export async function setAuthState(event: H3Event): Promise<string> {
-  const { randomBytes } = await import('node:crypto')
-  const state = randomBytes(32).toString('hex')
-
+/** Store a state token for OAuth CSRF protection. */
+export async function setAuthState(event: H3Event, state: string): Promise<void> {
   const session = await useSession<AuthStateData>(event, {
     password: getSessionPassword(),
     name: AUTH_STATE_NAME,
@@ -77,7 +74,6 @@ export async function setAuthState(event: H3Event): Promise<string> {
   })
 
   await session.update({ state, createdAt: Date.now() })
-  return state
 }
 
 /** Validate that the provided state matches the stored one. Clears after check. */

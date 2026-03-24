@@ -36,6 +36,10 @@ export function createSupabaseAuthProvider(): AuthProvider {
       const admin = useSupabaseAdmin()
       const config = useRuntimeConfig()
 
+      // Generate CSRF state token — stored by caller, validated on code exchange
+      const { randomBytes } = await import('node:crypto')
+      const state = randomBytes(32).toString('hex')
+
       const { data, error } = await admin.auth.signInWithOAuth({
         provider,
         options: {
@@ -48,10 +52,16 @@ export function createSupabaseAuthProvider(): AuthProvider {
       if (error || !data.url)
         throw createError({ statusCode: 500, message: `OAuth redirect failed: ${error?.message}` })
 
-      return { url: data.url }
+      // Append state to Supabase redirect URL
+      const url = new URL(data.url)
+      url.searchParams.set('state', state)
+
+      return { url: url.toString(), state }
     },
 
-    async exchangeCode(code: string): Promise<AuthSession> {
+    async exchangeCode(code: string, _state?: string): Promise<AuthSession> {
+      // State validation is done at the route level (session cookie comparison)
+      // Supabase PKCE handles the code_verifier/code_challenge exchange
       const admin = useSupabaseAdmin()
       const { data, error } = await admin.auth.exchangeCodeForSession(code)
 
@@ -75,13 +85,20 @@ export function createSupabaseAuthProvider(): AuthProvider {
       if (error || !data.user)
         throw createError({ statusCode: 401, message: `Token validation failed: ${error?.message}` })
 
+      // Decode JWT exp claim for accurate expiry
+      let expiresAt = Math.floor(Date.now() / 1000) + 3600
+      try {
+        const payload = JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64').toString())
+        if (payload.exp) expiresAt = payload.exp
+      }
+      catch { /* fallback to 1 hour */ }
+
       return {
         user: mapSupabaseUser(data.user),
         tokens: {
           accessToken,
           refreshToken: refreshToken ?? null,
-          // Supabase JWTs default to 1 hour; without decoding we estimate conservatively
-          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          expiresAt,
         },
       }
     },
