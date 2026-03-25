@@ -1,0 +1,57 @@
+{
+  "id": "starters",
+  "name": "Starter Kits",
+  "kind": "collection",
+  "domain": "system",
+  "i18n": false,
+  "description": "Starter template repositories for new Contentrain projects",
+  "fields": {
+    "description": {
+      "description": "Short description of the starter",
+      "required": true,
+      "type": "text"
+    },
+    "featured": {
+      "default": false,
+      "description": "Show in featured section",
+      "type": "boolean"
+    },
+    "framework": {
+      "description": "Framework used by this starter",
+      "options": [
+        "astro",
+        "nuxt",
+        "next",
+        "sveltekit",
+        "vitepress"
+      ],
+      "required": true,
+      "type": "select"
+    },
+    "image": {
+      "description": "Preview screenshot of the starter",
+      "type": "image"
+    },
+    "name": {
+      "description": "Display name (e.g. Astro Blog)",
+      "required": true,
+      "type": "string"
+    },
+    "repo": {
+      "description": "GitHub repo name under Contentrain org (e.g. contentrain-starter-astro-blog)",
+      "required": true,
+      "type": "string"
+    },
+    "slug": {
+      "description": "URL-friendly identifier (e.g. astro-blog)",
+      "required": true,
+      "type": "slug",
+      "unique": true
+    },
+    "tags": {
+      "description": "Tags for filtering (e.g. blog, landing, saas)",
+      "items": "string",
+      "type": "array"
+    }
+  }
+}
