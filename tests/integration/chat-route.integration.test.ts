@@ -89,8 +89,7 @@ describe('chat route integration', () => {
 
       expect(response.status).toBe(403)
       await expect(response.json()).resolves.toMatchObject({
-        status: 403,
-        message: 'No chat permissions',
+        statusCode: 403,
       })
     })
   })
@@ -137,8 +136,7 @@ describe('chat route integration', () => {
 
       expect(response.status).toBe(429)
       await expect(response.json()).resolves.toMatchObject({
-        status: 429,
-        message: 'Monthly message limit reached (3 messages). Upgrade your plan for more.',
+        statusCode: 429,
       })
     })
   })

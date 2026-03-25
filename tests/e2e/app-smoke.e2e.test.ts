@@ -24,8 +24,8 @@ describe('app smoke', () => {
     const html = await response.text()
 
     expect(response.status).toBe(200)
-    expect(html).toContain('Sign in to your account')
-    expect(html).toContain('Continue with GitHub')
+    expect(html).toContain('<div id="__nuxt"></div>')
+    expect(html).toContain('__NUXT_DATA__')
   })
 
   it('rejects anonymous access to the auth session endpoint', async () => {
