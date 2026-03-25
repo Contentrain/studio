@@ -65,10 +65,12 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
     },
 
     async readFile(path: string, ref?: string): Promise<string> {
-      const params: { owner: string, repo: string, path: string, ref?: string } = { owner, repo, path }
-      if (ref) params.ref = ref
-
-      const { data } = await octokit.repos.getContent(params) as { data: { content?: string, encoding?: string } }
+      // Use manual URL to avoid @octokit/endpoint encoding slashes in path as %2F
+      const { data } = await octokit.request({
+        method: 'GET',
+        url: `/repos/${owner}/${repo}/contents/${path}`,
+        ...(ref ? { ref } : {}),
+      }) as { data: { content?: string, encoding?: string } }
 
       if (!data.content)
         throw createError({ statusCode: 404, message: `File not found: ${path}` })
@@ -77,10 +79,12 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
     },
 
     async listDirectory(path: string, ref?: string): Promise<string[]> {
-      const params: { owner: string, repo: string, path: string, ref?: string } = { owner, repo, path }
-      if (ref) params.ref = ref
-
-      const { data } = await octokit.repos.getContent(params)
+      // Use manual URL to avoid @octokit/endpoint encoding slashes in path as %2F
+      const { data } = await octokit.request({
+        method: 'GET',
+        url: `/repos/${owner}/${repo}/contents/${path}`,
+        ...(ref ? { ref } : {}),
+      })
 
       if (!Array.isArray(data))
         throw createError({ statusCode: 400, message: `Not a directory: ${path}` })
@@ -90,9 +94,12 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
 
     async fileExists(path: string, ref?: string): Promise<boolean> {
       try {
-        const params: { owner: string, repo: string, path: string, ref?: string } = { owner, repo, path }
-        if (ref) params.ref = ref
-        await octokit.repos.getContent(params)
+        // Use manual URL to avoid @octokit/endpoint encoding slashes in path as %2F
+        await octokit.request({
+          method: 'GET',
+          url: `/repos/${owner}/${repo}/contents/${path}`,
+          ...(ref ? { ref } : {}),
+        })
         return true
       }
       catch {
