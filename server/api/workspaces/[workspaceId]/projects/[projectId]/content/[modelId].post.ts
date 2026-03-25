@@ -37,5 +37,39 @@ export default defineEventHandler(async (event) => {
   )
 
   const engine = createContentEngine({ git, contentRoot })
-  return engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
+  const result = await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
+
+  // Track media usage (non-blocking, non-fatal)
+  try {
+    const mediaProvider = useMediaProvider()
+    if (mediaProvider) {
+      const admin = useSupabaseAdmin()
+      const locale = body.locale ?? 'en'
+      // Scan saved data for media paths and track usage
+      for (const [entryId, entry] of Object.entries(body.data)) {
+        if (typeof entry !== 'object' || !entry) continue
+        for (const [fieldId, value] of Object.entries(entry as Record<string, unknown>)) {
+          if (typeof value === 'string' && value.startsWith('media/')) {
+            // Find asset by path
+            const { assets } = await mediaProvider.listAssets(projectId, { search: value.split('/').pop(), limit: 1 })
+            if (assets.length > 0) {
+              await trackMediaUsage(admin, {
+                asset_id: assets[0]!.id,
+                project_id: projectId,
+                model_id: modelId,
+                entry_id: entryId,
+                field_id: fieldId,
+                locale,
+              })
+            }
+          }
+        }
+      }
+    }
+  }
+  catch {
+    // Usage tracking failure is non-fatal
+  }
+
+  return result
 })

@@ -61,7 +61,10 @@ export default defineEventHandler(async (event) => {
   // ETag conditional request
   const ifNoneMatch = getHeader(event, 'if-none-match')
 
-  const result = await cdn.getObject(projectId, path.endsWith('.json') ? path : `${path}.json`)
+  // Media files served as-is, content files default to .json
+  const isMediaPath = path.startsWith('media/') || path === '_media_manifest.json'
+  const resolvedPath = isMediaPath || path.endsWith('.json') ? path : `${path}.json`
+  const result = await cdn.getObject(projectId, resolvedPath)
 
   if (!result)
     throw createError({ statusCode: 404, message: 'Content not found' })

@@ -361,7 +361,41 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       // Cleanup failure is non-fatal — uploaded content is still correct
     }
 
-    // 8. Purge edge cache
+    // 8. Media manifest (if MediaProvider is available)
+    try {
+      const mediaProvider = useMediaProvider()
+      if (mediaProvider) {
+        const { assets: mediaAssets } = await mediaProvider.listAssets(projectId, { limit: 10000 })
+        if (mediaAssets.length > 0) {
+          // Build media manifest
+          const mediaManifest: Record<string, { original: string, variants: Record<string, string>, meta: Record<string, unknown> }> = {}
+          for (const asset of mediaAssets) {
+            mediaManifest[asset.originalPath] = {
+              original: asset.originalPath,
+              variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
+              meta: {
+                width: asset.width,
+                height: asset.height,
+                format: asset.format,
+                size: asset.size,
+                blurhash: asset.blurhash,
+                alt: asset.alt,
+              },
+            }
+          }
+          const manifestData = JSON.stringify({ version: '1', assets: mediaManifest }, null, 2)
+          await cdn.putObject(projectId, '_media_manifest.json', manifestData, 'application/json')
+          uploadedPaths.add('_media_manifest.json')
+          filesUploaded++
+          totalSizeBytes += Buffer.byteLength(manifestData)
+        }
+      }
+    }
+    catch {
+      // Media manifest generation is non-fatal
+    }
+
+    // 9. Purge edge cache
     progress({ phase: 'done', message: `Build complete — ${filesUploaded} uploaded, ${filesDeleted} deleted`, current: targetModels.length, total: targetModels.length })
     await cdn.purgeCache(projectId)
 
