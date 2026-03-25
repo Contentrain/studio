@@ -40,6 +40,7 @@ const props = defineProps<{
   activeBranch?: string | null
   activeVocabulary?: boolean
   activeCdn?: boolean
+  activeAssets?: boolean
   branchDiff?: BranchDiffData | null
   branchDiffLoading?: boolean
   canManageBranches?: boolean
@@ -74,6 +75,7 @@ const panelState = computed(() => {
   if (props.activeBranch) return 'branch'
   if (props.activeVocabulary) return 'vocabulary'
   if (props.activeCdn) return 'cdn'
+  if (props.activeAssets) return 'assets'
   if (props.activeModelId) return 'model'
   return 'overview'
 })
@@ -201,7 +203,7 @@ provide('sendChatPrompt', sendChatPrompt)
     <!-- Header -->
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
       <AtomsIconButton
-        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary' || panelState === 'cdn'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
+        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary' || panelState === 'cdn' || panelState === 'assets'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
       <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
@@ -210,6 +212,9 @@ provide('sendChatPrompt', sendChatPrompt)
         </template>
         <template v-else-if="panelState === 'cdn'">
           {{ t('cdn.title') }}
+        </template>
+        <template v-else-if="panelState === 'assets'">
+          {{ t('media.title') }}
         </template>
         <template v-else-if="panelState === 'vocabulary'">
           {{ t('content.vocabulary') }}
@@ -302,6 +307,16 @@ provide('sendChatPrompt', sendChatPrompt)
           v-if="workspaceId && projectId"
           :workspace-id="workspaceId"
           :project-id="projectId"
+        />
+      </template>
+
+      <!-- ASSETS -->
+      <template v-else-if="panelState === 'assets'">
+        <OrganismsAssetManager
+          v-if="workspaceId && projectId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          :editable="editable"
         />
       </template>
 

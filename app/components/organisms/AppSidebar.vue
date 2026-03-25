@@ -28,7 +28,9 @@ const activeBranch = computed(() => {
   return b ? decodeURIComponent(b) : null
 })
 const isCDNActive = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
+const isAssetsActive = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
+const hasMedia = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
 
 // Fetch branches when project/workspace context becomes available.
 watch(
@@ -84,6 +86,10 @@ function selectCDN() {
   router.replace({ query: { cdn: 'true' } })
 }
 
+function selectAssets() {
+  router.replace({ query: { assets: 'true' } })
+}
+
 function backToWorkspace() {
   if (!activeWorkspace.value) return
   router.push(`/w/${activeWorkspace.value.slug}`)
@@ -122,9 +128,8 @@ async function onSettingsSaved() {
             {{ currentProject?.repo_full_name?.split('/')[1] ?? currentProjectId }}
           </span>
           <AtomsIconButton
-            v-if="isOwnerOrAdmin"
-            icon="icon-[annon--gear]" :label="t('project_settings.title')" size="sm"
-            @click="settingsModalOpen = true"
+            v-if="isOwnerOrAdmin" icon="icon-[annon--gear]" :label="t('project_settings.title')"
+            size="sm" @click="settingsModalOpen = true"
           />
           <AtomsIconButton icon="icon-[annon--cross]" :label="t('common.back')" size="sm" @click="backToWorkspace" />
         </div>
@@ -138,9 +143,9 @@ async function onSettingsSaved() {
         </div>
 
         <template v-else-if="hasContentrain">
-          <details v-for="(domainModels, domain) in modelsByDomain" :key="domain" class="group mt-1" open>
+          <details v-for="(domainModels, domain) in modelsByDomain" :key="domain" class="group mt-2 first:mt-0" open>
             <summary
-              class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+              class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-primary-900/20"
             >
               <span
                 class="icon-[annon--chevron-right] size-3 shrink-0 text-muted transition-transform group-open:rotate-90"
@@ -175,32 +180,28 @@ async function onSettingsSaved() {
           />
 
           <!-- CDN (Pro feature) -->
-          <div :class="!isPro ? 'opacity-60' : ''">
-            <MoleculesSidebarItem
-              icon="icon-[annon--globe]" :label="t('cdn.title')"
-              :active="isCDNActive" compact @click="selectCDN"
-            >
-              <template #trailing>
-                <AtomsBadge v-if="!isPro" variant="info" size="sm" class="text-[9px] px-1 py-0">
-                  Pro
-                </AtomsBadge>
-              </template>
-            </MoleculesSidebarItem>
-          </div>
+          <MoleculesSidebarItem
+            icon="icon-[annon--globe]" :label="t('cdn.title')" :active="isCDNActive" compact
+            @click="selectCDN"
+          >
+            <template #trailing>
+              <AtomsBadge v-if="!isPro" variant="info" size="sm" class="text-[9px] px-1 py-0">
+                Pro
+              </AtomsBadge>
+            </template>
+          </MoleculesSidebarItem>
 
-          <!-- Assets (Phase 4 — placeholder, always shows Pro badge for now) -->
-          <div class="opacity-60">
-            <MoleculesSidebarItem
-              icon="icon-[annon--image]" label="Assets"
-              compact :disabled="true"
-            >
-              <template #trailing>
-                <AtomsBadge variant="info" size="sm" class="text-[9px] px-1 py-0">
-                  Pro
-                </AtomsBadge>
-              </template>
-            </MoleculesSidebarItem>
-          </div>
+          <!-- Assets (Pro feature) -->
+          <MoleculesSidebarItem
+            icon="icon-[annon--image]" :label="t('media.title')"
+            :active="isAssetsActive" compact @click="selectAssets"
+          >
+            <template #trailing>
+              <AtomsBadge v-if="!hasMedia" variant="info" size="sm" class="text-[9px] px-1 py-0">
+                Pro
+              </AtomsBadge>
+            </template>
+          </MoleculesSidebarItem>
         </div>
 
         <!-- Pending branches -->
@@ -226,58 +227,70 @@ async function onSettingsSaved() {
               :to="link.to"
               class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
               :class="link.active
-                ? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
-                : 'text-body hover:bg-secondary-50 dark:text-secondary-400 dark:hover:bg-secondary-900'
+                ? 'border-l-2 border-primary-500 pl-[6px] bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
+                : 'text-body hover:bg-primary-50 hover:text-primary-700 dark:text-secondary-400 dark:hover:bg-primary-900/20 dark:hover:text-primary-400'
               "
             >
-              <span class="icon-[annon--folder] size-4 shrink-0" aria-hidden="true" />
+              <span
+                class="icon-[annon--folder] size-4 shrink-0" :class="link.active ? 'opacity-100' : 'opacity-60'"
+                aria-hidden="true"
+              />
               <span class="min-w-0 truncate">{{ link.label }}</span>
             </NuxtLink>
           </li>
-          <li v-if="activeWorkspace && isOwnerOrAdmin">
-            <MoleculesSidebarItem
-              icon="icon-[annon--plus-circle]" :label="t('sidebar.connect_repo')"
+          <li v-if="activeWorkspace && isOwnerOrAdmin" class="pt-1">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md border border-dashed border-secondary-300 px-2 py-1.5 text-sm text-muted transition-colors hover:border-primary-400 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-700 dark:hover:border-primary-500 dark:hover:text-primary-400"
               @click="connectDialogOpen = true"
-            />
+            >
+              <span class="icon-[annon--plus-circle] size-4 shrink-0" aria-hidden="true" />
+              <span>{{ t('sidebar.connect_repo') }}</span>
+            </button>
           </li>
         </ul>
       </template>
     </nav>
 
     <!-- Footer -->
-    <div class="shrink-0 space-y-0.5 border-t border-secondary-200 p-2 dark:border-secondary-800">
-      <MoleculesSidebarItem icon="icon-[annon--search]" :label="t('common.search')" @click="openCommandPalette">
-        <template #trailing>
-          <kbd
-            class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800"
-          >
-            ⌘K
-          </kbd>
-        </template>
-      </MoleculesSidebarItem>
+    <div class="shrink-0 border-t border-secondary-200 dark:border-secondary-800">
+      <!-- Tools -->
+      <div class="space-y-0.5 px-2 pt-2 pb-1">
+        <MoleculesSidebarItem icon="icon-[annon--search]" :label="t('common.search')" @click="openCommandPalette">
+          <template #trailing>
+            <kbd
+              class="ml-auto rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800"
+            >
+              ⌘K
+            </kbd>
+          </template>
+        </MoleculesSidebarItem>
 
-      <NuxtLink
-        v-if="activeWorkspace" :to="`/w/${activeWorkspace.slug}/settings`"
-        class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-secondary-50 hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900 dark:hover:text-secondary-300"
-      >
-        <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
-        <span>{{ t('common.settings') }}</span>
-      </NuxtLink>
+        <NuxtLink
+          v-if="activeWorkspace" :to="`/w/${activeWorkspace.slug}/settings`"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-primary-900/20 dark:hover:text-primary-400"
+        >
+          <span class="icon-[annon--gear] size-4 shrink-0" aria-hidden="true" />
+          <span>{{ t('common.settings') }}</span>
+        </NuxtLink>
 
-      <MoleculesSidebarItem
-        :icon="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'"
-        :label="isDark ? t('common.light_mode') : t('common.dark_mode')" @click="toggleTheme"
-      />
+        <MoleculesSidebarItem
+          :icon="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'"
+          :label="isDark ? t('common.light_mode') : t('common.dark_mode')" @click="toggleTheme"
+        />
+      </div>
 
       <!-- User -->
-      <div class="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-        <AtomsAvatar :src="authState.user?.avatarUrl" :name="authState.user?.email" size="sm" />
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
-            {{ authState.user?.email?.split('@')[0] }}
+      <div class="border-t border-secondary-100 px-2 py-2 dark:border-secondary-800/50">
+        <div class="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+          <AtomsAvatar :src="authState.user?.avatarUrl" :name="authState.user?.email" size="sm" />
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
+              {{ authState.user?.email?.split('@')[0] }}
+            </div>
           </div>
+          <AtomsIconButton icon="icon-[annon--log-out]" :label="t('common.sign_out')" @click="signOut" />
         </div>
-        <AtomsIconButton icon="icon-[annon--log-out]" :label="t('common.sign_out')" @click="signOut" />
       </div>
     </div>
 
