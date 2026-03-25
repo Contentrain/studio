@@ -72,6 +72,7 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
       <!-- Delete model -->
       <button
         type="button"
+        aria-label="Delete model"
         class="shrink-0 rounded-md p-1 text-muted opacity-0 transition-all hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
         @click="onDelete($event, model)"
       >
@@ -80,6 +81,7 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
       <!-- Pin to context -->
       <button
         type="button"
+        aria-label="Pin to context"
         class="mr-2 shrink-0 rounded-md p-1 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
         :class="isPinned('model', model.id)
           ? 'text-primary-500 opacity-100'
