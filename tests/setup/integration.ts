@@ -3,12 +3,14 @@ import {
   createError,
   defineEventHandler,
   getHeader,
+  readRawBody,
   getRequestPath,
   getQuery,
   getRequestURL,
   getRouterParam,
   readBody,
   sendRedirect,
+  setResponseHeader,
   setResponseStatus,
   useSession,
 } from 'h3'
@@ -45,9 +47,11 @@ beforeEach(() => {
   vi.stubGlobal('getRouterParam', getRouterParam)
   vi.stubGlobal('getServerSession', getServerSession)
   vi.stubGlobal('readBody', readBody)
+  vi.stubGlobal('readRawBody', readRawBody)
   vi.stubGlobal('requireAuth', requireAuth)
   vi.stubGlobal('sendRedirect', sendRedirect)
   vi.stubGlobal('setAuthState', setAuthState)
+  vi.stubGlobal('setResponseHeader', setResponseHeader)
   vi.stubGlobal('setResponseStatus', setResponseStatus)
   vi.stubGlobal('setServerSession', setServerSession)
   vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)

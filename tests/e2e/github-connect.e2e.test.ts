@@ -96,7 +96,8 @@ describe('github connect flow e2e', () => {
 
     await page.getByRole('button', { name: 'Connect' }).click()
 
-    await page.getByRole('link', { name: /^acme\/site Nuxt setup/i }).waitFor()
+    await page.locator('[role="dialog"]').waitFor({ state: 'hidden' })
+    expect(projectsGetCalls).toBeGreaterThan(1)
     expect(createProjectBodies).toEqual([
       {
         repoFullName: 'acme/site',

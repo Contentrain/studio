@@ -10,6 +10,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
 
   const client = useSupabaseUserClient(session.accessToken)
+  const { data: project } = await client
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: 'Project not found' })
 
   const { data } = await client
     .from('cdn_builds')

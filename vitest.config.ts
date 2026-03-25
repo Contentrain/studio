@@ -21,7 +21,8 @@ export default defineConfig({
     passWithNoTests: false,
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      reporter: ['text', 'json-summary'],
       include: [
         'server/api/**/*.ts',
         'server/middleware/**/*.ts',

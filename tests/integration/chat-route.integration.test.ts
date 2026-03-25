@@ -226,4 +226,167 @@ describe('chat route integration', () => {
       )
     })
   })
+
+  it('returns 429 when the request rate limit is exceeded before any AI work starts', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1', email: 'user@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue(createAgentUsageAdmin([])))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      project: { id: 'project-1', status: 'active' },
+      workspace: { id: 'workspace-1', plan: 'free' },
+      git: createGitStub(),
+      contentRoot: '',
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
+    vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
+      allowed: false,
+      retryAfterMs: 2_000,
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/chat', handler: await loadChatHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'hello' }),
+      })
+
+      expect(response.status).toBe(429)
+      await expect(response.json()).resolves.toMatchObject({
+        statusCode: 429,
+      })
+    })
+  })
+
+  it('returns 400 when neither a studio key nor a BYOA key is configured', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1', email: 'user@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue(createAgentUsageAdmin([])))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      project: { id: 'project-1', status: 'active' },
+      workspace: { id: 'workspace-1', plan: 'free' },
+      git: createGitStub(),
+      contentRoot: '',
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      availableTools: ['get_content'],
+      specificModels: false,
+      allowedModels: [],
+    }))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      sessionSecret: 'test-session-secret-32-characters-min',
+      anthropic: { apiKey: '' },
+      public: { siteUrl: 'http://localhost:3000' },
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/chat', handler: await loadChatHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'hello' }),
+      })
+
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toMatchObject({
+        statusCode: 400,
+      })
+    })
+  })
+
+  it('streams an error event when the AI provider crashes mid-request', async () => {
+    const userClient = createConversationLookupClient(true)
+    const saveChatResult = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1', email: 'user@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(userClient))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      project: { id: 'project-1', status: 'active' },
+      workspace: { id: 'workspace-1', plan: 'free' },
+      git: createGitStub(),
+      contentRoot: '',
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      availableTools: ['get_content'],
+      specificModels: false,
+      allowedModels: [],
+    }))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('loadConversationHistory', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('saveChatResult', saveChatResult)
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
+    vi.stubGlobal('STUDIO_TOOLS', [])
+    vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
+      streamCompletion: () => ({
+        [Symbol.asyncIterator]() {
+          return {
+            next: async () => {
+              throw new Error('provider exploded')
+            },
+          }
+        },
+      }),
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/chat', handler: await loadChatHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          message: 'hello',
+          conversationId: 'conversation-existing',
+        }),
+      })
+      const payload = await response.text()
+
+      expect(response.status).toBe(200)
+      expect(payload).toContain('"type":"conversation"')
+      expect(payload).toContain('"type":"error"')
+      expect(payload).toContain('provider exploded')
+      expect(saveChatResult).not.toHaveBeenCalled()
+    })
+  })
 })

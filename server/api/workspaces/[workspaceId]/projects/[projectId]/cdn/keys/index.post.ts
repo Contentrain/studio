@@ -16,6 +16,17 @@ export default defineEventHandler(async (event) => {
   // Role + plan check
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+
+  const { data: project } = await client
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: 'Project not found' })
+
   const { data: workspace } = await client
     .from('workspaces')
     .select('plan')

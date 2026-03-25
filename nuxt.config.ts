@@ -1,9 +1,11 @@
 import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 
+const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/image', 'nuxt-mcp-dev'],
+  modules: ['@nuxt/eslint', '@nuxt/image', ...(isTestEnv ? [] : ['nuxt-mcp-dev'])],
   ssr: false,
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],
