@@ -54,7 +54,7 @@ export interface BuildOptions {
 }
 
 export interface BuildProgressEvent {
-  phase: 'init' | 'model' | 'upload' | 'done'
+  phase: 'init' | 'model' | 'upload' | 'cleanup' | 'done'
   message: string
   current?: number
   total?: number
@@ -156,8 +156,10 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
   const progress = options.onProgress ?? (() => {})
 
   let filesUploaded = 0
+  let filesDeleted = 0
   let totalSizeBytes = 0
   const changedModelIds: string[] = []
+  const uploadedPaths = new Set<string>()
 
   try {
     // 1. Load project config
@@ -224,6 +226,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     }
     const manifestData = JSON.stringify(manifest, null, 2)
     await cdn.putObject(projectId, '_manifest.json', manifestData, 'application/json')
+    uploadedPaths.add('_manifest.json')
     filesUploaded++
     totalSizeBytes += Buffer.byteLength(manifestData)
 
@@ -238,12 +241,15 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     }))
     const indexData = JSON.stringify(modelSummaries, null, 2)
     await cdn.putObject(projectId, 'models/_index.json', indexData, 'application/json')
+    uploadedPaths.add('models/_index.json')
     filesUploaded++
     totalSizeBytes += Buffer.byteLength(indexData)
 
     for (const model of models) {
+      const defPath = `models/${model.id}.json`
       const modelData = JSON.stringify(model, null, 2)
-      await cdn.putObject(projectId, `models/${model.id}.json`, modelData, 'application/json')
+      await cdn.putObject(projectId, defPath, modelData, 'application/json')
+      uploadedPaths.add(defPath)
       filesUploaded++
       totalSizeBytes += Buffer.byteLength(modelData)
     }
@@ -260,7 +266,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
         try {
           if (model.kind === 'document') {
-            await buildDocumentModel(projectId, git, cdn, ctx, model, locale, branch)
+            await buildDocumentModel(projectId, git, cdn, ctx, model, locale, branch, uploadedPaths)
           }
           else {
             // JSON kinds: collection, singleton, dictionary
@@ -290,6 +296,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
             const outputPath = `content/${model.id}/${effectiveLocale === 'data' ? 'data' : locale}.json`
             const data = JSON.stringify(content, null, 2)
             await cdn.putObject(projectId, outputPath, data, 'application/json')
+            uploadedPaths.add(outputPath)
             filesUploaded++
             totalSizeBytes += Buffer.byteLength(data)
 
@@ -308,6 +315,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
               const metaOutput = `meta/${model.id}/${effectiveLocale === 'data' ? 'data' : locale}.json`
               const metaStr = JSON.stringify(filteredMeta, null, 2)
               await cdn.putObject(projectId, metaOutput, metaStr, 'application/json')
+              uploadedPaths.add(metaOutput)
               filesUploaded++
               totalSizeBytes += Buffer.byteLength(metaStr)
             }
@@ -320,8 +328,41 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    // 7. Purge edge cache
-    progress({ phase: 'done', message: `Build complete — ${filesUploaded} files uploaded`, current: targetModels.length, total: targetModels.length })
+    // 7. Diff-based stale object cleanup
+    progress({ phase: 'cleanup', message: 'Cleaning stale objects...' })
+    try {
+      if (options.fullRebuild || !options.changedPaths?.length) {
+        // Full rebuild: delete everything not in the new build
+        const existing = await cdn.listObjects(projectId)
+        for (const obj of existing) {
+          if (!uploadedPaths.has(obj.path)) {
+            await cdn.deleteObject(projectId, obj.path)
+            filesDeleted++
+          }
+        }
+      }
+      else {
+        // Selective build: only clean under affected model prefixes
+        for (const model of targetModels) {
+          const prefixes = [`content/${model.id}/`, `meta/${model.id}/`, `documents/${model.id}/`]
+          for (const prefix of prefixes) {
+            const existing = await cdn.listObjects(projectId, prefix)
+            for (const obj of existing) {
+              if (!uploadedPaths.has(obj.path)) {
+                await cdn.deleteObject(projectId, obj.path)
+                filesDeleted++
+              }
+            }
+          }
+        }
+      }
+    }
+    catch {
+      // Cleanup failure is non-fatal — uploaded content is still correct
+    }
+
+    // 8. Purge edge cache
+    progress({ phase: 'done', message: `Build complete — ${filesUploaded} uploaded, ${filesDeleted} deleted`, current: targetModels.length, total: targetModels.length })
     await cdn.purgeCache(projectId)
 
     return {
@@ -329,7 +370,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       buildId,
       commitSha,
       filesUploaded,
-      filesDeleted: 0,
+      filesDeleted,
       totalSizeBytes,
       changedModels: changedModelIds,
       durationMs: Date.now() - start,
@@ -341,7 +382,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       buildId,
       commitSha,
       filesUploaded,
-      filesDeleted: 0,
+      filesDeleted,
       totalSizeBytes,
       changedModels: changedModelIds,
       durationMs: Date.now() - start,
@@ -368,6 +409,7 @@ async function buildDocumentModel(
   model: ModelDefinition,
   locale: string,
   branch: string,
+  uploadedPaths: Set<string>,
 ): Promise<void> {
   // Get the content directory — handles content_path override
   const contentDir = getModelContentDir(ctx, model)
@@ -417,8 +459,10 @@ async function buildDocumentModel(
 
       // Upload individual document
       const cdnLocale = model.i18n ? locale : 'data'
+      const docPath = `documents/${model.id}/${slug}/${cdnLocale}.json`
       const docData = JSON.stringify({ frontmatter: { ...frontmatter, slug }, body, html }, null, 2)
-      await cdn.putObject(projectId, `documents/${model.id}/${slug}/${cdnLocale}.json`, docData, 'application/json')
+      await cdn.putObject(projectId, docPath, docData, 'application/json')
+      uploadedPaths.add(docPath)
 
       // Add to index
       indexEntries.push({
@@ -432,6 +476,8 @@ async function buildDocumentModel(
 
   // Upload document index
   const cdnLocale = model.i18n ? locale : 'data'
+  const docIndexPath = `documents/${model.id}/_index/${cdnLocale}.json`
   const indexData = JSON.stringify(indexEntries, null, 2)
-  await cdn.putObject(projectId, `documents/${model.id}/_index/${cdnLocale}.json`, indexData, 'application/json')
+  await cdn.putObject(projectId, docIndexPath, indexData, 'application/json')
+  uploadedPaths.add(docIndexPath)
 }
