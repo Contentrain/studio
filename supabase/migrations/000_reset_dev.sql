@@ -4,7 +4,6 @@
 
 -- Drop triggers first
 drop trigger if exists on_auth_user_created on auth.users;
-drop trigger if exists on_workspace_created on public.workspaces;
 
 -- Drop functions
 drop function if exists public.handle_new_user();
