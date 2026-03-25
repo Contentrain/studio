@@ -3,6 +3,7 @@ import type { AIProvider } from '../providers/ai'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider, CDNObject } from '../providers/cdn'
 import type { MediaProvider } from '../providers/media'
+import { createSharpMediaProvider } from '../../ee/media/sharp-processor'
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createGitHubAppProvider } from '../providers/github-app'
@@ -112,10 +113,7 @@ export function useMediaProvider(): MediaProvider | null {
   const cdn = useCDNProvider()
   if (!cdn) return null
 
-  // Lazy-import EE module at factory call time (not at module load)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mod = require('../../ee/media/sharp-processor') as { createSharpMediaProvider: typeof import('../../ee/media/sharp-processor')['createSharpMediaProvider'] }
-  _mediaProvider = mod.createSharpMediaProvider({ cdn, admin: useSupabaseAdmin() })
+  _mediaProvider = createSharpMediaProvider({ cdn, admin: useSupabaseAdmin() })
 
   return _mediaProvider
 }
