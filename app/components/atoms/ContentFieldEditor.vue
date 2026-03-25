@@ -239,14 +239,11 @@ function getRelationLabel(id: string): string {
       @keydown="handleKeydown"
     />
 
-    <!-- ═══ Image / Video / File (URL/path input) ═══ -->
-    <AtomsFormInput
+    <!-- ═══ Image / Video / File (media picker) ═══ -->
+    <MoleculesImageFieldPicker
       v-else-if="['image', 'video', 'file'].includes(type)"
       :model-value="String(localValue ?? '')"
-      type="url"
-      :description="t('content.enter_path')"
-      @update:model-value="localValue = $event"
-      @keydown="handleKeydown"
+      @update:model-value="localValue = $event ?? ''"
     />
 
     <!-- ═══ Relation (single select) ═══ -->

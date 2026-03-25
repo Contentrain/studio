@@ -95,8 +95,15 @@ const ratingStars = computed(() => {
 
     <!-- Image thumbnail -->
     <div v-else-if="isImage && displayValue" class="flex items-center gap-2">
-      <div class="size-8 overflow-hidden rounded border border-secondary-200 bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-800">
-        <span class="icon-[annon--image] block size-full p-1.5 text-muted" aria-hidden="true" />
+      <div class="size-8 shrink-0 overflow-hidden rounded border border-secondary-200 bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-800">
+        <NuxtImg
+          v-if="String(displayValue).startsWith('media/')"
+          :src="String(displayValue)"
+          :alt="String(displayValue).split('/').pop() ?? ''"
+          class="size-full object-cover"
+          loading="lazy"
+        />
+        <span v-else class="icon-[annon--image] block size-full p-1.5 text-muted" aria-hidden="true" />
       </div>
       <span class="truncate text-xs text-muted">{{ String(displayValue).split('/').pop() }}</span>
     </div>
