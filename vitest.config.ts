@@ -8,6 +8,14 @@ process.env.NUXT_PUBLIC_SITE_URL ??= 'http://localhost:3000'
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '~': rootDir,
+      '@': rootDir,
+      '~~': rootDir,
+      '@@': rootDir,
+    },
+  },
   test: {
     globals: true,
     passWithNoTests: false,
@@ -15,6 +23,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: [
+        'server/api/**/*.ts',
+        'server/middleware/**/*.ts',
         'server/utils/**/*.ts',
         'app/composables/**/*.ts',
         'app/components/**/*.vue',
@@ -34,6 +44,17 @@ export default defineConfig({
           include: ['tests/unit/**/*.test.ts'],
           environment: 'node',
           setupFiles: ['tests/setup/unit.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'integration',
+          include: ['tests/integration/**/*.integration.test.ts'],
+          environment: 'node',
+          setupFiles: ['tests/setup/integration.ts'],
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
+          fileParallelism: false,
         },
       },
       await defineVitestProject({
@@ -63,6 +84,17 @@ export default defineConfig({
           testTimeout: 120_000,
           hookTimeout: 120_000,
           setupFiles: ['tests/setup/e2e.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'rls',
+          include: ['tests/rls/**/*.rls.test.ts'],
+          environment: 'node',
+          setupFiles: ['tests/setup/unit.ts'],
+          testTimeout: 120_000,
+          hookTimeout: 120_000,
+          fileParallelism: false,
         },
       },
     ],
