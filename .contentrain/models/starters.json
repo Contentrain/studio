@@ -28,6 +28,11 @@
       "required": true,
       "type": "select"
     },
+    "framework_icon": {
+      "description": "Framework logo SVG URL for UI display",
+      "required": true,
+      "type": "url"
+    },
     "image": {
       "description": "Preview screenshot of the starter",
       "type": "image"
