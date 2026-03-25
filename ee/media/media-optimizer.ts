@@ -27,6 +27,16 @@ export interface OptimizeResult {
  * 5. Convert to WebP (lossy for photos, lossless for PNGs with alpha)
  */
 export async function optimizeImage(input: Buffer, contentType: string): Promise<OptimizeResult> {
+  // Non-image files: passthrough without Sharp processing
+  if (!contentType.startsWith('image/')) {
+    return { buffer: input, width: 0, height: 0, format: contentType.split('/').pop() ?? 'bin', size: input.length }
+  }
+
+  // SVG: keep as-is, no Sharp processing needed
+  if (contentType === 'image/svg+xml') {
+    return { buffer: input, width: 0, height: 0, format: 'svg', size: input.length }
+  }
+
   let pipeline = sharp(input)
     .rotate() // Auto-orient from EXIF
     .withMetadata({ orientation: undefined }) // Strip EXIF but keep color profile
@@ -47,11 +57,6 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
   const isAlphaPng = contentType === 'image/png' && hasAlpha
   if (isAlphaPng) {
     pipeline = pipeline.webp({ lossless: true })
-  }
-  else if (contentType === 'image/svg+xml') {
-    // SVG: keep as-is, no Sharp processing needed
-    const size = input.length
-    return { buffer: input, width: origWidth ?? 0, height: origHeight ?? 0, format: 'svg', size }
   }
   else {
     pipeline = pipeline.webp({ quality: 85 })
