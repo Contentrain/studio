@@ -88,6 +88,7 @@ describe('local Supabase RLS contracts', () => {
 
 function seedFixtures() {
   executeSql(`
+set session_replication_role = replica;
 insert into auth.users (
   instance_id,
   id,
@@ -108,6 +109,7 @@ insert into auth.users (
   ('00000000-0000-0000-0000-000000000000', '${ids.owner}', 'authenticated', 'authenticated', 'owner@example.com', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', '${ids.member}', 'authenticated', 'authenticated', 'member@example.com', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', '${ids.outsider}', 'authenticated', 'authenticated', 'outsider@example.com', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
+set session_replication_role = origin;
 
 insert into public.profiles (id, display_name, email) values
   ('${ids.owner}', 'Owner', 'owner@example.com'),
@@ -118,7 +120,6 @@ insert into public.workspaces (id, name, slug, type, owner_id, plan) values
   ('${ids.workspace}', 'Studio', 'studio', 'primary', '${ids.owner}', 'team');
 
 insert into public.workspace_members (workspace_id, user_id, role, accepted_at) values
-  ('${ids.workspace}', '${ids.owner}', 'owner', now()),
   ('${ids.workspace}', '${ids.member}', 'member', now());
 
 insert into public.projects (id, workspace_id, repo_full_name, default_branch, content_root, status) values

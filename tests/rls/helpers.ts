@@ -39,7 +39,7 @@ copy (
 ) to stdout;
 `)
 
-  return JSON.parse(output || '[]') as T[]
+  return parseJsonOutput<T>(output)
 }
 
 export function queryAsUserJson<T>(userId: string, sql: string, role: 'authenticated' | 'anon' = 'authenticated'): T[] {
@@ -55,20 +55,29 @@ copy (
 rollback;
 `)
 
-  return JSON.parse(output || '[]') as T[]
+  return parseJsonOutput<T>(output)
 }
 
 export function resetDatabase() {
   executeSql(`
-truncate table public.messages restart identity cascade;
-truncate table public.conversations restart identity cascade;
-truncate table public.agent_usage restart identity cascade;
-truncate table public.ai_keys restart identity cascade;
-truncate table public.project_members restart identity cascade;
-truncate table public.projects restart identity cascade;
-truncate table public.workspace_members restart identity cascade;
-truncate table public.workspaces restart identity cascade;
-truncate table public.profiles restart identity cascade;
-truncate table auth.users restart identity cascade;
+truncate table public.messages cascade;
+truncate table public.conversations cascade;
+truncate table public.agent_usage cascade;
+truncate table public.ai_keys cascade;
+truncate table public.project_members cascade;
+truncate table public.projects cascade;
+truncate table public.workspace_members cascade;
+truncate table public.workspaces cascade;
+truncate table public.profiles cascade;
+truncate table auth.users cascade;
 `)
+}
+
+function parseJsonOutput<T>(output: string) {
+  const normalized = (output || '[]')
+    .replaceAll('\\n', '')
+    .replaceAll('\\t', '')
+    .trim()
+
+  return JSON.parse(normalized || '[]') as T[]
 }

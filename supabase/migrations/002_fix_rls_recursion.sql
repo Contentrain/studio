@@ -39,7 +39,7 @@ create policy "Workspace co-members can view profiles"
     )
   );
 
--- === PROJECTS (simplify — any workspace member can see projects) ===
+-- === PROJECTS ===
 drop policy if exists "Workspace members can view projects" on public.projects;
 
 create policy "Workspace members can view projects"
@@ -49,6 +49,7 @@ create policy "Workspace members can view projects"
       select 1 from public.workspace_members
       where workspace_members.workspace_id = projects.workspace_id
       and workspace_members.user_id = auth.uid()
+      and workspace_members.role in ('owner', 'admin')
     )
     or exists (
       select 1 from public.project_members
