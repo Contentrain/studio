@@ -1,6 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createContentEngine } from '../../server/utils/content-engine'
 import type { GitProvider } from '../../server/providers/git'
+import {
+  resolveConfigPath,
+  resolveContentPath,
+  resolveContextPath,
+  resolveMetaPath,
+  resolveModelPath,
+  resolveModelsDir,
+} from '../../server/utils/content-paths'
+import { serializeCanonical } from '../../server/utils/content-serialization'
 
 function createGitProvider(overrides: Partial<GitProvider> = {}): GitProvider {
   return {
@@ -25,6 +34,20 @@ function createGitProvider(overrides: Partial<GitProvider> = {}): GitProvider {
 }
 
 describe('content engine', () => {
+  beforeEach(() => {
+    vi.stubGlobal('resolveModelPath', resolveModelPath)
+    vi.stubGlobal('resolveContentPath', resolveContentPath)
+    vi.stubGlobal('resolveMetaPath', resolveMetaPath)
+    vi.stubGlobal('resolveContextPath', resolveContextPath)
+    vi.stubGlobal('resolveConfigPath', resolveConfigPath)
+    vi.stubGlobal('resolveModelsDir', resolveModelsDir)
+    vi.stubGlobal('serializeCanonical', serializeCanonical)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('sanitizes invalid document slugs before touching git', async () => {
     const git = createGitProvider()
     const engine = createContentEngine({ git, contentRoot: '' })
@@ -84,5 +107,136 @@ describe('content engine', () => {
       sha: null,
       pullRequestUrl: 'https://example.com/pr/1',
     })
+  })
+
+  it('deletes collection entries and their meta records together', async () => {
+    const commitFiles = vi.fn().mockResolvedValue({
+      sha: 'commit-sha',
+      message: 'delete',
+      author: { name: 'bot', email: 'bot@example.com' },
+      timestamp: '2026-03-25T00:00:00.000Z',
+    })
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/faq.json')) {
+          return JSON.stringify({
+            id: 'faq',
+            name: 'FAQ',
+            kind: 'collection',
+            domain: 'marketing',
+            i18n: true,
+            fields: {},
+          })
+        }
+        if (path.endsWith('/marketing/faq/en.json')) {
+          return JSON.stringify({
+            keep: { title: 'Keep' },
+            drop: { title: 'Drop' },
+          })
+        }
+        if (path.endsWith('/meta/faq/en.json')) {
+          return JSON.stringify({
+            keep: { status: 'published' },
+            drop: { status: 'draft' },
+          })
+        }
+        if (path.endsWith('/context.json')) {
+          return JSON.stringify({ stats: { entries: 2 } })
+        }
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listDirectory: vi.fn().mockResolvedValue(['faq.json']),
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      commitFiles,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    await engine.deleteContent('faq', 'en', ['drop'], 'user@example.com')
+
+    expect(commitFiles).toHaveBeenCalledWith(
+      expect.stringMatching(/^contentrain\/delete-/),
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: '.contentrain/content/marketing/faq/en.json',
+          content: '{\n  "keep": {\n    "title": "Keep"\n  }\n}\n',
+        }),
+        expect.objectContaining({
+          path: '.contentrain/meta/faq/en.json',
+          content: '{\n  "keep": {\n    "status": "published"\n  }\n}\n',
+        }),
+      ]),
+      expect.stringContaining('contentrain: delete 1 entries from faq [en]'),
+      expect.any(Object),
+    )
+  })
+
+  it('updates entry status in meta without touching content files', async () => {
+    const commitFiles = vi.fn().mockResolvedValue({
+      sha: 'commit-sha',
+      message: 'status',
+      author: { name: 'bot', email: 'bot@example.com' },
+      timestamp: '2026-03-25T00:00:00.000Z',
+    })
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/faq.json')) {
+          return JSON.stringify({
+            id: 'faq',
+            name: 'FAQ',
+            kind: 'collection',
+            domain: 'marketing',
+            i18n: true,
+            fields: {},
+          })
+        }
+        if (path.endsWith('/meta/faq/en.json')) {
+          return JSON.stringify({
+            keep: { status: 'draft' },
+          })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      commitFiles,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    await engine.updateEntryStatus('faq', 'en', ['keep', 'new-entry'], 'published', 'user@example.com')
+
+    expect(commitFiles).toHaveBeenCalledWith(
+      expect.stringMatching(/^contentrain\/status-/),
+      [
+        {
+          path: '.contentrain/meta/faq/en.json',
+          content: '{\n  "keep": {\n    "status": "published",\n    "updated_by": "user@example.com"\n  },\n  "new-entry": {\n    "status": "published",\n    "updated_by": "user@example.com"\n  }\n}\n',
+        },
+      ],
+      expect.stringContaining('contentrain: published 2 entries in faq'),
+      expect.any(Object),
+    )
+  })
+
+  it('rejects locale copy on models without i18n support', async () => {
+    const git = createGitProvider({
+      readFile: vi.fn(async () => JSON.stringify({
+        id: 'settings',
+        name: 'Settings',
+        kind: 'singleton',
+        domain: 'system',
+        i18n: false,
+        fields: {},
+      })),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.copyLocale('settings', 'en', 'tr', 'user@example.com')
+
+    expect(result.validation.valid).toBe(false)
+    expect(result.validation.errors[0]?.message).toBe('Model does not support i18n')
   })
 })
