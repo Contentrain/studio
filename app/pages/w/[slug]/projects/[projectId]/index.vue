@@ -34,6 +34,7 @@ const activeBranch = computed(() => {
 })
 const activeVocabulary = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
 const activeCDN = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
+const activeAssets = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
 const activeLocale = ref('en')
 
 // Persist current path for session resume
@@ -242,6 +243,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         :active-branch="activeBranch"
         :active-vocabulary="activeVocabulary"
         :active-cdn="activeCDN"
+        :active-assets="activeAssets"
         :branch-diff="(branchDiff as any)"
         :branch-diff-loading="diffLoading"
         :can-manage-branches="hasFeature(activeWorkspace?.plan, 'workflow.review')"
