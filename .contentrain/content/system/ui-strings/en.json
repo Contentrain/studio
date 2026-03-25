@@ -261,6 +261,7 @@
   "starters.creating": "Creating...",
   "starters.description": "Choose a starter template to create a new project with pre-configured content models",
   "starters.invalid_repo_name": "Only letters, numbers, hyphens, underscores, and dots allowed",
+  "starters.needs_access": "Repository created! Please add it to your GitHub App installation to connect it as a project.",
   "starters.private_repo": "Private Repository",
   "starters.private_repo_hint": "Only you and collaborators can see this repository",
   "starters.repo_name_label": "Repository Name",
