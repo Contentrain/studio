@@ -10,9 +10,9 @@ const projectId = computed(() => route.params.projectId as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLastPath } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
-const { snapshot, loading: snapshotLoading, fetchSnapshot, hasContentrain } = useSnapshot()
+const { snapshot, loading: snapshotLoading, fetchSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
-const { branchDiff, diffLoading, fetchBranchDiff, clearBranchDiff, fetchBranches, mergeBranch, rejectBranch } = useBranches()
+const { branchDiff, diffLoading, fetchBranchDiff, clearBranchDiff, clearBranches, fetchBranches, mergeBranch, rejectBranch } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -41,26 +41,40 @@ watch(() => route.fullPath, (path) => {
   saveLastPath(path)
 }, { immediate: true })
 
-onMounted(async () => {
+// Bootstrap project state — handles both initial load AND SPA navigation between projects/workspaces.
+// Replaces onMounted to ensure state resets on route reuse.
+watch([projectId, slug], async ([newProjectId, newSlug], old) => {
+  const [oldProjectId, oldSlug] = old ?? [undefined, undefined]
+
+  // Clear stale state from previous project
+  if (oldProjectId) {
+    clearContent()
+    clearBranches()
+    clearSnapshot()
+  }
+
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
 
-  const ws = workspaces.value.find(w => w.slug === slug.value)
-  if (ws) {
-    setActiveWorkspace(ws.id)
-    if (projects.value.length === 0)
-      await fetchProjects(ws.id)
-    await fetchSnapshot(ws.id, projectId.value)
+  const ws = workspaces.value.find(w => w.slug === newSlug)
+  if (!ws) return
 
-    // Set default locale from config
-    const config = snapshot.value?.config as { locales?: { default?: string } } | null
-    if (config?.locales?.default) activeLocale.value = config.locales.default
+  setActiveWorkspace(ws.id)
 
-    if (activeModelId.value) {
-      await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
-    }
+  // Re-fetch projects on workspace change or when list is empty
+  if (!oldSlug || oldSlug !== newSlug || projects.value.length === 0)
+    await fetchProjects(ws.id)
+
+  await fetchSnapshot(ws.id, newProjectId)
+
+  // Set default locale from config
+  const config = snapshot.value?.config as { locales?: { default?: string } } | null
+  activeLocale.value = config?.locales?.default ?? 'en'
+
+  if (activeModelId.value) {
+    await fetchContent(ws.id, newProjectId, activeModelId.value, activeLocale.value)
   }
-})
+}, { immediate: true })
 
 // Watch for model changes AFTER initial load (user clicks in sidebar)
 watch(activeModelId, async (modelId, oldModelId) => {

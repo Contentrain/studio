@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineNuxtConfig({
   modules: ['@nuxt/eslint', '@nuxt/image', 'nuxt-mcp-dev'],
 
+  ssr: false,
+
   devtools: { enabled: true },
 
   css: ['~/assets/css/main.css'],

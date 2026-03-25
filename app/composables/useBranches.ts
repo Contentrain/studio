@@ -62,6 +62,11 @@ export function useBranches() {
     branchDiff.value = null
   }
 
+  function clearBranches() {
+    branches.value = []
+    branchDiff.value = null
+  }
+
   async function mergeBranch(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
     try {
       const result = await $fetch<{ merged: boolean }>(
@@ -106,6 +111,7 @@ export function useBranches() {
     fetchBranches,
     fetchBranchDiff,
     clearBranchDiff,
+    clearBranches,
     mergeBranch,
     rejectBranch,
   }
