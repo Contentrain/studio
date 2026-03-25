@@ -27,4 +27,10 @@ describe('app smoke', () => {
     expect(html).toContain('Sign in to your account')
     expect(html).toContain('Continue with GitHub')
   })
+
+  it('rejects anonymous access to the auth session endpoint', async () => {
+    const response = await fetch('/api/auth/me')
+
+    expect(response.status).toBe(401)
+  })
 })

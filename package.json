@@ -13,7 +13,14 @@
     "release": "changelogen --release",
     "changelog": "changelogen",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "test": "vitest --project unit --project nuxt",
+    "test:watch": "vitest --project unit --project nuxt",
+    "test:unit": "vitest run --project unit",
+    "test:nuxt": "vitest run --project nuxt",
+    "test:e2e": "vitest run --project e2e",
+    "test:coverage": "vitest run --coverage --project unit --project nuxt",
+    "test:ci": "pnpm test:unit && pnpm test:nuxt && pnpm test:e2e"
   },
   "lint-staged": {
     "*.{js,ts,mjs,vue}": "eslint --fix"
