@@ -1,6 +1,6 @@
 export type { AuthProvider, AuthUser, AuthSession, OAuthRedirectResult } from './auth'
 export type { DatabaseProvider } from './database'
-export type { StorageProvider, StorageFile } from './storage'
+export type { MediaProvider, MediaAsset, MediaVariant, MediaUsageRef, VariantConfig, UploadOptions, MediaListOptions } from './media'
 export type {
   GitProvider,
   TreeEntry,

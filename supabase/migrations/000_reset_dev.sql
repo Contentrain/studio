@@ -10,6 +10,8 @@ drop function if exists public.handle_new_user();
 drop function if exists public.handle_new_workspace();
 
 -- Drop tables (order matters for FK constraints)
+drop table if exists public.media_usage cascade;
+drop table if exists public.media_assets cascade;
 drop table if exists public.cdn_usage cascade;
 drop table if exists public.cdn_builds cascade;
 drop table if exists public.cdn_api_keys cascade;
