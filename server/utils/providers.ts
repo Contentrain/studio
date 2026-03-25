@@ -2,6 +2,7 @@ import type { AuthProvider } from '../providers/auth'
 import type { AIProvider } from '../providers/ai'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider, CDNObject } from '../providers/cdn'
+import type { MediaProvider } from '../providers/media'
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createGitHubAppProvider } from '../providers/github-app'
@@ -18,6 +19,7 @@ import { createAnthropicProvider } from '../providers/anthropic-ai'
 let _authProvider: AuthProvider | null = null
 let _aiProvider: AIProvider | null = null
 let _cdnProvider: CDNProvider | null = null
+let _mediaProvider: MediaProvider | null = null
 
 export function useAuthProvider(): AuthProvider {
   if (!_authProvider)
@@ -96,6 +98,26 @@ export function useCDNProvider(): CDNProvider | null {
   })
 
   return _cdnProvider
+}
+
+/**
+ * Media Provider (singleton).
+ *
+ * Returns null if CDN/R2 is not configured (media requires object storage).
+ * Uses Sharp for image processing + CDNProvider for R2 storage.
+ */
+export function useMediaProvider(): MediaProvider | null {
+  if (_mediaProvider) return _mediaProvider
+
+  const cdn = useCDNProvider()
+  if (!cdn) return null
+
+  // Lazy-import EE module at factory call time (not at module load)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('../../ee/media/sharp-processor') as { createSharpMediaProvider: typeof import('../../ee/media/sharp-processor')['createSharpMediaProvider'] }
+  _mediaProvider = mod.createSharpMediaProvider({ cdn, admin: useSupabaseAdmin() })
+
+  return _mediaProvider
 }
 
 /**
