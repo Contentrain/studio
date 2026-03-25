@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const { t } = useContent()
+
 const props = defineProps<{
   content: Record<string, Record<string, unknown>>
   meta?: Record<string, unknown> | null

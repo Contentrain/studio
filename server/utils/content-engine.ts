@@ -768,13 +768,15 @@ export function createContentEngine(ctx: ContentEngineContext) {
           }
         }
 
-        // Create empty meta file
-        for (const locale of locales) {
-          const metaPath = resolveMetaPath(pathCtx, model, locale)
-          files.push({
-            path: metaPath,
-            content: serializeCanonical({}),
-          })
+        // Create empty meta file (skip document kind — meta is per-slug)
+        if (model.kind !== 'document') {
+          for (const locale of locales) {
+            const metaPath = resolveMetaPath(pathCtx, model, locale)
+            files.push({
+              path: metaPath,
+              content: serializeCanonical({}),
+            })
+          }
         }
       }
 

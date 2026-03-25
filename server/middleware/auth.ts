@@ -20,7 +20,7 @@ const PUBLIC_PATHS = [
 const REFRESH_BUFFER_SECONDS = 5 * 60
 
 export default defineEventHandler(async (event) => {
-  const path = getRequestURL(event).pathname
+  const path = getRequestPath(event)
 
   // Skip non-API routes and public paths
   if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)))

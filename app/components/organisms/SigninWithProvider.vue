@@ -1,4 +1,8 @@
 <script lang="ts" setup>
+const props = defineProps<{
+  error?: string
+}>()
+
 defineEmits<{
   provider: [provider: 'github' | 'google']
   showEmail: []
@@ -14,6 +18,10 @@ const { t } = useContent()
         {{ t('auth.welcome_back') }}<br>
         {{ t('auth.sign_in_title') }}
       </AtomsHeadingText>
+
+      <p v-if="props.error" class="mt-4 text-sm text-danger-600 dark:text-danger-400">
+        {{ props.error }}
+      </p>
 
       <MoleculesProviderButtons class="mt-8" @provider="$emit('provider', $event)" />
 

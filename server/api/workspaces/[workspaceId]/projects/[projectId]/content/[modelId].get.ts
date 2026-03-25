@@ -92,9 +92,17 @@ async function readDocumentContent(
       if (!model.i18n && item.endsWith('.md')) {
         // Non-i18n: flat .md files
         try {
+          const slug = item.replace('.md', '')
           const raw = await git.readFile(`${contentDir}/${item}`)
           const parsed = matter(raw)
-          entries.push({ slug: item.replace('.md', ''), frontmatter: parsed.data, body: parsed.content })
+          // Load per-document meta
+          let entryMeta: Record<string, unknown> | null = null
+          try {
+            const metaPath = resolveMetaPath(ctx, model, locale, slug)
+            entryMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+          }
+          catch { /* no meta */ }
+          entries.push({ slug, frontmatter: parsed.data, body: parsed.content, meta: entryMeta })
         }
         catch { /* skip */ }
       }
@@ -103,7 +111,14 @@ async function readDocumentContent(
         try {
           const raw = await git.readFile(`${contentDir}/${item}/${locale}.md`)
           const parsed = matter(raw)
-          entries.push({ slug: item, frontmatter: parsed.data, body: parsed.content })
+          // Load per-document meta
+          let entryMeta: Record<string, unknown> | null = null
+          try {
+            const metaPath = resolveMetaPath(ctx, model, locale, item)
+            entryMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+          }
+          catch { /* no meta */ }
+          entries.push({ slug: item, frontmatter: parsed.data, body: parsed.content, meta: entryMeta })
         }
         catch { /* skip */ }
       }
@@ -111,13 +126,5 @@ async function readDocumentContent(
   }
   catch { /* directory not accessible */ }
 
-  // Load meta
-  let meta: Record<string, unknown> | null = null
-  try {
-    const metaPath = resolveMetaPath(ctx, model, locale)
-    meta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
-  }
-  catch { /* no meta */ }
-
-  return { modelId: model.id, locale, kind: 'document', data: entries, meta }
+  return { modelId: model.id, locale, kind: 'document', data: entries, meta: null }
 }

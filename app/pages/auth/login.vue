@@ -50,6 +50,7 @@ function resetEmailForm() {
 <template>
   <OrganismsSigninWithProvider
     v-if="!showEmailForm"
+    :error="error"
     @provider="handleOAuth"
     @show-email="showEmailForm = true"
   />
