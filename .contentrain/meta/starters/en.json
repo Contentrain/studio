@@ -1,0 +1,32 @@
+{
+  "astro-blog": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "astro-landing": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "next-commerce": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "nuxt-saas": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "sveltekit-editorial": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "vitepress-docs": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  }
+}
