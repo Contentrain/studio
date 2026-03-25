@@ -239,4 +239,96 @@ describe('content engine', () => {
     expect(result.validation.valid).toBe(false)
     expect(result.validation.errors[0]?.message).toBe('Model does not support i18n')
   })
+
+  it('saves model definitions and tracks new model count in context', async () => {
+    const commitFiles = vi.fn().mockResolvedValue({
+      sha: 'commit-sha',
+      message: 'save model',
+      author: { name: 'bot', email: 'bot@example.com' },
+      timestamp: '2026-03-25T00:00:00.000Z',
+    })
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/context.json')) {
+          return JSON.stringify({ stats: { entries: 0 } })
+        }
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
+        }
+        throw new Error(`Missing file: ${path}`)
+      }),
+      listDirectory: vi.fn().mockResolvedValue(['faq.json']),
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      commitFiles,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    await engine.saveModel({
+      id: 'authors',
+      name: 'Authors',
+      kind: 'collection',
+      domain: 'marketing',
+      i18n: true,
+      fields: {},
+    } as never, 'user@example.com')
+
+    expect(commitFiles).toHaveBeenCalledWith(
+      expect.stringMatching(/^contentrain\/model-/),
+      expect.arrayContaining([
+        expect.objectContaining({ path: '.contentrain/models/authors.json' }),
+        expect.objectContaining({ path: '.contentrain/context.json' }),
+      ]),
+      expect.stringContaining('contentrain: save model authors'),
+      expect.any(Object),
+    )
+  })
+
+  it('initializes a project with config, models, content, and meta files', async () => {
+    const commitFiles = vi.fn().mockResolvedValue({
+      sha: 'commit-sha',
+      message: 'init',
+      author: { name: 'bot', email: 'bot@example.com' },
+      timestamp: '2026-03-25T00:00:00.000Z',
+    })
+    const git = createGitProvider({
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      commitFiles,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: 'apps/web' })
+
+    await engine.initProject(
+      'nuxt',
+      ['en', 'tr'],
+      ['marketing'],
+      [
+        {
+          id: 'faq',
+          name: 'FAQ',
+          kind: 'collection',
+          domain: 'marketing',
+          i18n: true,
+          fields: {},
+        },
+      ] as never,
+      'user@example.com',
+    )
+
+    expect(commitFiles).toHaveBeenCalledWith(
+      expect.stringMatching(/^contentrain\/init-/),
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'apps/web/.contentrain/config.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/context.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/vocabulary.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/models/faq.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/content/marketing/faq/en.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/content/marketing/faq/tr.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/meta/faq/en.json' }),
+        expect.objectContaining({ path: 'apps/web/.contentrain/meta/faq/tr.json' }),
+      ]),
+      expect.stringContaining('contentrain: initialize project'),
+      expect.any(Object),
+    )
+  })
 })
