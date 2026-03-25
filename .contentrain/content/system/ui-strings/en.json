@@ -263,5 +263,10 @@
   "cdn.build_building": "Building",
   "cdn.build_pending": "Pending",
   "cdn.files": "files",
-  "cdn.snippet_title": "SDK Integration"
+  "cdn.snippet_title": "SDK Integration",
+  "ai_keys.provider_info": "Select the AI provider for your API key. Currently only Anthropic (Claude) is supported.",
+  "ai_keys.key_info": "Your API key is encrypted before storage. It's used for chat requests when BYOA is enabled on Pro+ plans.",
+  "cdn.keys_info": "API keys authenticate requests to the CDN. Each key is shown only once at creation — store it securely.",
+  "cdn.builds_info": "Each build snapshots your content into the CDN. Builds trigger automatically on content changes.",
+  "members.project_access_info": "Project members get specific roles (editor, reviewer, viewer) per project. Workspace owners and admins have full access to all projects."
 }

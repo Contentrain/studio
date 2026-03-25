@@ -323,7 +323,7 @@ export default defineEventHandler(async (event) => {
 
           // Execute tool
           const result = await executeToolWithAutoMerge(
-            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions,
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions, plan,
           )
 
           // Accumulate affected resources
@@ -397,9 +397,12 @@ async function executeToolWithAutoMerge(
   contentRoot: string,
   workflow: string,
   permissions: AgentPermissions,
+  plan: string,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
   const affected: AffectedResources = emptyAffected()
+  // Free plan: auto-publish on save. Pro+: draft (user publishes manually or via review merge)
+  const autoPublish = plan === 'free'
 
   try {
     let result: unknown
@@ -508,10 +511,10 @@ async function executeToolWithAutoMerge(
         if (params.slug && typeof params.slug === 'string') {
           const frontmatter = (params.data ?? params.frontmatter ?? {}) as Record<string, unknown>
           const body = (params.body as string) ?? ''
-          writeResult = await engine.saveDocument(modelId, locale, params.slug as string, frontmatter, body, userEmail)
+          writeResult = await engine.saveDocument(modelId, locale, params.slug as string, frontmatter, body, userEmail, { autoPublish })
         }
         else {
-          writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail)
+          writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail, { autoPublish })
         }
 
         affected.models.push(modelId)

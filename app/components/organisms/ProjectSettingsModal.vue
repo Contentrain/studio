@@ -120,13 +120,17 @@ async function save() {
 <template>
   <DialogRoot v-model:open="open">
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+      <DialogOverlay
+        class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out"
+      />
       <DialogContent
         class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border border-secondary-200 bg-white shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
         @interact-outside.prevent
       >
         <!-- Header -->
-        <div class="flex items-center justify-between border-b border-secondary-200 px-5 py-4 dark:border-secondary-800">
+        <div
+          class="flex items-center justify-between border-b border-secondary-200 px-5 py-4 dark:border-secondary-800"
+        >
           <div>
             <DialogTitle class="text-base font-semibold text-heading dark:text-secondary-100">
               {{ t('project_settings.title') }}
@@ -157,8 +161,7 @@ async function save() {
                 :class="workflow === 'auto-merge'
                   ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
                   : 'border-secondary-200 text-body hover:border-secondary-300 dark:border-secondary-700 dark:text-secondary-400 dark:hover:border-secondary-600'
-                "
-                @click="workflow = 'auto-merge'"
+                " @click="workflow = 'auto-merge'"
               >
                 <div class="font-medium">
                   {{ t('project_settings.workflow_auto') }}
@@ -168,14 +171,12 @@ async function save() {
                 </div>
               </button>
               <button
-                type="button"
-                :disabled="!canReview"
+                type="button" :disabled="!canReview"
                 class="flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 :class="workflow === 'review'
                   ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
                   : 'border-secondary-200 text-body hover:border-secondary-300 dark:border-secondary-700 dark:text-secondary-400 dark:hover:border-secondary-600'
-                "
-                @click="canReview ? workflow = 'review' : undefined"
+                " @click="canReview ? workflow = 'review' : undefined"
               >
                 <div class="flex items-center gap-1.5 font-medium">
                   {{ t('project_settings.workflow_review') }}
@@ -212,25 +213,24 @@ async function save() {
             <AtomsFormSelect
               :model-value="defaultLocale"
               :options="supportedLocales.map(l => ({ value: l, label: `${l.toUpperCase()} — ${getLocaleName(l)}` }))"
-              size="md"
-              class="mt-1.5"
-              @update:model-value="defaultLocale = $event"
+              size="md" class="mt-1.5" @update:model-value="defaultLocale = $event"
             />
           </div>
 
           <!-- Supported Locales -->
           <div>
-            <AtomsFormLabel :text="t('project_settings.locales')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('project_settings.locales')" size="sm" />
+              <AtomsInfoTooltip :text="t('project_settings.locales_info')" />
+            </div>
             <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
               <span
-                v-for="locale in supportedLocales"
-                :key="locale"
+                v-for="locale in supportedLocales" :key="locale"
                 class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-[11px] font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
               >
                 {{ locale.toUpperCase() }}
                 <button
-                  v-if="supportedLocales.length > 1"
-                  type="button"
+                  v-if="supportedLocales.length > 1" type="button"
                   class="rounded-full text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                   @click="removeLocale(locale)"
                 >
@@ -239,12 +239,12 @@ async function save() {
               </span>
             </div>
             <ComboboxRoot
-              class="relative mt-2"
-              :model-value="''"
-              :filter-function="filterLocales"
+              class="relative mt-2" :model-value="''" :filter-function="filterLocales"
               @update:model-value="addLocale($event as string)"
             >
-              <ComboboxAnchor class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900">
+              <ComboboxAnchor
+                class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900"
+              >
                 <span class="icon-[annon--search] size-3.5 shrink-0 text-muted" aria-hidden="true" />
                 <ComboboxInput
                   :placeholder="t('project_settings.locale_placeholder')"
@@ -253,18 +253,15 @@ async function save() {
               </ComboboxAnchor>
               <ComboboxPortal>
                 <ComboboxContent
-                  position="popper"
-                  :side-offset="4"
-                  class="z-[100] max-h-48 w-[var(--radix-combobox-trigger-width)] overflow-hidden rounded-lg border border-secondary-200 bg-white shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
+                  position="popper" :side-offset="4"
+                  class="z-100 max-h-48 w-(--radix-combobox-trigger-width) overflow-hidden rounded-lg border border-secondary-200 bg-white shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
                 >
                   <ComboboxViewport class="p-1">
                     <ComboboxEmpty class="px-3 py-2 text-xs text-muted">
                       No matching language
                     </ComboboxEmpty>
                     <ComboboxItem
-                      v-for="locale in availableLocales"
-                      :key="locale.code"
-                      :value="locale.code"
+                      v-for="locale in availableLocales" :key="locale.code" :value="locale.code"
                       class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
                     >
                       <span class="w-7 shrink-0 text-xs font-medium text-muted">{{ locale.code.toUpperCase() }}</span>
@@ -281,11 +278,13 @@ async function save() {
 
           <!-- Domains -->
           <div>
-            <AtomsFormLabel :text="t('project_settings.domains')" size="sm" />
+            <div class="flex items-center gap-1">
+              <AtomsFormLabel :text="t('project_settings.domains')" size="sm" />
+              <AtomsInfoTooltip :text="t('project_settings.domains_info')" />
+            </div>
             <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
               <span
-                v-for="domain in domains"
-                :key="domain"
+                v-for="domain in domains" :key="domain"
                 class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-[11px] font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
               >
                 {{ domain }}
@@ -300,9 +299,7 @@ async function save() {
             </div>
             <form class="mt-1.5 flex items-center gap-1.5" @submit.prevent="addDomain">
               <AtomsFormInput
-                v-model="newDomain"
-                type="text"
-                :placeholder="t('project_settings.domains_placeholder')"
+                v-model="newDomain" type="text" :placeholder="t('project_settings.domains_placeholder')"
                 class="w-36"
               />
               <AtomsBaseButton type="submit" variant="ghost" size="sm" :disabled="!newDomain.trim()">
@@ -313,16 +310,13 @@ async function save() {
         </div>
 
         <!-- Footer -->
-        <div class="flex items-center justify-end gap-2 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
+        <div
+          class="flex items-center justify-end gap-2 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800"
+        >
           <AtomsBaseButton variant="ghost" size="md" @click="open = false">
             {{ t('common.cancel') }}
           </AtomsBaseButton>
-          <AtomsBaseButton
-            variant="primary"
-            size="md"
-            :disabled="!hasChanges || saving"
-            @click="save"
-          >
+          <AtomsBaseButton variant="primary" size="md" :disabled="!hasChanges || saving" @click="save">
             {{ saving ? t('project_settings.saving') : t('common.save_changes') }}
           </AtomsBaseButton>
         </div>

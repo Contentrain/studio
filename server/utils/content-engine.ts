@@ -137,6 +137,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       locale: string,
       data: Record<string, unknown>,
       userEmail: string,
+      options?: { autoPublish?: boolean },
     ): Promise<WriteResult> {
       // 1. Load model definition
       const modelPath = resolveModelPath(pathCtx, modelId)
@@ -266,15 +267,18 @@ export function createContentEngine(ctx: ContentEngineContext) {
       }
       catch { /* no existing meta */ }
 
+      const defaultStatus = options?.autoPublish ? 'published' : 'draft'
+
       let updatedMeta: unknown
       if (modelDef.kind === 'collection') {
         // Per-entry meta
         const metaMap = { ...existingMeta } as Record<string, EntryMeta>
         const normalizedData = toObjectMap(data)
         for (const entryId of Object.keys(normalizedData)) {
+          const existingStatus = metaMap[entryId]?.status
           metaMap[entryId] = {
             ...(metaMap[entryId] ?? {}),
-            status: metaMap[entryId]?.status ?? 'draft',
+            status: options?.autoPublish ? 'published' : (existingStatus ?? defaultStatus),
             source: 'agent',
             updated_by: userEmail,
           } as EntryMeta
@@ -283,9 +287,10 @@ export function createContentEngine(ctx: ContentEngineContext) {
       }
       else {
         // Single meta for singleton/dictionary
+        const existingStatus = (existingMeta as unknown as EntryMeta).status
         updatedMeta = {
           ...existingMeta,
-          status: (existingMeta as unknown as EntryMeta).status ?? 'draft',
+          status: options?.autoPublish ? 'published' : (existingStatus ?? defaultStatus),
           source: 'agent' as const,
           updated_by: userEmail,
         }
@@ -396,6 +401,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       frontmatter: Record<string, unknown>,
       body: string,
       userEmail: string,
+      options?: { autoPublish?: boolean },
     ): Promise<WriteResult> {
       // Sanitize slug — prevent path traversal
       const safeSlug = slug.replace(/[^a-z0-9_-]/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
@@ -434,9 +440,11 @@ export function createContentEngine(ctx: ContentEngineContext) {
         existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
       }
       catch { /* no existing meta */ }
+      const docDefaultStatus = options?.autoPublish ? 'published' : 'draft'
+      const existingDocStatus = (existingMeta as unknown as EntryMeta).status
       const updatedMeta = {
         ...existingMeta,
-        status: (existingMeta as unknown as EntryMeta).status ?? 'draft',
+        status: options?.autoPublish ? 'published' : (existingDocStatus ?? docDefaultStatus),
         source: 'agent' as const,
         updated_by: userEmail,
       }
@@ -499,6 +507,49 @@ export function createContentEngine(ctx: ContentEngineContext) {
           { path: contextPath, content: contextJson },
         ],
         message,
+        BOT_AUTHOR,
+      )
+
+      const diff = await git.getBranchDiff(branchName)
+      return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
+    },
+
+    /**
+     * Update entry status (publish/unpublish/archive).
+     * Only modifies meta, not content.
+     */
+    async updateEntryStatus(
+      modelId: string,
+      locale: string,
+      entryIds: string[],
+      status: 'draft' | 'published' | 'archived',
+      userEmail: string,
+    ): Promise<WriteResult> {
+      const modelPath = resolveModelPath(pathCtx, modelId)
+      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+      const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
+
+      let existingMeta: Record<string, EntryMeta> = {}
+      try {
+        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, EntryMeta>
+      }
+      catch { /* no meta */ }
+
+      for (const entryId of entryIds) {
+        existingMeta[entryId] = {
+          ...(existingMeta[entryId] ?? {}),
+          status,
+          updated_by: userEmail,
+        } as EntryMeta
+      }
+
+      const branchName = `contentrain/status-${generateBranchId()}`
+      await git.createBranch(branchName)
+
+      const commit = await git.commitFiles(
+        branchName,
+        [{ path: metaPath, content: serializeCanonical(existingMeta) }],
+        `contentrain: ${status} ${entryIds.length} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
         BOT_AUTHOR,
       )
 
