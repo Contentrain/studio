@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - run: pnpm install
@@ -30,6 +30,12 @@ jobs:
 
       - name: Generate Contentrain client
         run: npx contentrain generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test:ci
 
       - name: Build
         run: pnpm build

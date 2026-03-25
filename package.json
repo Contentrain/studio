@@ -44,13 +44,20 @@
     "@commitlint/config-conventional": "^20.5.0",
     "@contentrain/mcp": "^1.0.3",
     "@iconify/tailwind4": "^1.2.3",
+    "@nuxt/test-utils": "^4.0.0",
     "@tailwindcss/vite": "^4.2.1",
+    "@vitest/coverage-v8": "^4.1.1",
+    "@vue/test-utils": "^2.4.6",
     "changelogen": "^0.6.2",
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.8.8",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "nuxt-mcp-dev": "^0.3.2",
+    "playwright-core": "^1.58.2",
     "tailwindcss": "^4.2.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.1"
   },
   "imports": {
     "#contentrain": {
