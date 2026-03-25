@@ -30,12 +30,16 @@ const activeBranch = computed(() => {
 const isCDNActive = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
 
-// Fetch branches when project changes (handles both initial load and SPA navigation)
-watch(currentProjectId, async (id) => {
-  if (id && activeWorkspace.value) {
-    await fetchBranches(activeWorkspace.value.id, id)
-  }
-}, { immediate: true })
+// Fetch branches when project/workspace context becomes available.
+watch(
+  () => [currentProjectId.value, activeWorkspace.value?.id] as const,
+  async ([id, workspaceId]) => {
+    if (id && workspaceId) {
+      await fetchBranches(workspaceId, id)
+    }
+  },
+  { immediate: true },
+)
 
 const sidebarLinks = computed(() => {
   if (!activeWorkspace.value) return []

@@ -4,13 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   modules: ['@nuxt/eslint', '@nuxt/image', 'nuxt-mcp-dev'],
-
   ssr: false,
-
   devtools: { enabled: true },
-
   css: ['~/assets/css/main.css'],
-
   runtimeConfig: {
     sessionSecret: '', // NUXT_SESSION_SECRET — min 32 chars, AES-256 cookie encryption
     github: {

@@ -71,6 +71,10 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
   const config = snapshot.value?.config as { locales?: { default?: string } } | null
   activeLocale.value = config?.locales?.default ?? 'en'
 
+  if (activeBranch.value) {
+    await fetchBranchDiff(ws.id, newProjectId, activeBranch.value)
+  }
+
   if (activeModelId.value) {
     await fetchContent(ws.id, newProjectId, activeModelId.value, activeLocale.value)
   }
