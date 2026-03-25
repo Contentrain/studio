@@ -188,7 +188,7 @@ const projectRoleOptions = computed(() => {
 })
 
 const projectOptions = computed(() =>
-  projects.value.map(p => ({ value: p.id, label: p.repo_full_name })),
+  projects.value.map(p => ({ value: p.id, label: p.repo_full_name.split('/').pop() ?? p.repo_full_name })),
 )
 
 const roleVariant: Record<string, 'primary' | 'success' | 'warning' | 'info' | 'secondary'> = {

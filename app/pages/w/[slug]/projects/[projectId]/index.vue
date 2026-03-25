@@ -221,7 +221,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         ref="chatPanelRef"
         :workspace-id="activeWorkspace.id"
         :project-id="projectId"
-        :project-name="project?.repo_full_name ?? t('common.loading')"
+        :project-name="project?.repo_full_name?.split('/').pop() ?? t('common.loading')"
         :project-status="effectiveProjectStatus"
         :context="chatContext"
         @content-changed="handleContentChanged"
