@@ -33,6 +33,9 @@ const TOOL_ROLES: Record<string, string[]> = {
   reject_branch: ['reviewer', 'admin', 'owner'],
   init_project: ['admin', 'owner'],
   copy_locale: ['editor', 'admin', 'owner'],
+  search_media: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
+  upload_media: ['editor', 'admin', 'owner'],
+  get_media: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
 }
 
 export async function resolveAgentPermissions(

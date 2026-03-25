@@ -213,6 +213,59 @@ Provide initial models with full field definitions using Contentrain's 27 type s
     defaultAffects: { branchesChanged: true, snapshotChanged: false },
     workflowBehavior: 'workflow-dependent',
   },
+
+  // ─── Media Tools ───
+
+  {
+    name: 'search_media',
+    description: 'Search the project media library. Returns assets with variants, dimensions, blurhash, and alt text. Use this to find existing images before uploading new ones.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search by filename, alt text, or tags' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Filter by tags' },
+        type: { type: 'string', description: 'Filter by MIME type prefix (e.g. "image", "video")' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
+      },
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'upload_media',
+    description: `Upload an image from URL to the project media library. Automatically optimizes, generates variants, and returns the media path. Use the returned path in save_content for image/video/file fields.
+
+Example: upload_media({ url: "https://...", alt: "Hero banner" }) → { path: "media/original/abc123.webp", ... }
+Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" } })`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Source image URL to fetch and upload' },
+        alt: { type: 'string', description: 'Alt text for accessibility' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for organization' },
+        variants: { type: 'string', description: 'Variant preset name (e.g. "hero-image", "avatar") or omit for default' },
+      },
+      required: ['url'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'get_media',
+    description: 'Get full metadata for a specific media asset by ID. Returns variants, dimensions, blurhash, alt, tags, and usage info.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assetId: { type: 'string', description: 'Asset UUID' },
+      },
+      required: ['assetId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
 ]
 
 /**

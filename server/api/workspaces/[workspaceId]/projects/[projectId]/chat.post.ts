@@ -672,6 +672,116 @@ async function executeToolWithAutoMerge(
         break
       }
 
+      case 'search_media': {
+        const mediaProvider = useMediaProvider()
+        if (!mediaProvider) {
+          result = { error: 'Media storage not configured' }
+          break
+        }
+        if (!hasFeature(plan, 'media.library')) {
+          result = { error: 'Media library requires Pro plan or higher' }
+          break
+        }
+        const searchResult = await mediaProvider.listAssets(projectId, {
+          search: params.query as string | undefined,
+          tags: params.tags as string[] | undefined,
+          contentType: params.type as string | undefined,
+          limit: Math.min((params.limit as number) ?? 10, 20),
+        })
+        result = searchResult.assets.map(a => ({
+          id: a.id,
+          filename: a.filename,
+          path: a.originalPath,
+          alt: a.alt,
+          tags: a.tags,
+          dimensions: `${a.width}x${a.height}`,
+          format: a.format,
+          blurhash: a.blurhash,
+          variants: Object.fromEntries(Object.entries(a.variants).map(([k, v]) => [k, v.path])),
+        }))
+        break
+      }
+
+      case 'upload_media': {
+        const mediaProvider = useMediaProvider()
+        if (!mediaProvider) {
+          result = { error: 'Media storage not configured' }
+          break
+        }
+        if (!hasFeature(plan, 'media.upload')) {
+          result = { error: 'Media upload requires Pro plan or higher' }
+          break
+        }
+        const url = params.url as string
+        if (!url) {
+          result = { error: 'url is required' }
+          break
+        }
+        let fetchResponse: Response
+        try {
+          fetchResponse = await fetch(url, {
+            headers: { 'User-Agent': 'Contentrain-Studio/1.0' },
+            signal: AbortSignal.timeout(30_000),
+          })
+        }
+        catch {
+          result = { error: 'Failed to fetch URL' }
+          break
+        }
+        if (!fetchResponse.ok) {
+          result = { error: `URL returned ${fetchResponse.status}` }
+          break
+        }
+        const mimeType = (fetchResponse.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim()
+        if (!isAllowedMimeType(mimeType)) {
+          result = { error: `File type not allowed: ${mimeType}` }
+          break
+        }
+        const fileBuffer = Buffer.from(await fetchResponse.arrayBuffer())
+        const urlFilename = new URL(url).pathname.split('/').pop() ?? 'uploaded-file'
+        const variants = resolveVariantConfig(params.variants as string | undefined)
+
+        const asset = await mediaProvider.upload({
+          projectId,
+          workspaceId,
+          file: fileBuffer,
+          filename: urlFilename,
+          contentType: mimeType,
+          alt: params.alt as string | undefined,
+          tags: params.tags as string[] | undefined,
+          variants,
+          uploadedBy: session.user.id,
+          source: 'agent',
+        })
+        result = {
+          id: asset.id,
+          path: asset.originalPath,
+          filename: asset.filename,
+          dimensions: `${asset.width}x${asset.height}`,
+          variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
+        }
+        break
+      }
+
+      case 'get_media': {
+        const mediaProvider = useMediaProvider()
+        if (!mediaProvider) {
+          result = { error: 'Media storage not configured' }
+          break
+        }
+        if (!hasFeature(plan, 'media.library')) {
+          result = { error: 'Media library requires Pro plan or higher' }
+          break
+        }
+        const asset = await mediaProvider.getAsset(params.assetId as string)
+        if (!asset || asset.projectId !== projectId) {
+          result = { error: 'Asset not found' }
+          break
+        }
+        result = asset
+        break
+      }
+
       default:
         result = { error: `Unknown tool: ${name}` }
     }
