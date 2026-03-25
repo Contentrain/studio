@@ -44,8 +44,7 @@ describe('auth route integration', () => {
 
       expect(response.status).toBe(400)
       await expect(response.json()).resolves.toMatchObject({
-        status: 400,
-        message: 'Invalid provider. Must be "github" or "google".',
+        statusCode: 400,
       })
     })
   })

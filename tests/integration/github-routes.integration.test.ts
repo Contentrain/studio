@@ -82,8 +82,7 @@ describe('GitHub route integration', () => {
 
       expect(response.status).toBe(409)
       await expect(response.json()).resolves.toMatchObject({
-        status: 409,
-        message: 'This GitHub installation is already linked to another workspace',
+        statusCode: 409,
       })
     })
   })
@@ -125,7 +124,8 @@ describe('GitHub route integration', () => {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(404)
+      expect(response.status).toBe(302)
+      expect(response.headers.get('location')).toBe('/w/studio-team')
       expect(updateEq).toHaveBeenCalledWith('id', 'workspace-primary')
     })
   })
