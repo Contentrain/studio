@@ -45,7 +45,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
         options: {
           redirectTo: `${config.public.siteUrl}${redirectTo}`,
           skipBrowserRedirect: true,
-          scopes: provider === 'github' ? 'read:user user:email' : undefined,
+          // Let Supabase handle default scopes per provider
         },
       })
 
