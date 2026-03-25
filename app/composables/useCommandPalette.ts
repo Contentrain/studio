@@ -32,7 +32,6 @@ export function useCommandPalette() {
 
   // Recent items from localStorage
   function getRecent(): Array<{ id: string, label: string, sublabel?: string, icon: string, type: string }> {
-    if (import.meta.server) return []
     try {
       return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
     }
@@ -40,7 +39,6 @@ export function useCommandPalette() {
   }
 
   function addRecent(item: { id: string, label: string, sublabel?: string, icon: string, type: string }) {
-    if (import.meta.server) return
     const recent = getRecent().filter(r => r.id !== item.id)
     recent.unshift(item)
     if (recent.length > MAX_RECENT) recent.pop()

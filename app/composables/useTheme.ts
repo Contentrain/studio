@@ -4,7 +4,6 @@ export function useTheme() {
   const theme = useState<Theme>('theme', () => 'system')
 
   const isDark = computed(() => {
-    if (import.meta.server) return false
     if (theme.value === 'dark') return true
     if (theme.value === 'light') return false
     return window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -13,9 +12,7 @@ export function useTheme() {
   function setTheme(value: Theme) {
     theme.value = value
     applyTheme()
-
-    if (import.meta.client)
-      localStorage.setItem('contentrain-theme', value)
+    localStorage.setItem('contentrain-theme', value)
   }
 
   function toggle() {
@@ -23,8 +20,6 @@ export function useTheme() {
   }
 
   function applyTheme() {
-    if (import.meta.server) return
-
     const root = document.documentElement
     if (theme.value === 'dark' || (theme.value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       root.classList.add('dark')
@@ -35,25 +30,23 @@ export function useTheme() {
   }
 
   // Track listener for cleanup
-  const mediaQuery = import.meta.client ? window.matchMedia('(prefers-color-scheme: dark)') : null
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   const onSystemChange = () => {
     if (theme.value === 'system') applyTheme()
   }
 
   function init() {
-    if (import.meta.server) return
-
     const stored = localStorage.getItem('contentrain-theme') as Theme | null
     if (stored) theme.value = stored
 
     applyTheme()
 
     // Listen for system preference changes
-    mediaQuery?.addEventListener('change', onSystemChange)
+    mediaQuery.addEventListener('change', onSystemChange)
   }
 
   function cleanup() {
-    mediaQuery?.removeEventListener('change', onSystemChange)
+    mediaQuery.removeEventListener('change', onSystemChange)
   }
 
   return {

@@ -1,10 +1,6 @@
 const PUBLIC_ROUTES = ['/auth/login', '/auth/callback']
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  // Only run on client
-  if (import.meta.server)
-    return
-
   const { isAuthenticated, state } = useAuth()
 
   // Wait for auth to initialize before making decisions
