@@ -254,8 +254,14 @@ Internal spec: `.internal/STUDIO-SPEC.md` — planning document, not part of cod
 
 ## Current Phase
 
-**Phase 2 completed.** Chat Engine + Content Editing — conversation-first content management.
-Phase 3 next: **CDN Content Delivery**. See `.internal/PHASE-3.md` for spec.
+**Phase 3 completed.** CDN Content Delivery — build pipeline, API keys, public CDN endpoint.
+See `.internal/PHASE-3.md` for reference spec.
+
+Remaining tech debt (not phase-gated):
+- Rate limiting: in-memory → Redis (production multi-instance)
+- Mobile shell: hamburger + slide-over (UI work)
+- Content validation: relation integrity on write path
+- Hardcoded strings: ongoing `t('key')` migration
 
 ## Reference Codebase
 
