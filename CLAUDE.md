@@ -195,16 +195,13 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 
 ## Deferred TODOs
 
-See `.internal/PHASE-1.md` → "Deferred TODOs" section for tracked items.
-Key items:
-- GitHub webhook for installation lifecycle (Phase 2)
-- GitProvider write operations — stubs now, Phase 2
-- ⌘K Command palette (Phase 2)
-- Team workspace + personal GitHub account warning (Phase 4)
-- Workspace ownership transfer before deletion (Phase 4)
-- Admin RLS for workspace_members management (Phase 4)
-- Sidebar mobile responsive (hamburger + slide-over)
-- Supabase JWT decode for accurate token expiry
+See `.internal/REVIEW-2026-03-24.md` for full tracking with phase assignments.
+Key items by phase:
+- **Phase 4:** Auth hardening (OAuth state, GitHub callback), RLS consolidation, route security (cross-workspace, branch safety, conversation scoping), rate limiting (Redis), mobile shell, workspace settings SPA fix
+- **Phase 5:** Content validation (relation integrity, schema enforcement on write path)
+- **Phase 6:** Publish workflow + CDN draft content filtering
+- **Phase 8:** DatabaseProvider abstraction (provider boundary)
+- **Every sprint:** Hardcoded strings → `t('key')`, accessibility (aria labels, switch semantics)
 
 ## Dev Tooling
 
