@@ -1,0 +1,80 @@
+{
+  "astro-blog": {
+    "description": "Premium Astro editorial starter powered by Contentrain SDK and seeded structured content.",
+    "featured": true,
+    "framework": "astro",
+    "name": "Astro Blog",
+    "repo": "contentrain-starter-astro-blog",
+    "slug": "astro-blog",
+    "tags": [
+      "blog",
+      "editorial",
+      "astro"
+    ]
+  },
+  "astro-landing": {
+    "description": "High-polish landing page starter with Contentrain content models and generated SDK client.",
+    "featured": true,
+    "framework": "astro",
+    "name": "Astro Landing",
+    "repo": "contentrain-starter-astro-landing",
+    "slug": "astro-landing",
+    "tags": [
+      "landing-page",
+      "marketing",
+      "astro"
+    ]
+  },
+  "next-commerce": {
+    "description": "Next.js commerce starter for campaigns, collections, and product detail storytelling with Contentrain SDK.",
+    "featured": true,
+    "framework": "next",
+    "name": "Next Commerce",
+    "repo": "contentrain-starter-next-commerce",
+    "slug": "next-commerce",
+    "tags": [
+      "commerce",
+      "nextjs",
+      "app-router"
+    ]
+  },
+  "nuxt-saas": {
+    "description": "Nuxt SaaS starter with pricing, integrations, changelog storytelling, and Contentrain SDK integration.",
+    "featured": true,
+    "framework": "nuxt",
+    "name": "Nuxt SaaS",
+    "repo": "contentrain-starter-nuxt-saas",
+    "slug": "nuxt-saas",
+    "tags": [
+      "saas",
+      "marketing-site",
+      "nuxt"
+    ]
+  },
+  "sveltekit-editorial": {
+    "description": "SvelteKit editorial starter with structured Contentrain content and a generated SDK client.",
+    "featured": false,
+    "framework": "sveltekit",
+    "name": "SvelteKit Editorial",
+    "repo": "contentrain-starter-sveltekit-editorial",
+    "slug": "sveltekit-editorial",
+    "tags": [
+      "editorial",
+      "publication",
+      "sveltekit"
+    ]
+  },
+  "vitepress-docs": {
+    "description": "VitePress documentation starter with Contentrain-managed Markdown pages, generated SDK client, and docs-native content architecture.",
+    "featured": false,
+    "framework": "vitepress",
+    "name": "VitePress Docs",
+    "repo": "contentrain-starter-vitepress-docs",
+    "slug": "vitepress-docs",
+    "tags": [
+      "documentation",
+      "markdown",
+      "vitepress"
+    ]
+  }
+}
