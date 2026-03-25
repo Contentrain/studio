@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   content: Record<string, Record<string, unknown>>
   meta?: Record<string, unknown> | null
   workspaceId?: string
@@ -12,6 +12,27 @@ defineProps<{
 const emit = defineEmits<{
   saved: []
 }>()
+
+const toast = useToast()
+const { isOwnerOrAdmin } = useWorkspaceRole()
+
+async function togglePublish(entryId: string) {
+  if (!props.workspaceId || !props.projectId || !props.modelId) return
+  const currentStatus = getEntryStatus(entryId, props.meta)
+  const newStatus = currentStatus === 'published' ? 'draft' : 'published'
+
+  try {
+    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/content/${props.modelId}/status`, {
+      method: 'PATCH',
+      body: { entryIds: [entryId], status: newStatus, locale: props.locale ?? 'en' },
+    })
+    toast.success(newStatus === 'published' ? 'Published' : 'Unpublished')
+    emit('saved')
+  }
+  catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : 'Failed to update status')
+  }
+}
 
 const statusVariants: Record<string, { variant: 'success' | 'warning' | 'primary' | 'secondary' | 'danger', label: string }> = {
   published: { variant: 'success', label: 'published' },
@@ -170,9 +191,23 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           >
             <span class="icon-[annon--pin] size-3" aria-hidden="true" />
           </button>
-          <!-- Status badge -->
+          <!-- Status badge (clickable for owner/admin to publish/unpublish) -->
+          <button
+            v-if="getEntryStatus(String(entryId), meta) && isOwnerOrAdmin && editable"
+            type="button"
+            class="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            :title="getEntryStatus(String(entryId), meta) === 'published' ? 'Unpublish' : 'Publish'"
+            @click.prevent="togglePublish(String(entryId))"
+          >
+            <AtomsBadge
+              :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
+              size="sm"
+            >
+              {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId), meta) }}
+            </AtomsBadge>
+          </button>
           <AtomsBadge
-            v-if="getEntryStatus(String(entryId), meta)"
+            v-else-if="getEntryStatus(String(entryId), meta)"
             :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
             size="sm"
             class="shrink-0"
