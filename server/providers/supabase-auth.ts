@@ -52,11 +52,9 @@ export function createSupabaseAuthProvider(): AuthProvider {
       if (error || !data.url)
         throw createError({ statusCode: 500, message: `OAuth redirect failed: ${error?.message}` })
 
-      // Append state to Supabase redirect URL
-      const url = new URL(data.url)
-      url.searchParams.set('state', state)
-
-      return { url: url.toString(), state }
+      // State is NOT appended to URL — Supabase manages its own OAuth state/PKCE
+      // Our state is stored in a server cookie and validated separately on callback
+      return { url: data.url, state }
     },
 
     async exchangeCode(code: string, _state?: string): Promise<AuthSession> {
