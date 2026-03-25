@@ -46,6 +46,11 @@ const FEATURE_MATRIX: Record<string, Plan[]> = {
   'cdn.custom_domain': ['enterprise'],
   'cdn.ip_allowlist': ['business', 'enterprise'],
 
+  // Media
+  'media.upload': ['pro', 'business', 'enterprise'],
+  'media.library': ['pro', 'business', 'enterprise'],
+  'media.custom_variants': ['business', 'enterprise'],
+
   // Enterprise
   'sso.saml': ['enterprise'],
   'sso.oidc': ['enterprise'],
@@ -94,6 +99,9 @@ const PLAN_LIMITS: Record<string, Record<Plan, number>> = {
   'cdn.api_keys': { free: 0, pro: 3, business: 10, enterprise: Infinity },
   'cdn.requests_per_month': { free: 0, pro: 100_000, business: 1_000_000, enterprise: Infinity },
   'cdn.bandwidth_gb': { free: 0, pro: 10, business: 100, enterprise: Infinity },
+  'media.storage_gb': { free: 0, pro: 1, business: 5, enterprise: Infinity },
+  'media.max_file_size_mb': { free: 0, pro: 10, business: 50, enterprise: 100 },
+  'media.variants_per_field': { free: 0, pro: 4, business: 10, enterprise: Infinity },
 }
 
 export function getPlanLimit(plan: Plan, limit: string): number {

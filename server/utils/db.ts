@@ -433,3 +433,185 @@ export async function getBYOAKey(
 
   return data?.encrypted_key ?? null
 }
+
+// ─── Media Assets ───
+
+export interface MediaAssetRow {
+  id: string
+  project_id: string
+  workspace_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  content_hash: string
+  width: number | null
+  height: number | null
+  format: string
+  blurhash: string | null
+  focal_point: { x: number, y: number } | null
+  duration_seconds: number | null
+  alt: string | null
+  tags: string[]
+  original_path: string
+  variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
+  uploaded_by: string
+  source: string
+  created_at: string
+  updated_at: string
+}
+
+export async function createMediaAsset(
+  admin: SupabaseClient,
+  asset: Omit<MediaAssetRow, 'id' | 'created_at' | 'updated_at'>,
+): Promise<MediaAssetRow> {
+  const { data, error } = await admin
+    .from('media_assets')
+    .insert(asset)
+    .select()
+    .single()
+
+  if (error || !data)
+    throw createError({ statusCode: 500, message: `Failed to create media asset: ${error?.message}` })
+
+  return data as MediaAssetRow
+}
+
+export async function getMediaAsset(
+  client: SupabaseClient,
+  assetId: string,
+): Promise<MediaAssetRow | null> {
+  const { data } = await client
+    .from('media_assets')
+    .select('*')
+    .eq('id', assetId)
+    .single()
+
+  return (data as MediaAssetRow) ?? null
+}
+
+export async function listMediaAssets(
+  client: SupabaseClient,
+  projectId: string,
+  options?: { search?: string, tags?: string[], contentType?: string, page?: number, limit?: number, sort?: string },
+): Promise<{ assets: MediaAssetRow[], total: number }> {
+  const page = options?.page ?? 1
+  const limit = options?.limit ?? 50
+  const offset = (page - 1) * limit
+
+  let query = client
+    .from('media_assets')
+    .select('*', { count: 'exact' })
+    .eq('project_id', projectId)
+
+  if (options?.search) {
+    query = query.or(`filename.ilike.%${options.search}%,alt.ilike.%${options.search}%`)
+  }
+
+  if (options?.tags?.length) {
+    query = query.overlaps('tags', options.tags)
+  }
+
+  if (options?.contentType) {
+    query = query.ilike('content_type', `${options.contentType}%`)
+  }
+
+  const sortColumn = options?.sort === 'name' ? 'filename' : options?.sort === 'size' ? 'size_bytes' : 'created_at'
+  const ascending = options?.sort === 'name' || options?.sort === 'oldest'
+
+  const { data, count, error } = await query
+    .order(sortColumn, { ascending })
+    .range(offset, offset + limit - 1)
+
+  if (error)
+    throw createError({ statusCode: 500, message: `Failed to list media assets: ${error.message}` })
+
+  return { assets: (data ?? []) as MediaAssetRow[], total: count ?? 0 }
+}
+
+export async function updateMediaAsset(
+  admin: SupabaseClient,
+  assetId: string,
+  updates: Partial<Pick<MediaAssetRow, 'alt' | 'tags' | 'focal_point' | 'variants' | 'blurhash'>>,
+): Promise<MediaAssetRow> {
+  const { data, error } = await admin
+    .from('media_assets')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', assetId)
+    .select()
+    .single()
+
+  if (error || !data)
+    throw createError({ statusCode: 500, message: `Failed to update media asset: ${error?.message}` })
+
+  return data as MediaAssetRow
+}
+
+export async function deleteMediaAsset(
+  admin: SupabaseClient,
+  assetId: string,
+): Promise<MediaAssetRow | null> {
+  const { data } = await admin
+    .from('media_assets')
+    .delete()
+    .eq('id', assetId)
+    .select()
+    .single()
+
+  return (data as MediaAssetRow) ?? null
+}
+
+export async function trackMediaUsage(
+  admin: SupabaseClient,
+  usage: { asset_id: string, project_id: string, model_id: string, entry_id: string, field_id: string, locale: string },
+): Promise<void> {
+  await admin
+    .from('media_usage')
+    .upsert(usage, { onConflict: 'asset_id,model_id,entry_id,field_id,locale' })
+}
+
+export async function removeMediaUsage(
+  admin: SupabaseClient,
+  usage: { asset_id: string, model_id: string, entry_id: string, field_id: string, locale: string },
+): Promise<void> {
+  await admin
+    .from('media_usage')
+    .delete()
+    .eq('asset_id', usage.asset_id)
+    .eq('model_id', usage.model_id)
+    .eq('entry_id', usage.entry_id)
+    .eq('field_id', usage.field_id)
+    .eq('locale', usage.locale)
+}
+
+export async function getMediaUsage(
+  client: SupabaseClient,
+  assetId: string,
+): Promise<Array<{ model_id: string, entry_id: string, field_id: string, locale: string }>> {
+  const { data } = await client
+    .from('media_usage')
+    .select('model_id, entry_id, field_id, locale')
+    .eq('asset_id', assetId)
+
+  return data ?? []
+}
+
+export async function updateWorkspaceStorageBytes(
+  admin: SupabaseClient,
+  workspaceId: string,
+  deltaBytes: number,
+): Promise<void> {
+  // Use RPC or raw SQL for atomic increment — fallback to read+write
+  const { data } = await admin
+    .from('workspaces')
+    .select('media_storage_bytes')
+    .eq('id', workspaceId)
+    .single()
+
+  const current = (data as { media_storage_bytes: number } | null)?.media_storage_bytes ?? 0
+  const newValue = Math.max(0, current + deltaBytes)
+
+  await admin
+    .from('workspaces')
+    .update({ media_storage_bytes: newValue })
+    .eq('id', workspaceId)
+}
