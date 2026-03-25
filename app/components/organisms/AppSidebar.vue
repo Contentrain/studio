@@ -46,7 +46,7 @@ const sidebarLinks = computed(() => {
   const slug = activeWorkspace.value.slug
   return projects.value.map(p => ({
     id: p.id,
-    label: p.repo_full_name,
+    label: p.repo_full_name.split('/').pop() ?? p.repo_full_name,
     to: `/w/${slug}/projects/${p.id}`,
     active: p.id === currentProjectId.value,
   }))

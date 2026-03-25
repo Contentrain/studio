@@ -11,6 +11,7 @@ const { projects, loading, fetchProjects } = useProjects()
 const { t } = useContent()
 
 const connectDialogOpen = ref(false)
+const starterDialogOpen = ref(false)
 
 // Persist current path
 watch(() => route.fullPath, path => saveLastPath(path), { immediate: true })
@@ -47,16 +48,26 @@ watch(slug, async (newSlug) => {
           {{ projects.length }} {{ projects.length === 1 ? t('projects.count_singular') : t('projects.count_plural') }}
         </p>
       </div>
-      <AtomsBaseButton
-        v-if="activeWorkspace"
-        size="sm"
-        @click="connectDialogOpen = true"
-      >
-        <template #prepend>
-          <span class="icon-[annon--plus] size-4" aria-hidden="true" />
-        </template>
-        <span>{{ t('projects.connect_repo') }}</span>
-      </AtomsBaseButton>
+      <div v-if="activeWorkspace" class="flex items-center gap-2">
+        <AtomsBaseButton
+          size="sm"
+          @click="starterDialogOpen = true"
+        >
+          <template #prepend>
+            <span class="icon-[annon--layers] size-4" aria-hidden="true" />
+          </template>
+          <span>{{ t('starters.use_template') }}</span>
+        </AtomsBaseButton>
+        <AtomsBaseButton
+          size="sm"
+          @click="connectDialogOpen = true"
+        >
+          <template #prepend>
+            <span class="icon-[annon--plus] size-4" aria-hidden="true" />
+          </template>
+          <span>{{ t('projects.connect_repo') }}</span>
+        </AtomsBaseButton>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -82,20 +93,32 @@ watch(slug, async (newSlug) => {
       :description="t('projects.empty_description')"
     >
       <template #action>
-        <AtomsBaseButton
-          v-if="activeWorkspace"
-          size="md"
-          @click="connectDialogOpen = true"
-        >
-          <template #prepend>
-            <span class="icon-[annon--plus] size-4" aria-hidden="true" />
-          </template>
-          <span>{{ t('projects.connect_repo') }}</span>
-        </AtomsBaseButton>
+        <div v-if="activeWorkspace" class="flex items-center gap-2">
+          <AtomsBaseButton
+            size="md"
+            variant="primary"
+            @click="starterDialogOpen = true"
+          >
+            <template #prepend>
+              <span class="icon-[annon--layers] size-4" aria-hidden="true" />
+            </template>
+            <span>{{ t('starters.use_template') }}</span>
+          </AtomsBaseButton>
+          <AtomsBaseButton
+            size="md"
+            @click="connectDialogOpen = true"
+          >
+            <template #prepend>
+              <span class="icon-[annon--plus] size-4" aria-hidden="true" />
+            </template>
+            <span>{{ t('projects.connect_repo') }}</span>
+          </AtomsBaseButton>
+        </div>
       </template>
     </AtomsEmptyState>
 
-    <!-- Connect Repo Dialog -->
+    <!-- Dialogs -->
     <OrganismsConnectRepoDialog v-model:open="connectDialogOpen" />
+    <OrganismsStarterKitDialog v-model:open="starterDialogOpen" />
   </div>
 </template>

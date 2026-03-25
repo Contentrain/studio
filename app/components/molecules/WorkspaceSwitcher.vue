@@ -162,7 +162,7 @@ onMounted(() => {
       <div class="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1">
         <span class="icon-[annon--folder] size-3.5 shrink-0 text-primary-500" aria-hidden="true" />
         <span class="min-w-0 truncate text-[13px] font-medium text-heading dark:text-secondary-100">
-          {{ activeProject.repo_full_name }}
+          {{ activeProject.repo_full_name.split('/').pop() }}
         </span>
       </div>
       <!-- Back to dashboard -->

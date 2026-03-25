@@ -190,7 +190,7 @@ const results = computed<ResultItem[]>(() => {
       if (matches(project.repo_full_name, query)) {
         items.push({
           id: `project:${project.id}`,
-          label: project.repo_full_name,
+          label: project.repo_full_name.split('/').pop() ?? project.repo_full_name,
           sublabel: project.detected_stack ?? '',
           icon: 'icon-[annon--folder]',
           group: 'Projects',
