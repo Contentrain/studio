@@ -22,6 +22,17 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  const admin = useSupabaseAdmin()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: 'Project not found in this workspace' })
+
   // Plan-based role gating: reviewer/viewer require Pro+, specificModels requires Pro+
   const { data: ws } = await client.from('workspaces').select('plan').eq('id', workspaceId).single()
   const plan = getWorkspacePlan(ws ?? {})
@@ -39,7 +50,6 @@ export default defineEventHandler(async (event) => {
 
   // Ensure user is a workspace member (auto-add as 'member' if not)
   // Check seat limit before auto-adding
-  const admin = useSupabaseAdmin()
   const currentMembers = await listWorkspaceMembers(admin, workspaceId)
   const isAlreadyMember = currentMembers.some(m => (m as { user_id?: string }).user_id === userId)
   if (!isAlreadyMember) {

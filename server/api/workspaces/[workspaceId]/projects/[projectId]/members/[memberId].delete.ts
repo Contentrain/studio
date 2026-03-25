@@ -15,6 +15,17 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  const admin = useSupabaseAdmin()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: 'Project not found in this workspace' })
+
   const { error } = await client
     .from('project_members')
     .delete()

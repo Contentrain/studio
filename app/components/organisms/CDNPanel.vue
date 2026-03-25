@@ -2,6 +2,7 @@
 const { t } = useContent()
 const toast = useToast()
 const { activeWorkspace } = useWorkspaces()
+const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const props = defineProps<{
   workspaceId: string
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>()
 
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
+const canManageCDN = computed(() => isPro.value && isOwnerOrAdmin.value)
 
 interface CDNKey { id: string, name: string, key_prefix: string, environment: string, created_at: string, revoked_at: string | null, key?: string }
 interface CDNBuild { id: string, status: string, trigger_type: string, commit_sha: string, file_count: number | null, build_duration_ms: number | null, error_message: string | null, started_at: string }
@@ -43,19 +45,31 @@ async function loadCDNData() {
     return
   }
   try {
-    const [settingsRes, keysRes, buildsRes] = await Promise.all([
+    const requests = [
       $fetch<{ cdn_enabled: boolean, cdn_branch: string | null }>(
         `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/settings`,
-      ),
-      $fetch<CDNKey[]>(
-        `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`,
       ),
       $fetch<CDNBuild[]>(
         `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`,
       ),
-    ])
+    ] as const
+
+    if (canManageCDN.value) {
+      const [settingsRes, buildsRes, keysRes] = await Promise.all([
+        ...requests,
+        $fetch<CDNKey[]>(
+          `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`,
+        ),
+      ])
+      cdnActive.value = settingsRes.cdn_enabled ?? false
+      keys.value = keysRes
+      builds.value = buildsRes
+      return
+    }
+
+    const [settingsRes, buildsRes] = await Promise.all(requests)
     cdnActive.value = settingsRes.cdn_enabled ?? false
-    keys.value = keysRes
+    keys.value = []
     builds.value = buildsRes
   }
   catch (e) {
@@ -230,8 +244,12 @@ function copyKey() {
           role="switch"
           :aria-checked="cdnActive"
           :aria-label="cdnActive ? t('cdn.disable') : t('cdn.enable')"
+          :disabled="!canManageCDN"
           class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-          :class="cdnActive ? 'bg-primary-500' : 'bg-secondary-200 dark:bg-secondary-700'"
+          :class="[
+            cdnActive ? 'bg-primary-500' : 'bg-secondary-200 dark:bg-secondary-700',
+            !canManageCDN ? 'opacity-60' : '',
+          ]"
           @click="toggleCDN"
         >
           <span
@@ -243,7 +261,7 @@ function copyKey() {
 
       <template v-if="cdnActive">
         <!-- New key alert -->
-        <div v-if="newKey" class="mx-5 mt-4 rounded-lg border border-success-200 bg-success-50 p-3 dark:border-success-500/20 dark:bg-success-500/10">
+        <div v-if="newKey && canManageCDN" class="mx-5 mt-4 rounded-lg border border-success-200 bg-success-50 p-3 dark:border-success-500/20 dark:bg-success-500/10">
           <p class="text-xs font-medium text-success-700 dark:text-success-400">
             {{ t('cdn.key_created') }}
           </p>
@@ -277,6 +295,7 @@ function copyKey() {
                 </div>
               </div>
               <button
+                v-if="canManageCDN"
                 type="button"
                 class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-danger-500 transition-colors hover:bg-danger-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger-500/50 dark:hover:bg-danger-900/20"
                 @click="revokeKey(key.id)"
@@ -289,7 +308,7 @@ function copyKey() {
             {{ t('cdn.no_keys') }}
           </p>
 
-          <form class="mt-3 flex items-center gap-2" @submit.prevent="createKey">
+          <form v-if="canManageCDN" class="mt-3 flex items-center gap-2" @submit.prevent="createKey">
             <AtomsFormInput
               v-model="keyName" type="text" :placeholder="t('cdn.key_name_placeholder')" class="flex-1"
             />
@@ -306,7 +325,7 @@ function copyKey() {
               <AtomsSectionLabel :label="t('cdn.builds_title')" :count="builds.length" />
               <AtomsInfoTooltip :text="t('cdn.builds_info')" />
             </div>
-            <AtomsBaseButton variant="ghost" size="sm" :disabled="rebuilding" @click="triggerRebuild">
+            <AtomsBaseButton v-if="canManageCDN" variant="ghost" size="sm" :disabled="rebuilding" @click="triggerRebuild">
               <span class="icon-[annon--arrow-swap] size-3.5" :class="rebuilding ? 'animate-spin' : ''" aria-hidden="true" />
               {{ rebuilding ? t('cdn.rebuilding') : t('cdn.rebuild') }}
             </AtomsBaseButton>
