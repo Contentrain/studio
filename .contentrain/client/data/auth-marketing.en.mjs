@@ -1,5 +1,0 @@
-export default {
-  "headline": "Git-native content for people who don't know Git.",
-  "illustration": "/illustrations/auth-promo.svg",
-  "tagline": "Invite your editors, translators and reviewers — they chat, approve and publish. You keep full version control."
-}
