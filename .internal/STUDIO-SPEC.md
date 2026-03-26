@@ -674,70 +674,74 @@ Both MCP and Studio import these. Format is guaranteed identical. Implementation
 
 ## Revenue Model (Revised)
 
-The independence from MCP and the expanded capability scope changes the revenue picture:
+### Pricing Model: Base Plan + Usage-Based
+
+> Updated 2026-03-26 — aligned with implemented features
+
+Plans unlock features. Usage beyond included amounts = overage billing (Stripe metering).
+BYOA (bring your own API key) is available on ALL plans including Free.
 
 ### Pricing Tiers
 
-| Tier | Price | Includes |
-|---|---|---|
-| **Free** | $0 forever | 1 project, 1 user, 50 Studio agent messages (onboarding), BYOA unlimited. No CDN, no media. |
-| **Pro** | $14/month | 3 projects, Studio agent (500 msg/mo), CDN (2GB), media (1GB), webhooks |
-| **Team** | $34/month + $9/seat | Unlimited projects, Studio agent (2000 msg/mo), 10GB CDN, 5GB media, roles, audit, scheduling |
-| **Enterprise** | Custom | Self-host, SSO, GitLab/Bitbucket, unlimited storage, SLA, custom agent limits |
+| | Free ($0) | Pro ($9/mo) | Team ($29/mo + $7/seat) | Enterprise (custom) |
+|---|---|---|---|---|
+| Workspaces | ∞ | ∞ | ∞ | ∞ |
+| Projects | ∞ | ∞ | ∞ | ∞ |
+| Users | 2 | 10 | 50 | ∞ |
+| AI Chat (included) | 50 msg/mo | 500 msg/mo | 2,000 msg/mo | Custom |
+| BYOA | ✅ ∞ | ✅ ∞ | ✅ ∞ | ✅ ∞ |
+| CDN | — | ✅ (10 GB) | ✅ (50 GB) | ✅ (∞) |
+| Media | — | ✅ (2 GB) | ✅ (10 GB) | ✅ (∞) |
+| Forms | 1 form, 50 sub | 5 forms, 500 sub | ∞, 5K sub | ∞ |
+| Review workflow | — | ✅ | ✅ | ✅ |
+| Conversation API | — | — | ✅ (1K msg) | ✅ |
+| REST API | — | — | ✅ | ✅ |
+| Webhooks | — | — | ✅ | ✅ |
+| SSO / White-label | — | — | — | ✅ |
 
-BYOA (bring your own API key) is always available on every tier as an alternative to Studio-hosted agent.
+### Usage-Based Overage (Pro+)
 
-### Revenue Streams
+| Resource | Included | Overage |
+|----------|----------|---------|
+| AI messages | Per plan | $0.02/msg |
+| CDN bandwidth | Per plan | $0.10/GB |
+| Media storage | Per plan | $0.25/GB/mo |
+| Form submissions | Per plan | $0.01/sub |
+| API messages | Per plan (Team+) | $0.05/msg |
 
-| Stream | Description | Tier |
-|---|---|---|
-| **Team seats** | Per-seat pricing for editors, reviewers, translators | Team |
-| **Content CDN** | JSON delivery for non-web platforms, bandwidth metering | Pro+ |
-| **Media CDN** | Image/asset delivery with optimization, storage metering | Pro+ |
-| **Multi-project** | More than 1 project | Pro+ |
-| **Advanced ops** | Scheduling, versioning, analytics | Team+ |
-| **Self-host license** | AGPL allows self-host free, but Enterprise adds support/SLA | Enterprise |
+### Upgrade Triggers
 
-### New Revenue Opportunities (Not in Previous Spec)
+| Free → Pro | Pro → Team |
+|------------|------------|
+| Needs CDN (app goes live) | Needs Conversation API (bot integration) |
+| Needs Media (images) | Needs 10+ users |
+| Needs review workflow | Needs webhooks (CI/CD) |
+| 50 AI msg limit hit | Needs REST API |
+| 5+ forms needed | Model-scoped access control |
 
-Because Studio is independent, it can do things MCP never could:
+### Target Audience
 
-**1. Media Pipeline ($)**
-- Image upload → optimize → variant generation → CDN delivery
-- This is infrastructure with real cost (storage + processing + bandwidth)
-- Natural billing: storage GB + processing operations + CDN bandwidth
-- Every content project eventually needs images
+**Primary:** Solo developer / small agency (1-5 people) building with Next.js, Nuxt, Astro, React Native, Flutter.
+Includes vibe coders using AI (Cursor/Windsurf) to build apps — Contentrain manages the content layer.
 
-**2. Content API (Future)**
-- Beyond CDN (static JSON), offer a query API:
-  `GET api.contentrain.io/{project}/content?model=blog&locale=en&status=published&sort=date`
-- This is a headless CMS API but backed by Git — unique positioning
-- Usage-based pricing: API calls/month
+**Secondary:** Startup product teams (5-20 people) managing marketing + docs + blog.
 
-**3. Content Webhooks ($)**
-- On merge → trigger URL (Vercel redeploy, Slack notification, custom automation)
-- Simple to implement, high perceived value
-- Pro feature
+**Message:** "Your AI builds the app. Contentrain manages the content."
 
-**4. White-Label (Enterprise)**
-- Agencies want Studio under their own brand for client delivery
-- Custom domain, custom branding
-- Enterprise/custom pricing
-
-### Revenue Projections (Revised, 6 months post-launch)
+### Revenue Projections (6 months post-launch)
 
 | Metric | Target |
 |---|---|
 | Free signups | 500 |
-| Free → Pro conversion | 12% (60 Pro) |
-| Pro → Team conversion | 15% (9 Teams) |
-| Average Team size | 3.5 seats |
-| Pro MRR | 60 × $14 = $840 |
-| Team MRR | 9 × ($34 + 2.5 × $9) = $508 |
-| CDN overage MRR | ~$150 |
-| **Total MRR** | **~$1,500** |
+| Free → Pro conversion | 15% (75 Pro) |
+| Pro → Team conversion | 12% (9 Teams) |
+| Average Team size | 3 seats |
+| Pro MRR | 75 × $9 = $675 |
+| Team MRR | 9 × ($29 + 2 × $7) = $387 |
+| Usage overage MRR | ~$300 |
+| **Total MRR** | **~$1,360** |
 
-Month 12 target with media + growth: $5,000 MRR.
+Month 12 target with growth: $5,000+ MRR.
 
 ---
 

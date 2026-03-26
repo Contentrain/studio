@@ -250,7 +250,7 @@ const result = await client.form('contact-requests').submit({
 
 ## Plan Gating
 
-| | Free | Pro ($14) | Business ($49) | Enterprise |
+| | Free | Pro ($9) | Team ($29+seats) | Enterprise |
 |---|---|---|---|---|
 | Form-enabled models | 1 | 5 | ∞ | ∞ |
 | Submissions/month | 50 | 500 | 5,000 | Custom |

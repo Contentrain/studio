@@ -333,23 +333,21 @@ Event-driven notification — bot'ların Studio'daki değişiklikleri anlık ö�
 
 ### Plan Bazlı Fiyatlandırma
 
-| | Pro ($14/mo) | Business ($49/mo) | Enterprise (Custom) |
+| | Pro ($9/mo) | Team ($29/mo + seats) | Enterprise (Custom) |
 |---|---|---|---|
-| Studio UI Chat | ✅ Unlimited | ✅ Unlimited | ✅ Unlimited |
-| Conversation API Keys | ❌ | 3 keys | Unlimited |
-| API Messages/month | ❌ | 1,000 | Custom (10K+) |
+| Studio UI Chat | 500 msg/mo | 2,000 msg/mo | Custom |
+| Conversation API Keys | ❌ | 5 keys | Unlimited |
+| API Messages/month (included) | ❌ | 1,000 | Custom |
 | Content REST API | ❌ | ✅ | ✅ |
-| Media REST API | ❌ | ✅ | ✅ |
-| Outbound Webhooks | ❌ | 5 endpoints | Unlimited |
+| Outbound Webhooks | ❌ | 10 endpoints | Unlimited |
 | Custom Instructions | ❌ | ✅ | ✅ |
-| Rate Limit | — | 30 req/min | Custom (100+) |
+| Rate Limit | — | 30 req/min | Custom |
 
-### Ek Gelir Kanalları
+### Ek Gelir: Usage-Based Overage
 
-**1. Message Overage ($0.05/message):**
-Business plan 1000 mesaj/ay dahil. Aşım fiyatlandırması:
-- 1,001 - 5,000: $0.05/message
-- 5,001 - 20,000: $0.03/message
+**API Message Overage ($0.05/message):**
+Team plan 1,000 mesaj/ay dahil. Aşım:
+- $0.05/message (flat rate)
 - 20,000+: Enterprise'a yönlendir
 
 **2. AI Model Upsell:**
@@ -361,11 +359,10 @@ Custom rate limits, guaranteed throughput, SLA — annual contract.
 
 ### Gelir Projeksiyonu
 
-| Metrik | Business | Enterprise |
-|--------|----------|------------|
-| ARPU | $49/mo | $299+/mo |
-| Conversation API contribution | ~$15/mo (30% of plan) | ~$100/mo |
-| Overage potential | $25-150/mo | Included in plan |
+| Metrik | Team | Enterprise |
+|--------|------|------------|
+| ARPU | $29/mo + seats + overage | $299+/mo |
+| Conversation API contribution | ~$10/mo (usage overage) | Included |
 | Retention impact | Bot entegrasyonu = yüksek switching cost | Lock-in |
 
 **Key insight:** Conversation API en güçlü retention aracı. Müşteri bot yazdığında Contentrain'den ayrılması çok zor — tüm automation yeniden yazılmalı.
