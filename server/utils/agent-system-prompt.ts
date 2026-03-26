@@ -164,7 +164,7 @@ function buildArchitectureSection(): string {
 **Rich text:** markdown, richtext
 **Number:** number, integer, decimal, percent, rating (1-5)
 **Primitive:** boolean, date (YYYY-MM-DD), datetime (ISO 8601)
-**Media:** image, video, file — store as string (URL or relative path). For external images (Unsplash, CDN URLs), save the URL directly as the field value via save_content — do NOT call upload_media. Only use upload_media when user explicitly asks to upload/process a file into the media library.
+**Media:** image, video, file — ${agentPrompt('media.field_guide')}
 **Relation:** relation (single ref → entry ID or slug), relations (array of refs)
 **Structural:** select (enum from options[]), array (items), object (nested fields)
 
@@ -402,8 +402,7 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
     'Dictionary entries are free key-value pairs — ALL values must be strings.',
 
     // Content reads — prefer brain cache
-    'Use brain_query instead of get_content for faster content reads — it returns instantly from cache.',
-    'Use brain_search to find entries across all models by keyword.',
+    agentPrompt('brain.tools_guide'),
 
     // Content updates
     'To UPDATE existing content, use the EXISTING entry ID from brain_query or get_content. NEVER generate a new ID for updates — this causes duplicates.',
@@ -441,26 +440,26 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
 
   // Plan-aware rules — inform agent about available features and guide user
   if (effectivePlan === 'free') {
-    rules.push(`This workspace is on the FREE plan. Available: content management, 100 AI messages/month, 1 form (50 submissions), BYOA unlimited. NOT available: CDN delivery, Asset Manager (media upload), review workflow, advanced roles. All changes auto-merge immediately.`)
-    rules.push('If the user asks about CDN, media upload, review workflow, or team roles — explain these require the Pro plan ($12/mo) and describe what they would get.')
+    rules.push(agentPrompt('plan.free'))
+    rules.push(agentPrompt('plan.free.upgrade_hint'))
   }
   else if (effectivePlan === 'pro') {
-    rules.push(`This workspace is on the PRO plan. Available: CDN delivery (20GB), Asset Manager (media upload, 5GB storage, variant generation), review workflow, reviewer/viewer roles, 5 forms (1000 submissions), 500 AI messages/month.`)
-    rules.push('CDN: content is delivered via API keys at /api/cdn/v1/{projectId}/. Use the Studio sidebar CDN panel to manage keys and trigger builds.')
-    rules.push('Asset Manager: upload images via the Assets panel in the sidebar. Use upload_media tool only when user explicitly asks to upload files. For external URLs (Unsplash, etc), save the URL directly in the content field.')
-    rules.push('If the user asks about Conversation API, REST API, or webhooks — explain these require the Team plan ($29/mo).')
+    rules.push(agentPrompt('plan.pro'))
+    rules.push(agentPrompt('plan.pro.cdn_guide'))
+    rules.push(agentPrompt('plan.pro.media_guide'))
+    rules.push(agentPrompt('plan.pro.upgrade_hint'))
   }
   else if (effectivePlan === 'business') {
-    rules.push(`This workspace is on the TEAM plan. All Pro features plus: Conversation API (external bot integration), Content REST API, Webhook Outbound, model-scoped access control, custom AI instructions, 2000 AI messages/month.`)
-    rules.push('CDN + Asset Manager + Review workflow all available. Conversation API enables external bots (Telegram, Slack) to manage content via API keys with configurable permissions.')
+    rules.push(agentPrompt('plan.team'))
+    rules.push(agentPrompt('plan.team.api_guide'))
   }
   else if (effectivePlan === 'enterprise') {
-    rules.push('This workspace is on the ENTERPRISE plan. All features available with no limits. Self-host license, SSO, multi-provider support.')
+    rules.push(agentPrompt('plan.enterprise'))
   }
 
   // Feature upgrade guidance — when a tool returns a plan-gated error, help the user understand
-  rules.push('When a tool returns an error about plan requirements, explain the feature value clearly and suggest upgrading in workspace settings. Always mention what the user CAN do on their current plan as an alternative.')
-  rules.push('Plan tiers: Free ($0) → Pro ($12/mo) → Team ($29/mo + seats) → Enterprise (custom). Each tier includes everything from the tier below.')
+  rules.push(agentPrompt('upgrade.guidance'))
+  rules.push(agentPrompt('plan.tiers'))
 
   // Out of scope
   if (intent.category === 'out_of_scope') {
