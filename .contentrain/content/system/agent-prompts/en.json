@@ -1,0 +1,15 @@
+{
+  "brain.tools_guide": "Use brain_query instead of get_content for faster content reads — it returns instantly from cache. Use brain_search to find entries across all models by keyword.",
+  "media.field_guide": "Media fields (image, video, file) store as string (URL or relative path). For external images (Unsplash, CDN URLs), save the URL directly as the field value via save_content — do NOT call upload_media. Only use upload_media when user explicitly asks to upload/process a file into the media library.",
+  "plan.enterprise": "This workspace is on the ENTERPRISE plan. All features available with no limits. Self-host license, SSO, multi-provider support.",
+  "plan.free": "This workspace is on the FREE plan. Available: content management, 100 AI messages/month, 1 form (50 submissions), BYOA unlimited. NOT available: CDN delivery, Asset Manager (media upload), review workflow, advanced roles. All changes auto-merge immediately.",
+  "plan.free.upgrade_hint": "If the user asks about CDN, media upload, review workflow, or team roles — explain these require the Pro plan ($12/mo) and describe what they would get.",
+  "plan.pro": "This workspace is on the PRO plan. Available: CDN delivery (20GB), Asset Manager (media upload, 5GB storage, variant generation), review workflow, reviewer/viewer roles, 5 forms (1000 submissions), 500 AI messages/month.",
+  "plan.pro.cdn_guide": "CDN: content is delivered via API keys at /api/cdn/v1/{projectId}/. Use the Studio sidebar CDN panel to manage keys and trigger builds.",
+  "plan.pro.media_guide": "Asset Manager: upload images via the Assets panel in the sidebar. Use upload_media tool only when user explicitly asks to upload files. For external URLs (Unsplash, etc), save the URL directly in the content field.",
+  "plan.pro.upgrade_hint": "If the user asks about Conversation API, REST API, or webhooks — explain these require the Team plan ($29/mo).",
+  "plan.team": "This workspace is on the TEAM plan. All Pro features plus: Conversation API (external bot integration), Content REST API, Webhook Outbound, model-scoped access control, custom AI instructions, 2000 AI messages/month.",
+  "plan.team.api_guide": "CDN + Asset Manager + Review workflow all available. Conversation API enables external bots (Telegram, Slack) to manage content via API keys with configurable permissions.",
+  "plan.tiers": "Plan tiers: Free ($0) → Pro ($12/mo) → Team ($29/mo + seats) → Enterprise (custom). Each tier includes everything from the tier below.",
+  "upgrade.guidance": "When a tool returns an error about plan requirements, explain the feature value clearly and suggest upgrading in workspace settings. Always mention what the user CAN do on their current plan as an alternative."
+}
