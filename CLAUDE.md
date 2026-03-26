@@ -268,14 +268,13 @@ Completed phases:
 
 ### Roadmap (next)
 
-| Sprint | Focus | Efor | Plan |
-|--------|-------|------|------|
-| Next | Content Health Dashboard + Quality Score | 2 hafta | Free |
-| +1 | Forms & Submissions | 2-3 hafta | Free+ |
-| +2 | Conversation API + Content REST API | 2-3 hafta | Business+ |
-| +3 | Webhook Outbound + Deploy Hooks | 2 hafta | Business+ |
-| +4 | Content Analytics + Notifications | 2-3 hafta | Pro+ |
-| +5 | Schema Validation + Agent Rules | 3 hafta | Business+ |
+| Sprint | Focus | Efor | Plan | Spec |
+|--------|-------|------|------|------|
+| Next | Project Health (schema validation + dashboard) | 2 hafta | Free | `SCHEMA-VALIDATION.md` |
+| +1 | Forms & Submissions | 2-3 hafta | Free+ | `FORMS-SUBMISSIONS.md` |
+| +2 | Conversation API + Content REST API | 2-3 hafta | Business+ | `CONVERSATION-API.md` |
+| +3 | Webhook Outbound | 2 hafta | Business+ | `IDEAS.md` |
+| +4 | Multi-Repo Governance | 2 hafta | Enterprise | İhtiyaç doğduğunda |
 
 ## Reference Codebase
 
