@@ -195,12 +195,11 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 
 ## Deferred TODOs
 
-See `.internal/REVIEW-2026-03-24.md` for full tracking. Most review findings are resolved.
-Remaining items by phase:
-- **Phase 4:** Rate limiting production (Redis), mobile shell (hamburger + slide-over)
-- **Phase 5:** Content validation (relation integrity, schema enforcement on write path)
-- **Phase 8:** DatabaseProvider abstraction (provider boundary)
-- **Every sprint:** Hardcoded strings → `t('key')`, accessibility (ContentModelList aria-labels)
+Tech debt (not phase-gated, fix when relevant):
+- Rate limiting: in-memory → Redis/Upstash (production multi-instance deploy)
+- Mobile shell: hamburger + slide-over (UI work)
+- DatabaseProvider abstraction (only when adding second DB provider)
+- Hardcoded strings: ongoing `t('key')` migration
 
 ## Dev Tooling
 
@@ -246,22 +245,37 @@ Full spec: `.internal/EE-SEPARATION.md`
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
 
-## Phase Documents
+## Internal Documents
 
-Implementation phases are tracked in `.internal/PHASE-2.md` (completed).
-Each phase document is kept as reference until the next phase starts.
-Internal spec: `.internal/STUDIO-SPEC.md` — planning document, not part of codebase.
+Active specs in `.internal/`:
+- `STUDIO-SPEC.md` — master product & architecture spec
+- `EE-SEPARATION.md` — Open Core / EE boundary rules
+- `MARKETING.md` — go-to-market strategy
+- `IDEAS.md` — product ideas with feasibility analysis
+- `CONVERSATION-API.md` — external AI content ops (Business+) — not yet implemented
+- `FORMS-SUBMISSIONS.md` — content-in via public forms — not yet implemented
+- `SCHEMA-VALIDATION.md` — model integrity & breaking change detection — not yet implemented
 
 ## Current Phase
 
-**Phase 3 completed.** CDN Content Delivery — build pipeline, API keys, public CDN endpoint.
-See `.internal/PHASE-3.md` for reference spec.
+**Phase 4 completed.** Media Management — upload, optimize, variants, blurhash, asset manager UI, agent tools, CDN integration.
 
-Remaining tech debt (not phase-gated):
-- Rate limiting: in-memory → Redis (production multi-instance)
-- Mobile shell: hamburger + slide-over (UI work)
-- Content validation: relation integrity on write path
-- Hardcoded strings: ongoing `t('key')` migration
+Completed phases:
+- Phase 1: Foundation + Content Browsing
+- Phase 2: Chat Engine + Content Editing
+- Phase 3: CDN Content Delivery
+- Phase 4: Media Management
+
+### Roadmap (next)
+
+| Sprint | Focus | Efor | Plan |
+|--------|-------|------|------|
+| Next | Content Health Dashboard + Quality Score | 2 hafta | Free |
+| +1 | Forms & Submissions | 2-3 hafta | Free+ |
+| +2 | Conversation API + Content REST API | 2-3 hafta | Business+ |
+| +3 | Webhook Outbound + Deploy Hooks | 2 hafta | Business+ |
+| +4 | Content Analytics + Notifications | 2-3 hafta | Pro+ |
+| +5 | Schema Validation + Agent Rules | 3 hafta | Business+ |
 
 ## Reference Codebase
 
