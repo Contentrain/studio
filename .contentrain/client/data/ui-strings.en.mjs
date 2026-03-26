@@ -197,6 +197,7 @@ export default {
   "media.path": "Path",
   "media.path_description": "Enter a media path or external URL",
   "media.path_placeholder": "media/original/... or https://...",
+  "media.pro_required": "Upload, organize, and optimize images with the Asset Manager. Available on Pro plan and above.",
   "media.save_error": "Failed to save changes",
   "media.save_success": "Changes saved",
   "media.search_placeholder": "Search assets...",
