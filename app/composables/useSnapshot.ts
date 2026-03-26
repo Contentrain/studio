@@ -1,5 +1,14 @@
 import type { ModelKind } from '@contentrain/types'
-import { get, set, del } from 'idb-keyval'
+
+/**
+ * Snapshot composable — thin adapter over Content Brain.
+ *
+ * Preserves the exact same return shape as the original useSnapshot()
+ * so all consuming components (AppSidebar, ContentPanel, project page)
+ * continue working without changes.
+ *
+ * Data source: useContentBrain() → Worker IndexedDB + /api/brain/sync
+ */
 
 interface ModelSummary {
   id: string
@@ -30,123 +39,48 @@ interface Snapshot {
   contentContext?: ContentContext | null
 }
 
-interface CachedSnapshot {
-  data: Snapshot
-  timestamp: number
-  projectId: string
-}
-
-const CACHE_PREFIX = 'cr-snapshot-'
-const STALE_AFTER_MS = 5 * 60 * 1000 // 5 minutes — show cache, refresh in background
-
 export function useSnapshot() {
-  const snapshot = useState<Snapshot | null>('snapshot', () => null)
-  const loading = useState('snapshot-loading', () => false)
-  const refreshing = useState('snapshot-refreshing', () => false)
-  const error = useState<string | null>('snapshot-error', () => null)
+  const brain = useContentBrain()
 
-  /**
-   * Load snapshot with cache-first strategy:
-   * 1. Read from IndexedDB → instant render
-   * 2. If stale or no cache → fetch from API in background
-   * 3. Update IndexedDB + reactive state
-   */
+  const snapshot = computed<Snapshot | null>(() => {
+    if (!brain.ready.value && !brain.config.value) return null
+
+    return {
+      exists: brain.hasContentrain.value,
+      config: brain.config.value,
+      models: brain.models.value.map(m => ({
+        id: m.id ?? '',
+        name: m.name ?? '',
+        kind: (m.kind ?? 'collection') as ModelKind,
+        type: (m.kind ?? 'collection') as ModelKind,
+        fields: (m.fields ?? {}) as Record<string, unknown>,
+        domain: m.domain ?? '',
+        i18n: m.i18n ?? false,
+      })),
+      content: brain.contentSummary.value,
+      vocabulary: brain.vocabulary.value,
+      contentContext: brain.contentContext.value as ContentContext | null,
+    }
+  })
+
   async function fetchSnapshot(workspaceId: string, projectId: string) {
-    error.value = null
-    const cacheKey = `${CACHE_PREFIX}${projectId}`
-
-    // 1. Try IndexedDB cache first (client only)
-    if (import.meta.client) {
-      try {
-        const cached = await get<CachedSnapshot>(cacheKey)
-        if (cached && cached.projectId === projectId) {
-          snapshot.value = cached.data
-          // If cache is fresh enough, skip API call
-          const age = Date.now() - cached.timestamp
-          if (age < STALE_AFTER_MS) {
-            return
-          }
-          // Cache is stale — show it but refresh in background
-          refreshing.value = true
-          fetchFromAPI(workspaceId, projectId, cacheKey).finally(() => {
-            refreshing.value = false
-          })
-          return
-        }
-      }
-      catch {
-        // IndexedDB unavailable — fall through to API
-      }
-    }
-
-    // 2. No cache — show loading, fetch from API
-    loading.value = true
-    await fetchFromAPI(workspaceId, projectId, cacheKey)
-    loading.value = false
-  }
-
-  async function fetchFromAPI(workspaceId: string, projectId: string, cacheKey: string) {
-    try {
-      const data = await $fetch<Snapshot>(
-        `/api/workspaces/${workspaceId}/projects/${projectId}/snapshot`,
-      )
-      snapshot.value = data
-
-      // Write to IndexedDB cache
-      if (import.meta.client) {
-        try {
-          await set(cacheKey, {
-            data,
-            timestamp: Date.now(),
-            projectId,
-          } satisfies CachedSnapshot)
-        }
-        catch {
-          // IndexedDB write failed — not critical
-        }
-      }
-    }
-    catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Failed to load content'
-      // Don't clear snapshot if we have cached data
-      if (!snapshot.value)
-        snapshot.value = null
-    }
+    brain.initBrain(projectId)
+    await brain.sync(workspaceId, projectId)
   }
 
   function clearSnapshot() {
-    snapshot.value = null
-    error.value = null
+    brain.destroyBrain()
   }
 
-  /**
-   * Invalidate cache for a project (call after content changes).
-   */
   async function invalidateCache(projectId: string) {
-    if (import.meta.client) {
-      try {
-        await del(`${CACHE_PREFIX}${projectId}`)
-      }
-      catch {
-        // Not critical
-      }
-    }
+    await brain.invalidate(projectId)
   }
 
   const models = computed(() => snapshot.value?.models ?? [])
-  const hasContentrain = computed(() => snapshot.value?.exists ?? false)
+  const hasContentrain = brain.hasContentrain
   const vocabulary = computed(() => snapshot.value?.vocabulary ?? null)
   const contentContext = computed(() => snapshot.value?.contentContext ?? null)
-  const projectStats = computed(() => {
-    if (!snapshot.value?.exists) return null
-    const ctx = snapshot.value.contentContext?.stats
-    return {
-      modelCount: ctx?.models ?? snapshot.value.models.length,
-      entryCount: ctx?.entries ?? Object.values(snapshot.value.content).reduce((sum, c) => sum + c.count, 0),
-      localeCount: ctx?.locales?.length ?? 0,
-      locales: ctx?.locales ?? [],
-    }
-  })
+  const projectStats = brain.projectStats
 
   return {
     snapshot: readonly(snapshot),
@@ -155,9 +89,9 @@ export function useSnapshot() {
     vocabulary,
     contentContext,
     projectStats,
-    loading: readonly(loading),
-    refreshing: readonly(refreshing),
-    error: readonly(error),
+    loading: brain.syncing,
+    refreshing: computed(() => false),
+    error: brain.syncError,
     fetchSnapshot,
     clearSnapshot,
     invalidateCache,
