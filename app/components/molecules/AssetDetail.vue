@@ -14,6 +14,7 @@ const props = defineProps<{
     alt: string | null
     tags: string[]
     originalPath: string
+    previewUrl?: string
     variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
     source: string
     createdAt: string
@@ -78,8 +79,14 @@ function copyPath() {
     <!-- Body -->
     <div class="flex-1 space-y-4 overflow-y-auto p-4">
       <!-- Preview -->
-      <div class="flex items-center justify-center rounded-lg bg-secondary-100 p-6 dark:bg-secondary-800/50">
-        <div class="text-center">
+      <div class="flex items-center justify-center overflow-hidden rounded-lg bg-secondary-100 dark:bg-secondary-800/50" :class="isImage && asset.previewUrl ? 'p-0' : 'p-6'">
+        <img
+          v-if="isImage && asset.previewUrl"
+          :src="asset.previewUrl"
+          :alt="asset.alt ?? asset.filename"
+          class="max-h-48 max-w-full object-contain"
+        >
+        <div v-else class="text-center">
           <span
             :class="[isImage ? 'icon-[annon--image-3]' : isVideo ? 'icon-[annon--video-library]' : 'icon-[annon--file-text]',
                      'size-12 text-secondary-400 dark:text-secondary-500']"

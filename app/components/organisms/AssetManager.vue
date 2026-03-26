@@ -75,12 +75,16 @@ onUnmounted(() => {
           :placeholder="t('media.search_placeholder')"
           class="flex-1"
         />
-        <AtomsIconButton
-          icon="icon-[annon--expand]"
-          :label="t('media.open_full')"
-          size="sm"
+        <button
+          type="button"
+          :aria-label="t('media.open_full')"
+          class="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-secondary-100 hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-800 dark:hover:text-secondary-100"
           @click="modalOpen = true"
-        />
+        >
+          <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9.5 1.5h5v5M6.5 14.5h-5v-5M14.5 1.5L9 7M1.5 14.5L7 9" />
+          </svg>
+        </button>
       </div>
 
       <!-- Bulk actions bar -->
@@ -132,12 +136,10 @@ onUnmounted(() => {
             :filename="asset.filename"
             :original-path="asset.originalPath"
             :content-type="asset.contentType"
-            :width="asset.width"
-            :height="asset.height"
+            :preview-url="`/api/workspaces/${workspaceId}/projects/${projectId}/media/${asset.id}/preview`"
             :format="asset.format"
             :size="asset.size"
             :alt="asset.alt"
-            :blurhash="asset.blurhash"
             @click="openAssetDetail"
           />
         </div>

@@ -198,12 +198,10 @@ async function handleBulkDelete() {
                 :filename="asset.filename"
                 :original-path="asset.originalPath"
                 :content-type="asset.contentType"
-                :width="asset.width"
-                :height="asset.height"
+                :preview-url="`/api/workspaces/${workspaceId}/projects/${projectId}/media/${asset.id}/preview`"
                 :format="asset.format"
                 :size="asset.size"
                 :alt="asset.alt"
-                :blurhash="asset.blurhash"
                 :selected="selectedAsset?.id === asset.id || selectedIds.has(asset.id)"
                 @click="isSelecting ? toggleSelect(asset.id) : selectAsset(asset)"
               />
@@ -216,7 +214,7 @@ async function handleBulkDelete() {
             class="w-80 shrink-0 border-l border-secondary-200 dark:border-secondary-800"
           >
             <MoleculesAssetDetail
-              :asset="selectedAsset"
+              :asset="{ ...selectedAsset, previewUrl: `/api/workspaces/${workspaceId}/projects/${projectId}/media/${selectedAsset.id}/preview` }"
               :editable="editable"
               @save="handleSave"
               @delete="handleDelete"
