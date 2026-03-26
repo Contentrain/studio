@@ -1,21 +1,18 @@
 {
   "lastOperation": {
-    "entries": [
-      "en"
-    ],
     "locale": "en",
-    "model": "ui-strings",
+    "model": "agent-prompts",
     "source": "mcp-local",
-    "timestamp": "2026-03-26T11:29:56.018Z",
-    "tool": "contentrain_content_save"
+    "timestamp": "2026-03-26T22:41:04.222Z",
+    "tool": "contentrain_model_save"
   },
   "stats": {
     "entries": 8,
-    "lastSync": "2026-03-26T11:29:56.018Z",
+    "lastSync": "2026-03-26T22:41:04.224Z",
     "locales": [
       "en"
     ],
-    "models": 3
+    "models": 4
   },
   "version": "1"
 }
