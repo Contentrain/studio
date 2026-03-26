@@ -15,28 +15,28 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!workspaceId || !projectId || !modelId)
-    throw createError({ statusCode: 400, message: 'workspaceId, projectId, and modelId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.model_id_required') })
 
   if (!body.entryIds?.length || !body.status)
-    throw createError({ statusCode: 400, message: 'entryIds and status are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.entry_status_required') })
 
   if (!['draft', 'published', 'archived'].includes(body.status))
-    throw createError({ statusCode: 400, message: 'status must be draft, published, or archived' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.status_invalid') })
 
   // Permission check: publish requires owner/admin, draft/archive requires editor+
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
 
   if (body.status === 'published') {
     if (permissions.workspaceRole !== 'owner' && permissions.workspaceRole !== 'admin')
-      throw createError({ statusCode: 403, message: 'Only workspace owner/admin can publish content' })
+      throw createError({ statusCode: 403, message: errorMessage('content.publish_owner_only') })
   }
   else if (!permissions.availableTools.includes('save_content')) {
-    throw createError({ statusCode: 403, message: 'Insufficient permissions' })
+    throw createError({ statusCode: 403, message: errorMessage('content.insufficient_permissions') })
   }
 
   // Model restriction
   if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
-    throw createError({ statusCode: 403, message: `No access to model: ${modelId}` })
+    throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
   const { git, contentRoot } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,

@@ -8,18 +8,18 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'media.upload'))
-    throw createError({ statusCode: 403, message: 'Media upload requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade') })
 
   const media = useMediaProvider()
   if (!media)
-    throw createError({ statusCode: 503, message: 'Media storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
 
   const body = await readBody<{
     url: string
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!body.url?.trim())
-    throw createError({ statusCode: 400, message: 'url is required' })
+    throw createError({ statusCode: 400, message: errorMessage('media.url_required') })
 
   // Fetch the URL server-side
   let response: Response
@@ -40,22 +40,22 @@ export default defineEventHandler(async (event) => {
     })
   }
   catch {
-    throw createError({ statusCode: 400, message: 'Failed to fetch URL' })
+    throw createError({ statusCode: 400, message: errorMessage('media.url_fetch_failed') })
   }
 
   if (!response.ok)
-    throw createError({ statusCode: 400, message: `URL returned ${response.status}` })
+    throw createError({ statusCode: 400, message: errorMessage('media.url_bad_response', { status: response.status }) })
 
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream'
   if (!isAllowedMimeType(contentType.split(';')[0]!.trim()))
-    throw createError({ statusCode: 400, message: `File type not allowed: ${contentType}` })
+    throw createError({ statusCode: 400, message: errorMessage('media.file_type_not_allowed', { type: contentType }) })
 
   const buffer = Buffer.from(await response.arrayBuffer())
 
   // Size limit
   const maxSizeMb = getPlanLimit(plan, 'media.max_file_size_mb')
   if (buffer.length > maxSizeMb * 1024 * 1024)
-    throw createError({ statusCode: 400, message: `File exceeds ${maxSizeMb}MB limit` })
+    throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
 
   // Extract filename from URL
   const urlPath = new URL(body.url).pathname

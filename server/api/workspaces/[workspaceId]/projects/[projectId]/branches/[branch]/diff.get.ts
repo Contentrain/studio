@@ -9,11 +9,11 @@ export default defineEventHandler(async (event) => {
   const branch = getRouterParam(event, 'branch')
 
   if (!workspaceId || !projectId || !branch)
-    throw createError({ statusCode: 400, message: 'workspaceId, projectId, and branch are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.branch_params_required') })
 
   // Only contentrain/* branches can be diffed through Studio
   if (!branch.startsWith('contentrain/'))
-    throw createError({ statusCode: 400, message: 'Only contentrain/ branches can be viewed through Studio' })
+    throw createError({ statusCode: 400, message: errorMessage('branches.contentrain_only') })
 
   const { git } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,

@@ -10,10 +10,10 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'Workspace ID is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   if (!body.repoFullName)
-    throw createError({ statusCode: 400, message: 'repoFullName is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.repo_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 

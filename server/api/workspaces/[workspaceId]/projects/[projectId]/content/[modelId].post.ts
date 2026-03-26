@@ -18,19 +18,19 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!workspaceId || !projectId || !modelId)
-    throw createError({ statusCode: 400, message: 'workspaceId, projectId, and modelId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.model_id_required') })
 
   if (!body.data)
-    throw createError({ statusCode: 400, message: 'data is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.data_required') })
 
   // Permission check: editor+ can write content
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (!permissions.availableTools.includes('save_content'))
-    throw createError({ statusCode: 403, message: 'Insufficient permissions to write content' })
+    throw createError({ statusCode: 403, message: errorMessage('content.write_forbidden') })
 
   // Model restriction check
   if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
-    throw createError({ statusCode: 403, message: `No access to model: ${modelId}` })
+    throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
   const { git, contentRoot } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,

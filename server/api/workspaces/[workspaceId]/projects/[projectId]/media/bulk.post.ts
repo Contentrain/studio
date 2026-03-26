@@ -7,14 +7,14 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const media = useMediaProvider()
   if (!media)
-    throw createError({ statusCode: 503, message: 'Media storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
 
   const body = await readBody<{
     action: 'delete' | 'tag'
@@ -23,10 +23,10 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!body.action || !body.assetIds?.length)
-    throw createError({ statusCode: 400, message: 'action and assetIds are required' })
+    throw createError({ statusCode: 400, message: errorMessage('media.bulk_params_required') })
 
   if (body.assetIds.length > 50)
-    throw createError({ statusCode: 400, message: 'Maximum 50 assets per bulk operation' })
+    throw createError({ statusCode: 400, message: errorMessage('media.bulk_limit_exceeded') })
 
   const results: { id: string, success: boolean, error?: string }[] = []
 
@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
   }
   else if (body.action === 'tag') {
     if (!body.tags?.length)
-      throw createError({ statusCode: 400, message: 'tags required for tag action' })
+      throw createError({ statusCode: 400, message: errorMessage('media.bulk_tags_required') })
 
     for (const assetId of body.assetIds) {
       try {
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
     }
   }
   else {
-    throw createError({ statusCode: 400, message: `Unknown action: ${body.action}` })
+    throw createError({ statusCode: 400, message: errorMessage('media.bulk_unknown_action', { action: body.action }) })
   }
 
   return { results }

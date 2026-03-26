@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const keyId = getRouterParam(event, 'keyId')
 
   if (!workspaceId || !keyId)
-    throw createError({ statusCode: 400, message: 'workspaceId and keyId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('api.key_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 

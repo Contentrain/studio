@@ -8,10 +8,10 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ name: string }>(event)
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   if (!body.name?.trim())
-    throw createError({ statusCode: 400, message: 'name is required' })
+    throw createError({ statusCode: 400, message: errorMessage('cdn.key_name_required') })
 
   // Role + plan check
   const client = useSupabaseUserClient(session.accessToken)
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   const { data: workspace } = await client
     .from('workspaces')
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   const plan = getWorkspacePlan(workspace ?? {})
   if (!hasFeature(plan, 'cdn.delivery'))
-    throw createError({ statusCode: 403, message: 'CDN requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
 
   // Check key limit
   const keyLimit = getPlanLimit(plan, 'cdn.api_keys')
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
     .is('revoked_at', null)
 
   if ((count ?? 0) >= keyLimit)
-    throw createError({ statusCode: 403, message: `Plan allows max ${keyLimit} API keys` })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.key_limit_reached', { limit: keyLimit }) })
 
   // Generate key
   const { key, keyHash, keyPrefix } = generateCDNKey()

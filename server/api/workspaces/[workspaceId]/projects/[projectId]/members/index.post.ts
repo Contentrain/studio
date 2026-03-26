@@ -10,13 +10,13 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'Workspace ID and Project ID are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   if (!body.email || !body.role)
-    throw createError({ statusCode: 400, message: 'email and role are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.email_role_required') })
 
   if (!['editor', 'reviewer', 'viewer'].includes(body.role))
-    throw createError({ statusCode: 400, message: 'role must be editor, reviewer, or viewer' })
+    throw createError({ statusCode: 400, message: errorMessage('members.invalid_project_role') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -31,20 +31,20 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found in this workspace' })
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
   // Plan-based role gating: reviewer/viewer require Pro+, specificModels requires Pro+
   const { data: ws } = await client.from('workspaces').select('plan').eq('id', workspaceId).single()
   const plan = getWorkspacePlan(ws ?? {})
 
   if (body.role === 'reviewer' && !hasFeature(plan, 'roles.reviewer'))
-    throw createError({ statusCode: 403, message: 'Reviewer role requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('members.reviewer_upgrade') })
 
   if (body.role === 'viewer' && !hasFeature(plan, 'roles.viewer'))
-    throw createError({ statusCode: 403, message: 'Viewer role requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('members.viewer_upgrade') })
 
   if (body.specificModels && !hasFeature(plan, 'roles.specific_models'))
-    throw createError({ statusCode: 403, message: 'Model-specific access requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('members.model_access_upgrade') })
 
   const userId = await inviteOrLookupUser(body.email)
 
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
   if (!isAlreadyMember) {
     const memberLimit = getPlanLimit(plan, 'team.members')
     if (currentMembers.length >= memberLimit)
-      throw createError({ statusCode: 403, message: `Workspace seat limit reached (${memberLimit}). Upgrade plan to add more members.` })
+      throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
   }
   await ensureWorkspaceMember(client, admin, workspaceId, userId, body.email)
 

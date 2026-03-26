@@ -3,7 +3,7 @@ export default defineEventHandler(async (event) => {
   const ip = getHeader(event, 'x-forwarded-for') ?? 'unknown'
   const rateCheck = checkRateLimit(`magic-link:${ip}`, 5, 60_000)
   if (!rateCheck.allowed)
-    throw createError({ statusCode: 429, message: 'Too many requests. Try again later.' })
+    throw createError({ statusCode: 429, message: errorMessage('auth.rate_limited') })
 
   const body = await readBody<{ email: string, redirectTo?: string }>(event)
 

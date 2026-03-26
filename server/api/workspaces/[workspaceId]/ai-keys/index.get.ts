@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   const workspaceId = getRouterParam(event, 'workspaceId')
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'workspaceId is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 

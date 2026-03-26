@@ -9,10 +9,10 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ role: 'admin' | 'member' }>(event)
 
   if (!workspaceId || !memberId)
-    throw createError({ statusCode: 400, message: 'workspaceId and memberId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.member_id_required') })
 
   if (!body.role || !['admin', 'member'].includes(body.role))
-    throw createError({ statusCode: 400, message: 'role must be admin or member' })
+    throw createError({ statusCode: 400, message: errorMessage('members.invalid_workspace_role') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -27,10 +27,10 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!target)
-    throw createError({ statusCode: 404, message: 'Member not found' })
+    throw createError({ statusCode: 404, message: errorMessage('members.not_found') })
 
   if (target.role === 'owner')
-    throw createError({ statusCode: 400, message: 'Cannot change owner role' })
+    throw createError({ statusCode: 400, message: errorMessage('members.cannot_change_owner_role') })
 
   const { data, error } = await client
     .from('workspace_members')

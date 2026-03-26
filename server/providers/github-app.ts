@@ -73,7 +73,7 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
       }) as { data: { content?: string, encoding?: string } }
 
       if (!data.content)
-        throw createError({ statusCode: 404, message: `File not found: ${path}` })
+        throw createError({ statusCode: 404, message: errorMessage('github.file_not_found', { path }) })
 
       return Buffer.from(data.content, 'base64').toString('utf-8')
     },
@@ -87,7 +87,7 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
       })
 
       if (!Array.isArray(data))
-        throw createError({ statusCode: 400, message: `Not a directory: ${path}` })
+        throw createError({ statusCode: 400, message: errorMessage('github.not_a_directory', { path }) })
 
       return data.map((item: { name: string }) => item.name)
     },

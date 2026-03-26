@@ -541,7 +541,7 @@ export function analyzeBrainContent(
   analysisType: 'seo_audit' | 'locale_parity' | 'stale_content' | 'quality_score' | 'full',
 ): Record<string, unknown> {
   const config = brain.config
-  if (!config) return { error: 'Project not initialized' }
+  if (!config) return { error: agentMessage('analyze.not_initialized') }
 
   const defaultLocale = config.locales?.default ?? 'en'
   const supportedLocales = config.locales?.supported ?? [defaultLocale]
@@ -566,15 +566,15 @@ export function analyzeBrainContent(
 
       for (const [entryId, entry] of Object.entries(contentData as Record<string, Record<string, unknown>>)) {
         if (descField && (!entry[descField] || String(entry[descField]).length === 0)) {
-          seoIssues.push({ model: model.name, entryId, issue: `Missing ${descField}` })
+          seoIssues.push({ model: model.name, entryId, issue: agentMessage('analyze.seo_missing_field', { field: descField }) })
         }
         if (titleField) {
           const title = String(entry[titleField] ?? '')
           if (title.length > 60) {
-            seoIssues.push({ model: model.name, entryId, issue: `Title too long (${title.length} chars, max 60)` })
+            seoIssues.push({ model: model.name, entryId, issue: agentMessage('analyze.seo_title_long', { length: title.length, max: 60 }) })
           }
           if (title.length < 10 && title.length > 0) {
-            seoIssues.push({ model: model.name, entryId, issue: `Title too short (${title.length} chars, min 10)` })
+            seoIssues.push({ model: model.name, entryId, issue: agentMessage('analyze.seo_title_short', { length: title.length, min: 10 }) })
           }
         }
       }
@@ -671,7 +671,7 @@ export function analyzeBrainContent(
     }
 
     const avgScore = modelCount > 0 ? Math.round(totalScore / modelCount) : 0
-    const tier = avgScore >= 90 ? 'Excellent' : avgScore >= 75 ? 'Good' : avgScore >= 50 ? 'Fair' : 'Poor'
+    const tier = avgScore >= 90 ? agentMessage('analyze.quality_excellent') : avgScore >= 75 ? agentMessage('analyze.quality_good') : avgScore >= 50 ? agentMessage('analyze.quality_fair') : agentMessage('analyze.quality_poor')
     result.quality = { score: avgScore, tier, modelCount }
   }
 

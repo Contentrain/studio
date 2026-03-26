@@ -79,7 +79,7 @@ export async function resolveProjectContext(
     .single()
 
   if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   const { data: workspace } = await client
     .from('workspaces')
@@ -88,7 +88,7 @@ export async function resolveProjectContext(
     .single()
 
   if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
+    throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
   const [owner, repo] = project.repo_full_name.split('/')
   const git = useGitProvider({
@@ -193,7 +193,7 @@ export async function requireWorkspaceRole(
     .single()
 
   if (!data || !requiredRoles.includes(data.role))
-    throw createError({ statusCode: 403, message: `Requires ${requiredRoles.join(' or ')} role` })
+    throw createError({ statusCode: 403, message: errorMessage('members.requires_role', { roles: requiredRoles.join(' or ') }) })
 
   return data.role
 }
@@ -261,7 +261,7 @@ export async function inviteOrLookupUser(email: string): Promise<string> {
     const { data: users } = await admin.auth.admin.listUsers()
     const existing = users?.users?.find((u: { email?: string }) => u.email === email)
     if (!existing?.id)
-      throw createError({ statusCode: 400, message: 'Could not find or invite user' })
+      throw createError({ statusCode: 400, message: errorMessage('members.could_not_invite') })
     return existing.id
   }
 }
@@ -471,7 +471,7 @@ export async function createMediaAsset(
     .single()
 
   if (error || !data)
-    throw createError({ statusCode: 500, message: `Failed to create media asset: ${error?.message}` })
+    throw createError({ statusCode: 500, message: errorMessage('media.create_failed', { detail: error?.message ?? 'Unknown error' }) })
 
   return data as MediaAssetRow
 }
@@ -523,7 +523,7 @@ export async function listMediaAssets(
     .range(offset, offset + limit - 1)
 
   if (error)
-    throw createError({ statusCode: 500, message: `Failed to list media assets: ${error.message}` })
+    throw createError({ statusCode: 500, message: errorMessage('media.list_failed', { detail: error.message }) })
 
   return { assets: (data ?? []) as MediaAssetRow[], total: count ?? 0 }
 }
@@ -541,7 +541,7 @@ export async function updateMediaAsset(
     .single()
 
   if (error || !data)
-    throw createError({ statusCode: 500, message: `Failed to update media asset: ${error?.message}` })
+    throw createError({ statusCode: 500, message: errorMessage('media.update_failed', { detail: error?.message ?? 'Unknown error' }) })
 
   return data as MediaAssetRow
 }

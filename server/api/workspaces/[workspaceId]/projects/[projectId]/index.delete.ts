@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found in this workspace' })
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
   // 1. Clean R2 storage (CDN content + media assets)
   const cdn = useCDNProvider()

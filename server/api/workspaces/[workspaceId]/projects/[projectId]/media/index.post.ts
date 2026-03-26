@@ -9,38 +9,38 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'media.upload'))
-    throw createError({ statusCode: 403, message: 'Media upload requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade') })
 
   const media = useMediaProvider()
   if (!media)
-    throw createError({ statusCode: 503, message: 'Media storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
 
   // Parse multipart
   const formData = await readMultipartFormData(event)
   if (!formData?.length)
-    throw createError({ statusCode: 400, message: 'No file provided' })
+    throw createError({ statusCode: 400, message: errorMessage('media.no_file_provided') })
 
   const filePart = formData.find(p => p.name === 'file')
   if (!filePart?.data || !filePart.filename)
-    throw createError({ statusCode: 400, message: 'File field is required' })
+    throw createError({ statusCode: 400, message: errorMessage('media.file_field_required') })
 
   const contentType = filePart.type ?? 'application/octet-stream'
 
   // MIME whitelist
   if (!isAllowedMimeType(contentType))
-    throw createError({ statusCode: 400, message: `File type not allowed: ${contentType}` })
+    throw createError({ statusCode: 400, message: errorMessage('media.file_type_not_allowed', { type: contentType }) })
 
   // Size limit
   const maxSizeMb = getPlanLimit(plan, 'media.max_file_size_mb')
   if (filePart.data.length > maxSizeMb * 1024 * 1024)
-    throw createError({ statusCode: 400, message: `File exceeds ${maxSizeMb}MB limit` })
+    throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
 
   // Storage quota
   const admin = useSupabaseAdmin()
@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
   const storageLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
   const currentUsage = (ws as { media_storage_bytes: number } | null)?.media_storage_bytes ?? 0
   if (storageLimit > 0 && currentUsage + filePart.data.length > storageLimit)
-    throw createError({ statusCode: 403, message: 'Storage quota exceeded' })
+    throw createError({ statusCode: 403, message: errorMessage('storage.quota_exceeded') })
 
   // Extract form fields
   const altPart = formData.find(p => p.name === 'alt')

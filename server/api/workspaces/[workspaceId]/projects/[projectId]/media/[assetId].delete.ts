@@ -8,19 +8,19 @@ export default defineEventHandler(async (event) => {
   const assetId = getRouterParam(event, 'assetId')
 
   if (!workspaceId || !projectId || !assetId)
-    throw createError({ statusCode: 400, message: 'workspaceId, projectId, and assetId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const media = useMediaProvider()
   if (!media)
-    throw createError({ statusCode: 503, message: 'Media storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
 
   // Verify asset belongs to project
   const existing = await media.getAsset(assetId)
   if (!existing || existing.projectId !== projectId)
-    throw createError({ statusCode: 404, message: 'Asset not found' })
+    throw createError({ statusCode: 404, message: errorMessage('media.asset_not_found') })
 
   await media.delete(projectId, assetId)
 

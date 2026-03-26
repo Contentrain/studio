@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   const admin = useSupabaseAdmin()
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
-    throw createError({ statusCode: 403, message: 'CDN requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
 
   // Get project
   const { git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
@@ -37,11 +37,11 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!project?.cdn_enabled)
-    throw createError({ statusCode: 400, message: 'CDN is not enabled for this project' })
+    throw createError({ statusCode: 400, message: errorMessage('cdn.not_enabled') })
 
   const cdn = useCDNProvider()
   if (!cdn)
-    throw createError({ statusCode: 503, message: 'CDN storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('cdn.storage_not_configured') })
 
   const branch = project.cdn_branch ?? project.default_branch ?? 'main'
 
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (buildError || !build)
-    throw createError({ statusCode: 500, message: `Failed to create build record: ${buildError?.message ?? 'unknown'}` })
+    throw createError({ statusCode: 500, message: errorMessage('cdn.build_failed', { detail: buildError?.message ?? 'unknown' }) })
 
   // SSE stream for progress
   const eventStream = createEventStream(event)
