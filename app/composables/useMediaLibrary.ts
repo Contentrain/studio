@@ -26,7 +26,7 @@ export function useMediaLibrary() {
   const filters = useState('media-filters', () => ({
     search: '',
     tags: [] as string[],
-    type: '',
+    type: 'all',
     page: 1,
     limit: 50,
     sort: 'newest' as 'newest' | 'oldest' | 'name' | 'size',
@@ -38,7 +38,7 @@ export function useMediaLibrary() {
       const params = new URLSearchParams()
       if (filters.value.search) params.set('search', filters.value.search)
       if (filters.value.tags.length) params.set('tags', filters.value.tags.join(','))
-      if (filters.value.type) params.set('type', filters.value.type)
+      if (filters.value.type && filters.value.type !== 'all') params.set('type', filters.value.type)
       params.set('page', String(filters.value.page))
       params.set('limit', String(filters.value.limit))
       params.set('sort', filters.value.sort)
