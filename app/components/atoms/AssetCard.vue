@@ -3,6 +3,7 @@ const props = defineProps<{
   filename: string
   originalPath: string
   contentType: string
+  previewUrl?: string
   width?: number
   height?: number
   format?: string
@@ -44,7 +45,14 @@ function formatSize(bytes: number): string {
   >
     <!-- Preview area -->
     <div class="relative flex aspect-square w-full items-center justify-center bg-secondary-100 dark:bg-secondary-800/50">
-      <span :class="[typeIcon, 'size-8 text-secondary-400 dark:text-secondary-500']" aria-hidden="true" />
+      <img
+        v-if="isImage && previewUrl"
+        :src="previewUrl"
+        :alt="alt ?? filename"
+        class="size-full object-cover"
+        loading="lazy"
+      >
+      <span v-else :class="[typeIcon, 'size-8 text-secondary-400 dark:text-secondary-500']" aria-hidden="true" />
     </div>
 
     <!-- Info -->
@@ -53,7 +61,6 @@ function formatSize(bytes: number): string {
         {{ filename }}
       </div>
       <div class="flex items-center gap-1.5 text-[10px] text-muted">
-        <span v-if="width && height">{{ width }}×{{ height }}</span>
         <span v-if="format" class="uppercase">{{ format }}</span>
         <span v-if="size">{{ formatSize(size) }}</span>
       </div>
