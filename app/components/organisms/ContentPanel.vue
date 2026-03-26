@@ -323,7 +323,11 @@ provide('sendChatPrompt', sendChatPrompt)
       <!-- VOCABULARY -->
       <template v-else-if="panelState === 'vocabulary'">
         <div v-if="vocabularyTerms.length === 0 && !editable" class="p-5">
-          <AtomsEmptyState icon="icon-[annon--book-library]" :title="t('content.vocabulary')" />
+          <AtomsEmptyState
+            icon="icon-[annon--book-library]"
+            :title="t('content.vocabulary_empty_title')"
+            :description="t('content.vocabulary_empty_description')"
+          />
         </div>
         <template v-else>
           <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
@@ -397,7 +401,8 @@ provide('sendChatPrompt', sendChatPrompt)
         </div>
         <div v-else-if="!snapshot.exists" class="p-5">
           <AtomsEmptyState
-            icon="icon-[annon--folder-open]" :title="t('content.not_found_title')"
+            illustration="/illustrations/initialize-project.png"
+            :title="t('content.not_found_title')"
             :description="t('content.not_found_description')"
           />
         </div>

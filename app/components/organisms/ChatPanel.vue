@@ -211,28 +211,31 @@ function formatConversationDate(dateStr: string): string {
       </div>
 
       <!-- Empty state: setup project (no .contentrain/) -->
-      <div v-else-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center gap-4 p-8">
+      <div v-else-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center p-8">
         <AtomsEmptyState
-          icon="icon-[annon--box]"
+          illustration="/illustrations/initialize-project.png"
           :title="t('content.not_found_title')"
           :description="t('content.not_found_description')"
-        />
-        <AtomsBaseButton
-          variant="primary"
-          size="md"
-          @click="handleSend(t('chat.init_prompt'))"
         >
-          <template #prepend>
-            <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
+          <template #action>
+            <AtomsBaseButton
+              variant="primary"
+              size="md"
+              @click="handleSend(t('chat.init_prompt'))"
+            >
+              <template #prepend>
+                <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
+              </template>
+              <span>{{ t('chat.init_project') }}</span>
+            </AtomsBaseButton>
           </template>
-          <span>{{ t('chat.init_project') }}</span>
-        </AtomsBaseButton>
+        </AtomsEmptyState>
       </div>
 
       <!-- Empty state: active project -->
       <div v-else-if="messages.length === 0" class="flex h-full items-center justify-center p-8">
         <AtomsEmptyState
-          icon="icon-[annon--comment-2-plus]"
+          illustration="/illustrations/start-conversation.png"
           :title="t('chat.empty_title')"
           :description="t('chat.empty_description')"
         />

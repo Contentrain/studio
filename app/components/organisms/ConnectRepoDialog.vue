@@ -250,8 +250,13 @@ onUnmounted(() => window.removeEventListener('focus', onWindowFocus))
             </div>
 
             <!-- Empty -->
-            <div v-else-if="filteredRepos.length === 0" class="px-3 py-8 text-center text-sm text-muted">
-              {{ t('github.no_repos') }}
+            <div v-else-if="filteredRepos.length === 0" class="px-3 py-8">
+              <AtomsEmptyState
+                icon="icon-[annon--search]"
+                :title="t('github.no_repos')"
+                :description="t('github.no_repos_hint')"
+                compact
+              />
             </div>
 
             <!-- List -->

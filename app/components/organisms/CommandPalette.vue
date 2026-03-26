@@ -477,8 +477,9 @@ const emit = defineEmits<{
         <!-- Results -->
         <div class="max-h-80 overflow-y-auto">
           <!-- No results -->
-          <div v-if="!hasResults && searchInput.length > 0" class="px-4 py-8 text-center text-sm text-muted">
-            No results found
+          <div v-if="!hasResults && searchInput.length > 0" class="flex flex-col items-center gap-2 px-4 py-8">
+            <span class="icon-[annon--search] size-5 text-disabled" aria-hidden="true" />
+            <span class="text-sm text-muted">{{ t('common.no_results') }}</span>
           </div>
 
           <!-- Empty state (no query) -->
