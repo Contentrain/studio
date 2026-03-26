@@ -109,15 +109,15 @@ onUnmounted(() => {
         class="flex-1"
       />
       <AtomsFormSelect
-        :model-value="filters.type"
+        :model-value="filters.type || 'all'"
         :options="[
-          { value: '', label: t('media.all_types') },
+          { value: 'all', label: t('media.all_types') },
           { value: 'image', label: t('media.images') },
           { value: 'video', label: t('media.videos') },
           { value: 'application', label: t('media.files') },
         ]"
         size="sm"
-        @update:model-value="filters.type = $event"
+        @update:model-value="filters.type = $event === 'all' ? '' : $event"
       />
       <AtomsFormSelect
         :model-value="filters.sort"
