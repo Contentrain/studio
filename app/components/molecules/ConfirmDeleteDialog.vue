@@ -25,6 +25,7 @@ const emit = defineEmits<{
   confirm: []
 }>()
 
+const { t } = useContent()
 const open = defineModel<boolean>('open', { default: false })
 const input = ref('')
 
@@ -93,7 +94,7 @@ watch(open, (isOpen) => {
         <div class="flex items-center justify-end gap-2 border-t border-secondary-200 px-6 py-4 dark:border-secondary-800">
           <DialogClose as-child>
             <AtomsBaseButton size="sm">
-              {{ $t ? $t('common.cancel') : 'Cancel' }}
+              {{ t('common.cancel') }}
             </AtomsBaseButton>
           </DialogClose>
           <AtomsBaseButton
