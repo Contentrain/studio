@@ -168,19 +168,40 @@ export async function buildBrainSnapshot(
   // 3. Read all model definitions
   const models = new Map<string, ModelDefinition>()
   try {
-    const modelFiles = await git.listDirectory(resolveModelsDir(ctx))
+    const modelsDir = resolveModelsDir(ctx)
+    // eslint-disable-next-line no-console
+    console.log(`[brain] Reading models from: ${modelsDir}`)
+    const modelFiles = await git.listDirectory(modelsDir)
+    // eslint-disable-next-line no-console
+    console.log(`[brain] Found ${modelFiles.length} model files:`, modelFiles)
     const modelReads = modelFiles
       .filter(f => f.endsWith('.json'))
       .map(async (file) => {
         try {
-          const def = JSON.parse(await git.readFile(`${resolveModelsDir(ctx)}/${file}`)) as ModelDefinition
-          models.set(def.id ?? file.replace('.json', ''), def)
+          const raw = JSON.parse(await git.readFile(`${modelsDir}/${file}`)) as Record<string, unknown>
+          const modelId = (raw.id as string) ?? file.replace('.json', '')
+          // Ensure id and name are always set (some model files omit them)
+          const def = {
+            ...raw,
+            id: modelId,
+            name: (raw.name as string) ?? modelId,
+            kind: (raw.kind as string) ?? 'collection',
+          } as ModelDefinition
+          models.set(modelId, def)
         }
-        catch { /* skip invalid model */ }
+        catch (e) {
+          // eslint-disable-next-line no-console
+          console.error(`[brain] Failed to read model ${file}:`, e)
+        }
       })
     await Promise.all(modelReads)
+    // eslint-disable-next-line no-console
+    console.log(`[brain] Loaded ${models.size} models`)
   }
-  catch { /* no models directory */ }
+  catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[brain] Failed to list models directory:`, e)
+  }
 
   // 4. Read all content + meta for each model
   const content = new Map<string, unknown>()
@@ -190,9 +211,10 @@ export async function buildBrainSnapshot(
   const contentReads: Promise<void>[] = []
 
   for (const [modelId, model] of models) {
-    const kind = model.kind ?? 'collection'
+    const kind = (model.kind ?? 'collection') as string
     const locales = model.i18n ? supportedLocales : ['data']
-    const modelLocales: string[] = []
+    // eslint-disable-next-line no-console
+    console.log(`[brain] Reading content for model ${modelId} (${kind}, i18n: ${model.i18n}, locales: ${locales.join(',')})`)
 
     for (const locale of locales) {
       contentReads.push((async () => {
@@ -245,7 +267,7 @@ export async function buildBrainSnapshot(
             }
 
             content.set(key, entries)
-            modelLocales.push(locale === 'data' ? defaultLocale : locale)
+            // locale tracked in summary post-processing
           }
           catch { /* directory not accessible */ }
         }
@@ -253,11 +275,18 @@ export async function buildBrainSnapshot(
           // JSON kinds: collection, singleton, dictionary
           try {
             const contentPath = resolveContentPath(ctx, model, locale)
+            // eslint-disable-next-line no-console
+            console.log(`[brain] Reading content: ${contentPath}`)
             const raw = await git.readFile(contentPath)
             content.set(key, JSON.parse(raw))
-            modelLocales.push(locale === 'data' ? defaultLocale : locale)
+            // locale tracked in summary post-processing
+            // eslint-disable-next-line no-console
+            console.log(`[brain] ✓ Content loaded for ${key}`)
           }
-          catch { /* content file not found */ }
+          catch (e) {
+            // eslint-disable-next-line no-console
+            console.error(`[brain] ✗ Content failed for ${modelId}:${locale}:`, (e as Error).message?.substring(0, 100))
+          }
 
           // Meta
           try {
@@ -269,28 +298,37 @@ export async function buildBrainSnapshot(
       })())
     }
 
-    // Content summary will be computed after all reads
-    contentReads.push((async () => {
-      // Wait for this model's content to be populated
-      await Promise.resolve() // yield
-      let entryCount = 0
-      for (const [k, v] of content) {
-        if (!k.startsWith(`${modelId}:`)) continue
-        if (kind === 'collection' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
-          entryCount = Math.max(entryCount, Object.keys(v).length)
-        }
-        else if (Array.isArray(v)) {
-          entryCount = Math.max(entryCount, v.length)
-        }
-        else if (v !== null) {
-          entryCount = 1
-        }
-      }
-      contentSummary[modelId] = { count: entryCount, locales: modelLocales, kind }
-    })())
+    // Content summary computed after Promise.all below (not here — race condition)
+    // Summary computed after Promise.all(contentReads) below
   }
 
   await Promise.all(contentReads)
+
+  // 4.5 Compute content summaries (after all reads complete — no race condition)
+  for (const [modelId, model] of models) {
+    const kind = (model.kind ?? 'collection') as ModelKind
+    let entryCount = 0
+    const localesFound: string[] = []
+
+    for (const [k, v] of content) {
+      if (!k.startsWith(`${modelId}:`)) continue
+      const locale = k.split(':')[1] ?? defaultLocale
+      localesFound.push(locale)
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        entryCount = Math.max(entryCount, Object.keys(v).length)
+      }
+      else if (Array.isArray(v)) {
+        entryCount = Math.max(entryCount, v.length)
+      }
+      else if (v !== null) {
+        entryCount = 1
+      }
+    }
+    contentSummary[modelId] = { count: entryCount, locales: localesFound, kind }
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`[brain] Content summary:`, Object.entries(contentSummary).map(([id, s]) => `${id}: ${s.count} entries (${s.locales.join(',')})`).join(', '))
 
   // 5. Read vocabulary
   let vocabulary: Record<string, Record<string, string>> | null = null
