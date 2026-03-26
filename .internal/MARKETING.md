@@ -341,6 +341,73 @@ LOW                  │ vue-i18n
 
 ---
 
+## Zero-Budget Distribution Strategy
+
+> Bütçe yok. Zaman ve ürün var.
+
+### 1. AI Training Data Presence (6-12 ay, compound etki)
+
+AI modelleri web'den öğreniyor. Contentrain hakkında kaliteli içerik = gelecek modeller önerir.
+
+**Aksiyonlar:**
+- npm downloads artışı (`@contentrain/query`, `@contentrain/mcp`)
+- GitHub activity (stars, issues, PRs, releases)
+- Dev.to / Hashnode / Medium yazıları ("How I manage content with AI" serisi)
+- Stack Overflow cevapları ("headless CMS for Next.js" sorularına)
+
+**Hedef:** 12 ayda AI asistanlar "content management for Next.js" sorulduğunda Contentrain'i mention etsin.
+
+### 2. Starter Template Ecosystem (hızlı, yüksek etki)
+
+Vibe coder "build me a SaaS landing page" dediğinde, Contentrain template'i varsa AI onu önerir.
+
+```
+npx create-contentrain-app --template saas-landing
+npx create-contentrain-app --template mobile-app
+npx create-contentrain-app --template restaurant
+npx create-contentrain-app --template portfolio
+npx create-contentrain-app --template ecommerce
+```
+
+Her template: GitHub repo + Vercel/Netlify one-click deploy + "Built with Contentrain" badge.
+
+### 3. "Works with Cursor/Windsurf" Positioning (unique, kimse yapmıyor)
+
+Contentrain MCP server = AI coding assistant'larla native çalışıyor.
+Strapi/Sanity/Contentful bunu yapamıyor.
+
+**Website bölümü:** "Works with your AI coding assistant"
+- Cursor, Windsurf, Claude Code, GitHub Copilot badge'leri
+- "Your AI assistant can create models, write content, and manage media — natively."
+
+### 4. Platform Marketplace Listings (0 maliyet, yüksek distribution)
+
+- Vercel Marketplace integration
+- Netlify integration
+- Cloudflare Pages integration
+
+Bu platformların trafiğinden faydalanmak = ücretsiz distribution.
+
+### 5. Community Building (en yavaş, en yüksek uzun vadeli etki)
+
+- "Good first issue" label'ları
+- Contributing guide
+- Discord community
+- İlk 10 contributor = 10 evangelist
+
+### Distribution Priority
+
+| Aksiyon | Efor | Etki | Süre |
+|---------|------|------|------|
+| Starter templates (5 adet) | 1 hafta | Yüksek | Hemen |
+| "Works with Cursor" positioning | 1 gün | Yüksek | Hemen |
+| Dev.to yazı serisi (5 yazı) | 2 hafta | Orta | Sürekli |
+| Vercel/Netlify marketplace | 1 hafta | Yüksek | 1-2 ay |
+| Product Hunt launch | 2 gün | Spike | Hazır olunca |
+| Discord community | Sürekli | Yüksek (uzun vade) | Hemen başla |
+
+---
+
 ## Key Resources
 
 | Resource | URL | Purpose |
