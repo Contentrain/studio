@@ -1,410 +1,582 @@
 # Content Intelligence — Client-Side Content Brain for Studio
 
-> **Tarih:** 2026-03-26 (revised)
+> **Tarih:** 2026-03-26 (revised v3)
 > **Durum:** Research complete, architecture designed
 > **Bağımlılık:** Content Engine ✅, CDN ✅, Snapshot system ✅
-> **Plan konumlaması:** KARAR VERİLMEDİ — ayrıca tartışılacak
+> **Plan konumlaması:** Tüm planlarda bedava (sunucu maliyeti sıfır, tüm compute browser'da)
+> **Teknoloji:** IndexedDB + FlexSearch + Web Worker (SQLite WASM değil — aşağıda gerekçe)
 
 ---
 
 ## Sorun
 
-Studio'daki AI agent içeriğe **parça parça** erişiyor:
+Studio'da 6 ayrı katman content'e erişiyor — hepsi birbirinden habersiz:
 
 ```
-Kullanıcı: "30 blog'un SEO analizini yap"
+CLIENT:
+  1. useSnapshot      → IndexedDB cache (5dk TTL) → /api/snapshot → Git API
+  2. useModelContent   → Memory + IndexedDB cache (5dk TTL) → /api/content/[model] → Git API
 
-Bugün:
-  Agent → get_content('blog-posts', 'en') → GitHub API → 30 entry döner
-  Agent → get_content('blog-posts', 'tr') → GitHub API → 30 entry döner
-  Agent → get_content('faq', 'en') → GitHub API → ayrı call
-  = 3 tool call, 3 API request, agent parça parça düşünüyor
+SERVER:
+  3. snapshot.get      → Git API (cache yok, ~4+3N+NL call per request)
+  4. content/[model].get → Git API (cache yok, ~3-5 call per request)
+  5. chat.post         → Git API (HER mesajda system prompt için ~4+3N call)
+  6. cdn-builder       → Git API (her build'de tüm content)
 
-Cursor'da (local):
-  Agent → .contentrain/ klasörünü açar → TÜM dosyaları aynı anda görür
-  = 0 API call, agent bütüncül düşünüyor
+Sorunlar:
+  - Model tanımları 4+ kez ayrı ayrı okunuyor
+  - Server-side cache SIFIR
+  - Agent HER mesajda system prompt için Git API okur
+  - Client cache invalidation gap — agent content değiştirdiğinde UI stale kalabilir
+  - 2 ayrı client cache (snapshot IDB + modelContent IDB) ayrı invalidation
 ```
-
-Studio'nun en büyük dezavantajı — local geliştirme deneyimi Studio'dan daha güçlü.
 
 ---
 
-## Rakip Analiz (2026-03 Güncel)
+## Rakipler Neden Bunu Yapamaz
 
-### Sanity Content Agent (en gelişmiş rakip)
-
-- Conversational AI agent — kullanıcı "tüm blog'ları analiz et" diyebilir
-- GROQ sorguları yazarak Content Lake'ten batch veri çeker
-- LLM ile analiz eder, staged draft'lar önerir
-- **Sınırlama:** GROQ batch'leri + LLM context window limiti — tüm içeriği aynı anda göremez
-- **Sınırlama:** Lokal dosyalara erişemez, sadece dataset'teki veri
-
-### Contentful
-
-- Per-entry AI Actions (max 200 batch), cross-content analiz yok
-- AI Actions field-level transform — SEO optimize per entry, compare yok
-
-### Strapi
-
-- AI sadece schema üretir (Content Type Builder), içerik analizi sıfır
-
-### Hygraph
-
-- Per-workflow-step AI Agents, MCP server var ama analiz dışarıda yapılmalı
-
-### Payload
-
-- RAG/vector ile benzer içerik bulur ama cross-content analiz yok, Enterprise-only
-
-### Gerçek Moat: Mimari Fark
-
-Rate limit argümanı zayıf — rakipler kendi dashboard'larında rate limit'i bypass edebilir. **Gerçek fark mimari:**
+**Gerçek moat rate limit değil, mimari fark:**
 
 ```
 API-native CMS (Contentful, Sanity, Strapi):
-  İçerik → Database → API → Browser
-  ↑ Her transferde serialization/deserialization
-  ↑ Multi-tenant DB paylaşımı = performans izolasyonu zor
-  ↑ Client'a tüm content'i indirmek = bandwidth maliyeti (her müşteri için)
-  ↑ Client-side index altyapısı yok — sıfırdan kurulması lazım
+  İçerik → Database (multi-tenant) → API → Browser
+  • Tüm content'i client'a transfer = database export + serialize + bandwidth
+  • Client-side indexleme altyapıları yok
+  • Her müşteri transfer = sunucu maliyeti
+  • Mimarileri değiştirmek = yıllar süren yeniden yazım
 
 Git-native CMS (Contentrain):
-  İçerik → .json dosyaları → Git repo → Browser
-  ↑ Zaten portable format (JSON files)
-  ↑ Git tree API ile delta sync (sadece değişenler)
-  ↑ Client'ta indexlendiğinde TÜM sorguları local çalıştırabilir
-  ↑ Browser cache = sonraki açılışlarda 0 transfer
+  İçerik → .json/.md dosyaları → Git repo → Browser
+  • Zaten portable format (JSON/Markdown files)
+  • Git Tree API ile delta sync (sadece değişenler, tek call)
+  • Client'ta indexlendiğinde TÜM sorguları local çalıştırabilir
+  • Sunucu maliyeti sıfır (browser compute)
 ```
 
-Rakipler teknik olarak bunu yapabilir mi? Evet — ama **yapmak için tüm mimarilerini değiştirmeleri lazım.** Database-first'ten file-first'e geçiş = yıllar süren yeniden yazım.
+Sanity Content Agent (en yakın rakip) GROQ batch sorguları çalıştırıyor ama:
+- Her sorgu API'ye gidiyor (200-500ms latency)
+- LLM context window limiti — tüm content'i aynı anda yükleyemiyor
+- Kullanıcının browser'ında çalışmıyor — sunucu-side
 
 ---
 
-## Çözüm: Content Brain
+## Neden IndexedDB, SQLite WASM Değil
 
-Studio'da çalışan AI agent'a **tüm proje içeriğini** browser'da indexed, compressed, searchable olarak sunmak.
+Content Brain'in sorguları SQL-seviyesi complexity gerektirmiyor:
 
-### Mimari
+| Sorgu | IndexedDB ile | SQLite ile | Fark |
+|-------|--------------|-----------|------|
+| Model'e göre entry listele | Index on model_id → getAll | SELECT WHERE model_id= | Aynı hız |
+| Field değerine göre filtre | Compound index → key range | SELECT WHERE field= | Aynı hız |
+| Keyword arama | FlexSearch library (6KB) | FTS5 virtual table | FlexSearch yeterli |
+| Aggregate (count, group) | getAll → JS reduce | GROUP BY | JS reduce yeterli |
 
-```
-GitHub Repo (.contentrain/)
-         ↓
-    Git Tree API (delta sync)
-         ↓
-    Content Brain Worker (Dedicated Web Worker)
-         ↓
-┌─────────────────────────────────────┐
-│  Browser — Dedicated Web Worker     │
-│                                     │
-│  ┌──────────────────────────┐       │
-│  │  SQLite WASM (wa-sqlite) │       │
-│  │  + OPFS persistence      │       │
-│  │                          │       │
-│  │  Tables:                 │       │
-│  │   models     (schema)    │       │
-│  │   entries    (content)   │       │
-│  │   entries_fts (FTS5)     │       │
-│  └──────────────────────────┘       │
-│                                     │
-│  ┌──────────────────────────┐       │
-│  │  CompressionStream       │       │
-│  │  (gzip for JSON bodies)  │       │
-│  └──────────────────────────┘       │
-│                                     │
-│  ┌──────────────────────────┐       │
-│  │  Transformers.js         │       │ ← FUTURE (Tier 3, ihtiyaç doğarsa)
-│  │  + EdgeVec vector search │       │
-│  └──────────────────────────┘       │
-└─────────────────────────────────────┘
-         ↓
-    BroadcastChannel (cross-tab sync)
-         ↓
-    Main Thread (Studio UI + Agent)
-```
+**IndexedDB avantajları:**
+- Zaten kullanıyoruz (idb-keyval) — ek dependency yok
+- Universal browser support, sıfır WASM binary
+- Structured clone = JSON nesneleri doğrudan saklanır
+- Compound index + getAllRecords() (Chrome 141+) hızlı
+- OPFS/COOP/COEP header gerektirmez
 
-### Data Flow
+**SQLite dezavantajları:**
+- wa-sqlite: ~300KB WASM binary download
+- OPFS sync handle: Dedicated Worker zorunlu
+- COOP/COEP header gerekebilir
+- Ek dependency, ek karmaşıklık
+- Over-engineering — Brain sorguları basit
 
-**1. İlk Yükleme (project açılışında)**
-
-```
-User projeyi açar
-  → git.getTree() → 1 API call → tüm dosya SHA listesi
-  → Cache'teki SHA'larla karşılaştır (delta detection)
-  → Sadece yeni/değişen dosyaları readFile() → 5-100 call (projeye göre)
-  → Content Brain Worker'a gönder
-  → Worker: SQLite'a yaz, FTS5 index, computed fields (word_count, has_meta vb.)
-  → BroadcastChannel → main thread'e "ready" sinyali
-```
-
-**2. Sonraki Açılışlar (warm start)**
-
-```
-User projeyi açar
-  → OPFS'teki SQLite cache'i aç → 50ms
-  → git.getTree() → SHA karşılaştır → delta varsa güncelle
-  → Yoksa: zaten güncel, sıfır transfer
-```
-
-**3. Content Değiştiğinde**
-
-```
-Agent save_content yaptı
-  → Content Engine commit eder
-  → Brain Worker'a "entry changed" mesajı
-  → Worker: sadece o entry'yi günceller (full re-sync gerekmez)
-  → FTS5 re-index (sadece o entry)
-```
+**Karar:** İhtiyaç doğarsa (5000+ entry, complex JOIN'ler) SQLite'a migrate edilir. Başlangıçta IndexedDB + FlexSearch yeterli.
 
 ---
 
-## GitHub API Verimliliği
+## Contentrain Dosya Yapısı — Brain Ne İndexler
 
-Endişe: 30 model × 3 locale = 90+ dosya çekmek GitHub rate limit'i tüketir mi?
-
-**Git Tree API bunu çözüyor:**
+### .contentrain/ Yapısı
 
 ```
-Yaklaşım 1 (kötü): Her dosya için readFile() = 90 call
-Yaklaşım 2 (doğru): getTree() + selective readFile()
-
-getTree() → 1 call → tüm dosyaların SHA hash'leri
-Cache'teki SHA'larla karşılaştır:
-  - Değişmeyen dosya: skip (0 call)
-  - Değişen dosya: readFile() (1 call per file)
-
-İlk yükleme: 1 + 90 = 91 call (bir kerelik)
-Sonraki sync: 1 + (değişen dosya sayısı) = tipik 1-5 call
-Rate limit: 5000/saat → sorun yok
+.contentrain/
+├── config.json                                    # Proje config (stack, locales, domains, workflow)
+├── context.json                                   # Last operation + stats
+├── vocabulary.json                                # Shared terminology
+├── models/
+│   ├── blog-posts.json                           # Model definition (fields, kind, domain, i18n)
+│   ├── faq.json
+│   └── hero-section.json
+├── content/
+│   └── {domain}/
+│       ├── {modelId}/
+│       │   ├── en.json                           # i18n: true → locale file (collection/singleton/dictionary)
+│       │   ├── tr.json
+│       │   └── data.json                         # i18n: false → data.json
+│       └── {slug}/                               # Document kind
+│           ├── en.md                             # i18n: true → locale markdown
+│           └── tr.md
+└── meta/
+    └── {modelId}/
+        ├── en.json                               # Entry metadata (status, source, updated_by)
+        ├── tr.json
+        └── {slug}/                               # Document meta (per-slug)
+            └── en.json
 ```
 
-`git.getTree()` zaten GitProvider'da implement edilmiş — kullanılması lazım.
+### content_path Override
+
+Model tanımında `content_path` varsa dosyalar `.contentrain/` **dışında** yaşar:
+
+```json
+{
+  "id": "docs",
+  "kind": "document",
+  "content_path": "content/docs",
+  "i18n": true
+}
+→ Dosya: content/docs/{slug}/{locale}.md (NOT .contentrain/content/...)
+```
+
+Brain sync'i bu override'ları da kapsamalı — `resolveContentPath()` kullanmalı.
+
+### Content Formatları (Brain'in parse etmesi gereken)
+
+**Collection/Singleton/Dictionary (JSON):**
+```json
+{
+  "entry-id-1": { "title": "Hello", "body": "...", "tags": ["a", "b"] },
+  "entry-id-2": { "title": "World", "body": "..." }
+}
+```
+
+**Document (Markdown with frontmatter):**
+```markdown
+---
+title: Getting Started
+author: ahmet
+category: tutorial
+---
+
+# Getting Started
+
+Content body here...
+```
+
+Brain document kind'ı indexlerken:
+- Frontmatter → structured fields olarak parse
+- Body → full-text search index'ine
+- **gray-matter parse gerekli** (server-side yapılıp gönderilmeli, client-side markdown parse ağır)
 
 ---
 
-## Agent'a Sunulan Yeni Yetenekler
+## Mimari: Content Brain
 
-### System Prompt Content Index
-
-Her conversation başında agent'a projenin özeti verilir:
+### Sync Endpoint (YENİ)
 
 ```
-## Content Brain — Full Project Index
+GET /api/workspaces/{wsId}/projects/{projId}/brain/sync
+  ?treeSha=<optional-last-known-sha>
 
-Status: 450 entries indexed, 10 models, 2 locales (en, tr)
-Last sync: 2 minutes ago
+Response (ilk yükleme — treeSha yok):
+{
+  treeSha: "abc123",
+  config: { ... },
+  vocabulary: { ... },
+  context: { ... },
+  models: [
+    { id: "blog-posts", name: "Blog Posts", kind: "collection", ... , fields: { ... } }
+  ],
+  content: {
+    "blog-posts": {
+      "en": {
+        entries: { "id1": { title: "...", body: "..." }, ... },
+        meta: { "id1": { status: "published", ... } }
+      },
+      "tr": { ... }
+    },
+    "hero-section": {
+      "en": { data: { title: "...", cta: "..." }, meta: { ... } }
+    }
+  },
+  documents: {
+    "docs": {
+      "en": [
+        { slug: "getting-started", frontmatter: { ... }, body: "...", meta: { ... } }
+      ]
+    }
+  }
+}
 
-### Models & Entry Summaries
-blog-posts (collection, 30 entries, en/tr):
-  Published: 24 | Draft: 6
-  Avg word count: 850 | Missing meta_description: 8
-  Tags: [ai, content, management, tutorial, guide...]
-
-hero-section (singleton, en/tr):
-  title: "Build faster with AI" | cta: "Get Started"
-
-faq (collection, 15 entries, en):
-  Categories: [general, pricing, technical]
-
-### Content Health
-- 8 entries missing meta_description
-- 3 entries with title > 60 chars
-- 2 stale entries (90+ days)
-- Locale parity: en=30, tr=25 (5 untranslated)
+Response (delta sync — treeSha var):
+{
+  treeSha: "def456",
+  changed: {
+    "blog-posts": { "en": { entries: { "id3": { ... } }, meta: { "id3": { ... } } } }
+  },
+  deleted: {
+    "blog-posts": { "en": { entries: ["id5"] } }
+  }
+}
 ```
 
-~200 token — context window'un %0.1'i. Agent **sıfır tool call** ile tüm projeyi biliyor.
+**Server-side:** Tek endpoint tüm content'i toplar. Document kind için `gray-matter` parse eder. Delta sync için `getTree()` SHA karşılaştırması yapar.
 
-### Agent Tools
+**Git API verimliliği:**
+```
+İlk sync: getTree(1) + readFile(N dosya) = ~N+1 call (bir kerelik)
+Delta sync: getTree(1) + readFile(değişen dosya sayısı) = ~1-5 call
+```
+
+### Client: Content Brain Worker
+
+```
+┌─────────────────────────────────────────────────┐
+│  Dedicated Web Worker: content-brain.worker.ts  │
+│                                                 │
+│  IndexedDB Stores:                              │
+│   "brain-models"    → model definitions         │
+│   "brain-entries"   → all entries (all models)   │
+│   "brain-meta"      → entry metadata             │
+│   "brain-config"    → config, vocab, context     │
+│   "brain-sync"      → treeSha, lastSync          │
+│                                                 │
+│  Indexes:                                       │
+│   entries: [model_id, locale] (compound)        │
+│   entries: [model_id, status] (compound)        │
+│   entries: [model_id, locale, has_meta_desc]    │
+│   meta: [model_id, locale, status]              │
+│                                                 │
+│  FlexSearch Instance:                           │
+│   Full-text index over entry titles + bodies    │
+│   ~6KB library, <5ms search                     │
+│                                                 │
+│  CompressionStream:                             │
+│   Large body fields gzip compressed             │
+│   60-80% reduction                              │
+└─────────────────────┬───────────────────────────┘
+                      │ postMessage
+                      ↓
+┌─────────────────────────────────────────────────┐
+│  Main Thread                                    │
+│                                                 │
+│  useContentBrain() composable:                  │
+│   - init(workspaceId, projectId)                │
+│   - query(modelId, filters?)                    │
+│   - search(keyword, options?)                   │
+│   - analyze(type)                               │
+│   - getSummary() → for system prompt            │
+│   - invalidate(changedModels?)                  │
+│   - onReady(callback)                           │
+│                                                 │
+│  BroadcastChannel: "brain-sync"                 │
+│   Cross-tab sync notifications                  │
+└─────────────────────────────────────────────────┘
+```
+
+### Composable Entegrasyonu — Mevcut Katmanları Replace Eder
 
 ```ts
-// Structured query — tüm content'e SQL ile erişim
-brain_query(sql: "SELECT title, slug FROM entries WHERE model='blog-posts' AND meta_description IS NULL")
-→ 8 satır, <1ms, 0 API call
+// BUGÜN: 2 ayrı composable, 2 ayrı cache
+const { snapshot } = useSnapshot()           // IndexedDB cache #1
+const { content } = useModelContent()         // Memory + IndexedDB cache #2
 
-// Full-text search — tüm modeller, tüm locale'ler üzerinde
-brain_search(query: "pricing", model?: "faq", locale?: "en")
-→ FTS5 ranked results, <5ms
+// CONTENT BRAIN İLE: tek composable, tek cache
+const { brain } = useContentBrain()
 
-// Pre-built analysis — aggregation queries
-brain_analyze(type: "seo_audit" | "locale_parity" | "stale_content" | "quality_score")
-→ Hazır rapor, <50ms
+// Snapshot verisi
+const models = brain.models                   // reactive, Brain'den
+const config = brain.config                   // reactive, Brain'den
+const vocabulary = brain.vocabulary           // reactive, Brain'den
 
-// FUTURE: Semantic similarity search
-brain_semantic(query: "AI content management", limit: 10)
-→ Vector search, <1ms (ihtiyaç doğarsa, Tier 3)
+// Model content (eskiden useModelContent)
+const blogEntries = brain.query('blog-posts', { locale: 'en' })  // Brain IndexedDB'den
+
+// Full-text search (YENİ — eskiden imkansızdı)
+const results = brain.search('pricing')       // FlexSearch, <5ms
+
+// Health analysis (YENİ)
+const health = brain.analyze('seo_audit')     // IndexedDB aggregate
 ```
 
-### Token Verimliliği
+### useSnapshot ve useModelContent Ne Olur?
 
 ```
-Geleneksel yaklaşım:
-  Agent: get_content('blog-posts', 'en') → 30 blog × 1000 kelime = 40,000 token
-  Bu context window'un %20'si
+Phase 1 (hemen):
+  useContentBrain eklenir
+  useSnapshot ve useModelContent KALIR (fallback)
+  Brain hazırsa Brain'den okur, değilse mevcut endpoint'lerden
 
-Content Brain yaklaşımı:
-  System prompt: content index = 200 token
-  Agent ihtiyaç duyduğunda: brain_query("SELECT title, meta FROM ...") = 400 token
-  Toplam: 600 token (%0.3)
+Phase 2 (Brain stabil):
+  useSnapshot → useContentBrain wrapper'ına dönüşür (thin adapter)
+  useModelContent → useContentBrain wrapper'ına dönüşür
+  Mevcut component'ler değişmez — composable API aynı kalır
 
-66x daha token-verimli.
+Phase 3 (temizlik):
+  Eski IndexedDB cache logic silinir
+  snapshot.get ve content/[model].get → brain/sync'e yönlendirilir veya kaldırılır
+  Tek cache: Brain IndexedDB
+```
+
+### Agent Entegrasyonu
+
+**System Prompt Content Index:**
+
+```ts
+// agent-system-prompt.ts
+function buildContentIndex(brain: ContentBrainSummary): string {
+  const lines = ['## Content Brain — Full Project Index']
+  lines.push(`${brain.totalEntries} entries, ${brain.models.length} models, ${brain.locales.join('/')}`)
+
+  for (const model of brain.models) {
+    const stats = brain.modelStats[model.id]
+    lines.push(`${model.name} (${model.kind}, ${stats.entryCount} entries):`)
+    if (stats.missingMeta > 0) lines.push(`  ⚠ ${stats.missingMeta} missing meta_description`)
+    if (stats.untranslated > 0) lines.push(`  ⚠ ${stats.untranslated} untranslated`)
+    if (stats.stale > 0) lines.push(`  ⚠ ${stats.stale} stale (90+ days)`)
+  }
+
+  return lines.join('\n') // ~200-500 token
+}
+```
+
+**Agent'ın Brain tool'ları — sunucu değil, client üzerinden çalışır:**
+
+```
+Kullanıcı: "SEO analizi yap"
+
+Agent system prompt'unda content index zaten var (Brain summary)
+Agent ihtiyaç duyduğunda:
+
+→ brain_query tool call
+→ chat.post.ts bu tool'u tanır
+→ Client'a "run brain query" mesajı gönderir (SSE üzerinden)
+→ Client Worker'da IndexedDB query çalıştırır
+→ Sonucu chat.post.ts'e geri gönderir
+→ Agent sonucu görür
+
+VEYA (daha basit):
+→ brain_query tool call
+→ chat.post.ts kendi server-side cache'inden çalıştırır
+  (brain/sync endpoint zaten tüm veriyi biliyor)
+```
+
+**İkinci yaklaşım daha pragmatik** — agent tool'ları server-side çalışır, Brain verisi server'da da cache'lenir. Client Brain + Server Brain aynı veriyi paylaşır.
+
+---
+
+## Server-Side Brain Cache
+
+Brain sadece client-side değil — server-side da cache'lenmeli:
+
+```ts
+// server/utils/brain-cache.ts
+const projectBrains = new Map<string, {
+  treeSha: string
+  models: ModelDefinition[]
+  config: ContentrainConfig
+  entryIndex: Map<string, { title: string, status: string, locale: string, wordCount: number }[]>
+  lastSync: number
+}>()
+
+// brain/sync endpoint çağrıldığında otomatik güncellenir
+// Agent tool'ları bu cache'ten okur — Git API'ye gitmez
+// TTL: webhook ile invalidate veya 5dk stale
+```
+
+Bu sayede:
+- Agent HER mesajda Git'e gitmez (bugünkü sorun)
+- System prompt content index Brain cache'ten oluşur
+- brain_query/brain_search tool'ları server cache'ten çalışır
+- Client ve server aynı veriyi paylaşır
+
+---
+
+## Data Flow (Tüm Akış)
+
+```
+SYNC:
+  Proje açılır
+    → Client: useContentBrain.init()
+    → Client → GET /api/brain/sync?treeSha=<cached>
+    → Server: getTree() → SHA compare → delta dosyaları oku
+    → Server: Brain cache güncelle (Map'te)
+    → Response: delta JSON (veya full, ilk kez)
+    → Client Worker: IndexedDB güncelle, FlexSearch re-index
+    → BroadcastChannel: "brain:ready"
+    → UI component'ler reactive state'ten render
+
+READ (UI):
+  Content panel → model tıkla
+    → useContentBrain.query('blog-posts', { locale: 'en' })
+    → Worker: IndexedDB compound index query → <1ms
+    → Sonuç reactive state'e → UI render
+
+READ (Agent):
+  User message → chat.post.ts
+    → System prompt: buildContentIndex(serverBrainCache) → ~200 token
+    → Agent: brain_query("entries missing meta_description")
+    → Server: serverBrainCache'ten query → <1ms
+    → Agent: sonucu analiz eder, öneriler sunar
+
+WRITE:
+  Agent: save_content → Content Engine → git commit
+    → Content Engine: commit başarılı
+    → Server: Brain cache invalidate (o model için)
+    → Response: affected models
+    → Client: Worker'a "invalidate" → brain/sync delta → IndexedDB güncelle
+    → BroadcastChannel: "brain:updated" → tüm tab'lar güncellenir
+    → UI anında yeni veriyi gösterir
 ```
 
 ---
 
-## Teknik Detay: SQLite Schema
+## Kaldırılacak / Sadeleşecek Kodlar
 
-```sql
-CREATE TABLE models (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  domain TEXT,
-  i18n BOOLEAN DEFAULT 0,
-  fields_json TEXT,
-  updated_at INTEGER
-);
+| Dosya | Bugün | Brain ile |
+|-------|-------|----------|
+| `useSnapshot.ts` | 165 satır, IndexedDB cache, 5dk TTL | Thin wrapper → `useContentBrain().config/models` |
+| `useModelContent.ts` | 130 satır, memory + IDB cache | Thin wrapper → `useContentBrain().query()` |
+| `snapshot.get.ts` | 130 satır, ~4+3N+NL Git call | Kaldırılır → `brain/sync` replace eder |
+| `content/[modelId].get.ts` | 124 satır, ~3-5 Git call | Kalır ama Brain fallback olarak kullanılır |
+| `chat.post.ts` system prompt | Her mesajda ~4+3N Git call | Server Brain cache'ten → 0 Git call |
 
-CREATE TABLE entries (
-  rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-  id TEXT NOT NULL,
-  model_id TEXT NOT NULL,
-  locale TEXT NOT NULL,
-  data_json TEXT NOT NULL,       -- compressed (gzip) entry data
-  title TEXT,                    -- extracted primary field
-  status TEXT,
-  word_count INTEGER DEFAULT 0,
-  has_meta_description BOOLEAN DEFAULT 0,
-  has_image BOOLEAN DEFAULT 0,
-  sha TEXT,                      -- git SHA for delta sync
-  updated_at INTEGER,
-  UNIQUE(id, model_id, locale)
-);
+**Toplam tasarruf:**
+- Git API call'ları: ~%90 azalma
+- Client cache karmaşıklığı: 2 ayrı sistem → 1 tek Brain
+- System prompt build: ~200ms Git okuma → <1ms cache okuma
 
-CREATE VIRTUAL TABLE entries_fts USING fts5(
-  title, content, tags,
-  content=entries,
-  content_rowid=rowid
-);
+---
 
-CREATE TABLE sync_meta (
-  key TEXT PRIMARY KEY,
-  value TEXT
-);
+## content_path Override Desteği
+
+Brain sync endpoint model tanımlarını okurken `content_path` override'ları resolve etmeli:
+
+```ts
+// Server-side brain sync
+for (const model of models) {
+  const locales = model.i18n ? supportedLocales : ['data']
+
+  for (const locale of locales) {
+    // resolveContentPath handles content_path override automatically
+    const contentPath = resolveContentPath(ctx, model, locale)
+    const content = await git.readFile(contentPath, branch)
+    // ...
+  }
+
+  if (model.kind === 'document') {
+    // Document kind: content_path override changes base directory
+    const baseDir = model.content_path
+      ? prefixed(ctx.contentRoot, model.content_path)
+      : `${ctx.contentRoot ? ctx.contentRoot + '/' : ''}.contentrain/content/${model.domain}/${model.id}`
+
+    const slugs = await git.listDirectory(baseDir, branch)
+    for (const slug of slugs) {
+      // gray-matter parse on server (not client)
+      const mdPath = resolveContentPath(ctx, model, locale, slug)
+      const raw = await git.readFile(mdPath, branch)
+      // Parse frontmatter + body, send structured to client
+    }
+  }
+}
+```
+
+**Kritik:** Document markdown parse'ı **server-side** yapılır (gray-matter). Client'a structured JSON gider — client markdown parse etmez.
+
+---
+
+## IndexedDB Schema
+
+```ts
+// Store: brain-config
+{ key: "config", value: ContentrainConfig }
+{ key: "vocabulary", value: Record<string, Record<string, string>> }
+{ key: "context", value: ContextJson }
+{ key: "treeSha", value: string }
+{ key: "lastSync", value: number }
+{ key: "projectId", value: string }
+
+// Store: brain-models (keyPath: "id")
+{ id: "blog-posts", name: "Blog Posts", kind: "collection", domain: "marketing",
+  i18n: true, fields: { ... }, content_path: null }
+
+// Store: brain-entries (keyPath: auto, indexes below)
+{ model_id: "blog-posts", entry_id: "abc123", locale: "en",
+  title: "Getting Started", status: "published", word_count: 850,
+  has_meta_description: true, has_image: true,
+  data: { /* compressed or full entry JSON */ },
+  updated_at: 1711500000 }
+
+// Indexes on brain-entries:
+//   [model_id, locale]         → fast model content listing
+//   [model_id, status]         → filter published/draft
+//   [model_id, locale, status] → compound filter
+//   [status]                   → cross-model status query
+
+// Store: brain-meta (keyPath: auto)
+{ model_id: "blog-posts", entry_id: "abc123", locale: "en",
+  status: "published", source: "agent", updated_by: "user@email",
+  publish_at: null, expire_at: null }
 ```
 
 ---
 
-## Storage Verimliliği
+## Storage & Performance
 
 ```
-Tipik proje (30 model, 500 entry):
-  Raw JSON: ~1MB
-  Compressed (gzip): ~300KB
-  SQLite overhead: ~100KB
-  FTS5 index: ~200KB
-  Total: ~600KB
+Tipik proje (10 model, 300 entry):
+  Entries: ~600KB (JSON, uncompressed)
+  Models: ~50KB
+  Config: ~5KB
+  FlexSearch index: ~100KB
+  Total: ~750KB
 
-Büyük proje (100 model, 5000 entry):
-  Raw JSON: ~10MB
-  Compressed: ~3MB
-  SQLite + FTS5: ~5MB
-  Total: ~8MB
+Büyük proje (30 model, 2000 entry):
+  Entries: ~4MB
+  With CompressionStream: ~1.5MB
+  Total: ~2MB
 
-Browser storage quota: en az 1GB → sorun yok.
+Browser quota: en az 1GB → sorun yok
+
+Performance:
+  Cold start: brain/sync ~2-3 saniye (background)
+  Warm start: IndexedDB open + delta check ~500ms
+  Query: <1ms (compound index)
+  Search: <5ms (FlexSearch)
+  Analyze: <50ms (JS aggregate over getAll)
 ```
-
----
-
-## Performance Budget
-
-```
-Cold start (ilk kez):
-  getTree(): 500ms
-  Content fetch (paralel): 2-3 saniye
-  SQLite init + write: 300ms
-  FTS5 index: 200ms
-  Total: ~3-4 saniye (background, UI blocked değil)
-
-Warm start (cache'ten):
-  OPFS SQLite open: 50ms
-  Delta check (getTree): 500ms
-  Delta sync (0-5 files): 0-500ms
-  Total: <1 saniye
-
-Query performance:
-  brain_query (SQL): <1ms
-  brain_search (FTS5): <5ms
-  brain_analyze (aggregate): <50ms
-```
-
----
-
-## Browser Uyumluluk
-
-| Teknoloji | Chrome | Safari | Firefox | Risk |
-|-----------|--------|--------|---------|------|
-| Web Workers | ✅ | ✅ | ✅ | Yok |
-| IndexedDB | ✅ | ✅* | ✅ | *Safari incognito: 0 quota |
-| OPFS | ✅ 86+ | ✅ 15.2+ | ✅ 111+ | Safari incognito: yok |
-| OPFS sync (Worker) | ✅ 108+ | ✅ 17+ | ✅ 111+ | Eski Safari: async only |
-| CompressionStream | ✅ 80+ | ✅ 16.4+ | ✅ 113+ | Yok |
-| SQLite WASM | ✅ | ✅ | ✅ | WASM universal |
-| BroadcastChannel | ✅ | ✅ | ✅ | Yok |
-
-### Fallback Stratejisi
-
-```
-Tier 1: OPFS mevcut → SQLite + OPFS (en hızlı, persistent)
-Tier 2: OPFS yok → SQLite + IndexedDB VFS (yavaş ama çalışır)
-Tier 3: Hiçbiri yok (Safari incognito) → Mevcut davranış (her seferinde API)
-```
-
-%99+ kullanıcı Tier 1 veya 2 alır. Studio authenticated app — incognito kullanımı nadir.
-
----
-
-## Over-Engineering Değerlendirmesi
-
-| Bileşen | Over-engineering mi? | Karar |
-|---------|---------------------|-------|
-| Content Index (system prompt) | **Hayır** — mevcut snapshot'ı genişletmek | YAPILMALI |
-| brain_query (SQL) | **Hayır** — SQLite + OPFS production-ready | YAPILMALI |
-| brain_search (FTS5) | **Hayır** — gerçek fark burada | YAPILMALI |
-| brain_analyze (aggregation) | **Hayır** — SQL query'ler, basit | YAPILMALI |
-| Delta sync (getTree) | **Hayır** — zaten GitProvider'da var | YAPILMALI |
-| Transformers.js (embeddings) | **EVET** — 23MB model, 300MB memory | FUTURE/OPTIONAL |
-| EdgeVec (vector search) | **EVET** — FTS5 çoğu case'i karşılar | FUTURE/OPTIONAL |
-| SharedWorker (cross-tab) | **Kısmen** — BroadcastChannel yeterli başta | SONRA |
-
-**Tier 3 (semantic search) ÇIKARILABİLİR.** FTS5 "meta description eksik olanları bul" için yeterli. Vector search "buna benzer content bul" için güzel ama critical değil. İhtiyaç doğarsa eklenir.
 
 ---
 
 ## Implementasyon Sırası
 
-### Adım 1: Content Index + brain_query (1 hafta)
+### Adım 1: Brain Sync Endpoint + Server Cache (1 hafta)
 
-Mevcut snapshot'ı genişlet — entry title/status/word_count ekle.
-System prompt'a content index section.
-`brain_query` tool — basit: tüm content'i memory'de tut, JavaScript filter.
-**Yeni dependency yok.** Hemen yapılabilir.
+- `server/api/.../brain/sync.get.ts` — tek endpoint, tüm content
+- `server/utils/brain-cache.ts` — server-side in-memory cache
+- Git Tree API delta sync
+- Document kind gray-matter parse (server-side)
+- content_path override desteği
 
-### Adım 2: SQLite WASM + FTS5 + brain_search (1-2 hafta)
+### Adım 2: Client Brain Worker + useContentBrain (1 hafta)
 
-wa-sqlite dependency.
-Web Worker + OPFS persistence.
-FTS5 full-text search.
-`brain_search` tool.
-CompressionStream for storage.
+- `app/workers/content-brain.worker.ts` — Dedicated Worker
+- IndexedDB stores + compound indexes
+- `app/composables/useContentBrain.ts` — reactive composable
+- useSnapshot/useModelContent → Brain wrapper (backward compat)
+- BroadcastChannel cross-tab sync
 
-### Adım 3: Delta Sync + brain_analyze (1 hafta)
+### Adım 3: FlexSearch + brain_search (3-4 gün)
 
-getTree() SHA comparison.
-Incremental sync (sadece değişenler).
-Pre-built analysis queries (SEO, locale parity, stale, quality).
-BroadcastChannel cross-tab notification.
+- FlexSearch entegrasyonu Worker içinde
+- brain_search tool (agent)
+- UI search (content panel'de global search)
 
-### Adım 4: Semantic Search — FUTURE/OPTIONAL
+### Adım 4: Agent Content Index + brain_query + brain_analyze (1 hafta)
 
-Transformers.js + EdgeVec.
-Sadece ihtiyaç doğarsa ve kullanıcı geri bildirimi talep ederse.
+- System prompt content index (Brain summary)
+- brain_query tool — server Brain cache'ten
+- brain_analyze tool — pre-built aggregate queries
+- Eski system prompt Git okumaları kaldırılır
+
+### Adım 5: Temizlik (3-4 gün)
+
+- useSnapshot IndexedDB logic kaldırılır
+- useModelContent memory + IDB cache kaldırılır
+- snapshot.get endpoint sadeleşir veya kaldırılır
+- Tek cache: Brain IndexedDB (client) + Brain Map (server)
