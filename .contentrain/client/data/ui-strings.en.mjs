@@ -193,6 +193,7 @@ export default {
   "media.file_size": "File size",
   "media.files": "Files",
   "media.images": "Images",
+  "media.open_full": "Open full asset manager",
   "media.or": "or",
   "media.path": "Path",
   "media.path_description": "Enter a media path or external URL",

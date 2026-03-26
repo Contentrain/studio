@@ -36,6 +36,7 @@ watch(() => props.asset, (a) => {
 })
 
 const isImage = computed(() => props.asset.contentType.startsWith('image/'))
+const isVideo = computed(() => props.asset.contentType.startsWith('video/'))
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -77,14 +78,17 @@ function copyPath() {
     <!-- Body -->
     <div class="flex-1 space-y-4 overflow-y-auto p-4">
       <!-- Preview -->
-      <div class="flex items-center justify-center rounded-lg bg-secondary-50 p-4 dark:bg-secondary-900">
-        <NuxtImg
-          v-if="isImage"
-          :src="asset.originalPath"
-          :alt="asset.alt ?? asset.filename"
-          class="max-h-48 max-w-full rounded object-contain"
-        />
-        <span v-else class="icon-[annon--file-text] size-16 text-secondary-300" aria-hidden="true" />
+      <div class="flex items-center justify-center rounded-lg bg-secondary-100 p-6 dark:bg-secondary-800/50">
+        <div class="text-center">
+          <span
+            :class="[isImage ? 'icon-[annon--image-3]' : isVideo ? 'icon-[annon--video-library]' : 'icon-[annon--file-text]',
+                     'size-12 text-secondary-400 dark:text-secondary-500']"
+            aria-hidden="true"
+          />
+          <div v-if="asset.width && asset.height" class="mt-1 text-[10px] text-muted">
+            {{ asset.width }}×{{ asset.height }}
+          </div>
+        </div>
       </div>
 
       <!-- Metadata -->
