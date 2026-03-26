@@ -1,0 +1,21 @@
+{
+  "analyze.locale_intro": "Here's the locale parity check:",
+  "analyze.quality_intro": "Here's the content quality score for your project:",
+  "analyze.seo_intro": "Here's the SEO analysis of your content:",
+  "analyze.stale_intro": "Here are entries that haven't been updated in over 90 days:",
+  "brain.cache_info": "I have full awareness of your project content — {entryCount} entries across {modelCount} models.",
+  "branch.merged": "Branch merged successfully. Content changes are now live.",
+  "branch.rejected": "Branch rejected. Changes have been discarded.",
+  "content.deleted": "Content entry deleted and merged.",
+  "content.saved": "Content saved and merged successfully.",
+  "content.saved_review": "Content saved to review branch. A team member with reviewer access can approve or reject the changes.",
+  "init.success": "Project initialized! Content structure is ready. You can start adding models and content.",
+  "media.upload_failed": "Image upload failed. You can use an external URL (Unsplash, etc) directly in the content field instead.",
+  "media.uploaded": "Image uploaded, optimized, and variants generated. Use the path in your content fields.",
+  "model.created": "Model created successfully. You can now add content entries.",
+  "model.deleted": "Model and all its content deleted.",
+  "search.no_results": "No matching content found. Try different keywords or check the model name.",
+  "upgrade.alternative": "In the meantime, here's what you can do on your current plan:",
+  "upgrade.free_to_pro": "This feature is available on the Pro plan ($12/mo). Pro includes CDN delivery, Asset Manager with image optimization, review workflow, and 500 AI messages/month. You can upgrade in your workspace settings.",
+  "upgrade.pro_to_team": "This feature is available on the Team plan ($29/mo + seats). Team includes Conversation API for bot integration, REST API, outbound webhooks, and custom AI instructions. You can upgrade in your workspace settings."
+}
