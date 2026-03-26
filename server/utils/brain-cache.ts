@@ -322,49 +322,320 @@ export async function buildBrainSnapshot(
 }
 
 /**
- * Build a compact content index for agent system prompt.
- * ~200-500 tokens instead of ~3000 tokens for raw schemas.
+ * Build a rich content index for agent system prompt.
+ * Gives the agent full project awareness: entry details, health issues,
+ * locale parity, stale content — all in ~300-800 tokens.
  */
 export function buildContentIndex(brain: BrainCacheEntry): string {
   if (!brain.config) return ''
 
+  const config = brain.config
+  const defaultLocale = config.locales?.default ?? 'en'
+  const supportedLocales = config.locales?.supported ?? [defaultLocale]
+
   const lines: string[] = ['## Content Index']
   const totalEntries = Object.values(brain.contentSummary).reduce((sum, s) => sum + s.count, 0)
-  const allLocales = new Set<string>()
-  for (const s of Object.values(brain.contentSummary)) {
-    for (const l of s.locales) allLocales.add(l)
-  }
 
-  lines.push(`${totalEntries} entries across ${brain.models.size} models, locales: [${[...allLocales].join(', ')}]`)
+  lines.push(`${totalEntries} entries, ${brain.models.size} models, locales: [${supportedLocales.join(', ')}]`)
   lines.push('')
+
+  const healthIssues: string[] = []
+  const now = Date.now()
+  const STALE_DAYS = 90
+  const staleThreshold = now - (STALE_DAYS * 24 * 60 * 60 * 1000)
 
   for (const [modelId, model] of brain.models) {
     const summary = brain.contentSummary[modelId]
     if (!summary) continue
 
-    const parts = [`${model.name} (${modelId}): ${summary.kind}, ${summary.count} entries`]
-    if (summary.locales.length > 0) parts.push(`locales: [${summary.locales.join(', ')}]`)
+    const modelLine = [`${model.name} (${modelId}): ${summary.kind}, ${summary.count} entries`]
 
-    // Quick health checks
-    const key = `${modelId}:${summary.locales[0] ?? 'en'}`
-    const contentData = brain.content.get(key)
-    const metaData = brain.meta.get(key)
+    // Primary locale content analysis
+    const primaryKey = `${modelId}:${summary.locales[0] ?? defaultLocale}`
+    const contentData = brain.content.get(primaryKey)
+    const metaData = brain.meta.get(primaryKey)
+    const fields = model.fields as Record<string, { type?: string, required?: boolean }> | undefined
 
-    if (contentData && typeof contentData === 'object' && !Array.isArray(contentData) && metaData) {
-      const entries = Object.keys(contentData)
-      const meta = metaData as Record<string, { status?: string }>
-      const published = entries.filter(id => meta[id]?.status === 'published').length
-      const draft = entries.filter(id => meta[id]?.status === 'draft').length
+    if (contentData && typeof contentData === 'object' && !Array.isArray(contentData)) {
+      const entries = Object.entries(contentData as Record<string, Record<string, unknown>>)
+      const meta = (metaData ?? {}) as Record<string, { status?: string, updated_at?: string }>
+
+      // Status counts
+      let published = 0
+      let draft = 0
+      for (const [id] of entries) {
+        const status = meta[id]?.status
+        if (status === 'published') published++
+        else draft++
+      }
       if (published > 0 || draft > 0) {
-        parts.push(`published: ${published}, draft: ${draft}`)
+        modelLine.push(`published: ${published}, draft: ${draft}`)
+      }
+
+      // Missing required fields
+      if (fields) {
+        const requiredFields = Object.entries(fields).filter(([_, f]) => f.required).map(([k]) => k)
+        for (const fieldId of requiredFields) {
+          const missing = entries.filter(([_, e]) => !e[fieldId] || e[fieldId] === '').length
+          if (missing > 0) {
+            healthIssues.push(`${model.name}: ${missing} entries missing required "${fieldId}"`)
+          }
+        }
+
+        // Missing meta_description (SEO check)
+        if (fields.meta_description || fields.description || fields.seo_description) {
+          const descField = fields.meta_description ? 'meta_description' : fields.description ? 'description' : 'seo_description'
+          const missingDesc = entries.filter(([_, e]) => !e[descField] || e[descField] === '').length
+          if (missingDesc > 0) {
+            healthIssues.push(`${model.name}: ${missingDesc} entries missing "${descField}" (SEO)`)
+          }
+        }
+
+        // Missing alt text on image fields
+        const imageFields = Object.entries(fields).filter(([_, f]) => f.type === 'image').map(([k]) => k)
+        for (const imgField of imageFields) {
+          const missingAlt = entries.filter(([_, e]) => e[imgField] && !e[`${imgField}_alt`] && !e.alt).length
+          if (missingAlt > 0 && missingAlt < entries.length) {
+            healthIssues.push(`${model.name}: ${missingAlt} entries with image but no alt text`)
+          }
+        }
+      }
+
+      // Stale entries (90+ days)
+      let staleCount = 0
+      for (const [id] of entries) {
+        const updatedAt = meta[id]?.updated_at
+        if (updatedAt && new Date(updatedAt).getTime() < staleThreshold) {
+          staleCount++
+        }
+      }
+      if (staleCount > 0) {
+        healthIssues.push(`${model.name}: ${staleCount} stale entries (${STALE_DAYS}+ days)`)
+      }
+
+      // Entry titles preview (first 5)
+      const primaryField = fields ? findPrimaryField(fields) : null
+      if (primaryField && entries.length > 0) {
+        const titles = entries.slice(0, 5).map(([_, e]) => String(e[primaryField] ?? '').substring(0, 50)).filter(Boolean)
+        if (titles.length > 0) {
+          modelLine.push(`recent: ${titles.map(t => `"${t}"`).join(', ')}${entries.length > 5 ? ` +${entries.length - 5} more` : ''}`)
+        }
+      }
+    }
+    else if (Array.isArray(contentData)) {
+      // Document kind
+      modelLine.push(`${contentData.length} documents`)
+      const slugs = contentData.slice(0, 5).map((d: unknown) => (d as Record<string, unknown>)?.slug).filter(Boolean)
+      if (slugs.length > 0) {
+        modelLine.push(`slugs: ${slugs.map(s => `"${s}"`).join(', ')}${contentData.length > 5 ? ` +${contentData.length - 5} more` : ''}`)
       }
     }
 
-    lines.push(`- ${parts.join(' | ')}`)
+    // Locale parity check
+    if (supportedLocales.length > 1 && model.i18n) {
+      const localeCounts: Record<string, number> = {}
+      for (const locale of supportedLocales) {
+        const locKey = `${modelId}:${locale}`
+        const locData = brain.content.get(locKey)
+        if (locData && typeof locData === 'object' && !Array.isArray(locData)) {
+          localeCounts[locale] = Object.keys(locData).length
+        }
+        else if (Array.isArray(locData)) {
+          localeCounts[locale] = locData.length
+        }
+        else {
+          localeCounts[locale] = 0
+        }
+      }
+      const counts = Object.values(localeCounts)
+      const maxCount = Math.max(...counts)
+      const missingLocales = Object.entries(localeCounts).filter(([_, c]) => c < maxCount)
+      if (missingLocales.length > 0 && maxCount > 0) {
+        const gaps = missingLocales.map(([l, c]) => `${l}: ${c}/${maxCount}`).join(', ')
+        healthIssues.push(`${model.name}: locale gap — ${gaps}`)
+      }
+    }
+
+    lines.push(`- ${modelLine.join(' | ')}`)
+  }
+
+  // Health summary
+  if (healthIssues.length > 0) {
+    lines.push('')
+    lines.push('### Content Health Issues')
+    for (const issue of healthIssues.slice(0, 10)) {
+      lines.push(`⚠ ${issue}`)
+    }
+    if (healthIssues.length > 10) {
+      lines.push(`... and ${healthIssues.length - 10} more issues`)
+    }
   }
 
   lines.push('')
-  lines.push('Use brain_query to read full content, brain_search to find entries by keyword.')
+  lines.push('Use brain_query to read content, brain_search to find entries, brain_analyze for detailed audits.')
 
   return lines.join('\n')
+}
+
+/**
+ * Find the primary display field for a model (title, name, label, slug).
+ */
+function findPrimaryField(fields: Record<string, { type?: string, required?: boolean }>): string | null {
+  // Priority: title → name → label → slug → first required string
+  for (const candidate of ['title', 'name', 'label', 'heading', 'question']) {
+    if (fields[candidate]) return candidate
+  }
+  for (const [key, def] of Object.entries(fields)) {
+    if (def.required && (def.type === 'string' || def.type === 'slug')) return key
+  }
+  for (const [key, def] of Object.entries(fields)) {
+    if (def.type === 'string' || def.type === 'slug') return key
+  }
+  return null
+}
+
+/**
+ * Run content analysis for brain_analyze tool.
+ * Pre-built aggregate queries against brain cache.
+ */
+export function analyzeBrainContent(
+  brain: BrainCacheEntry,
+  analysisType: 'seo_audit' | 'locale_parity' | 'stale_content' | 'quality_score' | 'full',
+): Record<string, unknown> {
+  const config = brain.config
+  if (!config) return { error: 'Project not initialized' }
+
+  const defaultLocale = config.locales?.default ?? 'en'
+  const supportedLocales = config.locales?.supported ?? [defaultLocale]
+  const now = Date.now()
+
+  const result: Record<string, unknown> = { analysisType, timestamp: new Date().toISOString() }
+
+  // SEO Audit
+  if (analysisType === 'seo_audit' || analysisType === 'full') {
+    const seoIssues: Array<{ model: string, entryId: string, issue: string }> = []
+
+    for (const [modelId, model] of brain.models) {
+      const fields = model.fields as Record<string, { type?: string }> | undefined
+      if (!fields) continue
+
+      const descField = fields.meta_description ? 'meta_description' : fields.description ? 'description' : fields.seo_description ? 'seo_description' : null
+      const titleField = findPrimaryField(fields as Record<string, { type?: string, required?: boolean }>)
+
+      const primaryKey = `${modelId}:${brain.contentSummary[modelId]?.locales[0] ?? defaultLocale}`
+      const contentData = brain.content.get(primaryKey)
+      if (!contentData || typeof contentData !== 'object' || Array.isArray(contentData)) continue
+
+      for (const [entryId, entry] of Object.entries(contentData as Record<string, Record<string, unknown>>)) {
+        if (descField && (!entry[descField] || String(entry[descField]).length === 0)) {
+          seoIssues.push({ model: model.name, entryId, issue: `Missing ${descField}` })
+        }
+        if (titleField) {
+          const title = String(entry[titleField] ?? '')
+          if (title.length > 60) {
+            seoIssues.push({ model: model.name, entryId, issue: `Title too long (${title.length} chars, max 60)` })
+          }
+          if (title.length < 10 && title.length > 0) {
+            seoIssues.push({ model: model.name, entryId, issue: `Title too short (${title.length} chars, min 10)` })
+          }
+        }
+      }
+    }
+    result.seo = { issues: seoIssues, total: seoIssues.length }
+  }
+
+  // Locale Parity
+  if (analysisType === 'locale_parity' || analysisType === 'full') {
+    const parityIssues: Array<{ model: string, locale: string, count: number, expected: number }> = []
+
+    for (const [modelId, model] of brain.models) {
+      if (!model.i18n || supportedLocales.length < 2) continue
+
+      const counts: Record<string, number> = {}
+      for (const locale of supportedLocales) {
+        const key = `${modelId}:${locale}`
+        const data = brain.content.get(key)
+        counts[locale] = data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data).length : Array.isArray(data) ? data.length : 0
+      }
+
+      const maxCount = Math.max(...Object.values(counts))
+      for (const [locale, count] of Object.entries(counts)) {
+        if (count < maxCount) {
+          parityIssues.push({ model: model.name, locale, count, expected: maxCount })
+        }
+      }
+    }
+    result.localeParity = { issues: parityIssues, total: parityIssues.length }
+  }
+
+  // Stale Content
+  if (analysisType === 'stale_content' || analysisType === 'full') {
+    const staleEntries: Array<{ model: string, entryId: string, daysSinceUpdate: number }> = []
+
+    for (const [modelId, model] of brain.models) {
+      const primaryKey = `${modelId}:${brain.contentSummary[modelId]?.locales[0] ?? defaultLocale}`
+      const metaData = brain.meta.get(primaryKey)
+      if (!metaData) continue
+
+      for (const [entryId, meta] of Object.entries(metaData as Record<string, { updated_at?: string }>)) {
+        if (meta.updated_at) {
+          const updatedAt = new Date(meta.updated_at).getTime()
+          const daysSince = Math.floor((now - updatedAt) / (24 * 60 * 60 * 1000))
+          if (daysSince > 90) {
+            staleEntries.push({ model: model.name, entryId, daysSinceUpdate: daysSince })
+          }
+        }
+      }
+    }
+    result.staleContent = { entries: staleEntries.sort((a, b) => b.daysSinceUpdate - a.daysSinceUpdate), total: staleEntries.length }
+  }
+
+  // Quality Score
+  if (analysisType === 'quality_score' || analysisType === 'full') {
+    let totalScore = 0
+    let modelCount = 0
+
+    for (const [modelId, model] of brain.models) {
+      let score = 100
+      const primaryKey = `${modelId}:${brain.contentSummary[modelId]?.locales[0] ?? defaultLocale}`
+      const contentData = brain.content.get(primaryKey)
+      const metaData = brain.meta.get(primaryKey)
+      const fields = model.fields as Record<string, { type?: string, required?: boolean }> | undefined
+
+      if (!contentData || typeof contentData !== 'object') continue
+
+      const entries = Array.isArray(contentData) ? contentData : Object.values(contentData)
+      if (entries.length === 0) continue
+
+      // Required field completeness (-10 per missing)
+      if (fields) {
+        const requiredFields = Object.entries(fields).filter(([_, f]) => f.required).map(([k]) => k)
+        for (const entry of entries as Record<string, unknown>[]) {
+          for (const field of requiredFields) {
+            if (!entry[field] || entry[field] === '') score -= 2
+          }
+        }
+      }
+
+      // Meta completeness (-5 if no meta)
+      if (!metaData) score -= 5
+
+      // Locale coverage (-10 per missing locale)
+      if (model.i18n && (brain.config?.locales?.supported?.length ?? 1) > 1) {
+        const expectedLocales = brain.config?.locales?.supported?.length ?? 1
+        const actualLocales = brain.contentSummary[modelId]?.locales.length ?? 0
+        score -= (expectedLocales - actualLocales) * 10
+      }
+
+      score = Math.max(0, Math.min(100, score))
+      totalScore += score
+      modelCount++
+    }
+
+    const avgScore = modelCount > 0 ? Math.round(totalScore / modelCount) : 0
+    const tier = avgScore >= 90 ? 'Excellent' : avgScore >= 75 ? 'Good' : avgScore >= 50 ? 'Fair' : 'Poor'
+    result.quality = { score: avgScore, tier, modelCount }
+  }
+
+  return result
 }

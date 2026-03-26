@@ -770,6 +770,13 @@ async function executeToolWithAutoMerge(
         break
       }
 
+      case 'brain_analyze': {
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const analysisType = params.type as 'seo_audit' | 'locale_parity' | 'stale_content' | 'quality_score' | 'full'
+        result = analyzeBrainContent(brainData, analysisType)
+        break
+      }
+
       default:
         result = { error: `Unknown tool: ${name}` }
     }

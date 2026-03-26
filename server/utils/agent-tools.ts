@@ -301,6 +301,20 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
     defaultAffects: { snapshotChanged: false, branchesChanged: false },
     workflowBehavior: 'none',
   },
+  {
+    name: 'brain_analyze',
+    description: 'Run content analysis across the entire project. Returns detailed audit results. Types: seo_audit (missing meta, title issues), locale_parity (untranslated entries), stale_content (90+ days old), quality_score (overall health), full (all checks).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['seo_audit', 'locale_parity', 'stale_content', 'quality_score', 'full'], description: 'Analysis type' },
+      },
+      required: ['type'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
 ]
 
 /**
