@@ -9,17 +9,42 @@ definePageMeta({
 const route = useRoute()
 const slug = computed(() => route.params.slug as string)
 
-const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, deleteWorkspace } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
 const { members, projectMembers, loading: membersLoading, fetchMembers, inviteMember, updateMemberRole, removeMember, fetchProjectMembers, assignProjectMember, removeProjectMember } = useMembers()
 const { t } = useContent()
 const toast = useToast()
 
 const router = useRouter()
+const { state: authState } = useAuth()
 const activeTab = ref('overview')
 const saving = ref(false)
 const workspaceName = ref('')
 const workspaceSlug = ref('')
+
+// Workspace deletion
+const isOwner = computed(() => activeWorkspace.value?.owner_id === authState.value.user?.id)
+const isSecondary = computed(() => activeWorkspace.value?.type === 'secondary')
+const wsDeleteConfirmOpen = ref(false)
+const wsDeleting = ref(false)
+
+async function handleDeleteWorkspace() {
+  if (!activeWorkspace.value) return
+  wsDeleting.value = true
+  const ok = await deleteWorkspace(activeWorkspace.value.id)
+  wsDeleting.value = false
+
+  if (ok) {
+    toast.success(t('danger_zone.workspace_deleted'))
+    wsDeleteConfirmOpen.value = false
+    const primary = workspaces.value.find(w => w.type === 'primary')
+    if (primary) router.push(`/w/${primary.slug}`)
+    else router.push('/')
+  }
+  else {
+    toast.error(t('danger_zone.workspace_delete_error'))
+  }
+}
 
 // Invite form state
 const inviteEmail = ref('')
@@ -367,6 +392,32 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
             <span>{{ t('common.save_changes') }}</span>
           </AtomsBaseButton>
         </div>
+
+        <!-- Danger Zone (secondary workspace, owner only) -->
+        <div
+          v-if="isSecondary && isOwner"
+          class="mt-8 max-w-md border-t border-danger-200 pt-5 dark:border-danger-500/20"
+        >
+          <AtomsHeadingText :level="3" size="xs" class="text-danger-600 dark:text-danger-400">
+            {{ t('danger_zone.title') }}
+          </AtomsHeadingText>
+          <div class="mt-3 flex items-center justify-between rounded-lg border border-danger-200 px-4 py-3 dark:border-danger-500/20">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-heading dark:text-secondary-100">
+                {{ t('danger_zone.workspace_delete_title') }}
+              </p>
+              <p class="mt-0.5 text-xs text-muted">
+                {{ t('danger_zone.workspace_delete_description') }}
+              </p>
+            </div>
+            <AtomsBaseButton variant="danger" size="sm" class="ml-4 shrink-0" @click="wsDeleteConfirmOpen = true">
+              {{ t('danger_zone.workspace_delete_button') }}
+            </AtomsBaseButton>
+          </div>
+        </div>
+        <p v-else-if="activeWorkspace?.type === 'primary'" class="mt-8 max-w-md text-xs text-muted">
+          {{ t('danger_zone.workspace_primary_warning') }}
+        </p>
       </TabsContent>
 
       <!-- Members -->
@@ -767,5 +818,17 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         </div>
       </TabsContent>
     </TabsRoot>
+
+    <!-- Workspace delete confirmation -->
+    <MoleculesConfirmDeleteDialog
+      v-model:open="wsDeleteConfirmOpen"
+      :title="t('danger_zone.workspace_delete_title')"
+      :description="t('danger_zone.workspace_delete_description')"
+      :confirm-text="activeWorkspace?.name ?? ''"
+      :confirm-label="t('danger_zone.workspace_confirm_label')"
+      :delete-label="wsDeleting ? t('danger_zone.deleting') : t('danger_zone.workspace_delete_button')"
+      :deleting="wsDeleting"
+      @confirm="handleDeleteWorkspace"
+    />
   </div>
 </template>

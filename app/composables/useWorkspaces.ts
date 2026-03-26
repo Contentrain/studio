@@ -91,6 +91,31 @@ export function useWorkspaces() {
     return workspace
   }
 
+  async function deleteWorkspace(workspaceId: string): Promise<boolean> {
+    try {
+      await $fetch(`/api/workspaces/${workspaceId}`, { method: 'DELETE' })
+      workspaces.value = workspaces.value.filter(w => w.id !== workspaceId)
+      // Reset active workspace to primary or first available
+      if (activeWorkspaceId.value === workspaceId) {
+        const primary = workspaces.value.find(w => w.type === 'primary')
+        activeWorkspaceId.value = primary?.id ?? workspaces.value[0]?.id ?? null
+        if (import.meta.client) {
+          if (activeWorkspaceId.value) {
+            localStorage.setItem(STORAGE_KEY_WORKSPACE, activeWorkspaceId.value)
+          }
+          else {
+            localStorage.removeItem(STORAGE_KEY_WORKSPACE)
+          }
+          localStorage.removeItem(STORAGE_KEY_LAST_PATH)
+        }
+      }
+      return true
+    }
+    catch {
+      return false
+    }
+  }
+
   return {
     workspaces: readonly(workspaces),
     activeWorkspace,
@@ -98,6 +123,7 @@ export function useWorkspaces() {
     fetchWorkspaces,
     setActiveWorkspace,
     createWorkspace,
+    deleteWorkspace,
     saveLastPath,
     getLastPath,
   }

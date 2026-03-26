@@ -108,6 +108,11 @@ async function onSettingsSaved() {
   await invalidateCache(currentProjectId.value)
   await fetchSnapshot(activeWorkspace.value.id, currentProjectId.value)
 }
+
+function onProjectDeleted() {
+  settingsModalOpen.value = false
+  backToWorkspace()
+}
 </script>
 
 <template>
@@ -325,7 +330,8 @@ async function onSettingsSaved() {
     <OrganismsProjectSettingsModal
       v-if="isInsideProject && activeWorkspace && currentProjectId"
       v-model:open="settingsModalOpen" :workspace-id="activeWorkspace.id" :project-id="currentProjectId"
-      :config="(projectConfig as any)" @saved="onSettingsSaved"
+      :project-name="currentProject?.repo_full_name?.split('/').pop() ?? ''"
+      :config="(projectConfig as any)" @saved="onSettingsSaved" @deleted="onProjectDeleted"
     />
   </aside>
 </template>
