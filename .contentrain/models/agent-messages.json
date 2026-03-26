@@ -1,0 +1,8 @@
+{
+  "id": "agent-messages",
+  "name": "Agent Messages",
+  "kind": "dictionary",
+  "domain": "system",
+  "i18n": true,
+  "description": "Agent response messages, upgrade CTAs, tool result summaries, feature explanations. Displayed to users in chat bubbles."
+}
