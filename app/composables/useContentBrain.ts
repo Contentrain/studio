@@ -13,6 +13,9 @@
 
 import type { ContentrainConfig, ModelDefinition, ModelKind } from '@contentrain/types'
 
+// Vite ?worker import — returns a constructor, not an instance
+import ContentBrainWorker from '~/workers/content-brain.worker.ts?worker'
+
 interface BrainSyncResponse {
   treeSha: string
   delta: boolean
@@ -37,9 +40,12 @@ interface SearchResult {
   score: number
 }
 
-// Pending promise resolvers for Worker query/search responses
+// Module-scoped shared state (singleton across all composable instances)
 const pendingRequests = new Map<string, { resolve: (value: unknown) => void, reject: (reason: unknown) => void }>()
 let requestCounter = 0
+const sharedContentStore = new Map<string, { data: unknown, meta: Record<string, unknown> | null, kind: string }>()
+let sharedWorker: Worker | null = null
+let sharedProjectId: string | null = null
 
 export function useContentBrain() {
   const treeSha = useState<string | null>('brain-tree-sha', () => null)
@@ -52,52 +58,44 @@ export function useContentBrain() {
   const contentContext = useState<Record<string, unknown> | null>('brain-content-context', () => null)
   const contentSummary = useState<Record<string, { count: number, locales: string[], kind: ModelKind }>>('brain-content-summary', () => ({}))
 
-  // In-memory content store (populated from sync response — Worker is optional enhancement)
-  const contentStore = new Map<string, { data: unknown, meta: Record<string, unknown> | null, kind: string }>()
-
-  let worker: Worker | null = null
-  let currentProjectId: string | null = null
-
   // --- Worker Lifecycle ---
 
   function initBrain(projectId: string) {
     if (!import.meta.client) return
 
     // If already initialized for this project, skip
-    if (worker && currentProjectId === projectId) return
+    if (sharedWorker && sharedProjectId === projectId) return
 
     // Destroy previous worker if switching projects
-    if (worker) destroyBrain()
+    if (sharedWorker) destroyBrain()
 
-    currentProjectId = projectId
+    sharedProjectId = projectId
 
     try {
-      worker = new Worker(
-        new URL('../workers/content-brain.worker.ts', import.meta.url),
-        { type: 'module' },
-      )
-      worker.onmessage = handleWorkerMessage
-      worker.onerror = (e) => {
+      sharedWorker = new ContentBrainWorker()
+      sharedWorker.onmessage = handleWorkerMessage
+      sharedWorker.onerror = (e) => {
         // eslint-disable-next-line no-console
         console.error('[brain] Worker error:', e.message)
       }
-      worker.postMessage({ type: 'init', projectId })
+      // eslint-disable-next-line no-console
+      console.log('[brain] Worker created successfully, sending init for project:', projectId)
+      sharedWorker.postMessage({ type: 'init', projectId })
     }
     catch (e) {
-      // Worker creation failed — continue without worker (API-only mode)
       // eslint-disable-next-line no-console
-      console.warn('[brain] Worker creation failed, using API-only mode:', e)
-      worker = null
+      console.warn('[brain] Worker creation failed, using in-memory only mode:', e)
+      sharedWorker = null
     }
   }
 
   function destroyBrain() {
-    if (worker) {
-      worker.postMessage({ type: 'destroy' })
-      worker.terminate()
-      worker = null
+    if (sharedWorker) {
+      sharedWorker.postMessage({ type: 'destroy' })
+      sharedWorker.terminate()
+      sharedWorker = null
     }
-    currentProjectId = null
+    sharedProjectId = null
     ready.value = false
     treeSha.value = null
     config.value = null
@@ -105,7 +103,7 @@ export function useContentBrain() {
     vocabulary.value = null
     contentContext.value = null
     contentSummary.value = {}
-    contentStore.clear()
+    sharedContentStore.clear()
     pendingRequests.clear()
   }
 
@@ -113,9 +111,13 @@ export function useContentBrain() {
 
   function handleWorkerMessage(event: MessageEvent) {
     const msg = event.data
+    // eslint-disable-next-line no-console
+    console.log('[brain] Worker message:', msg.type, msg.id ?? '')
 
     switch (msg.type) {
       case 'ready':
+        // eslint-disable-next-line no-console
+        console.log('[brain] Worker ready, cached:', msg.cached, 'treeSha:', msg.treeSha)
         treeSha.value = msg.treeSha ?? null
         ready.value = !!msg.cached
         break
@@ -150,8 +152,8 @@ export function useContentBrain() {
 
       case 'externalSync':
         // Another tab synced — refresh our snapshot state
-        if (worker && currentProjectId) {
-          worker.postMessage({ type: 'getSnapshot', projectId: currentProjectId })
+        if (sharedWorker && sharedProjectId) {
+          sharedWorker.postMessage({ type: 'getSnapshot', projectId: sharedProjectId })
         }
         break
 
@@ -181,13 +183,12 @@ export function useContentBrain() {
       )
 
       // Send sync payload to worker
-      if (worker) {
-        worker.postMessage({ type: 'sync', payload: response, projectId })
+      if (sharedWorker) {
+        sharedWorker.postMessage({ type: 'sync', payload: response, projectId })
       }
 
       // Update reactive state from response (immediate, don't wait for worker)
-      // eslint-disable-next-line no-console
-      console.log('[brain] Sync response:', { delta: response.delta, modelsCount: response.models ? Object.keys(response.models).length : 0, contentCount: response.content ? Object.keys(response.content).length : 0 })
+
       if (!response.delta) {
         if (response.config) config.value = response.config
         if (response.models) models.value = Object.values(response.models)
@@ -197,7 +198,7 @@ export function useContentBrain() {
         // Store content in memory for instant queryContent access
         if (response.content) {
           for (const [key, value] of Object.entries(response.content)) {
-            contentStore.set(key, value as { data: unknown, meta: Record<string, unknown> | null, kind: string })
+            sharedContentStore.set(key, value as { data: unknown, meta: Record<string, unknown> | null, kind: string })
           }
         }
       }
@@ -211,19 +212,20 @@ export function useContentBrain() {
       syncing.value = false
 
       // If brain sync fails, request snapshot from worker cache (if available)
-      if (worker && currentProjectId) {
-        worker.postMessage({ type: 'getSnapshot', projectId: currentProjectId })
+      if (sharedWorker && sharedProjectId) {
+        sharedWorker.postMessage({ type: 'getSnapshot', projectId: sharedProjectId })
       }
     }
   }
 
   async function invalidate(projectId: string) {
-    if (worker) {
-      worker.postMessage({ type: 'invalidate', projectId })
+    if (sharedWorker) {
+      sharedWorker.postMessage({ type: 'invalidate', projectId })
     }
     // Also invalidate server-side via query param trick (next sync will rebuild)
     treeSha.value = null
     ready.value = false
+    sharedContentStore.clear()
   }
 
   // --- Query ---
@@ -231,20 +233,20 @@ export function useContentBrain() {
   async function queryContent(modelId: string, locale: string): Promise<ContentQueryResult> {
     // 1. In-memory store (instant — populated from sync response)
     const key = `${modelId}:${locale}`
-    const cached = contentStore.get(key)
+    const cached = sharedContentStore.get(key)
     if (cached) {
       return { data: cached.data, kind: cached.kind, meta: cached.meta }
     }
 
     // 2. Worker IndexedDB (if available)
-    if (worker && currentProjectId) {
+    if (sharedWorker && sharedProjectId) {
       return new Promise((resolve) => {
         const id = `query-${++requestCounter}`
         pendingRequests.set(id, {
           resolve: data => resolve(data as ContentQueryResult),
           reject: () => resolve({ data: null, kind: 'collection', meta: null }),
         })
-        worker!.postMessage({ type: 'query', id, modelId, locale, projectId: currentProjectId })
+        sharedWorker!.postMessage({ type: 'query', id, modelId, locale, projectId: sharedProjectId })
 
         setTimeout(() => {
           if (pendingRequests.has(id)) {
@@ -260,7 +262,7 @@ export function useContentBrain() {
   }
 
   async function searchContent(query: string, modelId?: string, limit?: number): Promise<SearchResult[]> {
-    if (!worker) return []
+    if (!sharedWorker) return []
 
     return new Promise((resolve) => {
       const id = `search-${++requestCounter}`
@@ -268,7 +270,7 @@ export function useContentBrain() {
         resolve: data => resolve((data ?? []) as SearchResult[]),
         reject: () => resolve([]),
       })
-      worker!.postMessage({ type: 'search', id, query, modelId, limit: limit ?? 10 })
+      sharedWorker!.postMessage({ type: 'search', id, query, modelId, limit: limit ?? 10 })
 
       setTimeout(() => {
         if (pendingRequests.has(id)) {

@@ -21,15 +21,22 @@ const channel = new BroadcastChannel('cr-brain')
 
 let currentProjectId: string | null = null
 
+// eslint-disable-next-line no-console
+console.log('[brain-worker] Worker initialized, ready for messages')
+
 // --- Message Handler ---
 
 self.onmessage = async (event: MessageEvent) => {
   const msg = event.data
+  // eslint-disable-next-line no-console
+  console.log('[brain-worker] Received message:', msg.type)
 
   try {
     switch (msg.type) {
       case 'init': {
         currentProjectId = msg.projectId
+        // eslint-disable-next-line no-console
+        console.log('[brain-worker] Init for project:', msg.projectId)
         // Load cached treeSha from IDB
         const cachedMeta = await get(`${msg.projectId}:meta`, metaStore)
         self.postMessage({
