@@ -62,12 +62,12 @@ export default defineEventHandler(async (event) => {
   const filename = urlPath.split('/').pop() ?? 'imported-file'
 
   // Resolve variants
-  let variants: Record<string, import('~/server/providers/media').VariantConfig>
+  let variants: Record<string, import('~~/server/providers/media').VariantConfig>
   if (body.variants && typeof body.variants === 'string') {
     variants = resolveVariantConfig(body.variants)
   }
   else if (body.variants && typeof body.variants === 'object') {
-    variants = body.variants as Record<string, import('~/server/providers/media').VariantConfig>
+    variants = body.variants as Record<string, import('~~/server/providers/media').VariantConfig>
   }
   else {
     variants = resolveVariantConfig(undefined)

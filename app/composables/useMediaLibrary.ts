@@ -1,4 +1,6 @@
-interface MediaAssetUI {
+import type { DeepReadonly } from 'vue'
+
+export interface MediaAssetUI {
   id: string
   filename: string
   contentType: string
@@ -10,6 +12,7 @@ interface MediaAssetUI {
   alt: string | null
   tags: string[]
   originalPath: string
+  previewUrl?: string
   variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
   source: string
   createdAt: string
@@ -127,8 +130,16 @@ export function useMediaLibrary() {
     if (selectedAsset.value && assetIds.includes(selectedAsset.value.id)) selectedAsset.value = null
   }
 
-  function selectAsset(asset: MediaAssetUI | null) {
-    selectedAsset.value = asset
+  function selectAsset(asset: MediaAssetUI | DeepReadonly<MediaAssetUI> | null) {
+    if (!asset) {
+      selectedAsset.value = null
+      return
+    }
+    selectedAsset.value = {
+      ...asset,
+      tags: [...asset.tags],
+      variants: { ...asset.variants },
+    } as MediaAssetUI
   }
 
   function clearLibrary() {

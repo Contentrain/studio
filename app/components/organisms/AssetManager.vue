@@ -10,10 +10,27 @@ const props = defineProps<{
 const { activeWorkspace } = useWorkspaces()
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
 
-const { assets, total, loading, filters, fetchAssets, clearLibrary } = useMediaLibrary()
+const { assets, total, loading, filters, fetchAssets, deleteAsset, clearLibrary } = useMediaLibrary()
 const { toggle, isPinned } = useChatContext()
 const toast = useToast()
 const modalOpen = ref(false)
+
+// Bulk selection
+const selectedIds = ref<Set<string>>(new Set())
+const isSelecting = computed(() => selectedIds.value.size > 0)
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+async function handleBulkDelete() {
+  const ids = [...selectedIds.value]
+  for (const id of ids) {
+    await deleteAsset(props.workspaceId, props.projectId, id)
+  }
+  clearSelection()
+  await fetchAssets(props.workspaceId, props.projectId)
+}
 
 function togglePin(asset: { id: string, filename: string, originalPath: string, format: string, width: number, height: number, size: number, alt: string | null }) {
   toggle({

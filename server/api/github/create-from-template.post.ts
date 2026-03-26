@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
     installation_id: workspace.github_installation_id,
   })
 
-  const targetOwner = installation.account?.login
+  const targetOwner = (installation.account as { login?: string })?.login
   if (!targetOwner)
     throw createError({ statusCode: 500, message: errorMessage('github.owner_not_resolved') })
 

@@ -243,7 +243,7 @@ const groupedResults = computed(() => {
   const groups: Record<string, ResultItem[]> = {}
   for (const item of results.value) {
     if (!groups[item.group]) groups[item.group] = []
-    groups[item.group].push(item)
+    groups[item.group]!.push(item)
   }
   return groups
 })

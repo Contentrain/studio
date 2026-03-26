@@ -39,7 +39,7 @@ describe('useChatContext', () => {
   it('handles drag-drop payloads and serializes api context items', () => {
     const ctx = useChatContext()
     const payload = {
-      type: 'field',
+      type: 'field' as const,
       label: 'Title',
       sublabel: 'Hero section',
       modelId: 'hero',

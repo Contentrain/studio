@@ -49,8 +49,8 @@ export default defineEventHandler(async (event) => {
       installed: true,
       installationId: workspace.github_installation_id,
       account: {
-        login: installation.account?.login ?? null,
-        avatarUrl: installation.account?.avatar_url ?? null,
+        login: (installation.account as { login?: string })?.login ?? null,
+        avatarUrl: (installation.account as { avatar_url?: string })?.avatar_url ?? null,
         type: installation.target_type, // 'Organization' | 'User'
       },
       selection: installation.repository_selection, // 'all' | 'selected'

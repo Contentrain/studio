@@ -12,10 +12,10 @@ const props = defineProps<{
     format: string
     blurhash: string | null
     alt: string | null
-    tags: string[]
+    tags: readonly string[]
     originalPath: string
     previewUrl?: string
-    variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
+    variants: Readonly<Record<string, { path: string, width: number, height: number, format: string, size: number }>>
     source: string
     createdAt: string
   }

@@ -33,6 +33,9 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+        
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Start local Supabase DB
         run: pnpm dlx supabase start --yes --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor

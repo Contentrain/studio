@@ -38,7 +38,7 @@ export function hashCDNKey(key: string): string {
 /** Validate a CDN API key against the database. Returns project info or throws. */
 export async function validateCDNKey(
   authHeader: string | undefined,
-): Promise<{ projectId: string, keyId: string }> {
+): Promise<{ projectId: string, keyId: string, rateLimitPerHour: number, allowedOrigins: string[] }> {
   if (!authHeader?.startsWith('Bearer crn_'))
     throw createError({ statusCode: 401, message: errorMessage('cdn.key_invalid') })
 

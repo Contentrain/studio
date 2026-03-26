@@ -15,14 +15,14 @@ interface ModelSummary {
   name: string
   kind: ModelKind
   type: ModelKind
-  fields: Record<string, unknown>
+  fields: Record<string, unknown> | Readonly<Record<string, unknown>>
   domain: string
   i18n: boolean
 }
 
 interface ContentSummary {
   count: number
-  locales: string[]
+  locales: string[] | readonly string[]
 }
 
 interface ContentContext {
@@ -34,8 +34,8 @@ interface Snapshot {
   exists: boolean
   config: unknown
   models: ModelSummary[]
-  content: Record<string, ContentSummary>
-  vocabulary?: Record<string, Record<string, string>> | null
+  content: Record<string, ContentSummary> | Readonly<Record<string, ContentSummary>>
+  vocabulary?: Record<string, Record<string, string>> | Readonly<Record<string, Readonly<Record<string, string>>>> | null
   contentContext?: ContentContext | null
 }
 

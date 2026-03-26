@@ -13,8 +13,9 @@ import FlexSearch from 'flexsearch'
 const metaStore = createStore('cr-brain', 'brain-meta')
 const contentStore = createStore('cr-brain', 'brain-content')
 
-// FlexSearch index
-let searchIndex: FlexSearch.Document<{ id: string, text: string, modelId: string, entryId: string, locale: string }, true> | null = null
+// FlexSearch index (no published types — use any)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let searchIndex: any = null
 
 // BroadcastChannel for cross-tab sync
 const channel = new BroadcastChannel('cr-brain')
