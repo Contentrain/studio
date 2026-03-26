@@ -14,7 +14,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 
-const { assets, total, loading, uploading, selectedAsset, filters, fetchAssets, uploadFile, updateAsset, deleteAsset, bulkDelete, selectAsset } = useMediaLibrary()
+const { assets, total, loading, selectedAsset, filters, fetchAssets, updateAsset, deleteAsset, bulkDelete, selectAsset } = useMediaLibrary()
 const toast = useToast()
 
 const selectedIds = ref<Set<string>>(new Set())
@@ -51,14 +51,12 @@ watch(() => [filters.value.type, filters.value.sort], () => {
   fetchAssets(props.workspaceId, props.projectId)
 })
 
-async function handleUpload(file: File) {
-  try {
-    await uploadFile(props.workspaceId, props.projectId, file)
-    toast.success(t('media.upload_success'))
-  }
-  catch (e: unknown) {
-    toast.error(e instanceof Error ? e.message : t('media.upload_error'))
-  }
+function handleUploaded() {
+  fetchAssets(props.workspaceId, props.projectId)
+}
+
+function handleUploadError(message: string) {
+  toast.error(message)
 }
 
 async function handleSave(metadata: { alt?: string, tags?: string[] }) {
@@ -169,11 +167,12 @@ async function handleBulkDelete() {
           <div class="flex-1 overflow-y-auto">
             <!-- Upload zone -->
             <div v-if="editable" class="px-6 pt-4 pb-2">
-              <MoleculesAssetUploader @upload="handleUpload" />
-              <div v-if="uploading" class="mt-2 flex items-center gap-2 text-xs text-muted">
-                <span class="icon-[annon--loader] size-3.5 animate-spin" aria-hidden="true" />
-                {{ t('media.uploading') }}
-              </div>
+              <MoleculesAssetUploader
+                :workspace-id="workspaceId"
+                :project-id="projectId"
+                @uploaded="handleUploaded"
+                @error="handleUploadError"
+              />
             </div>
 
             <!-- Loading -->

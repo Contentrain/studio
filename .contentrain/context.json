@@ -4,18 +4,18 @@
       "en"
     ],
     "locale": "en",
-    "model": "auth-marketing",
+    "model": "ui-strings",
     "source": "mcp-local",
-    "timestamp": "2026-03-17T20:51:29.892Z",
+    "timestamp": "2026-03-26T11:29:56.018Z",
     "tool": "contentrain_content_save"
   },
   "stats": {
-    "entries": 2,
-    "lastSync": "2026-03-17T20:51:29.892Z",
+    "entries": 8,
+    "lastSync": "2026-03-26T11:29:56.018Z",
     "locales": [
       "en"
     ],
-    "models": 2
+    "models": 3
   },
   "version": "1"
 }
