@@ -70,14 +70,20 @@ export function useContentBrain() {
 
     try {
       worker = new Worker(
-        new URL('~/workers/content-brain.worker.ts', import.meta.url),
+        new URL('../workers/content-brain.worker.ts', import.meta.url),
         { type: 'module' },
       )
       worker.onmessage = handleWorkerMessage
+      worker.onerror = (e) => {
+        // eslint-disable-next-line no-console
+        console.error('[brain] Worker error:', e.message)
+      }
       worker.postMessage({ type: 'init', projectId })
     }
-    catch {
-      // Worker creation failed — fallback to API-only mode
+    catch (e) {
+      // Worker creation failed — continue without worker (API-only mode)
+      // eslint-disable-next-line no-console
+      console.warn('[brain] Worker creation failed, using API-only mode:', e)
       worker = null
     }
   }
@@ -176,8 +182,9 @@ export function useContentBrain() {
       }
 
       // Update reactive state from response (immediate, don't wait for worker)
+      // eslint-disable-next-line no-console
+      console.log('[brain] Sync response:', { delta: response.delta, modelsCount: response.models ? Object.keys(response.models).length : 0, contentCount: response.content ? Object.keys(response.content).length : 0 })
       if (!response.delta) {
-        if (response.config) config.value = response.config
         if (response.models) models.value = Object.values(response.models)
         if (response.vocabulary !== undefined) vocabulary.value = response.vocabulary
         if (response.contentContext !== undefined) contentContext.value = response.contentContext
