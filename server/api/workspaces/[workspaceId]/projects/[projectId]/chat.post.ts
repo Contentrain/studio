@@ -835,6 +835,11 @@ async function executeToolWithAutoMerge(
         result = { error: `Unknown tool: ${name}` }
     }
 
+    // Invalidate brain cache after any write operation
+    if (affected.snapshotChanged || affected.models.length > 0 || affected.branchesChanged) {
+      invalidateBrainCache(projectId)
+    }
+
     return { result, affected }
   }
   catch (e: unknown) {
