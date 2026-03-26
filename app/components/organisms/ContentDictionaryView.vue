@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { activeModelMetaKey } from '~/utils/injection-keys'
+
 const props = defineProps<{
   content: Record<string, unknown>
 }>()
 
 const { t } = useContent()
 const searchQuery = ref('')
-const modelMeta = inject<ComputedRef<{ id: string, name: string, kind: string } | null>>('activeModelMeta', computed(() => null))
+const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 
 const filteredEntries = computed(() => {

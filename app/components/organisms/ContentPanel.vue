@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FieldDef } from '@contentrain/types'
 import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from 'radix-vue'
+import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
 
@@ -190,12 +191,12 @@ function addModel() {
   sendChatPrompt('Create a new content model. Ask me what kind of content I want to manage.')
 }
 
-provide('getFieldType', getFieldType)
-provide('getEntryTitle', getEntryTitle)
-provide('getUserFieldIds', getUserFieldIds)
-provide('activeModelMeta', activeModelMeta)
-provide('getModelFields', getModelFields)
-provide('sendChatPrompt', sendChatPrompt)
+provide(getFieldTypeKey, getFieldType)
+provide(getEntryTitleKey, getEntryTitle)
+provide(getUserFieldIdsKey, getUserFieldIds)
+provide(activeModelMetaKey, activeModelMeta)
+provide(getModelFieldsKey, getModelFields)
+provide(sendChatPromptKey, sendChatPrompt)
 </script>
 
 <template>

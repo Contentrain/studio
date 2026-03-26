@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { marked } from 'marked'
+import { getFieldTypeKey, getUserFieldIdsKey } from '~/utils/injection-keys'
 
 defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
 }>()
 
 const { sanitize } = useSanitize()
-const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => 'string')
-const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
+const getFieldType = inject(getFieldTypeKey, () => 'string')
+const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
 
 function renderMarkdown(md: string): string {
   return sanitize(marked.parse(md, { async: false }) as string)

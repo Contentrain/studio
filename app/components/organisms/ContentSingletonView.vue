@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey } from '~/utils/injection-keys'
+
 defineProps<{
   content: Record<string, unknown>
   workspaceId?: string
@@ -12,13 +14,13 @@ const emit = defineEmits<{
   saved: []
 }>()
 
-const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => 'string')
-const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
-const modelMeta = inject<ComputedRef<{ id: string, name: string, kind: string } | null>>('activeModelMeta', computed(() => null))
+const getFieldType = inject(getFieldTypeKey, () => 'string')
+const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const modelMeta = inject(activeModelMetaKey, computed(() => null))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 const { t } = useContent()
-const getModelFields = inject<() => Record<string, unknown>>('getModelFields', () => ({}))
+const getModelFields = inject(getModelFieldsKey, () => ({}))
 
 // Modal edit state
 const editModalOpen = ref(false)

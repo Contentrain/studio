@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { sendChatPromptKey } from '~/utils/injection-keys'
+
 defineProps<{
   models: readonly { id: string, name: string, kind: string, type: string, fields: Readonly<Record<string, unknown>>, domain: string, i18n: boolean }[]
   content: Readonly<Record<string, { count: number, locales: string[] }>>
@@ -9,7 +11,7 @@ const emit = defineEmits<{
 }>()
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
-const sendChatPrompt = inject<(text: string) => void>('sendChatPrompt', () => {})
+const sendChatPrompt = inject(sendChatPromptKey, () => {})
 
 function onDelete(e: Event, model: { id: string, name: string }) {
   e.stopPropagation()

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+
 const { t } = useContent()
 
 const props = defineProps<{
@@ -50,14 +52,14 @@ function getEntryStatus(entryId: string, metaData: Record<string, unknown> | nul
   return entryMeta?.status ?? null
 }
 
-const getFieldType = inject<(fieldId: string) => string>('getFieldType', () => 'string')
-const getEntryTitle = inject<(entry: Record<string, unknown>, fallback: string) => string>('getEntryTitle', (_e, f) => f)
-const getUserFieldIds = inject<() => string[]>('getUserFieldIds', () => [])
-const modelMeta = inject<ComputedRef<{ id: string, name: string, kind: string } | null>>('activeModelMeta', computed(() => null))
-const getModelFields = inject<() => Record<string, unknown>>('getModelFields', () => ({}))
+const getFieldType = inject(getFieldTypeKey, () => 'string')
+const getEntryTitle = inject(getEntryTitleKey, (_e: Record<string, unknown>, f: string) => f)
+const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const modelMeta = inject(activeModelMetaKey, computed(() => null))
+const getModelFields = inject(getModelFieldsKey, () => ({}))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
-const sendChatPrompt = inject<(text: string) => void>('sendChatPrompt', () => {})
+const sendChatPrompt = inject(sendChatPromptKey, () => {})
 
 function deleteEntry(entryId: string, entry: Record<string, unknown>) {
   const title = getEntryTitle(entry, entryId.substring(0, 8))
