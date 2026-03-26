@@ -20,7 +20,7 @@
     "test:integration": "vitest run --project integration",
     "test:nuxt": "vitest run --project nuxt",
     "test:rls": "vitest run --project rls",
-    "test:e2e": "vitest run --project e2e",
+    "test:e2e": "node ./scripts/run-e2e-suite.mjs",
     "test:coverage": "vitest run --coverage --project unit --project integration",
     "test:coverage:nuxt": "vitest run --coverage --project nuxt",
     "test:coverage:html": "vitest run --coverage --project unit --project integration --coverage.reporter=html --coverage.reporter=lcov",
