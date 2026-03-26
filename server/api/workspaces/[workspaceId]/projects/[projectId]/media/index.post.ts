@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
 
   // Resolve variant config from target field
   const variantsPart = formData.find(p => p.name === 'variants')
-  let variants: Record<string, import('~/server/providers/media').VariantConfig> = {}
+  let variants: Record<string, import('~~/server/providers/media').VariantConfig> = {}
   if (variantsPart?.data) {
     try {
       const parsed = JSON.parse(variantsPart.data.toString('utf-8'))

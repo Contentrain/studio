@@ -16,11 +16,13 @@ interface ModelStub {
 interface BrainStub {
   ready: Ref<boolean>
   hasContentrain: ComputedRef<boolean>
-  config: Ref<{ locales: { default: string } } | null>
+  config: Ref<Record<string, unknown> | null>
   models: Ref<ModelStub[]>
+  modelList: ComputedRef<ModelStub[]>
   vocabulary: Ref<Record<string, Record<string, string>> | null>
   contentContext: Ref<Record<string, unknown> | null>
   contentSummary: Ref<Record<string, { count: number, locales: string[] }>>
+  treeSha: Ref<string | null>
   projectStats: ComputedRef<unknown>
   syncing: Ref<boolean>
   syncError: Ref<string | null>
@@ -28,6 +30,8 @@ interface BrainStub {
   sync: (workspaceId: string, projectId: string) => Promise<void>
   destroyBrain: () => void
   invalidate: (projectId: string) => Promise<void> | void
+  queryContent: (modelId: string, locale: string) => Promise<unknown>
+  searchContent: (query: string) => Promise<unknown[]>
 }
 
 const nuxtState = vi.hoisted(() => ({
@@ -46,14 +50,17 @@ describe('useSnapshot', () => {
   })
 
   it('maps current brain state into the legacy snapshot shape', () => {
-    const brain = {
+    const modelsRef = ref([{ id: 'faq', name: 'FAQ', kind: 'collection', fields: {}, domain: 'marketing', i18n: true }])
+    const brain: BrainStub = {
       ready: ref(true),
       hasContentrain: computed(() => true),
-      config: ref({ locales: { default: 'en' } }),
-      models: ref([{ id: 'faq', name: 'FAQ', kind: 'collection', fields: {}, domain: 'marketing', i18n: true }]),
+      config: ref<Record<string, unknown> | null>({ locales: { default: 'en' } }),
+      models: modelsRef,
+      modelList: computed(() => modelsRef.value),
       vocabulary: ref({ headline: { en: 'Headline' } }),
       contentContext: ref({ stats: { entries: 1 } }),
       contentSummary: ref({ faq: { count: 1, locales: ['en'] } }),
+      treeSha: ref<string | null>('abc123'),
       projectStats: computed(() => ({ modelCount: 1, entryCount: 1, localeCount: 1, locales: ['en'] })),
       syncing: ref(false),
       syncError: ref<string | null>(null),
@@ -61,6 +68,8 @@ describe('useSnapshot', () => {
       sync: vi.fn(),
       destroyBrain: vi.fn(),
       invalidate: vi.fn(),
+      queryContent: vi.fn().mockResolvedValue(null),
+      searchContent: vi.fn().mockResolvedValue([]),
     }
     nuxtState.brain = brain
 
@@ -78,7 +87,7 @@ describe('useSnapshot', () => {
   })
 
   it('initializes and syncs the brain for the requested project', async () => {
-    const config = ref(null)
+    const config = ref<Record<string, unknown> | null>(null)
     const models = ref<ModelStub[]>([])
     const contentSummary = ref<Record<string, { count: number, locales: string[] }>>({})
     const vocabulary = ref<Record<string, Record<string, string>> | null>(null)
@@ -91,14 +100,16 @@ describe('useSnapshot', () => {
       vocabulary.value = { cta: { en: 'Start' } }
       contentContext.value = { stats: { entries: 2 } }
     })
-    const brain = {
+    const brain: BrainStub = {
       ready: ref(false),
       hasContentrain: computed(() => config.value !== null),
       config,
       models,
+      modelList: computed(() => models.value),
       vocabulary,
       contentContext,
       contentSummary,
+      treeSha: ref<string | null>(null),
       projectStats: computed(() => null),
       syncing: ref(false),
       syncError: ref<string | null>(null),
@@ -106,6 +117,8 @@ describe('useSnapshot', () => {
       sync,
       destroyBrain: vi.fn(),
       invalidate: vi.fn(),
+      queryContent: vi.fn().mockResolvedValue(null),
+      searchContent: vi.fn().mockResolvedValue([]),
     }
     nuxtState.brain = brain
 

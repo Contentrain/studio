@@ -321,7 +321,7 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
         owner,
         repo,
         base_tree: baseTreeSha,
-        tree: treeEntries as Parameters<typeof octokit.git.createTree>[0]['tree'],
+        tree: treeEntries as { path?: string, mode?: '100644' | '100755' | '040000' | '160000' | '120000', type?: 'blob' | 'tree' | 'commit', sha?: string | null, content?: string }[],
       })
 
       // 5. Create commit

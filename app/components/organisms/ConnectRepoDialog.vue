@@ -67,7 +67,7 @@ async function loadRepos() {
   if (!activeWorkspace.value) return
   reposLoading.value = true
   try {
-    repos.value = await $fetch('/api/github/repos', {
+    repos.value = await $fetch<typeof repos.value>('/api/github/repos', {
       params: { workspaceId: activeWorkspace.value.id },
     })
   }
@@ -85,7 +85,7 @@ async function selectRepo(repo: typeof repos.value[0]) {
   scanLoading.value = true
 
   try {
-    scanResult.value = await $fetch('/api/github/scan', {
+    scanResult.value = await $fetch<NonNullable<typeof scanResult.value>>('/api/github/scan', {
       params: {
         workspaceId: activeWorkspace.value!.id,
         owner: repo.owner,

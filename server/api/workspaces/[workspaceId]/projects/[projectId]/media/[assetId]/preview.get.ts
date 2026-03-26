@@ -28,8 +28,9 @@ export default defineEventHandler(async (event) => {
 
   // Determine which variant to serve (query param or original)
   const query = getQuery(event) as { variant?: string }
-  const path = query.variant && asset.variants[query.variant]
-    ? asset.variants[query.variant].path
+  const variantKey = query.variant
+  const path = variantKey && asset.variants[variantKey]
+    ? asset.variants[variantKey]!.path
     : asset.originalPath
 
   const result = await cdn.getObject(projectId, path)

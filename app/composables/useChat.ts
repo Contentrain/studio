@@ -19,7 +19,7 @@ export interface ChatMessage {
   createdAt: string
   /** Context items attached to this message (user messages only) */
   contextItems?: Array<{
-    type: 'model' | 'entry' | 'field'
+    type: 'model' | 'entry' | 'field' | 'asset'
     label: string
     sublabel?: string
   }>
@@ -143,7 +143,7 @@ export function useChat(options?: {
     projectId: string,
     text: string,
     context?: ChatUIContext,
-    attachedChips?: Array<{ type: 'model' | 'entry' | 'field', label: string, sublabel?: string }>,
+    attachedChips?: Array<{ type: 'model' | 'entry' | 'field' | 'asset', label: string, sublabel?: string }>,
   ) {
     if (!text.trim() || isStreaming.value) return
 

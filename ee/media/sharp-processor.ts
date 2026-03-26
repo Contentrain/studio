@@ -208,7 +208,13 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
     async getAsset(assetId: string): Promise<MediaAsset | null> {
       const row = await getMediaAsset(admin, assetId)
       if (!row) return null
-      const usage = await getMediaUsage(admin, assetId)
+      const usageRows = await getMediaUsage(admin, assetId)
+      const usage: MediaUsageRef[] = usageRows.map(u => ({
+        modelId: u.model_id,
+        entryId: u.entry_id,
+        fieldId: u.field_id,
+        locale: u.locale,
+      }))
       return rowToAsset(row, usage)
     },
 

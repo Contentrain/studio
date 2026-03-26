@@ -15,11 +15,12 @@ import type { AITool } from '../providers/ai'
 
 /** Explicitly pinned context item from the content panel */
 export interface ContextItem {
-  type: 'model' | 'entry' | 'field'
+  type: 'model' | 'entry' | 'field' | 'asset'
   modelId: string
   modelName?: string
   entryId?: string
   fieldId?: string
+  assetId?: string
   data?: unknown
 }
 

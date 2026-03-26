@@ -12,6 +12,7 @@
     "prepare": "husky",
     "release": "changelogen --release",
     "changelog": "changelogen",
+    "typecheck":"nuxt typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest --project unit --project integration --project nuxt",
