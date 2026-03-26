@@ -1,18 +1,18 @@
 {
   "lastOperation": {
     "locale": "en",
-    "model": "agent-prompts",
+    "model": "agent-messages",
     "source": "mcp-local",
-    "timestamp": "2026-03-26T22:41:04.222Z",
+    "timestamp": "2026-03-26T22:41:53.415Z",
     "tool": "contentrain_model_save"
   },
   "stats": {
     "entries": 8,
-    "lastSync": "2026-03-26T22:41:04.224Z",
+    "lastSync": "2026-03-26T22:41:53.415Z",
     "locales": [
       "en"
     ],
-    "models": 4
+    "models": 5
   },
   "version": "1"
 }
