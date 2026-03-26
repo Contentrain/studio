@@ -1,0 +1,8 @@
+{
+  "id": "agent-prompts",
+  "name": "Agent Prompts",
+  "kind": "dictionary",
+  "domain": "system",
+  "i18n": true,
+  "description": "System prompt sections, agent behavior rules, plan descriptions, feature guides. Used by buildSystemPrompt() server-side."
+}
