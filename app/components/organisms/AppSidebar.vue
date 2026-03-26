@@ -90,6 +90,14 @@ function selectAssets() {
   router.replace({ query: { assets: 'true' } })
 }
 
+function installGitHubApp() {
+  window.open(
+    'https://github.com/apps/contentrain-studio-dev/installations/new',
+    '_blank',
+    'noopener,noreferrer',
+  )
+}
+
 function backToWorkspace() {
   if (!activeWorkspace.value) return
   router.push(`/w/${activeWorkspace.value.slug}`)
@@ -221,7 +229,25 @@ async function onSettingsSaved() {
       <!-- DASHBOARD VIEW -->
       <template v-else>
         <AtomsSectionLabel :label="t('sidebar.projects')" class="mb-1" />
-        <ul class="space-y-px">
+
+        <!-- No installation → prompt to install GitHub App -->
+        <div v-if="activeWorkspace && !activeWorkspace.github_installation_id && isOwnerOrAdmin" class="px-2 py-4">
+          <div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-secondary-300 px-3 py-4 text-center dark:border-secondary-700">
+            <span class="icon-[annon--link-1] size-5 text-muted" aria-hidden="true" />
+            <p class="text-xs text-muted">
+              {{ t('sidebar.install_github_hint') }}
+            </p>
+            <AtomsBaseButton size="sm" variant="primary" @click="installGitHubApp">
+              <template #prepend>
+                <span class="icon-[annon--external-link] size-3.5" aria-hidden="true" />
+              </template>
+              {{ t('github.install_button') }}
+            </AtomsBaseButton>
+          </div>
+        </div>
+
+        <!-- Projects list -->
+        <ul v-else class="space-y-px">
           <li v-for="link in sidebarLinks" :key="link.id">
             <NuxtLink
               :to="link.to"

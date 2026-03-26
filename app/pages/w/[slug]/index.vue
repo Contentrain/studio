@@ -85,7 +85,28 @@ watch(slug, async (newSlug) => {
       />
     </div>
 
-    <!-- Empty State -->
+    <!-- Empty State: no installation -->
+    <AtomsEmptyState
+      v-else-if="activeWorkspace && !activeWorkspace.github_installation_id"
+      illustration="/illustrations/connect-github.png"
+      :title="t('github.install_title')"
+      :description="t('github.install_description')"
+    >
+      <template #action>
+        <AtomsBaseButton
+          variant="primary"
+          size="md"
+          @click="connectDialogOpen = true"
+        >
+          <template #prepend>
+            <span class="icon-[annon--external-link] size-4" aria-hidden="true" />
+          </template>
+          <span>{{ t('github.install_button') }}</span>
+        </AtomsBaseButton>
+      </template>
+    </AtomsEmptyState>
+
+    <!-- Empty State: installed but no projects -->
     <AtomsEmptyState
       v-else
       illustration="/illustrations/empty-projects.png"

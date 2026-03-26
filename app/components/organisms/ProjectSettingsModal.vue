@@ -185,7 +185,7 @@ async function save() {
                   </AtomsBadge>
                 </div>
                 <div class="mt-0.5 text-xs opacity-70">
-                  {{ t('project_settings.workflow_review_desc') }}
+                  {{ canReview ? t('project_settings.workflow_review_desc') : t('project_settings.workflow_pro_hint') }}
                 </div>
               </button>
             </div>
