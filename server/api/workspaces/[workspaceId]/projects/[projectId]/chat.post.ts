@@ -396,7 +396,7 @@ async function executeToolWithAutoMerge(
         const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
         const modelId = params.model as string
         if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
-          result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
         const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
@@ -405,7 +405,7 @@ async function executeToolWithAutoMerge(
         const metaData = brainData.meta.get(key) ?? null
         const modelDef = brainData.models.get(modelId)
         if (!contentData) {
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: null, error: 'Content not found' }
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: null, error: errorMessage('content.not_found') }
         }
         else {
           result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: contentData, meta: metaData }
@@ -416,7 +416,7 @@ async function executeToolWithAutoMerge(
       case 'save_content': {
         const modelId = params.model as string
         if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
-          result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
         const locale = (params.locale as string) ?? 'en'
@@ -595,11 +595,11 @@ async function executeToolWithAutoMerge(
       case 'search_media': {
         const mediaProvider = useMediaProvider()
         if (!mediaProvider) {
-          result = { error: 'Media storage not configured' }
+          result = { error: errorMessage('media.storage_not_configured') }
           break
         }
         if (!hasFeature(plan, 'media.library')) {
-          result = { error: 'Media library requires Pro plan ($12/mo). Pro includes: Asset Manager with 5GB storage, image optimization, variant generation, and CDN delivery. Upgrade in workspace settings.' }
+          result = { error: errorMessage('media.library_upgrade') }
           break
         }
         const searchResult = await mediaProvider.listAssets(projectId, {
@@ -625,11 +625,11 @@ async function executeToolWithAutoMerge(
       case 'upload_media': {
         const mediaProvider = useMediaProvider()
         if (!mediaProvider) {
-          result = { error: 'Media storage not configured' }
+          result = { error: errorMessage('media.storage_not_configured') }
           break
         }
         if (!hasFeature(plan, 'media.upload')) {
-          result = { error: 'Media upload requires Pro plan ($12/mo). Pro includes: image upload, optimization, variant generation (hero, card, thumb, og sizes), and CDN delivery. For now, you can use external image URLs (Unsplash, etc) directly in content fields.' }
+          result = { error: errorMessage('media.upload_upgrade') }
           break
         }
         const url = params.url as string
@@ -686,11 +686,11 @@ async function executeToolWithAutoMerge(
       case 'get_media': {
         const mediaProvider = useMediaProvider()
         if (!mediaProvider) {
-          result = { error: 'Media storage not configured' }
+          result = { error: errorMessage('media.storage_not_configured') }
           break
         }
         if (!hasFeature(plan, 'media.library')) {
-          result = { error: 'Media library requires Pro plan ($12/mo). Pro includes: Asset Manager with 5GB storage, image optimization, variant generation, and CDN delivery. Upgrade in workspace settings.' }
+          result = { error: errorMessage('media.library_upgrade') }
           break
         }
         const asset = await mediaProvider.getAsset(params.assetId as string)
@@ -706,7 +706,7 @@ async function executeToolWithAutoMerge(
         const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
         const modelId = params.model as string
         if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
-          result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
         const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
