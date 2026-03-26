@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildSystemPrompt } from '../../server/utils/agent-system-prompt'
+
+vi.stubGlobal('agentPrompt', (key: string) => `[prompt:${key}]`)
 
 describe('buildSystemPrompt', () => {
   it('includes architecture, context, permissions, and vocabulary guidance', () => {
