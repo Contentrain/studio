@@ -164,7 +164,7 @@ function buildArchitectureSection(): string {
 **Rich text:** markdown, richtext
 **Number:** number, integer, decimal, percent, rating (1-5)
 **Primitive:** boolean, date (YYYY-MM-DD), datetime (ISO 8601)
-**Media:** image, video, file — store relative path (e.g. "media/original/abc123.webp"). Use upload_media to add images from URLs, search_media to find existing assets. Always set alt text for accessibility.
+**Media:** image, video, file — store as string (URL or relative path). For external images (Unsplash, CDN URLs), save the URL directly as the field value via save_content — do NOT call upload_media. Only use upload_media when user explicitly asks to upload/process a file into the media library.
 **Relation:** relation (single ref → entry ID or slug), relations (array of refs)
 **Structural:** select (enum from options[]), array (items), object (nested fields)
 
