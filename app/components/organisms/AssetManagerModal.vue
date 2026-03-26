@@ -15,7 +15,19 @@ const emit = defineEmits<{
 }>()
 
 const { assets, total, loading, selectedAsset, filters, fetchAssets, updateAsset, deleteAsset, bulkDelete, selectAsset } = useMediaLibrary()
+const { toggle: toggleContext, isPinned } = useChatContext()
 const toast = useToast()
+
+function togglePin(asset: { id: string, filename: string, originalPath: string, format: string, width: number, height: number, size: number, alt: string | null }) {
+  toggleContext({
+    type: 'asset',
+    label: asset.filename,
+    sublabel: `${asset.format?.toUpperCase()} · ${asset.width}×${asset.height}`,
+    modelId: asset.id,
+    assetId: asset.id,
+    data: { filename: asset.filename, originalPath: asset.originalPath, format: asset.format, width: asset.width, height: asset.height, size: asset.size, alt: asset.alt },
+  })
+}
 
 const selectedIds = ref<Set<string>>(new Set())
 const isSelecting = computed(() => selectedIds.value.size > 0)
@@ -194,6 +206,7 @@ async function handleBulkDelete() {
               <AtomsAssetCard
                 v-for="asset in assets"
                 :key="asset.id"
+                :asset-id="asset.id"
                 :filename="asset.filename"
                 :original-path="asset.originalPath"
                 :content-type="asset.contentType"
@@ -202,7 +215,9 @@ async function handleBulkDelete() {
                 :size="asset.size"
                 :alt="asset.alt"
                 :selected="selectedAsset?.id === asset.id || selectedIds.has(asset.id)"
+                :pinned="isPinned('asset', asset.id, undefined, undefined, asset.id)"
                 @click="isSelecting ? toggleSelect(asset.id) : selectAsset(asset)"
+                @pin="togglePin(asset)"
               />
             </div>
           </div>

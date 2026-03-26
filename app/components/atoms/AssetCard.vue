@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const props = defineProps<{
+  assetId: string
   filename: string
   originalPath: string
   contentType: string
@@ -11,11 +12,15 @@ const props = defineProps<{
   alt?: string | null
   blurhash?: string | null
   selected?: boolean
+  pinned?: boolean
 }>()
 
 defineEmits<{
   click: []
+  pin: []
 }>()
+
+const { startDrag, endDrag } = useChatContext()
 
 const isImage = computed(() => props.contentType.startsWith('image/'))
 const isVideo = computed(() => props.contentType.startsWith('video/'))
@@ -35,12 +40,14 @@ function formatSize(bytes: number): string {
 </script>
 
 <template>
-  <button
-    type="button"
-    class="group relative flex flex-col overflow-hidden rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+  <div
+    class="group relative flex flex-col overflow-hidden rounded-lg border transition-all"
     :class="selected
       ? 'border-primary-500 ring-2 ring-primary-500/30'
       : 'border-secondary-200 hover:border-secondary-300 dark:border-secondary-700 dark:hover:border-secondary-600'"
+    draggable="true"
+    @dragstart="startDrag($event, { type: 'asset', label: filename, sublabel: `${format?.toUpperCase()} · ${formatSize(size ?? 0)}`, modelId: assetId, assetId, data: { filename, originalPath, format, width, height, size, alt } })"
+    @dragend="endDrag"
     @click="$emit('click')"
   >
     <!-- Preview area -->
@@ -66,6 +73,19 @@ function formatSize(bytes: number): string {
       </div>
     </div>
 
+    <!-- Pin button -->
+    <button
+      type="button"
+      aria-label="Pin to context"
+      class="absolute left-1.5 top-1.5 rounded-md p-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+      :class="pinned
+        ? 'text-warning-500 opacity-100'
+        : 'text-white/70 opacity-0 hover:opacity-100 group-hover:opacity-60'"
+      @click.stop="$emit('pin')"
+    >
+      <span class="icon-[annon--pin] size-3.5" aria-hidden="true" />
+    </button>
+
     <!-- Selection indicator -->
     <div
       v-if="selected"
@@ -73,5 +93,5 @@ function formatSize(bytes: number): string {
     >
       <span class="icon-[annon--check] size-3" aria-hidden="true" />
     </div>
-  </button>
+  </div>
 </template>
