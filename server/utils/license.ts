@@ -1,49 +1,28 @@
 /**
  * License & feature flag system.
  *
- * Core (AGPL) checks workspace.plan to gate ee/ features.
- * Feature matrix defines which plan unlocks which capability.
+ * Plans: free → pro ($12/mo) → team ($39/mo + seats) → enterprise (custom)
+ * Revenue model: platform fee (low) + AI credits + usage overage + enterprise license
  *
- * Plans: free → pro ($9/mo) → team ($29/mo + seats) → enterprise (custom)
  * DB stores 'team' but code normalizes to 'business' for backward compat.
- *
- * Pricing model: base plan (feature unlock) + usage-based overage.
- * Plan limits define "included" amounts. Overage billed separately (Stripe metering).
+ * See .internal/PRICING-STRATEGY.md for full pricing rationale.
  *
  * Usage:
  *   const plan = getWorkspacePlan(workspace)
- *   if (hasFeature(plan, 'roles.reviewer')) { ... }
+ *   if (hasFeature(plan, 'cdn.delivery')) { ... }
  *
  * Design: hasFeature() is the ONLY way to check features.
- * Never hardcode plan === 'pro' checks in route handlers.
+ * Never hardcode plan checks in route handlers.
  */
 
 export type Plan = 'free' | 'pro' | 'business' | 'enterprise'
 
 const FEATURE_MATRIX: Record<string, Plan[]> = {
-  // Roles & permissions
-  'roles.reviewer': ['pro', 'business', 'enterprise'],
-  'roles.viewer': ['pro', 'business', 'enterprise'],
-  'roles.specific_models': ['business', 'enterprise'],
-
-  // AI
+  // AI — available on ALL plans (BYOA unlimited, studio-hosted = credit-based)
+  'ai.agent': ['free', 'pro', 'business', 'enterprise'],
   'ai.byoa': ['free', 'pro', 'business', 'enterprise'],
-  'ai.studio_key': ['free', 'pro', 'business', 'enterprise'],
 
-  // Workflow
-  'workflow.review': ['pro', 'business', 'enterprise'],
-
-  // CDN
-  'cdn.delivery': ['pro', 'business', 'enterprise'],
-  'cdn.preview_branch': ['business', 'enterprise'],
-  'cdn.custom_domain': ['enterprise'],
-
-  // Media
-  'media.upload': ['pro', 'business', 'enterprise'],
-  'media.library': ['pro', 'business', 'enterprise'],
-  'media.custom_variants': ['business', 'enterprise'],
-
-  // Forms
+  // Forms — free gets 1 form (CDN-independent)
   'forms.enabled': ['free', 'pro', 'business', 'enterprise'],
   'forms.file_upload': ['pro', 'business', 'enterprise'],
   'forms.captcha': ['pro', 'business', 'enterprise'],
@@ -52,7 +31,25 @@ const FEATURE_MATRIX: Record<string, Plan[]> = {
   'forms.spam_filter': ['business', 'enterprise'],
   'forms.auto_approve': ['pro', 'business', 'enterprise'],
 
-  // API (Team+)
+  // CDN — Pro+
+  'cdn.delivery': ['pro', 'business', 'enterprise'],
+  'cdn.preview_branch': ['business', 'enterprise'],
+  'cdn.custom_domain': ['enterprise'],
+
+  // Media — Pro+
+  'media.upload': ['pro', 'business', 'enterprise'],
+  'media.library': ['pro', 'business', 'enterprise'],
+  'media.custom_variants': ['business', 'enterprise'],
+
+  // Workflow — Pro+
+  'workflow.review': ['pro', 'business', 'enterprise'],
+
+  // Roles — Pro+ (basic), Team+ (advanced)
+  'roles.reviewer': ['pro', 'business', 'enterprise'],
+  'roles.viewer': ['pro', 'business', 'enterprise'],
+  'roles.specific_models': ['business', 'enterprise'],
+
+  // API — Team+
   'api.conversation': ['business', 'enterprise'],
   'api.rest': ['business', 'enterprise'],
   'api.custom_instructions': ['business', 'enterprise'],
@@ -69,7 +66,6 @@ const FEATURE_MATRIX: Record<string, Plan[]> = {
  */
 export function getWorkspacePlan(workspace: { plan?: string | null }): Plan {
   const raw = workspace?.plan
-  // Normalize 'team' → 'business' (DB stores 'team', code uses 'business')
   const plan = raw === 'team' ? 'business' : raw
   if (plan && ['free', 'pro', 'business', 'enterprise'].includes(plan)) {
     return plan as Plan
@@ -82,7 +78,7 @@ export function getWorkspacePlan(workspace: { plan?: string | null }): Plan {
  * This is the ONLY function to use for feature gating.
  */
 export function hasFeature(plan: Plan | string | null | undefined, feature: string): boolean {
-  const p = (plan ?? 'free') as Plan
+  const p = ((plan === 'team' ? 'business' : plan) ?? 'free') as Plan
   return FEATURE_MATRIX[feature]?.includes(p) ?? false
 }
 
@@ -96,37 +92,37 @@ export function getAvailableFeatures(plan: Plan): string[] {
 }
 
 /**
- * Numeric limits per plan. Represents "included" amounts.
- * Usage beyond these limits = overage billing (Stripe metering).
+ * Plan limits — "included" amounts per billing period.
+ * Usage beyond = overage billing via Stripe metering.
+ * AI credit packs are separate add-ons (not tied to plan limits).
  */
 const PLAN_LIMITS: Record<string, Record<Plan, number>> = {
-  // Workspace & team
-  'workspace.count': { free: Infinity, pro: Infinity, business: Infinity, enterprise: Infinity },
+  // Team
   'team.members': { free: 2, pro: 10, business: 50, enterprise: Infinity },
 
-  // AI messages (included per month, BYOA unlimited on all plans)
-  'ai.messages_per_month': { free: 50, pro: 500, business: 2_000, enterprise: Infinity },
+  // AI (included messages per month — BYOA unlimited on all plans)
+  'ai.messages_per_month': { free: 100, pro: 500, business: 2_000, enterprise: Infinity },
 
-  // CDN (included, overage billed)
+  // CDN
   'cdn.api_keys': { free: 0, pro: 5, business: Infinity, enterprise: Infinity },
-  'cdn.bandwidth_gb': { free: 0, pro: 10, business: 50, enterprise: Infinity },
+  'cdn.bandwidth_gb': { free: 0, pro: 20, business: 100, enterprise: Infinity },
 
-  // Media (included, overage billed)
-  'media.storage_gb': { free: 0, pro: 2, business: 10, enterprise: Infinity },
+  // Media
+  'media.storage_gb': { free: 0, pro: 5, business: 20, enterprise: Infinity },
   'media.max_file_size_mb': { free: 0, pro: 10, business: 50, enterprise: 100 },
   'media.variants_per_field': { free: 0, pro: 4, business: 10, enterprise: Infinity },
 
-  // Forms (included, overage billed)
+  // Forms
   'forms.models': { free: 1, pro: 5, business: Infinity, enterprise: Infinity },
-  'forms.submissions_per_month': { free: 50, pro: 500, business: 5_000, enterprise: Infinity },
+  'forms.submissions_per_month': { free: 100, pro: 1_000, business: 5_000, enterprise: Infinity },
 
-  // API (Team+, overage billed)
+  // API (Team+)
   'api.conversation_keys': { free: 0, pro: 0, business: 5, enterprise: Infinity },
   'api.messages_per_month': { free: 0, pro: 0, business: 1_000, enterprise: Infinity },
   'api.webhooks': { free: 0, pro: 0, business: 10, enterprise: Infinity },
 }
 
 export function getPlanLimit(plan: Plan | string | null | undefined, limit: string): number {
-  const p = (plan ?? 'free') as Plan
+  const p = ((plan === 'team' ? 'business' : plan) ?? 'free') as Plan
   return PLAN_LIMITS[limit]?.[p] ?? 0
 }
