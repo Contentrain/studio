@@ -599,7 +599,7 @@ async function executeToolWithAutoMerge(
           break
         }
         if (!hasFeature(plan, 'media.library')) {
-          result = { error: 'Media library requires Pro plan or higher' }
+          result = { error: 'Media library requires Pro plan ($12/mo). Pro includes: Asset Manager with 5GB storage, image optimization, variant generation, and CDN delivery. Upgrade in workspace settings.' }
           break
         }
         const searchResult = await mediaProvider.listAssets(projectId, {
@@ -629,7 +629,7 @@ async function executeToolWithAutoMerge(
           break
         }
         if (!hasFeature(plan, 'media.upload')) {
-          result = { error: 'Media upload requires Pro plan or higher' }
+          result = { error: 'Media upload requires Pro plan ($12/mo). Pro includes: image upload, optimization, variant generation (hero, card, thumb, og sizes), and CDN delivery. For now, you can use external image URLs (Unsplash, etc) directly in content fields.' }
           break
         }
         const url = params.url as string
@@ -690,7 +690,7 @@ async function executeToolWithAutoMerge(
           break
         }
         if (!hasFeature(plan, 'media.library')) {
-          result = { error: 'Media library requires Pro plan or higher' }
+          result = { error: 'Media library requires Pro plan ($12/mo). Pro includes: Asset Manager with 5GB storage, image optimization, variant generation, and CDN delivery. Upgrade in workspace settings.' }
           break
         }
         const asset = await mediaProvider.getAsset(params.assetId as string)
