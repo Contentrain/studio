@@ -6,6 +6,7 @@ const {
   rows = 4,
   state = 'default',
   autoResize = false,
+  name,
 } = defineProps<{
   modelValue?: string
   placeholder?: string
@@ -13,6 +14,7 @@ const {
   rows?: number
   state?: 'default' | 'error' | 'success'
   autoResize?: boolean
+  name?: string
 }>()
 
 const emit = defineEmits<{
@@ -42,7 +44,7 @@ defineExpose({ textareaRef })
 
 <template>
   <textarea
-    ref="textareaRef" :value="modelValue" :placeholder="placeholder" :disabled="disabled" :rows="rows"
+    ref="textareaRef" :value="modelValue" :name="name" :placeholder="placeholder" :disabled="disabled" :rows="rows"
     class="w-full rounded-lg border bg-white px-3 py-2 text-sm text-secondary-900 placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary-900 dark:text-secondary-100"
     :class="[stateClasses[state], autoResize ? 'resize-none' : 'resize-y']" @input="handleInput"
   />

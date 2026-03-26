@@ -46,7 +46,7 @@ const sizeClasses: Record<string, string> = {
         <SelectViewport class="p-1">
           <SelectItem
             v-for="opt in normalizedOptions" :key="opt.value" :value="opt.value"
-            class="flex items-center rounded-md px-2 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
+            class="flex items-center rounded-md px-2 py-1.5 text-sm text-heading outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
           >
             <SelectItemText>{{ opt.label }}</SelectItemText>
           </SelectItem>

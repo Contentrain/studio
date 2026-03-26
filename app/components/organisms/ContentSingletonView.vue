@@ -86,7 +86,7 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
           <!-- Pin field -->
           <button
             type="button"
-            class="shrink-0 rounded-md p-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
             :class="isPinned('field', modelId ?? '', undefined, fieldId)
               ? 'text-info-500 opacity-100'
               : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"

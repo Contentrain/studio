@@ -124,7 +124,7 @@ const ratingStars = computed(() => {
     </span>
 
     <!-- Number / Percent -->
-    <span v-else-if="isNumber" class="font-mono text-sm text-heading dark:text-secondary-100">
+    <span v-else-if="isNumber" class="font-mono text-sm tabular-nums text-heading dark:text-secondary-100">
       {{ displayValue }}{{ props.type === 'percent' ? '%' : '' }}
     </span>
 

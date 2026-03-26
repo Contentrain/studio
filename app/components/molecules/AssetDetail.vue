@@ -102,7 +102,7 @@ function copyPath() {
       <div class="space-y-3">
         <div>
           <AtomsSectionLabel :label="t('media.dimensions')" class="px-0 py-0" />
-          <span class="text-sm text-heading dark:text-secondary-100">{{ asset.width }}×{{ asset.height }} · {{ asset.format.toUpperCase() }}</span>
+          <span class="text-sm tabular-nums text-heading dark:text-secondary-100">{{ asset.width }}×{{ asset.height }} · {{ asset.format.toUpperCase() }}</span>
         </div>
         <div>
           <AtomsSectionLabel :label="t('media.file_size')" class="px-0 py-0" />
@@ -132,7 +132,7 @@ function copyPath() {
               class="flex items-center justify-between rounded bg-secondary-50 px-2.5 py-1.5 text-xs dark:bg-secondary-900"
             >
               <span class="font-medium text-label">{{ name }}</span>
-              <span class="text-muted">{{ v.width }}×{{ v.height }} · {{ formatSize(v.size) }}</span>
+              <span class="tabular-nums text-muted">{{ v.width }}×{{ v.height }} · {{ formatSize(v.size) }}</span>
             </div>
           </div>
         </div>

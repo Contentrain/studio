@@ -155,6 +155,7 @@ function getRelationLabel(id: string): string {
       <input
         type="color"
         :value="String(localValue ?? '#000000')"
+        aria-label="Color picker"
         class="size-9 shrink-0 cursor-pointer rounded-lg border border-secondary-200 bg-white p-0.5 dark:border-secondary-800 dark:bg-secondary-900"
         @input="localValue = ($event.target as HTMLInputElement).value"
       >

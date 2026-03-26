@@ -238,7 +238,7 @@ function frameworkLabel(fw: string): string {
               <button
                 v-for="starter in filteredStarters" :key="starter.id"
                 type="button"
-                class="group flex flex-col rounded-xl border border-secondary-200 p-4 text-left transition-all hover:border-primary-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-800 dark:hover:border-primary-700"
+                class="group flex flex-col rounded-xl border border-secondary-200 p-4 text-left transition-[color,border-color,box-shadow] hover:border-primary-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-800 dark:hover:border-primary-700"
                 @click="selectStarter(starter)"
               >
                 <!-- Framework icon + name -->

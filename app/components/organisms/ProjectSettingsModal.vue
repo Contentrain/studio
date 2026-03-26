@@ -248,7 +248,7 @@ async function save() {
                 <span class="icon-[annon--search] size-3.5 shrink-0 text-muted" aria-hidden="true" />
                 <ComboboxInput
                   :placeholder="t('project_settings.locale_placeholder')"
-                  class="h-8 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none dark:text-secondary-100"
+                  class="h-8 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100"
                 />
               </ComboboxAnchor>
               <ComboboxPortal>
@@ -262,7 +262,7 @@ async function save() {
                     </ComboboxEmpty>
                     <ComboboxItem
                       v-for="locale in availableLocales" :key="locale.code" :value="locale.code"
-                      class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
+                      class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
                     >
                       <span class="w-7 shrink-0 text-xs font-medium text-muted">{{ locale.code.toUpperCase() }}</span>
                       <span>{{ locale.name }}</span>

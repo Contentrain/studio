@@ -38,7 +38,7 @@ const repoUrl = computed(() => {
 <template>
   <NuxtLink
     :to="`/w/${workspaceSlug}/projects/${project.id}`"
-    class="group flex flex-col rounded-xl border border-secondary-200 bg-white p-5 transition-all hover:border-primary-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-800 dark:bg-secondary-950 dark:hover:border-primary-700"
+    class="group flex flex-col rounded-xl border border-secondary-200 bg-white p-5 transition-[color,border-color,box-shadow] hover:border-primary-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-800 dark:bg-secondary-950 dark:hover:border-primary-700"
   >
     <!-- Header -->
     <div class="flex items-start justify-between gap-3">
