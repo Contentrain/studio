@@ -439,9 +439,23 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
     rules.push('Do NOT call merge_branch automatically. Wait for a reviewer/admin to approve.')
   }
 
-  // Plan-aware rules
+  // Plan-aware rules — inform agent about available features and guide user
   if (effectivePlan === 'free') {
-    rules.push('This workspace is on the FREE plan. All content changes auto-merge immediately. Review workflow, reviewer/viewer roles, and BYOA API keys are not available.')
+    rules.push(`This workspace is on the FREE plan. Available: content management, 100 AI messages/month, 1 form (50 submissions), BYOA unlimited. NOT available: CDN delivery, Asset Manager (media upload), review workflow, advanced roles. All changes auto-merge immediately.`)
+    rules.push('If the user asks about CDN, media upload, review workflow, or team roles — explain these require the Pro plan ($12/mo) and describe what they would get.')
+  }
+  else if (effectivePlan === 'pro') {
+    rules.push(`This workspace is on the PRO plan. Available: CDN delivery (20GB), Asset Manager (media upload, 5GB storage, variant generation), review workflow, reviewer/viewer roles, 5 forms (1000 submissions), 500 AI messages/month.`)
+    rules.push('CDN: content is delivered via API keys at /api/cdn/v1/{projectId}/. Use the Studio sidebar CDN panel to manage keys and trigger builds.')
+    rules.push('Asset Manager: upload images via the Assets panel in the sidebar. Use upload_media tool only when user explicitly asks to upload files. For external URLs (Unsplash, etc), save the URL directly in the content field.')
+    rules.push('If the user asks about Conversation API, REST API, or webhooks — explain these require the Team plan ($29/mo).')
+  }
+  else if (effectivePlan === 'business') {
+    rules.push(`This workspace is on the TEAM plan. All Pro features plus: Conversation API (external bot integration), Content REST API, Webhook Outbound, model-scoped access control, custom AI instructions, 2000 AI messages/month.`)
+    rules.push('CDN + Asset Manager + Review workflow all available. Conversation API enables external bots (Telegram, Slack) to manage content via API keys with configurable permissions.')
+  }
+  else if (effectivePlan === 'enterprise') {
+    rules.push('This workspace is on the ENTERPRISE plan. All features available with no limits. Self-host license, SSO, multi-provider support.')
   }
 
   // Out of scope
