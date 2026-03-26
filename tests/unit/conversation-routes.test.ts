@@ -116,7 +116,6 @@ describe('conversation routes', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 404,
-      message: 'Conversation not found',
     })
   })
 

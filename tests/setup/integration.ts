@@ -57,6 +57,9 @@ beforeEach(() => {
   vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
   vi.stubGlobal('useSession', useSession)
   vi.stubGlobal('validateAuthState', validateAuthState)
+  vi.stubGlobal('errorMessage', (key: string) => key)
+  vi.stubGlobal('agentMessage', (key: string) => key)
+  vi.stubGlobal('agentPrompt', (key: string) => key)
 
   vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
     allowed: true,

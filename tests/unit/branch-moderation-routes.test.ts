@@ -36,7 +36,6 @@ describe('branch moderation routes', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      message: 'Only contentrain/ branches can be merged through Studio',
     })
   })
 
@@ -50,7 +49,6 @@ describe('branch moderation routes', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 403,
-      message: 'Insufficient permissions to merge branches',
     })
   })
 

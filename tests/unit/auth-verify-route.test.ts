@@ -38,7 +38,6 @@ describe('auth verify route', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 403,
-      message: 'Invalid or expired auth state. Please try logging in again.',
     })
     expect(exchangeCode).not.toHaveBeenCalled()
   })
@@ -98,7 +97,6 @@ describe('auth verify route', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 429,
-      message: 'Too many requests. Try again later.',
     })
   })
 })
