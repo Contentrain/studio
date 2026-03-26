@@ -30,12 +30,14 @@ const typeIcons: Record<string, string> = {
   model: 'icon-[annon--layers]',
   entry: 'icon-[annon--file-text]',
   field: 'icon-[annon--code]',
+  asset: 'icon-[annon--image-3]',
 }
 
 const typeColors: Record<string, string> = {
   model: 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-500/10 dark:text-primary-400 dark:border-primary-500/20',
   entry: 'bg-success-50 text-success-700 border-success-200 dark:bg-success-500/10 dark:text-success-400 dark:border-success-500/20',
   field: 'bg-info-50 text-info-700 border-info-200 dark:bg-info-500/10 dark:text-info-400 dark:border-info-500/20',
+  asset: 'bg-warning-50 text-warning-700 border-warning-200 dark:bg-warning-500/10 dark:text-warning-400 dark:border-warning-500/20',
 }
 </script>
 

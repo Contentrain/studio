@@ -11,8 +11,20 @@ const { activeWorkspace } = useWorkspaces()
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
 
 const { assets, total, loading, filters, fetchAssets, clearLibrary } = useMediaLibrary()
+const { toggle, isPinned } = useChatContext()
 const toast = useToast()
 const modalOpen = ref(false)
+
+function togglePin(asset: { id: string, filename: string, originalPath: string, format: string, width: number, height: number, size: number, alt: string | null }) {
+  toggle({
+    type: 'asset',
+    label: asset.filename,
+    sublabel: `${asset.format?.toUpperCase()} · ${asset.width}×${asset.height}`,
+    modelId: asset.id,
+    assetId: asset.id,
+    data: { filename: asset.filename, originalPath: asset.originalPath, format: asset.format, width: asset.width, height: asset.height, size: asset.size, alt: asset.alt },
+  })
+}
 
 onMounted(() => {
   if (isPro.value) fetchAssets(props.workspaceId, props.projectId)
@@ -126,6 +138,7 @@ onUnmounted(() => {
           <AtomsAssetCard
             v-for="asset in assets"
             :key="asset.id"
+            :asset-id="asset.id"
             :filename="asset.filename"
             :original-path="asset.originalPath"
             :content-type="asset.contentType"
@@ -133,7 +146,9 @@ onUnmounted(() => {
             :format="asset.format"
             :size="asset.size"
             :alt="asset.alt"
+            :pinned="isPinned('asset', asset.id, undefined, undefined, asset.id)"
             @click="openAssetDetail"
+            @pin="togglePin(asset)"
           />
         </div>
 

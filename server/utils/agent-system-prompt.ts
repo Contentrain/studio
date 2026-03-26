@@ -369,6 +369,13 @@ function buildContextSection(
         case 'field':
           lines.push(`- Field "${item.fieldId}" from ${item.modelName ?? item.modelId}${item.entryId ? ` (entry: ${item.entryId})` : ''} = ${JSON.stringify(item.data).substring(0, 200)}`)
           break
+        case 'asset': {
+          const assetData = item.data as Record<string, unknown> | undefined
+          const assetPath = assetData?.originalPath ?? assetData?.path ?? item.assetId
+          const assetInfo = assetData ? ` (${assetData.format ?? 'file'}, ${assetData.width ?? '?'}×${assetData.height ?? '?'})` : ''
+          lines.push(`- Asset: ${assetData?.filename ?? item.assetId}${assetInfo} → path: ${assetPath}`)
+          break
+        }
       }
     }
   }

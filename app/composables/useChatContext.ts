@@ -8,30 +8,33 @@
 
 export interface ContextChip {
   id: string
-  type: 'model' | 'entry' | 'field'
+  type: 'model' | 'entry' | 'field' | 'asset'
   label: string
   sublabel?: string
   modelId: string
   modelName?: string
   entryId?: string
   fieldId?: string
+  assetId?: string
   data?: unknown
 }
 
 /** Serialized context item sent to the server */
 export interface ContextItem {
-  type: 'model' | 'entry' | 'field'
+  type: 'model' | 'entry' | 'field' | 'asset'
   modelId: string
   modelName?: string
   entryId?: string
   fieldId?: string
+  assetId?: string
   data?: unknown
 }
 
 const DRAG_MIME = 'application/x-context-chip'
 
-function buildId(type: string, modelId: string, entryId?: string, fieldId?: string): string {
-  return [type, modelId, entryId, fieldId].filter(Boolean).join(':')
+function buildId(chip: { type: string, modelId: string, entryId?: string, fieldId?: string, assetId?: string }): string {
+  if (chip.type === 'asset') return `asset:${chip.assetId ?? chip.modelId}`
+  return [chip.type, chip.modelId, chip.entryId, chip.fieldId].filter(Boolean).join(':')
 }
 
 export function useChatContext() {
@@ -39,7 +42,7 @@ export function useChatContext() {
   const isDragging = useState('chat-context-dragging', () => false)
 
   function add(chip: Omit<ContextChip, 'id'>) {
-    const id = buildId(chip.type, chip.modelId, chip.entryId, chip.fieldId)
+    const id = buildId(chip)
     if (chips.value.some(c => c.id === id)) return
     chips.value = [...chips.value, { ...chip, id }]
   }
@@ -49,7 +52,7 @@ export function useChatContext() {
   }
 
   function toggle(chip: Omit<ContextChip, 'id'>) {
-    const id = buildId(chip.type, chip.modelId, chip.entryId, chip.fieldId)
+    const id = buildId(chip)
     if (chips.value.some(c => c.id === id)) {
       remove(id)
     }
@@ -58,8 +61,8 @@ export function useChatContext() {
     }
   }
 
-  function isPinned(type: string, modelId: string, entryId?: string, fieldId?: string): boolean {
-    return chips.value.some(c => c.id === buildId(type, modelId, entryId, fieldId))
+  function isPinned(type: string, modelId: string, entryId?: string, fieldId?: string, assetId?: string): boolean {
+    return chips.value.some(c => c.id === buildId({ type, modelId, entryId, fieldId, assetId }))
   }
 
   function clear() {
@@ -91,12 +94,13 @@ export function useChatContext() {
 
   /** Convert chips to serializable context items for the API */
   function toContextItems(): ContextItem[] {
-    return chips.value.map(({ type, modelId, modelName, entryId, fieldId, data }) => ({
+    return chips.value.map(({ type, modelId, modelName, entryId, fieldId, assetId, data }) => ({
       type,
       modelId,
       modelName,
       entryId,
       fieldId,
+      assetId,
       data,
     }))
   }
