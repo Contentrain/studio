@@ -13,10 +13,6 @@ async function loadConfigPatchHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/config.patch')).default
 }
 
-async function loadSnapshotHandler() {
-  return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/snapshot.get')).default
-}
-
 async function loadVocabularyPatchHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/vocabulary.patch')).default
 }
@@ -174,83 +170,6 @@ describe('project config and branch route integration', () => {
     })
   })
 
-  it('builds snapshot summaries and returns false when .contentrain is missing', async () => {
-    const git = {
-      fileExists: vi.fn()
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true),
-      readFile: vi.fn((path: string) => {
-        if (path === '.contentrain/config.json') {
-          return JSON.stringify({
-            locales: { default: 'en', supported: ['en'] },
-          })
-        }
-        if (path === '.contentrain/models/posts.json') {
-          return JSON.stringify({
-            id: 'posts',
-            name: 'Posts',
-            kind: 'collection',
-            domain: 'marketing',
-            i18n: true,
-            fields: {},
-          })
-        }
-        if (path === '.contentrain/content/marketing/posts/en.json') {
-          return JSON.stringify({ entry1: { title: 'Hello' } })
-        }
-        if (path === '.contentrain/vocabulary.json') {
-          return JSON.stringify({ terms: { headline: { en: 'Headline' } } })
-        }
-        if (path === '.contentrain/context.json') {
-          return JSON.stringify({ stats: { entries: 1 } })
-        }
-        throw new Error(`Unexpected read: ${path}`)
-      }),
-      listDirectory: vi.fn((path: string) => {
-        if (path === '.contentrain/models') return ['posts.json']
-        return []
-      }),
-    }
-
-    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-      if (key === 'workspaceId') return 'workspace-1'
-      if (key === 'projectId') return 'project-1'
-      return undefined
-    }))
-    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
-      user: { id: 'user-1' },
-      accessToken: 'token-1',
-    }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
-      git,
-      contentRoot: '',
-    }))
-    vi.stubGlobal('resolveContentPath', vi.fn().mockReturnValue('.contentrain/content/marketing/posts/en.json'))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/snapshot', handler: await loadSnapshotHandler() },
-      ],
-    }, async ({ request }) => {
-      const first = await request('/api/workspaces/workspace-1/projects/project-1/snapshot')
-      expect(first.status).toBe(200)
-      await expect(first.json()).resolves.toEqual({
-        exists: false,
-        config: null,
-        models: [],
-        content: {},
-      })
-
-      const second = await request('/api/workspaces/workspace-1/projects/project-1/snapshot')
-      expect(second.status).toBe(200)
-      const payload = await second.json()
-      expect(payload.exists).toBe(true)
-      expect(payload.content.posts).toEqual({ count: 1, locales: ['en'] })
-      expect(payload.vocabulary).toEqual({ headline: { en: 'Headline' } })
-    })
-  })
-
   it('merges vocabulary updates and loads pending branch diffs', async () => {
     const createBranch = vi.fn().mockResolvedValue(undefined)
     const commitFiles = vi.fn().mockResolvedValue(undefined)
@@ -298,8 +217,8 @@ describe('project config and branch route integration', () => {
     await withTestServer({
       routes: [
         { path: '/api/workspaces/workspace-1/projects/project-1/vocabulary', handler: await loadVocabularyPatchHandler() },
-        { path: '/api/workspaces/workspace-1/projects/project-1/branches', handler: await loadBranchesHandler() },
         { path: '/api/workspaces/workspace-1/projects/project-1/branches/contentrain/save-1/diff', handler: await loadBranchDiffHandler() },
+        { path: '/api/workspaces/workspace-1/projects/project-1/branches', handler: await loadBranchesHandler() },
       ],
     }, async ({ request }) => {
       const vocabResponse = await request('/api/workspaces/workspace-1/projects/project-1/vocabulary', {

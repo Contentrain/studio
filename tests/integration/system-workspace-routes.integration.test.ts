@@ -82,6 +82,15 @@ describe('system and workspace route integration', () => {
 
   it('normalizes workspace slugs on patch and returns 409 for collisions', async () => {
     const slugify = vi.fn().mockReturnValue('acme-studio')
+    const updateSingle = vi.fn()
+      .mockResolvedValueOnce({
+        data: { id: 'workspace-1', name: 'Acme Studio', slug: 'acme-studio' },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: '23505', message: 'duplicate' },
+      })
     vi.stubGlobal('slugify', slugify)
     vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
@@ -94,15 +103,7 @@ describe('system and workspace route integration', () => {
         update: vi.fn(() => ({
           eq: vi.fn(() => ({
             select: vi.fn(() => ({
-              single: vi.fn()
-                .mockResolvedValueOnce({
-                  data: { id: 'workspace-1', name: 'Acme Studio', slug: 'acme-studio' },
-                  error: null,
-                })
-                .mockResolvedValueOnce({
-                  data: null,
-                  error: { code: '23505', message: 'duplicate' },
-                }),
+              single: updateSingle,
             })),
           })),
         })),
@@ -183,7 +184,7 @@ describe('system and workspace route integration', () => {
     })
   })
 
-  it('blocks owner removal and allows member role updates by workspace owners', async () => {
+  it('blocks workspace-owner removal', async () => {
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'owner-1' },
       accessToken: 'token-1',
@@ -196,16 +197,51 @@ describe('system and workspace route integration', () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               eq: vi.fn(() => ({
-                single: vi.fn()
-                  .mockResolvedValueOnce({ data: { role: 'owner' } })
-                  .mockResolvedValueOnce({ data: { role: 'member' } })
-                  .mockResolvedValueOnce({ data: { role: 'member' } }),
+                single: vi.fn().mockResolvedValue({ data: { role: 'owner' } }),
               })),
             })),
           })),
           delete: vi.fn(() => ({
             eq: vi.fn(() => ({
               eq: vi.fn().mockResolvedValue({ error: null }),
+            })),
+          })),
+        }
+      }),
+    }))
+    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/members/member-1', handler: await loadWorkspaceMemberDeleteHandler() },
+      ],
+    }, async ({ request }) => {
+      vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+        if (key === 'workspaceId') return 'workspace-1'
+        if (key === 'memberId') return 'member-1'
+        return undefined
+      }))
+
+      const deleteOwner = await request('/api/workspaces/workspace-1/members/member-1', { method: 'DELETE' })
+      expect(deleteOwner.status).toBe(400)
+    })
+  })
+
+  it('allows member role updates by workspace owners', async () => {
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'owner-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table !== 'workspace_members') throw new Error(`Unexpected table: ${table}`)
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({ data: { role: 'member' } }),
+              })),
             })),
           })),
           update: vi.fn(() => ({
@@ -227,19 +263,9 @@ describe('system and workspace route integration', () => {
 
     await withTestServer({
       routes: [
-        { path: '/api/workspaces/workspace-1/members/member-1', handler: await loadWorkspaceMemberDeleteHandler() },
         { path: '/api/workspaces/workspace-1/members/member-2', handler: await loadWorkspaceMemberPatchHandler() },
       ],
     }, async ({ request }) => {
-      vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-        if (key === 'workspaceId') return 'workspace-1'
-        if (key === 'memberId') return 'member-1'
-        return undefined
-      }))
-
-      const deleteOwner = await request('/api/workspaces/workspace-1/members/member-1', { method: 'DELETE' })
-      expect(deleteOwner.status).toBe(400)
-
       vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
         if (key === 'workspaceId') return 'workspace-1'
         if (key === 'memberId') return 'member-2'
