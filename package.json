@@ -12,7 +12,7 @@
     "prepare": "husky",
     "release": "changelogen --release",
     "changelog": "changelogen",
-    "typecheck":"nuxt typecheck",
+    "typecheck": "nuxt typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest --project unit --project integration --project nuxt",
@@ -75,7 +75,8 @@
     "playwright-core": "^1.58.2",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "vue-tsc": "^3.2.6"
   },
   "imports": {
     "#contentrain": {
