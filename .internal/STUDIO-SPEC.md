@@ -567,9 +567,9 @@ Both MCP and Studio import these. Format is guaranteed identical. Implementation
 
 ## Phases (Revised)
 
-The architectural independence changes the phase structure significantly.
+> **Status as of 2026-03-26:** Phases 1-4 completed. Roadmap below updated.
 
-### Phase 1: Foundation + Content Browsing (2 weeks)
+### Phase 1: Foundation + Content Browsing ✅ COMPLETED
 
 **What:**
 - GitHub App setup (OAuth, installation flow, webhook registration)
@@ -589,7 +589,7 @@ The architectural independence changes the phase structure significantly.
 
 **Revenue:** None. Foundation for everything.
 
-### Phase 2: Chat Agent + Content Editing (3 weeks)
+### Phase 2: Chat Agent + Content Editing ✅ COMPLETED
 
 **What:**
 - Content Engine (validate, serialize, branch, commit — all via Git API)
@@ -609,7 +609,7 @@ The architectural independence changes the phase structure significantly.
 
 **Revenue:** None yet, but core value is deliverable. Free tier is fully functional.
 
-### Phase 3: CDN Content Delivery (2 weeks)
+### Phase 3: CDN Content Delivery ✅ COMPLETED
 
 > Full spec: `.internal/CDN-DELIVERY.md`
 
@@ -634,7 +634,18 @@ The architectural independence changes the phase structure significantly.
 
 **Revenue:** Pro tier unlocked. CDN = first monetization.
 
-### Phase 4: Billing + Advanced Team Features (2 weeks)
+### Phase 4: Media Management ✅ COMPLETED
+
+**What (implemented):**
+- MediaProvider interface (core) + Sharp processor (EE)
+- Upload → optimize → variants → blurhash → R2 storage
+- Asset Manager UI (sidebar panel + full-screen modal)
+- Agent tools: search_media, upload_media, get_media
+- CDN media manifest + __media enrichment
+- Context pin + drag-to-chat for assets
+- Preview proxy endpoint for Studio UI
+
+### Phase 5 (original): Billing + Advanced Team Features (deferred)
 
 **What:**
 - Billing integration (Stripe) — workspace is billing entity
@@ -648,58 +659,16 @@ The architectural independence changes the phase structure significantly.
 
 **Revenue:** Team tier unlocked. Seats = recurring revenue.
 
-### Phase 3.5–5: Media Management (2-3 weeks)
+### Upcoming Roadmap
 
-> Full spec: `.internal/MEDIA-MANAGEMENT.md`
-> CDN altyapısı (Phase 3) ile aynı R2 bucket'ı paylaşır.
-
-**What:**
-- MediaProvider interface (core) + Sharp-based processor (EE)
-- Upload pipeline: validate → optimize → generate variants → store to R2 → track in DB
-- Variant architecture: model field-level config + built-in presets (hero-image, avatar, gallery, icon, logo)
-- Upload-time pre-generation: original + N variants (resize, format, quality, fit mode)
-- Blurhash generation for loading placeholders
-- CDN enrichment: `{field}__media` convention (variant URLs + metadata in content response)
-- Content referencing: relative paths (`media/hero-abc123.webp`) — portable across all environments
-- Asset Manager UI: full panel in context area (grid/list view, search, filter, upload, detail, metadata edit)
-- Agent integration: `search_media`, `upload_media`, `get_media` tools — agent browses library, human references assets
-- Image field editor: opens Asset Manager, select or upload, preview variants
-- Connector pipeline: Canva/Figma browse → fetch → upload pipeline → media_assets
-- Duplicate detection (content hash), EXIF strip (privacy), storage quota enforcement
-- Video deferred — image-first
-
-**EE Separation:**
-- Core: MediaProvider interface, variant presets, API routes (hasFeature gated), Asset Manager UI, agent tools, DB schema
-- EE: Sharp processor, variant generator, blurhash, storage metering, duplicate detector
-
-**Validation:** Editor uploads image in chat, auto-optimized variants generated, served via CDN. Agent can search library and assign media to content fields. Asset Manager provides full browse/upload/edit control. Mobile app fetches optimized variant.
-
-**Revenue:** Pro/Team storage limits. Media storage = additional billing axis.
-
-### Phase 6: Advanced Content Operations (2-3 weeks)
-
-**What:**
-- Scheduled publishing (publish_at, expire_at with server-side cron)
-- Content versioning (semantic versions, rollback to previous version)
-- Translation memory (previously translated phrases, consistency suggestions)
-- Vocabulary management (visual editor for brand terms)
-- Content analytics (change frequency, coverage gaps, locale completeness)
-
-**Validation:** Editor schedules a blog post for next Monday. Content goes live automatically. Editor rolls back to previous version after a mistake.
-
-**Revenue:** Team/Enterprise features. Justifies higher tier pricing.
-
-### Phase 7: Multi-Provider (2 weeks)
-
-**What:**
-- GitLabProvider implementation
-- BitbucketProvider implementation
-- Provider selection in project settings
-- Self-hosted Git server support (Enterprise)
-
-**Validation:** User connects a GitLab repo. All features work identically to GitHub.
-
-**Revenue:** Enterprise tier. Unlocks non-GitHub organizations.
+| Sprint | Focus | Spec | Plan |
+|--------|-------|------|------|
+| Next | Project Health (schema validation + dashboard) | `SCHEMA-VALIDATION.md` | Free |
+| +1 | Forms & Submissions | `FORMS-SUBMISSIONS.md` | Free+ |
+| +2 | Conversation API + Content REST API | `CONVERSATION-API.md` | Business+ |
+| +3 | Webhook Outbound | `IDEAS.md` | Business+ |
+| +4 | Billing (Stripe) + plan enforcement | — | All |
+| +5 | Multi-Provider (GitLab, Bitbucket) | — | Enterprise |
 
 ---
 

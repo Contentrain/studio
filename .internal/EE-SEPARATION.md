@@ -100,7 +100,7 @@ CDN tamamen Pro+ feature. Core ve EE arasındaki sorumluluk dağılımı:
 
 **Core çalışır, EE yoksa:** CDN routes `hasFeature()` ile 403 döner. Builder çalışmaz çünkü CDNProvider implementasyonu yok. Graceful degradation.
 
-Detaylı spec: `.internal/CDN-DELIVERY.md`
+Implemented in Phase 3.
 
 ### Media Core/EE Ayrışımı
 
@@ -122,7 +122,7 @@ Media Management tamamen Pro+ feature. Aynı R2 altyapısını CDN ile paylaşı
 
 **Core çalışır, EE yoksa:** Media routes `hasFeature()` ile 403 döner. Image field'lar sadece manual path input olarak çalışır (mevcut davranış). Asset Manager "Upgrade to Pro" gösterir.
 
-Detaylı spec: `.internal/MEDIA-MANAGEMENT.md`
+Implemented in Phase 4.
 
 ---
 
@@ -285,23 +285,8 @@ const showSpecificModels = hasFeature(plan, 'roles.specific_models')
 4. **`agent-permissions.ts`** güncelle — plan check ekle
 5. **`chat.post.ts`** güncelle — BYOA feature flag
 6. **`settings.vue`** güncelle — conditional role UI
-7. **CDN altyapısı** (Phase 3) — `.internal/CDN-DELIVERY.md` spec'ine göre:
-   - `server/providers/cdn.ts` — CDNProvider interface (core)
-   - `server/utils/cdn-builder.ts` — Build pipeline (core)
-   - `server/utils/cdn-keys.ts` — API key management (core)
-   - `server/api/cdn/v1/` — Public CDN routes (core)
-   - `ee/cdn/cloudflare-cdn.ts` — R2 implementation (EE)
-   - `ee/cdn/cdn-usage.ts` — Usage metering (EE)
-   - `ee/cdn/cdn-rate-limiter.ts` — Rate limiting (EE)
-8. **Media altyapısı** (Phase 3-5 arası) — `.internal/MEDIA-MANAGEMENT.md` spec'ine göre:
-   - `server/providers/media.ts` — MediaProvider interface (core)
-   - `server/utils/media-variants.ts` — Variant presets + config (core)
-   - Media API routes + Asset Manager UI (core)
-   - Agent tools: search_media, upload_media, get_media (core)
-   - `ee/media/sharp-processor.ts` — Image processing (EE)
-   - `ee/media/variant-generator.ts` — Variant generation (EE)
-   - `ee/media/blurhash-calculator.ts` — Blurhash (EE)
-   - `ee/media/storage-usage.ts` — Storage metering (EE)
+7. **CDN altyapısı** ✅ Implemented (Phase 3)
+8. **Media altyapısı** ✅ Implemented (Phase 4)
 9. **Connector interface** — `server/providers/connector.ts`
 10. **İlk connector** — URL fetch (ücretsiz)
 11. **Pro connectors** — Canva, Figma, Recraft (ee/connectors/)
