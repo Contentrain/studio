@@ -19,8 +19,10 @@ const { starters } = useStarters()
 
 const open = defineModel<boolean>('open', { default: false })
 
+const hasInstallation = computed(() => !!activeWorkspace.value?.github_installation_id)
+
 // State machine
-type DialogState = 'select' | 'configure'
+type DialogState = 'install' | 'select' | 'configure'
 
 const state = ref<DialogState>('select')
 const selectedStarter = ref<Starters | null>(null)
@@ -41,7 +43,7 @@ const filteredStarters = computed(() => {
   return starters.value.filter(s => s.framework === activeFilter.value)
 })
 
-// Reset on close
+// Reset on close, check installation on open
 watch(open, (isOpen) => {
   if (!isOpen) {
     state.value = 'select'
@@ -49,8 +51,19 @@ watch(open, (isOpen) => {
     repoName.value = ''
     isPrivate.value = false
     activeFilter.value = null
+    return
   }
+  // Check installation when opening
+  state.value = hasInstallation.value ? 'select' : 'install'
 })
+
+function installGitHubApp() {
+  window.open(
+    'https://github.com/apps/contentrain-studio-dev/installations/new',
+    '_blank',
+    'noopener,noreferrer',
+  )
+}
 
 function selectStarter(starter: Starters) {
   selectedStarter.value = starter
@@ -171,8 +184,29 @@ function frameworkLabel(fw: string): string {
           </DialogClose>
         </div>
 
+        <!-- STATE 0: Install GitHub App -->
+        <div v-if="state === 'install'" class="px-6 py-12">
+          <AtomsEmptyState
+            icon="icon-[annon--link-1]"
+            :title="t('github.install_title')"
+            :description="t('github.install_description')"
+          >
+            <template #action>
+              <AtomsBaseButton variant="primary" size="md" @click="installGitHubApp">
+                <template #prepend>
+                  <span class="icon-[annon--external-link] size-4" aria-hidden="true" />
+                </template>
+                {{ t('github.install_button') }}
+              </AtomsBaseButton>
+            </template>
+          </AtomsEmptyState>
+          <p class="mt-2 text-center text-xs text-muted">
+            {{ t('github.install_hint') }}
+          </p>
+        </div>
+
         <!-- STATE 1: Select Starter -->
-        <div v-if="state === 'select'" class="flex max-h-[70vh] flex-col">
+        <div v-else-if="state === 'select'" class="flex max-h-[70vh] flex-col">
           <!-- Framework filter chips -->
           <div class="flex flex-wrap gap-2 border-b border-secondary-200 px-6 py-3 dark:border-secondary-800">
             <button

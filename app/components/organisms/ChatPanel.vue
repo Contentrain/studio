@@ -276,10 +276,26 @@ function formatConversationDate(dateStr: string): string {
       </div>
     </div>
 
+    <!-- Limit reached banner -->
+    <div
+      v-if="error && error.includes('limit')"
+      class="flex items-center gap-3 border-t border-warning-200 bg-warning-50 px-4 py-3 dark:border-warning-500/20 dark:bg-warning-500/10"
+    >
+      <NuxtImg src="/illustrations/limit-reached.png" alt="" class="h-10 w-auto shrink-0" loading="lazy" />
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-medium text-warning-700 dark:text-warning-400">
+          {{ error }}
+        </p>
+      </div>
+      <AtomsBadge variant="warning" size="sm">
+        {{ t('common.upgrade') }}
+      </AtomsBadge>
+    </div>
+
     <!-- Context bar (pinned items + drop zone) -->
     <MoleculesChatContextBar />
 
     <!-- Input -->
-    <MoleculesChatInput :disabled="isStreaming" @send="handleSend" />
+    <MoleculesChatInput :disabled="isStreaming || (!!error && error.includes('limit'))" @send="handleSend" />
   </div>
 </template>
