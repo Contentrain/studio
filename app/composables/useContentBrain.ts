@@ -185,6 +185,7 @@ export function useContentBrain() {
       // eslint-disable-next-line no-console
       console.log('[brain] Sync response:', { delta: response.delta, modelsCount: response.models ? Object.keys(response.models).length : 0, contentCount: response.content ? Object.keys(response.content).length : 0 })
       if (!response.delta) {
+        if (response.config) config.value = response.config
         if (response.models) models.value = Object.values(response.models)
         if (response.vocabulary !== undefined) vocabulary.value = response.vocabulary
         if (response.contentContext !== undefined) contentContext.value = response.contentContext
