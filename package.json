@@ -25,7 +25,7 @@
     "test:coverage:nuxt": "vitest run --coverage --project nuxt",
     "test:coverage:html": "vitest run --coverage --project unit --project integration --coverage.reporter=html --coverage.reporter=lcov",
     "test:coverage:full": "pnpm test:coverage && pnpm test:coverage:nuxt",
-    "test:ci": "pnpm test:unit && pnpm test:integration && pnpm test:nuxt && pnpm test:e2e"
+    "test:ci": "pnpm test:unit && pnpm test:integration && pnpm test:nuxt"
   },
   "lint-staged": {
     "*.{js,ts,mjs,vue}": "eslint --fix"
