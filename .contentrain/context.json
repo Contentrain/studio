@@ -1,18 +1,18 @@
 {
   "lastOperation": {
     "locale": "en",
-    "model": "agent-messages",
+    "model": "error-messages",
     "source": "mcp-local",
-    "timestamp": "2026-03-26T22:41:53.415Z",
+    "timestamp": "2026-03-26T22:42:32.969Z",
     "tool": "contentrain_model_save"
   },
   "stats": {
     "entries": 8,
-    "lastSync": "2026-03-26T22:41:53.415Z",
+    "lastSync": "2026-03-26T22:42:32.969Z",
     "locales": [
       "en"
     ],
-    "models": 5
+    "models": 6
   },
   "version": "1"
 }
