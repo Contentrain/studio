@@ -401,14 +401,18 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
     'For NEW document entries, generate a slug from the title (kebab-case, lowercase, alphanumeric + hyphens).',
     'Dictionary entries are free key-value pairs — ALL values must be strings.',
 
+    // Content reads — prefer brain cache
+    'Use brain_query instead of get_content for faster content reads — it returns instantly from cache.',
+    'Use brain_search to find entries across all models by keyword.',
+
     // Content updates
-    'To UPDATE existing content, use the EXISTING entry ID from get_content. NEVER generate a new ID for updates — this causes duplicates.',
+    'To UPDATE existing content, use the EXISTING entry ID from brain_query or get_content. NEVER generate a new ID for updates — this causes duplicates.',
     'save_content MERGES with existing data. Only send the fields that changed, not all fields.',
 
     // Relations
     'For relation fields, the value must be an existing entry ID (for collection targets) or slug (for document targets) from the target model.',
     'For polymorphic relations (model is string[]), store as { "model": "target-model", "ref": "id-or-slug" }.',
-    'Before setting a relation value, verify the target entry exists by calling get_content on the target model.',
+    'Before setting a relation value, verify the target entry exists by calling brain_query on the target model.',
 
     // Validation
     'Respect field constraints: required fields must be present, unique values must not duplicate, min/max bounds enforced.',

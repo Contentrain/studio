@@ -1,4 +1,4 @@
-import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
+import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock } from '~~/server/providers/ai'
 import type { ChatRequest, AffectedResources } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
@@ -144,44 +144,12 @@ export default defineEventHandler(async (event) => {
   }
   messages.push({ role: 'user', content: body.message })
 
-  // === LOAD SCHEMA ===
-  let projectConfig: ContentrainConfig | null = null
-  const models: ModelDefinition[] = []
-  let vocabulary: Record<string, Record<string, string>> | null = null
-
-  try {
-    const cfgPath = contentRoot ? `${contentRoot}/.contentrain/config.json` : '.contentrain/config.json'
-    projectConfig = JSON.parse(await git.readFile(cfgPath)) as ContentrainConfig
-  }
-  catch { /* no config */ }
-
-  try {
-    const mdDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
-    const modelFiles = await git.listDirectory(mdDir)
-    for (const file of modelFiles) {
-      if (!file.endsWith('.json')) continue
-      try {
-        models.push(JSON.parse(await git.readFile(`${mdDir}/${file}`)) as ModelDefinition)
-      }
-      catch { /* skip */ }
-    }
-  }
-  catch { /* no models */ }
-
-  // Load vocabulary + context from .contentrain/
-  let contentContext: Record<string, unknown> | null = null
-  try {
-    const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'
-    const vocabData = JSON.parse(await git.readFile(vocabPath)) as { terms?: Record<string, Record<string, string>> }
-    vocabulary = vocabData.terms ?? null
-  }
-  catch { /* no vocabulary */ }
-
-  try {
-    const ctxPath = contentRoot ? `${contentRoot}/.contentrain/context.json` : '.contentrain/context.json'
-    contentContext = JSON.parse(await git.readFile(ctxPath)) as Record<string, unknown>
-  }
-  catch { /* no context */ }
+  // === LOAD SCHEMA (from brain cache) ===
+  const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+  const projectConfig = brain.config
+  const models = [...brain.models.values()]
+  const vocabulary = brain.vocabulary
+  const contentContext = brain.contentContext
 
   // === STATE MACHINE ===
   let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
@@ -204,7 +172,13 @@ export default defineEventHandler(async (event) => {
     contentContext,
   }
 
-  const systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary, plan)
+  let systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary, plan)
+
+  // Append content index from brain cache (compact summary of all content)
+  const contentIndex = buildContentIndex(brain)
+  if (contentIndex) {
+    systemPrompt += `\n\n${contentIndex}`
+  }
 
   // === FILTER TOOLS by permissions + phase ===
   const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
@@ -323,7 +297,7 @@ export default defineEventHandler(async (event) => {
 
           // Execute tool
           const result = await executeToolWithAutoMerge(
-            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions, plan,
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions, plan, projectId, uiContext,
           )
 
           // Accumulate affected resources
@@ -398,6 +372,8 @@ async function executeToolWithAutoMerge(
   workflow: string,
   permissions: AgentPermissions,
   plan: string,
+  projectId: string,
+  uiContext: import('~~/server/utils/agent-types').ChatUIContext,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
   const affected: AffectedResources = emptyAffected()
@@ -520,6 +496,7 @@ async function executeToolWithAutoMerge(
         affected.models.push(modelId)
         affected.locales.push(locale)
         affected.branchesChanged = true
+        invalidateBrainCache(projectId)
 
         // Role-aware auto-merge
         if (shouldAutoMerge(workflow, permissions) && writeResult.branch) {
@@ -542,6 +519,7 @@ async function executeToolWithAutoMerge(
         affected.models.push(modelId)
         affected.locales.push(locale)
         affected.branchesChanged = true
+        invalidateBrainCache(projectId)
 
         if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
@@ -557,6 +535,7 @@ async function executeToolWithAutoMerge(
         const writeResult = await engine.saveModel(params as unknown as ModelDefinition, userEmail)
         affected.snapshotChanged = true
         affected.branchesChanged = true
+        invalidateBrainCache(projectId)
 
         if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
@@ -639,6 +618,7 @@ async function executeToolWithAutoMerge(
         affected.models.push(params.model as string)
         affected.locales.push(params.to as string)
         affected.branchesChanged = true
+        invalidateBrainCache(projectId)
 
         if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await engine.mergeBranch(writeResult.branch)
@@ -665,6 +645,7 @@ async function executeToolWithAutoMerge(
         )
         affected.snapshotChanged = true
         affected.branchesChanged = true
+        invalidateBrainCache(projectId)
 
         // Init always auto-merges
         const mergeResult = await engine.mergeBranch(initResult.branch)
@@ -779,6 +760,74 @@ async function executeToolWithAutoMerge(
           break
         }
         result = asset
+        break
+      }
+
+      case 'brain_query': {
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
+          break
+        }
+        const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        const key = `${modelId}:${locale}`
+        const contentData = brainData.content.get(key) ?? null
+        const metaData = brainData.meta.get(key) ?? null
+        const modelDef = brainData.models.get(modelId)
+
+        if (params.entryId && contentData && typeof contentData === 'object' && !Array.isArray(contentData)) {
+          const entry = (contentData as Record<string, unknown>)[params.entryId as string]
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: entry ?? null, entryId: params.entryId }
+        }
+        else {
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: contentData, meta: metaData }
+        }
+        break
+      }
+
+      case 'brain_search': {
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const searchQuery = (params.query as string).toLowerCase()
+        const targetModel = params.model as string | undefined
+        const searchLimit = Math.min((params.limit as number) ?? 10, 50)
+
+        const searchResults: Array<{ modelId: string, entryId: string, locale: string, preview: string }> = []
+
+        for (const [key, data] of brainData.content) {
+          const [mId, loc] = key.split(':')
+          if (!mId || !loc) continue
+          if (targetModel && mId !== targetModel) continue
+          if (permissions.specificModels && !permissions.allowedModels.includes(mId)) continue
+
+          const stringified = JSON.stringify(data).toLowerCase()
+          if (!stringified.includes(searchQuery)) continue
+
+          if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+            for (const [entryId, entry] of Object.entries(data as Record<string, unknown>)) {
+              const entryStr = JSON.stringify(entry).toLowerCase()
+              if (entryStr.includes(searchQuery)) {
+                const preview = JSON.stringify(entry).substring(0, 200)
+                searchResults.push({ modelId: mId, entryId, locale: loc, preview })
+                if (searchResults.length >= searchLimit) break
+              }
+            }
+          }
+          else if (Array.isArray(data)) {
+            for (const [idx, entry] of data.entries()) {
+              const entryStr = JSON.stringify(entry).toLowerCase()
+              if (entryStr.includes(searchQuery)) {
+                const slug = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>).slug as string ?? `entry-${idx}` : `entry-${idx}`
+                searchResults.push({ modelId: mId, entryId: slug, locale: loc, preview: JSON.stringify(entry).substring(0, 200) })
+                if (searchResults.length >= searchLimit) break
+              }
+            }
+          }
+
+          if (searchResults.length >= searchLimit) break
+        }
+
+        result = { query: params.query, results: searchResults, total: searchResults.length }
         break
       }
 

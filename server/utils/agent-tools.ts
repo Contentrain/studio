@@ -214,6 +214,41 @@ Provide initial models with full field definitions using Contentrain's 27 type s
     workflowBehavior: 'workflow-dependent',
   },
 
+  // ─── Brain Tools (cached content access) ───
+
+  {
+    name: 'brain_query',
+    description: 'Read full content for a model and locale from the project brain cache. Faster than get_content — returns instantly from cache. Use this for reading content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Model ID' },
+        locale: { type: 'string', description: 'Locale code (default: context locale)' },
+        entryId: { type: 'string', description: 'Specific entry ID (optional)' },
+      },
+      required: ['model'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'brain_search',
+    description: 'Full-text search across all project content. Returns matching entries with model ID, entry ID, and preview text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search text' },
+        model: { type: 'string', description: 'Limit to specific model (optional)' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
+      },
+      required: ['query'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+
   // ─── Media Tools ───
 
   {
