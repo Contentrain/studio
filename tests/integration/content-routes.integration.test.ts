@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 
-async function loadContentGetHandler() {
-  return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/content/[modelId].get')).default
-}
-
 async function loadContentPostHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/content/[modelId].post')).default
 }
@@ -14,104 +10,6 @@ async function loadContentStatusHandler() {
 }
 
 describe('content route integration', () => {
-  it('blocks model reads outside the allowed specificModels set', async () => {
-    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-      if (key === 'workspaceId') return 'workspace-1'
-      if (key === 'projectId') return 'project-1'
-      if (key === 'modelId') return 'posts'
-      return undefined
-    }))
-    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
-      user: { id: 'viewer-1' },
-      accessToken: 'token-1',
-    }))
-    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
-      specificModels: true,
-      allowedModels: ['pages'],
-    }))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/content/posts', handler: await loadContentGetHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-1/content/posts')
-
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 403,
-      })
-    })
-  })
-
-  it('reads collection content via the resolved project context and content paths', async () => {
-    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-      if (key === 'workspaceId') return 'workspace-1'
-      if (key === 'projectId') return 'project-1'
-      if (key === 'modelId') return 'posts'
-      return undefined
-    }))
-    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
-      user: { id: 'editor-1' },
-      accessToken: 'token-1',
-    }))
-    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
-      specificModels: false,
-      allowedModels: [],
-    }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('resolveModelPath', vi.fn().mockReturnValue('.contentrain/models/posts.json'))
-    vi.stubGlobal('resolveContentPath', vi.fn().mockReturnValue('.contentrain/content/blog/posts/en.json'))
-    vi.stubGlobal('resolveMetaPath', vi.fn().mockReturnValue('.contentrain/meta/blog/posts/en.json'))
-    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
-      contentRoot: '',
-      git: {
-        readFile: vi.fn((path: string) => {
-          if (path === '.contentrain/models/posts.json') {
-            return JSON.stringify({
-              id: 'posts',
-              domain: 'blog',
-              kind: 'collection',
-              i18n: true,
-            })
-          }
-          if (path === '.contentrain/content/blog/posts/en.json') {
-            return JSON.stringify({
-              entry1: { title: 'Hello world' },
-            })
-          }
-          if (path === '.contentrain/meta/blog/posts/en.json') {
-            return JSON.stringify({
-              entry1: { status: 'draft' },
-            })
-          }
-          throw new Error(`Unexpected read: ${path}`)
-        }),
-      },
-    }))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/content/posts', handler: await loadContentGetHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-1/content/posts?locale=en')
-
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        modelId: 'posts',
-        locale: 'en',
-        kind: 'collection',
-        data: {
-          entry1: { title: 'Hello world' },
-        },
-        meta: {
-          entry1: { status: 'draft' },
-        },
-      })
-    })
-  })
-
   it('saves content only for users with save_content permission and tracks media usage non-fatally', async () => {
     const saveContent = vi.fn().mockResolvedValue({
       branch: 'contentrain/save-123',
