@@ -9,6 +9,10 @@ async function loadCDNSettingsPatchHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/cdn/settings.patch')).default
 }
 
+async function loadCDNSettingsGetHandler() {
+  return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/cdn/settings.get')).default
+}
+
 async function loadCDNBuildTriggerHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/cdn/builds/trigger.post')).default
 }
@@ -165,6 +169,52 @@ describe('CDN route integration', () => {
       expect(response.status).toBe(403)
       await expect(response.json()).resolves.toMatchObject({
         statusCode: 403,
+      })
+    })
+  })
+
+  it('loads CDN settings only when the project belongs to the workspace path', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table !== 'projects') {
+          throw new Error(`Unexpected table: ${table}`)
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: { cdn_enabled: true, cdn_branch: 'release' },
+                  error: null,
+                }),
+              })),
+            })),
+          })),
+        }
+      }),
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/cdn/settings', handler: await loadCDNSettingsGetHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/cdn/settings')
+
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({
+        cdn_enabled: true,
+        cdn_branch: 'release',
       })
     })
   })

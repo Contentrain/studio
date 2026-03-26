@@ -30,7 +30,7 @@ const project = {
 async function mockProjectShell(page: Page, options: {
   role: 'owner' | 'admin' | 'member'
   plan: string
-  snapshot: Record<string, unknown>
+  brainSync: Record<string, unknown>
   branches?: Array<{ name: string, sha: string, protected: boolean }>
 }) {
   await page.route('**/api/auth/me', async route => fulfillJson(route, {
@@ -53,7 +53,7 @@ async function mockProjectShell(page: Page, options: {
   await page.route('**/api/workspaces/ws-1/projects/project-1/branches', async route => fulfillJson(route, {
     branches: options.branches ?? [],
   }))
-  await page.route('**/api/workspaces/ws-1/projects/project-1/snapshot', async route => fulfillJson(route, options.snapshot))
+  await page.route('**/api/workspaces/ws-1/projects/project-1/brain/sync**', async route => fulfillJson(route, options.brainSync))
 }
 
 describe('project content and review e2e', () => {
@@ -63,39 +63,44 @@ describe('project content and review e2e', () => {
     await mockProjectShell(page, {
       role: 'member',
       plan: 'business',
-      snapshot: {
-        exists: true,
+      brainSync: {
+        treeSha: 'tree-1',
+        delta: false,
         config: { locales: { supported: ['en'], default: 'en' } },
-        models: [{
-          id: 'posts',
-          name: 'Posts',
-          kind: 'collection',
-          type: 'collection',
-          fields: {
-            title: { type: 'string', required: true },
-            slug: { type: 'slug' },
+        models: {
+          posts: {
+            id: 'posts',
+            name: 'Posts',
+            kind: 'collection',
+            fields: {
+              title: { type: 'string', required: true },
+              slug: { type: 'slug' },
+            },
+            domain: 'marketing',
+            i18n: true,
           },
-          domain: 'marketing',
-          i18n: true,
-        }],
+        },
         content: {
-          posts: { count: 1, locales: ['en'] },
+          'posts:en': {
+            data: {
+              'post-1': {
+                title: 'Launch Post',
+                slug: 'launch-post',
+              },
+            },
+            kind: 'collection',
+            meta: {
+              'post-1': { status: 'published' },
+            },
+          },
+        },
+        vocabulary: null,
+        contentContext: null,
+        contentSummary: {
+          posts: { count: 1, locales: ['en'], kind: 'collection' },
         },
       },
     })
-
-    await page.route('**/api/workspaces/ws-1/projects/project-1/content/posts?locale=en', async route => fulfillJson(route, {
-      data: {
-        'post-1': {
-          title: 'Launch Post',
-          slug: 'launch-post',
-        },
-      },
-      kind: 'collection',
-      meta: {
-        'post-1': { status: 'published' },
-      },
-    }))
 
     await page.goto(url('/w/acme/projects/project-1?model=posts'))
 
@@ -114,33 +119,38 @@ describe('project content and review e2e', () => {
     await mockProjectShell(page, {
       role: 'owner',
       plan: 'business',
-      snapshot: {
-        exists: true,
+      brainSync: {
+        treeSha: 'tree-2',
+        delta: false,
         config: { locales: { supported: ['en'], default: 'en' } },
-        models: [{
-          id: 'site-settings',
-          name: 'Site Settings',
-          kind: 'singleton',
-          type: 'singleton',
-          fields: {
-            headline: { type: 'string', required: true },
+        models: {
+          'site-settings': {
+            id: 'site-settings',
+            name: 'Site Settings',
+            kind: 'singleton',
+            fields: {
+              headline: { type: 'string', required: true },
+            },
+            domain: 'system',
+            i18n: false,
           },
-          domain: 'system',
-          i18n: false,
-        }],
+        },
         content: {
-          'site-settings': { count: 1, locales: ['en'] },
+          'site-settings:en': {
+            data: {
+              headline: 'Welcome to Acme',
+            },
+            kind: 'singleton',
+            meta: null,
+          },
+        },
+        vocabulary: null,
+        contentContext: null,
+        contentSummary: {
+          'site-settings': { count: 1, locales: ['en'], kind: 'singleton' },
         },
       },
     })
-
-    await page.route('**/api/workspaces/ws-1/projects/project-1/content/site-settings?locale=en', async route => fulfillJson(route, {
-      data: {
-        headline: 'Welcome to Acme',
-      },
-      kind: 'singleton',
-      meta: null,
-    }))
 
     await page.route('**/api/workspaces/ws-1/projects/project-1/content/site-settings', async (route) => {
       if (route.request().method() === 'POST') {
@@ -191,22 +201,37 @@ describe('project content and review e2e', () => {
         sha: 'abc123',
         protected: false,
       }],
-      snapshot: {
-        exists: true,
+      brainSync: {
+        treeSha: 'tree-3',
+        delta: false,
         config: { locales: { supported: ['en'], default: 'en' } },
-        models: [{
-          id: 'posts',
-          name: 'Posts',
-          kind: 'collection',
-          type: 'collection',
-          fields: {
-            title: { type: 'string', required: true },
+        models: {
+          posts: {
+            id: 'posts',
+            name: 'Posts',
+            kind: 'collection',
+            fields: {
+              title: { type: 'string', required: true },
+            },
+            domain: 'marketing',
+            i18n: true,
           },
-          domain: 'marketing',
-          i18n: true,
-        }],
+        },
         content: {
-          posts: { count: 1, locales: ['en'] },
+          'posts:en': {
+            data: {
+              'post-1': { title: 'Old title' },
+            },
+            kind: 'collection',
+            meta: {
+              'post-1': { status: 'draft' },
+            },
+          },
+        },
+        vocabulary: null,
+        contentContext: null,
+        contentSummary: {
+          posts: { count: 1, locales: ['en'], kind: 'collection' },
         },
       },
     })

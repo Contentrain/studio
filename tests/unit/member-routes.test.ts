@@ -104,4 +104,53 @@ describe('member routes', () => {
       message: 'Reviewer role requires Pro plan or higher',
     })
   })
+
+  it('deletes project members only after validating workspace ownership', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      if (key === 'memberId') return 'member-1'
+      return undefined
+    }))
+
+    const deleteChain = vi.fn().mockResolvedValue({ error: null })
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table !== 'project_members') {
+          throw new Error(`Unexpected table: ${table}`)
+        }
+
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: deleteChain,
+            })),
+          })),
+        }
+      }),
+    }))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table !== 'projects') {
+          throw new Error(`Unexpected table: ${table}`)
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({ data: { id: 'project-1' } }),
+              })),
+            })),
+          })),
+        }
+      }),
+    }))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/members/[memberId].delete')).default
+    const result = await handler({} as never)
+
+    expect(result).toEqual({ deleted: true })
+    expect(deleteChain).toHaveBeenCalledWith('project_id', 'project-1')
+  })
 })

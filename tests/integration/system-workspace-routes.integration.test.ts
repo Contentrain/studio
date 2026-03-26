@@ -17,6 +17,10 @@ async function loadWorkspaceCreateHandler() {
   return (await import('../../server/api/workspaces/index.post')).default
 }
 
+async function loadWorkspaceListHandler() {
+  return (await import('../../server/api/workspaces/index.get')).default
+}
+
 async function loadWorkspaceMemberDeleteHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/members/[memberId].delete')).default
 }
@@ -38,6 +42,35 @@ describe('system and workspace route integration', () => {
       expect(response.status).toBe(200)
       expect(payload.status).toBe('ok')
       expect(Date.parse(payload.timestamp)).not.toBeNaN()
+    })
+  })
+
+  it('lists the authenticated user workspaces', async () => {
+    const listUserWorkspaces = vi.fn().mockResolvedValue([
+      { id: 'workspace-1', slug: 'acme', plan: 'business' },
+      { id: 'workspace-2', slug: 'docs', plan: 'free' },
+    ])
+
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({ client: true }))
+    vi.stubGlobal('listUserWorkspaces', listUserWorkspaces)
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces', handler: await loadWorkspaceListHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces')
+
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual([
+        { id: 'workspace-1', slug: 'acme', plan: 'business' },
+        { id: 'workspace-2', slug: 'docs', plan: 'free' },
+      ])
+      expect(listUserWorkspaces).toHaveBeenCalledWith({ client: true })
     })
   })
 
