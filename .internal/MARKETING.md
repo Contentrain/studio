@@ -200,6 +200,46 @@ LOW                  │ vue-i18n
 4. **No vendor lock-in** — Stop using Contentrain tomorrow, your files are still there
 5. **BYOA (Bring Your Own Agent)** — Works with any AI. We don't charge for AI, we don't sell AI
 6. **Extract from existing code** — The normalize feature has no equivalent in any competing product
+7. **AI sees your content** — The #1 technical advantage. See below.
+
+### The Context Advantage — "Your AI Sees Your Content"
+
+**This is Contentrain's deepest competitive moat.**
+
+API-driven CMS'lerde (Contentful, Sanity, Strapi) içerik database'de yaşıyor. AI agent içeriğe erişmek için API key, HTTP call, pagination, rate limit ile uğraşmalı. Agent **kör** — projedeki içeriği görmüyor.
+
+Git-native CMS'de (Contentrain) içerik `.contentrain/*.json` dosyaları olarak repo'da. AI agent (Cursor, Claude Code, Windsurf) projeyle çalışırken **tüm içeriği zaten görüyor.** Ekstra API call yok, auth yok, rate limit yok.
+
+**Pratik fark:**
+
+| Senaryo | Contentful/Strapi | Contentrain |
+|---------|-------------------|-------------|
+| "30 blogun SEO analizini yap" | Custom script + API calls + copy-paste + manual fix = yarım gün | 1 prompt, 30 saniye, agent okur-yazar-commit eder |
+| "Çevrilmemiş alanları bul" | Tüm modeller × tüm locale API'den çekilemez bile | Agent .contentrain/content/ tarar → 2 saniye |
+| "CTA button text'lerini tutarlı yap" | Agent hangi modellerde CTA var bilmiyor | Agent tüm model'leri tarar, bulur, düzeltir |
+| "Mevcut bloglarla çakışmayan 10 FAQ ekle" | Agent mevcut FAQ'ları bilmiyor | Agent content dosyasından okur, unique üretir |
+| "Ürün sayfalarının meta description'larını yaz" | Her entry ayrı API call, sonra ayrı update | Tek dosyada okur, yazar, commit |
+
+**Neden bu zaman geçtikçe güçleniyor:**
+
+AI agent'lar her yıl daha güçlü oluyor — daha çok context okuyabiliyor, daha akıllı analiz yapabiliyor. Contentrain bu gelişmeden **otomatik faydalanıyor** çünkü content zaten erişilebilir. Contentful/Strapi ise her yeni AI özelliği için yeni API entegrasyonu yazmalı.
+
+```
+2024: Agent 32K context → repo'daki 50 entry'yi okuyabilir
+2025: Agent 200K context → repo'daki 500 entry'yi okuyabilir
+2026: Agent 1M+ context → repo'daki tüm içeriği okuyabilir
+
+Contentrain: sıfır değişiklik, otomatik faydalanır
+Contentful: her context artışı için yeni API integration lazım
+```
+
+**Marketing message:**
+
+> "API-driven CMS = your AI is blind. Git-native CMS = your AI sees everything."
+
+> "Your AI assistant already reads your code. Why can't it read your content? With Contentrain, it can."
+
+> "Other CMS tools need API integrations for AI. Contentrain works with AI natively — because your content is in your repo."
 
 ---
 
