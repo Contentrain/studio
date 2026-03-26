@@ -59,19 +59,18 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <!-- Upgrade nudge for free plan -->
-    <div v-if="!isPro" class="flex flex-1 flex-col items-center justify-center p-8 text-center">
-      <div class="mb-4 flex size-14 items-center justify-center rounded-2xl bg-secondary-100 dark:bg-secondary-800">
-        <span class="icon-[annon--image-3] size-7 text-secondary-400" aria-hidden="true" />
-      </div>
-      <AtomsHeadingText :level="3" size="sm" class="mb-2">
-        {{ t('media.title') }}
-      </AtomsHeadingText>
-      <p class="mb-4 max-w-xs text-sm text-muted">
-        {{ t('media.pro_required') }}
-      </p>
-      <AtomsBadge variant="info" size="sm">
-        Pro
-      </AtomsBadge>
+    <div v-if="!isPro" class="flex flex-1 items-center justify-center p-8">
+      <AtomsEmptyState
+        icon="icon-[annon--image-3]"
+        :title="t('media.pro_required_title')"
+        :description="t('media.pro_required')"
+      >
+        <template #action>
+          <AtomsBadge variant="info" size="md">
+            Pro — $14/mo
+          </AtomsBadge>
+        </template>
+      </AtomsEmptyState>
     </div>
 
     <!-- Full asset manager (Pro+) -->
