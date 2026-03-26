@@ -458,6 +458,10 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
     rules.push('This workspace is on the ENTERPRISE plan. All features available with no limits. Self-host license, SSO, multi-provider support.')
   }
 
+  // Feature upgrade guidance — when a tool returns a plan-gated error, help the user understand
+  rules.push('When a tool returns an error about plan requirements, explain the feature value clearly and suggest upgrading in workspace settings. Always mention what the user CAN do on their current plan as an alternative.')
+  rules.push('Plan tiers: Free ($0) → Pro ($12/mo) → Team ($29/mo + seats) → Enterprise (custom). Each tier includes everything from the tier below.')
+
   // Out of scope
   if (intent.category === 'out_of_scope') {
     rules.push('This message appears off-topic. Respond with ONE sentence redirecting to content management tasks.')
