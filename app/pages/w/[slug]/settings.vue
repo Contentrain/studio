@@ -233,6 +233,63 @@ async function handleDeleteAIKey(keyId: string) {
   }
 }
 
+// GitHub installation state
+interface GitHubInstallation {
+  installed: boolean
+  installationId?: number
+  account?: { login: string | null, avatarUrl: string | null, type: string }
+  selection?: 'all' | 'selected'
+  permissions?: Record<string, string>
+  suspendedAt?: string | null
+  repos?: Array<{ id: number, name: string, fullName: string, private: boolean, language: string | null }>
+  settingsUrl?: string
+  error?: string
+}
+
+const ghInstallation = ref<GitHubInstallation | null>(null)
+const ghLoading = ref(false)
+
+async function loadGitHubInstallation() {
+  if (!activeWorkspace.value) return
+  ghLoading.value = true
+  try {
+    ghInstallation.value = await $fetch<GitHubInstallation>('/api/github/installation', {
+      params: { workspaceId: activeWorkspace.value.id },
+    })
+  }
+  catch {
+    ghInstallation.value = null
+  }
+  finally {
+    ghLoading.value = false
+  }
+}
+
+// Lazy-load GitHub data when tab is activated
+watch(activeTab, (tab) => {
+  if (tab === 'github' && !ghInstallation.value) {
+    loadGitHubInstallation()
+  }
+})
+
+function openGitHubSettings() {
+  if (ghInstallation.value?.settingsUrl) {
+    window.open(ghInstallation.value.settingsUrl, '_blank', 'noopener,noreferrer')
+  }
+}
+
+function installGitHubApp() {
+  window.open(
+    'https://github.com/apps/contentrain-studio-dev/installations/new',
+    '_blank',
+    'noopener,noreferrer',
+  )
+}
+
+const ghIsSuspended = computed(() => !!ghInstallation.value?.suspendedAt)
+const ghHasError = computed(() => !!ghInstallation.value?.error)
+const ghNeedsAttention = computed(() => ghIsSuspended.value || ghHasError.value)
+
 const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
 </script>
 
@@ -490,9 +547,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
                   />
                 </li>
               </ul>
-              <p v-else class="text-xs text-muted">
-                {{ t('members.no_project_members') }}
-              </p>
+              <div v-else class="flex items-center gap-2 rounded-lg border border-dashed border-secondary-200 px-3 py-3 dark:border-secondary-700">
+                <span class="icon-[annon--user-plus] size-4 text-muted" aria-hidden="true" />
+                <span class="text-xs text-muted">{{ t('members.no_project_members') }}</span>
+              </div>
             </template>
           </div>
         </div>
@@ -500,29 +558,139 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
 
       <!-- GitHub -->
       <TabsContent value="github" class="mt-6">
-        <div class="max-w-md space-y-5">
-          <div>
-            <div class="flex items-center gap-1">
-              <AtomsFormLabel :text="t('settings.github_installation')" size="sm" />
-              <AtomsInfoTooltip :text="t('settings.github_info')" />
-            </div>
-            <div v-if="activeWorkspace?.github_installation_id" class="mt-1.5 flex items-center gap-2">
-              <AtomsBadge variant="success" size="md">
-                {{ t('common.connected') }}
-              </AtomsBadge>
-              <span class="text-sm text-muted">
-                ID: {{ activeWorkspace.github_installation_id }}
-              </span>
-            </div>
-            <div v-else class="mt-1.5">
-              <AtomsBadge variant="warning" size="md">
-                {{ t('common.not_connected') }}
-              </AtomsBadge>
+        <div class="max-w-lg space-y-6">
+          <!-- Loading -->
+          <div v-if="ghLoading" class="space-y-3">
+            <AtomsSkeleton variant="custom" class="h-20 w-full rounded-xl" />
+            <AtomsSkeleton variant="custom" class="h-10 w-full rounded-lg" />
+          </div>
+
+          <!-- Not installed -->
+          <template v-else-if="!activeWorkspace?.github_installation_id">
+            <div class="rounded-xl border border-dashed border-secondary-300 p-8 text-center dark:border-secondary-700">
+              <div class="mx-auto flex size-14 items-center justify-center rounded-2xl bg-secondary-50 dark:bg-secondary-900">
+                <svg class="size-7 text-muted" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+                </svg>
+              </div>
+              <AtomsHeadingText :level="3" size="xs" class="mt-4">
+                {{ t('settings.github_not_connected_title') }}
+              </AtomsHeadingText>
               <p class="mt-2 text-sm text-muted">
                 {{ t('settings.github_not_connected_hint') }}
               </p>
+              <AtomsBaseButton variant="primary" size="md" class="mt-5" @click="installGitHubApp">
+                <template #prepend>
+                  <svg class="size-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+                  </svg>
+                </template>
+                {{ t('github.install_button') }}
+              </AtomsBaseButton>
             </div>
-          </div>
+          </template>
+
+          <!-- Installed -->
+          <template v-else-if="ghInstallation?.installed">
+            <!-- Alert: suspended or error -->
+            <div
+              v-if="ghNeedsAttention"
+              class="flex items-start gap-3 rounded-xl border border-danger-200 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
+            >
+              <span class="icon-[annon--alert-triangle] size-5 shrink-0 text-danger-500" aria-hidden="true" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-danger-700 dark:text-danger-400">
+                  {{ ghIsSuspended ? t('settings.github_suspended') : t('settings.github_error') }}
+                </p>
+                <p class="mt-1 text-xs text-danger-600 dark:text-danger-400/80">
+                  {{ ghIsSuspended ? t('settings.github_suspended_hint') : t('settings.github_error_hint') }}
+                </p>
+                <AtomsBaseButton variant="danger" size="sm" class="mt-3" @click="openGitHubSettings">
+                  {{ t('settings.github_manage') }}
+                </AtomsBaseButton>
+              </div>
+            </div>
+
+            <!-- Connected account card -->
+            <div
+              class="flex items-center gap-4 rounded-xl border p-4"
+              :class="ghNeedsAttention
+                ? 'border-danger-200 dark:border-danger-500/20'
+                : 'border-secondary-200 dark:border-secondary-800'"
+            >
+              <AtomsAvatar
+                v-if="ghInstallation.account?.avatarUrl"
+                :src="ghInstallation.account.avatarUrl"
+                :name="ghInstallation.account.login"
+                size="lg"
+              />
+              <div v-else class="flex size-12 items-center justify-center rounded-full bg-secondary-100 dark:bg-secondary-800">
+                <svg class="size-6 text-muted" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-heading dark:text-secondary-100">
+                    {{ ghInstallation.account?.login ?? '—' }}
+                  </span>
+                  <AtomsBadge
+                    :variant="ghInstallation.account?.type === 'Organization' ? 'info' : 'secondary'"
+                    size="sm"
+                  >
+                    {{ ghInstallation.account?.type === 'Organization' ? t('settings.github_org') : t('settings.github_user') }}
+                  </AtomsBadge>
+                </div>
+                <div class="mt-0.5 flex items-center gap-2 text-xs text-muted">
+                  <span>{{ ghInstallation.selection === 'all' ? t('settings.github_all_repos') : t('settings.github_selected_repos') }}</span>
+                  <span v-if="ghInstallation.repos" class="text-disabled">·</span>
+                  <span v-if="ghInstallation.repos">{{ ghInstallation.repos.length }} {{ t('settings.github_repos_accessible') }}</span>
+                </div>
+              </div>
+              <AtomsBadge :variant="ghNeedsAttention ? 'danger' : 'success'" size="sm">
+                {{ ghNeedsAttention ? t('settings.github_attention') : t('common.connected') }}
+              </AtomsBadge>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-2">
+              <AtomsBaseButton size="sm" @click="openGitHubSettings">
+                <template #prepend>
+                  <span class="icon-[annon--external-link] size-3.5" aria-hidden="true" />
+                </template>
+                {{ t('settings.github_manage') }}
+              </AtomsBaseButton>
+              <AtomsBaseButton size="sm" @click="loadGitHubInstallation">
+                <template #prepend>
+                  <span class="icon-[annon--arrow-swap] size-3.5" aria-hidden="true" />
+                </template>
+                {{ t('settings.github_refresh') }}
+              </AtomsBaseButton>
+            </div>
+
+            <!-- Accessible repos list -->
+            <div v-if="ghInstallation.repos && ghInstallation.repos.length > 0 && !ghNeedsAttention">
+              <div class="mb-2 flex items-center gap-1">
+                <AtomsSectionLabel :label="t('settings.github_repos_title')" :count="ghInstallation.repos.length" />
+                <AtomsInfoTooltip :text="t('settings.github_repos_info')" />
+              </div>
+              <ul class="divide-y divide-secondary-100 rounded-lg border border-secondary-200 dark:divide-secondary-800 dark:border-secondary-800">
+                <li
+                  v-for="repo in ghInstallation.repos" :key="repo.id"
+                  class="flex items-center gap-3 px-4 py-2.5"
+                >
+                  <span class="icon-[annon--folder] size-4 shrink-0 text-muted" aria-hidden="true" />
+                  <span class="min-w-0 flex-1 truncate text-sm text-heading dark:text-secondary-100">
+                    {{ repo.name }}
+                  </span>
+                  <AtomsBadge v-if="repo.language" variant="secondary" size="sm">
+                    {{ repo.language }}
+                  </AtomsBadge>
+                  <span v-if="repo.private" class="icon-[annon--lock] size-3 text-muted" aria-hidden="true" />
+                </li>
+              </ul>
+            </div>
+          </template>
         </div>
       </TabsContent>
 
@@ -538,15 +706,20 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
             </p>
           </div>
 
-          <!-- Pro required badge -->
-          <div v-if="!canByoa" class="rounded-lg border border-info-200 bg-info-50 p-4 dark:border-info-500/20 dark:bg-info-500/10">
-            <div class="flex items-center gap-2">
-              <AtomsBadge variant="info" size="sm">
-                Pro
+          <!-- Pro required -->
+          <AtomsEmptyState
+            v-if="!canByoa"
+            illustration="/illustrations/unlock-ai.png"
+            :title="t('ai_keys.pro_required_title')"
+            :description="t('ai_keys.pro_required')"
+            compact
+          >
+            <template #action>
+              <AtomsBadge variant="info" size="md">
+                Pro — $14/mo
               </AtomsBadge>
-              <span class="text-sm text-info-700 dark:text-info-400">{{ t('ai_keys.pro_required') }}</span>
-            </div>
-          </div>
+            </template>
+          </AtomsEmptyState>
 
           <!-- Existing keys -->
           <ul

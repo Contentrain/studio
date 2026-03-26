@@ -212,19 +212,18 @@ function copyKey() {
     </div>
 
     <!-- Upgrade nudge (not Pro) -->
-    <div v-else-if="!isPro" class="flex h-full flex-col items-center justify-center gap-4 p-8">
-      <div class="flex size-14 items-center justify-center rounded-2xl border border-info-200 bg-info-50 dark:border-info-500/20 dark:bg-info-500/10">
-        <span class="icon-[annon--globe] text-2xl text-info-500" aria-hidden="true" />
-      </div>
-      <AtomsHeadingText :level="3" size="xs" class="text-center">
-        {{ t('cdn.title') }}
-      </AtomsHeadingText>
-      <p class="max-w-xs text-center text-sm text-muted">
-        {{ t('cdn.pro_required') }}
-      </p>
-      <AtomsBadge variant="info" size="md">
-        Pro — $14/mo
-      </AtomsBadge>
+    <div v-else-if="!isPro" class="flex h-full items-center justify-center p-8">
+      <AtomsEmptyState
+        illustration="/illustrations/unlock-cdn.png"
+        :title="t('cdn.title')"
+        :description="t('cdn.pro_required')"
+      >
+        <template #action>
+          <AtomsBadge variant="info" size="md">
+            Pro — $14/mo
+          </AtomsBadge>
+        </template>
+      </AtomsEmptyState>
     </div>
 
     <!-- CDN Management (Pro) -->
@@ -304,9 +303,10 @@ function copyKey() {
               </button>
             </div>
           </div>
-          <p v-else class="text-xs text-muted">
-            {{ t('cdn.no_keys') }}
-          </p>
+          <div v-else class="flex items-center gap-2 rounded-lg border border-dashed border-secondary-200 px-3 py-3 dark:border-secondary-700">
+            <span class="icon-[annon--key] size-4 text-muted" aria-hidden="true" />
+            <span class="text-xs text-muted">{{ t('cdn.no_keys') }}</span>
+          </div>
 
           <form v-if="canManageCDN" class="mt-3 flex items-center gap-2" @submit.prevent="createKey">
             <AtomsFormInput
@@ -366,9 +366,10 @@ function copyKey() {
               <span class="shrink-0 text-[10px] text-disabled">{{ build.trigger_type }}</span>
             </div>
           </div>
-          <p v-else class="text-xs text-muted">
-            {{ t('cdn.no_builds') }}
-          </p>
+          <div v-else class="flex items-center gap-2 rounded-lg border border-dashed border-secondary-200 px-3 py-3 dark:border-secondary-700">
+            <span class="icon-[annon--arrow-swap] size-4 text-muted" aria-hidden="true" />
+            <span class="text-xs text-muted">{{ t('cdn.no_builds') }}</span>
+          </div>
         </div>
 
         <!-- SDK Snippet -->

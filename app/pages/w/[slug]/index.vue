@@ -88,7 +88,7 @@ watch(slug, async (newSlug) => {
     <!-- Empty State -->
     <AtomsEmptyState
       v-else
-      icon="icon-[annon--folder-plus]"
+      illustration="/illustrations/empty-projects.png"
       :title="t('projects.empty_title')"
       :description="t('projects.empty_description')"
     >

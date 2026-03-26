@@ -193,8 +193,8 @@ async function onSettingsSaved() {
 
           <!-- Assets (Pro feature) -->
           <MoleculesSidebarItem
-            icon="icon-[annon--image]" :label="t('media.title')"
-            :active="isAssetsActive" compact @click="selectAssets"
+            icon="icon-[annon--image]" :label="t('media.title')" :active="isAssetsActive" compact
+            @click="selectAssets"
           >
             <template #trailing>
               <AtomsBadge v-if="!hasMedia" variant="info" size="sm" class="text-[9px] px-1 py-0">
@@ -227,7 +227,7 @@ async function onSettingsSaved() {
               :to="link.to"
               class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
               :class="link.active
-                ? 'border-l-2 border-primary-500 pl-[6px] bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
+                ? 'border-l-2 border-primary-500 pl-1.5 bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/20 dark:text-primary-400'
                 : 'text-body hover:bg-primary-50 hover:text-primary-700 dark:text-secondary-400 dark:hover:bg-primary-900/20 dark:hover:text-primary-400'
               "
             >
