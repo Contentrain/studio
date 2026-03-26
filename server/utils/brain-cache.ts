@@ -64,9 +64,9 @@ export function invalidateBrainCache(projectId: string): void {
  * Compute a simple hash from tree entries for delta detection.
  */
 function computeTreeHash(tree: TreeEntry[]): string {
-  // Use the concatenation of all content-related file SHAs
+  // Only track .contentrain/ files — not the entire repo
   const contentFiles = tree
-    .filter(e => e.type === 'blob' && (e.path.includes('.contentrain/') || e.path.endsWith('.md') || e.path.endsWith('.json')))
+    .filter(e => e.type === 'blob' && e.path.includes('.contentrain/'))
     .sort((a, b) => a.path.localeCompare(b.path))
   return contentFiles.map(e => `${e.path}:${e.sha}`).join('|')
 }
