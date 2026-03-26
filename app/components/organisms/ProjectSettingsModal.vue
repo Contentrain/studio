@@ -11,6 +11,7 @@ const open = defineModel<boolean>('open', { default: false })
 const props = defineProps<{
   workspaceId: string
   projectId: string
+  projectName?: string
   config?: {
     workflow?: string
     stack?: string
@@ -21,7 +22,28 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   saved: []
+  deleted: []
 }>()
+
+const { deleteProject } = useProjects()
+const deleteConfirmOpen = ref(false)
+const deleting = ref(false)
+
+async function handleDeleteProject() {
+  deleting.value = true
+  const ok = await deleteProject(props.workspaceId, props.projectId)
+  deleting.value = false
+
+  if (ok) {
+    toast.success(t('danger_zone.project_deleted'))
+    deleteConfirmOpen.value = false
+    open.value = false
+    emit('deleted')
+  }
+  else {
+    toast.error(t('danger_zone.project_delete_error'))
+  }
+}
 
 // Local form state — initialized from config
 const workflow = ref('auto-merge')
@@ -309,6 +331,26 @@ async function save() {
           </div>
         </div>
 
+        <!-- Danger Zone -->
+        <div class="border-t border-danger-200 px-5 py-4 dark:border-danger-500/20">
+          <AtomsHeadingText :level="3" size="xs" class="text-danger-600 dark:text-danger-400">
+            {{ t('danger_zone.title') }}
+          </AtomsHeadingText>
+          <div class="mt-3 flex items-center justify-between rounded-lg border border-danger-200 px-4 py-3 dark:border-danger-500/20">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-heading dark:text-secondary-100">
+                {{ t('danger_zone.project_delete_title') }}
+              </p>
+              <p class="mt-0.5 text-xs text-muted">
+                {{ t('danger_zone.project_delete_description') }}
+              </p>
+            </div>
+            <AtomsBaseButton variant="danger" size="sm" class="ml-4 shrink-0" @click="deleteConfirmOpen = true">
+              {{ t('danger_zone.project_delete_button') }}
+            </AtomsBaseButton>
+          </div>
+        </div>
+
         <!-- Footer -->
         <div
           class="flex items-center justify-end gap-2 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800"
@@ -322,5 +364,17 @@ async function save() {
         </div>
       </DialogContent>
     </DialogPortal>
+
+    <!-- Delete confirmation dialog -->
+    <MoleculesConfirmDeleteDialog
+      v-model:open="deleteConfirmOpen"
+      :title="t('danger_zone.project_delete_title')"
+      :description="t('danger_zone.project_delete_description')"
+      :confirm-text="projectName ?? ''"
+      :confirm-label="t('danger_zone.project_confirm_label')"
+      :delete-label="deleting ? t('danger_zone.deleting') : t('danger_zone.project_delete_button')"
+      :deleting="deleting"
+      @confirm="handleDeleteProject"
+    />
   </DialogRoot>
 </template>

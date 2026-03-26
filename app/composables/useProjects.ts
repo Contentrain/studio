@@ -37,10 +37,24 @@ export function useProjects() {
     return project
   }
 
+  async function deleteProject(workspaceId: string, projectId: string): Promise<boolean> {
+    try {
+      await $fetch(`/api/workspaces/${workspaceId}/projects/${projectId}`, {
+        method: 'DELETE',
+      })
+      projects.value = projects.value.filter(p => p.id !== projectId)
+      return true
+    }
+    catch {
+      return false
+    }
+  }
+
   return {
     projects: readonly(projects),
     loading: readonly(loading),
     fetchProjects,
     createProject,
+    deleteProject,
   }
 }
