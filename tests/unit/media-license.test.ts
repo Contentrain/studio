@@ -25,8 +25,8 @@ describe('media license features', () => {
 describe('media plan limits', () => {
   it('returns correct storage limits', () => {
     expect(getPlanLimit('free', 'media.storage_gb')).toBe(0)
-    expect(getPlanLimit('pro', 'media.storage_gb')).toBe(2)
-    expect(getPlanLimit('business', 'media.storage_gb')).toBe(10)
+    expect(getPlanLimit('pro', 'media.storage_gb')).toBe(5)
+    expect(getPlanLimit('business', 'media.storage_gb')).toBe(20)
     expect(getPlanLimit('enterprise', 'media.storage_gb')).toBe(Infinity)
   })
 
