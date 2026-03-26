@@ -13,17 +13,17 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!query.installation_id) {
-    throw createError({ statusCode: 400, message: 'Missing installation_id' })
+    throw createError({ statusCode: 400, message: errorMessage('github.installation_id_missing') })
   }
 
   const installationId = Number(query.installation_id)
   if (!installationId || Number.isNaN(installationId))
-    throw createError({ statusCode: 400, message: 'Invalid installation_id' })
+    throw createError({ statusCode: 400, message: errorMessage('github.installation_id_invalid') })
 
   const workspace = await getPrimaryWorkspace(useSupabaseUserClient(session.accessToken), session.user.id)
 
   if (!workspace)
-    throw createError({ statusCode: 404, message: 'No workspace found' })
+    throw createError({ statusCode: 404, message: errorMessage('github.workspace_not_found') })
 
   // Check if another workspace already uses this installation
   const admin = useSupabaseAdmin()
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (existingWs)
-    throw createError({ statusCode: 409, message: 'This GitHub installation is already linked to another workspace' })
+    throw createError({ statusCode: 409, message: errorMessage('github.installation_linked') })
   const { error: updateError } = await admin
     .from('workspaces')
     .update({ github_installation_id: installationId })

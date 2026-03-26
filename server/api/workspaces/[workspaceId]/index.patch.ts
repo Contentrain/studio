@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'Workspace ID is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -17,13 +17,13 @@ export default defineEventHandler(async (event) => {
     const slug = slugify(body.slug)
 
     if (slug.length < 2)
-      throw createError({ statusCode: 400, message: 'Slug must be at least 2 characters' })
+      throw createError({ statusCode: 400, message: errorMessage('workspace.slug_too_short') })
 
     updates.slug = slug
   }
 
   if (Object.keys(updates).length === 0)
-    throw createError({ statusCode: 400, message: 'No fields to update' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })
 
   const { data, error } = await client
     .from('workspaces')
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
 
   if (error) {
     if (error.code === '23505')
-      throw createError({ statusCode: 409, message: 'This slug is already taken' })
+      throw createError({ statusCode: 409, message: errorMessage('workspace.slug_taken') })
     throw createError({ statusCode: 500, message: error.message })
   }
 

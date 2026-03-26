@@ -32,14 +32,7 @@ export function buildSystemPrompt(
   const sections: string[] = []
 
   // 1. ROLE — strict, bounded
-  sections.push(`You are a Contentrain content management executor. You perform structured content operations on this Git-backed repository using the tools provided.
-
-CONSTRAINTS:
-- Execute content tasks using tools. Never output raw JSON for users to copy.
-- Do NOT explain what Contentrain is or how it works.
-- Do NOT have general knowledge conversations.
-- Respond in the user's language. Be concise — 1-2 sentences for confirmations.
-- If a request is outside content management, respond with ONE sentence redirecting to content tasks.`)
+  sections.push(agentPrompt('role.definition'))
 
   // 2. CONTENTRAIN ARCHITECTURE — the agent must know this to work correctly
   sections.push(buildArchitectureSection())
@@ -54,7 +47,7 @@ CONSTRAINTS:
     if (intent.inferred.locale) inferredLines.push(`Default locale: ${intent.inferred.locale}`)
     if (intent.inferred.entryId) inferredLines.push(`Default entry: ${intent.inferred.entryId}`)
     if (intent.confidence === 'high') {
-      inferredLines.push('Use these defaults unless the user explicitly specifies different values.')
+      inferredLines.push(agentPrompt('intent.use_defaults'))
     }
     sections.push(inferredLines.join('\n'))
   }
@@ -84,10 +77,10 @@ CONSTRAINTS:
   }
 
   if (state.phase === 'uninitialized') {
-    stateLines.push('\nThis project needs initialization. Use init_project to create .contentrain/ structure.')
+    stateLines.push(`\n${agentPrompt('state.needs_init')}`)
   }
   else if (state.phase === 'init_pending') {
-    stateLines.push('\nAn init branch exists. Merge it before performing content operations.')
+    stateLines.push(`\n${agentPrompt('state.init_branch_exists')}`)
   }
 
   sections.push(stateLines.join('\n'))
@@ -149,66 +142,16 @@ CONSTRAINTS:
 // ─── Architecture Section ───
 
 function buildArchitectureSection(): string {
-  return `## Contentrain Architecture
-
-### Four Content Kinds
-| Kind | Storage | Entries | ID | Use Case |
-|---|---|---|---|---|
-| singleton | JSON object | 1 per locale | model = identity | Hero, nav, config |
-| collection | JSON object-map (ID→data) | N per locale | 12-char hex auto-generated | Blog, products, team, FAQ |
-| document | Markdown + YAML frontmatter | N (each = directory) | slug (URL-safe) | Blog posts, docs |
-| dictionary | JSON flat key-value | Free key-value | key = identity | Error messages, UI strings |
-
-### 27 Field Types
-**String:** string, text, email, url, slug, color, phone, code, icon
-**Rich text:** markdown, richtext
-**Number:** number, integer, decimal, percent, rating (1-5)
-**Primitive:** boolean, date (YYYY-MM-DD), datetime (ISO 8601)
-**Media:** image, video, file — ${agentPrompt('media.field_guide')}
-**Relation:** relation (single ref → entry ID or slug), relations (array of refs)
-**Structural:** select (enum from options[]), array (items), object (nested fields)
-
-### Field Properties
-- \`required\`: field must be present
-- \`unique\`: value must be unique across entries (collection)
-- \`min/max\`: string length, number range, or array size
-- \`pattern\`: regex validation
-- \`options\`: enum values for select type
-- \`model\`: target model ID(s) for relation/relations — string or string[]
-- \`items\`: array item type (string type name or FieldDef object)
-- \`fields\`: nested fields for object type (max 2 levels deep)
-- \`default\`: default value (omitted from storage when matches)
-- \`accept\`: MIME types for media fields
-- \`description\`: field documentation
-
-### Relation System
-- \`relation\` → stores single entry ID (collection target) or slug (document target)
-- \`relations\` → stores string[] of IDs/slugs
-- Polymorphic: when \`model\` is string[], value is \`{ model: "target-model", ref: "id-or-slug" }\`
-- Self-referencing allowed: model can reference itself (e.g., categories.parent → categories)
-- Singletons and dictionaries CANNOT be relation targets
-
-### Localization Rules
-- \`i18n: true\` → separate file per locale: en.json, tr.json
-- \`i18n: false\` → single file: data.json
-- Collections: ALL locales must have the SAME entry ID set
-- Dictionaries: ALL locales should have the SAME key set
-- Entry IDs and slugs are locale-agnostic (same across all locales)
-
-### System Fields (auto-managed, never set manually)
-- \`id\`: collection entry ID (12-char hex) — the object-map key
-- \`slug\`: document identifier — the directory name
-- \`status\`: draft | in_review | published | rejected | archived (in meta file)
-- \`source\`: agent | human | import (in meta file)
-- \`updated_by\`: who made the last change (in meta file)
-- Temporal data: createdAt/updatedAt from git history
-
-### Content Storage Format
-- Collections: \`{ "entryId": { field: value, ... }, ... }\` — keys sorted lexicographically
-- Singletons: \`{ field: value, ... }\`
-- Dictionaries: \`{ "key": "value", ... }\` — all values are strings
-- Documents: Markdown with YAML frontmatter (slug, fields in frontmatter, body in markdown)
-- Canonical JSON: 2-space indent, sorted keys, omit null/defaults, trailing newline`
+  return [
+    agentPrompt('architecture.intro'),
+    agentPrompt('architecture.content_kinds'),
+    agentPrompt('architecture.field_types', { mediaFieldGuide: agentPrompt('media.field_guide') }),
+    agentPrompt('architecture.field_properties'),
+    agentPrompt('architecture.relations'),
+    agentPrompt('architecture.localization'),
+    agentPrompt('architecture.system_fields'),
+    agentPrompt('architecture.storage_format'),
+  ].join('\n\n')
 }
 
 // ─── Schema Section ───
@@ -235,7 +178,7 @@ function buildSchemaSection(models: ModelDefinition[], uiContext: ChatUIContext)
       lines.push(`Fields:\n${fieldLines.join('\n')}`)
     }
     else if (model.kind === 'dictionary') {
-      lines.push('Fields: none (free key-value, all string values)')
+      lines.push(agentPrompt('architecture.dictionary_fields'))
     }
 
     lines.push('')
@@ -319,7 +262,7 @@ function buildRelationGraph(models: ModelDefinition[]): string | null {
 
   if (edges.length === 0) return null
 
-  return `## Relation Graph\n${edges.join('\n')}\n\nWhen creating/updating relation fields, use existing entry IDs or slugs from the target model. Call get_content on the target model first if you need to look up valid references.`
+  return `## Relation Graph\n${edges.join('\n')}\n\n${agentPrompt('rules.relation_graph_hint')}`
 }
 
 // ─── Context Section ───
@@ -334,30 +277,30 @@ function buildContextSection(
   if (uiContext.activeModelId) {
     const model = models.find(m => m.id === uiContext.activeModelId)
     if (model) {
-      lines.push(`User is viewing: "${model.name}" (${model.kind}), locale: ${uiContext.activeLocale}`)
+      lines.push(agentPrompt('context.viewing_model', { name: model.name, kind: model.kind, locale: uiContext.activeLocale }))
       if (uiContext.activeEntryId) {
-        lines.push(`Selected entry: ${uiContext.activeEntryId}`)
+        lines.push(agentPrompt('context.selected_entry', { entryId: uiContext.activeEntryId }))
       }
-      lines.push('Do NOT ask which model or locale — use these defaults.')
+      lines.push(agentPrompt('context.use_defaults'))
     }
   }
   else {
-    lines.push('User is viewing the project overview (model list).')
+    lines.push(agentPrompt('context.project_overview'))
   }
 
   if (uiContext.panelState === 'branch' && uiContext.activeBranch) {
-    lines.push(`The user is reviewing branch: ${uiContext.activeBranch}`)
+    lines.push(agentPrompt('context.reviewing_branch', { branch: uiContext.activeBranch }))
   }
 
   if (uiContext.panelState === 'vocabulary') {
-    lines.push('The user is viewing the vocabulary panel. They may want to add, edit, or discuss terminology.')
+    lines.push(agentPrompt('context.vocabulary_panel'))
   }
 
   // Pinned context items
   if (uiContext.contextItems && uiContext.contextItems.length > 0) {
     lines.push('')
-    lines.push('### Pinned Context')
-    lines.push('The user has pinned these items. Use them as primary targets:')
+    lines.push(agentPrompt('context.pinned_header'))
+    lines.push(agentPrompt('context.pinned_instruction'))
     for (const item of uiContext.contextItems) {
       switch (item.type) {
         case 'model':
@@ -392,50 +335,50 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
 
   const rules = [
     // Context inference
-    'Use the inferred model/locale/entry from context unless user explicitly overrides.',
-    'Never ask questions you can infer from context.',
-    'Never repeat tool calls that already returned results in this conversation.',
+    agentPrompt('rules.context_infer'),
+    agentPrompt('rules.context_no_ask'),
+    agentPrompt('rules.context_no_repeat'),
 
     // Content creation
-    'For NEW collection entries, generate entry IDs as 12-character lowercase hex strings (e.g., a1b2c3d4e5f6).',
-    'For NEW document entries, generate a slug from the title (kebab-case, lowercase, alphanumeric + hyphens).',
-    'Dictionary entries are free key-value pairs — ALL values must be strings.',
+    agentPrompt('rules.collection_id'),
+    agentPrompt('rules.document_slug'),
+    agentPrompt('rules.dictionary_values'),
 
     // Content reads — prefer brain cache
     agentPrompt('brain.tools_guide'),
 
     // Content updates
-    'To UPDATE existing content, use the EXISTING entry ID from brain_query or get_content. NEVER generate a new ID for updates — this causes duplicates.',
-    'save_content MERGES with existing data. Only send the fields that changed, not all fields.',
+    agentPrompt('rules.update_existing_id'),
+    agentPrompt('rules.update_merge'),
 
     // Relations
-    'For relation fields, the value must be an existing entry ID (for collection targets) or slug (for document targets) from the target model.',
-    'For polymorphic relations (model is string[]), store as { "model": "target-model", "ref": "id-or-slug" }.',
-    'Before setting a relation value, verify the target entry exists by calling brain_query on the target model.',
+    agentPrompt('rules.relation_value'),
+    agentPrompt('rules.polymorphic_relation'),
+    agentPrompt('rules.relation_verify'),
 
     // Validation
-    'Respect field constraints: required fields must be present, unique values must not duplicate, min/max bounds enforced.',
-    'For select fields, value MUST be one of the defined options.',
+    agentPrompt('rules.validate_constraints'),
+    agentPrompt('rules.select_options'),
 
     // i18n
-    'When creating collection entries in i18n models, the same entry ID must exist in ALL supported locales.',
-    'When creating dictionary entries in i18n models, the same keys should exist in ALL supported locales.',
+    agentPrompt('rules.i18n_collection'),
+    agentPrompt('rules.i18n_dictionary'),
 
     // Serialization
-    'Sort object keys alphabetically. Omit null values and default values.',
-    'System fields (id, slug, status, source, updated_by) are auto-managed — NEVER include them in content data.',
+    agentPrompt('rules.serialization_keys'),
+    agentPrompt('rules.system_fields'),
   ]
 
   // Workflow + role rules
   if (workflow === 'auto-merge') {
-    rules.push('After save_content/save_model/init_project, changes are auto-merged. Report the result directly.')
+    rules.push(agentPrompt('rules.auto_merge_owner'))
   }
   else if (isPrivileged) {
-    rules.push('After save_content/save_model, changes are auto-merged (you have admin/owner privileges). Report the result directly.')
+    rules.push(agentPrompt('rules.auto_merge_admin'))
   }
   else {
-    rules.push('After save_content/save_model, a review branch is created. Tell the user which branch was created and that it needs approval from a reviewer or admin.')
-    rules.push('Do NOT call merge_branch automatically. Wait for a reviewer/admin to approve.')
+    rules.push(agentPrompt('rules.review_branch'))
+    rules.push(agentPrompt('rules.no_auto_merge'))
   }
 
   // Plan-aware rules — inform agent about available features and guide user
@@ -463,7 +406,7 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
 
   // Out of scope
   if (intent.category === 'out_of_scope') {
-    rules.push('This message appears off-topic. Respond with ONE sentence redirecting to content management tasks.')
+    rules.push(agentPrompt('rules.off_topic'))
   }
 
   return `## Rules\n${rules.map(r => `- ${r}`).join('\n')}`

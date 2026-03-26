@@ -40,7 +40,7 @@ export async function validateCDNKey(
   authHeader: string | undefined,
 ): Promise<{ projectId: string, keyId: string }> {
   if (!authHeader?.startsWith('Bearer crn_'))
-    throw createError({ statusCode: 401, message: 'Invalid or missing API key' })
+    throw createError({ statusCode: 401, message: errorMessage('cdn.key_invalid') })
 
   const key = authHeader.slice(7) // Remove "Bearer "
   const keyHash = hashCDNKey(key)
@@ -54,10 +54,10 @@ export async function validateCDNKey(
     .single()
 
   if (!apiKey)
-    throw createError({ statusCode: 401, message: 'Invalid API key' })
+    throw createError({ statusCode: 401, message: errorMessage('cdn.key_invalid') })
 
   if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date())
-    throw createError({ statusCode: 401, message: 'API key expired' })
+    throw createError({ statusCode: 401, message: errorMessage('cdn.key_expired') })
 
   // Update last_used_at (non-blocking, fire-and-forget with error logging)
   admin

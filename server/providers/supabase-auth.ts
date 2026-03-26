@@ -50,7 +50,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
       })
 
       if (error || !data.url)
-        throw createError({ statusCode: 500, message: `OAuth redirect failed: ${error?.message}` })
+        throw createError({ statusCode: 500, message: errorMessage('auth.oauth_redirect_failed', { detail: error?.message ?? 'Unknown error' }) })
 
       // State is NOT appended to URL — Supabase manages its own OAuth state/PKCE
       // Our state is stored in a server cookie and validated separately on callback
@@ -64,7 +64,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
       const { data, error } = await admin.auth.exchangeCodeForSession(code)
 
       if (error || !data.session)
-        throw createError({ statusCode: 401, message: `Code exchange failed: ${error?.message}` })
+        throw createError({ statusCode: 401, message: errorMessage('auth.code_exchange_failed', { detail: error?.message ?? 'Unknown error' }) })
 
       return {
         user: mapSupabaseUser(data.user),
@@ -81,7 +81,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
       const { data, error } = await admin.auth.getUser(accessToken)
 
       if (error || !data.user)
-        throw createError({ statusCode: 401, message: `Token validation failed: ${error?.message}` })
+        throw createError({ statusCode: 401, message: errorMessage('auth.token_validation_failed', { detail: error?.message ?? 'Unknown error' }) })
 
       // Decode JWT exp claim for accurate expiry
       let expiresAt = Math.floor(Date.now() / 1000) + 3600
@@ -113,7 +113,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
       })
 
       if (error)
-        throw createError({ statusCode: 500, message: `Magic link failed: ${error.message}` })
+        throw createError({ statusCode: 500, message: errorMessage('auth.magic_link_failed', { detail: error.message }) })
     },
 
     async inviteUserByEmail(email: string): Promise<{ userId: string }> {
@@ -121,7 +121,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email)
 
       if (error)
-        throw createError({ statusCode: 500, message: `Invite failed: ${error.message}` })
+        throw createError({ statusCode: 500, message: errorMessage('auth.invite_failed', { detail: error.message }) })
 
       return { userId: data.user.id }
     },

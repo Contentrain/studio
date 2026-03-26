@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!body.name || !body.slug)
-    throw createError({ statusCode: 400, message: 'name and slug are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.name_slug_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     const plan = getWorkspacePlan(primaryWs)
     const limit = getPlanLimit(plan, 'workspace.count')
     if (existingWorkspaces.length >= limit)
-      throw createError({ statusCode: 403, message: `Workspace limit reached (${limit}). Upgrade your plan for more workspaces.` })
+      throw createError({ statusCode: 403, message: errorMessage('workspace.limit_reached', { limit }) })
   }
 
   const { data, error } = await client

@@ -11,13 +11,13 @@ export default defineEventHandler(async (event) => {
 
   const routeProjectId = getRouterParam(event, 'projectId')
   if (routeProjectId !== projectId)
-    throw createError({ statusCode: 403, message: 'API key does not match project' })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.key_mismatch') })
 
   // CORS origin check (if allowed_origins configured)
   if (allowedOrigins.length > 0) {
     const origin = getHeader(event, 'origin')
     if (origin && !allowedOrigins.includes(origin))
-      throw createError({ statusCode: 403, message: 'Origin not allowed' })
+      throw createError({ statusCode: 403, message: errorMessage('cdn.origin_not_allowed') })
   }
 
   // Plan check
@@ -29,10 +29,10 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found' })
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   if (!project.cdn_enabled)
-    throw createError({ statusCode: 403, message: 'CDN is not enabled for this project' })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.not_enabled') })
 
   const { data: workspace } = await admin
     .from('workspaces')
@@ -41,22 +41,22 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
-    throw createError({ statusCode: 403, message: 'CDN delivery requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
 
   // Rate limiting per-key (uses stored limit from DB)
   const rateCheck = checkRateLimit(`cdn:${keyId}`, rateLimitPerHour, 3600_000)
   if (!rateCheck.allowed)
-    throw createError({ statusCode: 429, message: 'Rate limit exceeded' })
+    throw createError({ statusCode: 429, message: errorMessage('rate.limit_exceeded') })
   setResponseHeader(event, 'X-RateLimit-Remaining', String(rateCheck.remaining))
 
   // Get content from CDN storage
   const cdn = useCDNProvider()
   if (!cdn)
-    throw createError({ statusCode: 503, message: 'CDN storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('cdn.storage_not_configured') })
 
   const path = (getRouterParam(event, 'path') ?? '').replace(/^\//, '')
   if (!path)
-    throw createError({ statusCode: 400, message: 'Path is required' })
+    throw createError({ statusCode: 400, message: errorMessage('cdn.path_required') })
 
   // ETag conditional request
   const ifNoneMatch = getHeader(event, 'if-none-match')
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
   const result = await cdn.getObject(projectId, resolvedPath)
 
   if (!result)
-    throw createError({ statusCode: 404, message: 'Content not found' })
+    throw createError({ statusCode: 404, message: errorMessage('cdn.content_not_found') })
 
   // 304 Not Modified
   if (ifNoneMatch && ifNoneMatch === result.etag) {

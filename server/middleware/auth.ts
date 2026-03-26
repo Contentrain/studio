@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   if (!sessionData) {
     throw createError({
       statusCode: 401,
-      message: 'Unauthorized',
+      message: errorMessage('auth.unauthorized'),
     })
   }
 
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
       await clearServerSession(event)
       throw createError({
         statusCode: 401,
-        message: 'Session expired',
+        message: errorMessage('auth.session_expired'),
       })
     }
 
@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
     await clearServerSession(event)
     throw createError({
       statusCode: 401,
-      message: 'Invalid session',
+      message: errorMessage('auth.session_invalid'),
     })
   }
 

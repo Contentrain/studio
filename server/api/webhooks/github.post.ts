@@ -12,16 +12,16 @@ export default defineEventHandler(async (event) => {
   const secret = runtimeConfig.github.webhookSecret
 
   if (!secret)
-    throw createError({ statusCode: 500, message: 'Webhook secret not configured' })
+    throw createError({ statusCode: 500, message: errorMessage('webhook.secret_not_configured') })
 
   // Verify HMAC-SHA256 signature
   const signature = getHeader(event, 'x-hub-signature-256')
   if (!signature)
-    throw createError({ statusCode: 401, message: 'Missing signature' })
+    throw createError({ statusCode: 401, message: errorMessage('webhook.missing_signature') })
 
   const rawBody = await readRawBody(event)
   if (!rawBody)
-    throw createError({ statusCode: 400, message: 'Empty body' })
+    throw createError({ statusCode: 400, message: errorMessage('webhook.empty_body') })
 
   const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`
 
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const expectedBuf = Buffer.from(expected)
 
   if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf))
-    throw createError({ statusCode: 401, message: 'Invalid signature' })
+    throw createError({ statusCode: 401, message: errorMessage('webhook.invalid_signature') })
 
   const body = JSON.parse(rawBody) as Record<string, unknown>
   const eventType = getHeader(event, 'x-github-event')

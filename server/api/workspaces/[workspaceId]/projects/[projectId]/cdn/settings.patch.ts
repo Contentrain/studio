@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ cdn_enabled?: boolean, cdn_branch?: string | null }>(event)
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
       .single()
 
     if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
-      throw createError({ statusCode: 403, message: 'CDN requires Pro plan or higher' })
+      throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
   }
 
   const update: Record<string, unknown> = {}

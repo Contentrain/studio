@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!query.workspaceId || !query.owner || !query.repo)
-    throw createError({ statusCode: 400, message: 'workspaceId, owner, and repo are required' })
+    throw createError({ statusCode: 400, message: errorMessage('github.scan_params_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   const workspace = await getWorkspace(client, query.workspaceId)
 
   if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed' })
+    throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
   // Create GitProvider for this repo
   const git = useGitProvider({

@@ -7,13 +7,13 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ provider: string, apiKey: string }>(event)
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'workspaceId is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   if (!body.provider || !body.apiKey)
-    throw createError({ statusCode: 400, message: 'provider and apiKey are required' })
+    throw createError({ statusCode: 400, message: errorMessage('api.provider_key_required') })
 
   if (!['anthropic'].includes(body.provider))
-    throw createError({ statusCode: 400, message: 'Unsupported provider' })
+    throw createError({ statusCode: 400, message: errorMessage('api.unsupported_provider') })
 
   // Feature gate: BYOA requires pro+
   const client = useSupabaseUserClient(session.accessToken)
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'ai.byoa'))
-    throw createError({ statusCode: 403, message: 'BYOA API keys require Pro plan or above' })
+    throw createError({ statusCode: 403, message: errorMessage('api.byoa_upgrade') })
 
   const runtimeConfig = useRuntimeConfig()
   const encryptedKey = encryptApiKey(body.apiKey, runtimeConfig.sessionSecret)

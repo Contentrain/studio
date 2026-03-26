@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const memberId = getRouterParam(event, 'memberId')
 
   if (!workspaceId || !memberId)
-    throw createError({ statusCode: 400, message: 'workspaceId and memberId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.member_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -23,10 +23,10 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!target)
-    throw createError({ statusCode: 404, message: 'Member not found' })
+    throw createError({ statusCode: 404, message: errorMessage('members.not_found') })
 
   if (target.role === 'owner')
-    throw createError({ statusCode: 400, message: 'Cannot remove workspace owner' })
+    throw createError({ statusCode: 400, message: errorMessage('members.cannot_remove_owner') })
 
   const { error } = await client
     .from('workspace_members')

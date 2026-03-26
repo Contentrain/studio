@@ -3,7 +3,7 @@ export default defineEventHandler(async (event) => {
   const ip = getHeader(event, 'x-forwarded-for') ?? 'unknown'
   const rateCheck = checkRateLimit(`auth-verify:${ip}`, 10, 60_000)
   if (!rateCheck.allowed)
-    throw createError({ statusCode: 429, message: 'Too many requests. Try again later.' })
+    throw createError({ statusCode: 429, message: errorMessage('auth.rate_limited') })
 
   const body = await readBody<{
     code?: string
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   if (body.code && body.state) {
     const valid = await validateAuthState(event, body.state)
     if (!valid)
-      throw createError({ statusCode: 403, message: 'Invalid or expired auth state. Please try logging in again.' })
+      throw createError({ statusCode: 403, message: errorMessage('auth.invalid_state') })
   }
 
   const authProvider = useAuthProvider()
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
     session = await authProvider.exchangeTokens(body.accessToken, body.refreshToken ?? undefined)
   }
   else {
-    throw createError({ statusCode: 400, message: 'code or accessToken required' })
+    throw createError({ statusCode: 400, message: errorMessage('auth.code_or_token_required') })
   }
 
   // Store tokens in encrypted httpOnly cookie — never exposed to client

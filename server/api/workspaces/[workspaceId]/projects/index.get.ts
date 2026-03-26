@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const workspaceId = getRouterParam(event, 'workspaceId')
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'Workspace ID is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   const admin = useSupabaseAdmin()
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!membership)
-    throw createError({ statusCode: 403, message: 'Not a member of this workspace' })
+    throw createError({ statusCode: 403, message: errorMessage('workspace.not_a_member') })
 
   // Owner/Admin: all projects
   if (membership.role === 'owner' || membership.role === 'admin') {

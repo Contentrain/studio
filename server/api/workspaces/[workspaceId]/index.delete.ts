@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const workspaceId = getRouterParam(event, 'workspaceId')
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'workspaceId is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner'])
@@ -24,13 +24,13 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!workspace)
-    throw createError({ statusCode: 404, message: 'Workspace not found' })
+    throw createError({ statusCode: 404, message: errorMessage('workspace.not_found') })
 
   if (workspace.type === 'primary')
-    throw createError({ statusCode: 400, message: 'Cannot delete primary workspace' })
+    throw createError({ statusCode: 400, message: errorMessage('workspace.cannot_delete_primary') })
 
   if (workspace.owner_id !== session.user.id)
-    throw createError({ statusCode: 403, message: 'Only the workspace owner can delete it' })
+    throw createError({ statusCode: 403, message: errorMessage('workspace.owner_only_delete') })
 
   // Clean R2 storage for all projects
   const { data: projects } = await admin

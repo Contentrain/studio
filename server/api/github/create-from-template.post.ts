@@ -23,11 +23,11 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!body.workspaceId || !body.templateRepo || !body.name)
-    throw createError({ statusCode: 400, message: 'workspaceId, templateRepo, and name are required' })
+    throw createError({ statusCode: 400, message: errorMessage('github.template_params_required') })
 
   // Validate repo name
   if (!/^[a-z0-9][a-z0-9._-]{0,99}$/i.test(body.name))
-    throw createError({ statusCode: 400, message: 'Invalid repository name' })
+    throw createError({ statusCode: 400, message: errorMessage('github.repo_name_invalid') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const workspace = await getWorkspace(client, body.workspaceId)
 
   if (!workspace?.github_installation_id)
-    throw createError({ statusCode: 400, message: 'GitHub App not installed for this workspace' })
+    throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
   const config = useRuntimeConfig()
   const privateKey = Buffer.from(config.github.privateKey, 'base64').toString('utf-8')
@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
 
   const targetOwner = installation.account?.login
   if (!targetOwner)
-    throw createError({ statusCode: 500, message: 'Could not resolve GitHub installation owner' })
+    throw createError({ statusCode: 500, message: errorMessage('github.owner_not_resolved') })
 
   // Create repo from template
   let newRepo
@@ -80,12 +80,12 @@ export default defineEventHandler(async (event) => {
     console.error('[create-from-template] Failed:', detail, 'status:', err.status)
 
     if (err.status === 422)
-      throw createError({ statusCode: 422, message: 'Repository name already exists or is invalid' })
+      throw createError({ statusCode: 422, message: errorMessage('github.repo_exists') })
 
     if (err.status === 403)
-      throw createError({ statusCode: 403, message: 'GitHub App does not have permission to create repositories. Please update the App permissions in GitHub settings.' })
+      throw createError({ statusCode: 403, message: errorMessage('github.repo_permission_denied') })
 
-    throw createError({ statusCode: 500, message: `Failed to create repository: ${detail}` })
+    throw createError({ statusCode: 500, message: errorMessage('github.repo_create_failed', { detail }) })
   }
 
   // Check if the App can access the newly created repo

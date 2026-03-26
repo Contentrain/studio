@@ -10,15 +10,15 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ terms: Record<string, Record<string, string> | null> }>(event)
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   if (!body.terms || typeof body.terms !== 'object')
-    throw createError({ statusCode: 400, message: 'terms object is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.terms_required') })
 
   // Editor+ required to modify vocabulary (viewer/reviewer cannot write)
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (!permissions.availableTools.includes('save_content'))
-    throw createError({ statusCode: 403, message: 'Insufficient permissions to modify vocabulary' })
+    throw createError({ statusCode: 403, message: errorMessage('vocabulary.modify_forbidden') })
 
   const { git, contentRoot } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,

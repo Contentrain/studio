@@ -7,13 +7,13 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!workspaceId)
-    throw createError({ statusCode: 400, message: 'Workspace ID is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   if (!body.email || !body.role)
-    throw createError({ statusCode: 400, message: 'email and role are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.email_role_required') })
 
   if (!['admin', 'member'].includes(body.role))
-    throw createError({ statusCode: 400, message: 'role must be admin or member' })
+    throw createError({ statusCode: 400, message: errorMessage('members.invalid_workspace_role') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   const currentMembers = await listWorkspaceMembers(client, workspaceId)
   const memberLimit = getPlanLimit(plan, 'team.members')
   if (currentMembers.length >= memberLimit)
-    throw createError({ statusCode: 403, message: `Team member limit reached (${memberLimit}). Upgrade your plan to invite more members.` })
+    throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
 
   const userId = await inviteOrLookupUser(body.email)
 

@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const memberId = getRouterParam(event, 'memberId')
 
   if (!workspaceId || !projectId || !memberId)
-    throw createError({ statusCode: 400, message: 'workspaceId, projectId, and memberId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.member_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!project)
-    throw createError({ statusCode: 404, message: 'Project not found in this workspace' })
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
   const { error } = await client
     .from('project_members')

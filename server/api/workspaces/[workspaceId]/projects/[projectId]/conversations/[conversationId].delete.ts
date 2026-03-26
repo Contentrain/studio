@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   const conversationId = getRouterParam(event, 'conversationId')
 
   if (!conversationId)
-    throw createError({ statusCode: 400, message: 'conversationId is required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.conversation_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
 

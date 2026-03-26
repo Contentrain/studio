@@ -8,14 +8,14 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'media.library'))
-    throw createError({ statusCode: 403, message: 'Media library requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('media.library_upgrade') })
 
   const query = getQuery(event) as {
     search?: string
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
 
   const media = useMediaProvider()
   if (!media)
-    throw createError({ statusCode: 503, message: 'Media storage not configured' })
+    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
 
   return media.listAssets(projectId, {
     search: query.search,

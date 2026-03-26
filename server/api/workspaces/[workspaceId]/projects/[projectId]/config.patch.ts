@@ -11,12 +11,12 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<Partial<ContentrainConfig>>(event)
 
   if (!workspaceId || !projectId)
-    throw createError({ statusCode: 400, message: 'workspaceId and projectId are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   // Only owner/admin can change project config
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.workspaceRole !== 'owner' && permissions.workspaceRole !== 'admin')
-    throw createError({ statusCode: 403, message: 'Only workspace owner/admin can change project settings' })
+    throw createError({ statusCode: 403, message: errorMessage('project.settings_owner_only') })
 
   const client = useSupabaseUserClient(session.accessToken)
   const { git, contentRoot, workspace } = await resolveProjectContext(client, workspaceId, projectId)
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   // Plan gate: review workflow requires Pro+
   if (body.workflow === 'review' && !hasFeature(plan, 'workflow.review'))
-    throw createError({ statusCode: 403, message: 'Review workflow requires Pro plan or higher' })
+    throw createError({ statusCode: 403, message: errorMessage('project.review_workflow_upgrade') })
 
   const configPath = contentRoot ? `${contentRoot}/.contentrain/config.json` : '.contentrain/config.json'
 
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     config = JSON.parse(await git.readFile(configPath)) as ContentrainConfig
   }
   catch {
-    throw createError({ statusCode: 404, message: '.contentrain/config.json not found' })
+    throw createError({ statusCode: 404, message: errorMessage('project.config_not_found') })
   }
 
   // Merge allowed fields only
