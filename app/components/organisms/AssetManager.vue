@@ -10,16 +10,14 @@ const props = defineProps<{
 const { activeWorkspace } = useWorkspaces()
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
 
-const { assets, total, loading, uploading, filters, fetchAssets, uploadFile, clearLibrary } = useMediaLibrary()
+const { assets, total, loading, filters, fetchAssets, clearLibrary } = useMediaLibrary()
 const toast = useToast()
 const modalOpen = ref(false)
 
-// Fetch on mount (skip on free plan)
 onMounted(() => {
   if (isPro.value) fetchAssets(props.workspaceId, props.projectId)
 })
 
-// Search debounce
 let searchTimeout: ReturnType<typeof setTimeout>
 watch(() => filters.value.search, () => {
   clearTimeout(searchTimeout)
@@ -33,14 +31,12 @@ function openAssetDetail() {
   modalOpen.value = true
 }
 
-async function handleUpload(file: File) {
-  try {
-    await uploadFile(props.workspaceId, props.projectId, file)
-    toast.success(t('media.upload_success'))
-  }
-  catch (e: unknown) {
-    toast.error(e instanceof Error ? e.message : t('media.upload_error'))
-  }
+function handleUploaded() {
+  fetchAssets(props.workspaceId, props.projectId)
+}
+
+function handleUploadError(message: string) {
+  toast.error(message)
 }
 
 onUnmounted(() => {
@@ -107,11 +103,12 @@ onUnmounted(() => {
       <div class="flex-1 overflow-y-auto">
         <!-- Upload zone -->
         <div v-if="editable" class="p-4 pb-2">
-          <MoleculesAssetUploader @upload="handleUpload" />
-          <div v-if="uploading" class="mt-2 flex items-center gap-2 text-xs text-muted">
-            <span class="icon-[annon--loader] size-3.5 animate-spin" aria-hidden="true" />
-            {{ t('media.uploading') }}
-          </div>
+          <MoleculesAssetUploader
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+            @uploaded="handleUploaded"
+            @error="handleUploadError"
+          />
         </div>
 
         <!-- Loading -->

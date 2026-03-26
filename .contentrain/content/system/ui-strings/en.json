@@ -230,6 +230,7 @@
   "media.open_full": "Open full asset manager",
   "media.or": "or",
   "media.path": "Path",
+  "media.processing": "Processing image...",
   "media.pro_required": "Upload, organize, and optimize images with the Asset Manager. Available on Pro plan and above.",
   "media.path_description": "Enter a media path or external URL",
   "media.path_placeholder": "media/original/... or https://...",
