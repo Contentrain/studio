@@ -109,7 +109,7 @@ onUnmounted(() => {
         class="flex-1"
       />
       <AtomsFormSelect
-        :model-value="filters.type || 'all'"
+        :model-value="filters.type"
         :options="[
           { value: 'all', label: t('media.all_types') },
           { value: 'image', label: t('media.images') },
