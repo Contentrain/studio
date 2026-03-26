@@ -1,0 +1,22 @@
+{
+  "api.conversation_upgrade": "Conversation API requires Team plan ($29/mo). Team includes: external bot integration (Telegram, Slack), REST API, webhooks, and custom AI instructions.",
+  "api.webhooks_upgrade": "Outbound webhooks require Team plan ($29/mo). Team includes: event notifications to external services, deploy hooks for Vercel/Netlify, and Slack integration.",
+  "auth.forbidden": "You don't have permission to perform this action.",
+  "auth.invalid_state": "Invalid or expired authentication state. Please try signing in again.",
+  "auth.session_expired": "Your session has expired. Please sign in again.",
+  "cdn.upgrade": "CDN delivery requires Pro plan ($12/mo). Pro includes: 20GB bandwidth, API key management, automatic builds on content change, and ETag caching.",
+  "content.not_found": "Content not found for this model and locale.",
+  "content.validation_failed": "Content validation failed. Please check the required fields and field types.",
+  "generic.server_error": "Something went wrong. Please try again or contact support if the problem persists.",
+  "media.library_upgrade": "Media library requires Pro plan ($12/mo). Pro includes: Asset Manager with 5GB storage, image optimization, variant generation, and CDN delivery. Upgrade in workspace settings.",
+  "media.storage_not_configured": "Media storage is not configured. Contact your administrator to set up R2 storage credentials.",
+  "media.upload_upgrade": "Media upload requires Pro plan ($12/mo). Pro includes: image upload, optimization, variant generation (hero, card, thumb, og sizes), and CDN delivery. For now, you can use external image URLs (Unsplash, etc) directly in content fields.",
+  "model.access_denied": "You don't have access to this model. Your role is restricted to specific models.",
+  "model.not_found": "Content model not found. It may have been deleted or renamed.",
+  "project.not_found": "Project not found or you don't have access.",
+  "rate.limit_exceeded": "Too many requests. Please wait a moment and try again.",
+  "storage.quota_exceeded": "Storage quota exceeded. Upgrade your plan for more storage or delete unused assets.",
+  "upload.file_too_large": "File exceeds the size limit for your plan. Pro: 10MB, Team: 50MB, Enterprise: 100MB.",
+  "upload.type_not_allowed": "This file type is not allowed. Supported: JPEG, PNG, GIF, WebP, AVIF, SVG, MP4, WebM, PDF.",
+  "workspace.not_found": "Workspace not found or you don't have access."
+}
