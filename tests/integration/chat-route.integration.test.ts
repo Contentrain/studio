@@ -177,6 +177,13 @@ describe('chat route integration', () => {
     vi.stubGlobal('saveChatResult', saveChatResult)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
     vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: null,
+      models: new Map(),
+      vocabulary: null,
+      contentContext: null,
+    }))
     vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
     vi.stubGlobal('STUDIO_TOOLS', [])
     vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
@@ -353,6 +360,13 @@ describe('chat route integration', () => {
     vi.stubGlobal('saveChatResult', saveChatResult)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
     vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: null,
+      models: new Map(),
+      vocabulary: null,
+      contentContext: null,
+    }))
     vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
     vi.stubGlobal('STUDIO_TOOLS', [])
     vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({

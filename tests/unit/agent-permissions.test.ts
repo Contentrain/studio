@@ -99,7 +99,7 @@ describe('resolveAgentPermissions', () => {
         specific_models: true,
         allowed_models: ['faq', 'docs'],
       },
-      workspace: { plan: 'pro' },
+      workspace: { plan: 'business' },
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
