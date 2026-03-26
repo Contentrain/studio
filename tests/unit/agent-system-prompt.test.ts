@@ -79,7 +79,7 @@ describe('buildSystemPrompt', () => {
       'business',
     )
 
-    expect(prompt).toContain('## Contentrain Architecture')
+    expect(prompt).toContain('[prompt:architecture.intro]')
     expect(prompt).toContain('## Inferred Intent: update_content')
     expect(prompt).toContain('Default model: posts')
     expect(prompt).toContain('Pending branches (1)')
@@ -125,8 +125,7 @@ describe('buildSystemPrompt', () => {
       'free',
     )
 
-    expect(prompt).toContain('This project needs initialization')
-    expect(prompt).toContain('Use init_project')
+    expect(prompt).toContain('[prompt:state.needs_init]')
     expect(prompt).toContain('Available tools: init_project')
   })
 })

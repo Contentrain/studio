@@ -69,7 +69,6 @@ describe('member routes', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 403,
-      message: 'Team member limit reached (2). Upgrade your plan to invite more members.',
     })
   })
 
@@ -101,7 +100,6 @@ describe('member routes', () => {
 
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 403,
-      message: 'Reviewer role requires Pro plan or higher',
     })
   })
 

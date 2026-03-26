@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<ChatRequest>(event)
 
   if (!workspaceId || !projectId || !body.message)
-    throw createError({ statusCode: 400, message: 'workspaceId, projectId, and message are required' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
 
   // Default context if not provided (backward compat)
   const uiContext = body.context ?? {
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   const rateKey = `chat:${session.user.id}`
   const rateCheck = checkRateLimit(rateKey)
   if (!rateCheck.allowed)
-    throw createError({ statusCode: 429, message: `Rate limit exceeded. Try again in ${Math.ceil(rateCheck.retryAfterMs / 1000)}s` })
+    throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
   // === MONTHLY LIMIT (aggregate across all sources: studio + byoa) ===
   const monthlyLimit = getMonthlyMessageLimit(plan)
@@ -60,13 +60,13 @@ export default defineEventHandler(async (event) => {
       .eq('month', month)
     const totalCount = (usageRows ?? []).reduce((sum, r) => sum + (r.message_count ?? 0), 0)
     if (totalCount >= monthlyLimit)
-      throw createError({ statusCode: 429, message: `Monthly message limit reached (${monthlyLimit} messages). Upgrade your plan for more.` })
+      throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: monthlyLimit }) })
   }
 
   // === PERMISSIONS ===
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.availableTools.length === 0)
-    throw createError({ statusCode: 403, message: 'No chat permissions' })
+    throw createError({ statusCode: 403, message: errorMessage('chat.no_permissions') })
 
   // === API KEY (BYOA is ee/ feature — free uses studio key only) ===
   const runtimeConfig = useRuntimeConfig()
@@ -83,14 +83,14 @@ export default defineEventHandler(async (event) => {
       apiKey = runtimeConfig.anthropic.apiKey
     }
     else {
-      throw createError({ statusCode: 400, message: 'No API key configured.' })
+      throw createError({ statusCode: 400, message: errorMessage('chat.no_api_key') })
     }
   }
   else if (runtimeConfig.anthropic.apiKey) {
     apiKey = runtimeConfig.anthropic.apiKey
   }
   else {
-    throw createError({ statusCode: 400, message: 'No API key configured.' })
+    throw createError({ statusCode: 400, message: errorMessage('chat.no_api_key') })
   }
 
   // === CONVERSATION ===
@@ -115,7 +115,7 @@ export default defineEventHandler(async (event) => {
     conversationId = (await createConversation(client, projectId, session.user.id, body.message)) ?? undefined
   }
   if (!conversationId)
-    throw createError({ statusCode: 500, message: 'Failed to create conversation' })
+    throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
   // === HISTORY ===
   const historyRows = await loadConversationHistory(client, conversationId, 50)
@@ -297,7 +297,7 @@ export default defineEventHandler(async (event) => {
 
           // Execute tool
           const result = await executeToolWithAutoMerge(
-            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions, plan, projectId, uiContext,
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext,
           )
 
           // Accumulate affected resources
@@ -373,6 +373,7 @@ async function executeToolWithAutoMerge(
   permissions: AgentPermissions,
   plan: string,
   projectId: string,
+  workspaceId: string,
   uiContext: import('~~/server/utils/agent-types').ChatUIContext,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
@@ -524,7 +525,7 @@ async function executeToolWithAutoMerge(
       case 'merge_branch': {
         const branchToMerge = params.branch as string
         if (!branchToMerge.startsWith('contentrain/')) {
-          result = { error: 'Only contentrain/ branches can be merged' }
+          result = { error: agentMessage('branch.contentrain_only_merge') }
           break
         }
         const mergeResult = await engine.mergeBranch(branchToMerge)
@@ -537,7 +538,7 @@ async function executeToolWithAutoMerge(
       case 'reject_branch': {
         const branchToReject = params.branch as string
         if (!branchToReject.startsWith('contentrain/')) {
-          result = { error: 'Only contentrain/ branches can be rejected' }
+          result = { error: agentMessage('branch.contentrain_only_reject') }
           break
         }
         await engine.rejectBranch(branchToReject)
@@ -634,7 +635,7 @@ async function executeToolWithAutoMerge(
         }
         const url = params.url as string
         if (!url) {
-          result = { error: 'url is required' }
+          result = { error: agentMessage('media.url_required') }
           break
         }
         let fetchResponse: Response
@@ -645,16 +646,16 @@ async function executeToolWithAutoMerge(
           })
         }
         catch {
-          result = { error: 'Failed to fetch URL' }
+          result = { error: agentMessage('media.fetch_failed') }
           break
         }
         if (!fetchResponse.ok) {
-          result = { error: `URL returned ${fetchResponse.status}` }
+          result = { error: agentMessage('media.url_bad_status', { status: fetchResponse.status }) }
           break
         }
         const mimeType = (fetchResponse.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim()
         if (!isAllowedMimeType(mimeType)) {
-          result = { error: `File type not allowed: ${mimeType}` }
+          result = { error: agentMessage('media.type_not_allowed', { type: mimeType }) }
           break
         }
         const fileBuffer = Buffer.from(await fetchResponse.arrayBuffer())
@@ -670,7 +671,7 @@ async function executeToolWithAutoMerge(
           alt: params.alt as string | undefined,
           tags: params.tags as string[] | undefined,
           variants,
-          uploadedBy: session.user.id,
+          uploadedBy: userEmail,
           source: 'agent',
         })
         result = {
@@ -695,7 +696,7 @@ async function executeToolWithAutoMerge(
         }
         const asset = await mediaProvider.getAsset(params.assetId as string)
         if (!asset || asset.projectId !== projectId) {
-          result = { error: 'Asset not found' }
+          result = { error: agentMessage('media.asset_not_found') }
           break
         }
         result = asset

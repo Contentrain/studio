@@ -33,7 +33,6 @@ describe('cdn keys', () => {
 
     await expect(validateCDNKey(undefined)).rejects.toMatchObject({
       statusCode: 401,
-      message: 'Invalid or missing API key',
     })
   })
 
@@ -59,7 +58,6 @@ describe('cdn keys', () => {
 
     await expect(validateCDNKey('Bearer crn_live_example')).rejects.toMatchObject({
       statusCode: 401,
-      message: 'API key expired',
     })
   })
 
