@@ -150,7 +150,7 @@ app/components/
 - All atoms use Radix Vue primitives where applicable
 - All components support dark mode
 - NuxtImg for all images (not <img>)
-- Icons via `icon-[annon--name]` class (not inline SVG, except brand logos)
+- Icons via `icon-[annon--home-2]` class (not inline SVG, except brand logos)
 
 ### Accessibility & Interactive Elements — CRITICAL
 

@@ -6,7 +6,7 @@ describe('connector provider contract', () => {
     const provider: ConnectorProvider = {
       id: 'url-fetch',
       name: 'URL Fetch',
-      icon: 'icon-[annon--link]',
+      icon: 'icon-[annon--link-1]',
       auth: 'none',
       featureKey: 'connector.url_fetch',
       browse: async () => [{ id: '1', title: 'Homepage', type: 'document' }],
