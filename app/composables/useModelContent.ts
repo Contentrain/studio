@@ -1,78 +1,41 @@
-import { get, set, del } from 'idb-keyval'
-
-interface CachedModelContent {
-  data: unknown
-  kind: string
-  meta: Record<string, unknown> | null
-  timestamp: number
-}
-
-const CACHE_PREFIX = 'cr-content-'
-const STALE_MS = 5 * 60 * 1000 // 5 minutes
-
-// In-memory cache for instant switching between models
-const memoryCache = new Map<string, CachedModelContent>()
+/**
+ * Model content composable — thin adapter over Content Brain.
+ *
+ * Preserves the exact same return shape as the original useModelContent()
+ * so all consuming components (ContentPanel, ContentCollectionView, etc.)
+ * continue working without changes.
+ *
+ * Data source: useContentBrain().queryContent() → Worker IndexedDB
+ * Fallback: direct API call if Brain not ready
+ */
 
 export function useModelContent() {
+  const brain = useContentBrain()
+
   const content = useState<unknown>('model-content', () => null)
   const kind = useState<string>('model-content-kind', () => 'collection')
   const meta = useState<Record<string, unknown> | null>('model-content-meta', () => null)
   const loading = useState('model-content-loading', () => false)
 
   async function fetchContent(workspaceId: string, projectId: string, modelId: string, locale: string = 'en') {
-    const cacheKey = `${CACHE_PREFIX}${projectId}:${modelId}:${locale}`
-
-    // 1. Memory cache (instant)
-    const mem = memoryCache.get(cacheKey)
-    if (mem && Date.now() - mem.timestamp < STALE_MS) {
-      content.value = mem.data
-      kind.value = mem.kind
-      meta.value = mem.meta
-      return
-    }
-
-    // 2. IndexedDB cache (fast, survives refresh)
-    if (import.meta.client) {
-      try {
-        const cached = await get<CachedModelContent>(cacheKey)
-        if (cached && Date.now() - cached.timestamp < STALE_MS) {
-          content.value = cached.data
-          kind.value = cached.kind
-          meta.value = cached.meta ?? null
-          memoryCache.set(cacheKey, cached)
-          return
-        }
-      }
-      catch { /* IndexedDB unavailable */ }
-    }
-
-    // 3. API fetch (slow — GitHub API)
     loading.value = true
     try {
-      const result = await $fetch<{ data: unknown, kind?: string, meta?: Record<string, unknown> | null }>(
-        `/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`,
-        { params: { locale } },
-      )
-      content.value = result.data
-      kind.value = result.kind ?? 'collection'
-      meta.value = result.meta ?? null
-
-      // Cache in memory + IndexedDB
-      const entry: CachedModelContent = {
-        data: result.data,
-        kind: result.kind ?? 'collection',
-        meta: result.meta ?? null,
-        timestamp: Date.now(),
+      if (brain.ready.value) {
+        // Brain is ready — query from Worker IndexedDB (instant)
+        const result = await brain.queryContent(modelId, locale)
+        content.value = result.data
+        kind.value = result.kind ?? 'collection'
+        meta.value = (result.meta ?? null) as Record<string, unknown> | null
       }
-      memoryCache.set(cacheKey, entry)
-
-      if (import.meta.client) {
-        try {
-          await set(cacheKey, entry)
-        }
-        catch {
-          // IndexedDB write not critical
-        }
+      else {
+        // Brain not ready — fallback to direct API
+        const result = await $fetch<{ data: unknown, kind?: string, meta?: Record<string, unknown> | null }>(
+          `/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`,
+          { params: { locale } },
+        )
+        content.value = result.data
+        kind.value = result.kind ?? 'collection'
+        meta.value = result.meta ?? null
       }
     }
     catch {
@@ -89,31 +52,8 @@ export function useModelContent() {
     meta.value = null
   }
 
-  /**
-   * Invalidate all cached content for a project.
-   * Call after content changes (save, delete, merge).
-   */
   async function invalidateProjectContent(projectId: string) {
-    // Clear memory cache entries for this project
-    for (const key of memoryCache.keys()) {
-      if (key.startsWith(`${CACHE_PREFIX}${projectId}:`)) {
-        memoryCache.delete(key)
-      }
-    }
-    // Clear IndexedDB cache entries
-    if (import.meta.client) {
-      try {
-        const { keys } = await import('idb-keyval')
-        const allKeys = await keys()
-        for (const key of allKeys) {
-          if (typeof key === 'string' && key.startsWith(`${CACHE_PREFIX}${projectId}:`)) {
-            await del(key)
-          }
-        }
-      }
-      catch { /* not critical */ }
-    }
-    // Clear current content
+    await brain.invalidate(projectId)
     content.value = null
   }
 
