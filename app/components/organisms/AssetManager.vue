@@ -12,6 +12,7 @@ const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.libr
 
 const { assets, total, loading, uploading, selectedAsset, filters, fetchAssets, uploadFile, updateAsset, deleteAsset, bulkDelete, selectAsset, clearLibrary } = useMediaLibrary()
 const toast = useToast()
+const modalOpen = ref(false)
 
 // Bulk selection
 const selectedIds = ref<Set<string>>(new Set())
@@ -129,6 +130,12 @@ onUnmounted(() => {
           :placeholder="t('media.search_placeholder')"
           class="flex-1"
         />
+        <AtomsIconButton
+          icon="icon-[annon--expand]"
+          :label="t('media.open_full')"
+          size="sm"
+          @click="modalOpen = true"
+        />
         <AtomsFormSelect
           :model-value="filters.type"
           :options="[
@@ -236,5 +243,13 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
+
+    <!-- Full-screen modal -->
+    <OrganismsAssetManagerModal
+      v-model:open="modalOpen"
+      :workspace-id="workspaceId"
+      :project-id="projectId"
+      :editable="editable"
+    />
   </div>
 </template>

@@ -32,9 +32,17 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     return { buffer: input, width: 0, height: 0, format: contentType.split('/').pop() ?? 'bin', size: input.length }
   }
 
-  // SVG: keep as-is, no Sharp processing needed
+  // SVG: keep as-is, extract dimensions only
   if (contentType === 'image/svg+xml') {
-    return { buffer: input, width: 0, height: 0, format: 'svg', size: input.length }
+    let svgWidth = 0
+    let svgHeight = 0
+    try {
+      const meta = await sharp(input).metadata()
+      svgWidth = meta.width ?? 0
+      svgHeight = meta.height ?? 0
+    }
+    catch { /* SVG metadata extraction optional */ }
+    return { buffer: input, width: svgWidth, height: svgHeight, format: 'svg', size: input.length }
   }
 
   let pipeline = sharp(input)
