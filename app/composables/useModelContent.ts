@@ -17,26 +17,13 @@ export function useModelContent() {
   const meta = useState<Record<string, unknown> | null>('model-content-meta', () => null)
   const loading = useState('model-content-loading', () => false)
 
-  async function fetchContent(workspaceId: string, projectId: string, modelId: string, locale: string = 'en') {
+  async function fetchContent(_workspaceId: string, _projectId: string, modelId: string, locale: string = 'en') {
     loading.value = true
     try {
-      if (brain.ready.value) {
-        // Brain is ready — query from Worker IndexedDB (instant)
-        const result = await brain.queryContent(modelId, locale)
-        content.value = result.data
-        kind.value = result.kind ?? 'collection'
-        meta.value = (result.meta ?? null) as Record<string, unknown> | null
-      }
-      else {
-        // Brain not ready — fallback to direct API
-        const result = await $fetch<{ data: unknown, kind?: string, meta?: Record<string, unknown> | null }>(
-          `/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`,
-          { params: { locale } },
-        )
-        content.value = result.data
-        kind.value = result.kind ?? 'collection'
-        meta.value = result.meta ?? null
-      }
+      const result = await brain.queryContent(modelId, locale)
+      content.value = result.data
+      kind.value = result.kind ?? 'collection'
+      meta.value = (result.meta ?? null) as Record<string, unknown> | null
     }
     catch {
       content.value = null
