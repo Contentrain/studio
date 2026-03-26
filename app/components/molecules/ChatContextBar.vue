@@ -72,7 +72,7 @@ const typeColors: Record<string, string> = {
       >
         <span :class="typeIcons[chip.type]" class="size-3 shrink-0" aria-hidden="true" />
         <span class="truncate">{{ chip.label }}</span>
-        <span v-if="chip.sublabel" class="truncate opacity-60">· {{ chip.sublabel }}</span>
+        <span v-if="chip.sublabel" class="truncate tabular-nums opacity-60">· {{ chip.sublabel }}</span>
         <button
           type="button"
           class="-mr-0.5 ml-1 flex shrink-0 items-center justify-center rounded-full p-0.5 transition-colors hover:bg-black/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current dark:hover:bg-white/10"

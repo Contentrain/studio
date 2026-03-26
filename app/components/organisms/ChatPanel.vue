@@ -153,7 +153,7 @@ function formatConversationDate(dateStr: string): string {
                 >
                   <button
                     type="button"
-                    class="min-w-0 flex-1 text-left focus-visible:outline-none"
+                    class="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                     @click="handleLoadConversation(conv.id)"
                   >
                     <div class="truncate text-sm text-heading dark:text-secondary-100">
@@ -165,7 +165,7 @@ function formatConversationDate(dateStr: string): string {
                   </button>
                   <button
                     type="button"
-                    class="shrink-0 rounded p-0.5 text-muted opacity-0 transition-all hover:text-danger-500 group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50"
+                    class="shrink-0 rounded p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50"
                     :title="confirmDeleteId === conv.id ? t('chat.confirm_delete') : t('chat.delete_conversation')"
                     @click.stop="handleDeleteConversation(conv.id)"
                   >

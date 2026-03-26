@@ -165,7 +165,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           <button
             v-if="editable"
             type="button"
-            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-all hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
             :aria-label="t('content.edit_entry')"
             @click.prevent="openEditModal(String(entryId), entry)"
           >
@@ -176,7 +176,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
             v-if="editable"
             type="button"
             :aria-label="t('content.delete_entry')"
-            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-all hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
             @click.prevent="deleteEntry(String(entryId), entry)"
           >
             <span class="icon-[annon--trash] size-3" aria-hidden="true" />
@@ -185,7 +185,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           <button
             type="button"
             aria-label="Pin to context"
-            class="shrink-0 rounded-md p-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
             :class="isPinned('entry', modelId ?? '', String(entryId))
               ? 'text-primary-500 opacity-100'
               : 'text-muted opacity-0 hover:opacity-100 group-hover/entry:opacity-60'"
@@ -234,7 +234,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
                 <!-- Pin field -->
                 <button
                   type="button"
-                  class="shrink-0 rounded-md p-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                   :class="isPinned('field', modelId ?? '', String(entryId), fieldId)
                     ? 'text-info-500 opacity-100'
                     : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"

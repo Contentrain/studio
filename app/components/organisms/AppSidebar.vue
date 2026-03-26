@@ -116,7 +116,7 @@ async function onSettingsSaved() {
   >
     <!-- Brand + Workspace -->
     <div class="shrink-0 px-3 pt-3 pb-2">
-      <NuxtLink to="/" class="mb-1 flex items-end gap-2 px-2 focus-visible:outline-none">
+      <NuxtLink to="/" class="mb-1 flex items-end gap-2 rounded px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50">
         <AtomsLogo variant="icon" color="auto" class="h-5 w-auto" />
         <span
           class="font-display text-[11px] leading-none font-semibold uppercase tracking-[0.2em] text-secondary-400"

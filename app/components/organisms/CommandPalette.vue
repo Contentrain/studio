@@ -467,7 +467,7 @@ const emit = defineEmits<{
             ref="inputRef"
             v-model="searchInput"
             :placeholder="placeholder"
-            class="h-12 flex-1 bg-transparent text-sm text-heading placeholder:text-muted focus:outline-none dark:text-secondary-100"
+            class="h-12 flex-1 bg-transparent text-sm text-heading placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100"
           >
           <kbd class="shrink-0 rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800">
             ESC
@@ -497,7 +497,7 @@ const emit = defineEmits<{
                 v-for="item in groupItems"
                 :key="item.id"
                 type="button"
-                class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none"
+                class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                 :class="results.indexOf(item) === selectedIndex
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
                   : 'text-heading hover:bg-secondary-50 dark:text-secondary-100 dark:hover:bg-secondary-900'

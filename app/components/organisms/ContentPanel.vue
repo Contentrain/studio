@@ -357,7 +357,7 @@ provide('sendChatPrompt', sendChatPrompt)
               <button
                 v-if="editable"
                 type="button"
-                class="shrink-0 rounded p-1 text-muted opacity-0 transition-all hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                class="shrink-0 rounded p-1 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                 :title="t('vocabulary.delete_term')"
                 @click="vocabDeleteTerm(term)"
               >

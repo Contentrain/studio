@@ -41,7 +41,7 @@ function formatSize(bytes: number): string {
 
 <template>
   <div
-    class="group relative flex flex-col overflow-hidden rounded-lg border transition-all"
+    class="group relative flex flex-col overflow-hidden rounded-lg border transition-colors"
     :class="selected
       ? 'border-primary-500 ring-2 ring-primary-500/30'
       : 'border-secondary-200 hover:border-secondary-300 dark:border-secondary-700 dark:hover:border-secondary-600'"
@@ -77,7 +77,7 @@ function formatSize(bytes: number): string {
     <button
       type="button"
       aria-label="Pin to context"
-      class="absolute left-1.5 top-1.5 rounded-md p-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+      class="absolute left-1.5 top-1.5 rounded-md p-0.5 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
       :class="pinned
         ? 'text-warning-500 opacity-100'
         : 'text-white/70 opacity-0 hover:opacity-100 group-hover:opacity-60'"

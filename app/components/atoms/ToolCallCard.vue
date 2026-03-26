@@ -28,7 +28,7 @@ const statusIcon = computed(() => {
     <!-- Header -->
     <button
       type="button"
-      class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-secondary-100 focus-visible:outline-none dark:hover:bg-secondary-800"
+      class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-800"
       @click="isExpanded = !isExpanded"
     >
       <!-- Status -->

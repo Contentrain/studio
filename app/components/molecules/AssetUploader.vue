@@ -137,7 +137,7 @@ const statusText = computed(() => {
 
 <template>
   <div
-    class="relative overflow-hidden rounded-lg border-2 border-dashed transition-all"
+    class="relative overflow-hidden rounded-lg border-2 border-dashed transition-colors"
     :class="[
       isDragging ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/10' : 'border-secondary-200 dark:border-secondary-700',
       isUploading ? 'pointer-events-none' : '',
