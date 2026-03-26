@@ -52,6 +52,9 @@ export function useContentBrain() {
   const contentContext = useState<Record<string, unknown> | null>('brain-content-context', () => null)
   const contentSummary = useState<Record<string, { count: number, locales: string[], kind: ModelKind }>>('brain-content-summary', () => ({}))
 
+  // In-memory content store (populated from sync response — Worker is optional enhancement)
+  const contentStore = new Map<string, { data: unknown, meta: Record<string, unknown> | null, kind: string }>()
+
   let worker: Worker | null = null
   let currentProjectId: string | null = null
 
@@ -102,6 +105,7 @@ export function useContentBrain() {
     vocabulary.value = null
     contentContext.value = null
     contentSummary.value = {}
+    contentStore.clear()
     pendingRequests.clear()
   }
 
@@ -190,6 +194,12 @@ export function useContentBrain() {
         if (response.vocabulary !== undefined) vocabulary.value = response.vocabulary
         if (response.contentContext !== undefined) contentContext.value = response.contentContext
         if (response.contentSummary) contentSummary.value = response.contentSummary
+        // Store content in memory for instant queryContent access
+        if (response.content) {
+          for (const [key, value] of Object.entries(response.content)) {
+            contentStore.set(key, value as { data: unknown, meta: Record<string, unknown> | null, kind: string })
+          }
+        }
       }
 
       treeSha.value = response.treeSha
@@ -219,31 +229,34 @@ export function useContentBrain() {
   // --- Query ---
 
   async function queryContent(modelId: string, locale: string): Promise<ContentQueryResult> {
-    if (!worker || !currentProjectId) {
-      // Fallback: direct API call
-      const result = await $fetch<ContentQueryResult>(
-        `/api/workspaces/${currentProjectId}/projects/${currentProjectId}/content/${modelId}`,
-        { params: { locale } },
-      )
-      return result
+    // 1. In-memory store (instant — populated from sync response)
+    const key = `${modelId}:${locale}`
+    const cached = contentStore.get(key)
+    if (cached) {
+      return { data: cached.data, kind: cached.kind, meta: cached.meta }
     }
 
-    return new Promise((resolve, reject) => {
-      const id = `query-${++requestCounter}`
-      pendingRequests.set(id, {
-        resolve: data => resolve(data as ContentQueryResult),
-        reject,
-      })
-      worker!.postMessage({ type: 'query', id, modelId, locale, projectId: currentProjectId })
+    // 2. Worker IndexedDB (if available)
+    if (worker && currentProjectId) {
+      return new Promise((resolve) => {
+        const id = `query-${++requestCounter}`
+        pendingRequests.set(id, {
+          resolve: data => resolve(data as ContentQueryResult),
+          reject: () => resolve({ data: null, kind: 'collection', meta: null }),
+        })
+        worker!.postMessage({ type: 'query', id, modelId, locale, projectId: currentProjectId })
 
-      // Timeout after 5 seconds — fallback to no-data
-      setTimeout(() => {
-        if (pendingRequests.has(id)) {
-          pendingRequests.delete(id)
-          resolve({ data: null, kind: 'collection', meta: null })
-        }
-      }, 5000)
-    })
+        setTimeout(() => {
+          if (pendingRequests.has(id)) {
+            pendingRequests.delete(id)
+            resolve({ data: null, kind: 'collection', meta: null })
+          }
+        }, 5000)
+      })
+    }
+
+    // 3. No data available
+    return { data: null, kind: 'collection', meta: null }
   }
 
   async function searchContent(query: string, modelId?: string, limit?: number): Promise<SearchResult[]> {
