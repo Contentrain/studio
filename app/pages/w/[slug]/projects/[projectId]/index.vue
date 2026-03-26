@@ -168,19 +168,17 @@ async function handleBranchReject() {
 
 // Targeted cache invalidation from tool execution results
 async function handleContentChanged(affected: { models: string[], locales: string[], snapshotChanged: boolean, branchesChanged?: boolean }) {
-  const { invalidateCache } = useSnapshot()
-  const { invalidateProjectContent } = useModelContent()
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
 
-  // Invalidate only what changed
-  if (affected.snapshotChanged) {
+  // Brain invalidation + re-sync (single source of truth)
+  if (affected.snapshotChanged || affected.models.length > 0) {
+    const { invalidateCache } = useSnapshot()
     await invalidateCache(projectId.value)
     await fetchSnapshot(ws.id, projectId.value)
   }
 
   if (affected.models.length > 0) {
-    await invalidateProjectContent(projectId.value)
     if (activeModelId.value && affected.models.includes(activeModelId.value)) {
       await fetchContent(ws.id, projectId.value, activeModelId.value, activeLocale.value)
     }

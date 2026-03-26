@@ -385,91 +385,30 @@ async function executeToolWithAutoMerge(
 
     switch (name) {
       case 'list_models': {
-        const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
-        const files = await git.listDirectory(modelsDir)
-        const modelsList = []
-        for (const file of files) {
-          if (!file.endsWith('.json')) continue
-          try {
-            modelsList.push(JSON.parse(await git.readFile(`${modelsDir}/${file}`)))
-          }
-          catch { /* skip */ }
-        }
-        result = { models: modelsList }
+        // Read from brain cache instead of Git
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+        result = { models: [...brainData.models.values()] }
         break
       }
 
       case 'get_content': {
+        // Redirect to brain_query — reads from cache instead of Git
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
         const modelId = params.model as string
-        // Model-scope enforcement (not just prompt-level)
         if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
           result = { error: `Access denied: model "${modelId}" is not in your allowed models` }
           break
         }
-        const locale = (params.locale as string) ?? 'en'
-        const modelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
-        const modelDef = JSON.parse(await git.readFile(`${modelsDir}/${modelId}.json`)) as ModelDefinition
-        const pathCtx = { contentRoot }
-
-        // Load meta (status, source, updated_by)
-        let meta: Record<string, unknown> | null = null
-        try {
-          const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
-          meta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+        const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        const key = `${modelId}:${locale}`
+        const contentData = brainData.content.get(key) ?? null
+        const metaData = brainData.meta.get(key) ?? null
+        const modelDef = brainData.models.get(modelId)
+        if (!contentData) {
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: null, error: 'Content not found' }
         }
-        catch { /* no meta */ }
-
-        // Document kind: read markdown files
-        if (modelDef.kind === 'document') {
-          try {
-            const contentDir = resolveContentPath(pathCtx, modelDef, locale)
-            // contentDir is the base directory for documents; list slug directories
-            const basePath = contentDir.replace(`/${locale}.md`, '')
-            const slugDirs = await git.listDirectory(basePath)
-            const documents: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }> = []
-            for (const slug of slugDirs) {
-              try {
-                const mdPath = `${basePath}/${slug}/${locale}.md`
-                const raw = await git.readFile(mdPath)
-                const { frontmatter, body } = parseMarkdownFrontmatter(raw)
-                documents.push({ slug, frontmatter, body: body.substring(0, 500) })
-              }
-              catch { /* skip */ }
-            }
-            result = { modelId, locale, kind: 'document', data: documents, meta }
-          }
-          catch {
-            result = { modelId, locale, kind: 'document', data: [], meta, error: 'Content not found' }
-          }
-          break
-        }
-
-        // JSON kinds (collection, singleton, dictionary)
-        const contentPath = resolveContentPath(pathCtx, modelDef, locale)
-        try {
-          let data = JSON.parse(await git.readFile(contentPath))
-          // Normalize array → object-map for collections
-          if (modelDef.kind === 'collection' && Array.isArray(data)) {
-            const map: Record<string, unknown> = {}
-            for (let i = 0; i < data.length; i++) {
-              const entry = data[i] as Record<string, unknown>
-              const id = String(entry.id ?? entry.ID ?? `entry-${i}`)
-              const { id: _id, ID: _ID, ...fields } = entry
-              map[id] = fields
-            }
-            data = map
-          }
-          if (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length > 10) {
-            const keys = Object.keys(data)
-            const sample = Object.fromEntries(keys.slice(0, 5).map(k => [k, (data as Record<string, unknown>)[k]]))
-            result = { modelId, locale, kind: modelDef.kind, totalEntries: keys.length, sample, meta, note: `Showing 5 of ${keys.length}` }
-          }
-          else {
-            result = { modelId, locale, kind: modelDef.kind, data, meta }
-          }
-        }
-        catch {
-          result = { modelId, locale, kind: modelDef.kind, data: null, meta, error: 'Content not found' }
+        else {
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: contentData, meta: metaData }
         }
         break
       }
