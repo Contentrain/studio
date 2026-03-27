@@ -6,6 +6,23 @@ import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKe
 
 const { t } = useContent()
 const { healthScore, hasIssues, criticalCount, errorCount, warningCount } = useProjectHealth()
+const brain = useContentBrain()
+
+// Check if active model has form enabled (form config is on raw model definition)
+const isFormEnabled = computed(() => {
+  if (!props.activeModelId) return false
+  const rawModel = brain.models.value.find(m => m.id === props.activeModelId)
+  if (!rawModel) return false
+  const form = (rawModel as unknown as { form?: { enabled?: boolean } }).form
+  return form?.enabled === true
+})
+
+const modelSubTab = ref<'content' | 'submissions'>('content')
+
+// Reset sub-tab when model changes
+watch(() => props.activeModelId, () => {
+  modelSubTab.value = 'content'
+})
 
 interface SnapshotModel {
   readonly id: string
@@ -532,46 +549,82 @@ provide(sendChatPromptKey, sendChatPrompt)
 
       <!-- MODEL CONTENT -->
       <template v-else-if="panelState === 'model'">
-        <div v-if="modelContentLoading" class="space-y-3 p-5">
-          <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
+        <!-- Form-enabled: tab switcher -->
+        <div v-if="isFormEnabled" class="flex items-center gap-1 border-b border-secondary-200 px-5 dark:border-secondary-800">
+          <button
+            type="button"
+            class="border-b-2 px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            :class="modelSubTab === 'content'
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-muted hover:text-body'"
+            @click="modelSubTab = 'content'"
+          >
+            {{ t('forms.tab_content') }}
+          </button>
+          <button
+            type="button"
+            class="border-b-2 px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            :class="modelSubTab === 'submissions'
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-muted hover:text-body'"
+            @click="modelSubTab = 'submissions'"
+          >
+            {{ t('forms.tab_submissions') }}
+          </button>
         </div>
-        <div v-else-if="!modelContent" class="p-5">
-          <AtomsEmptyState
-            icon="icon-[annon--file]" :title="t('content.no_content_title')"
-            :description="t('content.no_content_description')"
-          />
-        </div>
-        <template v-else>
-          <!-- Dictionary -->
-          <OrganismsContentDictionaryView
-            v-if="modelContentKind === 'dictionary' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
-            :content="(modelContent as Record<string, unknown>)"
-          />
-          <!-- Document -->
-          <OrganismsContentDocumentView
-            v-else-if="modelContentKind === 'document' && Array.isArray(modelContent)"
-            :entries="(modelContent as Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>)"
-          />
-          <!-- Collection (object-map) -->
-          <OrganismsContentCollectionView
-            v-else-if="modelContentKind === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
-            :content="(modelContent as Record<string, Record<string, unknown>>)" :meta="modelContentMeta"
-            :workspace-id="workspaceId" :project-id="projectId" :model-id="activeModelId ?? undefined"
-            :locale="currentLocale" :editable="editable" @saved="emit('back')"
-          />
-          <!-- Collection (array) -->
-          <OrganismsContentCollectionView
-            v-else-if="Array.isArray(modelContent)"
-            :content="arrayToObjectMap(modelContent as Record<string, unknown>[])" :workspace-id="workspaceId"
-            :project-id="projectId" :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable"
-            @saved="emit('back')"
-          />
-          <!-- Singleton -->
-          <OrganismsContentSingletonView
-            v-else-if="typeof modelContent === 'object'"
-            :content="(modelContent as Record<string, unknown>)" :workspace-id="workspaceId" :project-id="projectId"
-            :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable" @saved="emit('back')"
-          />
+
+        <!-- Submissions tab -->
+        <OrganismsSubmissionListView
+          v-if="isFormEnabled && modelSubTab === 'submissions' && workspaceId && projectId && activeModelId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          :model-id="activeModelId"
+          :editable="editable"
+        />
+
+        <!-- Content tab (default) -->
+        <template v-else-if="modelSubTab === 'content' || !isFormEnabled">
+          <div v-if="modelContentLoading" class="space-y-3 p-5">
+            <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
+          </div>
+          <div v-else-if="!modelContent" class="p-5">
+            <AtomsEmptyState
+              icon="icon-[annon--file]" :title="t('content.no_content_title')"
+              :description="t('content.no_content_description')"
+            />
+          </div>
+          <template v-else>
+            <!-- Dictionary -->
+            <OrganismsContentDictionaryView
+              v-if="modelContentKind === 'dictionary' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
+              :content="(modelContent as Record<string, unknown>)"
+            />
+            <!-- Document -->
+            <OrganismsContentDocumentView
+              v-else-if="modelContentKind === 'document' && Array.isArray(modelContent)"
+              :entries="(modelContent as Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>)"
+            />
+            <!-- Collection (object-map) -->
+            <OrganismsContentCollectionView
+              v-else-if="modelContentKind === 'collection' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
+              :content="(modelContent as Record<string, Record<string, unknown>>)" :meta="modelContentMeta"
+              :workspace-id="workspaceId" :project-id="projectId" :model-id="activeModelId ?? undefined"
+              :locale="currentLocale" :editable="editable" @saved="emit('back')"
+            />
+            <!-- Collection (array) -->
+            <OrganismsContentCollectionView
+              v-else-if="Array.isArray(modelContent)"
+              :content="arrayToObjectMap(modelContent as Record<string, unknown>[])" :workspace-id="workspaceId"
+              :project-id="projectId" :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable"
+              @saved="emit('back')"
+            />
+            <!-- Singleton -->
+            <OrganismsContentSingletonView
+              v-else-if="typeof modelContent === 'object'"
+              :content="(modelContent as Record<string, unknown>)" :workspace-id="workspaceId" :project-id="projectId"
+              :model-id="activeModelId ?? undefined" :locale="currentLocale" :editable="editable" @saved="emit('back')"
+            />
+          </template>
         </template>
       </template>
     </div>
