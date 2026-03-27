@@ -4,6 +4,7 @@ import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRo
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
+const { healthScore, hasIssues, criticalCount, errorCount, warningCount } = useProjectHealth()
 
 interface SnapshotModel {
   readonly id: string
@@ -42,6 +43,7 @@ const props = defineProps<{
   activeVocabulary?: boolean
   activeCdn?: boolean
   activeAssets?: boolean
+  activeHealth?: boolean
   branchDiff?: BranchDiffData | null
   branchDiffLoading?: boolean
   canManageBranches?: boolean
@@ -77,6 +79,7 @@ const panelState = computed(() => {
   if (props.activeVocabulary) return 'vocabulary'
   if (props.activeCdn) return 'cdn'
   if (props.activeAssets) return 'assets'
+  if (props.activeHealth) return 'health'
   if (props.activeModelId) return 'model'
   return 'overview'
 })
@@ -204,7 +207,7 @@ provide(sendChatPromptKey, sendChatPrompt)
     <!-- Header -->
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
       <AtomsIconButton
-        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary' || panelState === 'cdn' || panelState === 'assets'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
+        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary' || panelState === 'cdn' || panelState === 'assets' || panelState === 'health'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
       <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
@@ -216,6 +219,9 @@ provide(sendChatPromptKey, sendChatPrompt)
         </template>
         <template v-else-if="panelState === 'assets'">
           {{ t('media.title') }}
+        </template>
+        <template v-else-if="panelState === 'health'">
+          {{ t('health.title') }}
         </template>
         <template v-else-if="panelState === 'vocabulary'">
           {{ t('content.vocabulary') }}
@@ -394,6 +400,17 @@ provide(sendChatPromptKey, sendChatPrompt)
         </template>
       </template>
 
+      <!-- HEALTH DASHBOARD -->
+      <template v-else-if="panelState === 'health'">
+        <OrganismsProjectHealthDashboard
+          v-if="workspaceId && projectId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          @back="emit('back')"
+          @send-chat-prompt="emit('sendChatPrompt', $event)"
+        />
+      </template>
+
       <!-- OVERVIEW -->
       <template v-else-if="panelState === 'overview'">
         <div v-if="snapshotLoading || !snapshot" class="space-y-2 p-5">
@@ -464,8 +481,36 @@ provide(sendChatPromptKey, sendChatPrompt)
                   </TooltipContent>
                 </TooltipPortal>
               </TooltipRoot>
+
+              <!-- Health score -->
+              <TooltipRoot>
+                <TooltipTrigger as-child>
+                  <button type="button" class="ml-auto" @click="emit('selectModel', '__health__')">
+                    <AtomsHealthScoreBadge :score="healthScore" size="sm" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent
+                    :side-offset="6"
+                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
+                  >
+                    {{ t('health.score_label') }}: {{ healthScore }}/100
+                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
+                  </TooltipContent>
+                </TooltipPortal>
+              </TooltipRoot>
             </div>
           </TooltipProvider>
+
+          <!-- Schema warning banner -->
+          <MoleculesSchemaWarningBanner
+            v-if="hasIssues"
+            :critical-count="criticalCount"
+            :error-count="errorCount"
+            :warning-count="warningCount"
+            @view-details="emit('selectModel', '__health__')"
+            @dismiss="() => {}"
+          />
 
           <!-- Model list -->
           <OrganismsContentModelList

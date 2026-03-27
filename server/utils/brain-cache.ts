@@ -15,6 +15,7 @@
 
 import type { ContentrainConfig, ModelDefinition, ModelKind } from '@contentrain/types'
 import type { GitProvider, TreeEntry } from '../providers/git'
+import type { SchemaValidationResult } from './schema-validation'
 import matter from 'gray-matter'
 
 export interface BrainCacheEntry {
@@ -29,6 +30,8 @@ export interface BrainCacheEntry {
   contentContext: Record<string, unknown> | null
   /** Content summary per model (entry count + locales) */
   contentSummary: Record<string, { count: number, locales: string[], kind: ModelKind }>
+  /** Schema validation results (computed on build) */
+  schemaValidation: SchemaValidationResult | null
   lastRefresh: number
   projectId: string
 }
@@ -98,8 +101,9 @@ export async function getOrBuildBrainCache(
     }
   }
 
-  // Build fresh
-  const entry = await buildBrainSnapshot(git, contentRoot, projectId)
+  // Build fresh (pass previous brain for breaking change detection)
+  const previousBrain = cached ?? null
+  const entry = await buildBrainSnapshot(git, contentRoot, projectId, previousBrain)
   setBrainCache(projectId, entry)
   return entry
 }
@@ -128,6 +132,7 @@ export async function buildBrainSnapshot(
   git: GitProvider,
   contentRoot: string,
   projectId: string,
+  previousBrain?: BrainCacheEntry | null,
 ): Promise<BrainCacheEntry> {
   const ctx = { contentRoot }
 
@@ -157,6 +162,7 @@ export async function buildBrainSnapshot(
       vocabulary: null,
       contentContext: null,
       contentSummary: {},
+      schemaValidation: null,
       lastRefresh: Date.now(),
       projectId,
     }
@@ -345,7 +351,7 @@ export async function buildBrainSnapshot(
   }
   catch { /* no context */ }
 
-  return {
+  const brain: BrainCacheEntry = {
     treeSha,
     config,
     models,
@@ -354,9 +360,19 @@ export async function buildBrainSnapshot(
     vocabulary,
     contentContext,
     contentSummary,
+    schemaValidation: null,
     lastRefresh: Date.now(),
     projectId,
   }
+
+  // 7. Run schema validation (synchronous, pure — no I/O)
+  try {
+    const { validateProjectSchema } = await import('./schema-validation')
+    brain.schemaValidation = validateProjectSchema(brain, previousBrain)
+  }
+  catch { /* validation failure shouldn't block brain build */ }
+
+  return brain
 }
 
 /**
@@ -506,6 +522,26 @@ export function buildContentIndex(brain: BrainCacheEntry): string {
     }
     if (healthIssues.length > 10) {
       lines.push(`... and ${healthIssues.length - 10} more issues`)
+    }
+  }
+
+  // Schema validation summary
+  if (brain.schemaValidation) {
+    const sv = brain.schemaValidation
+    const criticals = sv.warnings.filter(w => w.severity === 'critical')
+    const errors = sv.warnings.filter(w => w.severity === 'error')
+    if (criticals.length > 0 || errors.length > 0) {
+      lines.push('')
+      lines.push(`### Schema Health: ${sv.healthScore}/100`)
+      for (const w of [...criticals, ...errors].slice(0, 5)) {
+        const prefix = w.severity === 'critical' ? '🔴' : '🟠'
+        lines.push(`${prefix} ${w.modelId}${w.field ? `.${w.field}` : ''}: ${w.message}`)
+      }
+      const remaining = criticals.length + errors.length - 5
+      if (remaining > 0) {
+        lines.push(`... and ${remaining} more schema issues`)
+      }
+      lines.push('Use validate_schema for full report.')
     }
   }
 

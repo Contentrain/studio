@@ -25,6 +25,27 @@ interface BrainSyncResponse {
   vocabulary: Record<string, Record<string, string>> | null
   contentContext: Record<string, unknown> | null
   contentSummary: Record<string, { count: number, locales: string[], kind: ModelKind }> | null
+  schemaValidation: SchemaValidationResult | null
+}
+
+interface SchemaValidationWarning {
+  modelId: string
+  type: string
+  field?: string
+  previous?: string
+  current?: string
+  affectedEntries: number
+  severity: 'critical' | 'error' | 'warning'
+  message: string
+}
+
+interface SchemaValidationResult {
+  valid: boolean
+  warnings: SchemaValidationWarning[]
+  healthScore: number
+  modelCount: number
+  validModels: number
+  timestamp: string
 }
 
 interface ContentQueryResult {
@@ -57,6 +78,7 @@ export function useContentBrain() {
   const vocabulary = useState<Record<string, Record<string, string>> | null>('brain-vocabulary', () => null)
   const contentContext = useState<Record<string, unknown> | null>('brain-content-context', () => null)
   const contentSummary = useState<Record<string, { count: number, locales: string[], kind: ModelKind }>>('brain-content-summary', () => ({}))
+  const schemaValidation = useState<SchemaValidationResult | null>('brain-schema-validation', () => null)
 
   // --- Worker Lifecycle ---
 
@@ -103,6 +125,7 @@ export function useContentBrain() {
     vocabulary.value = null
     contentContext.value = null
     contentSummary.value = {}
+    schemaValidation.value = null
     sharedContentStore.clear()
     pendingRequests.clear()
   }
@@ -195,6 +218,7 @@ export function useContentBrain() {
         if (response.vocabulary !== undefined) vocabulary.value = response.vocabulary
         if (response.contentContext !== undefined) contentContext.value = response.contentContext
         if (response.contentSummary) contentSummary.value = response.contentSummary
+        if (response.schemaValidation !== undefined) schemaValidation.value = response.schemaValidation
         // Store content in memory for instant queryContent access
         if (response.content) {
           for (const [key, value] of Object.entries(response.content)) {
@@ -308,6 +332,7 @@ export function useContentBrain() {
     vocabulary: readonly(vocabulary),
     contentContext: readonly(contentContext),
     contentSummary: readonly(contentSummary),
+    schemaValidation: readonly(schemaValidation),
     hasContentrain,
     projectStats,
 
