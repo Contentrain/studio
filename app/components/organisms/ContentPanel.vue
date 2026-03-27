@@ -246,6 +246,8 @@ provide(sendChatPromptKey, sendChatPrompt)
           @update:model-value="currentLocale = $event"
         />
       </template>
+      <!-- Health score in header -->
+      <AtomsHealthScoreBadge v-if="panelState === 'health'" :score="healthScore" size="sm" class="ml-auto" />
       <!-- Branch badge -->
       <AtomsBadge v-if="panelState === 'branch'" variant="warning" size="sm" class="ml-auto">
         <span class="icon-[annon--arrow-swap] mr-1 size-3" aria-hidden="true" />
