@@ -315,6 +315,17 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
     defaultAffects: { snapshotChanged: false, branchesChanged: false },
     workflowBehavior: 'none',
   },
+
+  // ─── Schema Validation Tool ───
+
+  {
+    name: 'validate_schema',
+    description: 'Run schema validation on the project. Returns health score, model count, valid models, and warnings about breaking changes, missing fields, type mismatches, and structural issues. Use this instead of validate for comprehensive schema-level checks.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
 ]
 
 /**

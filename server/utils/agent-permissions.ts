@@ -36,6 +36,7 @@ const TOOL_ROLES: Record<string, string[]> = {
   brain_query: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   brain_search: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   brain_analyze: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
+  validate_schema: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   search_media: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   upload_media: ['editor', 'admin', 'owner'],
   get_media: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],

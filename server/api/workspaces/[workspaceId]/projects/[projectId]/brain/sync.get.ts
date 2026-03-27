@@ -65,5 +65,6 @@ export default defineEventHandler(async (event) => {
     vocabulary: brain.vocabulary,
     contentContext: brain.contentContext,
     contentSummary: brain.contentSummary,
+    schemaValidation: brain.schemaValidation,
   }
 })

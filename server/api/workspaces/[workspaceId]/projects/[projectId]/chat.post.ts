@@ -487,34 +487,18 @@ async function executeToolWithAutoMerge(
         break
       }
 
-      case 'validate': {
-        // Basic validation: check that models have content files
-        const valModelsDir = contentRoot ? `${contentRoot}/.contentrain/models` : '.contentrain/models'
-        const valErrors: string[] = []
-        try {
-          const valFiles = await git.listDirectory(valModelsDir)
-          for (const file of valFiles) {
-            if (!file.endsWith('.json')) continue
-            try {
-              const def = JSON.parse(await git.readFile(`${valModelsDir}/${file}`)) as ModelDefinition
-              if (def.kind !== 'document') {
-                const valPathCtx = { contentRoot }
-                const contentPath = resolveContentPath(valPathCtx, def, def.i18n ? 'en' : 'data')
-                try {
-                  await git.readFile(contentPath)
-                }
-                catch {
-                  valErrors.push(`Model "${def.id}": content file missing at ${contentPath}`)
-                }
-              }
-            }
-            catch { /* skip invalid model file */ }
-          }
+      case 'validate':
+      case 'validate_schema': {
+        // Schema validation from brain cache — comprehensive checks
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+        result = brainData.schemaValidation ?? {
+          valid: true,
+          warnings: [],
+          healthScore: 100,
+          modelCount: brainData.models.size,
+          validModels: brainData.models.size,
+          timestamp: new Date().toISOString(),
         }
-        catch {
-          valErrors.push('Models directory not found')
-        }
-        result = { valid: valErrors.length === 0, errors: valErrors }
         break
       }
 

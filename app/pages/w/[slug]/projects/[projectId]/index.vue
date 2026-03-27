@@ -35,6 +35,7 @@ const activeBranch = computed(() => {
 const activeVocabulary = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
 const activeCDN = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
 const activeAssets = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
+const activeHealth = computed(() => (route.query as Record<string, string | undefined>).health === 'true')
 const activeLocale = ref('en')
 
 // Persist current path for session resume
@@ -117,6 +118,10 @@ watch(activeBranch, async (branch, oldBranch) => {
 const chatPanelRef = ref<{ handleSend: (text: string) => void } | null>(null)
 
 function selectModel(modelId: string) {
+  if (modelId === '__health__') {
+    router.replace({ query: { health: 'true' } })
+    return
+  }
   router.replace({ query: { ...route.query, model: modelId } })
 }
 
@@ -242,6 +247,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         :active-vocabulary="activeVocabulary"
         :active-cdn="activeCDN"
         :active-assets="activeAssets"
+        :active-health="activeHealth"
         :branch-diff="(branchDiff as any)"
         :branch-diff-loading="diffLoading"
         :can-manage-branches="hasFeature(activeWorkspace?.plan, 'workflow.review')"
