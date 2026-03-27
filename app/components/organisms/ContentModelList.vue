@@ -3,7 +3,7 @@ import { sendChatPromptKey } from '~/utils/injection-keys'
 
 defineProps<{
   models: readonly { id: string, name: string, kind: string, type: string, fields: Readonly<Record<string, unknown>>, domain: string, i18n: boolean }[]
-  content: Readonly<Record<string, { count: number, locales: string[] }>>
+  content: Readonly<Record<string, { count: number, locales: readonly string[] }>>
 }>()
 
 const emit = defineEmits<{

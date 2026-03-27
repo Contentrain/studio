@@ -16,7 +16,12 @@ const settingsModalOpen = ref(false)
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 const isInsideProject = computed(() => !!currentProjectId.value)
 const currentProject = computed(() => projects.value.find(p => p.id === currentProjectId.value) ?? null)
-const projectConfig = computed(() => snapshot.value?.config as Record<string, unknown> | null)
+const projectConfig = computed(() => snapshot.value?.config as {
+  workflow?: string
+  stack?: string
+  domains?: string[]
+  locales?: { default?: string, supported?: string[] }
+} | null)
 const activeModelId = computed(() => route.query.model as string | undefined)
 const isVocabularyActive = computed(() => (route.query as Record<string, string | undefined>).vocabulary === 'true')
 const vocabularyCount = computed(() => {
@@ -56,11 +61,11 @@ const sidebarLinks = computed(() => {
 })
 
 const modelsByDomain = computed(() => {
-  const groups: Record<string, typeof models.value> = {}
+  const groups: Record<string, Array<typeof models.value[number]>> = {}
   for (const model of models.value) {
-    const domain = (model as { domain?: string }).domain ?? 'other'
+    const domain = model.domain ?? 'other'
     if (!groups[domain]) groups[domain] = []
-    groups[domain].push(model)
+    groups[domain]!.push(model)
   }
   return groups
 })
@@ -182,7 +187,7 @@ function onProjectDeleted() {
                 >
                   <template #trailing>
                     <span
-                      v-if="(model as any).i18n" class="icon-[annon--globe] size-3 shrink-0 opacity-30"
+                      v-if="model.i18n" class="icon-[annon--globe] size-3 shrink-0 opacity-30"
                       aria-hidden="true" :title="t('common.i18n')"
                     />
                   </template>
@@ -338,7 +343,7 @@ function onProjectDeleted() {
       v-if="isInsideProject && activeWorkspace && currentProjectId"
       v-model:open="settingsModalOpen" :workspace-id="activeWorkspace.id" :project-id="currentProjectId"
       :project-name="currentProject?.repo_full_name?.split('/').pop() ?? ''"
-      :config="(projectConfig as any)" @saved="onSettingsSaved" @deleted="onProjectDeleted"
+      :config="projectConfig" @saved="onSettingsSaved" @deleted="onProjectDeleted"
     />
   </aside>
 </template>

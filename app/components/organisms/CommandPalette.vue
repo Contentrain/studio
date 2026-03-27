@@ -54,7 +54,7 @@ const placeholder = computed(() => {
 })
 
 // Mode badge
-const modeBadge = computed(() => {
+const modeBadge = computed((): { label: string, color: 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'info' } | null => {
   switch (parsed.value.mode) {
     case 'command': return { label: 'Commands', color: 'info' }
     case 'vocab': return { label: 'Vocabulary', color: 'success' }
@@ -460,7 +460,7 @@ const emit = defineEmits<{
         <!-- Search input -->
         <div class="flex items-center gap-2 border-b border-secondary-200 px-4 dark:border-secondary-800">
           <span class="icon-[annon--search] size-4 shrink-0 text-muted" aria-hidden="true" />
-          <AtomsBadge v-if="modeBadge" :variant="(modeBadge.color as any)" size="sm" class="shrink-0">
+          <AtomsBadge v-if="modeBadge" :variant="modeBadge.color" size="sm" class="shrink-0">
             {{ modeBadge.label }}
           </AtomsBadge>
           <input

@@ -7,9 +7,9 @@ interface FileDiff {
 }
 
 interface BranchDiffData {
-  branch: string
-  files: FileDiff[]
-  contents: Record<string, { before: unknown, after: unknown }>
+  readonly branch: string
+  readonly files: readonly FileDiff[]
+  readonly contents: Readonly<Record<string, { readonly before: unknown, readonly after: unknown }>>
 }
 
 const props = defineProps<{
