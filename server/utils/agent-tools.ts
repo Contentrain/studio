@@ -326,6 +326,53 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
     defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
     workflowBehavior: 'none',
   },
+
+  // ─── Form Submissions ───
+
+  {
+    name: 'list_submissions',
+    description: 'List form submissions for a model. Returns pending/approved/rejected submissions with contact data and metadata. Only works on form-enabled collection models.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        modelId: { type: 'string', description: 'Collection model ID that has form enabled' },
+        status: { type: 'string', description: 'Filter by status: pending, approved, rejected, spam. Default: pending' },
+        limit: { type: 'number', description: 'Max results (default 20, max 100)' },
+      },
+      required: ['modelId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'approve_submission',
+    description: 'Approve a form submission. Creates a draft content entry in the collection from the submission data. The submission status changes to approved.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        submissionId: { type: 'string', description: 'Submission UUID to approve' },
+      },
+      required: ['submissionId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: true, branchesChanged: true },
+    workflowBehavior: 'workflow-dependent',
+  },
+  {
+    name: 'reject_submission',
+    description: 'Reject a form submission. The submission is marked as rejected and no content entry is created.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        submissionId: { type: 'string', description: 'Submission UUID to reject' },
+      },
+      required: ['submissionId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
 ]
 
 /**

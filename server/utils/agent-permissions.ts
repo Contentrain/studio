@@ -40,6 +40,9 @@ const TOOL_ROLES: Record<string, string[]> = {
   search_media: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   upload_media: ['editor', 'admin', 'owner'],
   get_media: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
+  list_submissions: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
+  approve_submission: ['reviewer', 'admin', 'owner'],
+  reject_submission: ['reviewer', 'admin', 'owner'],
 }
 
 export async function resolveAgentPermissions(

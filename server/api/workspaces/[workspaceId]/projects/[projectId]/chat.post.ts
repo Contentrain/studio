@@ -502,6 +502,45 @@ async function executeToolWithAutoMerge(
         break
       }
 
+      case 'list_submissions': {
+        const subModelId = params.modelId as string
+        const subStatus = (params.status as string) ?? 'pending'
+        const subLimit = Math.min(Number(params.limit ?? 20), 100)
+        const admin = useSupabaseAdmin()
+        const subs = await listFormSubmissions(admin, projectId, subModelId, { status: subStatus, limit: subLimit })
+        result = subs.total > 0
+          ? { submissions: subs.submissions, total: subs.total, message: agentMessage('forms.submission_list', { count: subs.total, status: subStatus }) }
+          : { submissions: [], total: 0, message: agentMessage('forms.no_submissions') }
+        break
+      }
+
+      case 'approve_submission': {
+        const approveId = params.submissionId as string
+        const admin = useSupabaseAdmin()
+        const sub = await getFormSubmission(admin, approveId)
+        if (!sub) {
+          result = { error: errorMessage('forms.submission_not_found') }
+          break
+        }
+        const updated = await updateFormSubmissionStatus(admin, approveId, 'approved', permissions.workspaceRole)
+        affected.snapshotChanged = true
+        result = { submission: updated, message: agentMessage('forms.approved') }
+        break
+      }
+
+      case 'reject_submission': {
+        const rejectId = params.submissionId as string
+        const admin = useSupabaseAdmin()
+        const sub = await getFormSubmission(admin, rejectId)
+        if (!sub) {
+          result = { error: errorMessage('forms.submission_not_found') }
+          break
+        }
+        const updated = await updateFormSubmissionStatus(admin, rejectId, 'rejected')
+        result = { submission: updated, message: agentMessage('forms.rejected') }
+        break
+      }
+
       case 'list_branches':
         result = { branches: await engine.listContentBranches() }
         break
