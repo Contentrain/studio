@@ -11,7 +11,7 @@ const slug = computed(() => route.params.slug as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, deleteWorkspace } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
-const { members, projectMembers, loading: membersLoading, fetchMembers, inviteMember, updateMemberRole, removeMember, fetchProjectMembers, assignProjectMember, removeProjectMember } = useMembers()
+const { members, projectMembers, loading: membersLoading, fetchMembers, inviteMember, updateMemberRole, removeMember, resendInvite, fetchProjectMembers, assignProjectMember, removeProjectMember } = useMembers()
 const { t } = useContent()
 const toast = useToast()
 
@@ -170,6 +170,16 @@ async function handleRemove(memberId: string) {
   if (!activeWorkspace.value) return
   confirmRemoveId.value = null
   await removeMember(activeWorkspace.value.id, memberId)
+}
+
+async function handleResend(memberId: string) {
+  if (!activeWorkspace.value) return
+  await resendInvite(activeWorkspace.value.id, memberId)
+}
+
+function getInviteDaysAgo(member: { invited_at?: string }): number {
+  if (!member.invited_at) return 0
+  return Math.floor((Date.now() - new Date(member.invited_at).getTime()) / (1000 * 60 * 60 * 24))
 }
 
 async function handleAssignProject() {
@@ -489,8 +499,8 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
                 </div>
                 <div class="truncate text-xs text-muted">
                   {{ getMemberEmail(member) }}
-                  <span v-if="!member.accepted_at" class="ml-1 text-warning-500">
-                    ({{ t('members.pending') }})
+                  <span v-if="!member.accepted_at" class="ml-1" :class="getInviteDaysAgo(member) > 30 ? 'text-danger-500' : 'text-warning-500'">
+                    ({{ getInviteDaysAgo(member) > 30 ? t('members.expired_invite') : t('members.pending') }})
                   </span>
                 </div>
               </div>
@@ -507,6 +517,13 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
                   :options="wsRoleOptions"
                   size="sm"
                   @update:model-value="handleRoleChange(member, $event as 'admin' | 'member')"
+                />
+                <AtomsIconButton
+                  v-if="!member.accepted_at"
+                  icon="icon-[annon--email]"
+                  :label="t('members.resend')"
+                  size="sm"
+                  @click="handleResend(member.id)"
                 />
                 <AtomsIconButton
                   icon="icon-[annon--trash]"

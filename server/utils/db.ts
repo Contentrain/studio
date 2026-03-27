@@ -247,22 +247,45 @@ export async function listProjectMembers(client: SupabaseClient, projectId: stri
 /**
  * Invite a user by email — creates account if needed, returns userId.
  * Falls back to user lookup if invite fails (already exists).
+ * Sends notification email to existing users via EmailProvider.
  */
-export async function inviteOrLookupUser(email: string): Promise<string> {
+export async function inviteOrLookupUser(
+  email: string,
+  context?: { workspaceName: string, inviterName: string, workspaceSlug: string },
+): Promise<{ userId: string, isNewUser: boolean }> {
   const authProvider = useAuthProvider()
 
   try {
-    const result = await authProvider.inviteUserByEmail(email)
-    return result.userId
+    const config = useRuntimeConfig()
+    const redirectTo = context?.workspaceSlug
+      ? `${config.public.siteUrl}/auth/callback?workspace=${context.workspaceSlug}`
+      : undefined
+    const result = await authProvider.inviteUserByEmail(email, { redirectTo })
+    return { userId: result.userId, isNewUser: true }
   }
   catch {
-    // User might already exist — look up by email
+    // User already exists — look up by email
     const admin = useSupabaseAdmin()
     const { data: users } = await admin.auth.admin.listUsers()
     const existing = users?.users?.find((u: { email?: string }) => u.email === email)
     if (!existing?.id)
       throw createError({ statusCode: 400, message: errorMessage('members.could_not_invite') })
-    return existing.id
+
+    // Send notification email to existing user
+    if (context) {
+      const emailProvider = useEmailProvider()
+      if (emailProvider) {
+        const config = useRuntimeConfig()
+        const workspaceUrl = `${config.public.siteUrl}/w/${context.workspaceSlug}`
+        emailProvider.sendEmail({
+          to: email,
+          subject: `You've been added to ${context.workspaceName} on Contentrain Studio`,
+          html: `<p>Hi,</p><p><strong>${context.inviterName}</strong> added you to the <strong>${context.workspaceName}</strong> workspace on Contentrain Studio.</p><p><a href="${workspaceUrl}">Open workspace</a></p>`,
+        }).catch(() => { /* best-effort notification */ })
+      }
+    }
+
+    return { userId: existing.id, isNewUser: false }
   }
 }
 

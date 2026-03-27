@@ -20,14 +20,18 @@ export default defineEventHandler(async (event) => {
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   // Team size limit
-  const { data: ws } = await client.from('workspaces').select('plan').eq('id', workspaceId).single()
+  const { data: ws } = await client.from('workspaces').select('plan, name, slug').eq('id', workspaceId).single()
   const plan = getWorkspacePlan(ws ?? {})
-  const currentMembers = await listWorkspaceMembers(client, workspaceId)
+  const currentMembers = await listWorkspaceMembers(useSupabaseAdmin(), workspaceId)
   const memberLimit = getPlanLimit(plan, 'team.members')
   if (currentMembers.length >= memberLimit)
     throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
 
-  const userId = await inviteOrLookupUser(body.email)
+  const { userId } = await inviteOrLookupUser(body.email, {
+    workspaceName: ws?.name ?? '',
+    inviterName: session.user.email ?? '',
+    workspaceSlug: ws?.slug ?? '',
+  })
 
   const { data: member, error } = await client
     .from('workspace_members')

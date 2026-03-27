@@ -34,6 +34,7 @@ export function useMembers() {
   const projectMembers = useState<ProjectMember[]>('project-members', () => [])
   const loading = useState('members-loading', () => false)
   const toast = useToast()
+  const { t } = useContent()
 
   async function fetchMembers(workspaceId: string) {
     loading.value = true
@@ -145,6 +146,22 @@ export function useMembers() {
     }
   }
 
+  async function resendInvite(workspaceId: string, memberId: string): Promise<boolean> {
+    try {
+      await $fetch(`/api/workspaces/${workspaceId}/members/${memberId}/resend`, {
+        method: 'POST',
+      })
+      toast.success(t('members.resend_success'))
+      // Refresh to update invited_at timestamp
+      await fetchMembers(workspaceId)
+      return true
+    }
+    catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : t('members.resend_error'))
+      return false
+    }
+  }
+
   return {
     members: readonly(members),
     projectMembers: readonly(projectMembers),
@@ -153,6 +170,7 @@ export function useMembers() {
     inviteMember,
     updateMemberRole,
     removeMember,
+    resendInvite,
     fetchProjectMembers,
     assignProjectMember,
     removeProjectMember,

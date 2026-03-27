@@ -116,9 +116,11 @@ export function createSupabaseAuthProvider(): AuthProvider {
         throw createError({ statusCode: 500, message: errorMessage('auth.magic_link_failed', { detail: error.message }) })
     },
 
-    async inviteUserByEmail(email: string): Promise<{ userId: string }> {
+    async inviteUserByEmail(email: string, options?: { redirectTo?: string }): Promise<{ userId: string }> {
       const admin = useSupabaseAdmin()
-      const { data, error } = await admin.auth.admin.inviteUserByEmail(email)
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: options?.redirectTo,
+      })
 
       if (error)
         throw createError({ statusCode: 500, message: errorMessage('auth.invite_failed', { detail: error.message }) })

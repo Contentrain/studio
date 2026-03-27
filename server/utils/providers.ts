@@ -3,11 +3,13 @@ import type { AIProvider } from '../providers/ai'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider, CDNObject } from '../providers/cdn'
 import type { MediaProvider } from '../providers/media'
+import type { EmailProvider } from '../providers/email'
 import { createSharpMediaProvider } from '../../ee/media/sharp-processor'
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createGitHubAppProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
+import { createResendEmailProvider } from '../providers/resend-email'
 
 /**
  * Singleton provider instances.
@@ -21,6 +23,7 @@ let _authProvider: AuthProvider | null = null
 let _aiProvider: AIProvider | null = null
 let _cdnProvider: CDNProvider | null = null
 let _mediaProvider: MediaProvider | null = null
+let _emailProvider: EmailProvider | null | undefined
 
 export function useAuthProvider(): AuthProvider {
   if (!_authProvider)
@@ -116,6 +119,28 @@ export function useMediaProvider(): MediaProvider | null {
   _mediaProvider = createSharpMediaProvider({ cdn, admin: useSupabaseAdmin() })
 
   return _mediaProvider
+}
+
+/**
+ * Email Provider (singleton).
+ *
+ * Returns null if no email API key is configured.
+ * Current impl: Resend. Swap to SendGrid, Postmark, or nodemailer
+ * by changing the create*() call below.
+ */
+export function useEmailProvider(): EmailProvider | null {
+  if (_emailProvider !== undefined) return _emailProvider
+
+  const config = useRuntimeConfig()
+  const apiKey = (config.resend as { apiKey?: string })?.apiKey
+
+  if (!apiKey) {
+    _emailProvider = null
+    return null
+  }
+
+  _emailProvider = createResendEmailProvider(apiKey)
+  return _emailProvider
 }
 
 /**

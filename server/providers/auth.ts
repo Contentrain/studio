@@ -78,7 +78,7 @@ export interface AuthProvider {
   /**
    * Invite a user by email (creates account if not exists).
    */
-  inviteUserByEmail: (email: string) => Promise<{ userId: string }>
+  inviteUserByEmail: (email: string, options?: { redirectTo?: string }) => Promise<{ userId: string }>
 
   /**
    * Look up a user by their ID.
