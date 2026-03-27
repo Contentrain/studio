@@ -230,11 +230,13 @@ sender_name = "Contentrain Studio"
 subject = "You've been invited to Contentrain Studio"
 content_path = "./supabase/templates/invite.html"
 
-# Uncomment to customize notification email template
-# [auth.email.notification.password_changed]
-# enabled = true
-# subject = "Your password has been changed"
-# content_path = "./templates/password_changed_notification.html"
+[auth.email.template.magic_link]
+subject = "Sign in to Contentrain Studio"
+content_path = "./supabase/templates/magic-link.html"
+
+[auth.email.template.confirmation]
+subject = "Confirm your Contentrain Studio account"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
