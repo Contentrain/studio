@@ -43,7 +43,15 @@ onMounted(async () => {
 
     const { init } = useAuth()
     await init()
-    await router.replace('/')
+
+    // Redirect to invited workspace if query param present
+    const workspaceSlug = route.query.workspace as string | undefined
+    if (workspaceSlug) {
+      await router.replace(`/w/${workspaceSlug}`)
+    }
+    else {
+      await router.replace('/')
+    }
   }
   catch (e: unknown) {
     error.value = e instanceof Error ? e.message : t('auth.failed')

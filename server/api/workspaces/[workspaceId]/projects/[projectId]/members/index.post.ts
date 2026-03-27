@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
   // Plan-based role gating: reviewer/viewer require Pro+, specificModels requires Pro+
-  const { data: ws } = await client.from('workspaces').select('plan').eq('id', workspaceId).single()
+  const { data: ws } = await client.from('workspaces').select('plan, name, slug').eq('id', workspaceId).single()
   const plan = getWorkspacePlan(ws ?? {})
 
   if (body.role === 'reviewer' && !hasFeature(plan, 'roles.reviewer'))
@@ -46,7 +46,11 @@ export default defineEventHandler(async (event) => {
   if (body.specificModels && !hasFeature(plan, 'roles.specific_models'))
     throw createError({ statusCode: 403, message: errorMessage('members.model_access_upgrade') })
 
-  const userId = await inviteOrLookupUser(body.email)
+  const { userId } = await inviteOrLookupUser(body.email, {
+    workspaceName: ws?.name ?? '',
+    inviterName: session.user.email ?? '',
+    workspaceSlug: ws?.slug ?? '',
+  })
 
   // Ensure user is a workspace member (auto-add as 'member' if not)
   // Check seat limit before auto-adding

@@ -32,6 +32,9 @@ export default defineNuxtConfig({
       serviceRoleKey: '',
       anonKey: '',
     },
+    resend: {
+      apiKey: '', // NUXT_RESEND_API_KEY
+    },
     public: {
       siteUrl: 'http://localhost:3000',
     },

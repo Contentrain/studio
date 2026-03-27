@@ -18,7 +18,7 @@ async function loadLogoutHandler() {
 }
 
 async function loadAuthMiddleware() {
-  return (await import('../../server/middleware/auth')).default
+  return (await import('../../server/middleware/01.auth')).default
 }
 
 describe('auth route integration', () => {
