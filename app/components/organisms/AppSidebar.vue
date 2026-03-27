@@ -31,6 +31,7 @@ const isCDNActive = computed(() => (route.query as Record<string, string | undef
 const isAssetsActive = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
 const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
 const hasMedia = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
+const { healthScore, hasIssues } = useProjectHealth()
 
 // Fetch branches when project/workspace context becomes available.
 watch(
@@ -140,6 +141,28 @@ function onProjectDeleted() {
           <span class="min-w-0 flex-1 truncate text-sm font-medium text-heading dark:text-secondary-100">
             {{ currentProject?.repo_full_name?.split('/')[1] ?? currentProjectId }}
           </span>
+          <button
+            v-if="hasContentrain"
+            type="button"
+            class="relative size-4 shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            :title="`${t('health.score_label')}: ${healthScore}/100`"
+            @click="router.replace({ query: { health: 'true' } })"
+          >
+            <span
+              class="absolute inset-0.5 rounded-full"
+              :class="[
+                healthScore >= 90
+                  ? 'bg-success-500'
+                  : healthScore >= 70
+                    ? 'bg-warning-500'
+                    : 'bg-danger-500',
+              ]"
+            />
+            <span
+              v-if="hasIssues"
+              class="absolute -right-0.5 -top-0.5 flex size-2.5 items-center justify-center rounded-full bg-danger-500 text-[6px] font-bold text-white ring-1 ring-white dark:ring-secondary-900"
+            />
+          </button>
           <AtomsIconButton
             v-if="isOwnerOrAdmin" icon="icon-[annon--gear]" :label="t('project_settings.title')"
             size="sm" @click="settingsModalOpen = true"
