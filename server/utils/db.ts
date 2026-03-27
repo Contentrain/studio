@@ -638,3 +638,177 @@ export async function updateWorkspaceStorageBytes(
     .update({ media_storage_bytes: newValue })
     .eq('id', workspaceId)
 }
+
+// ============================================================
+// FORM SUBMISSIONS
+// ============================================================
+
+export interface FormSubmissionInsert {
+  project_id: string
+  workspace_id: string
+  model_id: string
+  data: Record<string, unknown>
+  source_ip?: string
+  user_agent?: string
+  referrer?: string
+  locale?: string
+}
+
+export interface FormSubmissionRow {
+  id: string
+  project_id: string
+  workspace_id: string
+  model_id: string
+  data: Record<string, unknown>
+  status: 'pending' | 'approved' | 'rejected' | 'spam'
+  source_ip: string | null
+  user_agent: string | null
+  referrer: string | null
+  locale: string
+  approved_at: string | null
+  approved_by: string | null
+  entry_id: string | null
+  created_at: string
+}
+
+export async function createFormSubmission(
+  admin: SupabaseClient,
+  submission: FormSubmissionInsert,
+): Promise<FormSubmissionRow> {
+  const { data, error } = await admin
+    .from('form_submissions')
+    .insert(submission)
+    .select()
+    .single()
+
+  if (error || !data)
+    throw createError({ statusCode: 500, message: errorMessage('forms.create_failed', { detail: error?.message ?? 'unknown' }) })
+
+  return data as FormSubmissionRow
+}
+
+export async function listFormSubmissions(
+  admin: SupabaseClient,
+  projectId: string,
+  modelId: string,
+  options?: { page?: number, limit?: number, status?: string, sort?: 'newest' | 'oldest' },
+): Promise<{ submissions: FormSubmissionRow[], total: number }> {
+  const page = options?.page ?? 1
+  const limit = Math.min(options?.limit ?? 50, 100)
+  const offset = (page - 1) * limit
+
+  let query = admin
+    .from('form_submissions')
+    .select('*', { count: 'exact' })
+    .eq('project_id', projectId)
+    .eq('model_id', modelId)
+
+  if (options?.status) {
+    query = query.eq('status', options.status)
+  }
+
+  query = options?.sort === 'oldest'
+    ? query.order('created_at', { ascending: true })
+    : query.order('created_at', { ascending: false })
+
+  const { data, count, error } = await query.range(offset, offset + limit - 1)
+
+  if (error)
+    throw createError({ statusCode: 500, message: errorMessage('forms.list_failed', { detail: error.message }) })
+
+  return {
+    submissions: (data ?? []) as FormSubmissionRow[],
+    total: count ?? 0,
+  }
+}
+
+export async function getFormSubmission(
+  admin: SupabaseClient,
+  submissionId: string,
+): Promise<FormSubmissionRow | null> {
+  const { data } = await admin
+    .from('form_submissions')
+    .select('*')
+    .eq('id', submissionId)
+    .single()
+
+  return (data as FormSubmissionRow) ?? null
+}
+
+export async function updateFormSubmissionStatus(
+  admin: SupabaseClient,
+  submissionId: string,
+  status: 'approved' | 'rejected' | 'spam',
+  approvedBy?: string,
+  entryId?: string,
+): Promise<FormSubmissionRow> {
+  const updates: Record<string, unknown> = { status }
+  if (status === 'approved') {
+    updates.approved_at = new Date().toISOString()
+    if (approvedBy) updates.approved_by = approvedBy
+    if (entryId) updates.entry_id = entryId
+  }
+
+  const { data, error } = await admin
+    .from('form_submissions')
+    .update(updates)
+    .eq('id', submissionId)
+    .select()
+    .single()
+
+  if (error || !data)
+    throw createError({ statusCode: 500, message: errorMessage('forms.update_failed', { detail: error?.message ?? 'unknown' }) })
+
+  return data as FormSubmissionRow
+}
+
+export async function countMonthlySubmissions(
+  admin: SupabaseClient,
+  projectId: string,
+): Promise<number> {
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  monthStart.setHours(0, 0, 0, 0)
+
+  const { count } = await admin
+    .from('form_submissions')
+    .select('*', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .gte('created_at', monthStart.toISOString())
+
+  return count ?? 0
+}
+
+export async function deleteFormSubmission(
+  admin: SupabaseClient,
+  submissionId: string,
+): Promise<void> {
+  const { error } = await admin
+    .from('form_submissions')
+    .delete()
+    .eq('id', submissionId)
+
+  if (error)
+    throw createError({ statusCode: 500, message: errorMessage('forms.delete_failed', { detail: error.message }) })
+}
+
+export async function bulkUpdateSubmissions(
+  admin: SupabaseClient,
+  submissionIds: string[],
+  status: 'approved' | 'rejected' | 'spam',
+  approvedBy?: string,
+): Promise<number> {
+  const updates: Record<string, unknown> = { status }
+  if (status === 'approved') {
+    updates.approved_at = new Date().toISOString()
+    if (approvedBy) updates.approved_by = approvedBy
+  }
+
+  const { data } = await admin
+    .from('form_submissions')
+    .update(updates)
+    .in('id', submissionIds)
+    .select('id')
+
+  return data?.length ?? 0
+}

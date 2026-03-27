@@ -32,7 +32,7 @@ export function checkStateTransition(
   toolName: string,
 ): StateCheck {
   // Tools that are always allowed (read-only or diagnostic)
-  const alwaysAllowed = ['list_models', 'list_branches', 'validate', 'validate_schema']
+  const alwaysAllowed = ['list_models', 'list_branches', 'validate', 'validate_schema', 'list_submissions']
   if (alwaysAllowed.includes(toolName)) {
     return { allowed: true }
   }
