@@ -28,12 +28,30 @@ const tierKeys: Record<string, string> = {
   poor: 'health.tier_poor',
 }
 
-const tierVariants: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
-  excellent: 'success',
-  good: 'success',
-  fair: 'warning',
-  poor: 'danger',
-}
+const scoreColor = computed(() => {
+  if (healthScore.value >= 90) return 'text-success-500'
+  if (healthScore.value >= 70) return 'text-warning-500'
+  return 'text-danger-500'
+})
+
+const ringColor = computed(() => {
+  if (healthScore.value >= 90) return 'stroke-success-500'
+  if (healthScore.value >= 70) return 'stroke-warning-500'
+  return 'stroke-danger-500'
+})
+
+const tierColor = computed(() => {
+  if (healthScore.value >= 90) return 'text-success-600 dark:text-success-400'
+  if (healthScore.value >= 70) return 'text-warning-600 dark:text-warning-400'
+  return 'text-danger-600 dark:text-danger-400'
+})
+
+// SVG ring progress (circumference = 2 * PI * radius)
+const RADIUS = 42
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+const strokeDashoffset = computed(() =>
+  CIRCUMFERENCE - (healthScore.value / 100) * CIRCUMFERENCE,
+)
 
 function handleAskAgent(prompt: string) {
   emit('sendChatPrompt', prompt)
@@ -42,57 +60,64 @@ function handleAskAgent(prompt: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- Header -->
-    <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
-      <AtomsIconButton
-        icon="icon-[annon--arrow-left]"
-        :label="t('common.back')"
-        @click="emit('back')"
-      />
-      <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
-        {{ t('health.title') }}
-      </AtomsHeadingText>
-      <AtomsHealthScoreBadge :score="healthScore" size="md" />
-      <AtomsBadge :variant="tierVariants[healthTier] ?? 'secondary'" size="sm">
-        {{ t(tierKeys[healthTier] ?? 'health.tier_good') }}
-      </AtomsBadge>
-    </div>
-
-    <!-- Body -->
     <div class="flex-1 overflow-y-auto">
-      <!-- Summary stat cards -->
-      <div class="grid grid-cols-3 gap-3 p-5">
-        <!-- Critical -->
-        <div class="rounded-lg border border-secondary-200 bg-white p-4 dark:border-secondary-800 dark:bg-secondary-950">
-          <div class="flex items-center gap-2">
-            <span class="icon-[annon--alert-circle] block size-4 text-danger-500" aria-hidden="true" />
-            <span class="text-xs font-medium text-muted">{{ t('health.critical') }}</span>
+      <!-- Hero score ring -->
+      <div class="flex flex-col items-center px-5 pb-2 pt-6">
+        <div class="relative size-24">
+          <svg class="size-full -rotate-90" viewBox="0 0 100 100">
+            <!-- Background ring -->
+            <circle
+              cx="50" cy="50" :r="RADIUS"
+              fill="none"
+              stroke-width="6"
+              class="stroke-secondary-200 dark:stroke-secondary-800"
+            />
+            <!-- Progress ring -->
+            <circle
+              cx="50" cy="50" :r="RADIUS"
+              fill="none"
+              stroke-width="6"
+              stroke-linecap="round"
+              :class="ringColor"
+              :stroke-dasharray="CIRCUMFERENCE"
+              :stroke-dashoffset="strokeDashoffset"
+              class="transition-all duration-700 ease-out"
+            />
+          </svg>
+          <!-- Score number -->
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span :class="scoreColor" class="text-2xl font-bold tabular-nums">
+              {{ healthScore }}
+            </span>
           </div>
-          <p class="mt-2 text-2xl font-semibold tabular-nums text-danger-600 dark:text-danger-400">
+        </div>
+        <span :class="tierColor" class="mt-2 text-sm font-semibold">
+          {{ t(tierKeys[healthTier] ?? 'health.tier_good') }}
+        </span>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="grid grid-cols-3 gap-2 px-5 pb-5 pt-3">
+        <div class="rounded-lg border border-secondary-200 bg-white px-3 py-2.5 text-center dark:border-secondary-800 dark:bg-secondary-900">
+          <span class="icon-[annon--alert-circle] mx-auto block size-4 text-danger-500" aria-hidden="true" />
+          <p class="mt-1 text-lg font-bold tabular-nums text-danger-600 dark:text-danger-400">
             {{ criticalCount }}
           </p>
+          <span class="text-[10px] font-medium uppercase tracking-wider text-muted">{{ t('health.critical') }}</span>
         </div>
-
-        <!-- Errors -->
-        <div class="rounded-lg border border-secondary-200 bg-white p-4 dark:border-secondary-800 dark:bg-secondary-950">
-          <div class="flex items-center gap-2">
-            <span class="icon-[annon--alert-triangle] block size-4 text-warning-500" aria-hidden="true" />
-            <span class="text-xs font-medium text-muted">{{ t('health.errors') }}</span>
-          </div>
-          <p class="mt-2 text-2xl font-semibold tabular-nums text-warning-600 dark:text-warning-400">
+        <div class="rounded-lg border border-secondary-200 bg-white px-3 py-2.5 text-center dark:border-secondary-800 dark:bg-secondary-900">
+          <span class="icon-[annon--alert-triangle] mx-auto block size-4 text-warning-500" aria-hidden="true" />
+          <p class="mt-1 text-lg font-bold tabular-nums text-warning-600 dark:text-warning-400">
             {{ errorCount }}
           </p>
+          <span class="text-[10px] font-medium uppercase tracking-wider text-muted">{{ t('health.errors') }}</span>
         </div>
-
-        <!-- Warnings -->
-        <div class="rounded-lg border border-secondary-200 bg-white p-4 dark:border-secondary-800 dark:bg-secondary-950">
-          <div class="flex items-center gap-2">
-            <span class="icon-[annon--info] block size-4 text-info-500" aria-hidden="true" />
-            <span class="text-xs font-medium text-muted">{{ t('health.warnings') }}</span>
-          </div>
-          <p class="mt-2 text-2xl font-semibold tabular-nums text-info-600 dark:text-info-400">
+        <div class="rounded-lg border border-secondary-200 bg-white px-3 py-2.5 text-center dark:border-secondary-800 dark:bg-secondary-900">
+          <span class="icon-[annon--info] mx-auto block size-4 text-info-500" aria-hidden="true" />
+          <p class="mt-1 text-lg font-bold tabular-nums text-info-600 dark:text-info-400">
             {{ warningCount }}
           </p>
+          <span class="text-[10px] font-medium uppercase tracking-wider text-muted">{{ t('health.warnings') }}</span>
         </div>
       </div>
 
@@ -108,8 +133,7 @@ function handleAskAgent(prompt: string) {
             :key="modelId"
             class="border-t border-secondary-100 dark:border-secondary-800/50"
           >
-            <!-- Model group header -->
-            <div class="flex items-center gap-2 px-5 py-2 bg-secondary-50 dark:bg-secondary-900/50">
+            <div class="flex items-center gap-2 bg-secondary-50 px-5 py-2 dark:bg-secondary-900/50">
               <span class="icon-[annon--layers] block size-3.5 text-muted" aria-hidden="true" />
               <span class="text-xs font-semibold text-heading dark:text-secondary-100">
                 {{ modelId }}
@@ -118,8 +142,6 @@ function handleAskAgent(prompt: string) {
                 {{ modelWarnings.length }}
               </AtomsBadge>
             </div>
-
-            <!-- Warning items -->
             <div class="divide-y divide-secondary-100 dark:divide-secondary-800/50">
               <MoleculesHealthWarningItem
                 v-for="(warning, idx) in modelWarnings"
@@ -132,7 +154,7 @@ function handleAskAgent(prompt: string) {
         </div>
       </template>
 
-      <!-- Empty state — no issues -->
+      <!-- Empty state -->
       <template v-else>
         <AtomsEmptyState
           icon="icon-[annon--check-circle]"
