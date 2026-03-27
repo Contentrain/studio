@@ -236,7 +236,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
     <div class="hidden w-80 min-w-0 shrink-0 border-l border-secondary-200 lg:flex lg:flex-col xl:w-96 dark:border-secondary-800">
       <OrganismsContentPanel
         v-model:locale="activeLocale"
-        :snapshot="(snapshot as any)"
+        :snapshot="snapshot"
         :snapshot-loading="snapshotLoading"
         :model-content="modelContent"
         :model-content-kind="modelContentKind"
@@ -248,7 +248,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         :active-cdn="activeCDN"
         :active-assets="activeAssets"
         :active-health="activeHealth"
-        :branch-diff="(branchDiff as any)"
+        :branch-diff="branchDiff"
         :branch-diff-loading="diffLoading"
         :can-manage-branches="hasFeature(activeWorkspace?.plan, 'workflow.review')"
         :workspace-id="activeWorkspace?.id"

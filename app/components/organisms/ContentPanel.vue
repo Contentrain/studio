@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DeepReadonly } from 'vue'
 import type { FieldDef } from '@contentrain/types'
 import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from 'radix-vue'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
@@ -11,28 +12,29 @@ interface SnapshotModel {
   readonly name: string
   readonly kind: string
   readonly type: string
-  readonly fields: Readonly<Record<string, unknown>>
+  readonly fields: Record<string, unknown> | Readonly<Record<string, unknown>>
   readonly domain: string
   readonly i18n: boolean
 }
 
-interface SnapshotData {
-  readonly exists: boolean
-  readonly config: unknown
-  readonly models: readonly SnapshotModel[]
-  readonly content: Readonly<Record<string, { count: number, locales: string[] }>>
-  readonly vocabulary?: Readonly<Record<string, Record<string, string>>> | null
-  readonly contentContext?: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null
+// Accept both mutable and DeepReadonly variants from useSnapshot
+type SnapshotData = {
+  exists: boolean
+  config: unknown
+  models: readonly SnapshotModel[]
+  content: Record<string, { count: number, locales: readonly string[] }>
+  vocabulary?: Record<string, Record<string, string>> | null
+  contentContext?: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null
 }
 
-interface BranchDiffData {
+type BranchDiffProps = {
   branch: string
-  files: Array<{ path: string, status: 'added' | 'modified' | 'removed' }>
+  files: readonly { path: string, status: 'added' | 'modified' | 'removed' }[]
   contents: Record<string, { before: unknown, after: unknown }>
 }
 
 const props = defineProps<{
-  snapshot: SnapshotData | null
+  snapshot: DeepReadonly<SnapshotData> | SnapshotData | null
   snapshotLoading: boolean
   modelContent: unknown
   modelContentKind: string
@@ -44,7 +46,7 @@ const props = defineProps<{
   activeCdn?: boolean
   activeAssets?: boolean
   activeHealth?: boolean
-  branchDiff?: BranchDiffData | null
+  branchDiff?: DeepReadonly<BranchDiffProps> | BranchDiffProps | null
   branchDiffLoading?: boolean
   canManageBranches?: boolean
   workspaceId?: string
