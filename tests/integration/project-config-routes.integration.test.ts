@@ -149,6 +149,7 @@ describe('project config and branch route integration', () => {
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('business'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/config/1234567890-abcd'))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ ensureContentBranch: vi.fn().mockResolvedValue(undefined), mergeBranch }))
 
     await withTestServer({
@@ -214,6 +215,7 @@ describe('project config and branch route integration', () => {
       contentRoot: '',
     }))
     vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/vocabulary/1234567890-abcd'))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ ensureContentBranch: vi.fn().mockResolvedValue(undefined), mergeBranch }))
 
     await withTestServer({

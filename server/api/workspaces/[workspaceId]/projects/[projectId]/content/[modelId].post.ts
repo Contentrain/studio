@@ -32,12 +32,34 @@ export default defineEventHandler(async (event) => {
   if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
     throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
-  const { git, contentRoot } = await resolveProjectContext(
+  const { git, contentRoot, workspace } = await resolveProjectContext(
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,
   )
 
   const engine = createContentEngine({ git, contentRoot })
   const result = await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
+
+  if (!result.validation.valid) {
+    return result
+  }
+
+  // Workflow-aware auto-merge (same logic as chat handler)
+  const plan = getWorkspacePlan(workspace)
+  const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+  const configWorkflow = brain.config?.workflow ?? 'auto-merge'
+  const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
+  const shouldMerge = workflow === 'auto-merge'
+    || permissions.workspaceRole === 'owner'
+    || permissions.workspaceRole === 'admin'
+
+  let merged = false
+  let pullRequestUrl: string | null = null
+  if (shouldMerge && result.branch) {
+    const mergeResult = await engine.mergeBranch(result.branch)
+    merged = mergeResult.merged
+    pullRequestUrl = mergeResult.pullRequestUrl
+    invalidateBrainCache(projectId)
+  }
 
   // Track media usage (non-blocking, non-fatal)
   try {
@@ -71,5 +93,5 @@ export default defineEventHandler(async (event) => {
     // Usage tracking failure is non-fatal
   }
 
-  return result
+  return { ...result, merged, workflow, pullRequestUrl }
 })

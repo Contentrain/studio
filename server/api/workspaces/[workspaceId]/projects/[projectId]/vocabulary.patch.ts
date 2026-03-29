@@ -64,5 +64,8 @@ export default defineEventHandler(async (event) => {
 
   const mergeResult = await engine.mergeBranch(branchName)
 
+  // Invalidate brain cache so next read picks up new vocabulary
+  invalidateBrainCache(projectId)
+
   return { vocabulary, merged: mergeResult.merged }
 })

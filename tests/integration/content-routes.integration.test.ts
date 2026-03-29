@@ -11,9 +11,12 @@ async function loadContentStatusHandler() {
 
 describe('content route integration', () => {
   it('saves content only for users with save_content permission and tracks media usage non-fatally', async () => {
+    const mergeBranch = vi.fn().mockResolvedValue({ merged: true, sha: 'merge-sha', pullRequestUrl: null })
     const saveContent = vi.fn().mockResolvedValue({
       branch: 'cr/content/posts/en/1234567890-abcd',
-      saved: true,
+      commit: { sha: 'abc' },
+      diff: [],
+      validation: { valid: true, errors: [] },
     })
     const listAssets = vi.fn().mockResolvedValue({
       assets: [{ id: 'asset-1' }],
@@ -32,6 +35,7 @@ describe('content route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      workspaceRole: 'editor',
       availableTools: ['save_content'],
       specificModels: false,
       allowedModels: [],
@@ -40,8 +44,13 @@ describe('content route integration', () => {
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},
       contentRoot: '',
+      workspace: { plan: 'free' },
     }))
-    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'auto-merge' } }))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent, mergeBranch }))
     vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ listAssets }))
     vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({}))
     vi.stubGlobal('trackMediaUsage', trackMediaUsage)
@@ -66,16 +75,17 @@ describe('content route integration', () => {
       })
 
       expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        branch: 'cr/content/posts/en/1234567890-abcd',
-        saved: true,
-      })
+      const payload = await response.json()
+      expect(payload.branch).toBe('cr/content/posts/en/1234567890-abcd')
+      expect(payload.merged).toBe(true)
+      expect(payload.workflow).toBe('auto-merge')
       expect(saveContent).toHaveBeenCalledWith('posts', 'en', {
         entry1: {
           title: 'Hello world',
           heroImage: 'media/hero.png',
         },
       }, 'editor@example.com')
+      expect(mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1234567890-abcd')
       expect(trackMediaUsage).toHaveBeenCalledWith({}, {
         asset_id: 'asset-1',
         project_id: 'project-1',

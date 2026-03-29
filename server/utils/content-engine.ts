@@ -143,18 +143,35 @@ export function createContentEngine(ctx: ContentEngineContext) {
     const hasContentBranch = branches.some(b => b.name === CONTENT_BRANCH)
 
     if (!hasContentBranch) {
-      // Migration: delete old contentrain/* branches (ref namespace collision)
+      // Create contentrain branch from default first
+      const defaultBranch = await git.getDefaultBranch()
+      await git.createBranch(CONTENT_BRANCH, defaultBranch)
+
+      // Migration: merge then delete old contentrain/* branches (ref namespace collision)
       const oldBranches = branches.filter(b => b.name.startsWith('contentrain/'))
       for (const old of oldBranches) {
+        try {
+          // Try to preserve unmerged content by merging into contentrain first
+          await git.mergeBranch(old.name, CONTENT_BRANCH)
+        }
+        catch {
+          // Merge conflict or already merged — content may be lost
+          // eslint-disable-next-line no-console
+          console.warn(`[contentrain] Migration: could not merge old branch ${old.name} — content may be lost`)
+        }
         try {
           await git.deleteBranch(old.name)
         }
         catch { /* best-effort cleanup */ }
       }
 
-      // Create contentrain branch from default
-      const defaultBranch = await git.getDefaultBranch()
-      await git.createBranch(CONTENT_BRANCH, defaultBranch)
+      // Advance main to include any migrated content
+      if (oldBranches.length > 0) {
+        try {
+          await git.mergeBranch(CONTENT_BRANCH, defaultBranch)
+        }
+        catch { /* branch protection may block — acceptable */ }
+      }
     }
     else {
       // Sync: merge main → contentrain (spec Step ②)
