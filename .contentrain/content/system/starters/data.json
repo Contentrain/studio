@@ -1,12 +1,45 @@
 {
   "astro-blog": {
-    "featured": false
+    "description": "Premium Astro editorial starter powered by Contentrain SDK and seeded structured content.",
+    "featured": false,
+    "framework": "astro",
+    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/astro/astro-original.svg",
+    "name": "Astro Blog",
+    "repo": "contentrain-starter-astro-blog",
+    "slug": "astro-blog",
+    "tags": [
+      "blog",
+      "editorial",
+      "astro"
+    ]
   },
   "astro-landing": {
-    "featured": false
+    "description": "High-polish landing page starter with Contentrain content models and generated SDK client.",
+    "featured": false,
+    "framework": "astro",
+    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/astro/astro-original.svg",
+    "name": "Astro Landing",
+    "repo": "contentrain-starter-astro-landing",
+    "slug": "astro-landing",
+    "tags": [
+      "landing-page",
+      "marketing",
+      "astro"
+    ]
   },
   "next-commerce": {
-    "featured": false
+    "description": "Next.js commerce starter for campaigns, collections, and product detail storytelling with Contentrain SDK.",
+    "featured": false,
+    "framework": "next",
+    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nextjs/nextjs-original.svg",
+    "name": "Next Commerce",
+    "repo": "contentrain-starter-next-commerce",
+    "slug": "next-commerce",
+    "tags": [
+      "commerce",
+      "nextjs",
+      "app-router"
+    ]
   },
   "next-multi-surface-saas": {
     "description": "Next.js starter that keeps marketing, app shell, docs, and changelog surfaces on one Contentrain content architecture.",
@@ -24,13 +57,49 @@
     ]
   },
   "next-saas-dashboard": {
-    "featured": true
+    "description": "Product-surface starter for SaaS dashboards with Contentrain-managed UI copy, settings, billing, and operational content.",
+    "featured": true,
+    "framework": "next",
+    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nextjs/nextjs-original.svg",
+    "name": "Next SaaS Dashboard",
+    "repo": "contentrain-starter-next-saas-dashboard",
+    "slug": "next-saas-dashboard",
+    "tags": [
+      "saas",
+      "dashboard",
+      "nextjs",
+      "product-copy"
+    ]
   },
   "next-white-label-portal": {
-    "featured": true
+    "description": "Next.js starter for tenant-specific terminology, locale governance, and white-label portal content powered by Contentrain.",
+    "featured": true,
+    "framework": "next",
+    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nextjs/nextjs-original.svg",
+    "name": "Next White-Label Portal",
+    "repo": "contentrain-starter-next-white-label-portal",
+    "slug": "next-white-label-portal",
+    "tags": [
+      "white-label",
+      "portal",
+      "nextjs",
+      "i18n"
+    ]
   },
   "nuxt-admin-console": {
-    "featured": true
+    "description": "Operator-focused Nuxt starter for admin consoles, localization workflows, approvals, and audit-heavy product surfaces.",
+    "featured": true,
+    "framework": "nuxt",
+    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nuxtjs/nuxtjs-original.svg",
+    "name": "Nuxt Admin Console",
+    "repo": "contentrain-starter-nuxt-admin-console",
+    "slug": "nuxt-admin-console",
+    "tags": [
+      "admin",
+      "dashboard",
+      "nuxt",
+      "operations"
+    ]
   },
   "nuxt-saas": {
     "description": "Nuxt SaaS starter with pricing, integrations, changelog storytelling, and Contentrain SDK integration.",
