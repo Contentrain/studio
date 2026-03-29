@@ -62,5 +62,8 @@ export default defineEventHandler(async (event) => {
 
   const mergeResult = await engine.mergeBranch(branchName)
 
+  // Invalidate brain cache so next read picks up new config (e.g. workflow change)
+  invalidateBrainCache(projectId)
+
   return { config, merged: mergeResult.merged, pullRequestUrl: mergeResult.pullRequestUrl }
 })
