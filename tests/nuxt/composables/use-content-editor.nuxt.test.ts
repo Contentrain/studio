@@ -18,7 +18,7 @@ describe('useContentEditor', () => {
 
   it('saves inline field edits for collection entries', async () => {
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({
-      branch: 'contentrain/save-123',
+      branch: 'cr/content/faq/en/1234567890-abcd',
       validation: { valid: true, errors: [] },
     }))
 
@@ -36,7 +36,7 @@ describe('useContentEditor', () => {
     )
 
     expect(result).toBe(true)
-    expect(success).toHaveBeenCalledWith('Saved to branch: contentrain/save-123')
+    expect(success).toHaveBeenCalledWith('Saved to branch: cr/content/faq/en/1234567890-abcd')
     expect(editor.isEditing.value).toBe(false)
     expect(editor.saveError.value).toBeNull()
   })
@@ -67,7 +67,7 @@ describe('useContentEditor', () => {
 
   it('tracks dirty batch fields and submits only changed values', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      branch: 'contentrain/save-456',
+      branch: 'cr/content/faq/en/1234567890-efgh',
       validation: { valid: true, errors: [] },
     })
     vi.stubGlobal('$fetch', fetchMock)

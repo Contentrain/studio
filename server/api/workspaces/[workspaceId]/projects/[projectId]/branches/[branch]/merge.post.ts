@@ -11,8 +11,8 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !branch)
     throw createError({ statusCode: 400, message: errorMessage('validation.branch_params_required') })
 
-  // Only contentrain/* branches can be merged through this endpoint
-  if (!branch.startsWith('contentrain/'))
+  // Only cr/* branches can be merged through this endpoint
+  if (!branch.startsWith('cr/'))
     throw createError({ statusCode: 400, message: errorMessage('branches.contentrain_only') })
 
   // Role check: only reviewer+ can merge

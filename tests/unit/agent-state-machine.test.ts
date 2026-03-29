@@ -4,7 +4,7 @@ import { checkStateTransition, deriveProjectPhase, filterToolsByPhase } from '..
 describe('agent state machine', () => {
   it('derives the correct project phase from config, status, and init branches', () => {
     expect(deriveProjectPhase(null, [], 'active')).toBe('uninitialized')
-    expect(deriveProjectPhase(null, [{ name: 'contentrain/init-123', sha: 'sha-1', protected: false }], 'active')).toBe('init_pending')
+    expect(deriveProjectPhase(null, [{ name: 'cr/new/init/1234567890-abcd', sha: 'sha-1', protected: false }], 'active')).toBe('init_pending')
     expect(deriveProjectPhase({} as never, [], 'active')).toBe('active')
     expect(deriveProjectPhase({} as never, [], 'error')).toBe('error')
   })

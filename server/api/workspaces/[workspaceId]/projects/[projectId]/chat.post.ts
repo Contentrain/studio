@@ -154,7 +154,7 @@ export default defineEventHandler(async (event) => {
   // === STATE MACHINE ===
   let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
   try {
-    pendingBranches = await git.listBranches('contentrain/')
+    pendingBranches = await git.listBranches('cr/')
   }
   catch { /* no branches */ }
 
@@ -547,7 +547,7 @@ async function executeToolWithAutoMerge(
 
       case 'merge_branch': {
         const branchToMerge = params.branch as string
-        if (!branchToMerge.startsWith('contentrain/')) {
+        if (!branchToMerge.startsWith('cr/')) {
           result = { error: agentMessage('branch.contentrain_only_merge') }
           break
         }
@@ -560,7 +560,11 @@ async function executeToolWithAutoMerge(
 
       case 'reject_branch': {
         const branchToReject = params.branch as string
-        if (!branchToReject.startsWith('contentrain/')) {
+        if (branchToReject === 'contentrain') {
+          result = { error: 'Cannot reject the permanent content branch' }
+          break
+        }
+        if (!branchToReject.startsWith('cr/')) {
           result = { error: agentMessage('branch.contentrain_only_reject') }
           break
         }

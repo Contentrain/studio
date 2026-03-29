@@ -133,7 +133,7 @@ DICTIONARY: kind="dictionary" requires NO fields property. All content is free k
   },
   {
     name: 'list_branches',
-    description: 'List pending contentrain/* branches awaiting merge or review.',
+    description: 'List pending cr/* content branches. These are feature branches for individual operations awaiting merge or review.',
     inputSchema: { type: 'object', properties: {} },
     requiredPhase: ['active', 'init_pending', 'error'],
     defaultAffects: { snapshotChanged: false, branchesChanged: false },
@@ -141,10 +141,10 @@ DICTIONARY: kind="dictionary" requires NO fields property. All content is free k
   },
   {
     name: 'merge_branch',
-    description: 'Approve and merge a content branch into the default branch. Use after reviewing changes.',
+    description: 'Approve and merge a cr/* content branch. Two-step: merges into contentrain SSOT branch, then advances contentrain to main.',
     inputSchema: {
       type: 'object',
-      properties: { branch: { type: 'string', description: 'Branch name (e.g., contentrain/save-abcd1234)' } },
+      properties: { branch: { type: 'string', description: 'Branch name (e.g., cr/content/blog-post/en/1774800862-27c1)' } },
       required: ['branch'],
     },
     requiredPhase: ['active', 'init_pending'],

@@ -1,5 +1,5 @@
 /**
- * List contentrain/* branches (pending content changes).
+ * List cr/* branches (pending content changes).
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -13,6 +13,6 @@ export default defineEventHandler(async (event) => {
     useSupabaseUserClient(session.accessToken), workspaceId, projectId,
   )
 
-  const branches = await git.listBranches('contentrain/')
+  const branches = await git.listBranches('cr/')
   return { branches }
 })

@@ -37,7 +37,7 @@ describe('buildSystemPrompt', () => {
       },
       {
         initialized: true,
-        pendingBranches: [{ name: 'contentrain/save-1', sha: 'abc', protected: false }],
+        pendingBranches: [{ name: 'cr/content/posts/en/1234567890-abcd', sha: 'abc', protected: false }],
         projectStatus: 'active',
         phase: 'active',
         contentContext: {

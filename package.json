@@ -26,7 +26,15 @@
     "test:coverage:nuxt": "vitest run --coverage --project nuxt",
     "test:coverage:html": "vitest run --coverage --project unit --project integration --coverage.reporter=html --coverage.reporter=lcov",
     "test:coverage:full": "pnpm test:coverage && pnpm test:coverage:nuxt",
-    "test:ci": "pnpm test:unit && pnpm test:integration && pnpm test:nuxt"
+    "test:ci": "pnpm test:unit && pnpm test:integration && pnpm test:nuxt",
+    "db:start": "set -a && . ./.env && set +a && pnpm dlx supabase start --workdir .",
+    "db:stop": "pnpm dlx supabase stop --workdir .",
+    "db:reset": "set -a && . ./.env && set +a && pnpm dlx supabase db reset --workdir .",
+    "db:status": "pnpm dlx supabase status --workdir .",
+    "db:migrate": "pnpm dlx supabase migration up --workdir . --local",
+    "db:diff": "pnpm dlx supabase db diff --workdir .",
+    "db:studio": "open http://127.0.0.1:54323",
+    "db:mail": "open http://127.0.0.1:54324"
   },
   "lint-staged": {
     "*.{js,ts,mjs,vue}": "eslint --fix"

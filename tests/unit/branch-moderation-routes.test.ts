@@ -40,7 +40,7 @@ describe('branch moderation routes', () => {
   })
 
   it('blocks merge requests without reviewer permissions', async () => {
-    stubRouteGlobals('contentrain/save-123')
+    stubRouteGlobals('cr/content/faq/en/1234567890-abcd')
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['list_branches'],
     }))
@@ -59,7 +59,7 @@ describe('branch moderation routes', () => {
       pullRequestUrl: null,
     })
 
-    stubRouteGlobals('contentrain/save-123')
+    stubRouteGlobals('cr/content/faq/en/1234567890-abcd')
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['merge_branch'],
     }))
@@ -75,7 +75,7 @@ describe('branch moderation routes', () => {
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/branches/[branch]/merge.post')).default
     const result = await handler({} as never)
 
-    expect(mergeBranch).toHaveBeenCalledWith('contentrain/save-123')
+    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
     expect(result).toEqual({
       merged: true,
       sha: 'merge-sha',
@@ -86,7 +86,7 @@ describe('branch moderation routes', () => {
   it('delegates reject operations to the content engine for valid contentrain branches', async () => {
     const rejectBranch = vi.fn().mockResolvedValue(undefined)
 
-    stubRouteGlobals('contentrain/save-123')
+    stubRouteGlobals('cr/content/faq/en/1234567890-abcd')
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['reject_branch'],
     }))
@@ -102,7 +102,7 @@ describe('branch moderation routes', () => {
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/branches/[branch]/reject.post')).default
     const result = await handler({} as never)
 
-    expect(rejectBranch).toHaveBeenCalledWith('contentrain/save-123')
+    expect(rejectBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
     expect(result).toEqual({ rejected: true })
   })
 })

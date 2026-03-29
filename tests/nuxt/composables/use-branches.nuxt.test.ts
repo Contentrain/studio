@@ -22,42 +22,42 @@ describe('useBranches', () => {
 
   it('encodes branch names when requesting diffs', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      branch: 'contentrain/save-123',
+      branch: 'cr/content/faq/en/1234567890-abcd',
       files: [],
       contents: {},
     })
     vi.stubGlobal('$fetch', fetchMock)
 
     const store = useBranches()
-    await store.fetchBranchDiff('workspace-1', 'project-1', 'contentrain/save-123')
+    await store.fetchBranchDiff('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/workspaces/workspace-1/projects/project-1/branches/contentrain%2Fsave-123/diff',
+      `/api/workspaces/workspace-1/projects/project-1/branches/${encodeURIComponent('cr/content/faq/en/1234567890-abcd')}/diff`,
     )
-    expect(store.branchDiff.value?.branch).toBe('contentrain/save-123')
+    expect(store.branchDiff.value?.branch).toBe('cr/content/faq/en/1234567890-abcd')
   })
 
   it('removes merged branches from local state and shows a success toast', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ merged: true })
     vi.stubGlobal('$fetch', fetchMock)
     useState('branches').value = [
-      { name: 'contentrain/save-123', sha: 'sha-1', protected: false },
-      { name: 'contentrain/save-456', sha: 'sha-2', protected: false },
+      { name: 'cr/content/faq/en/1234567890-abcd', sha: 'sha-1', protected: false },
+      { name: 'cr/content/blog/en/1234567890-efgh', sha: 'sha-2', protected: false },
     ]
 
     const store = useBranches()
-    const merged = await store.mergeBranch('workspace-1', 'project-1', 'contentrain/save-123')
+    const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
 
     expect(merged).toBe(true)
-    expect(success).toHaveBeenCalledWith('Branch merged: contentrain/save-123')
-    expect(store.branches.value.map(branch => branch.name)).toEqual(['contentrain/save-456'])
+    expect(success).toHaveBeenCalledWith('Branch merged: cr/content/faq/en/1234567890-abcd')
+    expect(store.branches.value.map(branch => branch.name)).toEqual(['cr/content/blog/en/1234567890-efgh'])
   })
 
   it('returns false and shows an error toast when merge fails', async () => {
     vi.stubGlobal('$fetch', vi.fn().mockRejectedValue(new Error('Merge failed on server')))
 
     const store = useBranches()
-    const merged = await store.mergeBranch('workspace-1', 'project-1', 'contentrain/save-123')
+    const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
 
     expect(merged).toBe(false)
     expect(error).toHaveBeenCalledWith('Merge failed on server')

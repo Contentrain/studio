@@ -18,7 +18,7 @@ describe('agent types helpers', () => {
         locales: ['en'],
         snapshotChanged: false,
         branchesChanged: true,
-        branch: 'contentrain/save-1',
+        branch: 'cr/content/faq/en/1234567890-abcd',
       },
       {
         models: ['docs', 'faq'],
@@ -31,7 +31,7 @@ describe('agent types helpers', () => {
       locales: ['en', 'tr'],
       snapshotChanged: true,
       branchesChanged: true,
-      branch: 'contentrain/save-1',
+      branch: 'cr/content/faq/en/1234567890-abcd',
     })
   })
 

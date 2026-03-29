@@ -47,9 +47,13 @@ export default defineEventHandler(async (event) => {
   }
   vocabulary.terms = updatedTerms
 
+  // Use content engine for branch lifecycle (ensureContentBranch + merge)
+  const engine = createContentEngine({ git, contentRoot })
+  await engine.ensureContentBranch()
+
   // Commit + auto-merge
-  const branchName = `contentrain/vocab-${Date.now().toString(36)}`
-  await git.createBranch(branchName)
+  const branchName = generateBranchName('content', 'vocabulary')
+  await git.createBranch(branchName, 'contentrain')
 
   await git.commitFiles(
     branchName,
@@ -58,8 +62,6 @@ export default defineEventHandler(async (event) => {
     { name: 'Contentrain Studio[bot]', email: 'bot@contentrain.io' },
   )
 
-  // Use content engine merge (has PR fallback for protected branches)
-  const engine = createContentEngine({ git, contentRoot })
   const mergeResult = await engine.mergeBranch(branchName)
 
   return { vocabulary, merged: mergeResult.merged }
