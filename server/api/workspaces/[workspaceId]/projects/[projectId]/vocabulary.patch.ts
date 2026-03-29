@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   // Read current vocabulary
   let vocabulary: { version: number, terms: Record<string, Record<string, string>> } = { version: 1, terms: {} }
   try {
-    vocabulary = JSON.parse(await git.readFile(vocabPath)) as typeof vocabulary
+    vocabulary = JSON.parse(await git.readFile(vocabPath, 'contentrain')) as typeof vocabulary
   }
   catch { /* no existing vocabulary */ }
 

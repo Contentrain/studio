@@ -18,6 +18,9 @@ import type { GitProvider, TreeEntry } from '../providers/git'
 import type { SchemaValidationResult } from './schema-validation'
 import matter from 'gray-matter'
 
+/** SSOT content branch — read from this for latest content state */
+const CONTENT_REF = 'contentrain'
+
 export interface BrainCacheEntry {
   treeSha: string
   config: ContentrainConfig | null
@@ -88,7 +91,7 @@ export async function getOrBuildBrainCache(
   if (cached && !isBrainStale(projectId)) {
     // Quick SHA check via tree
     try {
-      const tree = await git.getTree()
+      const tree = await git.getTree(CONTENT_REF).catch(() => git.getTree())
       const currentHash = computeTreeHash(tree)
       if (cached.treeSha === currentHash) {
         return cached
@@ -137,18 +140,26 @@ export async function buildBrainSnapshot(
   const ctx = { contentRoot }
 
   // 1. Get tree for SHA tracking
+  // Read from contentrain branch (SSOT) if available, else default
+  let contentRef: string | undefined = CONTENT_REF
   let tree: TreeEntry[] = []
   try {
-    tree = await git.getTree()
+    tree = await git.getTree(contentRef)
   }
-  catch { /* empty repo or no access */ }
+  catch {
+    contentRef = undefined
+    try {
+      tree = await git.getTree()
+    }
+    catch { /* empty repo or no access */ }
+  }
 
   const treeSha = computeTreeHash(tree)
 
   // 2. Read config
   let config: ContentrainConfig | null = null
   try {
-    config = JSON.parse(await git.readFile(resolveConfigPath(ctx))) as ContentrainConfig
+    config = JSON.parse(await git.readFile(resolveConfigPath(ctx), contentRef)) as ContentrainConfig
   }
   catch { /* no config */ }
 
@@ -177,14 +188,14 @@ export async function buildBrainSnapshot(
     const modelsDir = resolveModelsDir(ctx)
     // eslint-disable-next-line no-console
     console.log(`[brain] Reading models from: ${modelsDir}`)
-    const modelFiles = await git.listDirectory(modelsDir)
+    const modelFiles = await git.listDirectory(modelsDir, contentRef)
     // eslint-disable-next-line no-console
     console.log(`[brain] Found ${modelFiles.length} model files:`, modelFiles)
     const modelReads = modelFiles
       .filter(f => f.endsWith('.json'))
       .map(async (file) => {
         try {
-          const raw = JSON.parse(await git.readFile(`${modelsDir}/${file}`)) as Record<string, unknown>
+          const raw = JSON.parse(await git.readFile(`${modelsDir}/${file}`, contentRef)) as Record<string, unknown>
           const modelId = (raw.id as string) ?? file.replace('.json', '')
           // Ensure id and name are always set (some model files omit them)
           const def = {
@@ -233,7 +244,7 @@ export async function buildBrainSnapshot(
               ? (contentRoot ? `${contentRoot}/${model.content_path}` : model.content_path)
               : `${contentRoot ? `${contentRoot}/` : ''}.contentrain/content/${model.domain}/${model.id}`
 
-            const items = await git.listDirectory(contentDir)
+            const items = await git.listDirectory(contentDir, contentRef)
             const entries: Array<Record<string, unknown>> = []
 
             for (const item of items) {
@@ -251,14 +262,14 @@ export async function buildBrainSnapshot(
                   mdPath = `${contentDir}/${item}`
                 }
 
-                const raw = await git.readFile(mdPath)
+                const raw = await git.readFile(mdPath, contentRef)
                 const parsed = matter(raw)
 
                 // Read per-document meta
                 let entryMeta: Record<string, unknown> | null = null
                 try {
                   const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale, slug)
-                  entryMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+                  entryMeta = JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>
                 }
                 catch { /* no meta */ }
 
@@ -283,7 +294,7 @@ export async function buildBrainSnapshot(
             const contentPath = resolveContentPath(ctx, model, locale)
             // eslint-disable-next-line no-console
             console.log(`[brain] Reading content: ${contentPath}`)
-            const raw = await git.readFile(contentPath)
+            const raw = await git.readFile(contentPath, contentRef)
             content.set(key, JSON.parse(raw))
             // locale tracked in summary post-processing
             // eslint-disable-next-line no-console
@@ -297,7 +308,7 @@ export async function buildBrainSnapshot(
           // Meta
           try {
             const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale)
-            metaMap.set(key, JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>)
+            metaMap.set(key, JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>)
           }
           catch { /* no meta */ }
         }
@@ -339,7 +350,7 @@ export async function buildBrainSnapshot(
   // 5. Read vocabulary
   let vocabulary: Record<string, Record<string, string>> | null = null
   try {
-    const vocabData = JSON.parse(await git.readFile(resolveVocabularyPath(ctx))) as { terms?: Record<string, Record<string, string>> }
+    const vocabData = JSON.parse(await git.readFile(resolveVocabularyPath(ctx), contentRef)) as { terms?: Record<string, Record<string, string>> }
     vocabulary = vocabData.terms ?? null
   }
   catch { /* no vocabulary */ }
@@ -347,7 +358,7 @@ export async function buildBrainSnapshot(
   // 6. Read context.json
   let contentContext: Record<string, unknown> | null = null
   try {
-    contentContext = JSON.parse(await git.readFile(resolveContextPath(ctx))) as Record<string, unknown>
+    contentContext = JSON.parse(await git.readFile(resolveContextPath(ctx), contentRef)) as Record<string, unknown>
   }
   catch { /* no context */ }
 
