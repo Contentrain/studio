@@ -6,25 +6,18 @@
       "next-commerce",
       "next-saas-dashboard",
       "nuxt-admin-console",
+      "next-multi-surface-saas",
       "next-white-label-portal"
     ],
     "locale": "en",
     "model": "starters",
     "source": "mcp-local",
-<<<<<<< Updated upstream
-    "timestamp": "2026-03-29T19:42:01.321Z",
-=======
-    "timestamp": "2026-03-29T19:38:01.133Z",
->>>>>>> Stashed changes
+    "timestamp": "2026-03-29T19:43:20.349Z",
     "tool": "contentrain_content_save"
   },
   "stats": {
     "entries": 15,
-<<<<<<< Updated upstream
-    "lastSync": "2026-03-29T19:42:01.321Z",
-=======
-    "lastSync": "2026-03-29T19:38:01.133Z",
->>>>>>> Stashed changes
+    "lastSync": "2026-03-29T19:43:20.349Z",
     "locales": [
       "en"
     ],
