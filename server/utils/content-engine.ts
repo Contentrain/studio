@@ -82,10 +82,11 @@ async function buildContextUpdate(
   operation: { tool: string, model: string, locale: string, entries?: string[] },
   modelCount: number,
   locales: string[],
+  ref?: string,
 ): Promise<string> {
   let existing: Record<string, unknown> = {}
   try {
-    existing = JSON.parse(await git.readFile(contextPath)) as Record<string, unknown>
+    existing = JSON.parse(await git.readFile(contextPath, ref)) as Record<string, unknown>
   }
   catch { /* no existing context */ }
 
@@ -127,8 +128,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
   let contentBranchEnsured = false
 
   /**
-   * Ensure the dedicated `contentrain` branch exists.
-   * Migrates old `contentrain/*` branches (ref namespace collision).
+   * Ensure the dedicated `contentrain` branch exists and is synced with main.
+   *
+   * Per git-architecture.md §3.1 Step ②:
+   * - If contentrain doesn't exist: create from default branch
+   * - If contentrain exists: merge main → contentrain (sync, ensures fast-forward later)
+   *
    * Called before every write operation.
    */
   async function ensureContentBranch(): Promise<void> {
@@ -151,6 +156,17 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const defaultBranch = await git.getDefaultBranch()
       await git.createBranch(CONTENT_BRANCH, defaultBranch)
     }
+    else {
+      // Sync: merge main → contentrain (spec Step ②)
+      // Ensures contentrain contains all of main's history for fast-forward guarantee
+      const defaultBranch = await git.getDefaultBranch()
+      try {
+        await git.mergeBranch(defaultBranch, CONTENT_BRANCH)
+      }
+      catch {
+        // No-op (already in sync) or conflict (extremely rare — different directories)
+      }
+    }
 
     contentBranchEnsured = true
   }
@@ -159,14 +175,14 @@ export function createContentEngine(ctx: ContentEngineContext) {
   async function getProjectInfo(fallbackLocale: string): Promise<{ modelCount: number, locales: string[] }> {
     let modelCount = 0
     try {
-      const files = await git.listDirectory(resolveModelsDir(pathCtx))
+      const files = await git.listDirectory(resolveModelsDir(pathCtx), CONTENT_BRANCH)
       modelCount = files.filter(f => f.endsWith('.json')).length
     }
     catch { /* no models dir */ }
 
     let locales = [fallbackLocale]
     try {
-      const cfg = JSON.parse(await git.readFile(resolveConfigPath(pathCtx))) as ContentrainConfig
+      const cfg = JSON.parse(await git.readFile(resolveConfigPath(pathCtx), CONTENT_BRANCH)) as ContentrainConfig
       locales = cfg.locales?.supported ?? [fallbackLocale]
     }
     catch { /* no config */ }
@@ -189,16 +205,16 @@ export function createContentEngine(ctx: ContentEngineContext) {
       userEmail: string,
       options?: { autoPublish?: boolean },
     ): Promise<WriteResult> {
-      // 1. Load model definition
+      // 1. Load model definition (from contentrain — SSOT)
       const modelPath = resolveModelPath(pathCtx, modelId)
-      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+      const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
 
       // 2. Read existing content for validation context (unique checks)
       const fields = modelDef.fields ?? {}
       let existingForValidation: Record<string, Record<string, unknown>> = {}
       if (modelDef.kind === 'collection') {
         try {
-          const rawExisting = JSON.parse(await git.readFile(resolveContentPath(pathCtx, modelDef, locale)))
+          const rawExisting = JSON.parse(await git.readFile(resolveContentPath(pathCtx, modelDef, locale), CONTENT_BRANCH))
           existingForValidation = toObjectMap(rawExisting) as Record<string, Record<string, unknown>>
         }
         catch { /* no existing content */ }
@@ -237,7 +253,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         // Merge with existing before validating singleton too
         let existingSingleton: Record<string, unknown> = {}
         try {
-          existingSingleton = JSON.parse(await git.readFile(resolveContentPath(pathCtx, modelDef, locale))) as Record<string, unknown>
+          existingSingleton = JSON.parse(await git.readFile(resolveContentPath(pathCtx, modelDef, locale), CONTENT_BRANCH)) as Record<string, unknown>
         }
         catch { /* no existing */ }
         const mergedSingleton = { ...existingSingleton, ...data }
@@ -258,7 +274,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const contentPath = resolveContentPath(pathCtx, modelDef, locale)
       let existingContent: Record<string, unknown> = {}
       try {
-        const raw = JSON.parse(await git.readFile(contentPath))
+        const raw = JSON.parse(await git.readFile(contentPath, CONTENT_BRANCH))
         existingContent = modelDef.kind === 'collection' ? toObjectMap(raw) : (raw as Record<string, unknown>)
       }
       catch {
@@ -313,7 +329,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
       let existingMeta: Record<string, unknown> = {}
       try {
-        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+        existingMeta = JSON.parse(await git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, unknown>
       }
       catch { /* no existing meta */ }
 
@@ -350,7 +366,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const contextPath = resolveContextPath(pathCtx)
       const entryIds = modelDef.kind === 'collection' ? Object.keys(toObjectMap(data)) : undefined
       const projectInfo = await getProjectInfo(locale)
-      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
       // 8. Ensure contentrain branch + create feature branch
       await ensureContentBranch()
@@ -386,11 +402,11 @@ export function createContentEngine(ctx: ContentEngineContext) {
       userEmail: string,
     ): Promise<WriteResult> {
       const modelPath = resolveModelPath(pathCtx, modelId)
-      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+      const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
       const contentPath = resolveContentPath(pathCtx, modelDef, locale)
 
       // Read existing (normalize array → object-map)
-      const raw = JSON.parse(await git.readFile(contentPath))
+      const raw = JSON.parse(await git.readFile(contentPath, CONTENT_BRANCH))
       const existing = toObjectMap(raw)
 
       // Remove entries by rebuilding without deleted IDs
@@ -404,7 +420,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
       let existingMeta: Record<string, unknown> = {}
       try {
-        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+        existingMeta = JSON.parse(await git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, unknown>
       }
       catch { /* no meta */ }
       const filteredMeta = Object.fromEntries(
@@ -414,7 +430,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       // Context.json update
       const contextPath = resolveContextPath(pathCtx)
       const projectInfo = await getProjectInfo(locale)
-      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
       await ensureContentBranch()
       const branchName = generateBranchName('content', modelId, locale)
@@ -467,7 +483,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       }
 
       const modelPath = resolveModelPath(pathCtx, modelId)
-      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+      const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
 
       // Validate frontmatter against model fields
       const fields = modelDef.fields ?? {}
@@ -489,7 +505,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const metaPath = resolveMetaPath(pathCtx, modelDef, locale, safeSlug)
       let existingMeta: Record<string, unknown> = {}
       try {
-        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, unknown>
+        existingMeta = JSON.parse(await git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, unknown>
       }
       catch { /* no existing meta */ }
       const docDefaultStatus = options?.autoPublish ? 'published' : 'draft'
@@ -504,7 +520,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       // Context.json
       const contextPath = resolveContextPath(pathCtx)
       const projectInfo = await getProjectInfo(locale)
-      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
       await ensureContentBranch()
       const branchName = generateBranchName('content', modelId, locale)
@@ -542,12 +558,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
       // +1 if this is a new model
       let isNew = false
       try {
-        await git.readFile(modelPath)
+        await git.readFile(modelPath, CONTENT_BRANCH)
       }
       catch {
         isNew = true
       }
-      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales, CONTENT_BRANCH)
 
       await ensureContentBranch()
       const branchName = generateBranchName('model', definition.id)
@@ -580,12 +596,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
       userEmail: string,
     ): Promise<WriteResult> {
       const modelPath = resolveModelPath(pathCtx, modelId)
-      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+      const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
       const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
 
       let existingMeta: Record<string, EntryMeta> = {}
       try {
-        existingMeta = JSON.parse(await git.readFile(metaPath)) as Record<string, EntryMeta>
+        existingMeta = JSON.parse(await git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, EntryMeta>
       }
       catch { /* no meta */ }
 
@@ -678,7 +694,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       userEmail: string,
     ): Promise<WriteResult> {
       const modelPath = resolveModelPath(pathCtx, modelId)
-      const modelDef = JSON.parse(await git.readFile(modelPath)) as ModelDefinition
+      const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
 
       if (!modelDef.i18n) {
         return {
@@ -693,7 +709,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const sourcePath = resolveContentPath(pathCtx, modelDef, fromLocale)
       let sourceContent: string
       try {
-        sourceContent = await git.readFile(sourcePath)
+        sourceContent = await git.readFile(sourcePath, CONTENT_BRANCH)
       }
       catch {
         return {
@@ -707,7 +723,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       // Check if target already exists
       const targetPath = resolveContentPath(pathCtx, modelDef, toLocale)
       try {
-        const existing = await git.readFile(targetPath)
+        const existing = await git.readFile(targetPath, CONTENT_BRANCH)
         // If target exists and has content, don't overwrite
         if (existing && existing.trim().length > 2) {
           return {
@@ -724,7 +740,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const sourceMetaPath = resolveMetaPath(pathCtx, modelDef, fromLocale)
       let metaContent = '{}\n'
       try {
-        metaContent = await git.readFile(sourceMetaPath)
+        metaContent = await git.readFile(sourceMetaPath, CONTENT_BRANCH)
       }
       catch { /* no meta */ }
       const targetMetaPath = resolveMetaPath(pathCtx, modelDef, toLocale)
@@ -732,7 +748,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       // Context update
       const contextPath = resolveContextPath(pathCtx)
       const projectInfo = await getProjectInfo(toLocale)
-      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'copy_locale', model: modelId, locale: toLocale }, projectInfo.modelCount, projectInfo.locales)
+      const contextJson = await buildContextUpdate(git, contextPath, { tool: 'copy_locale', model: modelId, locale: toLocale }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
       await ensureContentBranch()
       const branchName = generateBranchName('content', modelId)

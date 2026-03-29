@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
   // Read current config
   let config: ContentrainConfig
   try {
-    config = JSON.parse(await git.readFile(configPath)) as ContentrainConfig
+    config = JSON.parse(await git.readFile(configPath, 'contentrain')) as ContentrainConfig
   }
   catch {
     throw createError({ statusCode: 404, message: errorMessage('project.config_not_found') })
