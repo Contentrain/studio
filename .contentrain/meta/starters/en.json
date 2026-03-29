@@ -14,6 +14,26 @@
     "status": "draft",
     "updated_by": "contentrain-mcp"
   },
+  "next-multi-surface-saas": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "next-saas-dashboard": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "next-white-label-portal": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "nuxt-admin-console": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
   "nuxt-saas": {
     "source": "agent",
     "status": "draft",
