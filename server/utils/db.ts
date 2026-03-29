@@ -766,15 +766,16 @@ export async function updateFormSubmissionStatus(
 
 export async function countMonthlySubmissions(
   admin: SupabaseClient,
-  projectId: string,
+  workspaceId: string,
 ): Promise<number> {
   const now = new Date()
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
+  // Count ALL submissions across workspace (not per-project) to enforce plan limits
   const { count } = await admin
     .from('form_submissions')
     .select('*', { count: 'exact', head: true })
-    .eq('project_id', projectId)
+    .eq('workspace_id', workspaceId)
     .gte('created_at', monthStart.toISOString())
 
   return count ?? 0
@@ -798,6 +799,7 @@ export async function bulkUpdateSubmissions(
   submissionIds: string[],
   status: 'approved' | 'rejected' | 'spam',
   approvedBy?: string,
+  workspaceId?: string,
   projectId?: string,
   modelId?: string,
 ): Promise<number> {
@@ -812,7 +814,8 @@ export async function bulkUpdateSubmissions(
     .update(updates)
     .in('id', submissionIds)
 
-  // Scope to project/model to prevent cross-workspace tampering
+  // Scope to workspace/project/model to prevent cross-workspace tampering
+  if (workspaceId) query = query.eq('workspace_id', workspaceId)
   if (projectId) query = query.eq('project_id', projectId)
   if (modelId) query = query.eq('model_id', modelId)
 
