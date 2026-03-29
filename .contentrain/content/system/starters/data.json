@@ -42,60 +42,16 @@
     ]
   },
   "next-multi-surface-saas": {
-    "description": "Next.js starter that keeps marketing, app shell, docs, and changelog surfaces on one Contentrain content architecture.",
-    "featured": true,
-    "framework": "next",
-    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nextjs/nextjs-original.svg",
-    "name": "Next Multi-Surface SaaS",
-    "slug": "next-multi-surface-saas",
-    "tags": [
-      "saas",
-      "multi-surface",
-      "nextjs",
-      "docs"
-    ]
+    "repo": "contentrain-starter-next-multi-surface-saas"
   },
   "next-saas-dashboard": {
-    "description": "Product-surface starter for SaaS dashboards with Contentrain-managed UI copy, settings, billing, and operational content.",
-    "featured": false,
-    "framework": "next",
-    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nextjs/nextjs-original.svg",
-    "name": "Next SaaS Dashboard",
-    "slug": "next-saas-dashboard",
-    "tags": [
-      "saas",
-      "dashboard",
-      "nextjs",
-      "product-copy"
-    ]
+    "repo": "contentrain-starter-next-saas-dashboard"
   },
   "next-white-label-portal": {
-    "description": "Next.js starter for tenant-specific terminology, locale governance, and white-label portal content powered by Contentrain.",
-    "featured": false,
-    "framework": "next",
-    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nextjs/nextjs-original.svg",
-    "name": "Next White-Label Portal",
-    "slug": "next-white-label-portal",
-    "tags": [
-      "white-label",
-      "portal",
-      "nextjs",
-      "i18n"
-    ]
+    "repo": "contentrain-starter-next-white-label-portal"
   },
   "nuxt-admin-console": {
-    "description": "Operator-focused Nuxt starter for admin consoles, localization workflows, approvals, and audit-heavy product surfaces.",
-    "featured": false,
-    "framework": "nuxt",
-    "framework_icon": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nuxtjs/nuxtjs-original.svg",
-    "name": "Nuxt Admin Console",
-    "slug": "nuxt-admin-console",
-    "tags": [
-      "admin",
-      "dashboard",
-      "nuxt",
-      "operations"
-    ]
+    "repo": "contentrain-starter-nuxt-admin-console"
   },
   "nuxt-saas": {
     "description": "Nuxt SaaS starter with pricing, integrations, changelog storytelling, and Contentrain SDK integration.",
