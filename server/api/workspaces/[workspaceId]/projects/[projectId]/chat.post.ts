@@ -297,7 +297,7 @@ export default defineEventHandler(async (event) => {
 
           // Execute tool
           const result = await executeToolWithAutoMerge(
-            tc.name, tc.input, contentEngine, git, session.user.email ?? '', contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext,
+            tc.name, tc.input, contentEngine, git, session.user.email ?? '', session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext,
           )
 
           // Accumulate affected resources
@@ -368,6 +368,7 @@ async function executeToolWithAutoMerge(
   engine: ReturnType<typeof createContentEngine>,
   git: ReturnType<typeof useGitProvider>,
   userEmail: string,
+  userId: string,
   contentRoot: string,
   workflow: string,
   permissions: AgentPermissions,
@@ -507,7 +508,7 @@ async function executeToolWithAutoMerge(
         const subStatus = (params.status as string) ?? 'pending'
         const subLimit = Math.min(Number(params.limit ?? 20), 100)
         const admin = useSupabaseAdmin()
-        const subs = await listFormSubmissions(admin, projectId, subModelId, { status: subStatus, limit: subLimit })
+        const subs = await listFormSubmissions(admin, workspaceId, projectId, subModelId, { status: subStatus, limit: subLimit })
         result = subs.total > 0
           ? { submissions: subs.submissions, total: subs.total, message: agentMessage('forms.submission_list', { count: subs.total, status: subStatus }) }
           : { submissions: [], total: 0, message: agentMessage('forms.no_submissions') }
@@ -518,11 +519,11 @@ async function executeToolWithAutoMerge(
         const approveId = params.submissionId as string
         const admin = useSupabaseAdmin()
         const sub = await getFormSubmission(admin, approveId)
-        if (!sub) {
+        if (!sub || sub.workspace_id !== workspaceId || sub.project_id !== projectId) {
           result = { error: errorMessage('forms.submission_not_found') }
           break
         }
-        const updated = await updateFormSubmissionStatus(admin, approveId, 'approved', permissions.workspaceRole)
+        const updated = await updateFormSubmissionStatus(admin, approveId, 'approved', userId)
         affected.snapshotChanged = true
         result = { submission: updated, message: agentMessage('forms.approved') }
         break
@@ -532,7 +533,7 @@ async function executeToolWithAutoMerge(
         const rejectId = params.submissionId as string
         const admin = useSupabaseAdmin()
         const sub = await getFormSubmission(admin, rejectId)
-        if (!sub) {
+        if (!sub || sub.workspace_id !== workspaceId || sub.project_id !== projectId) {
           result = { error: errorMessage('forms.submission_not_found') }
           break
         }

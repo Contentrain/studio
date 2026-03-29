@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   const admin = useSupabaseAdmin()
 
-  return listFormSubmissions(admin, projectId, modelId, {
+  return listFormSubmissions(admin, workspaceId, projectId, modelId, {
     page: query.page ? Number(query.page) : 1,
     limit: query.limit ? Math.min(Number(query.limit), 100) : 50,
     status: query.status,
