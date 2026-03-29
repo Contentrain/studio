@@ -68,7 +68,7 @@ describe('useChat', () => {
       'data: {"type":"conversation","id":"conv-1"}\n',
       'data: {"type":"text","content":"Merhaba"}\n',
       'data: {"type":"tool_use","id":"tool-1","name":"save_content"}\n',
-      'data: {"type":"tool_result","id":"tool-1","result":{"branch":"contentrain/save-1"}}\n',
+      'data: {"type":"tool_result","id":"tool-1","result":{"branch":"cr/content/faq/tr/1234567890-abcd"}}\n',
       'data: {"type":"done","affected":{"models":["faq"],"locales":["tr"],"snapshotChanged":false,"branchesChanged":true}}\n',
     ])))
 
@@ -82,7 +82,7 @@ describe('useChat', () => {
     expect(chat.messages.value[1]?.toolCalls[0]).toMatchObject({
       id: 'tool-1',
       name: 'save_content',
-      result: { branch: 'contentrain/save-1' },
+      result: { branch: 'cr/content/faq/tr/1234567890-abcd' },
       status: 'complete',
     })
     expect(onContentChanged).toHaveBeenCalledWith({

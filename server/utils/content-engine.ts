@@ -29,10 +29,19 @@ const BOT_AUTHOR: CommitAuthor = {
   email: 'bot@contentrain.io',
 }
 
-function generateBranchId(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(4)))
+/**
+ * Generate a v2 branch name following git-architecture.md §2.3:
+ * cr/{scope}/{target}[/{locale}]/{timestamp}-{suffix}
+ */
+export function generateBranchName(scope: string, target: string, locale?: string): string {
+  const timestamp = Math.floor(Date.now() / 1000)
+  const suffix = Array.from(crypto.getRandomValues(new Uint8Array(2)))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
+  const parts = ['cr', scope, target]
+  if (locale) parts.push(locale)
+  parts.push(`${timestamp}-${suffix}`)
+  return parts.join('/')
 }
 
 /**
@@ -104,9 +113,47 @@ async function buildContextUpdate(
   return serializeCanonical(updated)
 }
 
+/** Content branch name — dedicated SSOT branch per git-architecture.md §2 */
+const CONTENT_BRANCH = 'contentrain'
+
+/** Branch prefix for feature branches — avoids ref collision with CONTENT_BRANCH */
+const BRANCH_PREFIX = 'cr/'
+
 export function createContentEngine(ctx: ContentEngineContext) {
   const { git, contentRoot } = ctx
   const pathCtx = { contentRoot }
+
+  /** Cache flag: avoid repeated ensureContentBranch API calls per engine instance */
+  let contentBranchEnsured = false
+
+  /**
+   * Ensure the dedicated `contentrain` branch exists.
+   * Migrates old `contentrain/*` branches (ref namespace collision).
+   * Called before every write operation.
+   */
+  async function ensureContentBranch(): Promise<void> {
+    if (contentBranchEnsured) return
+
+    const branches = await git.listBranches()
+    const hasContentBranch = branches.some(b => b.name === CONTENT_BRANCH)
+
+    if (!hasContentBranch) {
+      // Migration: delete old contentrain/* branches (ref namespace collision)
+      const oldBranches = branches.filter(b => b.name.startsWith('contentrain/'))
+      for (const old of oldBranches) {
+        try {
+          await git.deleteBranch(old.name)
+        }
+        catch { /* best-effort cleanup */ }
+      }
+
+      // Create contentrain branch from default
+      const defaultBranch = await git.getDefaultBranch()
+      await git.createBranch(CONTENT_BRANCH, defaultBranch)
+    }
+
+    contentBranchEnsured = true
+  }
 
   /** Helper: get current model count + supported locales for context.json */
   async function getProjectInfo(fallbackLocale: string): Promise<{ modelCount: number, locales: string[] }> {
@@ -128,9 +175,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
   }
 
   return {
+    /** Ensure the dedicated contentrain branch exists. Exposed for standalone routes. */
+    ensureContentBranch,
+
     /**
      * Save content for a model (create or update entries).
-     * Creates a branch, commits changes, returns diff.
+     * Creates a cr/* branch from contentrain, commits changes, returns diff.
      */
     async saveContent(
       modelId: string,
@@ -302,9 +352,10 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(locale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales)
 
-      // 8. Create branch
-      const branchName = `contentrain/save-${generateBranchId()}`
-      await git.createBranch(branchName)
+      // 8. Ensure contentrain branch + create feature branch
+      await ensureContentBranch()
+      const branchName = generateBranchName('content', modelId, locale)
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       // 9. Commit content + meta + context
       const message = `contentrain: save ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
@@ -319,8 +370,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      // 10. Get diff
-      const diff = await git.getBranchDiff(branchName)
+      // 10. Get diff (against contentrain, not default)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
 
       return { branch: branchName, commit, diff, validation }
     },
@@ -365,8 +416,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(locale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales)
 
-      const branchName = `contentrain/delete-${generateBranchId()}`
-      await git.createBranch(branchName)
+      await ensureContentBranch()
+      const branchName = generateBranchName('content', modelId, locale)
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       const message = `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
@@ -380,7 +432,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      const diff = await git.getBranchDiff(branchName)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
 
       return {
         branch: branchName,
@@ -454,8 +506,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(locale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales)
 
-      const branchName = `contentrain/save-${generateBranchId()}`
-      await git.createBranch(branchName)
+      await ensureContentBranch()
+      const branchName = generateBranchName('content', modelId, locale)
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       const message = `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
@@ -469,7 +522,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      const diff = await git.getBranchDiff(branchName)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
       return { branch: branchName, commit, diff, validation }
     },
 
@@ -496,8 +549,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
       }
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales)
 
-      const branchName = `contentrain/model-${generateBranchId()}`
-      await git.createBranch(branchName)
+      await ensureContentBranch()
+      const branchName = generateBranchName('model', definition.id)
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       const message = `contentrain: save model ${definition.id}\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
@@ -510,7 +564,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      const diff = await git.getBranchDiff(branchName)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
       return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
     },
 
@@ -543,8 +597,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
         } as EntryMeta
       }
 
-      const branchName = `contentrain/status-${generateBranchId()}`
-      await git.createBranch(branchName)
+      await ensureContentBranch()
+      const branchName = generateBranchName('content', modelId, locale)
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       const commit = await git.commitFiles(
         branchName,
@@ -553,7 +608,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      const diff = await git.getBranchDiff(branchName)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
       return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
     },
 
@@ -561,39 +616,42 @@ export function createContentEngine(ctx: ContentEngineContext) {
      * List contentrain/* branches (pending changes).
      */
     async listContentBranches(): Promise<Branch[]> {
-      return git.listBranches('contentrain/')
+      return git.listBranches(BRANCH_PREFIX)
     },
 
     /**
-     * Merge a content branch into the default branch.
-     * Falls back to PR creation if direct merge is blocked by branch protection.
+     * Two-step merge per git-architecture.md §3:
+     * Step 1: cr/* → contentrain (always immediate)
+     * Step 2: contentrain → main (may fallback to PR if branch-protected)
      */
     async mergeBranch(branch: string): Promise<MergeResult> {
-      const defaultBranch = await git.getDefaultBranch()
+      // Step 1: merge feature branch → contentrain
+      const step1 = await git.mergeBranch(branch, CONTENT_BRANCH)
+      if (!step1.merged) {
+        return { merged: false, sha: null, pullRequestUrl: null }
+      }
 
+      // Clean up feature branch after successful merge to contentrain
       try {
-        const result = await git.mergeBranch(branch, defaultBranch)
+        await git.deleteBranch(branch)
+      }
+      catch {
+        // Branch may have been auto-deleted
+      }
 
-        // Clean up branch after merge
-        if (result.merged) {
-          try {
-            await git.deleteBranch(branch)
-          }
-          catch {
-            // Branch may have been auto-deleted by merge
-          }
-        }
-
-        return result
+      // Step 2: advance contentrain → main
+      const defaultBranch = await git.getDefaultBranch()
+      try {
+        return await git.mergeBranch(CONTENT_BRANCH, defaultBranch)
       }
       catch (e: unknown) {
-        // If direct merge fails (branch protection), try PR
+        // If direct merge fails (branch protection), create PR
         const msg = e instanceof Error ? e.message : ''
         if (msg.includes('protected') || msg.includes('403') || msg.includes('not allowed')) {
           const pr = await git.createPR(
-            branch,
+            CONTENT_BRANCH,
             defaultBranch,
-            `contentrain: ${branch.replace('contentrain/', '')}`,
+            `contentrain: advance content to ${defaultBranch}`,
             'Auto-generated by Contentrain Studio.',
           )
           return { merged: false, sha: null, pullRequestUrl: pr.url }
@@ -676,8 +734,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(toLocale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'copy_locale', model: modelId, locale: toLocale }, projectInfo.modelCount, projectInfo.locales)
 
-      const branchName = `contentrain/copy-locale-${generateBranchId()}`
-      await git.createBranch(branchName)
+      await ensureContentBranch()
+      const branchName = generateBranchName('content', modelId)
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       const message = `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`
       const commit = await git.commitFiles(
@@ -691,7 +750,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      const diff = await git.getBranchDiff(branchName)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
       return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
     },
 
@@ -780,9 +839,10 @@ export function createContentEngine(ctx: ContentEngineContext) {
         }
       }
 
-      // Create branch and commit
-      const branchName = `contentrain/init-${generateBranchId()}`
-      await git.createBranch(branchName)
+      // Ensure contentrain branch + create feature branch
+      await ensureContentBranch()
+      const branchName = generateBranchName('new', 'init')
+      await git.createBranch(branchName, CONTENT_BRANCH)
 
       const message = `contentrain: initialize project\n\nStack: ${stack}\nLocales: ${locales.join(', ')}\nDomains: ${domains.join(', ')}\nModels: ${models.map(m => m.id).join(', ')}\n\nCo-Authored-By: ${userEmail}`
 
@@ -793,7 +853,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
         BOT_AUTHOR,
       )
 
-      const diff = await git.getBranchDiff(branchName)
+      const diff = await git.getBranchDiff(branchName, CONTENT_BRANCH)
 
       return {
         branch: branchName,

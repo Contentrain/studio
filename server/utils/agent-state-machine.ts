@@ -19,7 +19,7 @@ export function deriveProjectPhase(
   if (projectStatus === 'error') return 'error'
 
   if (!config) {
-    const hasInitBranch = pendingBranches.some(b => b.name.startsWith('contentrain/init-'))
+    const hasInitBranch = pendingBranches.some(b => b.name.startsWith('cr/new/init/'))
     return hasInitBranch ? 'init_pending' : 'uninitialized'
   }
 
@@ -57,7 +57,7 @@ export function checkStateTransition(
       }
       return {
         allowed: false,
-        reason: 'Project initialization is pending. A contentrain/init-* branch needs to be merged first.',
+        reason: 'Project initialization is pending. A cr/new/init/* branch needs to be merged first.',
         suggestion: 'Merge the pending init branch before performing content operations.',
       }
 

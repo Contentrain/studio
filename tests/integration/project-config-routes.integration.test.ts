@@ -148,7 +148,8 @@ describe('project config and branch route integration', () => {
     }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('business'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
-    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ mergeBranch }))
+    vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/config/1234567890-abcd'))
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ ensureContentBranch: vi.fn().mockResolvedValue(undefined), mergeBranch }))
 
     await withTestServer({
       routes: [
@@ -178,7 +179,7 @@ describe('project config and branch route integration', () => {
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-1'
-      if (key === 'branch') return 'contentrain/save-1'
+      if (key === 'branch') return 'cr/content/faq/en/1234567890-abcd'
       return undefined
     }))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
@@ -198,13 +199,13 @@ describe('project config and branch route integration', () => {
               terms: { headline: { en: 'Headline' } },
             })
           }
-          if (path === 'content/posts/en.json' && ref === 'main') return JSON.stringify({ before: true })
-          if (path === 'content/posts/en.json' && ref === 'contentrain/save-1') return JSON.stringify({ after: true })
+          if (path === 'content/posts/en.json' && ref === 'contentrain') return JSON.stringify({ before: true })
+          if (path === 'content/posts/en.json' && ref === 'cr/content/faq/en/1234567890-abcd') return JSON.stringify({ after: true })
           throw new Error(`Unexpected read: ${path}`)
         }),
         createBranch,
         commitFiles,
-        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain/save-1', sha: 'abc', protected: false }]),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'cr/content/faq/en/1234567890-abcd', sha: 'abc', protected: false }]),
         getBranchDiff: vi.fn().mockResolvedValue([
           { path: 'content/posts/en.json', status: 'modified' },
         ]),
@@ -212,12 +213,13 @@ describe('project config and branch route integration', () => {
       },
       contentRoot: '',
     }))
-    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ mergeBranch }))
+    vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/vocabulary/1234567890-abcd'))
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ ensureContentBranch: vi.fn().mockResolvedValue(undefined), mergeBranch }))
 
     await withTestServer({
       routes: [
         { path: '/api/workspaces/workspace-1/projects/project-1/vocabulary', handler: await loadVocabularyPatchHandler() },
-        { path: '/api/workspaces/workspace-1/projects/project-1/branches/contentrain/save-1/diff', handler: await loadBranchDiffHandler() },
+        { path: '/api/workspaces/workspace-1/projects/project-1/branches/cr/content/faq/en/1234567890-abcd/diff', handler: await loadBranchDiffHandler() },
         { path: '/api/workspaces/workspace-1/projects/project-1/branches', handler: await loadBranchesHandler() },
       ],
     }, async ({ request }) => {
@@ -243,13 +245,13 @@ describe('project config and branch route integration', () => {
       const branchesResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches')
       expect(branchesResponse.status).toBe(200)
       await expect(branchesResponse.json()).resolves.toEqual({
-        branches: [{ name: 'contentrain/save-1', sha: 'abc', protected: false }],
+        branches: [{ name: 'cr/content/faq/en/1234567890-abcd', sha: 'abc', protected: false }],
       })
 
-      const diffResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches/contentrain/save-1/diff')
+      const diffResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches/cr/content/faq/en/1234567890-abcd/diff')
       expect(diffResponse.status).toBe(200)
       const diffPayload = await diffResponse.json()
-      expect(diffPayload.branch).toBe('contentrain/save-1')
+      expect(diffPayload.branch).toBe('cr/content/faq/en/1234567890-abcd')
       expect(diffPayload.contents['content/posts/en.json']).toEqual({
         before: { before: true },
         after: { after: true },

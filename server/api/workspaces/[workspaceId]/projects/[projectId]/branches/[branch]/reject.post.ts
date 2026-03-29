@@ -11,8 +11,10 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !branch)
     throw createError({ statusCode: 400, message: errorMessage('validation.branch_params_required') })
 
-  // Only contentrain/* branches can be rejected through this endpoint
-  if (!branch.startsWith('contentrain/'))
+  // Only cr/* branches can be rejected (contentrain branch is permanent)
+  if (branch === 'contentrain')
+    throw createError({ statusCode: 403, message: errorMessage('branches.permanent_branch') })
+  if (!branch.startsWith('cr/'))
     throw createError({ statusCode: 400, message: errorMessage('branches.contentrain_only') })
 
   // Role check: only reviewer+ can reject

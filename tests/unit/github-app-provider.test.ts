@@ -166,7 +166,7 @@ describe('github app provider', () => {
       repo: 'studio',
     })
 
-    await expect(provider.commitFiles('contentrain/save-1', [
+    await expect(provider.commitFiles('cr/content/posts/en/1234567890-abcd', [
       { path: 'content/posts/en.json', content: '{"entry":1}' },
       { path: 'content/pages/en.json', content: '{"entry":2}' },
       { path: 'content/old.json', content: null },
@@ -184,7 +184,7 @@ describe('github app provider', () => {
     expect(githubState.octokit.git.updateRef).toHaveBeenCalledWith({
       owner: 'contentrain',
       repo: 'studio',
-      ref: 'heads/contentrain/save-1',
+      ref: 'heads/cr/content/posts/en/1234567890-abcd',
       sha: 'commit-sha',
     })
   })
@@ -202,7 +202,7 @@ describe('github app provider', () => {
       repo: 'studio',
     })
 
-    await expect(provider.mergeBranch('contentrain/save-1', 'main')).resolves.toEqual({
+    await expect(provider.mergeBranch('cr/content/posts/en/1234567890-abcd', 'main')).resolves.toEqual({
       merged: false,
       sha: null,
       pullRequestUrl: null,

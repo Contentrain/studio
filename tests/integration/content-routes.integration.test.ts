@@ -12,7 +12,7 @@ async function loadContentStatusHandler() {
 describe('content route integration', () => {
   it('saves content only for users with save_content permission and tracks media usage non-fatally', async () => {
     const saveContent = vi.fn().mockResolvedValue({
-      branch: 'contentrain/save-123',
+      branch: 'cr/content/posts/en/1234567890-abcd',
       saved: true,
     })
     const listAssets = vi.fn().mockResolvedValue({
@@ -67,7 +67,7 @@ describe('content route integration', () => {
 
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({
-        branch: 'contentrain/save-123',
+        branch: 'cr/content/posts/en/1234567890-abcd',
         saved: true,
       })
       expect(saveContent).toHaveBeenCalledWith('posts', 'en', {
@@ -128,7 +128,7 @@ describe('content route integration', () => {
 
   it('updates entry statuses and auto-merges the generated branch', async () => {
     const updateEntryStatus = vi.fn().mockResolvedValue({
-      branch: 'contentrain/status-123',
+      branch: 'cr/content/posts/en/1234567890-efgh',
     })
     const mergeBranch = vi.fn().mockResolvedValue({ merged: true })
 
@@ -180,7 +180,7 @@ describe('content route integration', () => {
         entryIds: ['entry1'],
       })
       expect(updateEntryStatus).toHaveBeenCalledWith('posts', 'en', ['entry1'], 'published', 'owner@example.com')
-      expect(mergeBranch).toHaveBeenCalledWith('contentrain/status-123')
+      expect(mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1234567890-efgh')
     })
   })
 })

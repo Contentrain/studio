@@ -156,7 +156,7 @@ describe('project content and review e2e', () => {
       if (route.request().method() === 'POST') {
         saveBodies.push(JSON.parse(route.request().postData() ?? '{}'))
         await fulfillJson(route, {
-          branch: 'contentrain/update-site-settings',
+          branch: 'cr/content/site-settings/en/1234567890-abcd',
           validation: { valid: true, errors: [] },
         })
         return
@@ -175,7 +175,7 @@ describe('project content and review e2e', () => {
     await dialog.locator('input').first().fill('Updated Acme headline')
     await dialog.getByRole('button', { name: 'Save changes' }).click()
 
-    await page.getByText('Saved to branch: contentrain/update-site-settings', { exact: true }).waitFor()
+    await page.getByText('Saved to branch: cr/content/site-settings/en/1234567890-abcd', { exact: true }).waitFor()
     expect(saveBodies).toEqual([
       {
         locale: 'en',
@@ -197,7 +197,7 @@ describe('project content and review e2e', () => {
       role: 'owner',
       plan: 'business',
       branches: [{
-        name: 'contentrain/review-copy',
+        name: 'cr/content/posts/en/1234567890-review',
         sha: 'abc123',
         protected: false,
       }],
@@ -243,15 +243,15 @@ describe('project content and review e2e', () => {
         branches: branchesCalls > 1
           ? []
           : [{
-              name: 'contentrain/review-copy',
+              name: 'cr/content/posts/en/1234567890-review',
               sha: 'abc123',
               protected: false,
             }],
       })
     })
 
-    await page.route('**/api/workspaces/ws-1/projects/project-1/branches/contentrain%2Freview-copy/diff', async route => fulfillJson(route, {
-      branch: 'contentrain/review-copy',
+    await page.route(`**/api/workspaces/ws-1/projects/project-1/branches/${encodeURIComponent('cr/content/posts/en/1234567890-review')}/diff`, async route => fulfillJson(route, {
+      branch: 'cr/content/posts/en/1234567890-review',
       files: [{
         path: '.contentrain/content/marketing/posts/en.json',
         status: 'modified',
@@ -264,12 +264,12 @@ describe('project content and review e2e', () => {
       },
     }))
 
-    await page.route('**/api/workspaces/ws-1/projects/project-1/branches/contentrain%2Freview-copy/merge', async (route) => {
+    await page.route(`**/api/workspaces/ws-1/projects/project-1/branches/${encodeURIComponent('cr/content/posts/en/1234567890-review')}/merge`, async (route) => {
       mergeRequests.push(route.request().url())
       await fulfillJson(route, { merged: true })
     })
 
-    await page.goto(url('/w/acme/projects/project-1?branch=contentrain%2Freview-copy'))
+    await page.goto(url(`/w/acme/projects/project-1?branch=${encodeURIComponent('cr/content/posts/en/1234567890-review')}`))
 
     await page.getByRole('button', { name: 'Approve & Merge' }).waitFor()
     await page.getByRole('button', { name: 'Approve & Merge' }).click()

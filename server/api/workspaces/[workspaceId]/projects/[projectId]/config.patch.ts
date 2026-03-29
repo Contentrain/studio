@@ -45,9 +45,13 @@ export default defineEventHandler(async (event) => {
     if (body.locales.supported) config.locales.supported = body.locales.supported
   }
 
+  // Use content engine for branch lifecycle (ensureContentBranch + merge)
+  const engine = createContentEngine({ git, contentRoot })
+  await engine.ensureContentBranch()
+
   // Commit directly — config changes always auto-merge
-  const branchName = `contentrain/config-${Date.now().toString(36)}`
-  await git.createBranch(branchName)
+  const branchName = generateBranchName('content', 'config')
+  await git.createBranch(branchName, 'contentrain')
 
   await git.commitFiles(
     branchName,
@@ -56,8 +60,6 @@ export default defineEventHandler(async (event) => {
     { name: 'Contentrain Studio[bot]', email: 'bot@contentrain.io' },
   )
 
-  // Use content engine merge (has PR fallback for protected branches)
-  const engine = createContentEngine({ git, contentRoot })
   const mergeResult = await engine.mergeBranch(branchName)
 
   return { config, merged: mergeResult.merged, pullRequestUrl: mergeResult.pullRequestUrl }
