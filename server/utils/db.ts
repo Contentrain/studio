@@ -766,9 +766,8 @@ export async function countMonthlySubmissions(
   admin: SupabaseClient,
   projectId: string,
 ): Promise<number> {
-  const monthStart = new Date()
-  monthStart.setDate(1)
-  monthStart.setHours(0, 0, 0, 0)
+  const now = new Date()
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
   const { count } = await admin
     .from('form_submissions')
@@ -797,6 +796,8 @@ export async function bulkUpdateSubmissions(
   submissionIds: string[],
   status: 'approved' | 'rejected' | 'spam',
   approvedBy?: string,
+  projectId?: string,
+  modelId?: string,
 ): Promise<number> {
   const updates: Record<string, unknown> = { status }
   if (status === 'approved') {
@@ -804,11 +805,16 @@ export async function bulkUpdateSubmissions(
     if (approvedBy) updates.approved_by = approvedBy
   }
 
-  const { data } = await admin
+  let query = admin
     .from('form_submissions')
     .update(updates)
     .in('id', submissionIds)
-    .select('id')
+
+  // Scope to project/model to prevent cross-workspace tampering
+  if (projectId) query = query.eq('project_id', projectId)
+  if (modelId) query = query.eq('model_id', modelId)
+
+  const { data } = await query.select('id')
 
   return data?.length ?? 0
 }

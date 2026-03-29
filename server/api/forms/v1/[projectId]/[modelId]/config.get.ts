@@ -32,6 +32,15 @@ export default defineEventHandler(async (event) => {
   if (!projectId || !modelId)
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
+  // Rate limit config endpoint to prevent enumeration
+  const ip = getHeader(event, 'x-forwarded-for')?.split(',').pop()?.trim()
+    ?? getHeader(event, 'cf-connecting-ip')
+    ?? getHeader(event, 'x-real-ip')
+    ?? 'unknown'
+  const rateCheck = checkRateLimit(`form-config:${ip}`, 30, 60_000)
+  if (!rateCheck.allowed)
+    throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
+
   // Lookup project → workspace → plan (admin bypasses RLS)
   const admin = useSupabaseAdmin()
 
