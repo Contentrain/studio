@@ -23,18 +23,40 @@ interface FormConfig {
 
 /**
  * Verify Cloudflare Turnstile captcha token.
- * TODO: implement when captcha provider configured
+ * https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
  */
-async function verifyCaptcha(_token: string, _secret: string): Promise<boolean> {
-  // Turnstile verification — TODO: implement when captcha provider configured
-  return true
+async function verifyCaptcha(token: string, secret: string): Promise<boolean> {
+  if (!secret) return false
+
+  try {
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: token }),
+    })
+    const result = await response.json() as { success: boolean }
+    return result.success === true
+  }
+  catch {
+    return false
+  }
 }
 
 /**
- * Strip HTML tags from a string to prevent XSS.
+ * Sanitize string — strip HTML tags and decode common entities.
+ * Prevents stored XSS even though data is JSON-stored.
  */
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]*>/g, '')
+function sanitizeString(value: string): string {
+  return value
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#x3[cC];/g, '<')
+    .replace(/&#x3[eE];/g, '>')
+    .replace(/&#60;/g, '<')
+    .replace(/&#62;/g, '>')
+    .replace(/<[^>]*>/g, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
 }
 
 /**
@@ -45,12 +67,12 @@ function sanitizeData(data: Record<string, unknown>): Record<string, unknown> {
 
   for (const [key, value] of Object.entries(data)) {
     if (typeof value === 'string') {
-      sanitized[key] = stripHtml(value)
+      sanitized[key] = sanitizeString(value)
     }
     else if (Array.isArray(value)) {
       sanitized[key] = value.map(item =>
         typeof item === 'string'
-          ? stripHtml(item)
+          ? sanitizeString(item)
           : (item && typeof item === 'object' && !Array.isArray(item))
               ? sanitizeData(item as Record<string, unknown>)
               : item,
@@ -65,6 +87,24 @@ function sanitizeData(data: Record<string, unknown>): Record<string, unknown> {
   }
 
   return sanitized
+}
+
+/**
+ * Extract client IP — trust only the last hop from X-Forwarded-For
+ * (the one appended by the reverse proxy, not the client-supplied ones).
+ * Falls back to x-real-ip or peer address.
+ */
+function getClientIp(event: Parameters<typeof getHeader>[0]): string {
+  const xff = getHeader(event, 'x-forwarded-for')
+  if (xff) {
+    // Trust the LAST IP in the chain — added by our reverse proxy
+    // Client-supplied values are prepended, proxy-appended is last
+    const parts = xff.split(',').map(s => s.trim())
+    return parts[parts.length - 1] ?? 'unknown'
+  }
+  return getHeader(event, 'x-real-ip')
+    ?? getHeader(event, 'cf-connecting-ip')
+    ?? 'unknown'
 }
 
 export default defineEventHandler(async (event) => {
@@ -85,10 +125,8 @@ export default defineEventHandler(async (event) => {
   if (!projectId || !modelId)
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
-  // Extract IP for rate limiting
-  const ip = getHeader(event, 'x-forwarded-for')?.split(',')[0]?.trim()
-    ?? getHeader(event, 'x-real-ip')
-    ?? 'unknown'
+  // Extract IP — trust last hop, not client-supplied
+  const ip = getClientIp(event)
 
   // Read body early so we can fail fast on missing data
   const body = await readBody<{
@@ -170,21 +208,21 @@ export default defineEventHandler(async (event) => {
   // Captcha verification (Pro+)
   if (hasFeature(plan, 'forms.captcha') && formConfig.captcha === 'turnstile') {
     if (!body.captchaToken) {
-      return { success: false, errors: [{ field: 'captcha', message: 'Captcha verification required.' }] }
+      return { success: false, errors: [{ field: 'captcha', message: errorMessage('forms.captcha_failed') }] }
     }
 
     const config = useRuntimeConfig()
     const captchaSecret = (config as unknown as { turnstile?: { secretKey?: string } }).turnstile?.secretKey ?? ''
     const captchaValid = await verifyCaptcha(body.captchaToken, captchaSecret)
     if (!captchaValid) {
-      return { success: false, errors: [{ field: 'captcha', message: 'Captcha verification failed.' }] }
+      return { success: false, errors: [{ field: 'captcha', message: errorMessage('forms.captcha_failed') }] }
     }
   }
 
   // Filter model fields to exposed fields only
   const allFields = model.fields ?? {}
   const exposedFieldIds = new Set(formConfig.exposedFields ?? [])
-  const exposedFields: Record<string, Record<string, unknown>> = {}
+  const exposedFields: Record<string, import('@contentrain/types').FieldDef> = {}
 
   for (const [fieldId, fieldDef] of Object.entries(allFields)) {
     if (exposedFieldIds.has(fieldId)) {
@@ -201,7 +239,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Sanitize all string values in submission data (strip HTML tags)
+  // Sanitize all string values in submission data (strip HTML + entities + JS)
   const sanitizedData = sanitizeData(body.data)
 
   // Only keep exposed fields from submitted data

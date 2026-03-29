@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
     for (const submissionId of body.submissionIds) {
       try {
         const existing = await getFormSubmission(admin, submissionId)
-        if (!existing || existing.project_id !== projectId || existing.model_id !== modelId) {
+        if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId || existing.model_id !== modelId) {
           results.push({ id: submissionId, success: false, error: 'Not found' })
           continue
         }
@@ -62,8 +62,10 @@ export default defineEventHandler(async (event) => {
   const updated = await bulkUpdateSubmissions(
     admin,
     body.submissionIds,
-    statusMap[body.action],
+    statusMap[body.action]!,
     body.action === 'approve' ? session.user.id : undefined,
+    projectId,
+    modelId,
   )
 
   return { updated }

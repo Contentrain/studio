@@ -98,7 +98,7 @@ async function fetchSubmissions() {
   loading.value = true
   try {
     const data = await $fetch<FormSubmission[]>(
-      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/models/${props.modelId}/submissions`,
+      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions`,
     )
     submissions.value = data
   }
@@ -112,19 +112,25 @@ async function fetchSubmissions() {
 
 // --- Actions ---
 async function handleApprove(id: string) {
-  await $fetch(
-    `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions/${id}`,
-    { method: 'PATCH', body: { status: 'approved' } },
-  )
-  await fetchSubmissions()
+  try {
+    await $fetch(
+      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions/${id}`,
+      { method: 'PATCH', body: { status: 'approved' } },
+    )
+    await fetchSubmissions()
+  }
+  catch { /* fetch error bubbles to Vue error handler */ }
 }
 
 async function handleReject(id: string) {
-  await $fetch(
-    `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions/${id}`,
-    { method: 'PATCH', body: { status: 'rejected' } },
-  )
-  await fetchSubmissions()
+  try {
+    await $fetch(
+      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions/${id}`,
+      { method: 'PATCH', body: { status: 'rejected' } },
+    )
+    await fetchSubmissions()
+  }
+  catch { /* fetch error bubbles to Vue error handler */ }
 }
 
 onMounted(() => {

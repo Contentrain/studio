@@ -17,9 +17,9 @@ export default defineEventHandler(async (event) => {
 
   const admin = useSupabaseAdmin()
 
-  // Verify submission exists and belongs to this project/model
+  // Verify submission exists and belongs to this workspace/project/model
   const existing = await getFormSubmission(admin, submissionId)
-  if (!existing || existing.project_id !== projectId || existing.model_id !== modelId)
+  if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId || existing.model_id !== modelId)
     throw createError({ statusCode: 404, message: errorMessage('forms.submission_not_found') })
 
   await deleteFormSubmission(admin, submissionId)
