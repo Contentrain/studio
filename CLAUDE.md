@@ -239,7 +239,7 @@ Full spec: `.internal/EE-SEPARATION.md`
 - All auth flows, workspace/project CRUD
 - Chat engine + all agent tools
 - Content CRUD (all 4 kinds, all 27 field types)
-- Auto-merge workflow, branch creation
+- Auto-merge workflow, two-step merge (cr/* → contentrain → main)
 - Content editor modal, all UI components
 - Owner + Editor roles
 - URL fetch connector
@@ -250,11 +250,12 @@ Full spec: `.internal/EE-SEPARATION.md`
 Active specs in `.internal/`:
 - `STUDIO-SPEC.md` — master product & architecture spec
 - `EE-SEPARATION.md` — Open Core / EE boundary rules
+- `git-architecture.md` — Git v2: contentrain SSOT branch, cr/* feature branches, two-step merge
 - `MARKETING.md` — go-to-market strategy
 - `IDEAS.md` — product ideas with feasibility analysis
 - `CONVERSATION-API.md` — external AI content ops (Business+) — not yet implemented
-- `FORMS-SUBMISSIONS.md` — content-in via public forms — not yet implemented
-- `SCHEMA-VALIDATION.md` — model integrity & breaking change detection — not yet implemented
+- `FORMS-SUBMISSIONS.md` — content-in via public forms — implemented
+- `SCHEMA-VALIDATION.md` — model integrity & breaking change detection — implemented
 
 ## Current Phase
 
@@ -270,11 +271,9 @@ Completed phases:
 
 | Sprint | Focus | Efor | Plan | Spec |
 |--------|-------|------|------|------|
-| Next | Project Health (schema validation + dashboard) | 2 hafta | Free | `SCHEMA-VALIDATION.md` |
-| +1 | Forms & Submissions | 2-3 hafta | Free+ | `FORMS-SUBMISSIONS.md` |
-| +2 | Conversation API + Content REST API | 2-3 hafta | Business+ | `CONVERSATION-API.md` |
-| +3 | Webhook Outbound | 2 hafta | Business+ | `IDEAS.md` |
-| +4 | Multi-Repo Governance | 2 hafta | Enterprise | İhtiyaç doğduğunda |
+| Next | Conversation API + Content REST API | 2-3 hafta | Business+ | `CONVERSATION-API.md` |
+| +1 | Webhook Outbound | 2 hafta | Business+ | `IDEAS.md` |
+| +2 | Multi-Repo Governance | 2 hafta | Enterprise | İhtiyaç doğduğunda |
 
 ## Reference Codebase
 
