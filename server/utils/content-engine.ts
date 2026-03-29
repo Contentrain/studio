@@ -205,6 +205,9 @@ export function createContentEngine(ctx: ContentEngineContext) {
       userEmail: string,
       options?: { autoPublish?: boolean },
     ): Promise<WriteResult> {
+      // 0. Ensure contentrain branch exists + synced before any reads
+      await ensureContentBranch()
+
       // 1. Load model definition (from contentrain — SSOT)
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
@@ -368,8 +371,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(locale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-      // 8. Ensure contentrain branch + create feature branch
-      await ensureContentBranch()
+      // 8. Create feature branch from contentrain
       const branchName = generateBranchName('content', modelId, locale)
       await git.createBranch(branchName, CONTENT_BRANCH)
 
@@ -401,6 +403,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       entryIds: string[],
       userEmail: string,
     ): Promise<WriteResult> {
+      await ensureContentBranch()
+
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
       const contentPath = resolveContentPath(pathCtx, modelDef, locale)
@@ -432,7 +436,6 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(locale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-      await ensureContentBranch()
       const branchName = generateBranchName('content', modelId, locale)
       await git.createBranch(branchName, CONTENT_BRANCH)
 
@@ -482,6 +485,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
         }
       }
 
+      await ensureContentBranch()
+
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
 
@@ -522,7 +527,6 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(locale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-      await ensureContentBranch()
       const branchName = generateBranchName('content', modelId, locale)
       await git.createBranch(branchName, CONTENT_BRANCH)
 
@@ -549,6 +553,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       definition: ModelDefinition,
       userEmail: string,
     ): Promise<WriteResult> {
+      await ensureContentBranch()
+
       const modelPath = resolveModelPath(pathCtx, definition.id)
       const serialized = serializeCanonical(definition)
 
@@ -565,7 +571,6 @@ export function createContentEngine(ctx: ContentEngineContext) {
       }
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales, CONTENT_BRANCH)
 
-      await ensureContentBranch()
       const branchName = generateBranchName('model', definition.id)
       await git.createBranch(branchName, CONTENT_BRANCH)
 
@@ -595,6 +600,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       status: 'draft' | 'published' | 'archived',
       userEmail: string,
     ): Promise<WriteResult> {
+      await ensureContentBranch()
+
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
       const metaPath = resolveMetaPath(pathCtx, modelDef, locale)
@@ -613,7 +620,6 @@ export function createContentEngine(ctx: ContentEngineContext) {
         } as EntryMeta
       }
 
-      await ensureContentBranch()
       const branchName = generateBranchName('content', modelId, locale)
       await git.createBranch(branchName, CONTENT_BRANCH)
 
@@ -693,6 +699,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       toLocale: string,
       userEmail: string,
     ): Promise<WriteResult> {
+      await ensureContentBranch()
+
       const modelPath = resolveModelPath(pathCtx, modelId)
       const modelDef = JSON.parse(await git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
 
@@ -750,7 +758,6 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const projectInfo = await getProjectInfo(toLocale)
       const contextJson = await buildContextUpdate(git, contextPath, { tool: 'copy_locale', model: modelId, locale: toLocale }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-      await ensureContentBranch()
       const branchName = generateBranchName('content', modelId)
       await git.createBranch(branchName, CONTENT_BRANCH)
 
