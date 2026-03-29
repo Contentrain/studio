@@ -200,7 +200,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 
   // Monthly submission limit check
-  const monthlyCount = await countMonthlySubmissions(admin, projectId)
+  const monthlyCount = await countMonthlySubmissions(admin, workspace.id)
   const monthlyLimit = getPlanLimit(plan, 'forms.submissions_per_month')
   if (monthlyCount >= monthlyLimit)
     throw createError({ statusCode: 429, message: errorMessage('forms.monthly_limit') })

@@ -64,6 +64,7 @@ export default defineEventHandler(async (event) => {
     body.submissionIds,
     statusMap[body.action]!,
     body.action === 'approve' ? session.user.id : undefined,
+    workspaceId,
     projectId,
     modelId,
   )
