@@ -47,16 +47,21 @@ async function verifyCaptcha(token: string, secret: string): Promise<boolean> {
  * Prevents stored XSS even though data is JSON-stored.
  */
 function sanitizeString(value: string): string {
-  return value
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#x3[cC];/g, '<')
-    .replace(/&#x3[eE];/g, '>')
-    .replace(/&#60;/g, '<')
-    .replace(/&#62;/g, '>')
-    .replace(/<[^>]*>/g, '')
-    .replace(/javascript:/gi, '')
-    .replace(/on\w+\s*=/gi, '')
+  let s = value
+  // 1. Strip HTML tags first (before any entity decoding)
+  s = s.replace(/<[^>]*>/g, '')
+  // 2. Remove dangerous patterns
+  s = s.replace(/javascript:/gi, '')
+  s = s.replace(/on\w+\s*=/gi, '')
+  // 3. Decode entities that might hide tags, then strip again
+  s = s.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+  s = s.replace(/&#x3[cC];/g, '<').replace(/&#x3[eE];/g, '>')
+  s = s.replace(/&#60;/g, '<').replace(/&#62;/g, '>')
+  s = s.replace(/<[^>]*>/g, '')
+  // 4. Final pass for any remaining dangerous patterns
+  s = s.replace(/javascript:/gi, '')
+  s = s.replace(/on\w+\s*=/gi, '')
+  return s
 }
 
 /**

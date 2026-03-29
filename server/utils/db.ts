@@ -689,6 +689,7 @@ export async function createFormSubmission(
 
 export async function listFormSubmissions(
   admin: SupabaseClient,
+  workspaceId: string,
   projectId: string,
   modelId: string,
   options?: { page?: number, limit?: number, status?: string, sort?: 'newest' | 'oldest' },
@@ -700,6 +701,7 @@ export async function listFormSubmissions(
   let query = admin
     .from('form_submissions')
     .select('*', { count: 'exact' })
+    .eq('workspace_id', workspaceId)
     .eq('project_id', projectId)
     .eq('model_id', modelId)
 

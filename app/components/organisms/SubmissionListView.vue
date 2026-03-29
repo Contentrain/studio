@@ -97,10 +97,11 @@ function formatTime(dateStr: string): string {
 async function fetchSubmissions() {
   loading.value = true
   try {
-    const data = await $fetch<FormSubmission[]>(
+    const result = await $fetch<{ submissions: FormSubmission[], total: number }>(
       `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions`,
+      { params: activeFilter.value !== 'all' ? { status: activeFilter.value } : {} },
     )
-    submissions.value = data
+    submissions.value = result.submissions
   }
   catch {
     submissions.value = []
