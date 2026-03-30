@@ -8,17 +8,25 @@ definePageMeta({
 })
 
 const { t } = useContent()
-const { workspaces, activeWorkspace, fetchWorkspaces, getLastPath } = useWorkspaces()
+const { workspaces, activeWorkspace, fetchWorkspaces, getLastPath, saveLastPath } = useWorkspaces()
 
 onMounted(async () => {
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
 
-  // Resume last session — redirect to last visited path
+  // Resume last session — but validate the workspace slug still exists
   const lastPath = getLastPath()
   if (lastPath && lastPath !== '/') {
-    await navigateTo(lastPath, { replace: true })
-    return
+    const slugMatch = lastPath.match(/^\/w\/([^/]+)/)
+    if (slugMatch) {
+      const wsExists = workspaces.value.some(w => w.slug === slugMatch[1])
+      if (wsExists) {
+        await navigateTo(lastPath, { replace: true })
+        return
+      }
+    }
+    // Invalid last path — clear it
+    saveLastPath('/')
   }
 
   // Fallback: primary workspace dashboard

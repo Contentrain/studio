@@ -38,10 +38,10 @@ const activeAssets = computed(() => (route.query as Record<string, string | unde
 const activeHealth = computed(() => (route.query as Record<string, string | undefined>).health === 'true')
 const activeLocale = ref('en')
 
-// Persist current path for session resume
+// Persist current path — only after confirming project/workspace exist
 watch(() => route.fullPath, (path) => {
-  saveLastPath(path)
-}, { immediate: true })
+  if (project.value && activeWorkspace.value) saveLastPath(path)
+})
 
 // Bootstrap project state — handles both initial load AND SPA navigation between projects/workspaces.
 // Replaces onMounted to ensure state resets on route reuse.
@@ -59,13 +59,25 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
     await fetchWorkspaces()
 
   const ws = workspaces.value.find(w => w.slug === newSlug)
-  if (!ws) return
+  if (!ws) {
+    saveLastPath('/')
+    await router.replace('/')
+    return
+  }
 
   setActiveWorkspace(ws.id)
 
   // Re-fetch projects on workspace change or when list is empty
   if (!oldSlug || oldSlug !== newSlug || projects.value.length === 0)
     await fetchProjects(ws.id)
+
+  // Verify project exists in this workspace
+  const projectExists = projects.value.some(p => p.id === newProjectId)
+  if (!projectExists) {
+    saveLastPath(`/w/${newSlug}`)
+    await router.replace(`/w/${newSlug}`)
+    return
+  }
 
   await fetchSnapshot(ws.id, newProjectId)
 
