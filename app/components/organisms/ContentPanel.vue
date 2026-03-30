@@ -282,9 +282,9 @@ provide(sendChatPromptKey, sendChatPrompt)
         />
       </div>
       <div v-if="panelState === 'model'" class="ml-auto flex shrink-0 items-center gap-2">
-        <!-- Add entry (collection only) -->
+        <!-- Add entry (collection / document) -->
         <AtomsIconButton
-          v-if="editable && activeModel && (activeModel.kind === 'collection' || activeModel.type === 'collection')"
+          v-if="editable && activeModel && (activeModel.kind === 'collection' || activeModel.type === 'collection' || activeModel.kind === 'document' || activeModel.type === 'document')"
           icon="icon-[annon--plus]"
           :label="t('content.add_entry')"
           size="sm"
@@ -589,6 +589,8 @@ provide(sendChatPromptKey, sendChatPrompt)
             <OrganismsContentDocumentView
               v-else-if="modelContentKind === 'document' && Array.isArray(modelContent)"
               :entries="(modelContent as Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>)"
+              :workspace-id="workspaceId" :project-id="projectId" :model-id="activeModelId ?? undefined"
+              :locale="currentLocale" :editable="editable" @saved="emit('back')"
             />
             <!-- Collection (object-map) -->
             <OrganismsContentCollectionView
