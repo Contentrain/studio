@@ -11,11 +11,12 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !modelId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const db = useDatabaseProvider()
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
   // Verify project belongs to workspace (prevents cross-project access)
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
   const { data: project } = await admin
     .from('projects')
     .select('id')

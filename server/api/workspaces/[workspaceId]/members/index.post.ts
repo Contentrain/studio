@@ -1,5 +1,6 @@
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const body = await readBody<{
     email: string
@@ -15,40 +16,28 @@ export default defineEventHandler(async (event) => {
   if (!['admin', 'member'].includes(body.role))
     throw createError({ statusCode: 400, message: errorMessage('members.invalid_workspace_role') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
-
   // Team size limit
-  const { data: ws } = await client.from('workspaces').select('plan, name, slug').eq('id', workspaceId).single()
+  const ws = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'plan, name, slug')
   const plan = getWorkspacePlan(ws ?? {})
-  const currentMembers = await listWorkspaceMembers(useSupabaseAdmin(), workspaceId)
+  const currentMembers = await db.listWorkspaceMembers(session.accessToken, session.user.id, workspaceId)
   const memberLimit = getPlanLimit(plan, 'team.members')
   if (currentMembers.length >= memberLimit)
     throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
 
+  const workspaceName = typeof ws?.name === 'string' ? ws.name : ''
+  const workspaceSlug = typeof ws?.slug === 'string' ? ws.slug : ''
+
   const { userId } = await inviteOrLookupUser(body.email, {
-    workspaceName: ws?.name ?? '',
+    workspaceName,
     inviterName: session.user.email ?? '',
-    workspaceSlug: ws?.slug ?? '',
+    workspaceSlug,
   })
 
-  // Use admin client for mutation — RLS only allows owner, but route permits admin too
-  const admin = useSupabaseAdmin()
-  const { data: member, error } = await admin
-    .from('workspace_members')
-    .insert({
-      workspace_id: workspaceId,
-      user_id: userId,
-      role: body.role,
-      invited_email: body.email,
-      accepted_at: null, // Pending until user logs in and accesses workspace
-    })
-    .select()
-    .single()
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
-
-  return member
+  return db.createWorkspaceMember(session.accessToken, session.user.id, {
+    workspaceId,
+    memberUserId: userId,
+    role: body.role,
+    invitedEmail: body.email,
+    acceptedAt: null,
+  })
 })

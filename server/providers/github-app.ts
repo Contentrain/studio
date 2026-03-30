@@ -8,18 +8,36 @@ import type {
   FileChange,
   FileDiff,
   FrameworkDetection,
+  GitAppProvider,
   GitProvider,
+  InstallationDetails,
+  InstallationRepository,
   MergeResult,
   RepoPermissions,
+  TemplateRepositoryInput,
   TreeEntry,
 } from './git'
 
-interface GitHubAppConfig {
+interface GitHubAppBaseConfig {
   appId: string
   privateKey: string
   installationId: number
+}
+
+interface GitHubAppConfig extends GitHubAppBaseConfig {
   owner: string
   repo: string
+}
+
+function createInstallationOctokit(config: GitHubAppBaseConfig) {
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: config.appId,
+      privateKey: config.privateKey,
+      installationId: config.installationId,
+    },
+  })
 }
 
 /**
@@ -32,14 +50,7 @@ interface GitHubAppConfig {
  * Phase 2: Write operations (commit, branch, PR) active.
  */
 export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
-  const octokit = new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId: config.appId,
-      privateKey: config.privateKey,
-      installationId: config.installationId,
-    },
-  })
+  const octokit = createInstallationOctokit(config)
 
   const { owner, repo } = config
 
@@ -399,6 +410,89 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
       }
       catch {
         return null
+      }
+    },
+  }
+}
+
+export function createGitHubAppInstallationProvider(config: GitHubAppBaseConfig): GitAppProvider {
+  const octokit = createInstallationOctokit(config)
+
+  return {
+    async getInstallationDetails(): Promise<InstallationDetails> {
+      const { data } = await octokit.apps.getInstallation({
+        installation_id: config.installationId,
+      })
+
+      return {
+        installationId: config.installationId,
+        account: {
+          login: (data.account as { login?: string })?.login ?? null,
+          avatarUrl: (data.account as { avatar_url?: string })?.avatar_url ?? null,
+          type: data.target_type ?? null,
+        },
+        selection: data.repository_selection ?? null,
+        permissions: (data.permissions as Record<string, string> | undefined) ?? null,
+        suspendedAt: data.suspended_at ?? null,
+      }
+    },
+
+    async listInstallationRepositories(): Promise<InstallationRepository[]> {
+      const { data } = await octokit.apps.listReposAccessibleToInstallation({
+        per_page: 100,
+      })
+
+      return data.repositories.map(repo => ({
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.full_name,
+        owner: repo.owner.login,
+        private: repo.private,
+        defaultBranch: repo.default_branch,
+        description: repo.description,
+        language: repo.language,
+        updatedAt: repo.updated_at,
+        htmlUrl: repo.html_url,
+      }))
+    },
+
+    async createRepositoryFromTemplate(input: TemplateRepositoryInput): Promise<InstallationRepository> {
+      const details = await this.getInstallationDetails()
+      const targetOwner = details.account.login
+
+      if (!targetOwner) {
+        throw createError({ statusCode: 500, message: errorMessage('github.owner_not_resolved') })
+      }
+
+      const { data } = await octokit.repos.createUsingTemplate({
+        template_owner: input.templateOwner,
+        template_repo: input.templateRepo,
+        owner: targetOwner,
+        name: input.name,
+        private: input.private ?? false,
+        description: input.description || undefined,
+        include_all_branches: false,
+      })
+
+      return {
+        id: data.id,
+        name: data.name,
+        fullName: data.full_name,
+        owner: data.owner.login,
+        private: data.private,
+        defaultBranch: data.default_branch,
+        description: data.description,
+        htmlUrl: data.html_url,
+      }
+    },
+
+    async canAccessRepository(owner: string, repo: string): Promise<boolean> {
+      try {
+        await octokit.repos.get({ owner, repo })
+        return true
+      }
+      catch {
+        return false
       }
     },
   }

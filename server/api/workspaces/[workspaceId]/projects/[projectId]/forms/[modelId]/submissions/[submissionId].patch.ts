@@ -4,6 +4,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const modelId = getRouterParam(event, 'modelId')
@@ -12,7 +13,7 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !modelId || !submissionId)
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const body = await readBody<{
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
   if (!body.status || !validStatuses.includes(body.status))
     throw createError({ statusCode: 400, message: errorMessage('forms.invalid_status', { status: body.status ?? 'undefined' }) })
 
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
 
   // Verify submission exists and belongs to this workspace/project/model
   const existing = await getFormSubmission(admin, submissionId)

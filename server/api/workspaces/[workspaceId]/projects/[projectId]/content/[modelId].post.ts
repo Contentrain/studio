@@ -9,6 +9,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const modelId = getRouterParam(event, 'modelId')
@@ -33,7 +34,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
   const { git, contentRoot, workspace } = await resolveProjectContext(
-    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+    db.getUserClient(session.accessToken), workspaceId, projectId,
   )
 
   const engine = createContentEngine({ git, contentRoot })
@@ -65,7 +66,7 @@ export default defineEventHandler(async (event) => {
   try {
     const mediaProvider = useMediaProvider()
     if (mediaProvider) {
-      const admin = useSupabaseAdmin()
+      const admin = db.getAdminClient()
       const locale = body.locale ?? 'en'
       // Scan saved data for media paths and track usage
       for (const [entryId, entry] of Object.entries(body.data)) {

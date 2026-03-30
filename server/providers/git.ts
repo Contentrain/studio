@@ -59,6 +59,48 @@ export interface FrameworkDetection {
   suggestedContentPaths: Record<string, string>
 }
 
+export interface InstallationAccount {
+  login: string | null
+  avatarUrl: string | null
+  type: string | null
+}
+
+export interface InstallationRepository {
+  id: number
+  name: string
+  fullName: string
+  owner: string
+  private: boolean
+  defaultBranch?: string | null
+  description?: string | null
+  language?: string | null
+  updatedAt?: string | null
+  htmlUrl?: string | null
+}
+
+export interface InstallationDetails {
+  installationId: number
+  account: InstallationAccount
+  selection: string | null
+  permissions: Record<string, string> | null
+  suspendedAt: string | null
+}
+
+export interface TemplateRepositoryInput {
+  templateOwner: string
+  templateRepo: string
+  name: string
+  private?: boolean
+  description?: string
+}
+
+export interface GitAppProvider {
+  getInstallationDetails: () => Promise<InstallationDetails>
+  listInstallationRepositories: () => Promise<InstallationRepository[]>
+  createRepositoryFromTemplate: (input: TemplateRepositoryInput) => Promise<InstallationRepository>
+  canAccessRepository: (owner: string, repo: string) => Promise<boolean>
+}
+
 export interface GitProvider {
   // Tree operations (scoped to content_root + .contentrain/)
   getTree: (ref?: string) => Promise<TreeEntry[]>

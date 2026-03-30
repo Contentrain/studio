@@ -8,6 +8,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 export default defineEventHandler(async (event) => {
+  const db = useDatabaseProvider()
   const runtimeConfig = useRuntimeConfig()
   const secret = runtimeConfig.github.webhookSecret
 
@@ -34,7 +35,7 @@ export default defineEventHandler(async (event) => {
   const body = JSON.parse(rawBody) as Record<string, unknown>
   const eventType = getHeader(event, 'x-github-event')
 
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
 
   if (eventType === 'push') {
     const repoFullName = (body.repository as { full_name?: string })?.full_name

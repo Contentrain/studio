@@ -45,7 +45,7 @@ export async function validateCDNKey(
   const key = authHeader.slice(7) // Remove "Bearer "
   const keyHash = hashCDNKey(key)
 
-  const admin = useSupabaseAdmin()
+  const admin = useDatabaseProvider().getAdminClient()
   const { data: apiKey } = await admin
     .from('cdn_api_keys')
     .select('id, project_id, rate_limit_per_hour, allowed_origins, revoked_at, expires_at')

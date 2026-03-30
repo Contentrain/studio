@@ -10,7 +10,8 @@
  * Free tier degrades gracefully: reviewer/viewer → editor.
  */
 
-import { getWorkspacePlan, hasFeature } from './license'
+import { getWorkspacePlan } from './license'
+import { normalizeEnterpriseProjectMemberAccess } from './enterprise'
 
 export interface AgentPermissions {
   workspaceRole: 'owner' | 'admin' | 'member'
@@ -52,7 +53,7 @@ export async function resolveAgentPermissions(
   projectId: string,
   accessToken: string,
 ): Promise<AgentPermissions> {
-  const client = useSupabaseUserClient(accessToken)
+  const client = useDatabaseProvider().getUserClient(accessToken)
 
   // Get workspace role + plan
   const { data: wsMember } = await client
@@ -104,14 +105,14 @@ export async function resolveAgentPermissions(
 
   const plan = getWorkspacePlan(workspace ?? {})
 
-  // EE gating: degrade reviewer/viewer to editor on free plan
-  let projectRole = projMember.role as AgentPermissions['projectRole']
-  if (projectRole === 'reviewer' && !hasFeature(plan, 'roles.reviewer')) {
-    projectRole = 'editor'
-  }
-  if (projectRole === 'viewer' && !hasFeature(plan, 'roles.viewer')) {
-    projectRole = 'editor'
-  }
+  const normalizedAccess = await normalizeEnterpriseProjectMemberAccess({
+    plan,
+    role: projMember.role as AgentPermissions['projectRole'],
+    specificModels: projMember.specific_models ?? false,
+    allowedModels: projMember.allowed_models ?? [],
+  })
+
+  const projectRole = normalizedAccess.role as AgentPermissions['projectRole']
 
   const effectiveRole = projectRole ?? 'viewer'
 
@@ -120,19 +121,11 @@ export async function resolveAgentPermissions(
     .filter(([_, roles]) => roles.includes(effectiveRole))
     .map(([name]) => name)
 
-  // EE gating: specificModels only on plans that support it
-  const specificModels = hasFeature(plan, 'roles.specific_models')
-    ? (projMember.specific_models ?? false)
-    : false
-  const allowedModels = specificModels
-    ? (projMember.allowed_models ?? [])
-    : []
-
   return {
     workspaceRole,
     projectRole,
-    specificModels,
-    allowedModels,
+    specificModels: normalizedAccess.specificModels,
+    allowedModels: normalizedAccess.allowedModels,
     allowedLocales: [],
     availableTools,
   }

@@ -69,6 +69,7 @@
   "github.scan_params_required": "Workspace ID, repository owner, and repository name are required.",
   "github.template_params_required": "Workspace ID, template repository, and name are required.",
   "github.workspace_not_found": "No workspace found for this GitHub installation.",
+  "github.workspace_state_required": "Workspace state parameter is required for GitHub App installation. Please install from workspace settings.",
   "forms.bulk_limit": "Maximum 50 submissions per bulk operation.",
   "forms.captcha_failed": "Captcha verification failed. Please try again.",
   "forms.create_failed": "Failed to save form submission: {detail}",

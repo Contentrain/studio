@@ -1,5 +1,4 @@
-import { Octokit } from '@octokit/rest'
-import { createAppAuth } from '@octokit/auth-app'
+import { useDatabaseProvider, useGitAppProvider } from '../../utils/providers'
 
 /**
  * List repositories accessible via the GitHub App installation.
@@ -9,48 +8,34 @@ import { createAppAuth } from '@octokit/auth-app'
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const query = getQuery(event) as { workspaceId?: string }
 
   if (!query.workspaceId)
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-
-  // Only owner/admin can list repos (prevents private repo exposure to regular members)
-  await requireWorkspaceRole(client, session.user.id, query.workspaceId, ['owner', 'admin'])
-
-  const workspace = await getWorkspace(client, query.workspaceId)
+  const workspace = await db.getWorkspaceForUser(
+    session.accessToken,
+    session.user.id,
+    query.workspaceId,
+    ['owner', 'admin'],
+    'id, github_installation_id',
+  )
 
   if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
-  // Create Octokit with installation auth
-  const config = useRuntimeConfig()
-  const privateKey = Buffer.from(config.github.privateKey, 'base64').toString('utf-8')
+  const repos = await useGitAppProvider(workspace.github_installation_id as number).listInstallationRepositories()
 
-  const octokit = new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId: config.github.appId,
-      privateKey,
-      installationId: workspace.github_installation_id,
-    },
-  })
-
-  // List repos accessible to this installation
-  const { data } = await octokit.apps.listReposAccessibleToInstallation({
-    per_page: 100,
-  })
-
-  return data.repositories.map(repo => ({
+  return repos.map(repo => ({
     id: repo.id,
-    fullName: repo.full_name,
+    fullName: repo.fullName,
     name: repo.name,
-    owner: repo.owner.login,
+    owner: repo.owner,
     private: repo.private,
-    defaultBranch: repo.default_branch,
+    defaultBranch: repo.defaultBranch ?? null,
     description: repo.description,
     language: repo.language,
-    updatedAt: repo.updated_at,
+    updatedAt: repo.updatedAt ?? null,
   }))
 })

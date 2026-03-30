@@ -3,6 +3,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const body = await readBody<{ name: string }>(event)
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('cdn.key_name_required') })
 
   // Role + plan check
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const { data: project } = await client

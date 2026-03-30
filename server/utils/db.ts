@@ -1,6 +1,8 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { DatabaseClientBridge } from '../providers/database'
 import type { GitProvider } from '../providers/git'
 import { normalizeContentRoot } from './content-paths'
+
+type SupabaseClient = DatabaseClientBridge
 
 /**
  * Database helper layer.
@@ -105,21 +107,24 @@ export async function resolveProjectContext(
 // ─── Workspace Queries ───
 
 /**
- * List workspaces the user is a member of (RLS-filtered).
+ * List workspaces the user is a member of.
+ *
+ * Step 1 uses user client (RLS: own membership rows only).
+ * Step 2 uses admin client because workspaces RLS is owner_id-only —
+ * non-owner members would get empty results with user client.
  */
-export async function listUserWorkspaces(client: SupabaseClient) {
-  // Two-step query to avoid RLS recursion:
+export async function listUserWorkspaces(client: SupabaseClient, admin: SupabaseClient, userId: string) {
   // 1. Get user's workspace IDs from workspace_members (terminal RLS: own rows only)
-  // 2. Get workspace details by IDs
   const { data: memberships } = await client
     .from('workspace_members')
     .select('workspace_id, role')
 
   if (!memberships?.length) {
-    // Fallback: check owned workspaces directly
-    const { data, error } = await client
+    // Fallback: user has no membership rows — show owned workspaces via admin
+    const { data, error } = await admin
       .from('workspaces')
       .select('*')
+      .eq('owner_id', userId)
       .order('created_at', { ascending: true })
     if (error) throw createError({ statusCode: 500, message: error.message })
     return (data ?? []).map(w => ({ ...w, workspace_members: [{ role: 'owner' }] }))
@@ -128,7 +133,8 @@ export async function listUserWorkspaces(client: SupabaseClient) {
   const wsIds = memberships.map(m => m.workspace_id)
   const roleMap = Object.fromEntries(memberships.map(m => [m.workspace_id, m.role]))
 
-  const { data, error } = await client
+  // 2. Get workspace details via admin (bypasses owner_id RLS)
+  const { data, error } = await admin
     .from('workspaces')
     .select('*')
     .in('id', wsIds)
@@ -265,7 +271,7 @@ export async function inviteOrLookupUser(
   }
   catch {
     // User already exists — look up by email
-    const admin = useSupabaseAdmin()
+    const admin = useDatabaseProvider().getAdminClient() as SupabaseClient
     const { data: users } = await admin.auth.admin.listUsers()
     const existing = users?.users?.find((u: { email?: string }) => u.email === email)
     if (!existing?.id)

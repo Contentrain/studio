@@ -59,7 +59,7 @@ watch(open, (isOpen) => {
 
 function installGitHubApp() {
   window.open(
-    'https://github.com/apps/contentrain-studio-dev/installations/new',
+    getGitHubAppInstallUrl(),
     '_blank',
     'noopener,noreferrer',
   )

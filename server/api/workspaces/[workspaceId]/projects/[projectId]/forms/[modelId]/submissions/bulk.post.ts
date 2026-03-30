@@ -4,6 +4,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const modelId = getRouterParam(event, 'modelId')
@@ -11,7 +12,7 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !modelId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const body = await readBody<{
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event) => {
   if (body.submissionIds.length > 50)
     throw createError({ statusCode: 400, message: errorMessage('forms.bulk_limit') })
 
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
 
   if (body.action === 'delete') {
     const results: { id: string, success: boolean, error?: string }[] = []

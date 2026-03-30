@@ -572,6 +572,42 @@ export function createContentEngine(ctx: ContentEngineContext) {
     ): Promise<WriteResult> {
       await ensureContentBranch()
 
+      // Validate model definition before saving
+      const { validateModelDefinition } = await import('./schema-validation')
+      // Get existing model IDs for relation target validation
+      let existingModelIds: string[] = []
+      try {
+        const modelsDir = resolveModelsDir(pathCtx)
+        const files = await git.listDirectory(modelsDir, CONTENT_BRANCH)
+        existingModelIds = files.filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''))
+      }
+      catch { /* no models dir yet */ }
+      // Include the current model in the list (it may be new)
+      if (!existingModelIds.includes(definition.id)) {
+        existingModelIds.push(definition.id)
+      }
+
+      // Read config for domain validation
+      let config: ContentrainConfig | null = null
+      try {
+        config = JSON.parse(await git.readFile(resolveConfigPath(pathCtx), CONTENT_BRANCH)) as ContentrainConfig
+      }
+      catch { /* no config */ }
+
+      const schemaWarnings = validateModelDefinition(definition, config, existingModelIds)
+      const criticalErrors = schemaWarnings.filter(w => w.severity === 'critical' || w.severity === 'error')
+      if (criticalErrors.length > 0) {
+        return {
+          branch: '',
+          commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+          diff: [],
+          validation: {
+            valid: false,
+            errors: criticalErrors.map(w => ({ field: w.field ?? '', message: w.message, severity: 'error' as const })),
+          },
+        }
+      }
+
       const modelPath = resolveModelPath(pathCtx, definition.id)
       const serialized = serializeCanonical(definition)
 

@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   if (!body.repoFullName)
     throw createError({ statusCode: 400, message: errorMessage('validation.repo_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = useDatabaseProvider().getUserClient(session.accessToken)
 
   const { data: project, error } = await client
     .from('projects')

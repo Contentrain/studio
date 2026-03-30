@@ -1,52 +1,20 @@
-import { createClient } from '@supabase/supabase-js'
-import type { SupabaseClient } from '@supabase/supabase-js'
-
-let _adminClient: SupabaseClient | null = null
+import { useDatabaseProvider } from './providers'
 
 /**
- * Server-side Supabase admin client (service_role key).
- * Used for privileged operations: invite users, manage auth, bypass RLS.
+ * Legacy compatibility shim.
+ *
+ * Application code is migrating to DatabaseProvider, but older routes/helpers
+ * still call `useSupabaseAdmin()` / `useSupabaseUserClient()`. Keep those
+ * names delegating through the active DatabaseProvider so adapter swaps only
+ * require provider changes, not app-wide rewrites.
  */
-export function useSupabaseAdmin(): SupabaseClient {
-  if (_adminClient)
-    return _adminClient
-
-  const config = useRuntimeConfig()
-
-  _adminClient = createClient(
-    config.supabase.url,
-    config.supabase.serviceRoleKey,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    },
-  )
-
-  return _adminClient
+export function useSupabaseAdmin() {
+  return useDatabaseProvider().getAdminClient()
 }
 
 /**
- * Server-side Supabase client scoped to a user's session.
- * Respects RLS policies.
+ * Legacy compatibility shim for user-scoped database access.
  */
-export function useSupabaseUserClient(accessToken: string): SupabaseClient {
-  const config = useRuntimeConfig()
-
-  return createClient(
-    config.supabase.url,
-    config.supabase.anonKey,
-    {
-      global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    },
-  )
+export function useSupabaseUserClient(accessToken: string) {
+  return useDatabaseProvider().getUserClient(accessToken)
 }

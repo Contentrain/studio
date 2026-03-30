@@ -6,5 +6,5 @@
  * gracefully degrade to null.
  */
 export default defineNitroPlugin(async () => {
-  await initMediaProvider()
+  await initEnterpriseBridge()
 })

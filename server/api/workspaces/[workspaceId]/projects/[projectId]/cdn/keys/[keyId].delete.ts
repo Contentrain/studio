@@ -3,13 +3,14 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const keyId = getRouterParam(event, 'keyId')
 
   if (!workspaceId || !keyId)
     throw createError({ statusCode: 400, message: errorMessage('api.key_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const { error } = await client

@@ -12,11 +12,12 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId)
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const db = useDatabaseProvider()
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner'])
 
   // Fetch workspace and verify ownership
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
   const { data: workspace } = await admin
     .from('workspaces')
     .select('id, type, owner_id')

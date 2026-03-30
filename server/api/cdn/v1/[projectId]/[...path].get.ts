@@ -1,3 +1,6 @@
+import { trackEnterpriseCdnUsage } from '../../../../utils/enterprise'
+import { useDatabaseProvider } from '../../../../utils/providers'
+
 /**
  * Public CDN endpoint — serves content from CDN storage.
  *
@@ -21,7 +24,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Plan check
-  const admin = useSupabaseAdmin()
+  const admin = useDatabaseProvider().getAdminClient()
   const { data: project } = await admin
     .from('projects')
     .select('workspace_id, cdn_enabled')
@@ -83,9 +86,7 @@ export default defineEventHandler(async (event) => {
 
   // Track CDN usage (fire-and-forget, Business+ feature)
   if (hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.metering')) {
-    import('~~/ee/cdn/cdn-usage').then(({ trackCDNUsage }) => {
-      trackCDNUsage(admin, projectId, keyId, result.data.length)
-    }).catch(() => {})
+    void trackEnterpriseCdnUsage(admin, projectId, keyId, result.data.length)
   }
 
   // Return binary data as-is, JSON/text as string

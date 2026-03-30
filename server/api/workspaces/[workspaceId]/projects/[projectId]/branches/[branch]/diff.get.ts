@@ -4,6 +4,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const branch = getRouterParam(event, 'branch')
@@ -16,7 +17,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('branches.contentrain_only') })
 
   const { git } = await resolveProjectContext(
-    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+    db.getUserClient(session.accessToken), workspaceId, projectId,
   )
 
   // Diff against contentrain branch (cr/* branches are created from contentrain)

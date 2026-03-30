@@ -64,7 +64,7 @@ export async function validateConversationKey(
   const key = authHeader.slice(7) // Remove "Bearer "
   const keyHash = hashConversationKey(key)
 
-  const admin = useSupabaseAdmin()
+  const admin = useDatabaseProvider().getAdminClient()
   const { data: apiKey } = await admin
     .from('conversation_api_keys')
     .select('id, project_id, workspace_id, name, role, specific_models, allowed_models, allowed_tools, allowed_locales, custom_instructions, ai_model, rate_limit_per_minute, monthly_message_limit, revoked_at')

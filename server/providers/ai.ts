@@ -46,6 +46,7 @@ export interface AICompletionRequest {
   messages: AIMessage[]
   tools: AITool[]
   maxTokens: number
+  abortSignal?: AbortSignal
 }
 
 export interface AICompletionResponse {
