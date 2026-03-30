@@ -12,6 +12,7 @@ const props = defineProps<{
   workspaceId: string
   projectId: string
   projectName?: string
+  initialTab?: 'general' | 'api' | 'webhooks'
   config?: {
     workflow?: string
     stack?: string
@@ -28,7 +29,12 @@ const emit = defineEmits<{
 const { deleteProject } = useProjects()
 const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
-const activeTab = ref<'general' | 'api' | 'webhooks'>('general')
+const activeTab = ref<'general' | 'api' | 'webhooks'>(props.initialTab ?? 'general')
+
+// Sync tab when initialTab prop changes (e.g. from command palette)
+watch(() => props.initialTab, (tab) => {
+  if (tab) activeTab.value = tab
+})
 
 async function handleDeleteProject() {
   deleting.value = true

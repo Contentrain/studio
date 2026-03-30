@@ -11,7 +11,18 @@ const slug = computed(() => route.params.slug as string)
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { t } = useContent()
 
-const activeTab = ref('overview')
+const validTabs = ['overview', 'members', 'github', 'ai-keys'] as const
+const tabFromQuery = computed(() => {
+  const tab = route.query.tab as string | undefined
+  return tab && (validTabs as readonly string[]).includes(tab) ? tab : null
+})
+
+const activeTab = ref(tabFromQuery.value ?? 'overview')
+
+// Deep-link: sync tab from ?tab= query param
+watch(tabFromQuery, (tab) => {
+  if (tab) activeTab.value = tab
+})
 
 async function loadSettingsData() {
   if (workspaces.value.length === 0)
