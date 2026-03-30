@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { withTestServer } from '../helpers/http'
 
 async function loadWorkspaceMembersHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/members/index.get')).default
@@ -27,23 +26,16 @@ describe('project and membership access integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockRejectedValue(Object.assign(new Error('Requires owner or admin role'), {
-      statusCode: 403,
-      message: 'Requires owner or admin role',
-    })))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/members', handler: await loadWorkspaceMembersHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/members')
-
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toMatchObject({
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      listWorkspaceMembers: vi.fn().mockRejectedValue(Object.assign(new Error('Requires owner or admin role'), {
         statusCode: 403,
-      })
+        message: 'Requires owner or admin role',
+      })),
+    }))
+
+    const handler = await loadWorkspaceMembersHandler()
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 403,
     })
   })
 
@@ -103,18 +95,12 @@ describe('project and membership access integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects', handler: await loadProjectsHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects')
+    const handler = await loadProjectsHandler()
+    const result = await handler({} as never)
 
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual([
-        { id: 'project-2', workspace_id: 'workspace-1', repo_full_name: 'acme/site' },
-      ])
-    })
+    expect(result).toEqual([
+      { id: 'project-2', workspace_id: 'workspace-1', repo_full_name: 'acme/site' },
+    ])
   })
 
   it('rejects project member invites routed through a foreign workspace path', async () => {
@@ -148,21 +134,14 @@ describe('project and membership access integration', () => {
     }))
     vi.stubGlobal('inviteOrLookupUser', vi.fn())
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-foreign/members', handler: await loadProjectMemberCreateHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-foreign/members', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'reviewer@example.com', role: 'editor' }),
-      })
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      email: 'reviewer@example.com',
+      role: 'editor',
+    }))
 
-      expect(response.status).toBe(404)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 404,
-      })
+    const handler = await loadProjectMemberCreateHandler()
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 404,
     })
   })
 
@@ -197,19 +176,9 @@ describe('project and membership access integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-foreign/members/member-1', handler: await loadProjectMemberDeleteHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-foreign/members/member-1', {
-        method: 'DELETE',
-      })
-
-      expect(response.status).toBe(404)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 404,
-      })
+    const handler = await loadProjectMemberDeleteHandler()
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 404,
     })
   })
 })

@@ -1,73 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const supabaseState = vi.hoisted(() => ({
-  createClient: vi.fn(),
+const providerState = vi.hoisted(() => ({
+  databaseProvider: {
+    getAdminClient: vi.fn(),
+    getUserClient: vi.fn(),
+  },
 }))
 
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: supabaseState.createClient,
+vi.mock('../../server/utils/providers', () => ({
+  useDatabaseProvider: vi.fn(() => providerState.databaseProvider),
 }))
 
 describe('supabase helpers', () => {
   beforeEach(() => {
     vi.resetModules()
-    supabaseState.createClient.mockReset()
-    vi.stubGlobal('useRuntimeConfig', () => ({
-      supabase: {
-        url: 'https://supabase.example.com',
-        serviceRoleKey: 'service-role-key',
-        anonKey: 'anon-key',
-      },
-    }))
+    providerState.databaseProvider.getAdminClient.mockReset()
+    providerState.databaseProvider.getUserClient.mockReset()
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  it('caches the admin client and disables auth persistence', async () => {
+  it('delegates admin access through the database provider bridge', async () => {
     const adminClient = { admin: true }
-    supabaseState.createClient.mockReturnValue(adminClient)
+    providerState.databaseProvider.getAdminClient.mockReturnValue(adminClient)
 
     const { useSupabaseAdmin } = await import('../../server/utils/supabase')
 
     expect(useSupabaseAdmin()).toBe(adminClient)
-    expect(useSupabaseAdmin()).toBe(adminClient)
-    expect(supabaseState.createClient).toHaveBeenCalledTimes(1)
-    expect(supabaseState.createClient).toHaveBeenCalledWith(
-      'https://supabase.example.com',
-      'service-role-key',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      },
-    )
+    expect(providerState.databaseProvider.getAdminClient).toHaveBeenCalledTimes(1)
   })
 
-  it('creates user-scoped clients with bearer auth headers', async () => {
+  it('delegates user-scoped access through the database provider bridge', async () => {
     const userClient = { user: true }
-    supabaseState.createClient.mockReturnValue(userClient)
+    providerState.databaseProvider.getUserClient.mockReturnValue(userClient)
 
     const { useSupabaseUserClient } = await import('../../server/utils/supabase')
 
     expect(useSupabaseUserClient('token-123')).toBe(userClient)
-    expect(supabaseState.createClient).toHaveBeenCalledWith(
-      'https://supabase.example.com',
-      'anon-key',
-      {
-        global: {
-          headers: {
-            Authorization: 'Bearer token-123',
-          },
-        },
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      },
-    )
+    expect(providerState.databaseProvider.getUserClient).toHaveBeenCalledWith('token-123')
   })
 })

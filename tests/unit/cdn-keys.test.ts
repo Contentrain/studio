@@ -27,7 +27,7 @@ describe('cdn keys', () => {
   })
 
   it('rejects missing bearer tokens before touching the database', async () => {
-    vi.stubGlobal('useSupabaseAdmin', vi.fn())
+    vi.stubGlobal('useDatabaseProvider', vi.fn())
 
     const { validateCDNKey } = await loadCDNKeysModule()
 
@@ -46,12 +46,14 @@ describe('cdn keys', () => {
     })
     const eq = vi.fn(() => ({ is: vi.fn(() => ({ single })) }))
 
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq,
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getAdminClient: vi.fn().mockReturnValue({
+        from: vi.fn(() => ({
+          select: vi.fn(() => ({
+            eq,
+          })),
         })),
-      })),
+      }),
     }))
 
     const { validateCDNKey } = await loadCDNKeysModule()
@@ -90,7 +92,9 @@ describe('cdn keys', () => {
       return {}
     })
 
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({ from }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getAdminClient: vi.fn().mockReturnValue({ from }),
+    }))
 
     const { validateCDNKey } = await loadCDNKeysModule()
     const result = await validateCDNKey('Bearer crn_live_example')

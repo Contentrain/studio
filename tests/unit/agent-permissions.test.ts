@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setEnterpriseBridgeForTesting } from '../../server/utils/enterprise'
 import { resolveAgentPermissions } from '../../server/utils/agent-permissions'
 
 interface QueryState {
@@ -42,12 +43,15 @@ function createSupabaseClient(rows: {
 
 describe('resolveAgentPermissions', () => {
   afterEach(() => {
+    setEnterpriseBridgeForTesting(null)
     vi.unstubAllGlobals()
   })
 
   it('returns full tool access for workspace owners and admins', async () => {
-    vi.stubGlobal('useSupabaseUserClient', () => createSupabaseClient({
-      workspaceMember: { role: 'owner' },
+    vi.stubGlobal('useDatabaseProvider', () => ({
+      getUserClient: () => createSupabaseClient({
+        workspaceMember: { role: 'owner' },
+      }),
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -59,9 +63,11 @@ describe('resolveAgentPermissions', () => {
   })
 
   it('returns no tools when a workspace member is not assigned to the project', async () => {
-    vi.stubGlobal('useSupabaseUserClient', () => createSupabaseClient({
-      workspaceMember: { role: 'member' },
-      projectMember: null,
+    vi.stubGlobal('useDatabaseProvider', () => ({
+      getUserClient: () => createSupabaseClient({
+        workspaceMember: { role: 'member' },
+        projectMember: null,
+      }),
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -72,14 +78,23 @@ describe('resolveAgentPermissions', () => {
   })
 
   it('degrades reviewer and disables specificModels on free plan', async () => {
-    vi.stubGlobal('useSupabaseUserClient', () => createSupabaseClient({
-      workspaceMember: { role: 'member' },
-      projectMember: {
-        role: 'reviewer',
-        specific_models: true,
-        allowed_models: ['faq', 'docs'],
-      },
-      workspace: { plan: 'free' },
+    setEnterpriseBridgeForTesting({
+      normalizeProjectMemberAccess: ({ plan, role, specificModels, allowedModels }) => ({
+        role: plan === 'free' && role !== 'editor' ? 'editor' : (role ?? 'editor'),
+        specificModels: plan === 'free' ? false : !!specificModels,
+        allowedModels: plan === 'free' ? [] : (allowedModels ?? []),
+      }),
+    } as never)
+    vi.stubGlobal('useDatabaseProvider', () => ({
+      getUserClient: () => createSupabaseClient({
+        workspaceMember: { role: 'member' },
+        projectMember: {
+          role: 'reviewer',
+          specific_models: true,
+          allowed_models: ['faq', 'docs'],
+        },
+        workspace: { plan: 'free' },
+      }),
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -92,14 +107,23 @@ describe('resolveAgentPermissions', () => {
   })
 
   it('keeps advanced role and allowed models on supported plans', async () => {
-    vi.stubGlobal('useSupabaseUserClient', () => createSupabaseClient({
-      workspaceMember: { role: 'member' },
-      projectMember: {
-        role: 'reviewer',
-        specific_models: true,
-        allowed_models: ['faq', 'docs'],
-      },
-      workspace: { plan: 'business' },
+    setEnterpriseBridgeForTesting({
+      normalizeProjectMemberAccess: ({ role, specificModels, allowedModels }) => ({
+        role: (role ?? 'editor'),
+        specificModels: !!specificModels,
+        allowedModels: allowedModels ?? [],
+      }),
+    } as never)
+    vi.stubGlobal('useDatabaseProvider', () => ({
+      getUserClient: () => createSupabaseClient({
+        workspaceMember: { role: 'member' },
+        projectMember: {
+          role: 'reviewer',
+          specific_models: true,
+          allowed_models: ['faq', 'docs'],
+        },
+        workspace: { plan: 'business' },
+      }),
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')

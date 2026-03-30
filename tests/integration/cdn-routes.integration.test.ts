@@ -1,5 +1,35 @@
-import { describe, expect, it, vi } from 'vitest'
-import { withTestServer } from '../helpers/http'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const providerState = vi.hoisted(() => ({
+  databaseProvider: {
+    getAdminClient: vi.fn(),
+  },
+}))
+
+const eventStreamState = vi.hoisted(() => ({
+  createEventStream: vi.fn(),
+  stream: {
+    push: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    onClosed: vi.fn(),
+    send: vi.fn().mockResolvedValue('stream-sent'),
+  },
+}))
+
+vi.mock('h3', async () => {
+  const actual = await vi.importActual<typeof import('h3')>('h3')
+
+  return {
+    ...actual,
+    createEventStream: eventStreamState.createEventStream,
+  }
+})
+
+vi.mock('../../server/utils/providers', () => {
+  return {
+    useDatabaseProvider: vi.fn(() => providerState.databaseProvider),
+  }
+})
 
 async function loadPublicCDNHandler() {
   return (await import('../../server/api/cdn/v1/[projectId]/[...path].get')).default
@@ -26,17 +56,42 @@ async function loadCDNKeyCreateHandler() {
 }
 
 describe('CDN route integration', () => {
+  beforeEach(() => {
+    providerState.databaseProvider.getAdminClient.mockReset()
+    eventStreamState.createEventStream.mockReset()
+    eventStreamState.stream.push.mockClear()
+    eventStreamState.stream.close.mockClear()
+    eventStreamState.stream.onClosed.mockClear()
+    eventStreamState.stream.send.mockClear()
+  })
+
   it('returns 304 when the requested CDN object matches the provided ETag', async () => {
+    const event = {} as never
+    const setResponseHeader = vi.fn()
+    const setResponseStatus = vi.fn()
+
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'projectId') return 'project-1'
       if (key === 'path') return 'models/posts'
       return undefined
     }))
+    vi.stubGlobal('getHeader', vi.fn((_: unknown, key: string) => {
+      if (key === 'authorization') return 'Bearer crn_live_example'
+      if (key === 'if-none-match') return 'etag-1'
+      return undefined
+    }))
+    vi.stubGlobal('setResponseHeader', setResponseHeader)
+    vi.stubGlobal('setResponseStatus', setResponseStatus)
     vi.stubGlobal('validateCDNKey', vi.fn().mockResolvedValue({
       projectId: 'project-1',
       keyId: 'key-1',
       rateLimitPerHour: 60,
       allowedOrigins: [],
+    }))
+    vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
+      allowed: true,
+      remaining: 59,
+      retryAfterMs: 0,
     }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
@@ -47,7 +102,7 @@ describe('CDN route integration', () => {
         data: Buffer.from('{"ok":true}'),
       }),
     }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
+    providerState.databaseProvider.getAdminClient.mockReturnValue({
       from: vi.fn((table: string) => {
         if (table === 'projects') {
           return {
@@ -75,26 +130,22 @@ describe('CDN route integration', () => {
 
         throw new Error(`Unexpected table: ${table}`)
       }),
-    }))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/cdn/v1/project-1/models/posts', handler: await loadPublicCDNHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/cdn/v1/project-1/models/posts', {
-        headers: {
-          'authorization': 'Bearer crn_live_example',
-          'if-none-match': 'etag-1',
-        },
-      })
-
-      expect(response.status).toBe(304)
-      expect(await response.text()).toBe('')
     })
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler(event)).resolves.toBe('')
+    expect(setResponseStatus).toHaveBeenCalledWith(event, 304)
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'X-RateLimit-Remaining', '59')
   })
 
   it('blocks CDN reads from disallowed origins', async () => {
+    const event = {} as never
+    vi.stubGlobal('getHeader', vi.fn((_: unknown, key: string) => {
+      if (key === 'authorization') return 'Bearer crn_live_example'
+      if (key === 'origin') return 'https://evil.example'
+      return undefined
+    }))
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'projectId') return 'project-1'
       if (key === 'path') return 'models/posts'
@@ -107,26 +158,82 @@ describe('CDN route integration', () => {
       allowedOrigins: ['https://allowed.example'],
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/cdn/v1/project-1/models/posts', handler: await loadPublicCDNHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/cdn/v1/project-1/models/posts', {
-        headers: {
-          authorization: 'Bearer crn_live_example',
-          origin: 'https://evil.example',
-        },
-      })
+    const handler = await loadPublicCDNHandler()
 
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 403,
-      })
+    await expect(handler(event)).rejects.toMatchObject({
+      statusCode: 403,
     })
   })
 
+  it('returns binary CDN payloads as raw buffers without UTF-8 conversion', async () => {
+    const event = {} as never
+    const binary = Buffer.from([0, 255, 16, 32, 128, 64])
+    const setResponseHeader = vi.fn()
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'projectId') return 'project-1'
+      if (key === 'path') return 'media/logo.png'
+      return undefined
+    }))
+    vi.stubGlobal('getHeader', vi.fn((_: unknown, key: string) => {
+      if (key === 'authorization') return 'Bearer crn_live_example'
+      return undefined
+    }))
+    vi.stubGlobal('setResponseHeader', setResponseHeader)
+    vi.stubGlobal('validateCDNKey', vi.fn().mockResolvedValue({
+      projectId: 'project-1',
+      keyId: 'key-1',
+      rateLimitPerHour: 60,
+      allowedOrigins: [],
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockImplementation((_: string, feature: string) => feature !== 'cdn.metering'))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({
+      getObject: vi.fn().mockResolvedValue({
+        etag: 'etag-binary',
+        contentType: 'image/png',
+        data: binary,
+      }),
+    }))
+    providerState.databaseProvider.getAdminClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === 'projects') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: { workspace_id: 'workspace-1', cdn_enabled: true },
+                }),
+              })),
+            })),
+          }
+        }
+
+        if (table === 'workspaces') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: { plan: 'pro' },
+                }),
+              })),
+            })),
+          }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    })
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler(event)).resolves.toEqual(binary)
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Content-Type', 'image/png')
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'ETag', 'etag-binary')
+  })
+
   it('rejects enabling CDN on plans without the delivery feature', async () => {
+    const event = {} as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-1'
@@ -136,6 +243,7 @@ describe('CDN route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_enabled: true }))
     vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
@@ -155,25 +263,15 @@ describe('CDN route integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/cdn/settings', handler: await loadCDNSettingsPatchHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-1/cdn/settings', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ cdn_enabled: true }),
-      })
+    const handler = await loadCDNSettingsPatchHandler()
 
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 403,
-      })
+    await expect(handler(event)).rejects.toMatchObject({
+      statusCode: 403,
     })
   })
 
   it('loads CDN settings only when the project belongs to the workspace path', async () => {
+    const event = {} as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-1'
@@ -204,22 +302,16 @@ describe('CDN route integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/cdn/settings', handler: await loadCDNSettingsGetHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-1/cdn/settings')
+    const handler = await loadCDNSettingsGetHandler()
 
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        cdn_enabled: true,
-        cdn_branch: 'release',
-      })
+    await expect(handler(event)).resolves.toEqual({
+      cdn_enabled: true,
+      cdn_branch: 'release',
     })
   })
 
   it('returns 404 when creating a CDN key through the wrong workspace path', async () => {
+    const event = {} as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-foreign'
@@ -229,6 +321,7 @@ describe('CDN route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ name: 'Public site key' }))
     vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
       from: vi.fn((table: string) => {
@@ -248,26 +341,17 @@ describe('CDN route integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-foreign/cdn/keys', handler: await loadCDNKeyCreateHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-foreign/cdn/keys', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Public site key' }),
-      })
+    const handler = await loadCDNKeyCreateHandler()
 
-      expect(response.status).toBe(404)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 404,
-      })
+    await expect(handler(event)).rejects.toMatchObject({
+      statusCode: 404,
     })
   })
 
   it('streams a successful manual CDN rebuild', async () => {
+    const event = {} as never
     const updateBuildRecord = vi.fn().mockResolvedValue({ error: null })
+    eventStreamState.createEventStream.mockReturnValue(eventStreamState.stream)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
@@ -344,25 +428,20 @@ describe('CDN route integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/cdn/builds/trigger', handler: await loadCDNBuildTriggerHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-1/cdn/builds/trigger', {
-        method: 'POST',
-      })
-      const payload = await response.text()
+    const handler = await loadCDNBuildTriggerHandler()
+    await expect(handler(event)).resolves.toBe('stream-sent')
+    await Promise.resolve()
+    await Promise.resolve()
 
-      expect(response.status).toBe(200)
-      expect(payload).toContain('"phase":"upload"')
-      expect(payload).toContain('"phase":"complete"')
-      expect(payload).toContain('Build complete')
-      expect(updateBuildRecord).toHaveBeenCalledWith('id', 'build-1')
-    })
+    expect(updateBuildRecord).toHaveBeenCalledWith('id', 'build-1')
+    expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"upload"'))
+    expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"complete"'))
+    expect(eventStreamState.stream.close).toHaveBeenCalledOnce()
+    expect(eventStreamState.stream.onClosed).toHaveBeenCalledOnce()
   })
 
   it('returns 404 for CDN build history requested through the wrong workspace path', async () => {
+    const event = {} as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-foreign'
@@ -402,17 +481,10 @@ describe('CDN route integration', () => {
       }),
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-foreign/cdn/builds', handler: await loadCDNBuildsHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-foreign/cdn/builds')
+    const handler = await loadCDNBuildsHandler()
 
-      expect(response.status).toBe(404)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 404,
-      })
+    await expect(handler(event)).rejects.toMatchObject({
+      statusCode: 404,
     })
   })
 })
