@@ -4,26 +4,6 @@ import type { FieldDef } from '@contentrain/types'
 import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from 'radix-vue'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
-const { t } = useContent()
-const { healthScore, hasIssues, criticalCount, errorCount, warningCount } = useProjectHealth()
-const brain = useContentBrain()
-
-// Check if active model has form enabled (form config is on raw model definition)
-const isFormEnabled = computed(() => {
-  if (!props.activeModelId) return false
-  const rawModel = brain.models.value.find(m => m.id === props.activeModelId)
-  if (!rawModel) return false
-  const form = (rawModel as unknown as { form?: { enabled?: boolean } }).form
-  return form?.enabled === true
-})
-
-const modelSubTab = ref<'content' | 'submissions'>('content')
-
-// Reset sub-tab when model changes
-watch(() => props.activeModelId, () => {
-  modelSubTab.value = 'content'
-})
-
 interface SnapshotModel {
   readonly id: string
   readonly name: string
@@ -80,6 +60,26 @@ const emit = defineEmits<{
   'branchReject': []
   'vocabularySave': [terms: Record<string, Record<string, string> | null>]
 }>()
+
+const { t } = useContent()
+const { healthScore, hasIssues, criticalCount, errorCount, warningCount } = useProjectHealth()
+const brain = useContentBrain()
+
+// Check if active model has form enabled (form config is on raw model definition)
+const isFormEnabled = computed(() => {
+  if (!props.activeModelId) return false
+  const rawModel = brain.models.value.find(m => m.id === props.activeModelId)
+  if (!rawModel) return false
+  const form = (rawModel as unknown as { form?: { enabled?: boolean } }).form
+  return form?.enabled === true
+})
+
+const modelSubTab = ref<'content' | 'submissions'>('content')
+
+// Reset sub-tab when model changes
+watch(() => props.activeModelId, () => {
+  modelSubTab.value = 'content'
+})
 
 // Locale from config
 const supportedLocales = computed(() => {
