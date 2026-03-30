@@ -7,10 +7,10 @@
  * LICENSE: Proprietary — Contentrain Enterprise Edition
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { DatabaseClientBridge } from '../../server/providers/database'
 
 export async function trackCDNUsage(
-  admin: SupabaseClient,
+  admin: DatabaseClientBridge,
   projectId: string,
   apiKeyId: string,
   responseSizeBytes: number,
@@ -58,7 +58,7 @@ export async function trackCDNUsage(
  * Get monthly usage for a project.
  */
 export async function getMonthlyUsage(
-  admin: SupabaseClient,
+  admin: DatabaseClientBridge,
   projectId: string,
   month?: string,
 ): Promise<{ requestCount: number, bandwidthBytes: number }> {

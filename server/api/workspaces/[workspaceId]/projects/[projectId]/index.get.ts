@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = useDatabaseProvider().getUserClient(session.accessToken)
 
   const { data, error } = await client
     .from('projects')

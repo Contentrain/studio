@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
   if (acceptedCache.has(cacheKey)) return
 
   try {
-    const admin = useSupabaseAdmin()
+    const admin = useDatabaseProvider().getAdminClient()
 
     // Update workspace_members accepted_at
     const { data } = await admin

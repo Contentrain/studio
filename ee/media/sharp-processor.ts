@@ -8,8 +8,8 @@
  */
 
 import { createHash } from 'node:crypto'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CDNProvider } from '../../server/providers/cdn'
+import type { DatabaseClientBridge } from '../../server/providers/database'
 import type {
   MediaAsset,
   MediaListOptions,
@@ -35,7 +35,7 @@ import { calculateBlurhash } from './blurhash-calculator'
 
 export interface SharpMediaProviderConfig {
   cdn: CDNProvider
-  admin: SupabaseClient
+  admin: DatabaseClientBridge
 }
 
 function rowToAsset(row: ReturnType<typeof getMediaAsset> extends Promise<infer T> ? NonNullable<T> : never, usedIn: MediaUsageRef[] = []): MediaAsset {

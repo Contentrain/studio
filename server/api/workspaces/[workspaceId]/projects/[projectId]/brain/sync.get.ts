@@ -11,6 +11,7 @@ import type { ModelDefinition } from '@contentrain/types'
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
 
@@ -18,7 +19,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const { git, contentRoot } = await resolveProjectContext(
-    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+    db.getUserClient(session.accessToken), workspaceId, projectId,
   )
 
   const query = getQuery(event) as { treeSha?: string }

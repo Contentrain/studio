@@ -3,6 +3,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const assetId = getRouterParam(event, 'assetId')
@@ -10,7 +11,7 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !assetId)
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = db.getUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
   const media = useMediaProvider()

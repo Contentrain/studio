@@ -27,7 +27,7 @@ export function createAnthropicProvider(): AIProvider {
         messages: toAnthropicMessages(request.messages),
         tools: toAnthropicTools(request.tools),
         max_tokens: request.maxTokens,
-      })
+      }, { signal: request.abortSignal })
 
       let currentToolId: string | undefined
       let currentToolName: string | undefined
@@ -117,7 +117,7 @@ export function createAnthropicProvider(): AIProvider {
         messages: toAnthropicMessages(request.messages),
         tools: toAnthropicTools(request.tools),
         max_tokens: request.maxTokens,
-      })
+      }, { signal: request.abortSignal })
 
       return {
         content: fromAnthropicContent(response.content),

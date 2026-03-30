@@ -5,11 +5,5 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId)
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-
-  // Only owner/admin can see full member roster (prevents email exposure to regular members)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
-
-  // Admin client for complete list
-  return listWorkspaceMembers(useSupabaseAdmin(), workspaceId)
+  return useDatabaseProvider().listWorkspaceMembers(session.accessToken, session.user.id, workspaceId)
 })

@@ -4,6 +4,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const branch = getRouterParam(event, 'branch')
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('branches.reject_forbidden') })
 
   const { git, contentRoot } = await resolveProjectContext(
-    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+    db.getUserClient(session.accessToken), workspaceId, projectId,
   )
 
   const engine = createContentEngine({ git, contentRoot })

@@ -1,5 +1,4 @@
-import { Octokit } from '@octokit/rest'
-import { createAppAuth } from '@octokit/auth-app'
+import { useDatabaseProvider, useGitAppProvider } from '../../utils/providers'
 
 /**
  * Create a new repository from a Contentrain starter template.
@@ -14,6 +13,7 @@ import { createAppAuth } from '@octokit/auth-app'
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const body = await readBody<{
     workspaceId: string
     templateRepo: string // e.g. "contentrain-starter-astro-blog"
@@ -29,50 +29,29 @@ export default defineEventHandler(async (event) => {
   if (!/^[a-z0-9][a-z0-9._-]{0,99}$/i.test(body.name))
     throw createError({ statusCode: 400, message: errorMessage('github.repo_name_invalid') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-
-  // Only owner/admin can create repos
-  await requireWorkspaceRole(client, session.user.id, body.workspaceId, ['owner', 'admin'])
-
-  const workspace = await getWorkspace(client, body.workspaceId)
+  const workspace = await db.getWorkspaceForUser(
+    session.accessToken,
+    session.user.id,
+    body.workspaceId,
+    ['owner', 'admin'],
+    'id, github_installation_id',
+  )
 
   if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
-  const config = useRuntimeConfig()
-  const privateKey = Buffer.from(config.github.privateKey, 'base64').toString('utf-8')
-
-  const octokit = new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId: config.github.appId,
-      privateKey,
-      installationId: workspace.github_installation_id,
-    },
-  })
-
-  // Resolve installation target (org or user account)
-  const { data: installation } = await octokit.apps.getInstallation({
-    installation_id: workspace.github_installation_id,
-  })
-
-  const targetOwner = (installation.account as { login?: string })?.login
-  if (!targetOwner)
-    throw createError({ statusCode: 500, message: errorMessage('github.owner_not_resolved') })
+  const gitApp = useGitAppProvider(workspace.github_installation_id as number)
 
   // Create repo from template
   let newRepo
   try {
-    const { data } = await octokit.repos.createUsingTemplate({
-      template_owner: 'Contentrain',
-      template_repo: body.templateRepo,
-      owner: targetOwner,
+    newRepo = await gitApp.createRepositoryFromTemplate({
+      templateOwner: 'Contentrain',
+      templateRepo: body.templateRepo,
       name: body.name,
       private: body.isPrivate ?? false,
-      description: body.description || undefined,
-      include_all_branches: false,
+      description: body.description,
     })
-    newRepo = data
   }
   catch (e: unknown) {
     const err = e as { status?: number, response?: { data?: { message?: string } } }
@@ -90,26 +69,17 @@ export default defineEventHandler(async (event) => {
 
   // Check if the App can access the newly created repo
   // (may fail if installation is set to "Only select repositories")
-  let needsAccess = false
-  try {
-    await octokit.repos.get({
-      owner: newRepo.owner.login,
-      repo: newRepo.name,
-    })
-  }
-  catch {
-    needsAccess = true
-  }
+  const needsAccess = !(await gitApp.canAccessRepository(newRepo.owner, newRepo.name))
 
   return {
     id: newRepo.id,
-    fullName: newRepo.full_name,
+    fullName: newRepo.fullName,
     name: newRepo.name,
-    owner: newRepo.owner.login,
+    owner: newRepo.owner,
     private: newRepo.private,
-    defaultBranch: newRepo.default_branch || 'main',
+    defaultBranch: newRepo.defaultBranch || 'main',
     description: newRepo.description,
-    htmlUrl: newRepo.html_url,
+    htmlUrl: newRepo.htmlUrl,
     needsAccess,
   }
 })

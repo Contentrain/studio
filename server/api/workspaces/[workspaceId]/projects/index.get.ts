@@ -14,8 +14,9 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId)
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-  const admin = useSupabaseAdmin()
+  const db = useDatabaseProvider()
+  const client = db.getUserClient(session.accessToken)
+  const admin = db.getAdminClient()
 
   // Get user's workspace role
   const { data: membership } = await client

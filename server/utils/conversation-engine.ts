@@ -99,7 +99,7 @@ export async function* runConversationLoop(
 
     if (isFirstIteration) {
       for await (const streamEvent of aiProvider.streamCompletion(
-        { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 4096 },
+        { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 4096, abortSignal: config.abortSignal },
         config.apiKey,
       )) {
         switch (streamEvent.type) {
@@ -129,7 +129,7 @@ export async function* runConversationLoop(
     }
     else {
       const response = await aiProvider.createCompletion(
-        { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 2048 },
+        { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 2048, abortSignal: config.abortSignal },
         config.apiKey,
       )
       totalInputTokens += response.usage.inputTokens
@@ -165,6 +165,12 @@ export async function* runConversationLoop(
     const toolResultBlocks: AIContentBlock[] = []
 
     for (const tc of currentToolCalls) {
+      // Stop tool execution if client disconnected
+      if (config.abortSignal?.aborted) {
+        toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify({ error: 'Request cancelled' }) })
+        continue
+      }
+
       // State machine guard
       const stateCheck = checkStateTransition(toolCtx.phase, tc.name)
       if (!stateCheck.allowed) {
@@ -228,8 +234,8 @@ export async function executeToolWithAutoMerge(
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
   const affected: AffectedResources = emptyAffected()
-  // Free plan: auto-publish on save. Pro+: draft (user publishes manually or via review merge)
-  const autoPublish = plan === 'free'
+  // Plans without review workflow support always auto-publish on save.
+  const autoPublish = !hasFeature(plan, 'workflow.review')
 
   try {
     let result: unknown
@@ -372,7 +378,7 @@ export async function executeToolWithAutoMerge(
         const subModelId = params.modelId as string
         const subStatus = (params.status as string) ?? 'pending'
         const subLimit = Math.min(Number(params.limit ?? 20), 100)
-        const admin = useSupabaseAdmin()
+        const admin = useDatabaseProvider().getAdminClient()
         const subs = await listFormSubmissions(admin, workspaceId, projectId, subModelId, { status: subStatus, limit: subLimit })
         result = subs.total > 0
           ? { submissions: subs.submissions, total: subs.total, message: agentMessage('forms.submission_list', { count: subs.total, status: subStatus }) }
@@ -382,7 +388,7 @@ export async function executeToolWithAutoMerge(
 
       case 'approve_submission': {
         const approveId = params.submissionId as string
-        const admin = useSupabaseAdmin()
+        const admin = useDatabaseProvider().getAdminClient()
         const sub = await getFormSubmission(admin, approveId)
         if (!sub || sub.workspace_id !== workspaceId || sub.project_id !== projectId) {
           result = { error: errorMessage('forms.submission_not_found') }
@@ -396,7 +402,7 @@ export async function executeToolWithAutoMerge(
 
       case 'reject_submission': {
         const rejectId = params.submissionId as string
-        const admin = useSupabaseAdmin()
+        const admin = useDatabaseProvider().getAdminClient()
         const sub = await getFormSubmission(admin, rejectId)
         if (!sub || sub.workspace_id !== workspaceId || sub.project_id !== projectId) {
           result = { error: errorMessage('forms.submission_not_found') }

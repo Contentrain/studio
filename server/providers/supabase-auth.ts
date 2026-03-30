@@ -1,4 +1,5 @@
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult } from './auth'
+import { createSupabaseAdminClient } from './supabase-db'
 
 /**
  * Supabase implementation of AuthProvider.
@@ -9,7 +10,7 @@ import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResu
 export function createSupabaseAuthProvider(): AuthProvider {
   return {
     async validateToken(accessToken: string): Promise<AuthUser | null> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.getUser(accessToken)
 
       if (error || !data.user)
@@ -19,7 +20,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async refreshSession(refreshToken: string): Promise<AuthTokens | null> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.refreshSession({ refresh_token: refreshToken })
 
       if (error || !data.session)
@@ -33,7 +34,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async getOAuthRedirectUrl(provider: 'github' | 'google', redirectTo: string): Promise<OAuthRedirectResult> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const config = useRuntimeConfig()
 
       // Generate CSRF state token — stored by caller, validated on code exchange
@@ -60,7 +61,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     async exchangeCode(code: string, _state?: string): Promise<AuthSession> {
       // State validation is done at the route level (session cookie comparison)
       // Supabase PKCE handles the code_verifier/code_challenge exchange
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.exchangeCodeForSession(code)
 
       if (error || !data.session)
@@ -77,7 +78,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async exchangeTokens(accessToken: string, refreshToken?: string): Promise<AuthSession> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.getUser(accessToken)
 
       if (error || !data.user)
@@ -102,7 +103,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async sendMagicLink(email: string, redirectTo: string): Promise<void> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const config = useRuntimeConfig()
 
       const { error } = await admin.auth.signInWithOtp({
@@ -117,7 +118,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async inviteUserByEmail(email: string, options?: { redirectTo?: string }): Promise<{ userId: string }> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo: options?.redirectTo,
       })
@@ -129,7 +130,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async getUserById(userId: string): Promise<AuthUser | null> {
-      const admin = useSupabaseAdmin()
+      const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.admin.getUserById(userId)
 
       if (error || !data.user)

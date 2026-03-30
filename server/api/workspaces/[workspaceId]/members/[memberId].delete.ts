@@ -4,41 +4,13 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const memberId = getRouterParam(event, 'memberId')
 
   if (!workspaceId || !memberId)
     throw createError({ statusCode: 400, message: errorMessage('validation.member_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
-
-  // Use admin client — RLS only allows owner, but route permits admin too
-  const admin = useSupabaseAdmin()
-
-  // Prevent removing the owner
-  const { data: target } = await admin
-    .from('workspace_members')
-    .select('role')
-    .eq('id', memberId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (!target)
-    throw createError({ statusCode: 404, message: errorMessage('members.not_found') })
-
-  if (target.role === 'owner')
-    throw createError({ statusCode: 400, message: errorMessage('members.cannot_remove_owner') })
-
-  const { error } = await admin
-    .from('workspace_members')
-    .delete()
-    .eq('id', memberId)
-    .eq('workspace_id', workspaceId)
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
-
+  await db.deleteWorkspaceMember(session.accessToken, session.user.id, workspaceId, memberId)
   return { deleted: true }
 })

@@ -18,11 +18,12 @@ export default defineEventHandler(async (event) => {
   if (!['editor', 'reviewer', 'viewer'].includes(body.role))
     throw createError({ statusCode: 400, message: errorMessage('members.invalid_project_role') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const db = useDatabaseProvider()
+  const client = db.getUserClient(session.accessToken)
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
   const { data: project } = await admin
     .from('projects')
     .select('id')
@@ -36,15 +37,12 @@ export default defineEventHandler(async (event) => {
   // Plan-based role gating: reviewer/viewer require Pro+, specificModels requires Pro+
   const { data: ws } = await client.from('workspaces').select('plan, name, slug').eq('id', workspaceId).single()
   const plan = getWorkspacePlan(ws ?? {})
-
-  if (body.role === 'reviewer' && !hasFeature(plan, 'roles.reviewer'))
-    throw createError({ statusCode: 403, message: errorMessage('members.reviewer_upgrade') })
-
-  if (body.role === 'viewer' && !hasFeature(plan, 'roles.viewer'))
-    throw createError({ statusCode: 403, message: errorMessage('members.viewer_upgrade') })
-
-  if (body.specificModels && !hasFeature(plan, 'roles.specific_models'))
-    throw createError({ statusCode: 403, message: errorMessage('members.model_access_upgrade') })
+  const normalizedAccess = await normalizeEnterpriseProjectMemberAccess({
+    plan,
+    role: body.role,
+    specificModels: body.specificModels ?? false,
+    allowedModels: body.allowedModels ?? [],
+  })
 
   const { userId } = await inviteOrLookupUser(body.email, {
     workspaceName: ws?.name ?? '',
@@ -69,9 +67,9 @@ export default defineEventHandler(async (event) => {
     .insert({
       project_id: projectId,
       user_id: userId,
-      role: body.role,
-      specific_models: body.specificModels ?? false,
-      allowed_models: body.allowedModels ?? [],
+      role: normalizedAccess.role,
+      specific_models: normalizedAccess.specificModels,
+      allowed_models: normalizedAccess.allowedModels,
       invited_email: body.email,
       accepted_at: null, // Pending until user accesses project
     })

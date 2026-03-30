@@ -1,3 +1,5 @@
+import { useDatabaseProvider, useGitProvider } from '../../utils/providers'
+
 /**
  * Scan a repository for .contentrain/ and detect framework.
  *
@@ -8,6 +10,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const query = getQuery(event) as {
     workspaceId?: string
     owner?: string
@@ -17,19 +20,24 @@ export default defineEventHandler(async (event) => {
   if (!query.workspaceId || !query.owner || !query.repo)
     throw createError({ statusCode: 400, message: errorMessage('github.scan_params_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const workspace = await db.getWorkspaceForUser(
+    session.accessToken,
+    session.user.id,
+    query.workspaceId,
+    ['owner', 'admin'],
+    'id, github_installation_id',
+  )
 
-  // Only owner/admin can scan repos
-  await requireWorkspaceRole(client, session.user.id, query.workspaceId, ['owner', 'admin'])
+  const installationId = typeof workspace?.github_installation_id === 'number'
+    ? workspace.github_installation_id
+    : null
 
-  const workspace = await getWorkspace(client, query.workspaceId)
-
-  if (!workspace?.github_installation_id)
+  if (!installationId)
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
   // Create GitProvider for this repo
   const git = useGitProvider({
-    installationId: workspace.github_installation_id,
+    installationId,
     owner: query.owner,
     repo: query.repo,
   })

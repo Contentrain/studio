@@ -5,14 +5,15 @@ import { createEventStream } from 'h3'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
-  const admin = useSupabaseAdmin()
+  const client = db.getUserClient(session.accessToken)
+  const admin = db.getAdminClient()
 
   // Verify owner/admin
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])

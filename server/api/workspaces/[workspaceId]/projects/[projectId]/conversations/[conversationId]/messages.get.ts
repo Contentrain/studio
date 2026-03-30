@@ -4,12 +4,13 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const conversationId = getRouterParam(event, 'conversationId')
 
   if (!conversationId)
     throw createError({ statusCode: 400, message: errorMessage('validation.conversation_id_required') })
 
-  const client = useSupabaseUserClient(session.accessToken)
+  const client = db.getUserClient(session.accessToken)
 
   // Verify conversation belongs to user (RLS handles this, but explicit check for clear error)
   const projectId = getRouterParam(event, 'projectId')

@@ -21,6 +21,7 @@ interface FormConfig {
 }
 
 export default defineEventHandler(async (event) => {
+  const db = useDatabaseProvider()
   // CORS headers for public embedding
   setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
   setResponseHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -42,7 +43,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 
   // Lookup project → workspace → plan (admin bypasses RLS)
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
 
   const { data: project } = await admin
     .from('projects')

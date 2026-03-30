@@ -5,6 +5,7 @@ import { toAITools } from '~~/server/utils/agent-types'
 import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
+import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 
 /**
  * Chat SSE endpoint — Bounded Task Executor.
@@ -36,8 +37,9 @@ export default defineEventHandler(async (event) => {
     activeBranch: null,
   }
 
-  const client = useSupabaseUserClient(session.accessToken)
-  const admin = useSupabaseAdmin()
+  const db = useDatabaseProvider()
+  const client = db.getUserClient(session.accessToken)
+  const admin = db.getAdminClient()
 
   // === RESOLVE PROJECT + WORKSPACE ===
   const { project, workspace, git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
@@ -74,18 +76,18 @@ export default defineEventHandler(async (event) => {
   let apiKey: string
   let usageSource: 'byoa' | 'studio' = 'studio'
 
-  if (hasFeature(plan, 'ai.byoa')) {
-    const encryptedByoaKey = await getBYOAKey(client, workspaceId, session.user.id)
-    if (encryptedByoaKey) {
-      apiKey = decryptApiKey(encryptedByoaKey, runtimeConfig.sessionSecret)
-      usageSource = 'byoa'
-    }
-    else if (runtimeConfig.anthropic.apiKey) {
-      apiKey = runtimeConfig.anthropic.apiKey
-    }
-    else {
-      throw createError({ statusCode: 400, message: errorMessage('chat.no_api_key') })
-    }
+  const enterpriseKey = await resolveEnterpriseChatApiKey({
+    workspaceId,
+    userId: session.user.id,
+    accessToken: session.accessToken,
+    plan,
+    sessionSecret: runtimeConfig.sessionSecret,
+    studioApiKey: runtimeConfig.anthropic.apiKey,
+  })
+
+  if (enterpriseKey) {
+    apiKey = enterpriseKey.apiKey
+    usageSource = enterpriseKey.usageSource
   }
   else if (runtimeConfig.anthropic.apiKey) {
     apiKey = runtimeConfig.anthropic.apiKey

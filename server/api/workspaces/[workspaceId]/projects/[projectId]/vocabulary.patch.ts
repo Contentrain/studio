@@ -5,6 +5,7 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
+  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const body = await readBody<{ terms: Record<string, Record<string, string> | null> }>(event)
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('vocabulary.modify_forbidden') })
 
   const { git, contentRoot } = await resolveProjectContext(
-    useSupabaseUserClient(session.accessToken), workspaceId, projectId,
+    db.getUserClient(session.accessToken), workspaceId, projectId,
   )
 
   const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'

@@ -113,6 +113,7 @@ function getClientIp(event: Parameters<typeof getHeader>[0]): string {
 }
 
 export default defineEventHandler(async (event) => {
+  const db = useDatabaseProvider()
   // CORS headers for public embedding
   setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
   setResponseHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -144,7 +145,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('forms.data_required') })
 
   // Admin client (bypasses RLS for public endpoint)
-  const admin = useSupabaseAdmin()
+  const admin = db.getAdminClient()
 
   // Lookup project → workspace → plan
   const { data: project } = await admin
