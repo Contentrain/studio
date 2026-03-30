@@ -68,11 +68,19 @@ export function invalidateBrainCache(projectId: string): void {
 
 /**
  * Compute a simple hash from tree entries for delta detection.
+ * Tracks .contentrain/ files + any custom content_path locations from models.
  */
-function computeTreeHash(tree: TreeEntry[]): string {
-  // Only track .contentrain/ files — not the entire repo
+function computeTreeHash(tree: TreeEntry[], extraPaths?: string[]): string {
   const contentFiles = tree
-    .filter(e => e.type === 'blob' && e.path.includes('.contentrain/'))
+    .filter((e) => {
+      if (e.type !== 'blob') return false
+      if (e.path.includes('.contentrain/')) return true
+      // Include files matching custom content_path locations
+      if (extraPaths) {
+        return extraPaths.some(p => e.path.startsWith(p))
+      }
+      return false
+    })
     .sort((a, b) => a.path.localeCompare(b.path))
   return contentFiles.map(e => `${e.path}:${e.sha}`).join('|')
 }
@@ -92,7 +100,11 @@ export async function getOrBuildBrainCache(
     // Quick SHA check via tree
     try {
       const tree = await git.getTree(CONTENT_REF).catch(() => git.getTree())
-      const currentHash = computeTreeHash(tree)
+      // Include custom content_path locations in hash
+      const extraPaths = [...cached.models.values()]
+        .filter(m => m.content_path)
+        .map(m => m.content_path!)
+      const currentHash = computeTreeHash(tree, extraPaths)
       if (cached.treeSha === currentHash) {
         return cached
       }
@@ -219,6 +231,12 @@ export async function buildBrainSnapshot(
     // eslint-disable-next-line no-console
     console.error(`[brain] Failed to list models directory:`, e)
   }
+
+  // Recompute tree hash including custom content_paths from models
+  const extraContentPaths = [...models.values()]
+    .filter(m => m.content_path)
+    .map(m => m.content_path!)
+  const finalTreeSha = computeTreeHash(tree, extraContentPaths)
 
   // 4. Read all content + meta for each model
   const content = new Map<string, unknown>()
@@ -363,7 +381,7 @@ export async function buildBrainSnapshot(
   catch { /* no context */ }
 
   const brain: BrainCacheEntry = {
-    treeSha,
+    treeSha: finalTreeSha,
     config,
     models,
     content,

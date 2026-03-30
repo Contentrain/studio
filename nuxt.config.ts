@@ -37,6 +37,7 @@ export default defineNuxtConfig({
     },
     public: {
       siteUrl: 'http://localhost:3000',
+      githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
     },
   },
 

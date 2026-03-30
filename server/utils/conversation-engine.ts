@@ -34,6 +34,7 @@ export interface ConversationConfig {
   tools: AITool[]
   maxToolIterations?: number
   maxToolResultLength?: number
+  abortSignal?: AbortSignal
 }
 
 // ─── Tool Execution Context ───
@@ -89,6 +90,8 @@ export async function* runConversationLoop(
   let iteration = 0
 
   while (iteration < maxIterations) {
+    if (config.abortSignal?.aborted) break
+
     iteration++
     const isFirstIteration = iteration === 1
     const currentToolCalls: Array<{ id: string, name: string, input: unknown }> = []
@@ -248,6 +251,10 @@ export async function executeToolWithAutoMerge(
           break
         }
         const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
+          result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
         const key = `${modelId}:${locale}`
         const contentData = brainData.content.get(key) ?? null
         const metaData = brainData.meta.get(key) ?? null
@@ -268,6 +275,10 @@ export async function executeToolWithAutoMerge(
           break
         }
         const locale = (params.locale as string) ?? 'en'
+        if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
+          result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
         let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }
 
         // Document kind: expects { slug, frontmatter/data, body }
@@ -301,7 +312,15 @@ export async function executeToolWithAutoMerge(
 
       case 'delete_content': {
         const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
+          break
+        }
         const locale = (params.locale as string) ?? 'en'
+        if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
+          result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
         const writeResult = await engine.deleteContent(modelId, locale, params.entryIds as string[], userEmail)
         affected.models.push(modelId)
         affected.locales.push(locale)
@@ -422,8 +441,25 @@ export async function executeToolWithAutoMerge(
       }
 
       case 'copy_locale': {
+        const copyModelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(copyModelId)) {
+          result = { error: `${errorMessage('model.access_denied')}: ${copyModelId}` }
+          break
+        }
+        const fromLocale = params.from as string
+        const toLocale = params.to as string
+        if (permissions.allowedLocales?.length) {
+          if (!permissions.allowedLocales.includes(fromLocale)) {
+            result = { error: `Locale "${fromLocale}" is not allowed for this API key` }
+            break
+          }
+          if (!permissions.allowedLocales.includes(toLocale)) {
+            result = { error: `Locale "${toLocale}" is not allowed for this API key` }
+            break
+          }
+        }
         const writeResult = await engine.copyLocale(
-          params.model as string, params.from as string, params.to as string, userEmail,
+          copyModelId, fromLocale, toLocale, userEmail,
         )
         if (!writeResult.validation.valid) {
           result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
@@ -585,6 +621,10 @@ export async function executeToolWithAutoMerge(
           break
         }
         const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
+          result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
         const key = `${modelId}:${locale}`
         const contentData = brainData.content.get(key) ?? null
         const metaData = brainData.meta.get(key) ?? null
@@ -613,6 +653,7 @@ export async function executeToolWithAutoMerge(
           if (!mId || !loc) continue
           if (targetModel && mId !== targetModel) continue
           if (permissions.specificModels && !permissions.allowedModels.includes(mId)) continue
+          if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(loc)) continue
 
           const stringified = JSON.stringify(data).toLowerCase()
           if (!stringified.includes(searchQuery)) continue

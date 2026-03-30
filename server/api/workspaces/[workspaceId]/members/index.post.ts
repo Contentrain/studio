@@ -33,7 +33,9 @@ export default defineEventHandler(async (event) => {
     workspaceSlug: ws?.slug ?? '',
   })
 
-  const { data: member, error } = await client
+  // Use admin client for mutation — RLS only allows owner, but route permits admin too
+  const admin = useSupabaseAdmin()
+  const { data: member, error } = await admin
     .from('workspace_members')
     .insert({
       workspace_id: workspaceId,

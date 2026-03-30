@@ -18,8 +18,11 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner'])
 
+  // Use admin client — RLS only allows owner, but route permits admin too
+  const admin = useSupabaseAdmin()
+
   // Prevent changing owner role
-  const { data: target } = await client
+  const { data: target } = await admin
     .from('workspace_members')
     .select('role')
     .eq('id', memberId)
@@ -32,7 +35,7 @@ export default defineEventHandler(async (event) => {
   if (target.role === 'owner')
     throw createError({ statusCode: 400, message: errorMessage('members.cannot_change_owner_role') })
 
-  const { data, error } = await client
+  const { data, error } = await admin
     .from('workspace_members')
     .update({ role: body.role })
     .eq('id', memberId)

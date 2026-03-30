@@ -80,7 +80,9 @@ describe('system and workspace route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
       from: vi.fn(() => ({
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
@@ -222,7 +224,8 @@ describe('system and workspace route integration', () => {
       user: { id: 'owner-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
       from: vi.fn((table: string) => {
         if (table !== 'workspace_members') throw new Error(`Unexpected table: ${table}`)
 
@@ -265,7 +268,8 @@ describe('system and workspace route integration', () => {
       user: { id: 'owner-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
       from: vi.fn((table: string) => {
         if (table !== 'workspace_members') throw new Error(`Unexpected table: ${table}`)
 

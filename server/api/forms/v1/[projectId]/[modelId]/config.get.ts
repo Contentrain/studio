@@ -97,7 +97,8 @@ export default defineEventHandler(async (event) => {
 
   for (const [fieldId, fieldDef] of Object.entries(allFields)) {
     if (exposedFieldIds.has(fieldId)) {
-      publicFields[fieldId] = fieldDef
+      // Clone to avoid mutating brain cache
+      publicFields[fieldId] = { ...(fieldDef as unknown as Record<string, unknown>) }
     }
   }
 

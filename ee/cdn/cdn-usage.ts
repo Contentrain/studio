@@ -17,25 +17,41 @@ export async function trackCDNUsage(
 ): Promise<void> {
   const today = new Date().toISOString().substring(0, 10) // YYYY-MM-DD
 
-  // Upsert daily usage — increment counts
-  await admin.rpc('increment_cdn_usage', {
+  // Upsert daily usage — increment counts via RPC
+  const { error: rpcError } = await admin.rpc('increment_cdn_usage', {
     p_project_id: projectId,
     p_api_key_id: apiKeyId,
     p_period_start: today,
     p_request_count: 1,
     p_bandwidth_bytes: responseSizeBytes,
-  }).catch(() => {
-    // Fallback: manual upsert if RPC doesn't exist
-    admin
+  })
+
+  if (rpcError) {
+    // Fallback: read-then-update if RPC doesn't exist
+    const { data: existing } = await admin
       .from('cdn_usage')
-      .upsert({
+      .select('id, request_count, bandwidth_bytes')
+      .eq('project_id', projectId)
+      .eq('api_key_id', apiKeyId)
+      .eq('period_start', today)
+      .single()
+
+    if (existing) {
+      await admin.from('cdn_usage').update({
+        request_count: (existing.request_count ?? 0) + 1,
+        bandwidth_bytes: (existing.bandwidth_bytes ?? 0) + responseSizeBytes,
+      }).eq('id', existing.id)
+    }
+    else {
+      await admin.from('cdn_usage').insert({
         project_id: projectId,
         api_key_id: apiKeyId,
         period_start: today,
         request_count: 1,
         bandwidth_bytes: responseSizeBytes,
-      }, { onConflict: 'project_id,api_key_id,period_start' })
-  })
+      })
+    }
+  }
 }
 
 /**

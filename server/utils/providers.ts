@@ -4,12 +4,14 @@ import type { GitProvider } from '../providers/git'
 import type { CDNProvider, CDNObject } from '../providers/cdn'
 import type { MediaProvider } from '../providers/media'
 import type { EmailProvider } from '../providers/email'
-import { createSharpMediaProvider } from '../../ee/media/sharp-processor'
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createGitHubAppProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
 import { createResendEmailProvider } from '../providers/resend-email'
+// EE dependency: sharp-processor — dynamically resolved to avoid static core→ee import.
+// If ee/ is absent (core-only build), useMediaProvider() gracefully returns null.
+let _createSharpMediaProvider: typeof import('../../ee/media/sharp-processor').createSharpMediaProvider | null = null
 
 /**
  * Singleton provider instances.
@@ -116,9 +118,31 @@ export function useMediaProvider(): MediaProvider | null {
   const cdn = useCDNProvider()
   if (!cdn) return null
 
-  _mediaProvider = createSharpMediaProvider({ cdn, admin: useSupabaseAdmin() })
+  try {
+    if (!_createSharpMediaProvider) return null
+    _mediaProvider = _createSharpMediaProvider({ cdn, admin: useSupabaseAdmin() })
+  }
+  catch {
+    // EE module not available in core-only builds
+    return null
+  }
 
   return _mediaProvider
+}
+
+/**
+ * Async initialization for EE media provider.
+ * Call once during server startup (e.g., Nitro plugin) to load the EE module.
+ * After init, useMediaProvider() works synchronously.
+ */
+export async function initMediaProvider(): Promise<void> {
+  try {
+    const mod = await import('../../ee/media/sharp-processor')
+    _createSharpMediaProvider = mod.createSharpMediaProvider
+  }
+  catch {
+    // EE module not available — core-only installation
+  }
 }
 
 /**

@@ -200,6 +200,7 @@ export default defineEventHandler(async (event) => {
   // === SSE STREAM ===
   const eventStream = createEventStream(event)
   const contentEngine = createContentEngine({ git, contentRoot })
+  const abortController = new AbortController()
 
   const processChat = async () => {
     await eventStream.push(JSON.stringify({ type: 'conversation', id: conversationId }))
@@ -211,9 +212,12 @@ export default defineEventHandler(async (event) => {
 
     try {
       for await (const evt of runConversationLoop(
-        { model, apiKey, systemPrompt, messages, tools: aiTools },
+        { model, apiKey, systemPrompt, messages, tools: aiTools, abortSignal: abortController.signal },
         { engine: contentEngine, git, userEmail: session.user.email ?? '', userId: session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext, phase },
       )) {
+        // Stop processing if client disconnected
+        if (abortController.signal.aborted) break
+
         // Forward all events to SSE stream
         if (evt.type === 'done') {
           // Extract final state from done event before forwarding
@@ -273,6 +277,8 @@ export default defineEventHandler(async (event) => {
   }
 
   processChat()
-  eventStream.onClosed(() => { /* client disconnected */ })
+  eventStream.onClosed(() => {
+    abortController.abort()
+  })
   return eventStream.send()
 })

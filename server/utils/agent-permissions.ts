@@ -17,6 +17,7 @@ export interface AgentPermissions {
   projectRole: 'editor' | 'reviewer' | 'viewer' | null
   specificModels: boolean
   allowedModels: string[]
+  allowedLocales: string[]
   availableTools: string[]
 }
 
@@ -70,6 +71,7 @@ export async function resolveAgentPermissions(
       projectRole: null,
       specificModels: false,
       allowedModels: [],
+      allowedLocales: [],
       availableTools: Object.keys(TOOL_ROLES),
     }
   }
@@ -88,6 +90,7 @@ export async function resolveAgentPermissions(
       projectRole: null,
       specificModels: false,
       allowedModels: [],
+      allowedLocales: [],
       availableTools: [],
     }
   }
@@ -130,6 +133,7 @@ export async function resolveAgentPermissions(
     projectRole,
     specificModels,
     allowedModels,
+    allowedLocales: [],
     availableTools,
   }
 }

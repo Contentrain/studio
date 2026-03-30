@@ -81,5 +81,18 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'ETag', result.etag)
   setResponseHeader(event, 'X-Contentrain-Key', keyId.substring(0, 8))
 
-  return result.data.toString('utf-8')
+  // Track CDN usage (fire-and-forget, Business+ feature)
+  if (hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.metering')) {
+    import('~~/ee/cdn/cdn-usage').then(({ trackCDNUsage }) => {
+      trackCDNUsage(admin, projectId, keyId, result.data.length)
+    }).catch(() => {})
+  }
+
+  // Return binary data as-is, JSON/text as string
+  if (result.contentType === 'application/json' || result.contentType.startsWith('text/')) {
+    return result.data.toString('utf-8')
+  }
+
+  // Binary content — return Buffer directly
+  return result.data
 })

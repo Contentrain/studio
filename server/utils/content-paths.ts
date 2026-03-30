@@ -31,6 +31,11 @@ export function resolveContentPath(
 ): string {
   // Custom content_path override — files live OUTSIDE .contentrain/
   if (model.content_path) {
+    // Validate content_path — prevent path traversal
+    const normalized = model.content_path.replace(/\\/g, '/')
+    if (normalized.includes('..') || normalized.startsWith('/') || normalized.includes('//')) {
+      throw new Error(`Invalid content_path: "${model.content_path}" — path traversal detected`)
+    }
     const basePath = prefixed(ctx.contentRoot, model.content_path)
     if (model.kind === 'document') {
       if (model.i18n && slug) return `${basePath}/${slug}/${locale}.md`

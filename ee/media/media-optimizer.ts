@@ -10,6 +10,8 @@
 import sharp from 'sharp'
 import { MAX_ORIGINAL_DIMENSION } from '../../server/utils/media-variants'
 
+const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
+
 export interface OptimizeResult {
   buffer: Buffer
   width: number
@@ -37,7 +39,7 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     let svgWidth = 0
     let svgHeight = 0
     try {
-      const meta = await sharp(input).metadata()
+      const meta = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
       svgWidth = meta.width ?? 0
       svgHeight = meta.height ?? 0
     }
@@ -45,12 +47,12 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     return { buffer: input, width: svgWidth, height: svgHeight, format: 'svg', size: input.length }
   }
 
-  let pipeline = sharp(input)
+  let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT })
     .rotate() // Auto-orient from EXIF
     .withMetadata({ orientation: undefined }) // Strip EXIF but keep color profile
 
   // Get original metadata
-  const metadata = await sharp(input).metadata()
+  const metadata = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
   const { width: origWidth, height: origHeight, hasAlpha } = metadata
 
   // Cap dimensions
@@ -90,7 +92,7 @@ export async function extractMetadata(input: Buffer): Promise<{
   format: string
   hasAlpha: boolean
 }> {
-  const metadata = await sharp(input).metadata()
+  const metadata = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
   return {
     width: metadata.width ?? 0,
     height: metadata.height ?? 0,

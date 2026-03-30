@@ -5,7 +5,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // Wait for auth to initialize before making decisions
   if (state.value.loading) {
-    // Auth still loading — let the page render (auth plugin will resolve)
+    // During auth init, block protected routes — redirect to login to avoid flash of protected content
+    const isPublic = PUBLIC_ROUTES.some(route => to.path.startsWith(route))
+    if (!isPublic) {
+      return navigateTo('/auth/login')
+    }
     return
   }
 

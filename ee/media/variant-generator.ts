@@ -10,6 +10,8 @@
 import sharp from 'sharp'
 import type { VariantConfig, MediaVariant } from '../../server/providers/media'
 
+const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
+
 export interface GeneratedVariant {
   name: string
   buffer: Buffer
@@ -40,7 +42,7 @@ async function generateSingleVariant(
   name: string,
   config: VariantConfig,
 ): Promise<GeneratedVariant> {
-  let pipeline = sharp(input)
+  let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT })
 
   // Resize with fit mode
   const resizeOptions: sharp.ResizeOptions = {

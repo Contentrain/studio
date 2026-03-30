@@ -133,6 +133,7 @@ export default defineEventHandler(async (event) => {
     projectRole: keyRole === 'admin' ? null : keyRole as AgentPermissions['projectRole'],
     specificModels: keyData.specificModels,
     allowedModels: keyData.allowedModels,
+    allowedLocales: keyData.allowedLocales,
     availableTools,
   }
 
