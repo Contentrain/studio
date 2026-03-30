@@ -550,28 +550,14 @@ provide(sendChatPromptKey, sendChatPrompt)
       <!-- MODEL CONTENT -->
       <template v-else-if="panelState === 'model'">
         <!-- Form-enabled: tab switcher -->
-        <div v-if="isFormEnabled" class="flex items-center gap-1 border-b border-secondary-200 px-5 dark:border-secondary-800">
-          <button
-            type="button"
-            class="border-b-2 px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :class="modelSubTab === 'content'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-muted hover:text-body'"
-            @click="modelSubTab = 'content'"
-          >
-            {{ t('forms.tab_content') }}
-          </button>
-          <button
-            type="button"
-            class="border-b-2 px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :class="modelSubTab === 'submissions'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-muted hover:text-body'"
-            @click="modelSubTab = 'submissions'"
-          >
-            {{ t('forms.tab_submissions') }}
-          </button>
-        </div>
+        <AtomsTabBar
+          v-if="isFormEnabled"
+          v-model="modelSubTab"
+          :tabs="[
+            { value: 'content', label: t('forms.tab_content') },
+            { value: 'submissions', label: t('forms.tab_submissions') },
+          ]"
+        />
 
         <!-- Submissions tab -->
         <OrganismsSubmissionListView
