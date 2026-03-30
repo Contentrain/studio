@@ -76,8 +76,9 @@ CREATE TABLE IF NOT EXISTS public.webhooks (
   events TEXT[] NOT NULL,
   secret TEXT NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true,
-  name TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  name TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_webhooks_project ON public.webhooks(project_id);
@@ -120,3 +121,23 @@ CREATE TABLE IF NOT EXISTS public.webhook_deliveries (
 CREATE INDEX idx_webhook_deliveries_webhook ON public.webhook_deliveries(webhook_id, created_at DESC);
 CREATE INDEX idx_webhook_deliveries_pending ON public.webhook_deliveries(status, next_retry_at)
   WHERE status = 'pending';
+
+ALTER TABLE public.webhook_deliveries ENABLE ROW LEVEL SECURITY;
+
+-- Deliveries visible to workspace members (via webhook → workspace join)
+CREATE POLICY "Workspace members can view webhook deliveries"
+  ON public.webhook_deliveries FOR SELECT
+  USING (
+    webhook_id IN (
+      SELECT w.id FROM public.webhooks w
+      WHERE w.workspace_id IN (
+        SELECT wm.workspace_id FROM public.workspace_members wm
+        WHERE wm.user_id = auth.uid()
+      )
+    )
+  );
+
+-- Service role manages deliveries (insert/update from webhook engine)
+CREATE POLICY "Service role can manage webhook deliveries"
+  ON public.webhook_deliveries FOR ALL
+  USING (true);

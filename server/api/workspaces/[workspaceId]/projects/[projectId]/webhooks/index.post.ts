@@ -21,15 +21,9 @@ export default defineEventHandler(async (event) => {
   if (!body.events?.length)
     throw createError({ statusCode: 400, message: errorMessage('webhook.events_required') })
 
-  // Validate URL format
-  try {
-    const parsed = new URL(body.url)
-    if (!['http:', 'https:'].includes(parsed.protocol))
-      throw new Error('Invalid protocol')
-  }
-  catch {
-    throw createError({ statusCode: 400, message: errorMessage('webhook.url_invalid') })
-  }
+  // Validate URL format + SSRF protection
+  if (!isAllowedWebhookUrl(body.url))
+    throw createError({ statusCode: 400, message: errorMessage('webhook.url_required') })
 
   // Role + plan check
   const client = useSupabaseUserClient(session.accessToken)
@@ -69,7 +63,9 @@ export default defineEventHandler(async (event) => {
   // Generate secret
   const secret = randomBytes(32).toString('hex')
 
-  const { data, error } = await client
+  // Use admin client for INSERT (RLS has SELECT-only for users)
+  const admin = useSupabaseAdmin()
+  const { data, error } = await admin
     .from('webhooks')
     .insert({
       project_id: projectId,

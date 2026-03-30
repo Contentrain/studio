@@ -13,14 +13,17 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  // Use admin for mutations (RLS is SELECT-only for users)
+  const admin = useSupabaseAdmin()
+
   // Delete deliveries first (cascade)
-  await client
+  await admin
     .from('webhook_deliveries')
     .delete()
     .eq('webhook_id', webhookId)
 
   // Delete webhook — scoped to workspace + project for ownership verification
-  const { error } = await client
+  const { error } = await admin
     .from('webhooks')
     .delete()
     .eq('id', webhookId)

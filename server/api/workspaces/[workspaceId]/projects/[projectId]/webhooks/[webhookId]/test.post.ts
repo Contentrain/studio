@@ -14,6 +14,11 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  // Rate limit test endpoint (prevent DDoS amplification)
+  const rateCheck = checkRateLimit(`webhook-test:${webhookId}`, 5, 60_000)
+  if (!rateCheck.allowed)
+    throw createError({ statusCode: 429, message: errorMessage('rate.limit_exceeded') })
+
   // Plan check
   const { data: workspace } = await client
     .from('workspaces')
