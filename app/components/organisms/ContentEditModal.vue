@@ -28,7 +28,7 @@ const {
   locale,
 } = defineProps<{
   modelName: string
-  modelKind: 'collection' | 'singleton'
+  modelKind: 'collection' | 'singleton' | 'document'
   fields: Record<string, FieldDef>
   entryId?: string
   entryData: Record<string, unknown>
@@ -64,9 +64,20 @@ const SYSTEM_FIELDS = new Set([
   'createdAt', 'updatedAt',
 ])
 
-const editableFieldIds = computed(() =>
-  Object.keys(fields).filter(id => !SYSTEM_FIELDS.has(id)),
-)
+const editableFieldIds = computed(() => {
+  const ids = Object.keys(fields).filter(id => !SYSTEM_FIELDS.has(id))
+  // Documents have a markdown body field outside the schema
+  if (modelKind === 'document' && !ids.includes('body')) {
+    ids.push('body')
+  }
+  return ids
+})
+
+// Merged field definitions — schema fields + synthetic body for documents
+const mergedFields = computed(() => {
+  if (modelKind !== 'document') return fields
+  return { ...fields, body: { type: 'markdown', ...fields.body } as FieldDef }
+})
 
 // Relation entries for relation fields
 const relationEntriesMap = ref<Record<string, Array<{ value: string, label: string }>>>({})
@@ -78,7 +89,7 @@ const requiredErrors = computed(() => {
   if (!batchEditData.value || !showValidation.value) return new Set<string>()
   const errors = new Set<string>()
   for (const fieldId of editableFieldIds.value) {
-    const def = fields[fieldId]
+    const def = mergedFields.value[fieldId]
     if (!def?.required) continue
     const val = batchEditData.value[fieldId]
     if (val === null || val === undefined || val === '') {
@@ -93,6 +104,7 @@ const hasValidationErrors = computed(() => requiredErrors.value.size > 0)
 // Title for the modal header
 const dialogTitle = computed(() => {
   if (modelKind === 'singleton') return modelName
+  if (modelKind === 'document') return entryTitle ?? t('content.edit_entry')
   return entryTitle ?? t('content.edit_entry')
 })
 
@@ -110,7 +122,7 @@ watch(open, (isOpen) => {
 }, { immediate: true })
 
 async function loadRelationEntries() {
-  for (const [fieldId, def] of Object.entries(fields)) {
+  for (const [fieldId, def] of Object.entries(mergedFields.value)) {
     if (def.type !== 'relation' && def.type !== 'relations') continue
     if (!def.model) continue
 
@@ -215,14 +227,14 @@ function confirmDiscard() {
         <div class="flex-1 overflow-y-auto px-6 py-5 max-sm:max-h-none" style="max-height: 60vh;">
           <div v-if="batchEditData" class="space-y-5">
             <div v-for="fieldId in editableFieldIds" :key="fieldId">
-              <AtomsFormLabel :text="fieldId" size="sm" :required="fields[fieldId]?.required" />
-              <p v-if="fields[fieldId]?.description" class="mb-1 text-xs text-muted">
-                {{ fields[fieldId].description }}
+              <AtomsFormLabel :text="fieldId" size="sm" :required="mergedFields[fieldId]?.required" />
+              <p v-if="mergedFields[fieldId]?.description" class="mb-1 text-xs text-muted">
+                {{ mergedFields[fieldId].description }}
               </p>
               <div class="mt-1.5">
                 <AtomsContentFieldEditor
-                  :type="fields[fieldId]?.type ?? 'string'" :model-value="batchEditData[fieldId]"
-                  :field-id="fieldId" :field-def="fields[fieldId]" :options="fields[fieldId]?.options"
+                  :type="mergedFields[fieldId]?.type ?? 'string'" :model-value="batchEditData[fieldId]"
+                  :field-id="fieldId" :field-def="mergedFields[fieldId]" :options="mergedFields[fieldId]?.options"
                   :related-entries="relationEntriesMap[fieldId]" :standalone="false"
                   @update:model-value="updateBatchField(fieldId, $event)"
                 />
