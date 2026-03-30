@@ -55,7 +55,7 @@ function handleDismiss() {
         class="rounded p-1 text-warning-500 transition-colors hover:bg-warning-100 hover:text-warning-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-warning-800/50 dark:hover:text-warning-300"
         @click="handleDismiss"
       >
-        <span class="icon-[annon--close] block size-3.5" aria-hidden="true" />
+        <span class="icon-[annon--cross] block size-3.5" aria-hidden="true" />
         <span class="sr-only">{{ t('common.dismiss') }}</span>
       </button>
     </div>
