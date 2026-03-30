@@ -100,11 +100,18 @@ export function useContentEditor() {
     saveError.value = null
   }
 
+  function normalizeForCompare(val: unknown): unknown {
+    if (val === undefined || val === null || val === '') return null
+    return val
+  }
+
   function updateBatchField(fieldId: string, value: unknown) {
     if (!batchEditData.value) return
     batchEditData.value[fieldId] = value
 
-    if (JSON.stringify(value) !== JSON.stringify(batchOriginalData.value?.[fieldId])) {
+    const normalized = normalizeForCompare(value)
+    const original = normalizeForCompare(batchOriginalData.value?.[fieldId])
+    if (JSON.stringify(normalized) !== JSON.stringify(original)) {
       batchDirtyFields.value.add(fieldId)
     }
     else {
