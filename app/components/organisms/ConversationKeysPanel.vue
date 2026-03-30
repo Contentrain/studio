@@ -189,7 +189,7 @@ watch(createOpen, (isOpen) => {
     <!-- Upgrade nudge -->
     <div v-else-if="!hasPlan" class="flex h-full items-center justify-center p-8">
       <AtomsEmptyState
-        icon="icon-[annon--message-programming]"
+        icon="icon-[annon--comment-2-text]"
         :title="t('conversation_keys.title')"
         :description="t('conversation_keys.description')"
       >
