@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const providerState = vi.hoisted(() => {
+  const state = {
+    adminClient: {} as Record<string, unknown>,
+    createSupabaseAdminClient: vi.fn(() => state.adminClient),
+  }
+
+  return state
+})
+
+vi.mock('../../server/providers/supabase-db', () => ({
+  createSupabaseAdminClient: providerState.createSupabaseAdminClient,
+}))
+
 describe('supabase auth provider', () => {
   beforeEach(() => {
     vi.resetModules()
+    providerState.adminClient = {}
+    providerState.createSupabaseAdminClient.mockClear()
     vi.stubGlobal('createError', ({ statusCode, message }: { statusCode: number, message: string }) =>
       Object.assign(new Error(message), { statusCode, message }),
     )
@@ -19,7 +34,7 @@ describe('supabase auth provider', () => {
   })
 
   it('maps validated Supabase users to the AuthUser shape', async () => {
-    vi.stubGlobal('useSupabaseAdmin', () => ({
+    providerState.adminClient = {
       auth: {
         getUser: vi.fn().mockResolvedValue({
           data: {
@@ -36,7 +51,7 @@ describe('supabase auth provider', () => {
           error: null,
         }),
       },
-    }))
+    }
 
     const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
     const provider = createSupabaseAuthProvider()
@@ -51,7 +66,7 @@ describe('supabase auth provider', () => {
   })
 
   it('refreshes sessions and preserves Supabase expiry timestamps', async () => {
-    vi.stubGlobal('useSupabaseAdmin', () => ({
+    providerState.adminClient = {
       auth: {
         refreshSession: vi.fn().mockResolvedValue({
           data: {
@@ -64,7 +79,7 @@ describe('supabase auth provider', () => {
           error: null,
         }),
       },
-    }))
+    }
 
     const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
     const provider = createSupabaseAuthProvider()
@@ -77,7 +92,7 @@ describe('supabase auth provider', () => {
   })
 
   it('builds OAuth redirect URLs and returns a CSRF state token', async () => {
-    vi.stubGlobal('useSupabaseAdmin', () => ({
+    providerState.adminClient = {
       auth: {
         signInWithOAuth: vi.fn().mockResolvedValue({
           data: {
@@ -86,7 +101,7 @@ describe('supabase auth provider', () => {
           error: null,
         }),
       },
-    }))
+    }
 
     const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
     const provider = createSupabaseAuthProvider()
@@ -101,7 +116,7 @@ describe('supabase auth provider', () => {
     const tokenPayload = Buffer.from(JSON.stringify({ exp: nowExp })).toString('base64url')
     const accessToken = `header.${tokenPayload}.sig`
 
-    vi.stubGlobal('useSupabaseAdmin', () => ({
+    providerState.adminClient = {
       auth: {
         exchangeCodeForSession: vi.fn().mockResolvedValue({
           data: {
@@ -131,7 +146,7 @@ describe('supabase auth provider', () => {
           error: null,
         }),
       },
-    }))
+    }
 
     const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
     const provider = createSupabaseAuthProvider()
@@ -181,7 +196,7 @@ describe('supabase auth provider', () => {
       error: null,
     })
 
-    vi.stubGlobal('useSupabaseAdmin', () => ({
+    providerState.adminClient = {
       auth: {
         signInWithOtp,
         admin: {
@@ -189,7 +204,7 @@ describe('supabase auth provider', () => {
           getUserById,
         },
       },
-    }))
+    }
 
     const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
     const provider = createSupabaseAuthProvider()

@@ -17,6 +17,14 @@ function stubRouteGlobals(branch: string) {
     if (key === 'branch') return branch
     return undefined
   }))
+  vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+    getUserClient: vi.fn((accessToken: string) => {
+      const userClient = (globalThis as typeof globalThis & {
+        useSupabaseUserClient?: (token: string) => unknown
+      }).useSupabaseUserClient
+      return typeof userClient === 'function' ? userClient(accessToken) : {}
+    }),
+  })))
 }
 
 describe('branch moderation routes', () => {

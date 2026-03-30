@@ -63,6 +63,14 @@ describe('conversation routes', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+      getUserClient: vi.fn((accessToken: string) => {
+        const userClient = (globalThis as typeof globalThis & {
+          useSupabaseUserClient?: (token: string) => unknown
+        }).useSupabaseUserClient
+        return typeof userClient === 'function' ? userClient(accessToken) : {}
+      }),
+    })))
   })
 
   afterEach(() => {

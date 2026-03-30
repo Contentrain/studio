@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { withTestServer } from '../helpers/http'
 
 async function loadHealthHandler() {
   return (await import('../../server/api/health.get')).default
@@ -31,18 +30,11 @@ async function loadWorkspaceMemberPatchHandler() {
 
 describe('system and workspace route integration', () => {
   it('returns a healthy timestamped status payload', async () => {
-    await withTestServer({
-      routes: [
-        { path: '/api/health', handler: await loadHealthHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/health')
-      const payload = await response.json()
+    const handler = await loadHealthHandler()
+    const payload = await handler({} as never)
 
-      expect(response.status).toBe(200)
-      expect(payload.status).toBe('ok')
-      expect(Date.parse(payload.timestamp)).not.toBeNaN()
-    })
+    expect(payload.status).toBe('ok')
+    expect(Date.parse(payload.timestamp)).not.toBeNaN()
   })
 
   it('lists the authenticated user workspaces', async () => {
@@ -55,23 +47,18 @@ describe('system and workspace route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({ client: true }))
-    vi.stubGlobal('listUserWorkspaces', listUserWorkspaces)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      listUserWorkspaces,
+    }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces', handler: await loadWorkspaceListHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces')
+    const handler = await loadWorkspaceListHandler()
+    const result = await handler({} as never)
 
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual([
-        { id: 'workspace-1', slug: 'acme', plan: 'business' },
-        { id: 'workspace-2', slug: 'docs', plan: 'free' },
-      ])
-      expect(listUserWorkspaces).toHaveBeenCalledWith({ client: true })
-    })
+    expect(result).toEqual([
+      { id: 'workspace-1', slug: 'acme', plan: 'business' },
+      { id: 'workspace-2', slug: 'docs', plan: 'free' },
+    ])
+    expect(listUserWorkspaces).toHaveBeenCalledWith('token-1', 'user-1')
   })
 
   it('loads workspace details with nested member profile data', async () => {
@@ -80,142 +67,103 @@ describe('system and workspace route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue({
-              data: {
-                id: 'workspace-1',
-                name: 'Acme',
-                workspace_members: [{ id: 'member-1', role: 'owner' }],
-              },
-              error: null,
-            }),
-          })),
-        })),
-      })),
-    }))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1', handler: await loadWorkspaceGetHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1')
-
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getWorkspaceDetailForUser: vi.fn().mockResolvedValue({
         id: 'workspace-1',
         name: 'Acme',
         workspace_members: [{ id: 'member-1', role: 'owner' }],
-      })
+      }),
+    }))
+
+    const handler = await loadWorkspaceGetHandler()
+    const result = await handler({} as never)
+
+    expect(result).toEqual({
+      id: 'workspace-1',
+      name: 'Acme',
+      workspace_members: [{ id: 'member-1', role: 'owner' }],
     })
   })
 
   it('normalizes workspace slugs on patch and returns 409 for collisions', async () => {
     const slugify = vi.fn().mockReturnValue('acme-studio')
-    const updateSingle = vi.fn()
+    const updateWorkspaceForUser = vi.fn()
       .mockResolvedValueOnce({
-        data: { id: 'workspace-1', name: 'Acme Studio', slug: 'acme-studio' },
-        error: null,
+        id: 'workspace-1',
+        name: 'Acme Studio',
+        slug: 'acme-studio',
       })
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: '23505', message: 'duplicate' },
-      })
+      .mockRejectedValueOnce(Object.assign(new Error('duplicate'), { statusCode: 409 }))
     vi.stubGlobal('slugify', slugify)
     vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateWorkspaceForUser,
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      name: 'Acme Studio',
+      slug: 'Acme Studio',
+    }))
 
-    const client = {
-      from: vi.fn(() => ({
-        update: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: updateSingle,
-            })),
-          })),
-        })),
-      })),
-    }
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(client))
+    const handler = await loadWorkspacePatchHandler()
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1', handler: await loadWorkspacePatchHandler() },
-      ],
-    }, async ({ request }) => {
-      const success = await request('/api/workspaces/workspace-1', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Acme Studio', slug: 'Acme Studio' }),
-      })
+    const success = await handler({} as never)
 
-      expect(success.status).toBe(200)
-      await expect(success.json()).resolves.toEqual({
-        id: 'workspace-1',
-        name: 'Acme Studio',
-        slug: 'acme-studio',
-      })
-      expect(slugify).toHaveBeenCalledWith('Acme Studio')
+    expect(success).toEqual({
+      id: 'workspace-1',
+      name: 'Acme Studio',
+      slug: 'acme-studio',
+    })
+    expect(slugify).toHaveBeenCalledWith('Acme Studio')
 
-      const conflict = await request('/api/workspaces/workspace-1', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ slug: 'Acme Studio' }),
-      })
-
-      expect(conflict.status).toBe(409)
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 409,
     })
   })
 
   it('creates secondary workspaces when the plan limit allows it', async () => {
+    const listUserWorkspaces = vi.fn().mockResolvedValue([
+      { id: 'ws-primary', plan: 'business' },
+    ])
+    const createWorkspace = vi.fn().mockResolvedValue({
+      id: 'workspace-2',
+      slug: 'acme-team',
+      type: 'secondary',
+    })
+
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
     vi.stubGlobal('slugify', vi.fn().mockReturnValue('acme-team'))
-    vi.stubGlobal('listUserWorkspaces', vi.fn().mockResolvedValue([
-      { id: 'ws-primary', plan: 'business' },
-    ]))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('business'))
     vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(5))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        insert: vi.fn(() => ({
-          select: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue({
-              data: { id: 'workspace-2', slug: 'acme-team', type: 'secondary' },
-              error: null,
-            }),
-          })),
-        })),
-      })),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      listUserWorkspaces,
+      createWorkspace,
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      name: 'Acme Team',
+      slug: 'Acme Team',
     }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces', handler: await loadWorkspaceCreateHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/workspaces', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Acme Team', slug: 'Acme Team' }),
-      })
+    const handler = await loadWorkspaceCreateHandler()
+    const result = await handler({} as never)
 
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        id: 'workspace-2',
-        slug: 'acme-team',
-        type: 'secondary',
-      })
+    expect(result).toEqual({
+      id: 'workspace-2',
+      slug: 'acme-team',
+      type: 'secondary',
+    })
+    expect(listUserWorkspaces).toHaveBeenCalledWith('token-1', 'user-1')
+    expect(createWorkspace).toHaveBeenCalledWith('token-1', {
+      ownerId: 'user-1',
+      name: 'Acme Team',
+      slug: 'acme-team',
+      type: 'secondary',
     })
   })
 
@@ -224,42 +172,21 @@ describe('system and workspace route integration', () => {
       user: { id: 'owner-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'workspace_members') throw new Error(`Unexpected table: ${table}`)
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: { role: 'owner' } }),
-              })),
-            })),
-          })),
-          delete: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({ error: null }),
-            })),
-          })),
-        }
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      deleteWorkspaceMember: vi.fn().mockRejectedValue(Object.assign(new Error('members.cannot_remove_owner'), {
+        statusCode: 400,
+        message: 'members.cannot_remove_owner',
+      })),
     }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'memberId') return 'member-1'
+      return undefined
+    }))
 
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/members/member-1', handler: await loadWorkspaceMemberDeleteHandler() },
-      ],
-    }, async ({ request }) => {
-      vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-        if (key === 'workspaceId') return 'workspace-1'
-        if (key === 'memberId') return 'member-1'
-        return undefined
-      }))
-
-      const deleteOwner = await request('/api/workspaces/workspace-1/members/member-1', { method: 'DELETE' })
-      expect(deleteOwner.status).toBe(400)
+    const handler = await loadWorkspaceMemberDeleteHandler()
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 400,
     })
   })
 
@@ -268,58 +195,27 @@ describe('system and workspace route integration', () => {
       user: { id: 'owner-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'workspace_members') throw new Error(`Unexpected table: ${table}`)
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: { role: 'member' } }),
-              })),
-            })),
-          })),
-          update: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                select: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({
-                    data: { id: 'member-2', role: 'admin' },
-                    error: null,
-                  }),
-                })),
-              })),
-            })),
-          })),
-        }
-      }),
-    }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-
-    await withTestServer({
-      routes: [
-        { path: '/api/workspaces/workspace-1/members/member-2', handler: await loadWorkspaceMemberPatchHandler() },
-      ],
-    }, async ({ request }) => {
-      vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-        if (key === 'workspaceId') return 'workspace-1'
-        if (key === 'memberId') return 'member-2'
-        return undefined
-      }))
-
-      const patchRole = await request('/api/workspaces/workspace-1/members/member-2', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ role: 'admin' }),
-      })
-
-      expect(patchRole.status).toBe(200)
-      await expect(patchRole.json()).resolves.toEqual({
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateWorkspaceMemberRole: vi.fn().mockResolvedValue({
         id: 'member-2',
         role: 'admin',
-      })
+      }),
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      role: 'admin',
+    }))
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'memberId') return 'member-2'
+      return undefined
+    }))
+
+    const handler = await loadWorkspaceMemberPatchHandler()
+    const result = await handler({} as never)
+
+    expect(result).toEqual({
+      id: 'member-2',
+      role: 'admin',
     })
   })
 })

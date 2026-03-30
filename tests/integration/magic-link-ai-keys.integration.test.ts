@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { EnterpriseBridge } from '../../server/utils/enterprise'
+import { setEnterpriseBridgeForTesting } from '../../server/utils/enterprise'
 import { withTestServer } from '../helpers/http'
 
 async function loadMagicLinkHandler() {
@@ -18,6 +20,10 @@ async function loadAIKeysDeleteHandler() {
 }
 
 describe('magic link and AI key route integration', () => {
+  afterEach(() => {
+    setEnterpriseBridgeForTesting(undefined)
+  })
+
   it('rate limits magic link requests per IP', async () => {
     vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
       allowed: false,
@@ -61,29 +67,11 @@ describe('magic link and AI key route integration', () => {
   })
 
   it('lists only the current user AI keys for the workspace', async () => {
-    vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
-    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
-      user: { id: 'user-1' },
-      accessToken: 'token-1',
-    }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'ai_keys')
-          throw new Error(`Unexpected table: ${table}`)
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({
-                data: [
-                  { id: 'key-1', provider: 'anthropic', key_hint: 'sk-...1234', created_at: '2026-03-26T00:00:00.000Z' },
-                ],
-              }),
-            })),
-          })),
-        }
-      }),
-    }))
+    setEnterpriseBridgeForTesting({
+      listWorkspaceAiKeys: vi.fn().mockResolvedValue([
+        { id: 'key-1', provider: 'anthropic', key_hint: 'sk-...1234', created_at: '2026-03-26T00:00:00.000Z' },
+      ]),
+    } as EnterpriseBridge)
 
     await withTestServer({
       routes: [
@@ -141,50 +129,14 @@ describe('magic link and AI key route integration', () => {
   })
 
   it('stores encrypted AI keys and returns only safe hints', async () => {
-    const upsertSingle = vi.fn().mockResolvedValue({
-      data: {
+    setEnterpriseBridgeForTesting({
+      createWorkspaceAiKey: vi.fn().mockResolvedValue({
         id: 'key-1',
         provider: 'anthropic',
         key_hint: 'sk-...1234',
         created_at: '2026-03-26T00:00:00.000Z',
-      },
-      error: null,
-    })
-
-    vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
-    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
-      user: { id: 'user-1' },
-      accessToken: 'token-1',
-    }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
-    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
-    vi.stubGlobal('encryptApiKey', vi.fn().mockReturnValue('encrypted-value'))
-    vi.stubGlobal('getKeyHint', vi.fn().mockReturnValue('sk-...1234'))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'workspaces') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: { plan: 'pro' } }),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'ai_keys') {
-          return {
-            upsert: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: upsertSingle,
-              })),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
       }),
-    }))
+    } as EnterpriseBridge)
 
     await withTestServer({
       routes: [
@@ -208,31 +160,9 @@ describe('magic link and AI key route integration', () => {
   })
 
   it('deletes AI keys within the authenticated user scope', async () => {
-    const eqUser = vi.fn().mockResolvedValue({ error: null })
-    const eqWorkspace = vi.fn(() => ({ eq: eqUser }))
-    const eqId = vi.fn(() => ({ eq: eqWorkspace }))
-
-    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
-      if (key === 'workspaceId') return 'workspace-1'
-      if (key === 'keyId') return 'key-1'
-      return undefined
-    }))
-    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
-      user: { id: 'user-1' },
-      accessToken: 'token-1',
-    }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'ai_keys')
-          throw new Error(`Unexpected table: ${table}`)
-
-        return {
-          delete: vi.fn(() => ({
-            eq: eqId,
-          })),
-        }
-      }),
-    }))
+    setEnterpriseBridgeForTesting({
+      deleteWorkspaceAiKey: vi.fn().mockResolvedValue({ deleted: true }),
+    } as EnterpriseBridge)
 
     await withTestServer({
       routes: [
@@ -243,9 +173,6 @@ describe('magic link and AI key route integration', () => {
 
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({ deleted: true })
-      expect(eqId).toHaveBeenCalledWith('id', 'key-1')
-      expect(eqWorkspace).toHaveBeenCalledWith('workspace_id', 'workspace-1')
-      expect(eqUser).toHaveBeenCalledWith('user_id', 'user-1')
     })
   })
 })

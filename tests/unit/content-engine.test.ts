@@ -290,7 +290,12 @@ describe('content engine', () => {
       kind: 'collection',
       domain: 'marketing',
       i18n: true,
-      fields: {},
+      fields: {
+        name: {
+          type: 'text',
+          label: 'Name',
+        },
+      },
     } as never, 'user@example.com')
 
     expect(commitFiles).toHaveBeenCalledWith(

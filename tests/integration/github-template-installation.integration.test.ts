@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { withTestServer } from '../helpers/http'
 
 const octokitState = vi.hoisted(() => {
   const octokit = {
@@ -30,6 +29,25 @@ vi.mock('@octokit/auth-app', () => ({
   createAppAuth: octokitState.createAppAuth,
 }))
 
+const providerState = vi.hoisted(() => ({
+  databaseProvider: {
+    getWorkspaceForUser: vi.fn(),
+  },
+  gitAppProvider: {
+    getInstallationDetails: vi.fn(),
+    listInstallationRepositories: vi.fn(),
+    createRepositoryFromTemplate: vi.fn(),
+    canAccessRepository: vi.fn(),
+  },
+}))
+
+vi.mock('../../server/utils/providers', () => {
+  return {
+    useDatabaseProvider: vi.fn(() => providerState.databaseProvider),
+    useGitAppProvider: vi.fn(() => providerState.gitAppProvider),
+  }
+})
+
 async function loadInstallationHandler() {
   return (await import('../../server/api/github/installation.get')).default
 }
@@ -45,6 +63,11 @@ describe('GitHub installation and template route integration', () => {
     octokitState.octokit.apps.listReposAccessibleToInstallation.mockReset()
     octokitState.octokit.repos.createUsingTemplate.mockReset()
     octokitState.octokit.repos.get.mockReset()
+    providerState.databaseProvider.getWorkspaceForUser.mockReset()
+    providerState.gitAppProvider.getInstallationDetails.mockReset()
+    providerState.gitAppProvider.listInstallationRepositories.mockReset()
+    providerState.gitAppProvider.createRepositoryFromTemplate.mockReset()
+    providerState.gitAppProvider.canAccessRepository.mockReset()
   })
 
   it('returns installation details and accessible repos for owner/admin users', async () => {
@@ -52,68 +75,57 @@ describe('GitHub installation and template route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({
-      github_installation_id: 321,
+    vi.stubGlobal('getQuery', vi.fn().mockReturnValue({
+      workspaceId: 'workspace-1',
     }))
+    providerState.databaseProvider.getWorkspaceForUser.mockResolvedValue({
+      github_installation_id: 321,
+    })
+    providerState.gitAppProvider.getInstallationDetails.mockResolvedValue({
+      installationId: 321,
+      account: {
+        login: 'contentrain',
+        avatarUrl: 'https://example.com/avatar.png',
+        type: 'Organization',
+      },
+      selection: 'selected',
+      permissions: { contents: 'write' },
+      suspendedAt: null,
+    })
+    providerState.gitAppProvider.listInstallationRepositories.mockResolvedValue([
+      {
+        id: 1,
+        name: 'studio',
+        fullName: 'contentrain/studio',
+        owner: 'contentrain',
+        private: true,
+        language: 'TypeScript',
+      },
+    ])
 
-    octokitState.octokit.apps.getInstallation.mockResolvedValue({
-      data: {
-        account: {
-          login: 'contentrain',
-          avatar_url: 'https://example.com/avatar.png',
+    const handler = await loadInstallationHandler()
+
+    await expect(handler({} as never)).resolves.toEqual({
+      installed: true,
+      installationId: 321,
+      account: {
+        login: 'contentrain',
+        avatarUrl: 'https://example.com/avatar.png',
+        type: 'Organization',
+      },
+      selection: 'selected',
+      permissions: { contents: 'write' },
+      suspendedAt: null,
+      repos: [
+        {
+          id: 1,
+          name: 'studio',
+          fullName: 'contentrain/studio',
+          private: true,
+          language: 'TypeScript',
         },
-        target_type: 'Organization',
-        repository_selection: 'selected',
-        permissions: { contents: 'write' },
-        suspended_at: null,
-      },
-    })
-    octokitState.octokit.apps.listReposAccessibleToInstallation.mockResolvedValue({
-      data: {
-        repositories: [
-          {
-            id: 1,
-            name: 'studio',
-            full_name: 'contentrain/studio',
-            private: true,
-            language: 'TypeScript',
-          },
-        ],
-      },
-    })
-
-    await withTestServer({
-      routes: [
-        { path: '/api/github/installation', handler: await loadInstallationHandler() },
       ],
-    }, async ({ request }) => {
-      const response = await request('/api/github/installation?workspaceId=workspace-1')
-
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        installed: true,
-        installationId: 321,
-        account: {
-          login: 'contentrain',
-          avatarUrl: 'https://example.com/avatar.png',
-          type: 'Organization',
-        },
-        selection: 'selected',
-        permissions: { contents: 'write' },
-        suspendedAt: null,
-        repos: [
-          {
-            id: 1,
-            name: 'studio',
-            fullName: 'contentrain/studio',
-            private: true,
-            language: 'TypeScript',
-          },
-        ],
-        settingsUrl: 'https://github.com/settings/installations/321',
-      })
+      settingsUrl: 'https://github.com/settings/installations/321',
     })
   })
 
@@ -122,28 +134,21 @@ describe('GitHub installation and template route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('admin'))
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({
-      github_installation_id: 654,
+    vi.stubGlobal('getQuery', vi.fn().mockReturnValue({
+      workspaceId: 'workspace-1',
     }))
+    providerState.databaseProvider.getWorkspaceForUser.mockResolvedValue({
+      github_installation_id: 654,
+    })
+    providerState.gitAppProvider.getInstallationDetails.mockRejectedValue({ status: 404 })
 
-    octokitState.octokit.apps.getInstallation.mockRejectedValue({ status: 404 })
+    const handler = await loadInstallationHandler()
 
-    await withTestServer({
-      routes: [
-        { path: '/api/github/installation', handler: await loadInstallationHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/github/installation?workspaceId=workspace-1')
-
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        installed: true,
-        installationId: 654,
-        error: 'installation_not_accessible',
-        settingsUrl: 'https://github.com/settings/installations/654',
-      })
+    await expect(handler({} as never)).resolves.toEqual({
+      installed: true,
+      installationId: 654,
+      error: 'installation_not_accessible',
+      settingsUrl: 'https://github.com/settings/installations/654',
     })
   })
 
@@ -152,62 +157,40 @@ describe('GitHub installation and template route integration', () => {
       user: { id: 'user-1', email: 'owner@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({
-      github_installation_id: 987,
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      workspaceId: 'workspace-1',
+      templateRepo: 'contentrain-starter-astro-blog',
+      name: 'studio-template-copy',
+      isPrivate: true,
+      description: 'Starter repo',
     }))
-
-    octokitState.octokit.apps.getInstallation.mockResolvedValue({
-      data: {
-        account: { login: 'contentrain' },
-      },
+    providerState.databaseProvider.getWorkspaceForUser.mockResolvedValue({
+      github_installation_id: 987,
     })
-    octokitState.octokit.repos.createUsingTemplate.mockResolvedValue({
-      data: {
-        id: 44,
-        full_name: 'contentrain/studio-template-copy',
-        name: 'studio-template-copy',
-        owner: { login: 'contentrain' },
-        private: true,
-        default_branch: 'main',
-        description: 'Starter repo',
-        html_url: 'https://github.com/contentrain/studio-template-copy',
-      },
+    providerState.gitAppProvider.createRepositoryFromTemplate.mockResolvedValue({
+      id: 44,
+      fullName: 'contentrain/studio-template-copy',
+      name: 'studio-template-copy',
+      owner: 'contentrain',
+      private: true,
+      defaultBranch: 'main',
+      description: 'Starter repo',
+      htmlUrl: 'https://github.com/contentrain/studio-template-copy',
     })
-    octokitState.octokit.repos.get.mockResolvedValue({
-      data: { id: 44 },
-    })
+    providerState.gitAppProvider.canAccessRepository.mockResolvedValue(true)
 
-    await withTestServer({
-      routes: [
-        { path: '/api/github/create-from-template', handler: await loadCreateFromTemplateHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/github/create-from-template', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: 'workspace-1',
-          templateRepo: 'contentrain-starter-astro-blog',
-          name: 'studio-template-copy',
-          isPrivate: true,
-          description: 'Starter repo',
-        }),
-      })
+    const handler = await loadCreateFromTemplateHandler()
 
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
-        id: 44,
-        fullName: 'contentrain/studio-template-copy',
-        name: 'studio-template-copy',
-        owner: 'contentrain',
-        private: true,
-        defaultBranch: 'main',
-        description: 'Starter repo',
-        htmlUrl: 'https://github.com/contentrain/studio-template-copy',
-        needsAccess: false,
-      })
+    await expect(handler({} as never)).resolves.toEqual({
+      id: 44,
+      fullName: 'contentrain/studio-template-copy',
+      name: 'studio-template-copy',
+      owner: 'contentrain',
+      private: true,
+      defaultBranch: 'main',
+      description: 'Starter repo',
+      htmlUrl: 'https://github.com/contentrain/studio-template-copy',
+      needsAccess: false,
     })
   })
 
@@ -218,18 +201,15 @@ describe('GitHub installation and template route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({
-      github_installation_id: 987,
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      workspaceId: 'workspace-1',
+      templateRepo: 'contentrain-starter-astro-blog',
+      name: 'studio-template-copy',
     }))
-
-    octokitState.octokit.apps.getInstallation.mockResolvedValue({
-      data: {
-        account: { login: 'contentrain' },
-      },
+    providerState.databaseProvider.getWorkspaceForUser.mockResolvedValue({
+      github_installation_id: 987,
     })
-    octokitState.octokit.repos.createUsingTemplate.mockRejectedValue({
+    providerState.gitAppProvider.createRepositoryFromTemplate.mockRejectedValue({
       status: 422,
       response: {
         data: {
@@ -238,25 +218,10 @@ describe('GitHub installation and template route integration', () => {
       },
     })
 
-    await withTestServer({
-      routes: [
-        { path: '/api/github/create-from-template', handler: await loadCreateFromTemplateHandler() },
-      ],
-    }, async ({ request }) => {
-      const response = await request('/api/github/create-from-template', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: 'workspace-1',
-          templateRepo: 'contentrain-starter-astro-blog',
-          name: 'studio-template-copy',
-        }),
-      })
+    const handler = await loadCreateFromTemplateHandler()
 
-      expect(response.status).toBe(422)
-      await expect(response.json()).resolves.toMatchObject({
-        statusCode: 422,
-      })
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 422,
     })
 
     consoleError.mockRestore()
