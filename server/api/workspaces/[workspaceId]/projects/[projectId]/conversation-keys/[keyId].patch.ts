@@ -40,18 +40,21 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
   }
 
-  // Build update object — only include provided fields
+  // Build update object — only include provided fields, with validation
+  const validRoles = ['viewer', 'editor', 'admin']
+  const validModels = ['claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
+
   const updates: Record<string, unknown> = {}
   if (body.name !== undefined) updates.name = body.name.trim()
-  if (body.role !== undefined) updates.role = body.role
+  if (body.role !== undefined && validRoles.includes(body.role)) updates.role = body.role
   if (body.specificModels !== undefined) updates.specific_models = body.specificModels
   if (body.allowedModels !== undefined) updates.allowed_models = body.allowedModels
   if (body.allowedTools !== undefined) updates.allowed_tools = body.allowedTools
   if (body.allowedLocales !== undefined) updates.allowed_locales = body.allowedLocales
-  if (body.customInstructions !== undefined) updates.custom_instructions = body.customInstructions
-  if (body.aiModel !== undefined) updates.ai_model = body.aiModel
-  if (body.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = body.rateLimitPerMinute
-  if (body.monthlyMessageLimit !== undefined) updates.monthly_message_limit = body.monthlyMessageLimit
+  if (body.customInstructions !== undefined) updates.custom_instructions = body.customInstructions ? body.customInstructions.substring(0, 2000) : body.customInstructions
+  if (body.aiModel !== undefined && validModels.includes(body.aiModel)) updates.ai_model = body.aiModel
+  if (body.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = Math.max(1, Math.min(body.rateLimitPerMinute, 60))
+  if (body.monthlyMessageLimit !== undefined) updates.monthly_message_limit = Math.max(1, Math.min(body.monthlyMessageLimit, 100_000))
 
   if (Object.keys(updates).length === 0)
     throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })

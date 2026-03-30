@@ -32,12 +32,13 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(plan, 'api.conversation'))
     throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
 
-  // === VERIFY CONVERSATION BELONGS TO PROJECT ===
+  // === VERIFY CONVERSATION BELONGS TO PROJECT + THIS KEY ===
   const { data: conv } = await admin
     .from('conversations')
     .select('id')
     .eq('id', conversationId)
     .eq('project_id', keyData.projectId)
+    .eq('user_id', keyData.keyId)
     .single()
 
   if (!conv)

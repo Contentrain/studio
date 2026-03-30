@@ -24,17 +24,9 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
     throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
-  // Validate URL if provided
-  if (body.url !== undefined) {
-    try {
-      const parsed = new URL(body.url)
-      if (!['http:', 'https:'].includes(parsed.protocol))
-        throw new Error('Invalid protocol')
-    }
-    catch {
-      throw createError({ statusCode: 400, message: errorMessage('webhook.url_invalid') })
-    }
-  }
+  // Validate URL if provided — SSRF protection
+  if (body.url !== undefined && !isAllowedWebhookUrl(body.url))
+    throw createError({ statusCode: 400, message: errorMessage('webhook.url_required') })
 
   // Build update payload — only include provided fields
   const update: Record<string, unknown> = {}
@@ -47,7 +39,8 @@ export default defineEventHandler(async (event) => {
   if (Object.keys(update).length <= 1)
     throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })
 
-  const { data, error } = await client
+  const admin = useSupabaseAdmin()
+  const { data, error } = await admin
     .from('webhooks')
     .update(update)
     .eq('id', webhookId)

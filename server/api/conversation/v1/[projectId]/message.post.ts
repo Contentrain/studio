@@ -69,6 +69,10 @@ export default defineEventHandler(async (event) => {
   if (!body.message?.trim())
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
 
+  // Message length limit — prevent token cost attacks
+  if (body.message.length > 10_000)
+    throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
+
   const admin = useSupabaseAdmin()
 
   // === WORKSPACE + PLAN CHECK ===
@@ -197,12 +201,13 @@ export default defineEventHandler(async (event) => {
   let conversationId = body.conversationId
 
   if (conversationId) {
-    // Verify conversation belongs to this project + API key
+    // Verify conversation belongs to this project + this specific API key
     const { data: conv } = await admin
       .from('conversations')
       .select('id')
       .eq('id', conversationId)
       .eq('project_id', keyData.projectId)
+      .eq('user_id', keyData.keyId)
       .single()
 
     if (!conv) conversationId = undefined

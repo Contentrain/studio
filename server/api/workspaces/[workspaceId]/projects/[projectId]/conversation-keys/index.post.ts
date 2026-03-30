@@ -63,6 +63,23 @@ export default defineEventHandler(async (event) => {
   if ((count ?? 0) >= keyLimit)
     throw createError({ statusCode: 403, message: errorMessage('conversation.key_limit') })
 
+  // Validate role
+  const validRoles = ['viewer', 'editor', 'admin']
+  const role = validRoles.includes(body.role ?? '') ? body.role : 'editor'
+
+  // Validate AI model allowlist
+  const validModels = ['claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
+  const aiModel = validModels.includes(body.aiModel ?? '') ? body.aiModel : 'claude-sonnet-4-5'
+
+  // Clamp rate/message limits
+  const rateLimitPerMinute = Math.max(1, Math.min(body.rateLimitPerMinute ?? 10, 60))
+  const monthlyMessageLimit = Math.max(1, Math.min(body.monthlyMessageLimit ?? 1000, getPlanLimit(plan, 'api.messages_per_month')))
+
+  // Limit custom instructions length
+  const customInstructions = body.customInstructions
+    ? body.customInstructions.substring(0, 2000)
+    : null
+
   // Generate key
   const { key, keyHash, keyPrefix } = generateConversationKey()
 
@@ -74,15 +91,15 @@ export default defineEventHandler(async (event) => {
       key_hash: keyHash,
       key_prefix: keyPrefix,
       name: body.name.trim(),
-      role: body.role ?? 'editor',
+      role,
       specific_models: body.specificModels ?? false,
       allowed_models: body.allowedModels ?? [],
       allowed_tools: body.allowedTools ?? [],
       allowed_locales: body.allowedLocales ?? [],
-      custom_instructions: body.customInstructions ?? null,
-      ai_model: body.aiModel ?? 'claude-sonnet-4-5',
-      rate_limit_per_minute: body.rateLimitPerMinute ?? 10,
-      monthly_message_limit: body.monthlyMessageLimit ?? 1000,
+      custom_instructions: customInstructions,
+      ai_model: aiModel,
+      rate_limit_per_minute: rateLimitPerMinute,
+      monthly_message_limit: monthlyMessageLimit,
     })
     .select('id, name, key_prefix, role, specific_models, allowed_models, allowed_tools, allowed_locales, custom_instructions, ai_model, rate_limit_per_minute, monthly_message_limit, created_at')
     .single()
