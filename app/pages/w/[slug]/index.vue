@@ -14,25 +14,37 @@ const connectDialogOpen = ref(false)
 const starterDialogOpen = ref(false)
 
 // Persist current path
-watch(() => route.fullPath, path => saveLastPath(path), { immediate: true })
+const router = useRouter()
 
 onMounted(async () => {
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
 
   const ws = workspaces.value.find(w => w.slug === slug.value)
-  if (ws) {
-    setActiveWorkspace(ws.id)
-    await fetchProjects(ws.id)
+  if (!ws) {
+    saveLastPath('/')
+    await router.replace('/')
+    return
   }
+  setActiveWorkspace(ws.id)
+  await fetchProjects(ws.id)
+  // Only persist path after confirming workspace exists
+  saveLastPath(route.fullPath)
+})
+
+watch(() => route.fullPath, (path) => {
+  // Only save if we're on a valid workspace route (not during redirect)
+  if (activeWorkspace.value) saveLastPath(path)
 })
 
 watch(slug, async (newSlug) => {
   const ws = workspaces.value.find(w => w.slug === newSlug)
-  if (ws) {
-    setActiveWorkspace(ws.id)
-    await fetchProjects(ws.id)
+  if (!ws) {
+    await router.replace('/')
+    return
   }
+  setActiveWorkspace(ws.id)
+  await fetchProjects(ws.id)
 })
 </script>
 

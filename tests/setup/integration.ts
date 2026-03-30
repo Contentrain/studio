@@ -60,6 +60,8 @@ beforeEach(() => {
   vi.stubGlobal('errorMessage', (key: string) => key)
   vi.stubGlobal('agentMessage', (key: string) => key)
   vi.stubGlobal('agentPrompt', (key: string) => key)
+  vi.stubGlobal('emptyAffected', () => ({ models: [], content: [], branches: [], vocabulary: false, config: false }))
+  vi.stubGlobal('mergeAffected', (a: unknown) => a)
 
   vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
     allowed: true,
