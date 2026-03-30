@@ -28,6 +28,7 @@ const emit = defineEmits<{
 const { deleteProject } = useProjects()
 const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
+const activeTab = ref<'general' | 'api' | 'webhooks'>('general')
 
 async function handleDeleteProject() {
   deleting.value = true
@@ -168,8 +169,18 @@ async function save() {
           </DialogClose>
         </div>
 
-        <!-- Body -->
-        <div class="max-h-[60vh] space-y-5 overflow-y-auto px-5 py-4">
+        <!-- Tab bar -->
+        <AtomsTabBar
+          v-model="activeTab"
+          :tabs="[
+            { value: 'general', label: t('project_settings.general') },
+            { value: 'api', label: t('conversation_keys.title') },
+            { value: 'webhooks', label: t('webhooks.title') },
+          ]"
+        />
+
+        <!-- General Settings -->
+        <div v-if="activeTab === 'general'" class="max-h-[60vh] space-y-5 overflow-y-auto px-5 py-4">
           <!-- Workflow -->
           <div>
             <div class="flex items-center gap-1">
@@ -331,8 +342,8 @@ async function save() {
           </div>
         </div>
 
-        <!-- Danger Zone -->
-        <div class="border-t border-danger-200 px-5 py-4 dark:border-danger-500/20">
+        <!-- Danger Zone (general tab only) -->
+        <div v-if="activeTab === 'general'" class="border-t border-danger-200 px-5 py-4 dark:border-danger-500/20">
           <AtomsHeadingText :level="3" size="xs" class="text-danger-600 dark:text-danger-400">
             {{ t('danger_zone.title') }}
           </AtomsHeadingText>
@@ -351,8 +362,25 @@ async function save() {
           </div>
         </div>
 
-        <!-- Footer -->
+        <!-- Conversation API Keys -->
+        <div v-else-if="activeTab === 'api'" class="max-h-[60vh] overflow-y-auto">
+          <OrganismsConversationKeysPanel
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+          />
+        </div>
+
+        <!-- Webhooks -->
+        <div v-else-if="activeTab === 'webhooks'" class="max-h-[60vh] overflow-y-auto">
+          <OrganismsWebhookSettingsPanel
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+          />
+        </div>
+
+        <!-- Footer (general tab only) -->
         <div
+          v-if="activeTab === 'general'"
           class="flex items-center justify-end gap-2 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800"
         >
           <AtomsBaseButton variant="ghost" size="md" @click="open = false">
