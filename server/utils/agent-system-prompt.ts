@@ -28,6 +28,7 @@ export function buildSystemPrompt(
   intent: ClassifiedIntent,
   vocabulary?: Record<string, Record<string, string>> | null,
   plan?: import('./license').Plan,
+  customInstructions?: string | null,
 ): string {
   const sections: string[] = []
 
@@ -135,6 +136,11 @@ export function buildSystemPrompt(
 
   // 10. RULES — hardened, workflow-aware, architecture-aware, role-aware, plan-aware
   sections.push(buildRulesSection(config, intent, permissions, plan))
+
+  // Custom instructions (Conversation API keys)
+  if (customInstructions) {
+    sections.push(`### Custom Instructions (from project admin)\n${customInstructions}`)
+  }
 
   return sections.join('\n\n')
 }
