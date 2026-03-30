@@ -46,5 +46,11 @@ jobs:
       - name: Test RLS
         run: pnpm test:rls
 
+      - name: Install Playwright browsers
+        run: pnpm dlx playwright install --with-deps chromium
+
+      - name: Test E2E
+        run: pnpm test:e2e
+
       - name: Build
         run: pnpm build

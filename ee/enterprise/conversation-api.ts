@@ -359,38 +359,9 @@ async function runConversationMessage(
     totalOutputTokens,
     keyData.workspaceId,
     keyData.keyId,
-    'studio',
+    'api',
+    keyData.keyId,
   )
-
-  const { data: existingUsage } = await admin
-    .from('agent_usage')
-    .select('id, message_count, input_tokens, output_tokens')
-    .eq('workspace_id', keyData.workspaceId)
-    .eq('api_key_id', keyData.keyId)
-    .eq('month', month)
-    .eq('source', 'api')
-    .single()
-
-  if (existingUsage) {
-    await admin.from('agent_usage').update({
-      message_count: (existingUsage.message_count ?? 0) + 1,
-      input_tokens: (existingUsage.input_tokens ?? 0) + totalInputTokens,
-      output_tokens: (existingUsage.output_tokens ?? 0) + totalOutputTokens,
-      updated_at: new Date().toISOString(),
-    }).eq('id', existingUsage.id)
-  }
-  else {
-    await admin.from('agent_usage').insert({
-      workspace_id: keyData.workspaceId,
-      user_id: keyData.keyId,
-      api_key_id: keyData.keyId,
-      month,
-      source: 'api',
-      message_count: 1,
-      input_tokens: totalInputTokens,
-      output_tokens: totalOutputTokens,
-    })
-  }
 
   return {
     conversationId,

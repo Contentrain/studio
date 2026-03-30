@@ -385,7 +385,8 @@ export async function saveChatResult(
   outputTokens: number,
   workspaceId: string,
   userId: string,
-  usageSource: 'byoa' | 'studio',
+  usageSource: 'byoa' | 'studio' | 'api',
+  apiKeyId?: string,
 ) {
   // Save user message
   await admin.from('messages').insert({
@@ -407,14 +408,23 @@ export async function saveChatResult(
 
   // Update usage — increment counters, not overwrite
   const month = new Date().toISOString().substring(0, 7)
-  const { data: existing } = await admin
+
+  // Build usage query — match by api_key_id when available, else by user_id
+  let usageQuery = admin
     .from('agent_usage')
     .select('id, message_count, input_tokens, output_tokens')
     .eq('workspace_id', workspaceId)
-    .eq('user_id', userId)
     .eq('month', month)
     .eq('source', usageSource)
-    .single()
+
+  if (apiKeyId) {
+    usageQuery = usageQuery.eq('api_key_id', apiKeyId)
+  }
+  else {
+    usageQuery = usageQuery.eq('user_id', userId)
+  }
+
+  const { data: existing } = await usageQuery.single()
 
   if (existing) {
     await admin.from('agent_usage').update({
@@ -428,6 +438,7 @@ export async function saveChatResult(
     await admin.from('agent_usage').insert({
       workspace_id: workspaceId,
       user_id: userId,
+      ...(apiKeyId ? { api_key_id: apiKeyId } : {}),
       month,
       source: usageSource,
       message_count: 1,

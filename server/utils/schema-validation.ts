@@ -330,6 +330,21 @@ export function validateContentAgainstSchema(brain: BrainCacheEntry): SchemaWarn
             }
           }
         }
+        else if (model.kind === 'document') {
+          // Document entries store frontmatter fields
+          if (Array.isArray(data)) {
+            for (const doc of data as Array<{ slug?: string, frontmatter?: Record<string, unknown> }>) {
+              if (!doc.frontmatter || typeof doc.frontmatter !== 'object') continue
+              const slug = doc.slug ?? 'unknown'
+              const result = validateContent(doc.frontmatter, model.fields, modelId, locale, slug)
+              for (const err of result.errors) {
+                if (err.severity === 'error') {
+                  warnings.push({ modelId, type: 'content_validation_error', field: err.field, severity: 'warning', affectedEntries: 1, message: `[${slug}] ${err.message}` })
+                }
+              }
+            }
+          }
+        }
       }
     }
 

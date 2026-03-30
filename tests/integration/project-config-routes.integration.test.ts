@@ -32,6 +32,18 @@ describe('project config and branch route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    // Admin client for duplicate project check
+    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({ data: null, error: null }),
+            })),
+          })),
+        })),
+      })),
+    }))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
       from: vi.fn(() => ({
         insert: vi.fn(() => ({

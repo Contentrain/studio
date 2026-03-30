@@ -64,6 +64,31 @@ describe('auth callback e2e', () => {
     await page.close()
   })
 
+  it('rejects OAuth code flow without stored state (CSRF protection)', async () => {
+    const page = await createPage()
+    let verifyStatus = 200
+
+    // No sessionStorage state set — simulates missing CSRF state
+    await page.route('**/api/auth/verify', async (route) => {
+      await fulfillJson(route, { message: 'Invalid state' }, 403)
+      verifyStatus = 403
+    })
+
+    await page.route('**/api/auth/me', async (route) => {
+      await fulfillJson(route, { message: 'Unauthorized' }, 401)
+    })
+
+    await page.goto(url('/auth/callback?code=oauth-code'))
+
+    // Should stay on auth pages (login or callback with error) — not redirect into app
+    await page.waitForTimeout(1000)
+    const currentUrl = page.url()
+    expect(currentUrl).toMatch(/\/auth\//)
+    expect(verifyStatus).toBe(403)
+
+    await page.close()
+  })
+
   it('handles token callback flow and clears the stored state', async () => {
     const verifyBodies: Array<Record<string, unknown>> = []
     let authMeCalls = 0

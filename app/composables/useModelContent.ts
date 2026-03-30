@@ -17,7 +17,7 @@ export function useModelContent() {
   const meta = useState<Record<string, unknown> | null>('model-content-meta', () => null)
   const loading = useState('model-content-loading', () => false)
 
-  async function fetchContent(_workspaceId: string, _projectId: string, modelId: string, locale: string = 'en') {
+  async function fetchContent(workspaceId: string, projectId: string, modelId: string, locale: string = 'en') {
     loading.value = true
     try {
       const result = await brain.queryContent(modelId, locale)
@@ -26,7 +26,26 @@ export function useModelContent() {
       meta.value = (result.meta ?? null) as Record<string, unknown> | null
     }
     catch {
-      content.value = null
+      // Brain not ready — fallback to server API (brain sync without treeSha = full payload)
+      try {
+        const syncResponse = await $fetch<{
+          content: Record<string, { data: unknown, meta: Record<string, unknown> | null, kind: string }> | null
+        }>(`/api/workspaces/${workspaceId}/projects/${projectId}/brain/sync`)
+
+        const key = `${modelId}:${locale}`
+        const modelContent = syncResponse?.content?.[key]
+        if (modelContent) {
+          content.value = modelContent.data
+          kind.value = modelContent.kind ?? 'collection'
+          meta.value = (modelContent.meta ?? null) as Record<string, unknown> | null
+        }
+        else {
+          content.value = null
+        }
+      }
+      catch {
+        content.value = null
+      }
     }
     finally {
       loading.value = false
