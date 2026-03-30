@@ -129,6 +129,15 @@ watch(activeBranch, async (branch, oldBranch) => {
 
 const chatPanelRef = ref<{ handleSend: (text: string) => void } | null>(null)
 
+// Consume send-prompt actions from CommandPalette
+const { pendingAction: cmdAction, consumeAction: cmdConsume } = useCommandPalette()
+watch(cmdAction, (action) => {
+  if (action?.type === 'send-prompt' && action.payload) {
+    cmdConsume()
+    chatPanelRef.value?.handleSend(action.payload)
+  }
+})
+
 function selectModel(modelId: string) {
   if (modelId === '__health__') {
     router.replace({ query: { health: 'true' } })

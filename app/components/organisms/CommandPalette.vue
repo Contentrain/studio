@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot } from 'radix-vue'
+import type { ResultItem } from '~/composables/useCommandPalette'
 
 const { t } = useContent()
 const { models, snapshot } = useSnapshot()
 const { branches } = useBranches()
-const { conversations } = useChat()
-const { activeWorkspace } = useWorkspaces()
+const { conversations, clearChat, selectedModel } = useChat()
+const { activeWorkspace, workspaces } = useWorkspaces()
 const { projects } = useProjects()
 const { isDark, toggle: toggleTheme } = useTheme()
+const { signOut } = useAuth()
 const router = useRouter()
 const route = useRoute()
-const { open, addRecent, parseInput, matches } = useCommandPalette()
-const { clearChat } = useChat()
+const { open, addRecent, parseInput, buildResults, groupResults, emitAction } = useCommandPalette()
 
 const searchInput = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
+const selectedIndex = ref(0)
 
 // Focus input when opened
 watch(open, (isOpen) => {
@@ -41,7 +43,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 // Parse current search
 const parsed = computed(() => parseInput(searchInput.value))
 
-// Placeholder text based on mode
+// Placeholder
 const placeholder = computed(() => {
   switch (parsed.value.mode) {
     case 'command': return 'Type a command...'
@@ -65,308 +67,137 @@ const modeBadge = computed((): { label: string, color: 'primary' | 'secondary' |
   }
 })
 
-// Build results
-interface ResultItem {
-  id: string
-  label: string
-  sublabel?: string
-  icon: string
-  group: string
-  type: string
-  keywords?: string[]
-  action: () => void
-}
+const isInProject = computed(() => !!route.params.projectId)
 
+// Build results via composable
 const results = computed<ResultItem[]>(() => {
   const { mode, query, modelId } = parsed.value
-  const items: ResultItem[] = []
-  const isInProject = !!route.params.projectId
-
-  // RECENT (only when no query)
-  if (mode === 'global' && !query) {
-    const recent = useCommandPalette().getRecent()
-    for (const r of recent) {
-      items.push({
-        id: `recent:${r.id}`,
-        label: r.label,
-        sublabel: r.sublabel,
-        icon: r.icon,
-        group: 'Recent',
-        type: 'recent',
-        action: () => executeRecent(r),
-      })
-    }
-  }
-
-  // COMMANDS MODE
-  if (mode === 'command' || (mode === 'global' && query.length > 0)) {
-    const commands = getStaticCommands(isInProject)
-    for (const cmd of commands) {
-      if (mode === 'command' || query.length >= 2) {
-        if (matches(cmd.label, query) || cmd.keywords?.some((k: string) => matches(k, query))) {
-          items.push({ ...cmd, group: 'Commands' })
-        }
-      }
-    }
-  }
-
-  // MODELS
-  if ((mode === 'global') && isInProject) {
-    for (const model of models.value) {
-      if (matches(model.name, query) || matches(model.id, query) || matches(model.domain ?? '', query)) {
-        items.push({
-          id: `model:${model.id}`,
-          label: model.name,
-          sublabel: `${model.kind} · ${(model as { domain?: string }).domain ?? ''}`,
-          icon: getModelKindIcon(model.kind ?? model.type),
-          group: 'Models',
-          type: 'model',
-          action: () => navigateToModel(model.id, model.name),
-        })
-      }
-    }
-  }
-
-  // VOCABULARY
-  if ((mode === 'vocab' || mode === 'global') && isInProject) {
-    const vocab = snapshot.value?.vocabulary as Record<string, Record<string, string>> | null
-    if (vocab) {
-      for (const [term, translations] of Object.entries(vocab)) {
-        const value = translations.en ?? Object.values(translations)[0] ?? ''
-        if (matches(term, query) || matches(value, query)) {
-          items.push({
-            id: `vocab:${term}`,
-            label: term,
-            sublabel: value,
-            icon: 'icon-[annon--book-library]',
-            group: 'Vocabulary',
-            type: 'vocab',
-            action: () => navigateToVocabulary(),
-          })
-        }
-        if (items.filter(i => i.group === 'Vocabulary').length >= 5) break
-      }
-    }
-  }
-
-  // BRANCHES
-  if ((mode === 'branch' || mode === 'global') && isInProject) {
-    for (const branch of branches.value) {
-      if (matches(branch.name, query)) {
-        items.push({
-          id: `branch:${branch.name}`,
-          label: branch.name.replace('contentrain/', ''),
-          sublabel: branch.sha.substring(0, 7),
-          icon: 'icon-[annon--arrow-swap]',
-          group: 'Branches',
-          type: 'branch',
-          action: () => navigateToBranch(branch.name),
-        })
-      }
-    }
-  }
-
-  // CONVERSATIONS
-  if (mode === 'global' && isInProject && query.length >= 2) {
-    for (const conv of conversations.value) {
-      if (matches(conv.title ?? '', query)) {
-        items.push({
-          id: `conv:${conv.id}`,
-          label: conv.title || t('chat.untitled'),
-          sublabel: new Date(conv.updated_at).toLocaleDateString(),
-          icon: 'icon-[annon--comment-2]',
-          group: 'Conversations',
-          type: 'conversation',
-          action: () => loadConversation(conv.id),
-        })
-      }
-      if (items.filter(i => i.group === 'Conversations').length >= 3) break
-    }
-  }
-
-  // PROJECTS
-  if (mode === 'global') {
-    for (const project of projects.value) {
-      if (matches(project.repo_full_name, query)) {
-        items.push({
-          id: `project:${project.id}`,
-          label: project.repo_full_name.split('/').pop() ?? project.repo_full_name,
-          sublabel: project.detected_stack ?? '',
-          icon: 'icon-[annon--folder]',
-          group: 'Projects',
-          type: 'project',
-          action: () => navigateToProject(project.id),
-        })
-      }
-    }
-  }
-
-  // MODEL ENTRIES (@model search)
-  if (mode === 'model' && modelId && isInProject) {
-    // Get content from snapshot if available
-    const content = snapshot.value?.content as Record<string, { count: number }> | undefined
-    if (content?.[modelId]) {
-      items.push({
-        id: `model-nav:${modelId}`,
-        label: `Open ${modelId}`,
-        sublabel: `${content[modelId].count} entries`,
-        icon: 'icon-[annon--arrow-right]',
-        group: `@${modelId}`,
-        type: 'command',
-        action: () => navigateToModel(modelId, modelId),
-      })
-    }
-  }
-
-  // HELP
-  if (mode === 'help') {
-    const helps = [
-      { id: 'help:search', label: 'Global search', sublabel: 'Type anything to search models, entries, vocabulary', icon: 'icon-[annon--search]' },
-      { id: 'help:commands', label: '> Commands', sublabel: 'Type > to see available actions', icon: 'icon-[annon--code]' },
-      { id: 'help:vocab', label: '# Vocabulary', sublabel: 'Type # to search vocabulary terms', icon: 'icon-[annon--book-library]' },
-      { id: 'help:branch', label: '! Branches', sublabel: 'Type ! to search content branches', icon: 'icon-[annon--arrow-swap]' },
-      { id: 'help:model', label: '@model Search', sublabel: 'Type @modelId to search within a model', icon: 'icon-[annon--layers]' },
-      { id: 'help:shortcut', label: '⌘K', sublabel: 'Open this palette from anywhere', icon: 'icon-[annon--key]' },
-    ]
-    for (const h of helps) {
-      if (matches(h.label, query) || matches(h.sublabel, query)) {
-        items.push({ ...h, group: 'Help', type: 'help', action: () => {} })
-      }
-    }
-  }
-
-  return items
+  return buildResults({
+    mode,
+    query,
+    modelId,
+    isInProject: isInProject.value,
+    isDark: isDark.value,
+    currentModelId: selectedModel.value,
+    t,
+    models: models.value,
+    branches: branches.value,
+    conversations: conversations.value,
+    projects: projects.value,
+    workspaces: workspaces.value as Array<{ id: string, name: string, slug: string, plan: string }>,
+    snapshot: snapshot.value as { vocabulary?: Record<string, Record<string, string>>, content?: Record<string, { count: number }> } | null,
+    onAction: handleAction,
+    onRecent: executeRecent,
+    onLoadConversation: loadConversation,
+    onNavigateModel: navigateToModel,
+    onNavigateBranch: navigateToBranch,
+    onNavigateProject: navigateToProject,
+    onNavigateWorkspace: navigateToWorkspace,
+  })
 })
 
-// Group results
-const groupedResults = computed(() => {
-  const groups: Record<string, ResultItem[]> = {}
-  for (const item of results.value) {
-    if (!groups[item.group]) groups[item.group] = []
-    groups[item.group]!.push(item)
-  }
-  return groups
-})
-
+const groupedResults = computed(() => groupResults(results.value))
 const hasResults = computed(() => results.value.length > 0)
 
-// Static commands
-function getStaticCommands(isInProject: boolean): ResultItem[] {
-  const cmds: ResultItem[] = []
+watch(results, () => {
+  selectedIndex.value = 0
+})
 
-  // Always available
-  cmds.push({
-    id: 'cmd:dark-mode',
-    label: isDark.value ? t('common.light_mode') : t('common.dark_mode'),
-    icon: isDark.value ? 'icon-[annon--sun]' : 'icon-[annon--moon]',
-    group: 'Commands',
-    type: 'command',
-    keywords: ['theme', 'dark', 'light', 'mode'],
-    action: () => {
+// ── Action resolver ────────────────────────────────────────
+
+function handleAction(actionKey: string, payload?: Record<string, unknown>) {
+  const slug = activeWorkspace.value?.slug
+
+  switch (actionKey) {
+    // Appearance
+    case 'toggle-theme':
       toggleTheme()
-      open.value = false
-    },
-  })
+      break
 
-  cmds.push({
-    id: 'cmd:settings',
-    label: t('common.settings'),
-    icon: 'icon-[annon--gear]',
-    group: 'Commands',
-    type: 'command',
-    keywords: ['settings', 'workspace', 'members'],
-    action: () => navigateToSettings(),
-  })
+    // Global navigation
+    case 'sign-out':
+      signOut()
+      break
+    case 'switch-workspace':
+      router.push('/')
+      break
+    case 'create-workspace':
+      router.push('/')
+      break
 
-  if (isInProject) {
-    cmds.push({
-      id: 'cmd:new-conversation',
-      label: t('chat.new_conversation'),
-      icon: 'icon-[annon--plus-circle]',
-      group: 'Commands',
-      type: 'command',
-      keywords: ['chat', 'new', 'conversation', 'clear'],
-      action: () => {
-        clearChat()
-        open.value = false
-      },
-    })
+    // Workspace settings
+    case 'ws-settings':
+      if (slug) router.push(`/w/${slug}/settings`)
+      break
+    case 'ws-members':
+      if (slug) router.push(`/w/${slug}/settings?tab=members`)
+      break
+    case 'ws-github':
+      if (slug) router.push(`/w/${slug}/settings?tab=github`)
+      break
+    case 'ws-ai-keys':
+      if (slug) router.push(`/w/${slug}/settings?tab=ai-keys`)
+      break
+    case 'connect-repo':
+      emitAction({ type: 'connect-repo' })
+      break
 
-    cmds.push({
-      id: 'cmd:vocabulary',
-      label: t('content.vocabulary'),
-      icon: 'icon-[annon--book-library]',
-      group: 'Commands',
-      type: 'command',
-      keywords: ['vocabulary', 'terms', 'glossary'],
-      action: () => navigateToVocabulary(),
-    })
+    // Project navigation
+    case 'project-overview':
+      router.replace({ query: {} })
+      break
+    case 'new-conversation':
+      clearChat()
+      break
+    case 'open-vocabulary':
+      router.replace({ query: { vocabulary: 'true' } })
+      break
+    case 'open-cdn':
+      router.replace({ query: { cdn: 'true' } })
+      break
+    case 'open-media':
+      router.replace({ query: { assets: 'true' } })
+      break
+    case 'open-health':
+      router.replace({ query: { health: 'true' } })
+      break
+    case 'open-project-settings':
+      emitAction({ type: 'open-project-settings' })
+      break
+    case 'open-webhooks':
+      emitAction({ type: 'open-project-settings', payload: 'webhooks' })
+      break
+    case 'open-conversation-keys':
+      emitAction({ type: 'open-project-settings', payload: 'api' })
+      break
 
-    cmds.push({
-      id: 'cmd:cdn',
-      label: t('cdn.title'),
-      icon: 'icon-[annon--globe]',
-      group: 'Commands',
-      type: 'command',
-      keywords: ['cdn', 'delivery', 'api', 'build'],
-      action: () => {
-        router.replace({ query: { cdn: 'true' } })
-        open.value = false
-      },
-    })
+    // AI model
+    case 'set-model-haiku':
+      selectedModel.value = 'claude-haiku-4-5-20251001'
+      break
+    case 'set-model-sonnet':
+      selectedModel.value = 'claude-sonnet-4-20250514'
+      break
+    case 'set-model-opus':
+      selectedModel.value = 'claude-opus-4-20250514'
+      break
 
-    cmds.push({
-      id: 'cmd:add-model',
-      label: t('content.add_model'),
-      icon: 'icon-[annon--plus]',
-      group: 'Commands',
-      type: 'command',
-      keywords: ['create', 'model', 'new', 'schema'],
-      action: () => {
-        emit('sendPrompt', 'Create a new content model. Ask me what kind of content I want to manage.')
-        open.value = false
-      },
-    })
-
-    cmds.push({
-      id: 'cmd:add-entry',
-      label: t('content.add_entry'),
-      icon: 'icon-[annon--file-text]',
-      group: 'Commands',
-      type: 'command',
-      keywords: ['create', 'entry', 'new', 'content', 'add'],
-      action: () => {
-        emit('sendPrompt', 'Create a new entry. Ask me which model and what content.')
-        open.value = false
-      },
-    })
-
-    cmds.push({
-      id: 'cmd:translate',
-      label: 'Translate content',
-      icon: 'icon-[annon--globe]',
-      group: 'Commands',
-      type: 'command',
-      keywords: ['translate', 'locale', 'language', 'i18n'],
-      action: () => {
-        emit('sendPrompt', 'Translate content to another locale. Ask me which model and target language.')
-        open.value = false
-      },
-    })
+    // Agent prompts
+    case 'send-prompt':
+      if (payload?.prompt) {
+        emitAction({ type: 'send-prompt', payload: payload.prompt as string })
+      }
+      break
   }
 
-  return cmds
-}
-
-// Navigation actions
-function navigateToModel(modelId: string, modelName: string) {
-  addRecent({ id: `model:${modelId}`, label: modelName, sublabel: 'model', icon: getModelKindIcon('collection'), type: 'model' })
-  router.replace({ query: { model: modelId } })
   open.value = false
 }
 
-function navigateToVocabulary() {
-  router.replace({ query: { vocabulary: 'true' } })
+// ── Navigation helpers ─────────────────────────────────────
+
+function navigateToModel(modelId: string, modelName: string) {
+  addRecent({ id: `model:${modelId}`, label: modelName, sublabel: 'model', icon: 'icon-[annon--layers]', type: 'model' })
+  router.replace({ query: { model: modelId } })
   open.value = false
 }
 
@@ -383,10 +214,10 @@ function navigateToProject(projectId: string) {
   open.value = false
 }
 
-function navigateToSettings() {
-  if (activeWorkspace.value) {
-    router.push(`/w/${activeWorkspace.value.slug}/settings`)
-  }
+function navigateToWorkspace(workspaceId: string, slug: string) {
+  const { setActiveWorkspace } = useWorkspaces()
+  setActiveWorkspace(workspaceId)
+  router.push(`/w/${slug}`)
   open.value = false
 }
 
@@ -414,6 +245,12 @@ function executeRecent(item: { id: string, type: string }) {
     navigateToProject(projectId)
     return
   }
+  else if (item.id.startsWith('ws:')) {
+    const wsId = item.id.replace('ws:', '')
+    const ws = workspaces.value.find(w => w.id === wsId)
+    if (ws) navigateToWorkspace(ws.id, ws.slug)
+    return
+  }
   open.value = false
 }
 
@@ -423,11 +260,6 @@ function executeItem(item: ResultItem) {
 }
 
 // Keyboard navigation
-const selectedIndex = ref(0)
-watch(results, () => {
-  selectedIndex.value = 0
-})
-
 function handleKeyNav(e: KeyboardEvent) {
   if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -443,10 +275,6 @@ function handleKeyNav(e: KeyboardEvent) {
     if (item) executeItem(item)
   }
 }
-
-const emit = defineEmits<{
-  sendPrompt: [text: string]
-}>()
 </script>
 
 <template>

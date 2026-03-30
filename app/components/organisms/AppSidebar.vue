@@ -7,12 +7,31 @@ const { models, hasContentrain, snapshot, loading: snapshotLoading, fetchSnapsho
 const { branches, fetchBranches } = useBranches()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
-const { toggle: openCommandPalette } = useCommandPalette()
+const { toggle: openCommandPalette, pendingAction, consumeAction } = useCommandPalette()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const router = useRouter()
 const connectDialogOpen = ref(false)
 const settingsModalOpen = ref(false)
+const settingsModalTab = ref<'general' | 'api' | 'webhooks'>('general')
+
+// Consume pending actions from CommandPalette (only sidebar-owned dialogs)
+watch(pendingAction, (action) => {
+  if (!action) return
+
+  switch (action.type) {
+    case 'open-project-settings':
+      consumeAction()
+      settingsModalTab.value = (action.payload as 'general' | 'api' | 'webhooks') ?? 'general'
+      settingsModalOpen.value = true
+      break
+    case 'connect-repo':
+      consumeAction()
+      connectDialogOpen.value = true
+      break
+    // 'send-prompt' is consumed by the project page (chatPanelRef)
+  }
+})
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
 const isInsideProject = computed(() => !!currentProjectId.value)
 const currentProject = computed(() => projects.value.find(p => p.id === currentProjectId.value) ?? null)
@@ -342,6 +361,7 @@ function onProjectDeleted() {
     <OrganismsProjectSettingsModal
       v-if="isInsideProject && activeWorkspace && currentProjectId"
       v-model:open="settingsModalOpen" :workspace-id="activeWorkspace.id" :project-id="currentProjectId"
+      :initial-tab="settingsModalTab"
       :project-name="currentProject?.repo_full_name?.split('/').pop() ?? ''"
       :config="projectConfig" @saved="onSettingsSaved" @deleted="onProjectDeleted"
     />
