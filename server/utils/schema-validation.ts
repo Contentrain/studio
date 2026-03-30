@@ -304,7 +304,7 @@ export function validateContentAgainstSchema(brain: BrainCacheEntry): SchemaWarn
 
     // Content validation against schema (non-dictionary only)
     if (model.fields && model.kind !== 'dictionary') {
-      const locales = model.i18n ? supportedLocales : ['data']
+      const locales = model.i18n ? supportedLocales : [defaultLocale]
       for (const locale of locales) {
         const data = brain.content.get(`${modelId}:${locale}`)
         if (!data || typeof data !== 'object') continue
@@ -335,7 +335,7 @@ export function validateContentAgainstSchema(brain: BrainCacheEntry): SchemaWarn
 
     // Dictionary: all values must be strings
     if (model.kind === 'dictionary') {
-      const locales = model.i18n ? supportedLocales : ['data']
+      const locales = model.i18n ? supportedLocales : [defaultLocale]
       for (const locale of locales) {
         const data = brain.content.get(`${modelId}:${locale}`)
         if (!data || typeof data !== 'object') continue
@@ -370,8 +370,8 @@ export function validateRelationIntegrity(brain: BrainCacheEntry): SchemaWarning
     )
     if (relationFields.length === 0) continue
 
-    // Get content for default locale
-    const locale = model.i18n ? defaultLocale : 'data'
+    // Get content for default locale (brain always stores with defaultLocale key)
+    const locale = defaultLocale
     const data = brain.content.get(`${modelId}:${locale}`)
     if (!data || typeof data !== 'object') continue
 

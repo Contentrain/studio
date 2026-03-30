@@ -623,7 +623,15 @@ export async function updateWorkspaceStorageBytes(
   workspaceId: string,
   deltaBytes: number,
 ): Promise<void> {
-  // Use RPC or raw SQL for atomic increment — fallback to read+write
+  // Try atomic increment via RPC first (avoids read-modify-write race)
+  const { error: rpcError } = await admin.rpc('increment_storage_bytes', {
+    p_workspace_id: workspaceId,
+    p_delta: deltaBytes,
+  })
+
+  if (!rpcError) return
+
+  // Fallback to read+write (race-prone but functional if RPC not yet deployed)
   const { data } = await admin
     .from('workspaces')
     .select('media_storage_bytes')

@@ -271,7 +271,7 @@ export default defineEventHandler(async (event) => {
   const userAgent = getHeader(event, 'user-agent') ?? null
   const referrer = getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? null
 
-  await createFormSubmission(admin, {
+  const submission = await createFormSubmission(admin, {
     project_id: projectId,
     workspace_id: workspace.id,
     model_id: modelId,
@@ -280,6 +280,13 @@ export default defineEventHandler(async (event) => {
     user_agent: userAgent ?? undefined,
     referrer: referrer ?? undefined,
   })
+
+  // Emit webhook event (fire-and-forget)
+  emitWebhookEvent(projectId, workspace.id, 'form.submitted', {
+    submissionId: submission.id,
+    modelId,
+    status: submission.status,
+  }).catch(() => {})
 
   return {
     success: true,

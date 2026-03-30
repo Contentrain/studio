@@ -14,6 +14,18 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
+  // Verify project belongs to workspace (prevents cross-project access)
+  const admin = useSupabaseAdmin()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
+
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'forms.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
@@ -24,8 +36,6 @@ export default defineEventHandler(async (event) => {
     status?: string
     sort?: string
   }
-
-  const admin = useSupabaseAdmin()
 
   return listFormSubmissions(admin, workspaceId, projectId, modelId, {
     page: query.page ? Number(query.page) : 1,

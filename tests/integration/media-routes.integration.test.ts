@@ -77,6 +77,17 @@ function stubMediaRouteGlobals() {
   }))
   vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
   vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
+  vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            single: vi.fn().mockResolvedValue({ data: { id: 'project-1' }, error: null }),
+          })),
+        })),
+      })),
+    })),
+  }))
 }
 
 describe('media route integration', () => {
@@ -135,12 +146,18 @@ describe('media route integration', () => {
         data: Buffer.from('marketing,homepage'),
       },
     ]))
+    vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
+      from: vi.fn((table: string) => ({
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: table === 'projects' ? { id: 'project-1' } : { media_storage_bytes: 1024 },
+              }),
+            })),
             single: vi.fn().mockResolvedValue({
-              data: { media_storage_bytes: 1024 },
+              data: table === 'projects' ? { id: 'project-1' } : { media_storage_bytes: 1024 },
             }),
           })),
         })),
@@ -177,6 +194,7 @@ describe('media route integration', () => {
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('isAllowedMimeType', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('isAllowedWebhookUrl', vi.fn().mockReturnValue(true))
     vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(10))
     vi.stubGlobal('resolveVariantConfig', vi.fn().mockReturnValue({
       default: { width: 1200, fit: 'inside' },

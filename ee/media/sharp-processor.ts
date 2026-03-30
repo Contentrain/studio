@@ -99,52 +99,68 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       const originalPath = `media/original/${assetId}.${isImage ? ext : optimized.format}`
       await cdn.putObject(projectId, originalPath, optimized.buffer, isImage ? 'image/webp' : contentType)
 
-      // Calculate blurhash (images only)
-      let blurhash: string | null = null
-      if (isImage) {
-        blurhash = await calculateBlurhash(optimized.buffer)
-      }
+      // Track uploaded paths for cleanup on failure
+      const uploadedPaths: string[] = [originalPath]
 
-      // Generate and upload variants (images only)
-      const variantMap: Record<string, { path: string, width: number, height: number, format: string, size: number }> = {}
-
-      if (isImage && Object.keys(options.variants).length > 0) {
-        const generated = await generateVariants(optimized.buffer, assetId, options.variants)
-        for (const v of generated) {
-          await cdn.putObject(projectId, v.variant.path, v.buffer, `image/${v.variant.format}`)
-          variantMap[v.name] = v.variant
+      try {
+        // Calculate blurhash (images only)
+        let blurhash: string | null = null
+        if (isImage) {
+          blurhash = await calculateBlurhash(optimized.buffer)
         }
+
+        // Generate and upload variants (images only)
+        const variantMap: Record<string, { path: string, width: number, height: number, format: string, size: number }> = {}
+
+        if (isImage && Object.keys(options.variants).length > 0) {
+          const generated = await generateVariants(optimized.buffer, assetId, options.variants)
+          for (const v of generated) {
+            await cdn.putObject(projectId, v.variant.path, v.buffer, `image/${v.variant.format}`)
+            variantMap[v.name] = v.variant
+            uploadedPaths.push(v.variant.path)
+          }
+        }
+
+        // Total storage used (original + all variants)
+        const totalBytes = optimized.size + Object.values(variantMap).reduce((sum, v) => sum + v.size, 0)
+
+        // Insert DB row
+        const row = await createMediaAsset(admin, {
+          project_id: projectId,
+          workspace_id: workspaceId,
+          filename,
+          content_type: contentType,
+          size_bytes: totalBytes,
+          content_hash: contentHash,
+          width: optimized.width,
+          height: optimized.height,
+          format: optimized.format,
+          blurhash,
+          focal_point: null,
+          duration_seconds: null,
+          alt: options.alt ?? null,
+          tags: options.tags ?? [],
+          original_path: originalPath,
+          variants: variantMap,
+          uploaded_by: uploadedBy,
+          source: options.source ?? 'upload',
+        })
+
+        // Update workspace storage counter
+        await updateWorkspaceStorageBytes(admin, workspaceId, totalBytes)
+
+        return rowToAsset(row)
       }
-
-      // Total storage used (original + all variants)
-      const totalBytes = optimized.size + Object.values(variantMap).reduce((sum, v) => sum + v.size, 0)
-
-      // Insert DB row
-      const row = await createMediaAsset(admin, {
-        project_id: projectId,
-        workspace_id: workspaceId,
-        filename,
-        content_type: contentType,
-        size_bytes: totalBytes,
-        content_hash: contentHash,
-        width: optimized.width,
-        height: optimized.height,
-        format: optimized.format,
-        blurhash,
-        focal_point: null,
-        duration_seconds: null,
-        alt: options.alt ?? null,
-        tags: options.tags ?? [],
-        original_path: originalPath,
-        variants: variantMap,
-        uploaded_by: uploadedBy,
-        source: options.source ?? 'upload',
-      })
-
-      // Update workspace storage counter
-      await updateWorkspaceStorageBytes(admin, workspaceId, totalBytes)
-
-      return rowToAsset(row)
+      catch (e) {
+        // Cleanup orphaned blobs on failure
+        for (const path of uploadedPaths) {
+          try {
+            await cdn.deleteObject(projectId, path)
+          }
+          catch { /* best-effort cleanup */ }
+        }
+        throw e
+      }
     },
 
     async regenerateVariants(assetId: string, variants: Record<string, VariantConfig>): Promise<MediaAsset> {
@@ -155,22 +171,28 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       const original = await cdn.getObject(row.project_id, row.original_path)
       if (!original) throw createError({ statusCode: 404, message: 'Original file not found in storage' })
 
-      // Delete old variants from R2
-      const oldVariants = row.variants as Record<string, { path: string, size: number }>
-      let freedBytes = 0
-      for (const v of Object.values(oldVariants)) {
-        await cdn.deleteObject(row.project_id, v.path)
-        freedBytes += v.size
-      }
-
-      // Generate new variants
+      // Generate NEW variants first (before deleting old ones)
       const generated = await generateVariants(original.data, assetId, variants)
       const variantMap: Record<string, { path: string, width: number, height: number, format: string, size: number }> = {}
       let newBytes = 0
+
+      // Upload NEW variants
       for (const v of generated) {
         await cdn.putObject(row.project_id, v.variant.path, v.buffer, `image/${v.variant.format}`)
         variantMap[v.name] = v.variant
         newBytes += v.variant.size
+      }
+
+      // NOW safe to delete old variants (new ones are durable)
+      const oldVariants = row.variants as Record<string, { path: string, size: number }>
+      let freedBytes = 0
+      for (const v of Object.values(oldVariants)) {
+        // Only delete if path differs from new variant (avoid deleting if same path reused)
+        const isReused = Object.values(variantMap).some(nv => nv.path === v.path)
+        if (!isReused) {
+          await cdn.deleteObject(row.project_id, v.path)
+        }
+        freedBytes += v.size
       }
 
       // Recalculate blurhash

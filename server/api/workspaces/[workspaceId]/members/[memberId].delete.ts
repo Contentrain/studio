@@ -14,8 +14,11 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
 
+  // Use admin client — RLS only allows owner, but route permits admin too
+  const admin = useSupabaseAdmin()
+
   // Prevent removing the owner
-  const { data: target } = await client
+  const { data: target } = await admin
     .from('workspace_members')
     .select('role')
     .eq('id', memberId)
@@ -28,7 +31,7 @@ export default defineEventHandler(async (event) => {
   if (target.role === 'owner')
     throw createError({ statusCode: 400, message: errorMessage('members.cannot_remove_owner') })
 
-  const { error } = await client
+  const { error } = await admin
     .from('workspace_members')
     .delete()
     .eq('id', memberId)

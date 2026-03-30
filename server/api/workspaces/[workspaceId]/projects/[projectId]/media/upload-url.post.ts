@@ -13,6 +13,18 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
+  // Verify project belongs to workspace (prevents cross-project access)
+  const admin = useSupabaseAdmin()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
+
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'media.upload'))
     throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade') })
@@ -30,6 +42,10 @@ export default defineEventHandler(async (event) => {
 
   if (!body.url?.trim())
     throw createError({ statusCode: 400, message: errorMessage('media.url_required') })
+
+  // SSRF protection — block internal/private networks
+  if (!isAllowedWebhookUrl(body.url.trim()))
+    throw createError({ statusCode: 400, message: errorMessage('media.url_blocked') })
 
   // Fetch the URL server-side
   let response: Response

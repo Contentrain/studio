@@ -13,9 +13,12 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   // OAuth state CSRF protection
-  // Code flow (OAuth): state is required and validated
+  // Code flow (OAuth): state is REQUIRED and validated
   // Token flow (magic link): state is optional (no redirect to hijack)
-  if (body.code && body.state) {
+  if (body.code) {
+    if (!body.state) {
+      throw createError({ statusCode: 403, message: errorMessage('auth.invalid_state') })
+    }
     const valid = await validateAuthState(event, body.state)
     if (!valid)
       throw createError({ statusCode: 403, message: errorMessage('auth.invalid_state') })

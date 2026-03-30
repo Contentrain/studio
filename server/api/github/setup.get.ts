@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event) as {
     installation_id?: string
     setup_action?: string
+    state?: string // workspace ID passed during GitHub App install
   }
 
   if (!query.installation_id) {
@@ -20,7 +21,25 @@ export default defineEventHandler(async (event) => {
   if (!installationId || Number.isNaN(installationId))
     throw createError({ statusCode: 400, message: errorMessage('github.installation_id_invalid') })
 
-  const workspace = await getPrimaryWorkspace(useSupabaseUserClient(session.accessToken), session.user.id)
+  let workspace: { id: string, slug: string, github_installation_id: number | null } | null = null
+
+  // If state contains workspace ID, use that (prevents binding to wrong workspace)
+  if (query.state) {
+    const client = useSupabaseUserClient(session.accessToken)
+    // Verify user is owner/admin of target workspace
+    await requireWorkspaceRole(client, session.user.id, query.state, ['owner', 'admin'])
+    const { data } = await client
+      .from('workspaces')
+      .select('id, slug, github_installation_id')
+      .eq('id', query.state)
+      .single()
+    workspace = data
+  }
+
+  // Fallback to primary workspace if no state provided
+  if (!workspace) {
+    workspace = await getPrimaryWorkspace(useSupabaseUserClient(session.accessToken), session.user.id)
+  }
 
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('github.workspace_not_found') })

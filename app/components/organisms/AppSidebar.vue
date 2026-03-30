@@ -97,8 +97,10 @@ function selectAssets() {
 }
 
 function installGitHubApp() {
+  const config = useRuntimeConfig()
+  const appSlug = config.public.githubAppSlug || 'contentrain-studio'
   window.open(
-    'https://github.com/apps/contentrain-studio-dev/installations/new',
+    `https://github.com/apps/${appSlug}/installations/new`,
     '_blank',
     'noopener,noreferrer',
   )

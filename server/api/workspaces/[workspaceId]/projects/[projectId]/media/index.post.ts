@@ -14,6 +14,18 @@ export default defineEventHandler(async (event) => {
   const client = useSupabaseUserClient(session.accessToken)
   await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
+  // Verify project belongs to workspace (prevents cross-project access)
+  const admin = useSupabaseAdmin()
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!project)
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
+
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'media.upload'))
     throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade') })
@@ -43,7 +55,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
 
   // Storage quota
-  const admin = useSupabaseAdmin()
   const { data: ws } = await admin
     .from('workspaces')
     .select('media_storage_bytes')
@@ -90,6 +101,13 @@ export default defineEventHandler(async (event) => {
     uploadedBy: session.user.id,
     source: 'upload',
   })
+
+  // Emit webhook event (fire-and-forget)
+  emitWebhookEvent(projectId, workspaceId, 'media.uploaded', {
+    assetId: asset.id,
+    filename: asset.filename,
+    contentType: asset.contentType,
+  }).catch(() => {})
 
   setResponseStatus(event, 201)
   return asset
