@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { DeepReadonly } from 'vue'
 import type { FieldDef } from '@contentrain/types'
-import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from 'radix-vue'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 interface SnapshotModel {
@@ -124,23 +123,6 @@ const vocabularyTerms = computed(() => {
   if (!vocab) return []
   return Object.entries(vocab)
 })
-
-// Vocabulary editing
-const vocabNewKey = ref('')
-const vocabNewValue = ref('')
-
-function vocabDeleteTerm(key: string) {
-  emit('vocabularySave', { [key]: null })
-}
-
-function vocabAddTerm() {
-  const key = vocabNewKey.value.trim()
-  const value = vocabNewValue.value.trim()
-  if (!key || !value) return
-  emit('vocabularySave', { [key]: { [currentLocale.value]: value } })
-  vocabNewKey.value = ''
-  vocabNewValue.value = ''
-}
 
 // Schema-aware field utilities
 function getFieldType(fieldId: string): string {
@@ -350,75 +332,12 @@ provide(sendChatPromptKey, sendChatPrompt)
 
       <!-- VOCABULARY -->
       <template v-else-if="panelState === 'vocabulary'">
-        <div v-if="vocabularyTerms.length === 0 && !editable" class="p-5">
-          <AtomsEmptyState
-            icon="icon-[annon--book-library]"
-            :title="t('content.vocabulary_empty_title')"
-            :description="t('content.vocabulary_empty_description')"
-          />
-        </div>
-        <template v-else>
-          <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
-            <div
-              v-for="[term, translations] in vocabularyTerms"
-              :key="term"
-              class="group/row flex items-center gap-3 px-5 py-2.5 hover:bg-secondary-50 dark:hover:bg-secondary-900"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="font-mono text-xs font-medium text-label">
-                  {{ term }}
-                </div>
-                <div class="mt-0.5 text-sm text-heading dark:text-secondary-100">
-                  {{ translations[currentLocale] ?? (Object.keys(translations).length > 0 ? translations[Object.keys(translations)[0]!] : '—') }}
-                </div>
-                <div v-if="Object.keys(translations).length > 1" class="mt-0.5 flex gap-1.5">
-                  <span
-                    v-for="(val, loc) in translations"
-                    :key="loc"
-                    class="text-[10px] text-muted"
-                    :class="{ 'font-medium text-primary-500': loc === currentLocale }"
-                  >
-                    {{ String(loc).toUpperCase() }}
-                  </span>
-                </div>
-              </div>
-              <button
-                v-if="editable"
-                type="button"
-                class="shrink-0 rounded p-1 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                :title="t('vocabulary.delete_term')"
-                @click="vocabDeleteTerm(term)"
-              >
-                <span class="icon-[annon--trash] block size-3.5" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          <!-- Add term -->
-          <div v-if="editable" class="sticky bottom-0 border-t border-secondary-200 bg-white px-5 py-3 dark:border-secondary-800 dark:bg-secondary-950">
-            <form class="flex items-center gap-2" @submit.prevent="vocabAddTerm">
-              <input
-                v-model="vocabNewKey"
-                type="text"
-                :placeholder="t('vocabulary.key_placeholder')"
-                class="h-8 w-24 shrink-0 rounded-lg border border-secondary-200 bg-white px-2.5 text-xs font-mono text-heading placeholder:text-disabled focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
-              >
-              <input
-                v-model="vocabNewValue"
-                type="text"
-                :placeholder="t('vocabulary.value_placeholder')"
-                class="h-8 flex-1 rounded-lg border border-secondary-200 bg-white px-2.5 text-sm text-heading placeholder:text-disabled focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
-              >
-              <AtomsBaseButton
-                type="submit"
-                variant="primary"
-                size="sm"
-                :disabled="!vocabNewKey.trim() || !vocabNewValue.trim()"
-              >
-                <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
-              </AtomsBaseButton>
-            </form>
-          </div>
-        </template>
+        <OrganismsContentVocabularyView
+          :terms="vocabularyTerms"
+          :locale="currentLocale"
+          :editable="editable"
+          @save="emit('vocabularySave', $event)"
+        />
       </template>
 
       <!-- HEALTH DASHBOARD -->
@@ -447,81 +366,14 @@ provide(sendChatPromptKey, sendChatPrompt)
         </div>
         <template v-else-if="snapshot && snapshot.models.length > 0">
           <!-- Project stats bar -->
-          <TooltipProvider v-if="stats" :delay-duration="300">
-            <div class="flex items-center gap-3 border-b border-secondary-100 px-5 py-2.5 dark:border-secondary-800/50">
-              <TooltipRoot>
-                <TooltipTrigger as-child>
-                  <div class="flex items-center gap-1.5 text-xs text-muted">
-                    <span class="icon-[annon--layers] size-3.5" aria-hidden="true" />
-                    <span class="font-medium">{{ stats.models }}</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent
-                    :side-offset="6"
-                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
-                  >
-                    {{ stats.models }} {{ stats.models === 1 ? 'model' : 'models' }}
-                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
-                  </TooltipContent>
-                </TooltipPortal>
-              </TooltipRoot>
-
-              <TooltipRoot>
-                <TooltipTrigger as-child>
-                  <div class="flex items-center gap-1.5 text-xs text-muted">
-                    <span class="icon-[annon--file-text] size-3.5" aria-hidden="true" />
-                    <span class="font-medium">{{ stats.entries }}</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent
-                    :side-offset="6"
-                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
-                  >
-                    {{ stats.entries }} {{ stats.entries === 1 ? 'entry' : 'entries' }}
-                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
-                  </TooltipContent>
-                </TooltipPortal>
-              </TooltipRoot>
-
-              <TooltipRoot v-if="stats.locales.length > 0">
-                <TooltipTrigger as-child>
-                  <div class="flex items-center gap-1.5 text-xs text-muted">
-                    <span class="icon-[annon--globe] size-3.5" aria-hidden="true" />
-                    <span class="font-medium">{{ stats.locales.map(l => l.toUpperCase()).join(', ') }}</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent
-                    :side-offset="6"
-                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
-                  >
-                    {{ stats.locales.length }} {{ stats.locales.length === 1 ? 'locale' : 'locales' }}: {{ stats.locales.join(', ') }}
-                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
-                  </TooltipContent>
-                </TooltipPortal>
-              </TooltipRoot>
-
-              <!-- Health score -->
-              <TooltipRoot>
-                <TooltipTrigger as-child>
-                  <button type="button" class="ml-auto" @click="emit('selectModel', '__health__')">
-                    <AtomsHealthScoreBadge :score="healthScore" size="sm" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent
-                    :side-offset="6"
-                    class="z-50 rounded-lg bg-secondary-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-secondary-100 dark:text-secondary-900"
-                  >
-                    {{ t('health.score_label') }}: {{ healthScore }}/100
-                    <TooltipArrow class="fill-secondary-900 dark:fill-secondary-100" />
-                  </TooltipContent>
-                </TooltipPortal>
-              </TooltipRoot>
-            </div>
-          </TooltipProvider>
+          <MoleculesContentStatsBar
+            v-if="stats"
+            :model-count="stats.models"
+            :entry-count="stats.entries"
+            :locales="stats.locales"
+            :health-score="healthScore"
+            @view-health="emit('selectModel', '__health__')"
+          />
 
           <!-- Schema warning banner -->
           <MoleculesSchemaWarningBanner
