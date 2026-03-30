@@ -15,7 +15,19 @@ export default defineEventHandler(async (event) => {
   if (!body.repoFullName)
     throw createError({ statusCode: 400, message: errorMessage('validation.repo_required') })
 
-  const client = useDatabaseProvider().getUserClient(session.accessToken)
+  const db = useDatabaseProvider()
+  const client = db.getUserClient(session.accessToken)
+
+  // Prevent duplicate — same repo in same workspace
+  const { data: existing } = await db.getAdminClient()
+    .from('projects')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .eq('repo_full_name', body.repoFullName)
+    .single()
+
+  if (existing)
+    throw createError({ statusCode: 409, message: errorMessage('project.already_connected') })
 
   const { data: project, error } = await client
     .from('projects')

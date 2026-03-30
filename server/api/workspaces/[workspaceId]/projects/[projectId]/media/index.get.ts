@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
   const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
+  const role = await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
   // Verify project belongs to workspace (prevents cross-project access)
   const admin = db.getAdminClient()
@@ -25,6 +25,12 @@ export default defineEventHandler(async (event) => {
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
+
+  // Workspace members need explicit project assignment
+  if (role === 'member') {
+    const { data: pm } = await admin.from('project_members').select('id').eq('project_id', projectId).eq('user_id', session.user.id).single()
+    if (!pm) throw createError({ statusCode: 403, message: errorMessage('project.access_denied') })
+  }
 
   const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
   if (!hasFeature(plan, 'media.library'))
