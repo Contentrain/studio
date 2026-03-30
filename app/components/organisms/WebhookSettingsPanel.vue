@@ -212,7 +212,7 @@ watch(createOpen, (isOpen) => {
     <!-- Upgrade nudge -->
     <div v-else-if="!hasPlan" class="flex h-full items-center justify-center p-8">
       <AtomsEmptyState
-        icon="icon-[annon--notification]"
+        icon="icon-[annon--bell]"
         :title="t('webhooks.title')"
         :description="t('webhooks.description')"
       >
@@ -292,7 +292,7 @@ watch(createOpen, (isOpen) => {
           >
             <!-- Top row: name + status -->
             <div class="flex items-center gap-2">
-              <span class="icon-[annon--notification] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+              <span class="icon-[annon--bell] size-3.5 shrink-0 text-muted" aria-hidden="true" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <span class="truncate text-xs font-medium text-heading dark:text-secondary-100">
@@ -369,7 +369,7 @@ watch(createOpen, (isOpen) => {
         <!-- Empty state -->
         <div v-else class="py-8">
           <AtomsEmptyState
-            icon="icon-[annon--notification]"
+            icon="icon-[annon--bell]"
             :title="t('webhooks.no_webhooks')"
             :description="t('webhooks.no_webhooks_description')"
             compact
