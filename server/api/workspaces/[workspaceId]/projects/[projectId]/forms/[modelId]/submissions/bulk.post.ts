@@ -12,8 +12,7 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !modelId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
   const body = await readBody<{
     action: 'approve' | 'reject' | 'spam' | 'delete'
@@ -30,19 +29,17 @@ export default defineEventHandler(async (event) => {
   if (body.submissionIds.length > 50)
     throw createError({ statusCode: 400, message: errorMessage('forms.bulk_limit') })
 
-  const admin = db.getAdminClient()
-
   if (body.action === 'delete') {
     const results: { id: string, success: boolean, error?: string }[] = []
 
     for (const submissionId of body.submissionIds) {
       try {
-        const existing = await getFormSubmission(admin, submissionId)
+        const existing = await db.getFormSubmission(submissionId)
         if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId || existing.model_id !== modelId) {
           results.push({ id: submissionId, success: false, error: 'Not found' })
           continue
         }
-        await deleteFormSubmission(admin, submissionId)
+        await db.deleteFormSubmission(submissionId)
         results.push({ id: submissionId, success: true })
       }
       catch (e: unknown) {
@@ -60,14 +57,11 @@ export default defineEventHandler(async (event) => {
     spam: 'spam',
   }
 
-  const updated = await bulkUpdateSubmissions(
-    admin,
+  const updated = await db.bulkUpdateSubmissions(
     body.submissionIds,
     statusMap[body.action]!,
     body.action === 'approve' ? session.user.id : undefined,
-    workspaceId,
-    projectId,
-    modelId,
+    { workspaceId, projectId, modelId },
   )
 
   return { updated }

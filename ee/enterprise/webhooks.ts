@@ -236,7 +236,10 @@ export function createWebhooksBridge() {
           if (responseBody && responseBody.length > 1000)
             responseBody = responseBody.substring(0, 1000)
         }
-        catch { /* ignore body read errors */ }
+        catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[webhook-test] Failed to read response body:', err)
+        }
 
         return {
           success,

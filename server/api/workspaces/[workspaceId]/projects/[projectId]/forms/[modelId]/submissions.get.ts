@@ -12,28 +12,21 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
-  const role = await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
+  const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
-  // Verify project belongs to workspace (prevents cross-project access)
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
+  // Verify project belongs to workspace
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   // Workspace members need explicit project assignment
   if (role === 'member') {
-    const { data: pm } = await admin.from('project_members').select('id').eq('project_id', projectId).eq('user_id', session.user.id).single()
+    const pm = await db.getProjectMember(projectId, session.user.id)
     if (!pm) throw createError({ statusCode: 403, message: errorMessage('project.access_denied') })
   }
 
-  const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
+  const ws = await db.getWorkspaceById(workspaceId, 'plan')
+  const plan = getWorkspacePlan(ws ?? {})
   if (!hasFeature(plan, 'forms.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
 
@@ -44,7 +37,7 @@ export default defineEventHandler(async (event) => {
     sort?: string
   }
 
-  return listFormSubmissions(admin, workspaceId, projectId, modelId, {
+  return db.listFormSubmissions(workspaceId, projectId, modelId, {
     page: query.page ? Number(query.page) : 1,
     limit: query.limit ? Math.min(Number(query.limit), 100) : 50,
     status: query.status,

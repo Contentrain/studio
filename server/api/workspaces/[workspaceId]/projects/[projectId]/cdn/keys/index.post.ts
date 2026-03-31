@@ -15,24 +15,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('cdn.key_name_required') })
 
   // Role + plan check
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-  const { data: project } = await client
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('plan')
-    .eq('id', workspaceId)
-    .single()
+  const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
   const plan = getWorkspacePlan(workspace ?? {})
   if (!hasFeature(plan, 'cdn.delivery'))
@@ -40,32 +30,21 @@ export default defineEventHandler(async (event) => {
 
   // Check key limit
   const keyLimit = getPlanLimit(plan, 'cdn.api_keys')
-  const { count } = await client
-    .from('cdn_api_keys')
-    .select('id', { count: 'exact', head: true })
-    .eq('project_id', projectId)
-    .is('revoked_at', null)
+  const activeKeyCount = await db.countActiveCDNKeys(projectId)
 
-  if ((count ?? 0) >= keyLimit)
+  if (activeKeyCount >= keyLimit)
     throw createError({ statusCode: 403, message: errorMessage('cdn.key_limit_reached', { limit: keyLimit }) })
 
   // Generate key
   const { key, keyHash, keyPrefix } = generateCDNKey()
 
-  const { data, error } = await client
-    .from('cdn_api_keys')
-    .insert({
-      project_id: projectId,
-      workspace_id: workspaceId,
-      key_hash: keyHash,
-      key_prefix: keyPrefix,
-      name: body.name.trim(),
-    })
-    .select('id, name, key_prefix, environment, created_at')
-    .single()
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  const data = await db.createCDNKey({
+    projectId,
+    workspaceId,
+    keyHash,
+    keyPrefix,
+    name: body.name.trim(),
+  })
 
   // Return the FULL key — this is the only time it's shown
   return { ...data, key }

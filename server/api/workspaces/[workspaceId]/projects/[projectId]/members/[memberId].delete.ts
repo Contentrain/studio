@@ -12,29 +12,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.member_id_required') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
-
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
-  const { error } = await client
-    .from('project_members')
-    .delete()
-    .eq('id', memberId)
-    .eq('project_id', projectId)
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  await db.deleteProjectMember(projectId, memberId)
 
   return { deleted: true }
 })

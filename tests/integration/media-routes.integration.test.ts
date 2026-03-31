@@ -75,18 +75,24 @@ function stubMediaRouteGlobals() {
     user: { id: 'user-1' },
     accessToken: 'token-1',
   }))
-  vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-  vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-  vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
+  vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+    requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+    getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
+    getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro', media_storage_bytes: 1024 }),
+    getProjectMember: vi.fn().mockResolvedValue({ id: 'pm-1', role: 'editor' }),
+    getUserClient: vi.fn().mockReturnValue({}),
+    getAdminClient: vi.fn().mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue({ data: { id: 'project-1' }, error: null }),
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({ data: { id: 'project-1' }, error: null }),
+            })),
+            single: vi.fn().mockResolvedValue({ data: { media_storage_bytes: 1024 }, error: null }),
           })),
         })),
       })),
-    })),
+    }),
   }))
 }
 
@@ -95,7 +101,6 @@ describe('media route integration', () => {
     const listAssets = vi.fn().mockResolvedValue({ assets: [sampleAsset], total: 1 })
 
     stubMediaRouteGlobals()
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({ plan: 'pro' }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ listAssets }))
@@ -122,7 +127,6 @@ describe('media route integration', () => {
 
   it('uploads multipart media files through the media provider', async () => {
     stubMediaRouteGlobals()
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({ plan: 'pro' }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('isAllowedMimeType', vi.fn().mockReturnValue(true))
@@ -147,22 +151,6 @@ describe('media route integration', () => {
       },
     ]))
     vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: table === 'projects' ? { id: 'project-1' } : { media_storage_bytes: 1024 },
-              }),
-            })),
-            single: vi.fn().mockResolvedValue({
-              data: table === 'projects' ? { id: 'project-1' } : { media_storage_bytes: 1024 },
-            }),
-          })),
-        })),
-      })),
-    }))
     const upload = vi.fn().mockResolvedValue(sampleAsset)
     vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ upload }))
 
@@ -190,7 +178,6 @@ describe('media route integration', () => {
 
   it('imports media from external URLs through the same upload pipeline', async () => {
     stubMediaRouteGlobals()
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({ plan: 'pro' }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('isAllowedMimeType', vi.fn().mockReturnValue(true))
@@ -292,7 +279,6 @@ describe('media route integration', () => {
 
   it('returns 404 for media assets that do not belong to the project', async () => {
     stubMediaRouteGlobals()
-    vi.stubGlobal('getWorkspace', vi.fn().mockResolvedValue({ plan: 'pro' }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({

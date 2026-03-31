@@ -33,9 +33,7 @@ export default defineEventHandler(async (event) => {
   if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
     throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
-  const { git, contentRoot, workspace } = await resolveProjectContext(
-    db.getUserClient(session.accessToken), workspaceId, projectId,
-  )
+  const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
 
   const engine = createContentEngine({ git, contentRoot })
   const result = await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
@@ -66,7 +64,6 @@ export default defineEventHandler(async (event) => {
   try {
     const mediaProvider = useMediaProvider()
     if (mediaProvider) {
-      const admin = db.getAdminClient()
       const locale = body.locale ?? 'en'
       // Scan saved data for media paths and track usage
       for (const [entryId, entry] of Object.entries(body.data)) {
@@ -76,7 +73,7 @@ export default defineEventHandler(async (event) => {
             // Find asset by path
             const { assets } = await mediaProvider.listAssets(projectId, { search: value.split('/').pop(), limit: 1 })
             if (assets.length > 0) {
-              await trackMediaUsage(admin, {
+              await db.trackMediaUsage({
                 asset_id: assets[0]!.id,
                 project_id: projectId,
                 model_id: modelId,

@@ -13,16 +13,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner'])
 
   // Fetch workspace and verify ownership
-  const admin = db.getAdminClient()
-  const { data: workspace } = await admin
-    .from('workspaces')
-    .select('id, type, owner_id')
-    .eq('id', workspaceId)
-    .single()
+  const workspace = await db.getWorkspaceById(workspaceId, 'id, type, owner_id')
 
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('workspace.not_found') })
@@ -34,16 +28,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('workspace.owner_only_delete') })
 
   // Clean R2 storage for all projects
-  const { data: projects } = await admin
-    .from('projects')
-    .select('id')
-    .eq('workspace_id', workspaceId)
+  const projects = await db.listWorkspaceProjects(session.accessToken, workspaceId)
 
   const cdn = useCDNProvider()
   if (cdn && projects?.length) {
     for (const project of projects) {
       try {
-        await cdn.deletePrefix(project.id, '')
+        await cdn.deletePrefix(project.id as string, '')
       }
       catch {
         // R2 cleanup failure should not block deletion
@@ -52,6 +43,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Delete workspace — CASCADE handles all child records
+  const admin = db.getAdminClient()
   const { error } = await admin
     .from('workspaces')
     .delete()

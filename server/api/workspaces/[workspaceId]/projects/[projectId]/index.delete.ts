@@ -15,17 +15,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
   // Verify project belongs to workspace
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
@@ -42,6 +35,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // 2. Update workspace storage quota
+  const admin = db.getAdminClient()
   const { data: mediaSum } = await admin
     .from('media_assets')
     .select('size_bytes')
@@ -50,22 +44,12 @@ export default defineEventHandler(async (event) => {
   if (mediaSum?.length) {
     const totalBytes = mediaSum.reduce((sum: number, a: { size_bytes: number | null }) => sum + (a.size_bytes ?? 0), 0)
     if (totalBytes > 0) {
-      await admin.rpc('decrement_storage_bytes', {
-        ws_id: workspaceId,
-        bytes: totalBytes,
-      })
+      await db.incrementWorkspaceStorageBytes(workspaceId, -totalBytes)
     }
   }
 
   // 3. Delete project — CASCADE handles all child records
-  const { error } = await admin
-    .from('projects')
-    .delete()
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  await db.deleteProject(projectId, workspaceId)
 
   return { deleted: true }
 })

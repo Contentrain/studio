@@ -9,18 +9,15 @@ function createErrorLike(input: { statusCode: number, message: string }) {
 }
 
 describe('db helpers', () => {
+  let mockDb: Record<string, ReturnType<typeof vi.fn>>
+
   beforeEach(() => {
     vi.resetModules()
     vi.stubGlobal('createError', createErrorLike)
-  })
+    vi.stubGlobal('errorMessage', (key: string) => key)
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('resolves project context and normalizes the content root', async () => {
-    const singleProject = vi.fn().mockResolvedValue({
-      data: {
+    mockDb = {
+      getProjectForWorkspace: vi.fn().mockResolvedValue({
         id: 'project-1',
         repo_full_name: 'contentrain/studio',
         content_root: '/apps/web/',
@@ -28,134 +25,42 @@ describe('db helpers', () => {
         default_branch: 'main',
         detected_stack: 'nuxt',
         status: 'active',
-      },
-    })
-    const singleWorkspace = vi.fn().mockResolvedValue({
-      data: {
+      }),
+      getWorkspaceById: vi.fn().mockResolvedValue({
         id: 'workspace-1',
         github_installation_id: 123,
         plan: 'pro',
-      },
-    })
-    const client = {
-      from: vi.fn((table: string) => ({
-        select: vi.fn(() => ({
-          eq: vi.fn((key: string) => {
-            if (table === 'projects' && key === 'workspace_id') {
-              return { single: singleProject }
-            }
-            if (table === 'workspaces') {
-              return { single: singleWorkspace }
-            }
-            return {
-              eq: vi.fn(() => ({ single: singleProject })),
-              single: singleProject,
-            }
-          }),
-        })),
-      })),
+      }),
+      createConversation: vi.fn().mockResolvedValue('conv-1'),
+      loadConversationMessages: vi.fn().mockResolvedValue([{ role: 'user', content: 'Hello', tool_calls: null }]),
+      insertMessage: vi.fn().mockResolvedValue(undefined),
+      upsertAgentUsage: vi.fn().mockResolvedValue(undefined),
+      updateConversationTimestamp: vi.fn().mockResolvedValue(undefined),
+      getBYOAKey: vi.fn().mockResolvedValue(null),
     }
-    const git = { provider: 'git' }
+    vi.stubGlobal('useDatabaseProvider', () => mockDb)
+  })
 
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves project context and normalizes the content root', async () => {
+    const git = { provider: 'git' }
     vi.stubGlobal('useGitProvider', vi.fn().mockReturnValue(git))
 
     const { resolveProjectContext } = await loadDbModule()
-    const result = await resolveProjectContext(client as never, 'workspace-1', 'project-1')
+    const result = await resolveProjectContext('workspace-1', 'project-1')
 
     expect(result.contentRoot).toBe('apps/web')
     expect(result.git).toBe(git)
     expect(result.workspace.id).toBe('workspace-1')
+    expect(mockDb.getProjectForWorkspace).toHaveBeenCalledWith('', 'workspace-1', 'project-1', expect.any(String))
   })
 
-  it('creates conversations with titles capped at 100 characters', async () => {
-    const single = vi.fn().mockResolvedValue({ data: { id: 'conv-1' } })
-    const insert = vi.fn(() => ({
-      select: vi.fn(() => ({ single })),
-    }))
-    const client = {
-      from: vi.fn(() => ({
-        insert,
-      })),
-    }
-
-    const { createConversation } = await loadDbModule()
-    const id = await createConversation(client as never, 'project-1', 'user-1', 'x'.repeat(140))
-
-    expect(id).toBe('conv-1')
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'x'.repeat(100),
-    }))
-  })
-
-  it('loads conversation history in chronological order with a limit', async () => {
-    const limit = vi.fn().mockResolvedValue({ data: [{ role: 'user', content: 'Hello', tool_calls: null }] })
-    const order = vi.fn(() => ({ limit }))
-    const eq = vi.fn(() => ({ order }))
-    const client = {
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq,
-        })),
-      })),
-    }
-
-    const { loadConversationHistory } = await loadDbModule()
-    const rows = await loadConversationHistory(client as never, 'conv-1', 10)
-
-    expect(rows).toEqual([{ role: 'user', content: 'Hello', tool_calls: null }])
-  })
-
-  it('increments existing usage rows when saving chat results', async () => {
-    const messagesInsert = vi.fn().mockResolvedValue({})
-    const usageSingle = vi.fn().mockResolvedValue({
-      data: {
-        id: 'usage-1',
-        message_count: 2,
-        input_tokens: 10,
-        output_tokens: 5,
-      },
-    })
-    const usageUpdateEq = vi.fn().mockResolvedValue({})
-    const conversationsUpdateEq = vi.fn().mockResolvedValue({})
-
-    const admin = {
-      from: vi.fn((table: string) => {
-        if (table === 'messages') {
-          return {
-            insert: messagesInsert,
-          }
-        }
-        if (table === 'agent_usage') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  eq: vi.fn(() => ({
-                    eq: vi.fn(() => ({ single: usageSingle })),
-                    single: usageSingle,
-                  })),
-                })),
-              })),
-            })),
-            update: vi.fn(() => ({
-              eq: usageUpdateEq,
-            })),
-          }
-        }
-        if (table === 'conversations') {
-          return {
-            update: vi.fn(() => ({
-              eq: conversationsUpdateEq,
-            })),
-          }
-        }
-        return {}
-      }),
-    }
-
+  it('saves chat results via provider methods', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult(
-      admin as never,
       'conv-1',
       'Hello',
       'World',
@@ -168,49 +73,23 @@ describe('db helpers', () => {
       'studio',
     )
 
-    expect(messagesInsert).toHaveBeenCalledTimes(2)
-    expect(usageUpdateEq).toHaveBeenCalledWith('id', 'usage-1')
-    expect(conversationsUpdateEq).toHaveBeenCalledWith('id', 'conv-1')
+    expect(mockDb.insertMessage).toHaveBeenCalledTimes(2)
+    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'user', content: 'Hello' }))
+    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'assistant', content: 'World' }))
+    expect(mockDb.upsertAgentUsage).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      source: 'studio',
+      messageCount: 1,
+      inputTokens: 7,
+      outputTokens: 3,
+    }))
+    expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-1')
   })
 
-  it('inserts a fresh usage row when none exists', async () => {
-    const usageInsert = vi.fn().mockResolvedValue({})
-    const admin = {
-      from: vi.fn((table: string) => {
-        if (table === 'messages') {
-          return {
-            insert: vi.fn().mockResolvedValue({}),
-          }
-        }
-        if (table === 'agent_usage') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  eq: vi.fn(() => ({
-                    eq: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: null }) })),
-                    single: vi.fn().mockResolvedValue({ data: null }),
-                  })),
-                })),
-              })),
-            })),
-            insert: usageInsert,
-          }
-        }
-        if (table === 'conversations') {
-          return {
-            update: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({}),
-            })),
-          }
-        }
-        return {}
-      }),
-    }
-
+  it('passes apiKeyId through to upsertAgentUsage', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult(
-      admin as never,
       'conv-1',
       'Hello',
       '',
@@ -221,15 +100,12 @@ describe('db helpers', () => {
       'workspace-1',
       'user-1',
       'byoa',
+      'key-123',
     )
 
-    expect(usageInsert).toHaveBeenCalledWith(expect.objectContaining({
-      workspace_id: 'workspace-1',
-      user_id: 'user-1',
+    expect(mockDb.upsertAgentUsage).toHaveBeenCalledWith(expect.objectContaining({
       source: 'byoa',
-      message_count: 1,
-      input_tokens: 4,
-      output_tokens: 2,
+      apiKeyId: 'key-123',
     }))
   })
 })

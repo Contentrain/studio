@@ -4,8 +4,6 @@
  * Key format: crn_conv_{32-byte-base62} (~50 chars)
  * Storage: SHA-256 hash in DB (plaintext never stored)
  * Display: key_prefix (first 16 chars) for identification
- *
- * Follows identical pattern as CDN keys (cdn-keys.ts).
  */
 
 import { createHash, randomBytes } from 'node:crypto'
@@ -61,43 +59,30 @@ export async function validateConversationKey(
   if (!authHeader?.startsWith('Bearer crn_conv_'))
     throw createError({ statusCode: 401, message: errorMessage('conversation.key_invalid') })
 
-  const key = authHeader.slice(7) // Remove "Bearer "
+  const key = authHeader.slice(7)
   const keyHash = hashConversationKey(key)
+  const db = useDatabaseProvider()
 
-  const admin = useDatabaseProvider().getAdminClient()
-  const { data: apiKey } = await admin
-    .from('conversation_api_keys')
-    .select('id, project_id, workspace_id, name, role, specific_models, allowed_models, allowed_tools, allowed_locales, custom_instructions, ai_model, rate_limit_per_minute, monthly_message_limit, revoked_at')
-    .eq('key_hash', keyHash)
-    .is('revoked_at', null)
-    .single()
-
+  const apiKey = await db.validateConversationKeyHash(keyHash)
   if (!apiKey)
     throw createError({ statusCode: 401, message: errorMessage('conversation.key_invalid') })
 
   // Update last_used_at (non-blocking)
-  admin
-    .from('conversation_api_keys')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', apiKey.id)
-    .then(({ error }) => {
-      // eslint-disable-next-line no-console
-      if (error) console.warn('[conversation-keys] last_used_at update failed:', error.message)
-    })
+  db.updateConversationKeyLastUsed(apiKey.id as string).catch(() => {})
 
   return {
-    keyId: apiKey.id,
-    projectId: apiKey.project_id,
-    workspaceId: apiKey.workspace_id,
-    name: apiKey.name,
+    keyId: apiKey.id as string,
+    projectId: apiKey.project_id as string,
+    workspaceId: apiKey.workspace_id as string,
+    name: apiKey.name as string,
     role: apiKey.role as ConversationKeyData['role'],
-    specificModels: apiKey.specific_models ?? false,
-    allowedModels: (apiKey.allowed_models as string[] | null) ?? [],
-    allowedTools: (apiKey.allowed_tools as string[] | null) ?? [],
-    allowedLocales: (apiKey.allowed_locales as string[] | null) ?? [],
-    customInstructions: apiKey.custom_instructions ?? null,
-    aiModel: apiKey.ai_model ?? 'claude-sonnet-4-5',
-    rateLimitPerMinute: apiKey.rate_limit_per_minute ?? 10,
-    monthlyMessageLimit: apiKey.monthly_message_limit ?? 1000,
+    specificModels: (apiKey.specific_models as boolean) ?? false,
+    allowedModels: (apiKey.allowed_models as string[]) ?? [],
+    allowedTools: (apiKey.allowed_tools as string[]) ?? [],
+    allowedLocales: (apiKey.allowed_locales as string[]) ?? [],
+    customInstructions: (apiKey.custom_instructions as string) ?? null,
+    aiModel: (apiKey.ai_model as string) ?? 'claude-sonnet-4-5',
+    rateLimitPerMinute: (apiKey.rate_limit_per_minute as number) ?? 10,
+    monthlyMessageLimit: (apiKey.monthly_message_limit as number) ?? 1000,
   }
 }

@@ -11,18 +11,12 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-
   // Verify owner/admin
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
   // Plan check if enabling
   if (body.cdn_enabled === true) {
-    const { data: workspace } = await client
-      .from('workspaces')
-      .select('plan')
-      .eq('id', workspaceId)
-      .single()
+    const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
     if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
       throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
@@ -32,16 +26,7 @@ export default defineEventHandler(async (event) => {
   if (body.cdn_enabled !== undefined) update.cdn_enabled = body.cdn_enabled
   if (body.cdn_branch !== undefined) update.cdn_branch = body.cdn_branch
 
-  const { data, error } = await client
-    .from('projects')
-    .update(update)
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .select('cdn_enabled, cdn_branch')
-    .single()
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  const data = await db.updateProject(projectId, update, 'cdn_enabled, cdn_branch')
 
   return data
 })

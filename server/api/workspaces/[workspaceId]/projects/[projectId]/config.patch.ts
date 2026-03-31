@@ -6,7 +6,6 @@ import type { ContentrainConfig } from '@contentrain/types'
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
-  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const body = await readBody<Partial<ContentrainConfig>>(event)
@@ -19,8 +18,7 @@ export default defineEventHandler(async (event) => {
   if (permissions.workspaceRole !== 'owner' && permissions.workspaceRole !== 'admin')
     throw createError({ statusCode: 403, message: errorMessage('project.settings_owner_only') })
 
-  const client = db.getUserClient(session.accessToken)
-  const { git, contentRoot, workspace } = await resolveProjectContext(client, workspaceId, projectId)
+  const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
   const plan = getWorkspacePlan(workspace)
 
   // Plan gate: review workflow requires Pro+

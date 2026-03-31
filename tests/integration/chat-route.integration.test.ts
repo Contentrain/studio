@@ -10,24 +10,6 @@ async function loadChatHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/chat.post')).default
 }
 
-function createConversationLookupClient(conversationOwned: boolean) {
-  return {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: conversationOwned ? { id: 'conversation-existing' } : null,
-              }),
-            })),
-          })),
-        })),
-      })),
-    })),
-  }
-}
-
 function createAgentUsageAdmin(rows: Array<{ message_count: number }>) {
   return {
     from: vi.fn(() => ({
@@ -148,17 +130,21 @@ describe('chat route integration', () => {
       if (key === 'projectId') return 'project-1'
       return undefined
     }))
-    const userClient = createConversationLookupClient(false)
-    const createConversation = vi.fn().mockResolvedValue('conversation-new')
-    const loadConversationHistory = vi.fn().mockResolvedValue([])
+    const mockCreateConversation = vi.fn().mockResolvedValue('conversation-new')
+    const mockLoadMessages = vi.fn().mockResolvedValue([])
     const saveChatResult = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1', email: 'user@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(userClient))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getUserClient: vi.fn().mockReturnValue({}),
+      getAdminClient: vi.fn().mockReturnValue({}),
+      getConversation: vi.fn().mockResolvedValue(null),
+      createConversation: mockCreateConversation,
+      loadConversationMessages: mockLoadMessages,
+    }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
       workspace: { id: 'workspace-1', plan: 'free' },
@@ -173,8 +159,6 @@ describe('chat route integration', () => {
       allowedModels: [],
     }))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
-    vi.stubGlobal('createConversation', createConversation)
-    vi.stubGlobal('loadConversationHistory', loadConversationHistory)
     vi.stubGlobal('saveChatResult', saveChatResult)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
     vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
@@ -217,10 +201,9 @@ describe('chat route integration', () => {
       expect(payload).toContain('"type":"conversation"')
       expect(payload).toContain('"id":"conversation-new"')
       expect(payload).toContain('"type":"done"')
-      expect(createConversation).toHaveBeenCalledWith(userClient, 'project-1', 'user-1', 'hello')
-      expect(loadConversationHistory).toHaveBeenCalledWith(userClient, 'conversation-new', 50)
+      expect(mockCreateConversation).toHaveBeenCalledWith('project-1', 'user-1', 'hello')
+      expect(mockLoadMessages).toHaveBeenCalledWith('conversation-new', 50)
       expect(saveChatResult).toHaveBeenCalledWith(
-        {},
         'conversation-new',
         'hello',
         '',
@@ -329,7 +312,6 @@ describe('chat route integration', () => {
   })
 
   it('streams an error event when the AI provider crashes mid-request', async () => {
-    const userClient = createConversationLookupClient(true)
     const saveChatResult = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
@@ -341,8 +323,13 @@ describe('chat route integration', () => {
       user: { id: 'user-1', email: 'user@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(userClient))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getUserClient: vi.fn().mockReturnValue({}),
+      getAdminClient: vi.fn().mockReturnValue({}),
+      getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
+      createConversation: vi.fn().mockResolvedValue('conversation-existing'),
+      loadConversationMessages: vi.fn().mockResolvedValue([]),
+    }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
       workspace: { id: 'workspace-1', plan: 'free' },
@@ -357,7 +344,6 @@ describe('chat route integration', () => {
       allowedModels: [],
     }))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
-    vi.stubGlobal('loadConversationHistory', vi.fn().mockResolvedValue([]))
     vi.stubGlobal('saveChatResult', saveChatResult)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
     vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))

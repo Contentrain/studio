@@ -3,6 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const providerState = vi.hoisted(() => ({
   databaseProvider: {
     getAdminClient: vi.fn(),
+    getUserClient: vi.fn(),
+    requireWorkspaceRole: vi.fn(),
+    getWorkspaceById: vi.fn(),
+    getProjectForWorkspace: vi.fn(),
+    createCDNBuild: vi.fn(),
+    updateCDNBuild: vi.fn(),
+    createCDNKey: vi.fn(),
+    countActiveCDNKeys: vi.fn(),
+    listCDNKeys: vi.fn(),
+    revokeCDNKey: vi.fn(),
+    updateProject: vi.fn(),
   },
 }))
 
@@ -58,6 +69,17 @@ async function loadCDNKeyCreateHandler() {
 describe('CDN route integration', () => {
   beforeEach(() => {
     providerState.databaseProvider.getAdminClient.mockReset()
+    providerState.databaseProvider.getUserClient.mockReset()
+    providerState.databaseProvider.requireWorkspaceRole.mockReset()
+    providerState.databaseProvider.getWorkspaceById.mockReset()
+    providerState.databaseProvider.getProjectForWorkspace.mockReset()
+    providerState.databaseProvider.createCDNBuild.mockReset()
+    providerState.databaseProvider.updateCDNBuild.mockReset()
+    providerState.databaseProvider.createCDNKey.mockReset()
+    providerState.databaseProvider.countActiveCDNKeys.mockReset()
+    providerState.databaseProvider.listCDNKeys.mockReset()
+    providerState.databaseProvider.revokeCDNKey.mockReset()
+    providerState.databaseProvider.updateProject.mockReset()
     eventStreamState.createEventStream.mockReset()
     eventStreamState.stream.push.mockClear()
     eventStreamState.stream.close.mockClear()
@@ -244,23 +266,12 @@ describe('CDN route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_enabled: true }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'workspaces') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({ data: { plan: 'free' } }),
-            })),
-          })),
-        }
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'free' }),
+      updateProject: vi.fn(),
     }))
 
     const handler = await loadCDNSettingsPatchHandler()
@@ -281,7 +292,8 @@ describe('CDN route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+
+    const userClient = {
       from: vi.fn((table: string) => {
         if (table !== 'projects') {
           throw new Error(`Unexpected table: ${table}`)
@@ -300,6 +312,9 @@ describe('CDN route integration', () => {
           })),
         }
       }),
+    }
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getUserClient: vi.fn().mockReturnValue(userClient),
     }))
 
     const handler = await loadCDNSettingsGetHandler()
@@ -322,23 +337,9 @@ describe('CDN route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ name: 'Public site key' }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'projects') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: null }),
-              })),
-            })),
-          })),
-        }
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue(null),
     }))
 
     const handler = await loadCDNKeyCreateHandler()
@@ -350,7 +351,7 @@ describe('CDN route integration', () => {
 
   it('streams a successful manual CDN rebuild', async () => {
     const event = {} as never
-    const updateBuildRecord = vi.fn().mockResolvedValue({ error: null })
+    const updateCDNBuild = vi.fn().mockResolvedValue(undefined)
     eventStreamState.createEventStream.mockReturnValue(eventStreamState.stream)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
@@ -362,7 +363,6 @@ describe('CDN route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
@@ -382,50 +382,16 @@ describe('CDN route integration', () => {
         error: null,
       }
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'workspaces') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: { plan: 'pro' } }),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { cdn_enabled: true, cdn_branch: null, default_branch: 'main' },
-                }),
-              })),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({
+        cdn_enabled: true,
+        cdn_branch: null,
+        default_branch: 'main',
       }),
-    }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'cdn_builds') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          insert: vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({ data: { id: 'build-1' }, error: null }),
-            })),
-          })),
-          update: vi.fn(() => ({
-            eq: updateBuildRecord,
-          })),
-        }
-      }),
+      createCDNBuild: vi.fn().mockResolvedValue({ id: 'build-1' }),
+      updateCDNBuild,
     }))
 
     const handler = await loadCDNBuildTriggerHandler()
@@ -433,7 +399,9 @@ describe('CDN route integration', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(updateBuildRecord).toHaveBeenCalledWith('id', 'build-1')
+    expect(updateCDNBuild).toHaveBeenCalledWith('build-1', expect.objectContaining({
+      status: 'success',
+    }))
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"upload"'))
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"complete"'))
     expect(eventStreamState.stream.close).toHaveBeenCalledOnce()
@@ -451,7 +419,8 @@ describe('CDN route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
+
+    const userClient = {
       from: vi.fn((table: string) => {
         if (table === 'projects') {
           return {
@@ -479,6 +448,9 @@ describe('CDN route integration', () => {
 
         throw new Error(`Unexpected table: ${table}`)
       }),
+    }
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getUserClient: vi.fn().mockReturnValue(userClient),
     }))
 
     const handler = await loadCDNBuildsHandler()

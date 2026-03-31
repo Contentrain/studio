@@ -1,13 +1,66 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+// ─── Legacy bridge types (will be removed after full migration) ───
 export type DatabaseRow = Record<string, unknown>
 export type DatabaseQueryChain = ReturnType<SupabaseClient['from']>
 export type DatabaseClientBridge = SupabaseClient
 
+// ─── Domain types ───
+
+export interface MediaAssetInput {
+  project_id: string
+  workspace_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  content_hash: string
+  width: number | null
+  height: number | null
+  format: string
+  blurhash: string | null
+  focal_point: { x: number, y: number } | null
+  duration_seconds: number | null
+  alt: string | null
+  tags: string[]
+  original_path: string
+  variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
+  uploaded_by: string
+  source: string
+}
+
+export interface MediaUsageInput {
+  asset_id: string
+  project_id: string
+  model_id: string
+  entry_id: string
+  field_id: string
+  locale: string
+}
+
+export interface FormSubmissionInput {
+  project_id: string
+  workspace_id: string
+  model_id: string
+  data: Record<string, unknown>
+  source_ip?: string
+  user_agent?: string
+  referrer?: string
+  locale?: string
+}
+
+export interface PaginationOptions {
+  page?: number
+  limit?: number
+}
+
 export interface DatabaseProvider {
-  // Internal bridge for legacy helper functions during the adapter migration.
+  // ─── Legacy bridge (will be removed in Faz 5) ───
   getAdminClient: () => DatabaseClientBridge
   getUserClient: (accessToken: string) => DatabaseClientBridge
+
+  // ═══════════════════════════════════════════════════
+  // WORKSPACES
+  // ═══════════════════════════════════════════════════
 
   listUserWorkspaces: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
   createWorkspace: (accessToken: string, input: {
@@ -35,8 +88,15 @@ export interface DatabaseProvider {
   ) => Promise<DatabaseRow>
   getPrimaryWorkspace: (accessToken: string, ownerId: string) => Promise<DatabaseRow | null>
   requireWorkspaceRole: (accessToken: string, userId: string, workspaceId: string, requiredRoles: string[]) => Promise<string>
+  getWorkspaceMemberRole: (accessToken: string, userId: string, workspaceId: string) => Promise<string | null>
   findWorkspaceByGithubInstallation: (installationId: number, excludeWorkspaceId?: string) => Promise<DatabaseRow | null>
   updateWorkspaceGithubInstallation: (workspaceId: string, installationId: number) => Promise<void>
+  clearWorkspaceGithubInstallation: (installationId: number) => Promise<void>
+  incrementWorkspaceStorageBytes: (workspaceId: string, deltaBytes: number) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // WORKSPACE MEMBERS
+  // ═══════════════════════════════════════════════════
 
   listWorkspaceMembers: (accessToken: string, userId: string, workspaceId: string) => Promise<DatabaseRow[]>
   getWorkspaceMember: (accessToken: string, userId: string, workspaceId: string, memberId: string) => Promise<DatabaseRow | null>
@@ -50,6 +110,42 @@ export interface DatabaseProvider {
   updateWorkspaceMemberRole: (accessToken: string, userId: string, workspaceId: string, memberId: string, role: 'admin' | 'member') => Promise<DatabaseRow>
   deleteWorkspaceMember: (accessToken: string, userId: string, workspaceId: string, memberId: string) => Promise<void>
   updateWorkspaceMemberInvitedAt: (accessToken: string, userId: string, workspaceId: string, memberId: string, invitedAt: string) => Promise<void>
+  ensureWorkspaceMember: (accessToken: string, workspaceId: string, userId: string, email: string, role?: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // PROJECTS
+  // ═══════════════════════════════════════════════════
+
+  getProjectForWorkspace: (accessToken: string, workspaceId: string, projectId: string, fields?: string) => Promise<DatabaseRow | null>
+  getProjectById: (projectId: string, fields?: string) => Promise<DatabaseRow | null>
+  createProject: (accessToken: string, input: Record<string, unknown>) => Promise<DatabaseRow>
+  updateProject: (projectId: string, updates: Record<string, unknown>, fields?: string) => Promise<DatabaseRow>
+  deleteProject: (projectId: string, workspaceId: string) => Promise<void>
+  listWorkspaceProjects: (accessToken: string, workspaceId: string) => Promise<DatabaseRow[]>
+  listUserAssignedProjects: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
+  updateProjectContentTimestamp: (repoFullName: string) => Promise<void>
+  listCDNEnabledProjects: (repoFullName: string) => Promise<DatabaseRow[]>
+
+  // ═══════════════════════════════════════════════════
+  // PROJECT MEMBERS
+  // ═══════════════════════════════════════════════════
+
+  listProjectMembers: (projectId: string) => Promise<DatabaseRow[]>
+  getProjectMember: (projectId: string, userId: string) => Promise<DatabaseRow | null>
+  createProjectMember: (input: {
+    projectId: string
+    workspaceId: string
+    userId: string
+    role: string
+    invitedEmail: string
+    specificModels?: boolean
+    allowedModels?: string[]
+  }) => Promise<DatabaseRow>
+  deleteProjectMember: (projectId: string, memberId: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // AI KEYS (user's BYOA keys per workspace)
+  // ═══════════════════════════════════════════════════
 
   listUserAIKeys: (accessToken: string, workspaceId: string, userId: string) => Promise<DatabaseRow[]>
   upsertUserAIKey: (accessToken: string, input: {
@@ -60,8 +156,105 @@ export interface DatabaseProvider {
     keyHint: string
   }) => Promise<DatabaseRow>
   deleteUserAIKey: (accessToken: string, workspaceId: string, keyId: string, userId: string) => Promise<void>
+  getBYOAKey: (accessToken: string, workspaceId: string, userId: string) => Promise<string | null>
 
-  getProjectForWorkspace: (accessToken: string, workspaceId: string, projectId: string, fields?: string) => Promise<DatabaseRow | null>
+  // ═══════════════════════════════════════════════════
+  // CONVERSATIONS
+  // ═══════════════════════════════════════════════════
+
+  createConversation: (projectId: string, userId: string, title: string) => Promise<string | null>
+  getConversation: (conversationId: string, projectId: string, filters?: { userId?: string, workspaceId?: string }) => Promise<DatabaseRow | null>
+  listConversations: (accessToken: string, projectId: string, userId: string) => Promise<DatabaseRow[]>
+  deleteConversation: (accessToken: string, conversationId: string, userId: string, projectId: string) => Promise<void>
+  updateConversationTimestamp: (conversationId: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // MESSAGES
+  // ═══════════════════════════════════════════════════
+
+  loadConversationMessages: (conversationId: string, limit?: number, fields?: string) => Promise<DatabaseRow[]>
+  insertMessage: (input: {
+    conversationId: string
+    role: 'user' | 'assistant'
+    content: string
+    toolCalls?: unknown[] | null
+    tokenCountInput?: number
+    tokenCountOutput?: number
+    model?: string
+  }) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // AGENT USAGE
+  // ═══════════════════════════════════════════════════
+
+  getAgentUsage: (workspaceId: string, month: string, source: string, identifiers: {
+    userId?: string
+    apiKeyId?: string
+  }) => Promise<DatabaseRow | null>
+  upsertAgentUsage: (input: {
+    workspaceId: string
+    userId: string
+    apiKeyId?: string
+    month: string
+    source: string
+    messageCount: number
+    inputTokens: number
+    outputTokens: number
+  }) => Promise<void>
+  getMonthlyUsageSummary: (workspaceId: string, userId: string, month: string) => Promise<number>
+
+  // ═══════════════════════════════════════════════════
+  // MEDIA ASSETS
+  // ═══════════════════════════════════════════════════
+
+  createMediaAsset: (asset: MediaAssetInput) => Promise<DatabaseRow>
+  getMediaAsset: (assetId: string) => Promise<DatabaseRow | null>
+  listMediaAssets: (projectId: string, options?: PaginationOptions & {
+    search?: string
+    tags?: string[]
+    contentType?: string
+    sort?: string
+  }) => Promise<{ assets: DatabaseRow[], total: number }>
+  updateMediaAsset: (assetId: string, updates: {
+    alt?: string | null
+    tags?: string[]
+    focal_point?: { x: number, y: number } | null
+    variants?: Record<string, unknown>
+    blurhash?: string | null
+  }) => Promise<DatabaseRow>
+  deleteMediaAsset: (assetId: string) => Promise<DatabaseRow | null>
+
+  // ═══════════════════════════════════════════════════
+  // MEDIA USAGE
+  // ═══════════════════════════════════════════════════
+
+  trackMediaUsage: (usage: MediaUsageInput) => Promise<void>
+  removeMediaUsage: (usage: Omit<MediaUsageInput, 'project_id'>) => Promise<void>
+  getMediaUsage: (assetId: string) => Promise<DatabaseRow[]>
+
+  // ═══════════════════════════════════════════════════
+  // FORM SUBMISSIONS
+  // ═══════════════════════════════════════════════════
+
+  createFormSubmission: (submission: FormSubmissionInput) => Promise<DatabaseRow>
+  listFormSubmissions: (workspaceId: string, projectId: string, modelId: string, options?: PaginationOptions & {
+    status?: string
+    sort?: 'newest' | 'oldest'
+  }) => Promise<{ submissions: DatabaseRow[], total: number }>
+  getFormSubmission: (submissionId: string) => Promise<DatabaseRow | null>
+  updateFormSubmissionStatus: (submissionId: string, status: 'approved' | 'rejected' | 'spam', approvedBy?: string, entryId?: string) => Promise<DatabaseRow>
+  deleteFormSubmission: (submissionId: string) => Promise<void>
+  bulkUpdateSubmissions: (submissionIds: string[], status: 'approved' | 'rejected' | 'spam', approvedBy?: string, scope?: {
+    workspaceId?: string
+    projectId?: string
+    modelId?: string
+  }) => Promise<number>
+  countMonthlySubmissions: (workspaceId: string) => Promise<number>
+
+  // ═══════════════════════════════════════════════════
+  // WEBHOOKS
+  // ═══════════════════════════════════════════════════
+
   countProjectWebhooks: (projectId: string, workspaceId: string) => Promise<number>
   createWebhook: (input: {
     workspaceId: string
@@ -71,4 +264,73 @@ export interface DatabaseProvider {
     events: string[]
     secret: string
   }) => Promise<DatabaseRow>
+  listProjectWebhooks: (projectId: string, workspaceId: string) => Promise<DatabaseRow[]>
+  getWebhook: (webhookId: string, options?: { projectId?: string, workspaceId?: string }) => Promise<DatabaseRow | null>
+  updateWebhook: (webhookId: string, projectId: string, workspaceId: string, updates: Record<string, unknown>) => Promise<DatabaseRow>
+  deleteWebhook: (webhookId: string, projectId: string, workspaceId: string) => Promise<void>
+  listActiveProjectWebhooks: (workspaceId: string, projectId: string) => Promise<DatabaseRow[]>
+
+  // ═══════════════════════════════════════════════════
+  // WEBHOOK DELIVERIES
+  // ═══════════════════════════════════════════════════
+
+  createWebhookDelivery: (input: {
+    webhookId: string
+    event: string
+    payload: Record<string, unknown>
+  }) => Promise<DatabaseRow>
+  listWebhookDeliveries: (webhookId: string, options?: PaginationOptions) => Promise<{ deliveries: DatabaseRow[], total: number }>
+  updateWebhookDelivery: (deliveryId: string, updates: Record<string, unknown>) => Promise<void>
+  listPendingWebhookRetries: (limit?: number) => Promise<DatabaseRow[]>
+  deleteWebhookDeliveries: (webhookId: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // CDN API KEYS
+  // ═══════════════════════════════════════════════════
+
+  validateCDNKeyHash: (keyHash: string) => Promise<DatabaseRow | null>
+  updateCDNKeyLastUsed: (keyId: string) => Promise<void>
+  countActiveCDNKeys: (projectId: string) => Promise<number>
+  createCDNKey: (input: {
+    projectId: string
+    workspaceId: string
+    keyHash: string
+    keyPrefix: string
+    name: string
+  }) => Promise<DatabaseRow>
+  listCDNKeys: (accessToken: string, projectId: string, workspaceId: string) => Promise<DatabaseRow[]>
+  revokeCDNKey: (keyId: string, projectId: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // CDN BUILDS
+  // ═══════════════════════════════════════════════════
+
+  createCDNBuild: (input: {
+    projectId: string
+    triggerType: string
+    commitSha?: string
+    branch?: string
+  }) => Promise<DatabaseRow>
+  updateCDNBuild: (buildId: string, updates: Record<string, unknown>) => Promise<void>
+  listCDNBuilds: (projectId: string, options?: PaginationOptions & { sort?: string }) => Promise<DatabaseRow[]>
+
+  // ═══════════════════════════════════════════════════
+  // CDN USAGE
+  // ═══════════════════════════════════════════════════
+
+  incrementCDNUsage: (projectId: string, apiKeyId: string, periodStart: string, requestCount: number, bandwidthBytes: number) => Promise<void>
+  getMonthlyProjectCDNUsage: (projectId: string, startDate: string, endDate: string) => Promise<{ requestCount: number, bandwidthBytes: number }>
+
+  // ═══════════════════════════════════════════════════
+  // CONVERSATION API KEYS
+  // ═══════════════════════════════════════════════════
+
+  validateConversationKeyHash: (keyHash: string) => Promise<DatabaseRow | null>
+  updateConversationKeyLastUsed: (keyId: string) => Promise<void>
+  listConversationKeys: (projectId: string, workspaceId: string) => Promise<DatabaseRow[]>
+  createConversationKey: (input: Record<string, unknown>) => Promise<DatabaseRow>
+  updateConversationKey: (keyId: string, projectId: string, workspaceId: string, updates: Record<string, unknown>) => Promise<DatabaseRow>
+  revokeConversationKey: (keyId: string, projectId: string, workspaceId: string) => Promise<void>
+  countActiveConversationKeys: (projectId: string, workspaceId: string) => Promise<number>
+  getConversationKeyUsage: (keyIds: string[], month: string) => Promise<DatabaseRow[]>
 }

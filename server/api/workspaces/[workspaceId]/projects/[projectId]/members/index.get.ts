@@ -10,20 +10,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-  // Verify project belongs to this workspace (prevents cross-workspace leak)
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
-  return listProjectMembers(admin, projectId)
+  return db.listProjectMembers(projectId)
 })

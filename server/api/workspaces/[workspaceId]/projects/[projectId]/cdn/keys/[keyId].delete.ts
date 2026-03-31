@@ -10,17 +10,13 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !keyId)
     throw createError({ statusCode: 400, message: errorMessage('api.key_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-  const { error } = await client
-    .from('cdn_api_keys')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', keyId)
-    .eq('workspace_id', workspaceId)
+  const projectId = getRouterParam(event, 'projectId')
+  if (!projectId)
+    throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  await db.revokeCDNKey(keyId, projectId)
 
   return { revoked: true }
 })

@@ -52,8 +52,9 @@ describe('content route integration', () => {
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent, mergeBranch }))
     vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ listAssets }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('trackMediaUsage', trackMediaUsage)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      trackMediaUsage,
+    }))
 
     await withTestServer({
       routes: [
@@ -86,7 +87,7 @@ describe('content route integration', () => {
         },
       }, 'editor@example.com')
       expect(mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1234567890-abcd')
-      expect(trackMediaUsage).toHaveBeenCalledWith({}, {
+      expect(trackMediaUsage).toHaveBeenCalledWith({
         asset_id: 'asset-1',
         project_id: 'project-1',
         model_id: 'posts',
