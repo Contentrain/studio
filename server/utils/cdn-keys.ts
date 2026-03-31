@@ -42,37 +42,24 @@ export async function validateCDNKey(
   if (!authHeader?.startsWith('Bearer crn_'))
     throw createError({ statusCode: 401, message: errorMessage('cdn.key_invalid') })
 
-  const key = authHeader.slice(7) // Remove "Bearer "
+  const key = authHeader.slice(7)
   const keyHash = hashCDNKey(key)
+  const db = useDatabaseProvider()
 
-  const admin = useDatabaseProvider().getAdminClient()
-  const { data: apiKey } = await admin
-    .from('cdn_api_keys')
-    .select('id, project_id, rate_limit_per_hour, allowed_origins, revoked_at, expires_at')
-    .eq('key_hash', keyHash)
-    .is('revoked_at', null)
-    .single()
-
+  const apiKey = await db.validateCDNKeyHash(keyHash)
   if (!apiKey)
     throw createError({ statusCode: 401, message: errorMessage('cdn.key_invalid') })
 
-  if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date())
+  if (apiKey.expires_at && new Date(apiKey.expires_at as string) < new Date())
     throw createError({ statusCode: 401, message: errorMessage('cdn.key_expired') })
 
-  // Update last_used_at (non-blocking, fire-and-forget with error logging)
-  admin
-    .from('cdn_api_keys')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', apiKey.id)
-    .then(({ error }) => {
-      // eslint-disable-next-line no-console
-      if (error) console.warn('[cdn-keys] last_used_at update failed:', error.message)
-    })
+  // Update last_used_at (non-blocking)
+  db.updateCDNKeyLastUsed(apiKey.id as string).catch(() => {})
 
   return {
-    projectId: apiKey.project_id,
-    keyId: apiKey.id,
-    rateLimitPerHour: apiKey.rate_limit_per_hour ?? 1000,
-    allowedOrigins: (apiKey.allowed_origins as string[] | null) ?? [],
+    projectId: apiKey.project_id as string,
+    keyId: apiKey.id as string,
+    rateLimitPerHour: (apiKey.rate_limit_per_hour as number) ?? 1000,
+    allowedOrigins: (apiKey.allowed_origins as string[]) ?? [],
   }
 }

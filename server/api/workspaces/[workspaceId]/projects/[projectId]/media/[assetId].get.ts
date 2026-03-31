@@ -11,10 +11,10 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !assetId)
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
-  const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
+  const ws = await db.getWorkspaceById(workspaceId, 'plan')
+  const plan = getWorkspacePlan(ws ?? {})
   if (!hasFeature(plan, 'media.library'))
     throw createError({ statusCode: 403, message: errorMessage('media.library_upgrade') })
 

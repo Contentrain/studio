@@ -19,23 +19,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('members.invalid_project_role') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
-
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
-  // Plan-based role gating: reviewer/viewer require Pro+, specificModels requires Pro+
-  const { data: ws } = await client.from('workspaces').select('plan, name, slug').eq('id', workspaceId).single()
+  // Plan-based role gating
+  const ws = await db.getWorkspaceById(workspaceId, 'plan, name, slug')
   const plan = getWorkspacePlan(ws ?? {})
   const normalizedAccess = await normalizeEnterpriseProjectMemberAccess({
     plan,
@@ -44,40 +35,32 @@ export default defineEventHandler(async (event) => {
     allowedModels: body.allowedModels ?? [],
   })
 
+  const wsName = typeof ws?.name === 'string' ? ws.name : ''
+  const wsSlug = typeof ws?.slug === 'string' ? ws.slug : ''
+
   const { userId } = await inviteOrLookupUser(body.email, {
-    workspaceName: ws?.name ?? '',
+    workspaceName: wsName,
     inviterName: session.user.email ?? '',
-    workspaceSlug: ws?.slug ?? '',
+    workspaceSlug: wsSlug,
   })
 
   // Ensure user is a workspace member (auto-add as 'member' if not)
-  // Check seat limit before auto-adding
-  const currentMembers = await listWorkspaceMembers(admin, workspaceId)
+  const currentMembers = await db.listWorkspaceMembers(session.accessToken, session.user.id, workspaceId)
   const isAlreadyMember = currentMembers.some(m => (m as { user_id?: string }).user_id === userId)
   if (!isAlreadyMember) {
     const memberLimit = getPlanLimit(plan, 'team.members')
     if (currentMembers.length >= memberLimit)
       throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
   }
-  await ensureWorkspaceMember(client, admin, workspaceId, userId, body.email)
+  await db.ensureWorkspaceMember(session.accessToken, workspaceId, userId, body.email)
 
-  // Create project member record
-  const { data: member, error } = await client
-    .from('project_members')
-    .insert({
-      project_id: projectId,
-      user_id: userId,
-      role: normalizedAccess.role,
-      specific_models: normalizedAccess.specificModels,
-      allowed_models: normalizedAccess.allowedModels,
-      invited_email: body.email,
-      accepted_at: null, // Pending until user accesses project
-    })
-    .select()
-    .single()
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
-
-  return member
+  return db.createProjectMember({
+    projectId,
+    workspaceId,
+    userId,
+    role: normalizedAccess.role,
+    invitedEmail: body.email,
+    specificModels: normalizedAccess.specificModels,
+    allowedModels: normalizedAccess.allowedModels,
+  })
 })

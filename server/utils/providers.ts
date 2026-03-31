@@ -141,7 +141,7 @@ export function useMediaProvider(): MediaProvider | null {
   const bridge = getLoadedEnterpriseBridge()
   if (!bridge?.createMediaProvider) return null
 
-  _mediaProvider = bridge.createMediaProvider({ cdn, admin: useDatabaseProvider().getAdminClient() })
+  _mediaProvider = bridge.createMediaProvider({ cdn, db: useDatabaseProvider() })
 
   return _mediaProvider
 }

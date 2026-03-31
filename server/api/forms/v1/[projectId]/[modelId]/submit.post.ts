@@ -144,24 +144,13 @@ export default defineEventHandler(async (event) => {
   if (!body?.data || typeof body.data !== 'object')
     throw createError({ statusCode: 400, message: errorMessage('forms.data_required') })
 
-  // Admin client (bypasses RLS for public endpoint)
-  const admin = db.getAdminClient()
-
-  // Lookup project → workspace → plan
-  const { data: project } = await admin
-    .from('projects')
-    .select('id, workspace_id, repo_full_name, content_root')
-    .eq('id', projectId)
-    .single()
+  // Lookup project → workspace → plan (admin-level — public endpoint, no session)
+  const project = await db.getProjectById(projectId, 'id, workspace_id, repo_full_name, content_root')
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const { data: workspace } = await admin
-    .from('workspaces')
-    .select('id, plan, github_installation_id')
-    .eq('id', project.workspace_id)
-    .single()
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id')
 
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
@@ -175,13 +164,14 @@ export default defineEventHandler(async (event) => {
   if (!workspace.github_installation_id)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const [owner, repo] = project.repo_full_name.split('/')
+  const repoFullName = String(project.repo_full_name)
+  const [owner = '', repo = ''] = repoFullName.split('/')
   const git = useGitProvider({
-    installationId: workspace.github_installation_id,
+    installationId: workspace.github_installation_id as number,
     owner,
     repo,
   })
-  const contentRoot = normalizeContentRoot(project.content_root)
+  const contentRoot = normalizeContentRoot(project.content_root as string)
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
 
   // Get model definition
@@ -201,7 +191,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 
   // Monthly submission limit check
-  const monthlyCount = await countMonthlySubmissions(admin, workspace.id)
+  const monthlyCount = await db.countMonthlySubmissions(workspace.id as string)
   const monthlyLimit = getPlanLimit(plan, 'forms.submissions_per_month')
   if (monthlyCount >= monthlyLimit)
     throw createError({ statusCode: 429, message: errorMessage('forms.monthly_limit') })
@@ -272,9 +262,9 @@ export default defineEventHandler(async (event) => {
   const userAgent = getHeader(event, 'user-agent') ?? null
   const referrer = getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? null
 
-  const submission = await createFormSubmission(admin, {
+  const submission = await db.createFormSubmission({
     project_id: projectId,
-    workspace_id: workspace.id,
+    workspace_id: workspace.id as string,
     model_id: modelId,
     data: filteredData,
     source_ip: ip !== 'unknown' ? ip : undefined,
@@ -283,7 +273,7 @@ export default defineEventHandler(async (event) => {
   })
 
   // Emit webhook event (fire-and-forget)
-  emitWebhookEvent(projectId, workspace.id, 'form.submitted', {
+  emitWebhookEvent(projectId, workspace.id as string, 'form.submitted', {
     submissionId: submission.id,
     modelId,
     status: submission.status,

@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
 
   // Track CDN usage (fire-and-forget, Business+ feature)
   if (hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.metering')) {
-    void trackEnterpriseCdnUsage(admin, projectId, keyId, result.data.length)
+    void trackEnterpriseCdnUsage(projectId, keyId, result.data.length)
   }
 
   // Return binary data as-is, JSON/text as string

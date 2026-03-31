@@ -16,23 +16,16 @@ describe('workspace and project delete route integration', () => {
       user: { id: 'owner-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'workspaces')
-          throw new Error(`Unexpected table: ${table}`)
 
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: { id: 'workspace-primary', type: 'primary', owner_id: 'owner-1' },
-              }),
-            })),
-          })),
-        }
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({
+        id: 'workspace-primary',
+        type: 'primary',
+        owner_id: 'owner-1',
       }),
+      listWorkspaceProjects: vi.fn().mockResolvedValue([]),
+      getAdminClient: vi.fn(),
     }))
 
     await withTestServer({
@@ -60,37 +53,30 @@ describe('workspace and project delete route integration', () => {
       user: { id: 'owner-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ deletePrefix }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'workspaces') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { id: 'workspace-1', type: 'secondary', owner_id: 'owner-1' },
-                }),
+
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({
+        id: 'workspace-1',
+        type: 'secondary',
+        owner_id: 'owner-1',
+      }),
+      listWorkspaceProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1' },
+        { id: 'project-2' },
+      ]),
+      getAdminClient: vi.fn().mockReturnValue({
+        from: vi.fn((table: string) => {
+          if (table === 'workspaces') {
+            return {
+              delete: vi.fn(() => ({
+                eq: deleteEq,
               })),
-            })),
-            delete: vi.fn(() => ({
-              eq: deleteEq,
-            })),
+            }
           }
-        }
-
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({
-                data: [{ id: 'project-1' }, { id: 'project-2' }],
-              }),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
+          throw new Error(`Unexpected table: ${table}`)
+        }),
       }),
     }))
 
@@ -118,23 +104,11 @@ describe('workspace and project delete route integration', () => {
       user: { id: 'admin-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('admin'))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'projects')
-          throw new Error(`Unexpected table: ${table}`)
 
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: null }),
-              })),
-            })),
-          })),
-        }
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('admin'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue(null),
+      getAdminClient: vi.fn(),
     }))
 
     await withTestServer({
@@ -153,8 +127,8 @@ describe('workspace and project delete route integration', () => {
 
   it('deletes a project and decrements workspace storage usage by uploaded media bytes', async () => {
     const deletePrefix = vi.fn().mockResolvedValue(undefined)
-    const rpc = vi.fn().mockResolvedValue({ error: null })
-    const deleteProject = vi.fn().mockResolvedValue({ error: null })
+    const deleteProject = vi.fn().mockResolvedValue(undefined)
+    const incrementWorkspaceStorageBytes = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
@@ -165,40 +139,26 @@ describe('workspace and project delete route integration', () => {
       user: { id: 'admin-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('admin'))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ deletePrefix }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      rpc,
-      from: vi.fn((table: string) => {
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ data: { id: 'project-1' } }),
-                })),
-              })),
-            })),
-            delete: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: deleteProject,
-              })),
-            })),
-          }
-        }
 
-        if (table === 'media_assets') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({
-                data: [{ size_bytes: 512 }, { size_bytes: 1536 }],
-              }),
-            })),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('admin'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
+      deleteProject,
+      incrementWorkspaceStorageBytes,
+      getAdminClient: vi.fn().mockReturnValue({
+        from: vi.fn((table: string) => {
+          if (table === 'media_assets') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn().mockResolvedValue({
+                  data: [{ size_bytes: 512 }, { size_bytes: 1536 }],
+                }),
+              })),
+            }
           }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
+          throw new Error(`Unexpected table: ${table}`)
+        }),
       }),
     }))
 
@@ -212,10 +172,7 @@ describe('workspace and project delete route integration', () => {
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({ deleted: true })
       expect(deletePrefix).toHaveBeenCalledWith('project-1', '')
-      expect(rpc).toHaveBeenCalledWith('decrement_storage_bytes', {
-        ws_id: 'workspace-1',
-        bytes: 2048,
-      })
+      expect(incrementWorkspaceStorageBytes).toHaveBeenCalledWith('workspace-1', -2048)
     })
   })
 })

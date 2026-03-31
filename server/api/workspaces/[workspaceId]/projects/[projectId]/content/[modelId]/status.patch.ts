@@ -5,7 +5,6 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
-  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const modelId = getRouterParam(event, 'modelId')
@@ -39,9 +38,7 @@ export default defineEventHandler(async (event) => {
   if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
     throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
-  const { git, contentRoot } = await resolveProjectContext(
-    db.getUserClient(session.accessToken), workspaceId, projectId,
-  )
+  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
   const engine = createContentEngine({ git, contentRoot })
   const writeResult = await engine.updateEntryStatus(

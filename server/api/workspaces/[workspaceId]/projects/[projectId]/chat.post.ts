@@ -38,11 +38,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
   const admin = db.getAdminClient()
 
   // === RESOLVE PROJECT + WORKSPACE ===
-  const { project, workspace, git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
+  const { project, workspace, git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
   const plan = getWorkspacePlan(workspace)
 
   // === RATE LIMIT ===
@@ -101,27 +100,20 @@ export default defineEventHandler(async (event) => {
 
   // Verify ownership if continuing existing conversation
   if (conversationId) {
-    const { data: conv } = await client
-      .from('conversations')
-      .select('id')
-      .eq('id', conversationId)
-      .eq('user_id', session.user.id)
-      .eq('project_id', projectId)
-      .single()
+    const conv = await db.getConversation(conversationId, projectId, { userId: session.user.id })
     if (!conv) {
-      // Invalid or foreign conversation — start fresh
       conversationId = undefined
     }
   }
 
   if (!conversationId) {
-    conversationId = (await createConversation(client, projectId, session.user.id, body.message)) ?? undefined
+    conversationId = (await db.createConversation(projectId, session.user.id, body.message)) ?? undefined
   }
   if (!conversationId)
     throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
   // === HISTORY ===
-  const historyRows = await loadConversationHistory(client, conversationId, 50)
+  const historyRows = await db.loadConversationMessages(conversationId, 50)
 
   // Build message history: chronological order, newest messages prioritized within budget
   const allHistory = historyRows ?? []
@@ -142,7 +134,7 @@ export default defineEventHandler(async (event) => {
 
   for (let i = budgetStart; i < allHistory.length; i++) {
     const row = allHistory[i]!
-    const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
+    const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
     messages.push({ role: row.role as 'user' | 'assistant', content })
   }
   messages.push({ role: 'user', content: body.message })
@@ -247,7 +239,7 @@ export default defineEventHandler(async (event) => {
         .join('')
 
       await saveChatResult(
-        admin, conversationId, body.message, assistantText,
+        conversationId, body.message, assistantText,
         lastAssistantContent, model, totalInputTokens, totalOutputTokens,
         workspaceId, session.user.id, usageSource,
       )

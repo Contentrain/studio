@@ -11,8 +11,7 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId || !assetId)
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
   const media = useMediaProvider()
   if (!media)

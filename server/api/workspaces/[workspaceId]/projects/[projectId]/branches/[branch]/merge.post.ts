@@ -4,7 +4,6 @@
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
-  const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const branch = getRouterParam(event, 'branch')
@@ -21,9 +20,7 @@ export default defineEventHandler(async (event) => {
   if (!permissions.availableTools.includes('merge_branch'))
     throw createError({ statusCode: 403, message: errorMessage('branches.merge_forbidden') })
 
-  const { git, contentRoot } = await resolveProjectContext(
-    db.getUserClient(session.accessToken), workspaceId, projectId,
-  )
+  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
   const engine = createContentEngine({ git, contentRoot })
   return engine.mergeBranch(branch)

@@ -10,17 +10,14 @@ import type { ModelDefinition } from '@contentrain/types'
  * returns empty delta (0 additional Git calls after cache check).
  */
 export default defineEventHandler(async (event) => {
-  const session = requireAuth(event)
-  const db = useDatabaseProvider()
+  requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const { git, contentRoot } = await resolveProjectContext(
-    db.getUserClient(session.accessToken), workspaceId, projectId,
-  )
+  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
   const query = getQuery(event) as { treeSha?: string }
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)

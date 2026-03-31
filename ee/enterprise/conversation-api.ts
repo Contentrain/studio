@@ -220,7 +220,10 @@ async function runConversationMessage(
   try {
     pendingBranches = await git.listBranches('cr/')
   }
-  catch { /* no branches */ }
+  catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[conversation-api] Failed to list branches:', err)
+  }
 
   const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
   const intent = classifyIntent(body.message, uiContext, phase)
@@ -349,7 +352,6 @@ async function runConversationMessage(
   }
 
   await saveChatResult(
-    admin,
     conversationId,
     body.message,
     responseText,

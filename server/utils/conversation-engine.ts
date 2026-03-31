@@ -378,8 +378,7 @@ export async function executeToolWithAutoMerge(
         const subModelId = params.modelId as string
         const subStatus = (params.status as string) ?? 'pending'
         const subLimit = Math.min(Number(params.limit ?? 20), 100)
-        const admin = useDatabaseProvider().getAdminClient()
-        const subs = await listFormSubmissions(admin, workspaceId, projectId, subModelId, { status: subStatus, limit: subLimit })
+        const subs = await useDatabaseProvider().listFormSubmissions(workspaceId, projectId, subModelId, { status: subStatus, limit: subLimit })
         result = subs.total > 0
           ? { submissions: subs.submissions, total: subs.total, message: agentMessage('forms.submission_list', { count: subs.total, status: subStatus }) }
           : { submissions: [], total: 0, message: agentMessage('forms.no_submissions') }
@@ -388,13 +387,13 @@ export async function executeToolWithAutoMerge(
 
       case 'approve_submission': {
         const approveId = params.submissionId as string
-        const admin = useDatabaseProvider().getAdminClient()
-        const sub = await getFormSubmission(admin, approveId)
+        const dbp = useDatabaseProvider()
+        const sub = await dbp.getFormSubmission(approveId)
         if (!sub || sub.workspace_id !== workspaceId || sub.project_id !== projectId) {
           result = { error: errorMessage('forms.submission_not_found') }
           break
         }
-        const updated = await updateFormSubmissionStatus(admin, approveId, 'approved', userId)
+        const updated = await dbp.updateFormSubmissionStatus(approveId, 'approved', userId)
         affected.snapshotChanged = true
         result = { submission: updated, message: agentMessage('forms.approved') }
         break
@@ -402,13 +401,13 @@ export async function executeToolWithAutoMerge(
 
       case 'reject_submission': {
         const rejectId = params.submissionId as string
-        const admin = useDatabaseProvider().getAdminClient()
-        const sub = await getFormSubmission(admin, rejectId)
+        const dbp = useDatabaseProvider()
+        const sub = await dbp.getFormSubmission(rejectId)
         if (!sub || sub.workspace_id !== workspaceId || sub.project_id !== projectId) {
           result = { error: errorMessage('forms.submission_not_found') }
           break
         }
-        const updated = await updateFormSubmissionStatus(admin, rejectId, 'rejected')
+        const updated = await dbp.updateFormSubmissionStatus(rejectId, 'rejected')
         result = { submission: updated, message: agentMessage('forms.rejected') }
         break
       }

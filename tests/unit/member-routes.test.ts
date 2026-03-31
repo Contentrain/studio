@@ -112,22 +112,30 @@ describe('member routes', () => {
         accepted_at: null,
       }),
       updateWorkspaceMemberInvitedAt: vi.fn().mockResolvedValue(undefined),
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      listProjectMembers: vi.fn().mockResolvedValue([{ id: 'project-member-1' }]),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'free', name: 'Acme', slug: 'acme' }),
+      ensureWorkspaceMember: vi.fn().mockResolvedValue(undefined),
+      createProjectMember: vi.fn().mockResolvedValue({
+        id: 'project-member-1',
+        role: 'editor',
+        specific_models: false,
+        allowed_models: [],
+      }),
+      deleteProjectMember: vi.fn().mockResolvedValue(undefined),
       getUserClient: vi.fn(() => userClient),
       getAdminClient: vi.fn(() => adminClient),
     }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
     vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
       allowed: true,
       remaining: 2,
       retryAfterMs: 0,
     }))
-    vi.stubGlobal('listWorkspaceMembers', vi.fn().mockResolvedValue([{ id: 'member-1' }]))
-    vi.stubGlobal('listProjectMembers', vi.fn().mockResolvedValue([{ id: 'project-member-1' }]))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
     vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(2))
     vi.stubGlobal('inviteOrLookupUser', vi.fn().mockResolvedValue({ userId: 'user-2', isNewUser: true }))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
-    vi.stubGlobal('ensureWorkspaceMember', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('normalizeEnterpriseProjectMemberAccess', vi.fn().mockResolvedValue({
       role: 'editor',
       specificModels: false,
@@ -166,6 +174,7 @@ describe('member routes', () => {
       listWorkspaceMembers: vi.fn().mockResolvedValue([{ id: '1' }, { id: '2' }]),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'free', name: 'Acme', slug: 'acme' }),
       createWorkspaceMember: vi.fn(),
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
     }))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/members/index.post')).default
@@ -298,48 +307,19 @@ describe('member routes', () => {
       return undefined
     }))
 
-    const deleteChain = vi.fn().mockResolvedValue({ error: null })
-    const userClient = {
-      from: vi.fn((table: string) => {
-        if (table !== 'project_members') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          delete: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: deleteChain,
-            })),
-          })),
-        }
-      }),
-    }
-    const adminClient = {
-      from: vi.fn((table: string) => {
-        if (table !== 'projects') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: { id: 'project-1' } }),
-              })),
-            })),
-          })),
-        }
-      }),
-    }
+    const deleteProjectMember = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getUserClient: vi.fn(() => userClient),
-      getAdminClient: vi.fn(() => adminClient),
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
+      deleteProjectMember,
+      getUserClient: vi.fn(),
+      getAdminClient: vi.fn(),
     }))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/members/[memberId].delete')).default
     const result = await handler({} as never)
 
     expect(result).toEqual({ deleted: true })
-    expect(deleteChain).toHaveBeenCalledWith('project_id', 'project-1')
+    expect(deleteProjectMember).toHaveBeenCalledWith('project-1', 'member-1')
   })
 })

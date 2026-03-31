@@ -12,30 +12,19 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  const admin = db.getAdminClient()
-
   // Verify owner/admin
-  await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin'])
+  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
   // Plan check
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('plan')
-    .eq('id', workspaceId)
-    .single()
+  const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
 
   // Get project
-  const { git, contentRoot } = await resolveProjectContext(client, workspaceId, projectId)
+  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
-  const { data: project } = await client
-    .from('projects')
-    .select('cdn_enabled, cdn_branch, default_branch')
-    .eq('id', projectId)
-    .single()
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'cdn_enabled, cdn_branch, default_branch')
 
   if (!project?.cdn_enabled)
     throw createError({ statusCode: 400, message: errorMessage('cdn.not_enabled') })
@@ -44,7 +33,7 @@ export default defineEventHandler(async (event) => {
   if (!cdn)
     throw createError({ statusCode: 503, message: errorMessage('cdn.storage_not_configured') })
 
-  const branch = project.cdn_branch ?? project.default_branch ?? 'main'
+  const branch = (project.cdn_branch ?? project.default_branch ?? 'main') as string
 
   // Get latest commit SHA
   let commitSha = 'manual'
@@ -56,20 +45,15 @@ export default defineEventHandler(async (event) => {
   catch { /* use 'manual' */ }
 
   // Create build record
-  const { data: build, error: buildError } = await admin
-    .from('cdn_builds')
-    .insert({
-      project_id: projectId,
-      trigger_type: 'manual',
-      commit_sha: commitSha,
-      branch,
-      status: 'building',
-    })
-    .select('id')
-    .single()
+  const build = await db.createCDNBuild({
+    projectId,
+    triggerType: 'manual',
+    commitSha,
+    branch,
+  })
 
-  if (buildError || !build)
-    throw createError({ statusCode: 500, message: errorMessage('cdn.build_failed', { detail: buildError?.message ?? 'unknown' }) })
+  if (!build?.id)
+    throw createError({ statusCode: 500, message: errorMessage('cdn.build_failed', { detail: 'unknown' }) })
 
   // SSE stream for progress
   const eventStream = createEventStream(event)
@@ -78,7 +62,7 @@ export default defineEventHandler(async (event) => {
     try {
       const result = await executeCDNBuild({
         projectId,
-        buildId: build.id,
+        buildId: build.id as string,
         git,
         cdn,
         contentRoot,
@@ -91,18 +75,15 @@ export default defineEventHandler(async (event) => {
       })
 
       // Update build record
-      await admin
-        .from('cdn_builds')
-        .update({
-          status: result.error ? 'failed' : 'success',
-          file_count: result.filesUploaded,
-          total_size_bytes: result.totalSizeBytes,
-          changed_models: result.changedModels,
-          build_duration_ms: result.durationMs,
-          error_message: result.error ?? null,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', build.id)
+      await db.updateCDNBuild(build.id as string, {
+        status: result.error ? 'failed' : 'success',
+        file_count: result.filesUploaded,
+        total_size_bytes: result.totalSizeBytes,
+        changed_models: result.changedModels,
+        build_duration_ms: result.durationMs,
+        error_message: result.error ?? null,
+        completed_at: new Date().toISOString(),
+      })
 
       await eventStream.push(JSON.stringify({
         phase: 'complete',
@@ -119,11 +100,11 @@ export default defineEventHandler(async (event) => {
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Build failed'
       // Mark build as failed so it doesn't stay stuck in 'building'
-      await admin.from('cdn_builds').update({
+      await db.updateCDNBuild(build.id as string, {
         status: 'failed',
         error_message: msg,
         completed_at: new Date().toISOString(),
-      }).eq('id', build.id)
+      })
       try {
         await eventStream.push(JSON.stringify({ phase: 'error', message: msg }))
       }

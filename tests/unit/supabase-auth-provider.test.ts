@@ -9,7 +9,7 @@ const providerState = vi.hoisted(() => {
   return state
 })
 
-vi.mock('../../server/providers/supabase-db', () => ({
+vi.mock('../../server/providers/supabase-client', () => ({
   createSupabaseAdminClient: providerState.createSupabaseAdminClient,
 }))
 

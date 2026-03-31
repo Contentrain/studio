@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3'
 import type { CDNProvider } from '../providers/cdn'
-import type { DatabaseClientBridge } from '../providers/database'
+import type { DatabaseProvider } from '../providers/database'
 import type { MediaProvider } from '../providers/media'
 
 export type EnterpriseRouteHandler<T = unknown> = (event: H3Event) => Promise<T> | T
@@ -54,8 +54,8 @@ export interface EnterpriseBridge {
     secretAccessKey: string
     bucket: string
   }) => CDNProvider
-  createMediaProvider?: (config: { cdn: CDNProvider, admin: DatabaseClientBridge }) => MediaProvider
-  trackCDNUsage?: (admin: DatabaseClientBridge, projectId: string, apiKeyId: string, responseSizeBytes: number) => Promise<void>
+  createMediaProvider?: (config: { cdn: CDNProvider, db: DatabaseProvider }) => MediaProvider
+  trackCDNUsage?: (projectId: string, apiKeyId: string, responseSizeBytes: number) => Promise<void>
   emitWebhookEvent?: (projectId: string, workspaceId: string, event: string, data: Record<string, unknown>) => Promise<void>
   processWebhookRetries?: () => Promise<number>
   normalizeProjectMemberAccess?: (input: {
@@ -121,13 +121,12 @@ export async function runEnterpriseRoute<T>(
 }
 
 export async function trackEnterpriseCdnUsage(
-  admin: DatabaseClientBridge,
   projectId: string,
   apiKeyId: string,
   responseSizeBytes: number,
 ): Promise<void> {
   const bridge = await loadEnterpriseBridge()
-  await bridge?.trackCDNUsage?.(admin, projectId, apiKeyId, responseSizeBytes)
+  await bridge?.trackCDNUsage?.(projectId, apiKeyId, responseSizeBytes)
 }
 
 export async function emitEnterpriseWebhookEvent(

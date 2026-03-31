@@ -2,42 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setEnterpriseBridgeForTesting } from '../../server/utils/enterprise'
 import { resolveAgentPermissions } from '../../server/utils/agent-permissions'
 
-interface QueryState {
-  table: string
-  filters: Record<string, unknown>
-}
-
-function createSupabaseClient(rows: {
-  workspaceMember?: { role: 'owner' | 'admin' | 'member' } | null
-  projectMember?: { role: 'editor' | 'reviewer' | 'viewer', specific_models?: boolean, allowed_models?: string[] } | null
+function createMockDatabaseProvider(rows: {
+  workspaceMemberRole?: string | null
+  projectMember?: { role: string, specific_models?: boolean, allowed_models?: string[] } | null
   workspace?: { plan?: string | null } | null
 }) {
   return {
-    from(table: string) {
-      const state: QueryState = { table, filters: {} }
-
-      return {
-        select() {
-          return this
-        },
-        eq(key: string, value: unknown) {
-          state.filters[key] = value
-          return this
-        },
-        async single() {
-          if (state.table === 'workspace_members') {
-            return { data: rows.workspaceMember ?? null }
-          }
-          if (state.table === 'project_members') {
-            return { data: rows.projectMember ?? null }
-          }
-          if (state.table === 'workspaces') {
-            return { data: rows.workspace ?? null }
-          }
-          return { data: null }
-        },
-      }
-    },
+    getWorkspaceMemberRole: vi.fn().mockResolvedValue(rows.workspaceMemberRole ?? null),
+    getProjectMember: vi.fn().mockResolvedValue(rows.projectMember ?? null),
+    getWorkspaceById: vi.fn().mockResolvedValue(rows.workspace ?? null),
   }
 }
 
@@ -48,10 +21,8 @@ describe('resolveAgentPermissions', () => {
   })
 
   it('returns full tool access for workspace owners and admins', async () => {
-    vi.stubGlobal('useDatabaseProvider', () => ({
-      getUserClient: () => createSupabaseClient({
-        workspaceMember: { role: 'owner' },
-      }),
+    vi.stubGlobal('useDatabaseProvider', () => createMockDatabaseProvider({
+      workspaceMemberRole: 'owner',
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -63,11 +34,9 @@ describe('resolveAgentPermissions', () => {
   })
 
   it('returns no tools when a workspace member is not assigned to the project', async () => {
-    vi.stubGlobal('useDatabaseProvider', () => ({
-      getUserClient: () => createSupabaseClient({
-        workspaceMember: { role: 'member' },
-        projectMember: null,
-      }),
+    vi.stubGlobal('useDatabaseProvider', () => createMockDatabaseProvider({
+      workspaceMemberRole: 'member',
+      projectMember: null,
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -85,16 +54,14 @@ describe('resolveAgentPermissions', () => {
         allowedModels: plan === 'free' ? [] : (allowedModels ?? []),
       }),
     } as never)
-    vi.stubGlobal('useDatabaseProvider', () => ({
-      getUserClient: () => createSupabaseClient({
-        workspaceMember: { role: 'member' },
-        projectMember: {
-          role: 'reviewer',
-          specific_models: true,
-          allowed_models: ['faq', 'docs'],
-        },
-        workspace: { plan: 'free' },
-      }),
+    vi.stubGlobal('useDatabaseProvider', () => createMockDatabaseProvider({
+      workspaceMemberRole: 'member',
+      projectMember: {
+        role: 'reviewer',
+        specific_models: true,
+        allowed_models: ['faq', 'docs'],
+      },
+      workspace: { plan: 'free' },
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -114,16 +81,14 @@ describe('resolveAgentPermissions', () => {
         allowedModels: allowedModels ?? [],
       }),
     } as never)
-    vi.stubGlobal('useDatabaseProvider', () => ({
-      getUserClient: () => createSupabaseClient({
-        workspaceMember: { role: 'member' },
-        projectMember: {
-          role: 'reviewer',
-          specific_models: true,
-          allowed_models: ['faq', 'docs'],
-        },
-        workspace: { plan: 'business' },
-      }),
+    vi.stubGlobal('useDatabaseProvider', () => createMockDatabaseProvider({
+      workspaceMemberRole: 'member',
+      projectMember: {
+        role: 'reviewer',
+        specific_models: true,
+        allowed_models: ['faq', 'docs'],
+      },
+      workspace: { plan: 'business' },
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')

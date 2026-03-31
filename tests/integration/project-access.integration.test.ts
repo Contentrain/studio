@@ -113,24 +113,9 @@ describe('project and membership access integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'projects') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: null }),
-              })),
-            })),
-          })),
-        }
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue(null),
     }))
     vi.stubGlobal('inviteOrLookupUser', vi.fn())
 
@@ -156,24 +141,9 @@ describe('project and membership access integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('requireWorkspaceRole', vi.fn().mockResolvedValue('owner'))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table !== 'projects') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: null }),
-              })),
-            })),
-          })),
-        }
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue(null),
     }))
 
     const handler = await loadProjectMemberDeleteHandler()

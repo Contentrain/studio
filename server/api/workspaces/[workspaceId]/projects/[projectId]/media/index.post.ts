@@ -12,28 +12,19 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  const role = await requireWorkspaceRole(client, session.user.id, workspaceId, ['owner', 'admin', 'member'])
+  const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
-  // Verify project belongs to workspace (prevents cross-project access)
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  // Workspace members need explicit project assignment
   if (role === 'member') {
-    const { data: pm } = await admin.from('project_members').select('id').eq('project_id', projectId).eq('user_id', session.user.id).single()
+    const pm = await db.getProjectMember(projectId, session.user.id)
     if (!pm) throw createError({ statusCode: 403, message: errorMessage('project.access_denied') })
   }
 
-  const plan = getWorkspacePlan(await getWorkspace(client, workspaceId))
+  const ws = await db.getWorkspaceById(workspaceId, 'plan, media_storage_bytes')
+  const plan = getWorkspacePlan(ws ?? {})
   if (!hasFeature(plan, 'media.upload'))
     throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade') })
 
@@ -62,14 +53,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
 
   // Storage quota
-  const { data: ws } = await admin
-    .from('workspaces')
-    .select('media_storage_bytes')
-    .eq('id', workspaceId)
-    .single()
-
   const storageLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
-  const currentUsage = (ws as { media_storage_bytes: number } | null)?.media_storage_bytes ?? 0
+  const currentUsage = (ws as Record<string, unknown>)?.media_storage_bytes as number ?? 0
   if (storageLimit > 0 && currentUsage + filePart.data.length > storageLimit)
     throw createError({ statusCode: 403, message: errorMessage('storage.quota_exceeded') })
 

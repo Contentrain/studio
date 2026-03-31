@@ -37,23 +37,13 @@ describe('cdn keys', () => {
   })
 
   it('rejects expired api keys', async () => {
-    const single = vi.fn().mockResolvedValue({
-      data: {
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      validateCDNKeyHash: vi.fn().mockResolvedValue({
         id: 'key-1',
         project_id: 'project-1',
         expires_at: '2020-01-01T00:00:00.000Z',
-      },
-    })
-    const eq = vi.fn(() => ({ is: vi.fn(() => ({ single })) }))
-
-    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getAdminClient: vi.fn().mockReturnValue({
-        from: vi.fn(() => ({
-          select: vi.fn(() => ({
-            eq,
-          })),
-        })),
       }),
+      updateCDNKeyLastUsed: vi.fn().mockResolvedValue(undefined),
     }))
 
     const { validateCDNKey } = await loadCDNKeysModule()
@@ -64,36 +54,17 @@ describe('cdn keys', () => {
   })
 
   it('returns project info and updates last_used_at for valid api keys', async () => {
-    const updateEq = vi.fn().mockResolvedValue({ error: null })
-    const single = vi.fn().mockResolvedValue({
-      data: {
+    const updateCDNKeyLastUsed = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      validateCDNKeyHash: vi.fn().mockResolvedValue({
         id: 'key-1',
         project_id: 'project-1',
         rate_limit_per_hour: 500,
         allowed_origins: ['https://app.example.com'],
-        revoked_at: null,
         expires_at: null,
-      },
-    })
-    const from = vi.fn((table: string) => {
-      if (table === 'cdn_api_keys') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              is: vi.fn(() => ({ single })),
-            })),
-          })),
-          update: vi.fn(() => ({
-            eq: updateEq,
-          })),
-        }
-      }
-
-      return {}
-    })
-
-    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getAdminClient: vi.fn().mockReturnValue({ from }),
+      }),
+      updateCDNKeyLastUsed,
     }))
 
     const { validateCDNKey } = await loadCDNKeysModule()
@@ -105,6 +76,6 @@ describe('cdn keys', () => {
       rateLimitPerHour: 500,
       allowedOrigins: ['https://app.example.com'],
     })
-    expect(updateEq).toHaveBeenCalledWith('id', 'key-1')
+    expect(updateCDNKeyLastUsed).toHaveBeenCalledWith('key-1')
   })
 })

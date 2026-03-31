@@ -1,5 +1,5 @@
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult } from './auth'
-import { createSupabaseAdminClient } from './supabase-db'
+import { createSupabaseAdminClient } from './supabase-client'
 
 /**
  * Supabase implementation of AuthProvider.

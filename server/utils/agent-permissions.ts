@@ -53,17 +53,11 @@ export async function resolveAgentPermissions(
   projectId: string,
   accessToken: string,
 ): Promise<AgentPermissions> {
-  const client = useDatabaseProvider().getUserClient(accessToken)
+  const db = useDatabaseProvider()
 
-  // Get workspace role + plan
-  const { data: wsMember } = await client
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', userId)
-    .single()
-
-  const workspaceRole = (wsMember?.role ?? 'member') as AgentPermissions['workspaceRole']
+  // Get workspace role
+  const wsRole = await db.getWorkspaceMemberRole(accessToken, userId, workspaceId)
+  const workspaceRole = (wsRole ?? 'member') as AgentPermissions['workspaceRole']
 
   // Workspace owner/admin → full access (regardless of plan)
   if (workspaceRole === 'owner' || workspaceRole === 'admin') {
@@ -78,12 +72,7 @@ export async function resolveAgentPermissions(
   }
 
   // Workspace member → check project role
-  const { data: projMember } = await client
-    .from('project_members')
-    .select('role, specific_models, allowed_models')
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .single()
+  const projMember = await db.getProjectMember(projectId, userId)
 
   if (!projMember) {
     return {
@@ -97,19 +86,14 @@ export async function resolveAgentPermissions(
   }
 
   // Resolve workspace plan for EE feature gating
-  const { data: workspace } = await client
-    .from('workspaces')
-    .select('plan')
-    .eq('id', workspaceId)
-    .single()
-
+  const workspace = await db.getWorkspaceById(workspaceId, 'plan')
   const plan = getWorkspacePlan(workspace ?? {})
 
   const normalizedAccess = await normalizeEnterpriseProjectMemberAccess({
     plan,
-    role: projMember.role as AgentPermissions['projectRole'],
-    specificModels: projMember.specific_models ?? false,
-    allowedModels: projMember.allowed_models ?? [],
+    role: (projMember.role as string) as AgentPermissions['projectRole'],
+    specificModels: (projMember.specific_models as boolean) ?? false,
+    allowedModels: (projMember.allowed_models as string[]) ?? [],
   })
 
   const projectRole = normalizedAccess.role as AgentPermissions['projectRole']

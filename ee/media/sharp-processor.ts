@@ -9,7 +9,6 @@
 
 import { createHash } from 'node:crypto'
 import type { CDNProvider } from '../../server/providers/cdn'
-import type { DatabaseClientBridge } from '../../server/providers/database'
 import type {
   MediaAsset,
   MediaListOptions,
@@ -18,53 +17,43 @@ import type {
   UploadOptions,
   VariantConfig,
 } from '../../server/providers/media'
-import {
-  createMediaAsset,
-  deleteMediaAsset,
-  getMediaAsset,
-  getMediaUsage,
-  listMediaAssets,
-  removeMediaUsage,
-  trackMediaUsage,
-  updateMediaAsset,
-  updateWorkspaceStorageBytes,
-} from '../../server/utils/db'
+import type { DatabaseProvider, DatabaseRow } from '../../server/providers/database'
 import { optimizeImage } from './media-optimizer'
 import { generateVariants } from './variant-generator'
 import { calculateBlurhash } from './blurhash-calculator'
 
 export interface SharpMediaProviderConfig {
   cdn: CDNProvider
-  admin: DatabaseClientBridge
+  db: DatabaseProvider
 }
 
-function rowToAsset(row: ReturnType<typeof getMediaAsset> extends Promise<infer T> ? NonNullable<T> : never, usedIn: MediaUsageRef[] = []): MediaAsset {
+function rowToAsset(row: DatabaseRow, usedIn: MediaUsageRef[] = []): MediaAsset {
   return {
-    id: row.id,
-    projectId: row.project_id,
-    filename: row.filename,
-    contentType: row.content_type,
-    size: row.size_bytes,
-    width: row.width ?? 0,
-    height: row.height ?? 0,
-    format: row.format,
-    blurhash: row.blurhash,
-    alt: row.alt,
-    focalPoint: row.focal_point,
-    variants: row.variants,
-    tags: row.tags,
-    uploadedBy: row.uploaded_by,
+    id: row.id as string,
+    projectId: row.project_id as string,
+    filename: row.filename as string,
+    contentType: row.content_type as string,
+    size: (row.size_bytes as number) ?? 0,
+    width: (row.width as number) ?? 0,
+    height: (row.height as number) ?? 0,
+    format: row.format as string,
+    blurhash: (row.blurhash as string) ?? null,
+    alt: (row.alt as string) ?? null,
+    focalPoint: row.focal_point as MediaAsset['focalPoint'],
+    variants: row.variants as MediaAsset['variants'],
+    tags: (row.tags as string[]) ?? [],
+    uploadedBy: row.uploaded_by as string,
     source: row.source as MediaAsset['source'],
-    originalPath: row.original_path,
-    contentHash: row.content_hash,
+    originalPath: row.original_path as string,
+    contentHash: row.content_hash as string,
     usedIn,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
   }
 }
 
 export function createSharpMediaProvider(config: SharpMediaProviderConfig): MediaProvider {
-  const { cdn, admin } = config
+  const { cdn, db } = config
 
   return {
     async upload(options: UploadOptions): Promise<MediaAsset> {
@@ -125,7 +114,7 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
         const totalBytes = optimized.size + Object.values(variantMap).reduce((sum, v) => sum + v.size, 0)
 
         // Insert DB row
-        const row = await createMediaAsset(admin, {
+        const row = await db.createMediaAsset({
           project_id: projectId,
           workspace_id: workspaceId,
           filename,
@@ -147,7 +136,7 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
         })
 
         // Update workspace storage counter
-        await updateWorkspaceStorageBytes(admin, workspaceId, totalBytes)
+        await db.incrementWorkspaceStorageBytes(workspaceId, totalBytes)
 
         return rowToAsset(row)
       }
@@ -164,11 +153,11 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
     },
 
     async regenerateVariants(assetId: string, variants: Record<string, VariantConfig>): Promise<MediaAsset> {
-      const row = await getMediaAsset(admin, assetId)
+      const row = await db.getMediaAsset(assetId)
       if (!row) throw createError({ statusCode: 404, message: 'Asset not found' })
 
       // Fetch original from R2
-      const original = await cdn.getObject(row.project_id, row.original_path)
+      const original = await cdn.getObject(row.project_id as string, row.original_path as string)
       if (!original) throw createError({ statusCode: 404, message: 'Original file not found in storage' })
 
       // Generate NEW variants first (before deleting old ones)
@@ -178,7 +167,7 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
 
       // Upload NEW variants
       for (const v of generated) {
-        await cdn.putObject(row.project_id, v.variant.path, v.buffer, `image/${v.variant.format}`)
+        await cdn.putObject(row.project_id as string, v.variant.path, v.buffer, `image/${v.variant.format}`)
         variantMap[v.name] = v.variant
         newBytes += v.variant.size
       }
@@ -190,7 +179,7 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
         // Only delete if path differs from new variant (avoid deleting if same path reused)
         const isReused = Object.values(variantMap).some(nv => nv.path === v.path)
         if (!isReused) {
-          await cdn.deleteObject(row.project_id, v.path)
+          await cdn.deleteObject(row.project_id as string, v.path)
         }
         freedBytes += v.size
       }
@@ -199,20 +188,20 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       const blurhash = await calculateBlurhash(original.data)
 
       // Update DB
-      const updated = await updateMediaAsset(admin, assetId, { variants: variantMap, blurhash })
+      const updated = await db.updateMediaAsset(assetId, { variants: variantMap, blurhash })
 
       // Update storage delta
-      await updateWorkspaceStorageBytes(admin, row.workspace_id, newBytes - freedBytes)
+      await db.incrementWorkspaceStorageBytes(row.workspace_id as string, newBytes - freedBytes)
 
       return rowToAsset(updated)
     },
 
     async delete(projectId: string, assetId: string): Promise<void> {
-      const row = await getMediaAsset(admin, assetId)
+      const row = await db.getMediaAsset(assetId)
       if (!row) return
 
       // Delete original from R2
-      await cdn.deleteObject(projectId, row.original_path)
+      await cdn.deleteObject(projectId, row.original_path as string)
 
       // Delete variants from R2
       const variants = row.variants as Record<string, { path: string, size: number }>
@@ -221,27 +210,27 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       }
 
       // Delete DB row (cascades to media_usage)
-      await deleteMediaAsset(admin, assetId)
+      await db.deleteMediaAsset(assetId)
 
       // Update workspace storage counter
-      await updateWorkspaceStorageBytes(admin, row.workspace_id, -row.size_bytes)
+      await db.incrementWorkspaceStorageBytes(row.workspace_id as string, -(row.size_bytes as number))
     },
 
     async getAsset(assetId: string): Promise<MediaAsset | null> {
-      const row = await getMediaAsset(admin, assetId)
+      const row = await db.getMediaAsset(assetId)
       if (!row) return null
-      const usageRows = await getMediaUsage(admin, assetId)
+      const usageRows = await db.getMediaUsage(assetId)
       const usage: MediaUsageRef[] = usageRows.map(u => ({
-        modelId: u.model_id,
-        entryId: u.entry_id,
-        fieldId: u.field_id,
-        locale: u.locale,
+        modelId: u.model_id as string,
+        entryId: u.entry_id as string,
+        fieldId: u.field_id as string,
+        locale: u.locale as string,
       }))
       return rowToAsset(row, usage)
     },
 
     async listAssets(projectId: string, options?: MediaListOptions) {
-      const result = await listMediaAssets(admin, projectId, options)
+      const result = await db.listMediaAssets(projectId, options)
       return {
         assets: result.assets.map(row => rowToAsset(row)),
         total: result.total,
@@ -254,16 +243,16 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       if (metadata.tags !== undefined) updates.tags = metadata.tags
       if (metadata.focalPoint !== undefined) updates.focal_point = metadata.focalPoint
 
-      const row = await updateMediaAsset(admin, assetId, updates as Parameters<typeof updateMediaAsset>[2])
+      const row = await db.updateMediaAsset(assetId, updates)
       return rowToAsset(row)
     },
 
     async trackUsage(assetId: string, usage: MediaUsageRef) {
-      const row = await getMediaAsset(admin, assetId)
+      const row = await db.getMediaAsset(assetId)
       if (!row) return
-      await trackMediaUsage(admin, {
+      await db.trackMediaUsage({
         asset_id: assetId,
-        project_id: row.project_id,
+        project_id: row.project_id as string,
         model_id: usage.modelId,
         entry_id: usage.entryId,
         field_id: usage.fieldId,
@@ -272,7 +261,7 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
     },
 
     async removeUsage(assetId: string, usage: MediaUsageRef) {
-      await removeMediaUsage(admin, {
+      await db.removeMediaUsage({
         asset_id: assetId,
         model_id: usage.modelId,
         entry_id: usage.entryId,
