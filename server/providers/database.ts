@@ -1,9 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-
-// ─── Legacy bridge types (will be removed after full migration) ───
 export type DatabaseRow = Record<string, unknown>
-export type DatabaseQueryChain = ReturnType<SupabaseClient['from']>
-export type DatabaseClientBridge = SupabaseClient
 
 // ─── Domain types ───
 
@@ -54,10 +49,6 @@ export interface PaginationOptions {
 }
 
 export interface DatabaseProvider {
-  // ─── Legacy bridge (will be removed in Faz 5) ───
-  getAdminClient: () => DatabaseClientBridge
-  getUserClient: (accessToken: string) => DatabaseClientBridge
-
   // ═══════════════════════════════════════════════════
   // WORKSPACES
   // ═══════════════════════════════════════════════════
@@ -92,6 +83,7 @@ export interface DatabaseProvider {
   findWorkspaceByGithubInstallation: (installationId: number, excludeWorkspaceId?: string) => Promise<DatabaseRow | null>
   updateWorkspaceGithubInstallation: (workspaceId: string, installationId: number) => Promise<void>
   clearWorkspaceGithubInstallation: (installationId: number) => Promise<void>
+  deleteWorkspace: (workspaceId: string) => Promise<void>
   incrementWorkspaceStorageBytes: (workspaceId: string, deltaBytes: number) => Promise<void>
 
   // ═══════════════════════════════════════════════════
@@ -111,6 +103,7 @@ export interface DatabaseProvider {
   deleteWorkspaceMember: (accessToken: string, userId: string, workspaceId: string, memberId: string) => Promise<void>
   updateWorkspaceMemberInvitedAt: (accessToken: string, userId: string, workspaceId: string, memberId: string, invitedAt: string) => Promise<void>
   ensureWorkspaceMember: (accessToken: string, workspaceId: string, userId: string, email: string, role?: string) => Promise<void>
+  acceptPendingInvitations: (userId: string, workspaceId: string) => Promise<boolean>
 
   // ═══════════════════════════════════════════════════
   // PROJECTS
@@ -118,10 +111,16 @@ export interface DatabaseProvider {
 
   getProjectForWorkspace: (accessToken: string, workspaceId: string, projectId: string, fields?: string) => Promise<DatabaseRow | null>
   getProjectById: (projectId: string, fields?: string) => Promise<DatabaseRow | null>
+  getProjectWithMembers: (accessToken: string, workspaceId: string, projectId: string) => Promise<DatabaseRow | null>
+  checkDuplicateProject: (workspaceId: string, repoFullName: string) => Promise<boolean>
   createProject: (accessToken: string, input: Record<string, unknown>) => Promise<DatabaseRow>
   updateProject: (projectId: string, updates: Record<string, unknown>, fields?: string) => Promise<DatabaseRow>
   deleteProject: (projectId: string, workspaceId: string) => Promise<void>
+  getProjectMediaStorageSum: (projectId: string) => Promise<number>
   listWorkspaceProjects: (accessToken: string, workspaceId: string) => Promise<DatabaseRow[]>
+  listWorkspaceProjectsAdmin: (workspaceId: string) => Promise<DatabaseRow[]>
+  listUserAssignedProjectIds: (userId: string) => Promise<string[]>
+  listWorkspaceProjectsByIds: (workspaceId: string, projectIds: string[]) => Promise<DatabaseRow[]>
   listUserAssignedProjects: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
   updateProjectContentTimestamp: (repoFullName: string) => Promise<void>
   listCDNEnabledProjects: (repoFullName: string) => Promise<DatabaseRow[]>

@@ -84,4 +84,9 @@ export interface AuthProvider {
    * Look up a user by their ID.
    */
   getUserById: (userId: string) => Promise<AuthUser | null>
+
+  /**
+   * Look up a user by their email address.
+   */
+  getUserByEmail: (email: string) => Promise<AuthUser | null>
 }

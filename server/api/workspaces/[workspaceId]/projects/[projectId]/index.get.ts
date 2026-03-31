@@ -6,23 +6,11 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = useDatabaseProvider().getUserClient(session.accessToken)
+  const db = useDatabaseProvider()
+  const data = await db.getProjectWithMembers(session.accessToken, workspaceId, projectId)
 
-  const { data, error } = await client
-    .from('projects')
-    .select(`
-      *,
-      project_members(
-        id, role, user_id, specific_models, allowed_models, invited_email, accepted_at,
-        profiles:user_id(id, display_name, email, avatar_url)
-      )
-    `)
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (error)
-    throw createError({ statusCode: error.code === 'PGRST116' ? 404 : 500, message: error.message })
+  if (!data)
+    throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   return data
 })

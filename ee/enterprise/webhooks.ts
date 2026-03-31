@@ -24,17 +24,11 @@ export function createWebhooksBridge() {
       if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
-      const admin = db.getAdminClient()
-      const { data } = await admin
-        .from('webhooks')
-        .select('id, name, url, events, active, created_at, updated_at, secret')
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-        .order('created_at', { ascending: false })
+      const data = await db.listProjectWebhooks(projectId, workspaceId)
 
-      return (data ?? []).map((w: { secret: string, [key: string]: unknown }) => ({
+      return (data ?? []).map((w: { secret?: string, [key: string]: unknown }) => ({
         ...w,
-        secret: w.secret ? `****${w.secret.slice(-4)}` : null,
+        secret: w.secret ? `****${String(w.secret).slice(-4)}` : null,
       }))
     },
 
@@ -119,18 +113,7 @@ export function createWebhooksBridge() {
       if (Object.keys(update).length <= 1)
         throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })
 
-      const admin = db.getAdminClient()
-      const { data, error } = await admin
-        .from('webhooks')
-        .update(update)
-        .eq('id', webhookId)
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-        .select('id, name, url, events, active, created_at, updated_at')
-        .single()
-
-      if (error)
-        throw createError({ statusCode: 500, message: error.message })
+      const data = await db.updateWebhook(webhookId, projectId, workspaceId, update)
 
       if (!data)
         throw createError({ statusCode: 404, message: errorMessage('webhook.not_found') })
@@ -150,18 +133,7 @@ export function createWebhooksBridge() {
 
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-      const admin = db.getAdminClient()
-      await admin.from('webhook_deliveries').delete().eq('webhook_id', webhookId)
-
-      const { error } = await admin
-        .from('webhooks')
-        .delete()
-        .eq('id', webhookId)
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-
-      if (error)
-        throw createError({ statusCode: 500, message: error.message })
+      await db.deleteWebhook(webhookId, projectId, workspaceId)
 
       return { deleted: true }
     },
@@ -186,14 +158,7 @@ export function createWebhooksBridge() {
       if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
-      const admin = db.getAdminClient()
-      const { data: webhook } = await admin
-        .from('webhooks')
-        .select('id, url, secret, active')
-        .eq('id', webhookId)
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-        .single()
+      const webhook = await db.getWebhook(webhookId, { projectId, workspaceId })
 
       if (!webhook)
         throw createError({ statusCode: 404, message: errorMessage('webhook.not_found') })
@@ -209,13 +174,13 @@ export function createWebhooksBridge() {
       }
 
       const body = JSON.stringify(payload)
-      const signature = signPayload(body, webhook.secret)
+      const signature = signPayload(body, webhook.secret as string)
 
       try {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), 10_000)
 
-        const response = await fetch(webhook.url, {
+        const response = await fetch(webhook.url as string, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -273,14 +238,7 @@ export function createWebhooksBridge() {
       if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
-      const admin = db.getAdminClient()
-      const { data: webhook } = await admin
-        .from('webhooks')
-        .select('id')
-        .eq('id', webhookId)
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-        .single()
+      const webhook = await db.getWebhook(webhookId, { projectId, workspaceId })
 
       if (!webhook)
         throw createError({ statusCode: 404, message: errorMessage('webhook.not_found') })
@@ -288,21 +246,12 @@ export function createWebhooksBridge() {
       const query = getQuery(event)
       const page = Math.max(1, Number(query.page) || 1)
       const limit = Math.min(Number(query.limit) || 50, 100)
-      const offset = (page - 1) * limit
 
-      const { data, count, error } = await admin
-        .from('webhook_deliveries')
-        .select('id, event, status, response_code, response_body, retry_count, delivered_at, next_retry_at, created_at', { count: 'exact' })
-        .eq('webhook_id', webhookId)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1)
-
-      if (error)
-        throw createError({ statusCode: 500, message: error.message })
+      const { deliveries, total } = await db.listWebhookDeliveries(webhookId, { page, limit })
 
       return {
-        deliveries: data ?? [],
-        total: count ?? 0,
+        deliveries,
+        total,
         page,
         limit,
       }

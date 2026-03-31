@@ -10,16 +10,9 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
+  const data = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'cdn_enabled, cdn_branch')
 
-  const { data, error } = await client
-    .from('projects')
-    .select('cdn_enabled, cdn_branch')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
-
-  if (error || !data)
+  if (!data)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   return data

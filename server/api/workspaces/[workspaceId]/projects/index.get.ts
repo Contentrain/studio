@@ -15,53 +15,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(session.accessToken)
-  const admin = db.getAdminClient()
 
   // Get user's workspace role
-  const { data: membership } = await client
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', session.user.id)
-    .single()
+  const role = await db.getWorkspaceMemberRole(session.accessToken, session.user.id, workspaceId)
 
-  if (!membership)
+  if (!role)
     throw createError({ statusCode: 403, message: errorMessage('workspace.not_a_member') })
 
   // Owner/Admin: all projects
-  if (membership.role === 'owner' || membership.role === 'admin') {
-    const { data, error } = await admin
-      .from('projects')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .order('created_at', { ascending: false })
-
-    if (error)
-      throw createError({ statusCode: 500, message: error.message })
-
-    return data
+  if (role === 'owner' || role === 'admin') {
+    return db.listWorkspaceProjectsAdmin(workspaceId)
   }
 
   // Member: only explicitly assigned projects
-  const { data: assignments } = await admin
-    .from('project_members')
-    .select('project_id')
-    .eq('user_id', session.user.id)
-
-  const assignedIds = (assignments ?? []).map(a => a.project_id)
+  const assignedIds = await db.listUserAssignedProjectIds(session.user.id)
 
   if (assignedIds.length === 0) return []
 
-  const { data, error } = await admin
-    .from('projects')
-    .select('*')
-    .eq('workspace_id', workspaceId)
-    .in('id', assignedIds)
-    .order('created_at', { ascending: false })
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
-
-  return data
+  return db.listWorkspaceProjectsByIds(workspaceId, assignedIds)
 })

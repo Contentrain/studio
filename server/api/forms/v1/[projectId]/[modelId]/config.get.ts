@@ -42,24 +42,12 @@ export default defineEventHandler(async (event) => {
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 
-  // Lookup project → workspace → plan (admin bypasses RLS)
-  const admin = db.getAdminClient()
-
-  const { data: project } = await admin
-    .from('projects')
-    .select('id, workspace_id, repo_full_name, content_root')
-    .eq('id', projectId)
-    .single()
-
+  // Lookup project → workspace → plan
+  const project = await db.getProjectById(projectId, 'id, workspace_id, repo_full_name, content_root')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const { data: workspace } = await admin
-    .from('workspaces')
-    .select('id, plan, github_installation_id')
-    .eq('id', project.workspace_id)
-    .single()
-
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id')
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
@@ -72,13 +60,13 @@ export default defineEventHandler(async (event) => {
   if (!workspace.github_installation_id)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const [owner, repo] = project.repo_full_name.split('/')
+  const [owner = '', repo = ''] = (project.repo_full_name as string).split('/')
   const git = useGitProvider({
-    installationId: workspace.github_installation_id,
+    installationId: workspace.github_installation_id as number,
     owner,
     repo,
   })
-  const contentRoot = normalizeContentRoot(project.content_root)
+  const contentRoot = normalizeContentRoot(project.content_root as string)
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
 
   // Get model definition

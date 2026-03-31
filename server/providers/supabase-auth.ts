@@ -138,6 +138,14 @@ export function createSupabaseAuthProvider(): AuthProvider {
 
       return mapSupabaseUser(data.user)
     },
+
+    async getUserByEmail(email: string): Promise<AuthUser | null> {
+      const admin = createSupabaseAdminClient()
+      const { data } = await admin.auth.admin.listUsers()
+      const user = data?.users?.find(u => u.email === email)
+      if (!user) return null
+      return mapSupabaseUser(user)
+    },
   }
 }
 

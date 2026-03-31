@@ -43,14 +43,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Delete workspace — CASCADE handles all child records
-  const admin = db.getAdminClient()
-  const { error } = await admin
-    .from('workspaces')
-    .delete()
-    .eq('id', workspaceId)
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
+  await db.deleteWorkspace(workspaceId)
 
   return { deleted: true }
 })

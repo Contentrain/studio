@@ -4,73 +4,16 @@ function createErrorLike(input: { statusCode: number, message: string }) {
   return Object.assign(new Error(input.message), input)
 }
 
-function createClient(overrides: {
-  conversationsData?: unknown
-  messagesData?: unknown
-  deleteError?: { message: string } | null
-  conversationExists?: boolean
-}) {
-  return {
-    from(table: string) {
-      if (table === 'conversations') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  limit: vi.fn().mockResolvedValue({ data: overrides.conversationsData ?? [] }),
-                })),
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ data: overrides.conversationExists === false ? null : { id: 'conv-1' } }),
-                })),
-                single: vi.fn().mockResolvedValue({ data: overrides.conversationExists === false ? null : { id: 'conv-1' } }),
-              })),
-            })),
-          })),
-          delete: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn().mockResolvedValue({ error: overrides.deleteError ?? null }),
-              })),
-            })),
-          })),
-        }
-      }
-
-      if (table === 'messages') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              order: vi.fn(() => ({
-                limit: vi.fn().mockResolvedValue({ data: overrides.messagesData ?? [], error: null }),
-              })),
-            })),
-          })),
-        }
-      }
-
-      return {}
-    },
-  }
-}
-
 describe('conversation routes', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('createError', createErrorLike)
+    vi.stubGlobal('errorMessage', vi.fn((key: string) => key))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
-      getUserClient: vi.fn((accessToken: string) => {
-        const userClient = (globalThis as typeof globalThis & {
-          useSupabaseUserClient?: (token: string) => unknown
-        }).useSupabaseUserClient
-        return typeof userClient === 'function' ? userClient(accessToken) : {}
-      }),
-    })))
   })
 
   afterEach(() => {
@@ -83,14 +26,18 @@ describe('conversation routes', () => {
       if (key === 'projectId') return 'project-1'
       return undefined
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(createClient({
-      conversationsData: [{ id: 'conv-1', title: 'Hello', created_at: 'x', updated_at: 'y' }],
+    const listConversations = vi.fn().mockResolvedValue([
+      { id: 'conv-1', title: 'Hello', created_at: 'x', updated_at: 'y' },
+    ])
+    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+      listConversations,
     })))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/conversations/index.get')).default
     const result = await handler({} as never)
 
     expect(result).toEqual([{ id: 'conv-1', title: 'Hello', created_at: 'x', updated_at: 'y' }])
+    expect(listConversations).toHaveBeenCalledWith('token-1', 'project-1', 'user-1')
   })
 
   it('loads conversation messages only when the conversation belongs to the user and project', async () => {
@@ -99,15 +46,21 @@ describe('conversation routes', () => {
       if (key === 'projectId') return 'project-1'
       return 'workspace-1'
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(createClient({
-      conversationExists: true,
-      messagesData: [{ id: 'msg-1', role: 'user', content: 'Hello', tool_calls: null, model: null, created_at: 'now' }],
+    const getConversation = vi.fn().mockResolvedValue({ id: 'conv-1' })
+    const loadConversationMessages = vi.fn().mockResolvedValue([
+      { id: 'msg-1', role: 'user', content: 'Hello', tool_calls: null, model: null, created_at: 'now' },
+    ])
+    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+      getConversation,
+      loadConversationMessages,
     })))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/conversations/[conversationId]/messages.get')).default
     const result = await handler({} as never)
 
     expect(result).toEqual([{ id: 'msg-1', role: 'user', content: 'Hello', tool_calls: null, model: null, created_at: 'now' }])
+    expect(getConversation).toHaveBeenCalledWith('conv-1', 'project-1', { userId: 'user-1' })
+    expect(loadConversationMessages).toHaveBeenCalledWith('conv-1', 100, 'id, role, content, tool_calls, model, created_at')
   })
 
   it('returns 404 for foreign or missing conversations', async () => {
@@ -116,8 +69,9 @@ describe('conversation routes', () => {
       if (key === 'projectId') return 'project-1'
       return 'workspace-1'
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(createClient({
-      conversationExists: false,
+    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+      getConversation: vi.fn().mockResolvedValue(null),
+      loadConversationMessages: vi.fn(),
     })))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/conversations/[conversationId]/messages.get')).default
@@ -133,11 +87,15 @@ describe('conversation routes', () => {
       if (key === 'projectId') return 'project-1'
       return 'workspace-1'
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue(createClient({})))
+    const deleteConversation = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+      deleteConversation,
+    })))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/conversations/[conversationId].delete')).default
     const result = await handler({} as never)
 
     expect(result).toEqual({ deleted: true })
+    expect(deleteConversation).toHaveBeenCalledWith('token-1', 'conv-1', 'user-1', 'project-1')
   })
 })

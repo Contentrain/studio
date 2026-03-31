@@ -48,51 +48,12 @@ describe('project and membership access integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({ data: { role: 'member' } }),
-            })),
-          })),
-        })),
-      })),
-    }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'project_members') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({
-                data: [
-                  { project_id: 'project-2' },
-                  { project_id: 'project-outside' },
-                ],
-              }),
-            })),
-          }
-        }
-
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                in: vi.fn(() => ({
-                  order: vi.fn().mockResolvedValue({
-                    data: [
-                      { id: 'project-2', workspace_id: 'workspace-1', repo_full_name: 'acme/site' },
-                    ],
-                    error: null,
-                  }),
-                })),
-              })),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getWorkspaceMemberRole: vi.fn().mockResolvedValue('member'),
+      listUserAssignedProjectIds: vi.fn().mockResolvedValue(['project-2', 'project-outside']),
+      listWorkspaceProjectsByIds: vi.fn().mockResolvedValue([
+        { id: 'project-2', workspace_id: 'workspace-1', repo_full_name: 'acme/site' },
+      ]),
     }))
 
     const handler = await loadProjectsHandler()

@@ -19,7 +19,6 @@ import {
   useAIProvider,
   useAuthProvider,
   useCDNProvider,
-  useDatabaseProvider,
   useEmailProvider,
   useGitAppProvider,
   useGitProvider,
@@ -75,29 +74,8 @@ beforeEach(() => {
   vi.stubGlobal('useAIProvider', useAIProvider)
   vi.stubGlobal('useAuthProvider', useAuthProvider)
   vi.stubGlobal('useCDNProvider', useCDNProvider)
-  vi.stubGlobal('useDatabaseProvider', () => {
-    const actual = useDatabaseProvider()
-    const globals = globalThis as typeof globalThis & {
-      useSupabaseUserClient?: (accessToken: string) => unknown
-      useSupabaseAdmin?: () => unknown
-    }
-    const userClient = globals.useSupabaseUserClient
-    const adminClient = globals.useSupabaseAdmin
-
-    return {
-      ...actual,
-      getUserClient: (accessToken: string) => {
-        if (typeof userClient === 'function')
-          return userClient(accessToken)
-        return actual.getUserClient(accessToken)
-      },
-      getAdminClient: () => {
-        if (typeof adminClient === 'function')
-          return adminClient()
-        return actual.getAdminClient()
-      },
-    }
-  })
+  // Default mock — individual tests override with vi.stubGlobal('useDatabaseProvider', ...)
+  vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({}))
   vi.stubGlobal('useEmailProvider', useEmailProvider)
   vi.stubGlobal('useGitAppProvider', useGitAppProvider)
   vi.stubGlobal('useGitProvider', useGitProvider)

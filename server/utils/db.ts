@@ -160,11 +160,8 @@ export async function inviteOrLookupUser(
     return { userId: result.userId, isNewUser: true }
   }
   catch {
-    // User already exists — look up by email via Supabase Auth admin API
-    // TODO: Move to AuthProvider.getUserByEmail() in Faz 5
-    const admin = useDatabaseProvider().getAdminClient() as { auth: { admin: { listUsers: () => Promise<{ data: { users: Array<{ id: string, email?: string }> } }> } } }
-    const { data: usersData } = await admin.auth.admin.listUsers()
-    const existing = usersData?.users?.find(u => u.email === email)
+    // User already exists — look up by email via AuthProvider
+    const existing = await authProvider.getUserByEmail(email)
     if (!existing?.id)
       throw createError({ statusCode: 400, message: errorMessage('members.could_not_invite') })
 

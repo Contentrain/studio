@@ -16,29 +16,18 @@ export function createConversationKeysBridge() {
       if (!workspaceId || !projectId)
         throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-      const admin = db.getAdminClient()
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
-      const { data } = await admin
-        .from('conversation_api_keys')
-        .select('id, name, key_prefix, role, specific_models, allowed_models, allowed_tools, allowed_locales, custom_instructions, ai_model, rate_limit_per_minute, monthly_message_limit, last_used_at, created_at, revoked_at')
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-        .order('created_at', { ascending: false })
+      const data = await db.listConversationKeys(projectId, workspaceId)
 
       const month = new Date().toISOString().substring(0, 7)
-      const keyIds = (data ?? []).filter(k => !k.revoked_at).map(k => k.id)
+      const keyIds = (data ?? []).filter(k => !k.revoked_at).map(k => String(k.id))
 
       let usageMap: Record<string, number> = {}
       if (keyIds.length > 0) {
-        const { data: usageRows } = await admin
-          .from('agent_usage')
-          .select('api_key_id, message_count')
-          .in('api_key_id', keyIds)
-          .eq('month', month)
-          .eq('source', 'api')
+        const usageRows = await db.getConversationKeyUsage(keyIds, month)
 
         usageMap = Object.fromEntries(
-          (usageRows ?? []).map(r => [r.api_key_id, r.message_count ?? 0]),
+          (usageRows ?? []).map(r => [String(r.api_key_id), Number(r.message_count ?? 0)]),
         )
       }
 
@@ -55,7 +44,7 @@ export function createConversationKeysBridge() {
         aiModel: key.ai_model,
         rateLimitPerMinute: key.rate_limit_per_minute,
         monthlyMessageLimit: key.monthly_message_limit,
-        monthlyUsage: usageMap[key.id] ?? 0,
+        monthlyUsage: usageMap[String(key.id)] ?? 0,
         lastUsedAt: key.last_used_at,
         createdAt: key.created_at,
         revokedAt: key.revoked_at,
@@ -100,15 +89,9 @@ export function createConversationKeysBridge() {
         throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
 
       const keyLimit = getPlanLimit(plan, 'api.conversation_keys')
-      const admin = db.getAdminClient()
-      const { count } = await admin
-        .from('conversation_api_keys')
-        .select('id', { count: 'exact', head: true })
-        .eq('project_id', projectId)
-        .eq('workspace_id', workspaceId)
-        .is('revoked_at', null)
+      const count = await db.countActiveConversationKeys(projectId, workspaceId)
 
-      if ((count ?? 0) >= keyLimit)
+      if (count >= keyLimit)
         throw createError({ statusCode: 403, message: errorMessage('conversation.key_limit') })
 
       const validRoles = ['viewer', 'editor', 'admin']
@@ -122,29 +105,22 @@ export function createConversationKeysBridge() {
       const customInstructions = body.customInstructions ? body.customInstructions.substring(0, 2000) : null
       const { key, keyHash, keyPrefix } = generateConversationKey()
 
-      const { data, error } = await admin
-        .from('conversation_api_keys')
-        .insert({
-          project_id: projectId,
-          workspace_id: workspaceId,
-          key_hash: keyHash,
-          key_prefix: keyPrefix,
-          name: body.name.trim(),
-          role,
-          specific_models: body.specificModels ?? false,
-          allowed_models: body.allowedModels ?? [],
-          allowed_tools: body.allowedTools ?? [],
-          allowed_locales: body.allowedLocales ?? [],
-          custom_instructions: customInstructions,
-          ai_model: aiModel,
-          rate_limit_per_minute: rateLimitPerMinute,
-          monthly_message_limit: monthlyMessageLimit,
-        })
-        .select('id, name, key_prefix, role, specific_models, allowed_models, allowed_tools, allowed_locales, custom_instructions, ai_model, rate_limit_per_minute, monthly_message_limit, created_at')
-        .single()
-
-      if (error)
-        throw createError({ statusCode: 500, message: error.message })
+      const data = await db.createConversationKey({
+        project_id: projectId,
+        workspace_id: workspaceId,
+        key_hash: keyHash,
+        key_prefix: keyPrefix,
+        name: body.name.trim(),
+        role,
+        specific_models: body.specificModels ?? false,
+        allowed_models: body.allowedModels ?? [],
+        allowed_tools: body.allowedTools ?? [],
+        allowed_locales: body.allowedLocales ?? [],
+        custom_instructions: customInstructions,
+        ai_model: aiModel,
+        rate_limit_per_minute: rateLimitPerMinute,
+        monthly_message_limit: monthlyMessageLimit,
+      })
 
       return { ...data, key }
     },
@@ -199,30 +175,10 @@ export function createConversationKeysBridge() {
       if (Object.keys(updates).length === 0)
         throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })
 
-      const admin = db.getAdminClient()
-      const { data: existing } = await admin
-        .from('conversation_api_keys')
-        .select('id')
-        .eq('id', keyId)
-        .eq('workspace_id', workspaceId)
-        .eq('project_id', projectId)
-        .is('revoked_at', null)
-        .single()
+      const data = await db.updateConversationKey(keyId, projectId, workspaceId, updates)
 
-      if (!existing)
+      if (!data)
         throw createError({ statusCode: 404, message: errorMessage('conversation.key_not_found') })
-
-      const { data, error } = await admin
-        .from('conversation_api_keys')
-        .update(updates)
-        .eq('id', keyId)
-        .eq('workspace_id', workspaceId)
-        .eq('project_id', projectId)
-        .select('id, name, key_prefix, role, specific_models, allowed_models, allowed_tools, allowed_locales, custom_instructions, ai_model, rate_limit_per_minute, monthly_message_limit, created_at')
-        .single()
-
-      if (error)
-        throw createError({ statusCode: 500, message: error.message })
 
       return data
     },
@@ -238,28 +194,8 @@ export function createConversationKeysBridge() {
         throw createError({ statusCode: 400, message: errorMessage('api.key_id_required') })
 
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
-      const admin = db.getAdminClient()
-      const { data: existing } = await admin
-        .from('conversation_api_keys')
-        .select('id')
-        .eq('id', keyId)
-        .eq('workspace_id', workspaceId)
-        .eq('project_id', projectId)
-        .is('revoked_at', null)
-        .single()
 
-      if (!existing)
-        throw createError({ statusCode: 404, message: errorMessage('conversation.key_not_found') })
-
-      const { error } = await admin
-        .from('conversation_api_keys')
-        .update({ revoked_at: new Date().toISOString() })
-        .eq('id', keyId)
-        .eq('workspace_id', workspaceId)
-        .eq('project_id', projectId)
-
-      if (error)
-        throw createError({ statusCode: 500, message: error.message })
+      await db.revokeConversationKey(keyId, projectId, workspaceId)
 
       return { revoked: true }
     },

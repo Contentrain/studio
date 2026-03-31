@@ -35,17 +35,9 @@ export default defineEventHandler(async (event) => {
   }
 
   // 2. Update workspace storage quota
-  const admin = db.getAdminClient()
-  const { data: mediaSum } = await admin
-    .from('media_assets')
-    .select('size_bytes')
-    .eq('project_id', projectId)
-
-  if (mediaSum?.length) {
-    const totalBytes = mediaSum.reduce((sum: number, a: { size_bytes: number | null }) => sum + (a.size_bytes ?? 0), 0)
-    if (totalBytes > 0) {
-      await db.incrementWorkspaceStorageBytes(workspaceId, -totalBytes)
-    }
+  const totalBytes = await db.getProjectMediaStorageSum(projectId)
+  if (totalBytes > 0) {
+    await db.incrementWorkspaceStorageBytes(workspaceId, -totalBytes)
   }
 
   // 3. Delete project — CASCADE handles all child records

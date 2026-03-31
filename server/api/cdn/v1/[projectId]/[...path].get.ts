@@ -1,5 +1,4 @@
 import { trackEnterpriseCdnUsage } from '../../../../utils/enterprise'
-import { useDatabaseProvider } from '../../../../utils/providers'
 
 /**
  * Public CDN endpoint — serves content from CDN storage.
@@ -24,12 +23,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // Plan check
-  const admin = useDatabaseProvider().getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('workspace_id, cdn_enabled')
-    .eq('id', projectId)
-    .single()
+  const db = useDatabaseProvider()
+  const project = await db.getProjectById(projectId, 'workspace_id, cdn_enabled')
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
@@ -37,11 +32,7 @@ export default defineEventHandler(async (event) => {
   if (!project.cdn_enabled)
     throw createError({ statusCode: 403, message: errorMessage('cdn.not_enabled') })
 
-  const { data: workspace } = await admin
-    .from('workspaces')
-    .select('plan')
-    .eq('id', project.workspace_id)
-    .single()
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'plan')
 
   if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })

@@ -43,16 +43,12 @@ describe('GitHub webhook integration', () => {
   })
 
   it('clears linked workspaces when GitHub sends an installation.deleted event', async () => {
-    const clearInstallation = vi.fn().mockResolvedValue({ error: null })
+    const clearWorkspaceGithubInstallation = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
       github: { webhookSecret: 'webhook-secret' },
     }))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        update: vi.fn(() => ({
-          eq: clearInstallation,
-        })),
-      })),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      clearWorkspaceGithubInstallation,
     }))
 
     const { raw, signature } = signGithubBody('webhook-secret', {
@@ -81,13 +77,13 @@ describe('GitHub webhook integration', () => {
         event: 'installation',
         action: 'deleted',
       })
-      expect(clearInstallation).toHaveBeenCalledWith('github_installation_id', 77)
+      expect(clearWorkspaceGithubInstallation).toHaveBeenCalledWith(77)
     })
   })
 
   it('ignores CDN builds when a push hits a different branch than the configured CDN branch', async () => {
     const executeCDNBuild = vi.fn()
-    const createBuildRecord = vi.fn()
+    const createCDNBuild = vi.fn()
 
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
       github: { webhookSecret: 'webhook-secret' },
@@ -97,55 +93,19 @@ describe('GitHub webhook integration', () => {
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('normalizeContentRoot', vi.fn().mockImplementation((value: string | null) => value ?? ''))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'projects') {
-          return {
-            update: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({ error: null }),
-            })),
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn().mockResolvedValue({
-                  data: [{
-                    id: 'project-1',
-                    workspace_id: 'workspace-1',
-                    content_root: '.',
-                    cdn_enabled: true,
-                    cdn_branch: 'preview',
-                    default_branch: 'main',
-                  }],
-                }),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'workspaces') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: { plan: 'pro' } }),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'cdn_builds') {
-          return {
-            insert: vi.fn(() => {
-              createBuildRecord()
-              return {
-                select: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ data: { id: 'build-1' } }),
-                })),
-              }
-            }),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
-      }),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateProjectContentTimestamp: vi.fn().mockResolvedValue(undefined),
+      listCDNEnabledProjects: vi.fn().mockResolvedValue([{
+        id: 'project-1',
+        workspace_id: 'workspace-1',
+        content_root: '.',
+        cdn_enabled: true,
+        cdn_branch: 'preview',
+        default_branch: 'main',
+      }]),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
+      createCDNBuild,
+      updateCDNBuild: vi.fn().mockResolvedValue(undefined),
     }))
 
     const payload = {
@@ -177,7 +137,7 @@ describe('GitHub webhook integration', () => {
         event: 'push',
         repo: 'acme/site',
       })
-      expect(createBuildRecord).not.toHaveBeenCalled()
+      expect(createCDNBuild).not.toHaveBeenCalled()
       expect(executeCDNBuild).not.toHaveBeenCalled()
     })
   })

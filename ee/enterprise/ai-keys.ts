@@ -18,19 +18,12 @@ export async function resolveEnterpriseChatApiKey(input: {
     return null
 
   const db = useDatabaseProvider()
-  const client = db.getUserClient(input.accessToken)
 
-  const { data: anthropicKey } = await client
-    .from('ai_keys')
-    .select('encrypted_key')
-    .eq('workspace_id', input.workspaceId)
-    .eq('user_id', input.userId)
-    .eq('provider', 'anthropic')
-    .single()
+  const encryptedKey = await db.getBYOAKey(input.accessToken, input.workspaceId, input.userId)
 
-  if (anthropicKey?.encrypted_key) {
+  if (encryptedKey) {
     return {
-      apiKey: decryptApiKey(String(anthropicKey.encrypted_key), input.sessionSecret),
+      apiKey: decryptApiKey(encryptedKey, input.sessionSecret),
       usageSource: 'byoa',
     }
   }

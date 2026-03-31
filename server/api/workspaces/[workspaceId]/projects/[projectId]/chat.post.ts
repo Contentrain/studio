@@ -38,7 +38,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = useDatabaseProvider()
-  const admin = db.getAdminClient()
 
   // === RESOLVE PROJECT + WORKSPACE ===
   const { project, workspace, git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
@@ -54,13 +53,7 @@ export default defineEventHandler(async (event) => {
   const monthlyLimit = getMonthlyMessageLimit(plan)
   if (monthlyLimit !== Infinity) {
     const month = new Date().toISOString().substring(0, 7)
-    const { data: usageRows } = await admin
-      .from('agent_usage')
-      .select('message_count')
-      .eq('workspace_id', workspaceId)
-      .eq('user_id', session.user.id)
-      .eq('month', month)
-    const totalCount = (usageRows ?? []).reduce((sum, r) => sum + (r.message_count ?? 0), 0)
+    const totalCount = await db.getMonthlyUsageSummary(workspaceId, session.user.id, month)
     if (totalCount >= monthlyLimit)
       throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: monthlyLimit }) })
   }
