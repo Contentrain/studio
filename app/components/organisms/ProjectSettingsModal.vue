@@ -153,17 +153,21 @@ async function save() {
         class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out"
       />
       <DialogContent
-        class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border border-secondary-200 bg-white shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
+        class="fixed left-1/2 top-1/2 z-50 flex w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-secondary-200 bg-white shadow-xl max-h-[85vh] dark:border-secondary-800 dark:bg-secondary-950"
         @interact-outside.prevent
       >
         <!-- Header -->
-        <div
-          class="flex items-center justify-between border-b border-secondary-200 px-5 py-4 dark:border-secondary-800"
-        >
-          <div>
+        <div class="flex shrink-0 items-center justify-between border-b border-secondary-200 px-6 py-4 dark:border-secondary-800">
+          <div class="min-w-0 flex-1">
             <DialogTitle class="text-base font-semibold text-heading dark:text-secondary-100">
               {{ t('project_settings.title') }}
             </DialogTitle>
+            <div class="mt-1 flex items-center gap-2">
+              <span class="truncate text-sm text-muted">{{ projectName }}</span>
+              <AtomsBadge v-if="config?.stack" variant="secondary" size="sm">
+                {{ config.stack }}
+              </AtomsBadge>
+            </div>
             <DialogDescription class="sr-only">
               {{ t('project_settings.title') }}
             </DialogDescription>
@@ -186,190 +190,297 @@ async function save() {
         />
 
         <!-- General Settings -->
-        <div v-if="activeTab === 'general'" class="max-h-[60vh] space-y-5 overflow-y-auto px-5 py-4">
-          <!-- Workflow -->
-          <div>
-            <div class="flex items-center gap-1">
-              <AtomsFormLabel :text="t('project_settings.workflow')" size="sm" />
-              <AtomsInfoTooltip :text="t('project_settings.workflow_info')" />
-            </div>
-            <div class="mt-2 flex gap-2">
-              <button
-                type="button"
-                class="flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                :class="workflow === 'auto-merge'
-                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
-                  : 'border-secondary-200 text-body hover:border-secondary-300 dark:border-secondary-700 dark:text-secondary-400 dark:hover:border-secondary-600'
-                " @click="workflow = 'auto-merge'"
-              >
-                <div class="font-medium">
-                  {{ t('project_settings.workflow_auto') }}
+        <div v-if="activeTab === 'general'" class="flex-1 overflow-y-auto">
+          <div class="space-y-6 px-6 py-5">
+            <!-- Section: Workflow -->
+            <section aria-labelledby="section-workflow">
+              <div class="flex items-start gap-3">
+                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 dark:bg-primary-900/20">
+                  <span class="icon-[annon--flash] size-4 text-primary-500" aria-hidden="true" />
                 </div>
-                <div class="mt-0.5 text-xs opacity-70">
-                  {{ t('project_settings.workflow_auto_desc') }}
+                <div class="min-w-0 flex-1">
+                  <h3 id="section-workflow" class="text-sm font-semibold text-heading dark:text-secondary-100">
+                    {{ t('project_settings.workflow') }}
+                  </h3>
+                  <p class="mt-0.5 text-xs text-muted">
+                    {{ t('project_settings.workflow_info') }}
+                  </p>
                 </div>
-              </button>
-              <button
-                type="button" :disabled="!canReview"
-                class="flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-50"
-                :class="workflow === 'review'
-                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
-                  : 'border-secondary-200 text-body hover:border-secondary-300 dark:border-secondary-700 dark:text-secondary-400 dark:hover:border-secondary-600'
-                " @click="canReview ? workflow = 'review' : undefined"
-              >
-                <div class="flex items-center gap-1.5 font-medium">
-                  {{ t('project_settings.workflow_review') }}
-                  <AtomsBadge v-if="!canReview" variant="info" size="sm">
-                    Pro
-                  </AtomsBadge>
-                </div>
-                <div class="mt-0.5 text-xs opacity-70">
-                  {{ canReview ? t('project_settings.workflow_review_desc') : t('project_settings.workflow_pro_hint') }}
-                </div>
-              </button>
-            </div>
-          </div>
+              </div>
 
-          <!-- Stack (read-only) -->
-          <div>
-            <div class="flex items-center gap-1">
-              <AtomsFormLabel :text="t('project_settings.stack')" size="sm" />
-              <AtomsInfoTooltip :text="t('project_settings.stack_info')" />
-            </div>
-            <div class="mt-1.5">
-              <AtomsBadge variant="secondary" size="md">
-                {{ config?.stack ?? 'other' }}
-              </AtomsBadge>
-            </div>
-          </div>
-
-          <!-- Default Locale -->
-          <div>
-            <div class="flex items-center gap-1">
-              <AtomsFormLabel :text="t('project_settings.default_locale')" size="sm" />
-              <AtomsInfoTooltip :text="t('project_settings.default_locale_info')" />
-            </div>
-            <AtomsFormSelect
-              :model-value="defaultLocale"
-              :options="supportedLocales.map(l => ({ value: l, label: `${l.toUpperCase()} — ${getLocaleName(l)}` }))"
-              size="md" class="mt-1.5" @update:model-value="defaultLocale = $event"
-            />
-          </div>
-
-          <!-- Supported Locales -->
-          <div>
-            <div class="flex items-center gap-1">
-              <AtomsFormLabel :text="t('project_settings.locales')" size="sm" />
-              <AtomsInfoTooltip :text="t('project_settings.locales_info')" />
-            </div>
-            <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span
-                v-for="locale in supportedLocales" :key="locale"
-                class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-[11px] font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
-              >
-                {{ locale.toUpperCase() }}
-                <button
-                  v-if="supportedLocales.length > 1" type="button"
-                  class="rounded-full text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  @click="removeLocale(locale)"
-                >
-                  <span class="icon-[annon--cross] block size-2.5" aria-hidden="true" />
-                </button>
-              </span>
-            </div>
-            <ComboboxRoot
-              class="relative mt-2" :model-value="''" :filter-function="filterLocales"
-              @update:model-value="addLocale($event as string)"
-            >
-              <ComboboxAnchor
-                class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900"
-              >
-                <span class="icon-[annon--search] size-3.5 shrink-0 text-muted" aria-hidden="true" />
-                <ComboboxInput
-                  :placeholder="t('project_settings.locale_placeholder')"
-                  class="h-8 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100"
-                />
-              </ComboboxAnchor>
-              <ComboboxPortal>
-                <ComboboxContent
-                  position="popper" :side-offset="4"
-                  class="z-100 max-h-48 w-(--radix-combobox-trigger-width) overflow-hidden rounded-lg border border-secondary-200 bg-white shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
-                >
-                  <ComboboxViewport class="p-1">
-                    <ComboboxEmpty class="px-3 py-2 text-xs text-muted">
-                      No matching language
-                    </ComboboxEmpty>
-                    <ComboboxItem
-                      v-for="locale in availableLocales" :key="locale.code" :value="locale.code"
-                      class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
-                    >
-                      <span class="w-7 shrink-0 text-xs font-medium text-muted">{{ locale.code.toUpperCase() }}</span>
-                      <span>{{ locale.name }}</span>
-                      <ComboboxItemIndicator class="ml-auto">
-                        <span class="icon-[annon--check] size-3.5 text-primary-500" aria-hidden="true" />
-                      </ComboboxItemIndicator>
-                    </ComboboxItem>
-                  </ComboboxViewport>
-                </ComboboxContent>
-              </ComboboxPortal>
-            </ComboboxRoot>
-          </div>
-
-          <!-- Domains -->
-          <div>
-            <div class="flex items-center gap-1">
-              <AtomsFormLabel :text="t('project_settings.domains')" size="sm" />
-              <AtomsInfoTooltip :text="t('project_settings.domains_info')" />
-            </div>
-            <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span
-                v-for="domain in domains" :key="domain"
-                class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-[11px] font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
-              >
-                {{ domain }}
+              <div class="mt-3 grid grid-cols-2 gap-3" role="radiogroup" :aria-label="t('project_settings.workflow')">
+                <!-- Auto-merge -->
                 <button
                   type="button"
-                  class="rounded-full text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  @click="removeDomain(domain)"
+                  role="radio"
+                  :aria-checked="workflow === 'auto-merge'"
+                  class="relative rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  :class="workflow === 'auto-merge'
+                    ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20'
+                    : 'border-secondary-200 hover:border-secondary-300 dark:border-secondary-700 dark:hover:border-secondary-600'"
+                  @click="workflow = 'auto-merge'"
                 >
-                  <span class="icon-[annon--cross] block size-2.5" aria-hidden="true" />
+                  <div
+                    class="absolute right-3 top-3 flex size-4 items-center justify-center rounded-full border-2"
+                    :class="workflow === 'auto-merge'
+                      ? 'border-primary-500 dark:border-primary-400'
+                      : 'border-secondary-300 dark:border-secondary-600'"
+                  >
+                    <div v-if="workflow === 'auto-merge'" class="size-2 rounded-full bg-primary-500 dark:bg-primary-400" />
+                  </div>
+                  <span
+                    class="icon-[annon--flash] size-5"
+                    :class="workflow === 'auto-merge' ? 'text-primary-500 dark:text-primary-400' : 'text-muted'"
+                    aria-hidden="true"
+                  />
+                  <div
+                    class="mt-2 text-sm font-medium"
+                    :class="workflow === 'auto-merge' ? 'text-primary-700 dark:text-primary-300' : 'text-heading dark:text-secondary-100'"
+                  >
+                    {{ t('project_settings.workflow_auto') }}
+                  </div>
+                  <div
+                    class="mt-0.5 text-xs"
+                    :class="workflow === 'auto-merge' ? 'text-primary-600/70 dark:text-primary-300/70' : 'text-muted'"
+                  >
+                    {{ t('project_settings.workflow_auto_desc') }}
+                  </div>
                 </button>
-              </span>
-            </div>
-            <form class="mt-1.5 flex items-center gap-1.5" @submit.prevent="addDomain">
-              <AtomsFormInput
-                v-model="newDomain" type="text" :placeholder="t('project_settings.domains_placeholder')"
-                class="w-36"
-              />
-              <AtomsBaseButton type="submit" variant="ghost" size="sm" :disabled="!newDomain.trim()">
-                <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
-              </AtomsBaseButton>
-            </form>
+
+                <!-- Review -->
+                <button
+                  type="button"
+                  role="radio"
+                  :aria-checked="workflow === 'review'"
+                  class="relative rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  :class="workflow === 'review'
+                    ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20'
+                    : 'border-secondary-200 hover:border-secondary-300 dark:border-secondary-700 dark:hover:border-secondary-600'"
+                  @click="canReview ? workflow = 'review' : toast.info(t('project_settings.workflow_pro_hint'))"
+                >
+                  <div
+                    class="absolute right-3 top-3 flex size-4 items-center justify-center rounded-full border-2"
+                    :class="workflow === 'review'
+                      ? 'border-primary-500 dark:border-primary-400'
+                      : 'border-secondary-300 dark:border-secondary-600'"
+                  >
+                    <div v-if="workflow === 'review'" class="size-2 rounded-full bg-primary-500 dark:bg-primary-400" />
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span
+                      class="icon-[annon--check-circle] size-5"
+                      :class="workflow === 'review' ? 'text-primary-500 dark:text-primary-400' : 'text-muted'"
+                      aria-hidden="true"
+                    />
+                    <AtomsBadge v-if="!canReview" variant="info" size="sm">
+                      Pro
+                    </AtomsBadge>
+                  </div>
+                  <div
+                    class="mt-2 text-sm font-medium"
+                    :class="workflow === 'review' ? 'text-primary-700 dark:text-primary-300' : 'text-heading dark:text-secondary-100'"
+                  >
+                    {{ t('project_settings.workflow_review') }}
+                  </div>
+                  <div
+                    class="mt-0.5 text-xs"
+                    :class="workflow === 'review' ? 'text-primary-600/70 dark:text-primary-300/70' : 'text-muted'"
+                  >
+                    {{ canReview ? t('project_settings.workflow_review_desc') : t('project_settings.workflow_pro_hint') }}
+                  </div>
+                </button>
+              </div>
+            </section>
+
+            <div class="border-b border-secondary-100 dark:border-secondary-800" />
+
+            <!-- Section: Localization -->
+            <section aria-labelledby="section-localization">
+              <div class="flex items-start gap-3">
+                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-50 dark:bg-info-900/20">
+                  <span class="icon-[annon--globe] size-4 text-info-500" aria-hidden="true" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <h3 id="section-localization" class="text-sm font-semibold text-heading dark:text-secondary-100">
+                    {{ t('project_settings.localization_title') }}
+                  </h3>
+                  <p class="mt-0.5 text-xs text-muted">
+                    {{ t('project_settings.localization_description') }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-3 space-y-4">
+                <!-- Supported languages -->
+                <div>
+                  <AtomsFormLabel :text="t('project_settings.locales')" size="sm" />
+                  <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span
+                      v-for="locale in supportedLocales" :key="locale"
+                      class="inline-flex items-center gap-1.5 rounded-full bg-secondary-100 px-2.5 py-1 text-xs font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
+                    >
+                      {{ locale.toUpperCase() }}
+                      <span class="text-[10px] text-muted">{{ getLocaleName(locale) }}</span>
+                      <button
+                        v-if="supportedLocales.length > 1" type="button"
+                        class="ml-0.5 rounded-full p-0.5 text-muted transition-colors hover:bg-danger-50 hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-danger-900/20"
+                        @click="removeLocale(locale)"
+                      >
+                        <span class="icon-[annon--cross] block size-2.5" aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
+                  <ComboboxRoot
+                    class="relative mt-2" :model-value="''" :filter-function="filterLocales"
+                    @update:model-value="addLocale($event as string)"
+                  >
+                    <ComboboxAnchor
+                      class="flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 dark:border-secondary-700 dark:bg-secondary-900"
+                    >
+                      <span class="icon-[annon--search] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+                      <ComboboxInput
+                        :placeholder="t('project_settings.locale_placeholder')"
+                        class="h-8 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none dark:text-secondary-100"
+                      />
+                    </ComboboxAnchor>
+                    <ComboboxPortal>
+                      <ComboboxContent
+                        position="popper" :side-offset="4"
+                        class="z-100 max-h-48 w-(--radix-combobox-trigger-width) overflow-hidden rounded-lg border border-secondary-200 bg-white shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
+                      >
+                        <ComboboxViewport class="p-1">
+                          <ComboboxEmpty class="px-3 py-2 text-xs text-muted">
+                            {{ t('common.no_results') }}
+                          </ComboboxEmpty>
+                          <ComboboxItem
+                            v-for="locale in availableLocales" :key="locale.code" :value="locale.code"
+                            class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
+                          >
+                            <span class="w-7 shrink-0 text-xs font-medium text-muted">{{ locale.code.toUpperCase() }}</span>
+                            <span>{{ locale.name }}</span>
+                            <ComboboxItemIndicator class="ml-auto">
+                              <span class="icon-[annon--check] size-3.5 text-primary-500" aria-hidden="true" />
+                            </ComboboxItemIndicator>
+                          </ComboboxItem>
+                        </ComboboxViewport>
+                      </ComboboxContent>
+                    </ComboboxPortal>
+                  </ComboboxRoot>
+                </div>
+
+                <!-- Default language -->
+                <div class="flex items-center justify-between rounded-lg border border-secondary-200 px-4 py-3 dark:border-secondary-800">
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-heading dark:text-secondary-100">
+                      {{ t('project_settings.default_locale') }}
+                    </div>
+                    <p class="mt-0.5 text-xs text-muted">
+                      {{ t('project_settings.default_locale_info') }}
+                    </p>
+                  </div>
+                  <AtomsFormSelect
+                    :model-value="defaultLocale"
+                    :options="supportedLocales.map(l => ({ value: l, label: `${l.toUpperCase()} — ${getLocaleName(l)}` }))"
+                    size="sm" class="ml-4 shrink-0"
+                    @update:model-value="defaultLocale = $event"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <div class="border-b border-secondary-100 dark:border-secondary-800" />
+
+            <!-- Section: Domains -->
+            <section aria-labelledby="section-domains">
+              <div class="flex items-start gap-3">
+                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success-50 dark:bg-success-900/20">
+                  <span class="icon-[annon--link-1] size-4 text-success-500" aria-hidden="true" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <h3 id="section-domains" class="text-sm font-semibold text-heading dark:text-secondary-100">
+                    {{ t('project_settings.domains') }}
+                  </h3>
+                  <p class="mt-0.5 text-xs text-muted">
+                    {{ t('project_settings.domains_info') }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <!-- Domain list -->
+                <div v-if="domains.length > 0" class="space-y-1.5">
+                  <div
+                    v-for="domain in domains" :key="domain"
+                    class="flex items-center gap-3 rounded-lg border border-secondary-200 px-3 py-2.5 dark:border-secondary-800"
+                  >
+                    <span class="icon-[annon--globe] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate text-sm text-heading dark:text-secondary-100">
+                      {{ domain }}
+                    </span>
+                    <button
+                      type="button"
+                      class="shrink-0 rounded p-1 text-muted transition-colors hover:bg-danger-50 hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-danger-900/20"
+                      @click="removeDomain(domain)"
+                    >
+                      <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Add domain form -->
+                <form class="mt-2 flex items-center gap-2" @submit.prevent="addDomain">
+                  <div
+                    class="flex flex-1 items-center gap-2 rounded-lg border border-secondary-200 bg-white px-3 transition-colors focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900"
+                  >
+                    <span class="icon-[annon--plus] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+                    <input
+                      v-model="newDomain"
+                      type="text"
+                      :placeholder="t('project_settings.domains_placeholder')"
+                      class="h-9 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none dark:text-secondary-100"
+                    >
+                  </div>
+                  <AtomsBaseButton type="submit" variant="primary" size="sm" :disabled="!newDomain.trim()">
+                    {{ t('common.add') }}
+                  </AtomsBaseButton>
+                </form>
+
+                <div v-if="domains.length === 0" class="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-secondary-200 px-3 py-2.5 dark:border-secondary-700">
+                  <span class="icon-[annon--link-1] size-3.5 shrink-0 text-muted" aria-hidden="true" />
+                  <p class="text-xs text-muted">
+                    {{ t('project_settings.domains_empty_hint') }}
+                  </p>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
 
-        <!-- Danger Zone (general tab only) -->
-        <div v-if="activeTab === 'general'" class="border-t border-danger-200 px-5 py-4 dark:border-danger-500/20">
-          <AtomsHeadingText :level="3" size="xs" class="text-danger-600 dark:text-danger-400">
-            {{ t('danger_zone.title') }}
-          </AtomsHeadingText>
-          <div class="mt-3 flex items-center justify-between rounded-lg border border-danger-200 px-4 py-3 dark:border-danger-500/20">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-heading dark:text-secondary-100">
-                {{ t('danger_zone.project_delete_title') }}
-              </p>
-              <p class="mt-0.5 text-xs text-muted">
-                {{ t('danger_zone.project_delete_description') }}
-              </p>
+        <!-- Danger Zone (general tab only, pinned below scroll) -->
+        <div
+          v-if="activeTab === 'general'"
+          class="shrink-0 border-t border-danger-200 bg-danger-50/50 px-6 py-4 dark:border-danger-500/20 dark:bg-danger-500/5"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex min-w-0 flex-1 items-center gap-3">
+              <span class="icon-[annon--alert-triangle] size-4 shrink-0 text-danger-500" aria-hidden="true" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-danger-700 dark:text-danger-400">
+                  {{ t('danger_zone.project_delete_title') }}
+                </p>
+                <p class="mt-0.5 text-xs text-danger-600/70 dark:text-danger-400/70">
+                  {{ t('danger_zone.project_delete_description') }}
+                </p>
+              </div>
             </div>
-            <AtomsBaseButton variant="danger" size="sm" class="ml-4 shrink-0" @click="deleteConfirmOpen = true">
+            <AtomsBaseButton variant="danger" size="sm" class="shrink-0" @click="deleteConfirmOpen = true">
               {{ t('danger_zone.project_delete_button') }}
             </AtomsBaseButton>
           </div>
         </div>
 
         <!-- Conversation API Keys -->
-        <div v-else-if="activeTab === 'api'" class="max-h-[60vh] overflow-y-auto">
+        <div v-else-if="activeTab === 'api'" class="flex-1 overflow-y-auto">
           <OrganismsConversationKeysPanel
             :workspace-id="workspaceId"
             :project-id="projectId"
@@ -377,7 +488,7 @@ async function save() {
         </div>
 
         <!-- Webhooks -->
-        <div v-else-if="activeTab === 'webhooks'" class="max-h-[60vh] overflow-y-auto">
+        <div v-else-if="activeTab === 'webhooks'" class="flex-1 overflow-y-auto">
           <OrganismsWebhookSettingsPanel
             :workspace-id="workspaceId"
             :project-id="projectId"
@@ -387,12 +498,15 @@ async function save() {
         <!-- Footer (general tab only) -->
         <div
           v-if="activeTab === 'general'"
-          class="flex items-center justify-end gap-2 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800"
+          class="flex shrink-0 items-center justify-end gap-2 border-t border-secondary-200 px-6 py-3 dark:border-secondary-800"
         >
           <AtomsBaseButton variant="ghost" size="md" @click="open = false">
             {{ t('common.cancel') }}
           </AtomsBaseButton>
           <AtomsBaseButton variant="primary" size="md" :disabled="!hasChanges || saving" @click="save">
+            <template v-if="saving" #prepend>
+              <div class="size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            </template>
             {{ saving ? t('project_settings.saving') : t('common.save_changes') }}
           </AtomsBaseButton>
         </div>
