@@ -35,23 +35,14 @@ export default defineEventHandler(async (event) => {
   const body = JSON.parse(rawBody) as Record<string, unknown>
   const eventType = getHeader(event, 'x-github-event')
 
-  const admin = db.getAdminClient()
-
   if (eventType === 'push') {
     const repoFullName = (body.repository as { full_name?: string })?.full_name
     if (!repoFullName) return { ok: true }
 
-    await admin
-      .from('projects')
-      .update({ content_updated_at: new Date().toISOString() })
-      .eq('repo_full_name', repoFullName)
+    await db.updateProjectContentTimestamp(repoFullName)
 
     // CDN build trigger — check if any project has CDN enabled
-    const { data: cdnProjects } = await admin
-      .from('projects')
-      .select('id, workspace_id, content_root, cdn_enabled, cdn_branch, default_branch')
-      .eq('repo_full_name', repoFullName)
-      .eq('cdn_enabled', true)
+    const cdnProjects = await db.listCDNEnabledProjects(repoFullName)
 
     if (cdnProjects?.length) {
       const ref = body.ref as string | undefined
@@ -60,40 +51,35 @@ export default defineEventHandler(async (event) => {
       const changedPaths = commits?.flatMap(c => [...(c.added ?? []), ...(c.modified ?? []), ...(c.removed ?? [])]) ?? []
 
       for (const proj of cdnProjects) {
-        const targetBranch = proj.cdn_branch ?? proj.default_branch ?? 'main'
+        const targetBranch = (proj.cdn_branch ?? proj.default_branch ?? 'main') as string
         if (pushBranch !== targetBranch) continue
 
         // Plan check
-        const { data: ws } = await admin.from('workspaces').select('plan').eq('id', proj.workspace_id).single()
+        const ws = await db.getWorkspaceById(proj.workspace_id as string, 'plan')
         if (!hasFeature(getWorkspacePlan(ws ?? {}), 'cdn.delivery')) continue
 
         const cdn = useCDNProvider()
         if (!cdn) continue
 
-        const contentRoot = normalizeContentRoot(proj.content_root)
+        const contentRoot = normalizeContentRoot(proj.content_root as string)
         const commitSha = (body.after as string) ?? 'webhook'
 
         // Create build record + execute async
-        const { data: build } = await admin
-          .from('cdn_builds')
-          .insert({
-            project_id: proj.id,
-            trigger_type: 'webhook',
-            commit_sha: commitSha,
-            branch: targetBranch,
-            status: 'building',
-          })
-          .select('id')
-          .single()
+        const build = await db.createCDNBuild({
+          projectId: proj.id as string,
+          triggerType: 'webhook',
+          commitSha,
+          branch: targetBranch,
+        })
 
         if (build) {
           const [repoOwner = '', repoName = ''] = repoFullName.split('/')
-          const { data: wsForGit } = await admin.from('workspaces').select('github_installation_id').eq('id', proj.workspace_id).single()
+          const wsForGit = await db.getWorkspaceById(proj.workspace_id as string, 'github_installation_id')
           if (wsForGit?.github_installation_id && repoOwner && repoName) {
-            const git = useGitProvider({ installationId: wsForGit.github_installation_id, owner: repoOwner, repo: repoName })
+            const git = useGitProvider({ installationId: wsForGit.github_installation_id as number, owner: repoOwner, repo: repoName })
             executeCDNBuild({
-              projectId: proj.id,
-              buildId: build.id,
+              projectId: proj.id as string,
+              buildId: build.id as string,
               git,
               cdn,
               contentRoot,
@@ -101,7 +87,7 @@ export default defineEventHandler(async (event) => {
               branch: targetBranch,
               changedPaths,
             }).then(async (result) => {
-              await admin.from('cdn_builds').update({
+              await db.updateCDNBuild(build.id as string, {
                 status: result.error ? 'failed' : 'success',
                 file_count: result.filesUploaded,
                 total_size_bytes: result.totalSizeBytes,
@@ -109,15 +95,15 @@ export default defineEventHandler(async (event) => {
                 build_duration_ms: result.durationMs,
                 error_message: result.error ?? null,
                 completed_at: new Date().toISOString(),
-              }).eq('id', build.id)
+              })
             }).catch(async (err: unknown) => {
               // Ensure build never stays stuck in 'building'
               const msg = err instanceof Error ? err.message : 'Build failed'
-              await admin.from('cdn_builds').update({
+              await db.updateCDNBuild(build.id as string, {
                 status: 'failed',
                 error_message: msg,
                 completed_at: new Date().toISOString(),
-              }).eq('id', build.id)
+              })
             })
           }
         }
@@ -133,10 +119,7 @@ export default defineEventHandler(async (event) => {
 
     if (action === 'deleted' && installationId) {
       // Clear installation from workspaces
-      await admin
-        .from('workspaces')
-        .update({ github_installation_id: null })
-        .eq('github_installation_id', installationId)
+      await db.clearWorkspaceGithubInstallation(installationId)
 
       return { ok: true, event: 'installation', action: 'deleted' }
     }

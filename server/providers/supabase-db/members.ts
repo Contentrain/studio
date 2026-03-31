@@ -25,6 +25,7 @@ type MemberMethods = Pick<
   | 'upsertUserAIKey'
   | 'deleteUserAIKey'
   | 'getProjectForWorkspace'
+  | 'acceptPendingInvitations'
   | 'countProjectWebhooks'
   | 'createWebhook'
 >
@@ -148,6 +149,42 @@ export function memberMethods(): MemberMethods {
         invited_at: new Date().toISOString(),
         accepted_at: null,
       })
+    },
+
+    async acceptPendingInvitations(userId, workspaceId) {
+      const admin = getAdmin()
+      const now = new Date().toISOString()
+
+      // Update workspace_members accepted_at
+      const { data } = await admin
+        .from('workspace_members')
+        .update({ accepted_at: now })
+        .eq('user_id', userId)
+        .eq('workspace_id', workspaceId)
+        .is('accepted_at', null)
+        .select('id')
+
+      if (data?.length) {
+        // Also accept project memberships in this workspace
+        const { data: projects } = await admin
+          .from('projects')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+
+        if (projects?.length) {
+          const projectIds = projects.map(p => p.id)
+          await admin
+            .from('project_members')
+            .update({ accepted_at: now })
+            .eq('user_id', userId)
+            .in('project_id', projectIds)
+            .is('accepted_at', null)
+        }
+
+        return true
+      }
+
+      return false
     },
 
     // ─── AI Keys ───

@@ -29,7 +29,6 @@ const RETRY_DELAYS_MS = [
   43_200_000,
 ]
 const DELIVERY_TIMEOUT_MS = 10_000
-type AdminClient = ReturnType<DatabaseProvider['getAdminClient']>
 
 export async function emitWebhookEvent(
   projectId: string,
@@ -37,29 +36,20 @@ export async function emitWebhookEvent(
   event: WebhookEvent,
   data: Record<string, unknown>,
 ): Promise<void> {
-  const admin = useDatabaseProvider().getAdminClient()
+  const db = useDatabaseProvider()
 
-  const { data: workspace } = await admin
-    .from('workspaces')
-    .select('plan')
-    .eq('id', workspaceId)
-    .single()
+  const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
   if (!workspace || !hasFeature(getWorkspacePlan(workspace), 'api.webhooks_outbound'))
     return
 
-  const { data: webhooks } = await admin
-    .from('webhooks')
-    .select('id, url, events, secret, active')
-    .eq('workspace_id', workspaceId)
-    .eq('project_id', projectId)
-    .eq('active', true)
+  const webhooks = await db.listActiveProjectWebhooks(workspaceId, projectId)
 
   if (!Array.isArray(webhooks) || webhooks.length === 0)
     return
 
-  const matchingWebhooks = webhooks.filter((webhook: WebhookRow) =>
-    webhook.events.includes(event) || webhook.events.includes('*'),
+  const matchingWebhooks = webhooks.filter((webhook: Record<string, unknown>) =>
+    (webhook.events as string[]).includes(event) || (webhook.events as string[]).includes('*'),
   )
 
   if (matchingWebhooks.length === 0)
@@ -72,24 +62,19 @@ export async function emitWebhookEvent(
     data,
   }
 
-  for (const webhook of matchingWebhooks as WebhookRow[]) {
+  for (const webhook of matchingWebhooks as unknown as WebhookRow[]) {
     if (!isAllowedWebhookUrl(webhook.url))
       continue
 
     try {
-      const { data: delivery } = await admin
-        .from('webhook_deliveries')
-        .insert({
-          webhook_id: webhook.id,
-          event,
-          payload,
-          status: 'pending',
-        })
-        .select('id')
-        .single()
+      const delivery = await db.createWebhookDelivery({
+        webhookId: webhook.id,
+        event,
+        payload: payload as unknown as Record<string, unknown>,
+      })
 
       if (delivery?.id) {
-        void attemptDelivery(admin, webhook, payload, delivery.id, 0)
+        void attemptDelivery(db, webhook, payload, String(delivery.id), 0)
       }
     }
     catch {
@@ -100,14 +85,9 @@ export async function emitWebhookEvent(
 }
 
 export async function processWebhookRetries(): Promise<number> {
-  const admin = useDatabaseProvider().getAdminClient()
+  const db = useDatabaseProvider()
 
-  const { data: pendingDeliveries } = await admin
-    .from('webhook_deliveries')
-    .select('id, webhook_id, payload, retry_count')
-    .eq('status', 'pending')
-    .lte('next_retry_at', new Date().toISOString())
-    .limit(50)
+  const pendingDeliveries = await db.listPendingWebhookRetries(50)
 
   if (!Array.isArray(pendingDeliveries) || pendingDeliveries.length === 0)
     return 0
@@ -117,25 +97,20 @@ export async function processWebhookRetries(): Promise<number> {
   for (const delivery of pendingDeliveries) {
     const retryCount = Number(delivery.retry_count ?? 0)
     if (retryCount >= MAX_RETRIES) {
-      await admin.from('webhook_deliveries').update({ status: 'failed' }).eq('id', delivery.id)
+      await db.updateWebhookDelivery(String(delivery.id), { status: 'failed' })
       processed++
       continue
     }
 
-    const { data: webhook } = await admin
-      .from('webhooks')
-      .select('id, url, events, secret, active')
-      .eq('id', delivery.webhook_id)
-      .eq('active', true)
-      .single()
+    const webhook = await db.getWebhook(String(delivery.webhook_id))
 
-    if (!webhook || !isAllowedWebhookUrl(String(webhook.url))) {
-      await admin.from('webhook_deliveries').update({ status: 'failed' }).eq('id', delivery.id)
+    if (!webhook || !webhook.active || !isAllowedWebhookUrl(String(webhook.url))) {
+      await db.updateWebhookDelivery(String(delivery.id), { status: 'failed' })
       processed++
       continue
     }
 
-    await attemptDelivery(admin, webhook as unknown as WebhookRow, delivery.payload as WebhookPayload, String(delivery.id), retryCount)
+    await attemptDelivery(db, webhook as unknown as WebhookRow, delivery.payload as WebhookPayload, String(delivery.id), retryCount)
     processed++
   }
 
@@ -143,7 +118,7 @@ export async function processWebhookRetries(): Promise<number> {
 }
 
 async function attemptDelivery(
-  admin: AdminClient,
+  db: DatabaseProvider,
   webhook: WebhookRow,
   payload: WebhookPayload,
   deliveryId: string,
@@ -182,33 +157,33 @@ async function attemptDelivery(
     }
 
     if (success) {
-      await admin.from('webhook_deliveries').update({
+      await db.updateWebhookDelivery(deliveryId, {
         status: 'delivered',
         response_code: response.status,
         response_body: responseBody,
         delivered_at: new Date().toISOString(),
-      }).eq('id', deliveryId)
+      })
     }
     else {
       const nextDelay = RETRY_DELAYS_MS[Math.min(retryCount, RETRY_DELAYS_MS.length - 1)]!
-      await admin.from('webhook_deliveries').update({
+      await db.updateWebhookDelivery(deliveryId, {
         status: 'pending',
         response_code: response.status,
         response_body: responseBody,
         retry_count: retryCount + 1,
         next_retry_at: new Date(Date.now() + nextDelay).toISOString(),
-      }).eq('id', deliveryId)
+      })
     }
 
     return success
   }
   catch {
     const nextDelay = RETRY_DELAYS_MS[Math.min(retryCount, RETRY_DELAYS_MS.length - 1)]!
-    await admin.from('webhook_deliveries').update({
+    await db.updateWebhookDelivery(deliveryId, {
       status: 'pending',
       retry_count: retryCount + 1,
       next_retry_at: new Date(Date.now() + nextDelay).toISOString(),
-    }).eq('id', deliveryId)
+    })
     return false
   }
 }

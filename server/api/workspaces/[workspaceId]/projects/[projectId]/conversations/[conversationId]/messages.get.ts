@@ -6,34 +6,16 @@ export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const db = useDatabaseProvider()
   const conversationId = getRouterParam(event, 'conversationId')
+  const projectId = getRouterParam(event, 'projectId')
 
-  if (!conversationId)
+  if (!conversationId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.conversation_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-
-  // Verify conversation belongs to user (RLS handles this, but explicit check for clear error)
-  const projectId = getRouterParam(event, 'projectId')
-  const { data: conv } = await client
-    .from('conversations')
-    .select('id')
-    .eq('id', conversationId)
-    .eq('user_id', session.user.id)
-    .eq('project_id', projectId!)
-    .single()
+  // Verify conversation belongs to user
+  const conv = await db.getConversation(conversationId, projectId, { userId: session.user.id })
 
   if (!conv)
     throw createError({ statusCode: 404, message: errorMessage('chat.conversation_not_found') })
 
-  const { data, error } = await client
-    .from('messages')
-    .select('id, role, content, tool_calls, model, created_at')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
-    .limit(100)
-
-  if (error)
-    throw createError({ statusCode: 500, message: error.message })
-
-  return data
+  return db.loadConversationMessages(conversationId, 100, 'id, role, content, tool_calls, model, created_at')
 })

@@ -31,37 +31,8 @@ export default defineEventHandler(async (event) => {
   if (acceptedCache.has(cacheKey)) return
 
   try {
-    const admin = useDatabaseProvider().getAdminClient()
-
-    // Update workspace_members accepted_at
-    const { data } = await admin
-      .from('workspace_members')
-      .update({ accepted_at: new Date().toISOString() })
-      .eq('user_id', auth.user.id)
-      .eq('workspace_id', workspaceId)
-      .is('accepted_at', null)
-      .select('id')
-
-    if (data?.length) {
-      // Also accept project memberships in this workspace
-      const { data: projects } = await admin
-        .from('projects')
-        .select('id')
-        .eq('workspace_id', workspaceId)
-
-      if (projects?.length) {
-        const projectIds = projects.map(p => p.id)
-        await admin
-          .from('project_members')
-          .update({ accepted_at: new Date().toISOString() })
-          .eq('user_id', auth.user.id)
-          .in('project_id', projectIds)
-          .is('accepted_at', null)
-      }
-    }
-
-    // Cache regardless of whether update happened — avoid future queries
-    acceptedCache.add(cacheKey)
+    const accepted = await useDatabaseProvider().acceptPendingInvitations(auth.user.id, workspaceId!)
+    if (accepted !== undefined) acceptedCache.add(cacheKey)
   }
   catch {
     // Best-effort — don't block the request

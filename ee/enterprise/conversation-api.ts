@@ -1,7 +1,7 @@
 import { createError, getHeader, getQuery, getRouterParam, readBody, type H3Event } from 'h3'
 import { useRuntimeConfig } from '#imports'
 import type { AIContentBlock, AIMessage } from '../../server/providers/ai'
-import type { DatabaseClientBridge } from '../../server/providers/database'
+import type { DatabaseProvider } from '../../server/providers/database'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext } from '../../server/utils/agent-types'
 import { toAITools } from '../../server/utils/agent-types'
@@ -45,7 +45,7 @@ const API_TOOL_ROLES: Record<string, string[]> = {
 }
 
 interface ConversationApiContext {
-  admin: DatabaseClientBridge
+  db: DatabaseProvider
   keyData: Awaited<ReturnType<typeof validateConversationKey>>
   project: {
     id: string
@@ -106,22 +106,12 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
   if (!routeProjectId || routeProjectId !== keyData.projectId)
     throw createError({ statusCode: 403, message: errorMessage('conversation.key_invalid') })
 
-  const admin = db.getAdminClient()
-  const { data: project } = await admin
-    .from('projects')
-    .select('id, repo_full_name, content_root, workspace_id, default_branch, detected_stack, status')
-    .eq('id', keyData.projectId)
-    .eq('workspace_id', keyData.workspaceId)
-    .single()
+  const project = await db.getProjectById(keyData.projectId, 'id, repo_full_name, content_root, workspace_id, default_branch, detected_stack, status')
 
-  if (!project)
+  if (!project || project.workspace_id !== keyData.workspaceId)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  const { data: workspace } = await admin
-    .from('workspaces')
-    .select('id, github_installation_id, plan, slug, name, owner_id')
-    .eq('id', keyData.workspaceId)
-    .single()
+  const workspace = await db.getWorkspaceById(keyData.workspaceId, 'id, github_installation_id, plan, slug, name, owner_id')
 
   if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
@@ -130,38 +120,28 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
   if (!hasFeature(plan, 'api.conversation'))
     throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
 
-  return { admin, keyData, project, workspace, plan }
+  return { db, keyData, project: project as ConversationApiContext['project'], workspace: workspace as ConversationApiContext['workspace'], plan }
 }
 
 async function loadConversationMessages(
-  admin: DatabaseClientBridge,
+  db: DatabaseProvider,
   conversationId: string,
   limit: number,
 ) {
-  const { data: messageRows } = await admin
-    .from('messages')
-    .select('id, role, content, tool_calls, model, token_count_input, token_count_output, created_at')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
-    .limit(limit)
+  const messageRows = await db.loadConversationMessages(
+    conversationId,
+    limit,
+    'id, role, content, tool_calls, model, token_count_input, token_count_output, created_at',
+  )
 
-  return (messageRows ?? []).map((row: {
-    id: string
-    role: string
-    content: string
-    tool_calls: unknown[] | null
-    model: string | null
-    token_count_input: number | null
-    token_count_output: number | null
-    created_at: string
-  }) => ({
+  return (messageRows ?? []).map((row: Record<string, unknown>) => ({
     id: row.id,
     role: row.role,
     content: row.content,
     toolCalls: row.tool_calls ?? undefined,
     model: row.model ?? undefined,
     usage: (row.token_count_input || row.token_count_output)
-      ? { inputTokens: row.token_count_input ?? 0, outputTokens: row.token_count_output ?? 0 }
+      ? { inputTokens: (row.token_count_input as number) ?? 0, outputTokens: (row.token_count_output as number) ?? 0 }
       : undefined,
     createdAt: row.created_at,
   }))
@@ -171,7 +151,7 @@ async function runConversationMessage(
   event: H3Event,
   body: { message: string, conversationId?: string, context?: Partial<ChatUIContext> },
 ) {
-  const { admin, keyData, project, workspace, plan } = await resolveConversationApiContext(event)
+  const { db, keyData, project, workspace, plan } = await resolveConversationApiContext(event)
 
   if (!body.message?.trim())
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
@@ -184,14 +164,9 @@ async function runConversationMessage(
     throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
   const month = new Date().toISOString().substring(0, 7)
-  const { data: usageRows } = await admin
-    .from('agent_usage')
-    .select('message_count')
-    .eq('workspace_id', keyData.workspaceId)
-    .eq('month', month)
-    .eq('api_key_id', keyData.keyId)
+  const usageRow = await db.getAgentUsage(keyData.workspaceId, month, 'api', { apiKeyId: keyData.keyId })
 
-  const totalCount = (usageRows ?? []).reduce((sum, row) => sum + (row.message_count ?? 0), 0)
+  const totalCount = usageRow ? Number(usageRow.message_count ?? 0) : 0
   if (totalCount >= keyData.monthlyMessageLimit)
     throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: keyData.monthlyMessageLimit }) })
 
@@ -255,35 +230,19 @@ async function runConversationMessage(
 
   let conversationId = body.conversationId
   if (conversationId) {
-    const { data: conv } = await admin
-      .from('conversations')
-      .select('id')
-      .eq('id', conversationId)
-      .eq('project_id', keyData.projectId)
-      .eq('user_id', keyData.keyId)
-      .single()
+    const conv = await db.getConversation(conversationId, keyData.projectId, { userId: keyData.keyId })
 
     if (!conv) conversationId = undefined
   }
 
   if (!conversationId) {
-    const { data: newConv } = await admin
-      .from('conversations')
-      .insert({
-        project_id: keyData.projectId,
-        user_id: keyData.keyId,
-        title: body.message.substring(0, 100),
-      })
-      .select('id')
-      .single()
-
-    conversationId = newConv?.id
+    conversationId = await db.createConversation(keyData.projectId, keyData.keyId, body.message.substring(0, 100)) ?? undefined
   }
 
   if (!conversationId)
     throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
-  const historyRows = await loadConversationMessages(admin, conversationId, 50)
+  const historyRows = await loadConversationMessages(db, conversationId, 50)
   const messages: AIMessage[] = []
   const HISTORY_TOKEN_BUDGET = 8000
 
@@ -303,7 +262,7 @@ async function runConversationMessage(
 
   for (let i = budgetStart; i < historyRows.length; i++) {
     const row = historyRows[i]!
-    const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : row.content
+    const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
     messages.push({ role: row.role as 'user' | 'assistant', content })
   }
   messages.push({ role: 'user', content: body.message })
@@ -377,26 +336,20 @@ async function runConversationMessage(
 }
 
 async function runConversationHistory(event: H3Event) {
-  const { admin, keyData } = await resolveConversationApiContext(event)
+  const { db, keyData } = await resolveConversationApiContext(event)
 
   const query = getQuery(event)
   const conversationId = query.conversationId as string | undefined
   if (!conversationId)
     throw createError({ statusCode: 400, message: errorMessage('validation.conversation_id_required') })
 
-  const { data: conv } = await admin
-    .from('conversations')
-    .select('id')
-    .eq('id', conversationId)
-    .eq('project_id', keyData.projectId)
-    .eq('user_id', keyData.keyId)
-    .single()
+  const conv = await db.getConversation(conversationId, keyData.projectId, { userId: keyData.keyId })
 
   if (!conv)
     throw createError({ statusCode: 404, message: errorMessage('chat.conversation_not_found') })
 
   const limit = Math.min(Number(query.limit ?? 50), 100)
-  const messages = await loadConversationMessages(admin, conversationId, limit)
+  const messages = await loadConversationMessages(db, conversationId, limit)
 
   return { conversationId, messages }
 }

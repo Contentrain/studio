@@ -10,20 +10,6 @@ async function loadChatHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/chat.post')).default
 }
 
-function createAgentUsageAdmin(rows: Array<{ message_count: number }>) {
-  return {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn().mockResolvedValue({ data: rows }),
-          })),
-        })),
-      })),
-    })),
-  }
-}
-
 function createGitStub() {
   return {
     readFile: vi.fn().mockRejectedValue(new Error('missing')),
@@ -43,8 +29,6 @@ describe('chat route integration', () => {
       user: { id: 'user-1', email: 'user@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue(createAgentUsageAdmin([])))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
       workspace: { id: 'workspace-1', plan: 'free' },
@@ -87,11 +71,9 @@ describe('chat route integration', () => {
       user: { id: 'user-1', email: 'user@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue(createAgentUsageAdmin([
-      { message_count: 2 },
-      { message_count: 1 },
-    ])))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getMonthlyUsageSummary: vi.fn().mockResolvedValue(3),
+    }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
       workspace: { id: 'workspace-1', plan: 'pro' },
@@ -139,8 +121,7 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getUserClient: vi.fn().mockReturnValue({}),
-      getAdminClient: vi.fn().mockReturnValue({}),
+      getMonthlyUsageSummary: vi.fn().mockResolvedValue(0),
       getConversation: vi.fn().mockResolvedValue(null),
       createConversation: mockCreateConversation,
       loadConversationMessages: mockLoadMessages,
@@ -228,8 +209,6 @@ describe('chat route integration', () => {
       user: { id: 'user-1', email: 'user@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue(createAgentUsageAdmin([])))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
       workspace: { id: 'workspace-1', plan: 'free' },
@@ -271,8 +250,6 @@ describe('chat route integration', () => {
       user: { id: 'user-1', email: 'user@example.com' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue(createAgentUsageAdmin([])))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
       workspace: { id: 'workspace-1', plan: 'free' },
@@ -324,8 +301,7 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getUserClient: vi.fn().mockReturnValue({}),
-      getAdminClient: vi.fn().mockReturnValue({}),
+      getMonthlyUsageSummary: vi.fn().mockResolvedValue(0),
       getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
       createConversation: vi.fn().mockResolvedValue('conversation-existing'),
       loadConversationMessages: vi.fn().mockResolvedValue([]),

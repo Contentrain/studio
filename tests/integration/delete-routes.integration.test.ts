@@ -25,7 +25,7 @@ describe('workspace and project delete route integration', () => {
         owner_id: 'owner-1',
       }),
       listWorkspaceProjects: vi.fn().mockResolvedValue([]),
-      getAdminClient: vi.fn(),
+      deleteWorkspace: vi.fn().mockResolvedValue(undefined),
     }))
 
     await withTestServer({
@@ -46,7 +46,7 @@ describe('workspace and project delete route integration', () => {
     const deletePrefix = vi.fn()
       .mockRejectedValueOnce(new Error('r2 unavailable'))
       .mockResolvedValueOnce(undefined)
-    const deleteEq = vi.fn().mockResolvedValue({ error: null })
+    const deleteWorkspace = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
@@ -66,18 +66,7 @@ describe('workspace and project delete route integration', () => {
         { id: 'project-1' },
         { id: 'project-2' },
       ]),
-      getAdminClient: vi.fn().mockReturnValue({
-        from: vi.fn((table: string) => {
-          if (table === 'workspaces') {
-            return {
-              delete: vi.fn(() => ({
-                eq: deleteEq,
-              })),
-            }
-          }
-          throw new Error(`Unexpected table: ${table}`)
-        }),
-      }),
+      deleteWorkspace,
     }))
 
     await withTestServer({
@@ -90,7 +79,7 @@ describe('workspace and project delete route integration', () => {
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({ deleted: true })
       expect(deletePrefix).toHaveBeenCalledTimes(2)
-      expect(deleteEq).toHaveBeenCalledWith('id', 'workspace-1')
+      expect(deleteWorkspace).toHaveBeenCalledWith('workspace-1')
     })
   })
 
@@ -108,7 +97,6 @@ describe('workspace and project delete route integration', () => {
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       requireWorkspaceRole: vi.fn().mockResolvedValue('admin'),
       getProjectForWorkspace: vi.fn().mockResolvedValue(null),
-      getAdminClient: vi.fn(),
     }))
 
     await withTestServer({
@@ -146,20 +134,7 @@ describe('workspace and project delete route integration', () => {
       getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
       deleteProject,
       incrementWorkspaceStorageBytes,
-      getAdminClient: vi.fn().mockReturnValue({
-        from: vi.fn((table: string) => {
-          if (table === 'media_assets') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn().mockResolvedValue({
-                  data: [{ size_bytes: 512 }, { size_bytes: 1536 }],
-                }),
-              })),
-            }
-          }
-          throw new Error(`Unexpected table: ${table}`)
-        }),
-      }),
+      getProjectMediaStorageSum: vi.fn().mockResolvedValue(2048),
     }))
 
     await withTestServer({

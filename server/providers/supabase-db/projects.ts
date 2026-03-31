@@ -7,10 +7,16 @@ import { getAdmin, getUser, PROJECT_MEMBER_SELECT, toDatabaseRowOrNull } from '.
 type ProjectMethods = Pick<
   DatabaseProvider,
   | 'getProjectById'
+  | 'getProjectWithMembers'
+  | 'checkDuplicateProject'
   | 'createProject'
   | 'updateProject'
   | 'deleteProject'
+  | 'getProjectMediaStorageSum'
   | 'listWorkspaceProjects'
+  | 'listWorkspaceProjectsAdmin'
+  | 'listUserAssignedProjectIds'
+  | 'listWorkspaceProjectsByIds'
   | 'listUserAssignedProjects'
   | 'updateProjectContentTimestamp'
   | 'listCDNEnabledProjects'
@@ -35,6 +41,42 @@ export function projectMethods(): ProjectMethods {
         throw createError({ statusCode: 500, message: error.message })
       }
       return toDatabaseRowOrNull(data)
+    },
+
+    async getProjectWithMembers(accessToken, workspaceId, projectId) {
+      const client = getUser(accessToken)
+      const { data, error } = await client
+        .from('projects')
+        .select(`
+          *,
+          project_members(
+            id, role, user_id, specific_models, allowed_models, invited_email, accepted_at,
+            profiles:user_id(id, display_name, email, avatar_url)
+          )
+        `)
+        .eq('id', projectId)
+        .eq('workspace_id', workspaceId)
+        .single()
+
+      if (error) {
+        if (error.code === 'PGRST116') return null
+        throw createError({ statusCode: 500, message: error.message })
+      }
+      return toDatabaseRowOrNull(data)
+    },
+
+    async checkDuplicateProject(workspaceId, repoFullName) {
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('projects')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('repo_full_name', repoFullName)
+        .single()
+
+      if (error && error.code === 'PGRST116') return false
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return !!data
     },
 
     async createProject(accessToken, input) {
@@ -73,6 +115,17 @@ export function projectMethods(): ProjectMethods {
       if (error) throw createError({ statusCode: 500, message: error.message })
     },
 
+    async getProjectMediaStorageSum(projectId) {
+      const admin = getAdmin()
+      const { data } = await admin
+        .from('media_assets')
+        .select('size_bytes')
+        .eq('project_id', projectId)
+
+      if (!data?.length) return 0
+      return data.reduce((sum: number, a: { size_bytes: number | null }) => sum + (a.size_bytes ?? 0), 0)
+    },
+
     async listWorkspaceProjects(accessToken, workspaceId) {
       const client = getUser(accessToken)
       const { data, error } = await client
@@ -83,6 +136,44 @@ export function projectMethods(): ProjectMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
       return data ?? []
+    },
+
+    async listWorkspaceProjectsAdmin(workspaceId) {
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('projects')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return data ?? []
+    },
+
+    async listWorkspaceProjectsByIds(workspaceId, projectIds) {
+      if (projectIds.length === 0) return []
+
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('projects')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .in('id', projectIds)
+        .order('created_at', { ascending: false })
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return data ?? []
+    },
+
+    async listUserAssignedProjectIds(userId) {
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', userId)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data ?? []).map(r => r.project_id as string)
     },
 
     async listUserAssignedProjects(accessToken, userId) {

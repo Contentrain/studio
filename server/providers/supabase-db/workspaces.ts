@@ -19,6 +19,7 @@ type WorkspaceMethods = Pick<
   | 'findWorkspaceByGithubInstallation'
   | 'updateWorkspaceGithubInstallation'
   | 'clearWorkspaceGithubInstallation'
+  | 'deleteWorkspace'
   | 'incrementWorkspaceStorageBytes'
 >
 
@@ -174,6 +175,16 @@ export function workspaceMethods(): WorkspaceMethods {
     async clearWorkspaceGithubInstallation(installationId) {
       const { error } = await getAdmin()
         .from('workspaces').update({ github_installation_id: null }).eq('github_installation_id', installationId)
+      if (error) throw createError({ statusCode: 500, message: error.message })
+    },
+
+    async deleteWorkspace(workspaceId) {
+      const admin = getAdmin()
+      const { error } = await admin
+        .from('workspaces')
+        .delete()
+        .eq('id', workspaceId)
+
       if (error) throw createError({ statusCode: 500, message: error.message })
     },
 

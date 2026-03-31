@@ -10,23 +10,11 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
-  const client = db.getUserClient(session.accessToken)
-  const { data: project } = await client
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('workspace_id', workspaceId)
-    .single()
+  // Verify project belongs to workspace (access check via RLS)
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id')
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  const { data } = await client
-    .from('cdn_builds')
-    .select('id, trigger_type, commit_sha, branch, status, file_count, total_size_bytes, changed_models, build_duration_ms, error_message, started_at, completed_at')
-    .eq('project_id', projectId)
-    .order('started_at', { ascending: false })
-    .limit(20)
-
-  return data ?? []
+  return db.listCDNBuilds(projectId)
 })

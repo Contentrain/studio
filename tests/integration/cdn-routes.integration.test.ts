@@ -2,16 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const providerState = vi.hoisted(() => ({
   databaseProvider: {
-    getAdminClient: vi.fn(),
-    getUserClient: vi.fn(),
     requireWorkspaceRole: vi.fn(),
     getWorkspaceById: vi.fn(),
     getProjectForWorkspace: vi.fn(),
+    getProjectById: vi.fn(),
     createCDNBuild: vi.fn(),
     updateCDNBuild: vi.fn(),
     createCDNKey: vi.fn(),
     countActiveCDNKeys: vi.fn(),
     listCDNKeys: vi.fn(),
+    listCDNBuilds: vi.fn(),
     revokeCDNKey: vi.fn(),
     updateProject: vi.fn(),
   },
@@ -68,16 +68,16 @@ async function loadCDNKeyCreateHandler() {
 
 describe('CDN route integration', () => {
   beforeEach(() => {
-    providerState.databaseProvider.getAdminClient.mockReset()
-    providerState.databaseProvider.getUserClient.mockReset()
     providerState.databaseProvider.requireWorkspaceRole.mockReset()
     providerState.databaseProvider.getWorkspaceById.mockReset()
     providerState.databaseProvider.getProjectForWorkspace.mockReset()
+    providerState.databaseProvider.getProjectById.mockReset()
     providerState.databaseProvider.createCDNBuild.mockReset()
     providerState.databaseProvider.updateCDNBuild.mockReset()
     providerState.databaseProvider.createCDNKey.mockReset()
     providerState.databaseProvider.countActiveCDNKeys.mockReset()
     providerState.databaseProvider.listCDNKeys.mockReset()
+    providerState.databaseProvider.listCDNBuilds.mockReset()
     providerState.databaseProvider.revokeCDNKey.mockReset()
     providerState.databaseProvider.updateProject.mockReset()
     eventStreamState.createEventStream.mockReset()
@@ -124,35 +124,10 @@ describe('CDN route integration', () => {
         data: Buffer.from('{"ok":true}'),
       }),
     }))
-    providerState.databaseProvider.getAdminClient.mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { workspace_id: 'workspace-1', cdn_enabled: true },
-                }),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'workspaces') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { plan: 'pro' },
-                }),
-              })),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
-      }),
-    })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
+    }))
 
     const handler = await loadPublicCDNHandler()
 
@@ -217,35 +192,10 @@ describe('CDN route integration', () => {
         data: binary,
       }),
     }))
-    providerState.databaseProvider.getAdminClient.mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { workspace_id: 'workspace-1', cdn_enabled: true },
-                }),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'workspaces') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { plan: 'pro' },
-                }),
-              })),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
-      }),
-    })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
+    }))
 
     const handler = await loadPublicCDNHandler()
 
@@ -293,28 +243,8 @@ describe('CDN route integration', () => {
       accessToken: 'token-1',
     }))
 
-    const userClient = {
-      from: vi.fn((table: string) => {
-        if (table !== 'projects') {
-          throw new Error(`Unexpected table: ${table}`)
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { cdn_enabled: true, cdn_branch: 'release' },
-                  error: null,
-                }),
-              })),
-            })),
-          })),
-        }
-      }),
-    }
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getUserClient: vi.fn().mockReturnValue(userClient),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({ cdn_enabled: true, cdn_branch: 'release' }),
     }))
 
     const handler = await loadCDNSettingsGetHandler()
@@ -420,37 +350,9 @@ describe('CDN route integration', () => {
       accessToken: 'token-1',
     }))
 
-    const userClient = {
-      from: vi.fn((table: string) => {
-        if (table === 'projects') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ data: null }),
-                })),
-              })),
-            })),
-          }
-        }
-
-        if (table === 'cdn_builds') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  limit: vi.fn().mockResolvedValue({ data: [] }),
-                })),
-              })),
-            })),
-          }
-        }
-
-        throw new Error(`Unexpected table: ${table}`)
-      }),
-    }
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getUserClient: vi.fn().mockReturnValue(userClient),
+      getProjectForWorkspace: vi.fn().mockResolvedValue(null),
+      listCDNBuilds: vi.fn().mockResolvedValue([]),
     }))
 
     const handler = await loadCDNBuildsHandler()

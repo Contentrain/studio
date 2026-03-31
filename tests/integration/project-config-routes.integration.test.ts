@@ -32,33 +32,11 @@ describe('project config and branch route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    // Admin client for duplicate project check
-    vi.stubGlobal('useSupabaseAdmin', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({ data: null, error: null }),
-            })),
-          })),
-        })),
-      })),
-    }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        insert: vi.fn(() => ({
-          select: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue({
-              data: {
-                id: 'project-1',
-                status: 'setup',
-                content_root: '/',
-              },
-              error: null,
-            }),
-          })),
-        })),
-      })),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'workspace-1', plan: 'free', github_installation_id: 123 }),
+      checkDuplicateProject: vi.fn().mockResolvedValue(false),
+      createProject: vi.fn().mockResolvedValue({ id: 'project-1', status: 'setup', content_root: '/' }),
     }))
 
     await withTestServer({
@@ -94,22 +72,11 @@ describe('project config and branch route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: {
-                  id: 'project-1',
-                  project_members: [{ id: 'pm-1', role: 'editor' }],
-                },
-                error: null,
-              }),
-            })),
-          })),
-        })),
-      })),
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProjectWithMembers: vi.fn().mockResolvedValue({
+        id: 'project-1',
+        project_members: [{ id: 'pm-1', role: 'editor' }],
+      }),
     }))
 
     await withTestServer({
