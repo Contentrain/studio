@@ -163,6 +163,9 @@ describe('auth route integration', () => {
     }
 
     vi.stubGlobal('useAuthProvider', vi.fn().mockReturnValue(authProvider))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProfile: vi.fn().mockResolvedValue({ avatar_url: null, display_name: null, theme: 'system' }),
+    }))
 
     await withTestServer({
       middleware: [await loadAuthMiddleware()],
@@ -195,6 +198,9 @@ describe('auth route integration', () => {
           id: 'user-1',
           email: 'user@example.com',
           provider: 'github',
+          avatarUrl: undefined,
+          displayName: null,
+          theme: 'system',
         },
       })
       expect(authProvider.refreshSession).toHaveBeenCalledWith('refresh-token')
