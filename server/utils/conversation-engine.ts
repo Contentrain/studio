@@ -393,9 +393,26 @@ export async function executeToolWithAutoMerge(
           result = { error: errorMessage('forms.submission_not_found') }
           break
         }
-        const updated = await dbp.updateFormSubmissionStatus(approveId, 'approved', userId)
+
+        // Create content entry in Git from submission data
+        const { generateEntryId } = await import('~~/server/utils/content-serialization')
+        const subModelId = sub.model_id as string
+        const subData = sub.data as Record<string, unknown>
+        const entryId = generateEntryId()
+        const writeResult = await engine.saveContent(subModelId, 'en', { [entryId]: subData }, userEmail, { autoPublish })
+
+        if (writeResult.branch) {
+          if (shouldAutoMerge(workflow, permissions)) {
+            await engine.mergeBranch(writeResult.branch)
+          }
+          invalidateBrainCache(projectId)
+        }
+
+        await dbp.updateFormSubmissionStatus(approveId, 'approved', userId, entryId)
         affected.snapshotChanged = true
-        result = { submission: updated, message: agentMessage('forms.approved') }
+        affected.branchesChanged = true
+        affected.models.push(subModelId)
+        result = { entryId, submission: { ...sub, status: 'approved', entry_id: entryId }, message: agentMessage('forms.approved') }
         break
       }
 

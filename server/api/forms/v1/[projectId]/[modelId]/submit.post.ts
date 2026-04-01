@@ -3,23 +3,16 @@
  *
  * Auth: NONE (public endpoint)
  * Rate limit: per-IP sliding window
- * Plan: requires forms.enabled feature
+ * Plan: requires forms.enabled feature + forms.models limit
  * Security: honeypot, captcha (Turnstile), field validation, HTML sanitization
+ * Auto-approve: if configured + plan supports, creates content entry on submit
  *
  * POST /api/forms/v1/{projectId}/{modelId}/submit
  */
 
-interface FormConfig {
-  enabled: boolean
-  public: boolean
-  exposedFields: string[]
-  requiredOverrides?: Record<string, boolean>
-  honeypot?: boolean
-  captcha?: 'turnstile' | null
-  successMessage?: string
-  limits?: { rateLimitPerIp?: number, maxPerMonth?: number }
-  autoApprove?: boolean
-}
+import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
+import { createContentEngine } from '~~/server/utils/content-engine'
+import { generateEntryId } from '~~/server/utils/content-serialization'
 
 /**
  * Verify Cloudflare Turnstile captcha token.
@@ -94,24 +87,6 @@ function sanitizeData(data: Record<string, unknown>): Record<string, unknown> {
   return sanitized
 }
 
-/**
- * Extract client IP — trust only the last hop from X-Forwarded-For
- * (the one appended by the reverse proxy, not the client-supplied ones).
- * Falls back to x-real-ip or peer address.
- */
-function getClientIp(event: Parameters<typeof getHeader>[0]): string {
-  const xff = getHeader(event, 'x-forwarded-for')
-  if (xff) {
-    // Trust the LAST IP in the chain — added by our reverse proxy
-    // Client-supplied values are prepended, proxy-appended is last
-    const parts = xff.split(',').map(s => s.trim())
-    return parts[parts.length - 1] ?? 'unknown'
-  }
-  return getHeader(event, 'x-real-ip')
-    ?? getHeader(event, 'cf-connecting-ip')
-    ?? 'unknown'
-}
-
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
   // CORS headers for public embedding
@@ -180,9 +155,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: errorMessage('forms.model_not_found') })
 
   // Check form config exists and is enabled + public
-  const formConfig = (model as unknown as { form?: FormConfig }).form
+  const formConfig = getFormConfig(model)
   if (!formConfig?.enabled || !formConfig?.public)
     throw createError({ statusCode: 404, message: errorMessage('forms.form_disabled') })
+
+  // Enforce forms.models plan limit
+  const formsModelLimit = getPlanLimit(plan, 'forms.models')
+  const enabledCount = countFormEnabledModels(brain.models)
+  if (enabledCount > formsModelLimit) {
+    const enabledIds = [...brain.models.entries()]
+      .filter(([, m]) => getFormConfig(m)?.enabled)
+      .map(([id]) => id)
+      .sort()
+    const allowedIds = new Set(enabledIds.slice(0, formsModelLimit))
+    if (!allowedIds.has(modelId))
+      throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
+  }
 
   // Rate limit per IP + model (uses form config limit or default 10/min)
   const rateLimitPerIp = formConfig.limits?.rateLimitPerIp ?? 10
@@ -198,7 +186,7 @@ export default defineEventHandler(async (event) => {
 
   // Honeypot check — silent reject (return 200 to fool bots)
   if (formConfig.honeypot && body._hp) {
-    return { success: true, message: formConfig.successMessage ?? 'Thank you!' }
+    return { success: true, message: formConfig.successMessage ?? errorMessage('forms.default_success') }
   }
 
   // Captcha verification (Pro+)
@@ -258,6 +246,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Determine auto-approve: config flag + plan feature
+  const shouldAutoApprove = formConfig.autoApprove === true
+    && hasFeature(plan, 'forms.auto_approve')
+
   // Create form submission record
   const userAgent = getHeader(event, 'user-agent') ?? null
   const referrer = getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? null
@@ -272,15 +264,37 @@ export default defineEventHandler(async (event) => {
     referrer: referrer ?? undefined,
   })
 
+  // Auto-approve: create content entry + update submission status
+  if (shouldAutoApprove) {
+    try {
+      const engine = createContentEngine({ git, contentRoot })
+      const entryId = generateEntryId()
+      const entryData = { [entryId]: filteredData }
+      const writeResult = await engine.saveContent(modelId, 'en', entryData, 'form-auto-approve@contentrain.io', { autoPublish: false })
+
+      // Auto-merge the content branch (form submissions go straight through)
+      if (writeResult.branch) {
+        await engine.mergeBranch(writeResult.branch).catch(() => {})
+        invalidateBrainCache(projectId)
+      }
+
+      // Mark submission as approved with entry_id
+      await db.updateFormSubmissionStatus(submission.id as string, 'approved', undefined, entryId)
+    }
+    catch {
+      // Auto-approve failed — submission stays pending, no user-facing error
+    }
+  }
+
   // Emit webhook event (fire-and-forget)
   emitWebhookEvent(projectId, workspace.id as string, 'form.submitted', {
     submissionId: submission.id,
     modelId,
-    status: submission.status,
+    status: shouldAutoApprove ? 'approved' : submission.status,
   }).catch(() => {})
 
   return {
     success: true,
-    message: formConfig.successMessage ?? 'Thank you!',
+    message: formConfig.successMessage ?? errorMessage('forms.default_success'),
   }
 })

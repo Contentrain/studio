@@ -86,6 +86,7 @@
   "forms.submission_not_found": "Form submission not found.",
   "forms.update_failed": "Failed to update form submission: {detail}",
   "forms.upgrade": "Forms require a plan upgrade.",
+  "forms.default_success": "Thank you! Your submission has been received.",
   "forms.validation_failed": "Form validation failed.",
   "media.asset_not_found": "Media asset not found. It may have been deleted.",
   "media.bulk_limit_exceeded": "Maximum 50 assets per bulk operation.",
