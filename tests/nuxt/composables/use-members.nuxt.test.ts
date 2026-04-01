@@ -58,7 +58,7 @@ describe('useMembers', () => {
     const invited = await members.inviteMember('workspace-1', 'editor@example.com', 'member')
 
     expect(invited).toBe(true)
-    expect(success).toHaveBeenCalledWith('Invited editor@example.com')
+    expect(success).toHaveBeenCalledWith('Member invited')
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/workspaces/workspace-1/members', {
       method: 'POST',
       body: { email: 'editor@example.com', role: 'member' },
@@ -93,7 +93,7 @@ describe('useMembers', () => {
     )
 
     expect(assigned).toBe(true)
-    expect(success).toHaveBeenCalledWith('Assigned reviewer@example.com as reviewer')
+    expect(success).toHaveBeenCalledWith('Member assigned to project')
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/workspaces/workspace-1/projects/project-1/members')
     expect(members.projectMembers.value[0]?.role).toBe('reviewer')
   })
