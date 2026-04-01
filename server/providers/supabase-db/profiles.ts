@@ -1,7 +1,7 @@
 import type { DatabaseProvider, DatabaseRow } from '../database'
 import { getUser, toDatabaseRow } from './helpers'
 
-const PROFILE_SELECT = 'id, display_name, email, avatar_url, created_at'
+const PROFILE_SELECT = 'id, display_name, email, avatar_url, theme, created_at'
 
 type ProfileMethods = Pick<DatabaseProvider, 'getProfile' | 'updateProfile'>
 
@@ -22,7 +22,7 @@ export function profileMethods(): ProfileMethods {
       return data as DatabaseRow
     },
 
-    async updateProfile(accessToken: string, userId: string, updates: { display_name?: string }): Promise<DatabaseRow> {
+    async updateProfile(accessToken: string, userId: string, updates: { display_name?: string, avatar_url?: string | null, theme?: 'light' | 'dark' | 'system' }): Promise<DatabaseRow> {
       const client = getUser(accessToken)
       const { data, error } = await client
         .from('profiles')

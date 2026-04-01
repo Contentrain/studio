@@ -51,22 +51,104 @@ const providerVariant = computed(() => {
   if (p === 'google') return 'info' as const
   return 'primary' as const
 })
+
+// Avatar upload
+const uploading = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const hasCustomAvatar = computed(() => {
+  const url = authState.value.user?.avatarUrl
+  return url?.startsWith('data:') ?? false
+})
+
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
+
+async function handleAvatarUpload(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    await $fetch('/api/profile/avatar', { method: 'POST', body: formData })
+    await refreshUser()
+    toast.success(t('account_settings.avatar_upload_success'))
+  }
+  catch (e: unknown) {
+    const message = e instanceof Error ? e.message : t('account_settings.avatar_upload_error')
+    toast.error(message)
+  }
+  finally {
+    uploading.value = false
+    if (target) target.value = ''
+  }
+}
+
+async function handleAvatarRemove() {
+  uploading.value = true
+  try {
+    await $fetch('/api/profile/avatar', { method: 'DELETE' })
+    await refreshUser()
+    toast.success(t('account_settings.avatar_remove_success'))
+  }
+  catch {
+    toast.error(t('account_settings.avatar_remove_error'))
+  }
+  finally {
+    uploading.value = false
+  }
+}
 </script>
 
 <template>
   <div class="max-w-md space-y-5">
-    <!-- Avatar (read-only) -->
+    <!-- Avatar (editable) -->
     <div>
       <div class="flex items-center gap-1">
         <AtomsFormLabel :text="t('account_settings.avatar_label')" size="sm" />
-        <AtomsInfoTooltip :text="t('account_settings.avatar_info')" />
+        <AtomsInfoTooltip :text="t('account_settings.avatar_edit_info')" />
       </div>
-      <div class="mt-2">
-        <AtomsAvatar
-          :src="authState.user?.avatarUrl"
-          :name="authState.user?.displayName || authState.user?.email"
-          size="lg"
-        />
+      <div class="mt-2 flex items-center gap-3">
+        <div class="relative">
+          <AtomsAvatar
+            :src="authState.user?.avatarUrl"
+            :name="authState.user?.displayName || authState.user?.email"
+            size="lg"
+          />
+          <button
+            type="button"
+            class="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            :disabled="uploading"
+            @click="triggerFileInput"
+          >
+            <span class="icon-[annon--camera] size-5 text-white" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="flex flex-col gap-1">
+          <AtomsBaseButton size="sm" :disabled="uploading" @click="triggerFileInput">
+            {{ t('account_settings.avatar_upload_button') }}
+          </AtomsBaseButton>
+          <AtomsBaseButton
+            v-if="hasCustomAvatar"
+            variant="ghost"
+            size="sm"
+            :disabled="uploading"
+            @click="handleAvatarRemove"
+          >
+            {{ t('account_settings.avatar_remove_button') }}
+          </AtomsBaseButton>
+        </div>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          class="hidden"
+          @change="handleAvatarUpload"
+        >
       </div>
     </div>
 

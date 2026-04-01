@@ -13,6 +13,14 @@ export function useTheme() {
     theme.value = value
     applyTheme()
     localStorage.setItem('contentrain-theme', value)
+
+    // Persist to server (fire-and-forget for authenticated users)
+    $fetch('/api/profile', {
+      method: 'PATCH',
+      body: { theme: value },
+    }).catch(() => {
+      // Silently fail — localStorage is the immediate source of truth
+    })
   }
 
   function toggle() {
@@ -36,8 +44,17 @@ export function useTheme() {
   }
 
   function init() {
-    const stored = localStorage.getItem('contentrain-theme') as Theme | null
-    if (stored) theme.value = stored
+    // Priority: server (auth state) > localStorage > default 'system'
+    const { state: authState } = useAuth()
+    const serverTheme = authState.value.user?.theme
+    if (serverTheme && serverTheme !== 'system') {
+      theme.value = serverTheme
+      localStorage.setItem('contentrain-theme', serverTheme)
+    }
+    else {
+      const stored = localStorage.getItem('contentrain-theme') as Theme | null
+      if (stored) theme.value = stored
+    }
 
     applyTheme()
 
