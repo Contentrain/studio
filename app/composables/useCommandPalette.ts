@@ -113,11 +113,11 @@ export function useCommandPalette() {
     /** Translation function */
     t: (key: string) => string
     /** Reactive data sources */
-    models: Array<{ id: string, name: string, kind?: string, type?: string, domain?: string }>
-    branches: Array<{ name: string, sha: string }>
-    conversations: Array<{ id: string, title: string | null, updated_at: string }>
-    projects: Array<{ id: string, repo_full_name: string, detected_stack?: string | null }>
-    workspaces: Array<{ id: string, name: string, slug: string, plan: string }>
+    models: ReadonlyArray<{ id: string, name: string, kind?: string, type?: string, domain?: string }>
+    branches: ReadonlyArray<{ name: string, sha: string }>
+    conversations: ReadonlyArray<{ id: string, title: string | null, updated_at: string }>
+    projects: ReadonlyArray<{ id: string, repo_full_name: string, detected_stack?: string | null }>
+    workspaces: ReadonlyArray<{ id: string, name: string, slug: string, plan: string }>
     snapshot: { vocabulary?: Record<string, Record<string, string>>, content?: Record<string, { count: number }> } | null
     /** Action handlers — resolved by component */
     onAction: (actionKey: string, payload?: Record<string, unknown>) => void

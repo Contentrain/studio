@@ -84,7 +84,7 @@ const results = computed<ResultItem[]>(() => {
     branches: branches.value,
     conversations: conversations.value,
     projects: projects.value,
-    workspaces: workspaces.value as Array<{ id: string, name: string, slug: string, plan: string }>,
+    workspaces: workspaces.value,
     snapshot: snapshot.value as { vocabulary?: Record<string, Record<string, string>>, content?: Record<string, { count: number }> } | null,
     onAction: handleAction,
     onRecent: executeRecent,
@@ -286,7 +286,7 @@ function handleKeyNav(e: KeyboardEvent) {
         @keydown="handleKeyNav"
       >
         <!-- Search input -->
-        <div class="flex items-center gap-2 border-b border-secondary-200 px-4 dark:border-secondary-800">
+        <div class="flex items-center gap-2.5 border-b border-secondary-200 px-4 py-3 dark:border-secondary-800">
           <span class="icon-[annon--search] size-4 shrink-0 text-muted" aria-hidden="true" />
           <AtomsBadge v-if="modeBadge" :variant="modeBadge.color" size="sm" class="shrink-0">
             {{ modeBadge.label }}
@@ -295,7 +295,7 @@ function handleKeyNav(e: KeyboardEvent) {
             ref="inputRef"
             v-model="searchInput"
             :placeholder="placeholder"
-            class="h-12 flex-1 bg-transparent text-sm text-heading placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100"
+            class="h-7 flex-1 bg-transparent text-sm text-heading placeholder:text-disabled focus:outline-none dark:text-secondary-100"
           >
           <kbd class="shrink-0 rounded border border-secondary-200 bg-secondary-50 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:border-secondary-700 dark:bg-secondary-800">
             ESC
@@ -317,15 +317,15 @@ function handleKeyNav(e: KeyboardEvent) {
 
           <!-- Grouped results -->
           <template v-for="(groupItems, groupName) in groupedResults" :key="groupName">
-            <div class="px-3 pt-2 pb-1">
+            <div class="px-4 pt-3 pb-1">
               <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">{{ groupName }}</span>
             </div>
-            <div class="px-2 pb-1">
+            <div class="px-1.5 pb-1">
               <button
                 v-for="item in groupItems"
                 :key="item.id"
                 type="button"
-                class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                class="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                 :class="results.indexOf(item) === selectedIndex
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
                   : 'text-heading hover:bg-secondary-50 dark:text-secondary-100 dark:hover:bg-secondary-900'
@@ -342,10 +342,10 @@ function handleKeyNav(e: KeyboardEvent) {
         </div>
 
         <!-- Footer hints -->
-        <div class="flex items-center gap-3 border-t border-secondary-100 px-4 py-2 text-[10px] text-disabled dark:border-secondary-800">
-          <span>↑↓ navigate</span>
-          <span>↩ select</span>
-          <span>esc close</span>
+        <div class="flex items-center gap-4 border-t border-secondary-200 px-4 py-2 text-[10px] text-disabled dark:border-secondary-800">
+          <span class="flex items-center gap-1"><kbd class="rounded border border-secondary-200 px-1 font-mono dark:border-secondary-700">↑↓</kbd> navigate</span>
+          <span class="flex items-center gap-1"><kbd class="rounded border border-secondary-200 px-1 font-mono dark:border-secondary-700">↩</kbd> select</span>
+          <span class="flex items-center gap-1"><kbd class="rounded border border-secondary-200 px-1 font-mono dark:border-secondary-700">esc</kbd> close</span>
         </div>
       </DialogContent>
     </DialogPortal>
