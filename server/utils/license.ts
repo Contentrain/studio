@@ -17,7 +17,7 @@ import type { StudioPlan } from '../../shared/utils/license'
 export type Plan = StudioPlan
 
 /**
- * Extract plan from workspace row. Defaults to 'free'.
+ * Extract plan from workspace row. Defaults to 'starter'.
  */
 export function getWorkspacePlan(workspace: { plan?: string | null }): Plan {
   return normalizePlan(workspace?.plan)

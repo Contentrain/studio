@@ -13,6 +13,9 @@ const saving = ref(false)
 const workspaceName = ref('')
 const workspaceSlug = ref('')
 
+// Plan selection modal
+const planModalOpen = ref(false)
+
 // Workspace deletion
 const isOwner = computed(() => activeWorkspace.value?.owner_id === authState.value.user?.id)
 const isSecondary = computed(() => activeWorkspace.value?.type === 'secondary')
@@ -134,9 +137,16 @@ async function handleDeleteWorkspace() {
         <AtomsFormLabel :text="t('settings.plan_label')" size="sm" />
         <AtomsInfoTooltip :text="t('settings.plan_info')" />
       </div>
-      <AtomsBadge variant="primary" size="md" class="mt-1.5">
-        {{ activeWorkspace?.plan ?? 'free' }}
-      </AtomsBadge>
+      <button
+        type="button"
+        class="mt-1.5 inline-flex items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+        @click="planModalOpen = true"
+      >
+        <AtomsBadge variant="primary" size="md" class="capitalize">
+          {{ activeWorkspace?.plan ?? 'starter' }}
+        </AtomsBadge>
+        <span class="icon-[annon--chevron-right] size-3.5 text-muted" aria-hidden="true" />
+      </button>
     </div>
     <AtomsBaseButton
       variant="primary"
@@ -184,5 +194,11 @@ async function handleDeleteWorkspace() {
     :delete-label="wsDeleting ? t('danger_zone.deleting') : t('danger_zone.workspace_delete_button')"
     :deleting="wsDeleting"
     @confirm="handleDeleteWorkspace"
+  />
+
+  <!-- Plan selection modal -->
+  <OrganismsPlanSelectionModal
+    :open="planModalOpen"
+    @update:open="planModalOpen = $event"
   />
 </template>

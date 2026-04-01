@@ -4,8 +4,6 @@ import { ISO_LOCALES, getLocaleName } from '~/utils/locales'
 
 const { t } = useContent()
 const toast = useToast()
-const { activeWorkspace } = useWorkspaces()
-const canReview = computed(() => hasFeature(activeWorkspace.value?.plan, 'workflow.review'))
 const open = defineModel<boolean>('open', { default: false })
 
 const props = defineProps<{
@@ -257,7 +255,7 @@ async function save() {
                   :class="workflow === 'review'
                     ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20'
                     : 'border-secondary-200 hover:border-secondary-300 dark:border-secondary-700 dark:hover:border-secondary-600'"
-                  @click="canReview ? workflow = 'review' : toast.info(t('project_settings.workflow_pro_hint'))"
+                  @click="workflow = 'review'"
                 >
                   <div
                     class="absolute right-3 top-3 flex size-4 items-center justify-center rounded-full border-2"
@@ -273,9 +271,6 @@ async function save() {
                       :class="workflow === 'review' ? 'text-primary-500 dark:text-primary-400' : 'text-muted'"
                       aria-hidden="true"
                     />
-                    <AtomsBadge v-if="!canReview" variant="info" size="sm">
-                      Pro
-                    </AtomsBadge>
                   </div>
                   <div
                     class="mt-2 text-sm font-medium"
@@ -287,7 +282,7 @@ async function save() {
                     class="mt-0.5 text-xs"
                     :class="workflow === 'review' ? 'text-primary-600/70 dark:text-primary-300/70' : 'text-muted'"
                   >
-                    {{ canReview ? t('project_settings.workflow_review_desc') : t('project_settings.workflow_pro_hint') }}
+                    {{ t('project_settings.workflow_review_desc') }}
                   </div>
                 </button>
               </div>

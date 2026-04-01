@@ -1,267 +1,200 @@
 # Enterprise Edition (ee/) Separation Guide
 
-> **Tarih:** 2026-03-23
-> **Durum:** Temel yapı kuruldu — license.ts, ee/ dizini, feature flags aktif
+> **Tarih:** 2026-04-01
+> **Durum:** Tüm EE altyapısı aktif — CDN, Media, Webhooks, Conversation API, AI Keys
+
+---
+
+## Felsefe
+
+**Tüm özellikler tüm planlarda açık. Fark sadece dahil kullanım miktarı.**
+
+Eski model (feature gating) → Yeni model (limit-based differentiation):
+- Starter ($9/mo) — düşük limitler, Haiku AI
+- Pro ($29/mo + $9/seat) — yüksek limitler, Sonnet AI
+- Enterprise (custom) — sınırsız, SSO, white-label
+
+EE dizini artık "feature erişim kontrolü" değil, **implementasyon ayrımı** sağlıyor.
+Core (AGPL) interface'leri tanımlar, EE (proprietary) implementasyonları sağlar.
 
 ---
 
 ## Özet
 
-Proje mimari olarak **zaten EE-ready**. Database schema, RLS policies, permissions sistemi ve provider pattern sayesinde EE ayrışımı **konfigürasyon + UI** düzeyinde — mimari değişiklik gerektirmiyor.
+Proje mimari olarak **EE-complete**. Database schema, RLS policies, permissions sistemi ve provider pattern sayesinde EE ayrışımı **konfigürasyon + limit** düzeyinde.
 
 ---
 
-## Ayrışım Kararları
-
-### Taşınması Gereken (ee/ dizinine)
-
-| # | Bileşen | Yaklaşım | Efor |
-|---|---------|----------|------|
-| 1 | Reviewer/Viewer rolleri | `agent-permissions.ts` → core interface + ee/ genişleme | Düşük |
-| 2 | specificModels + allowedModels | #1 ile birlikte, aynı dosya | Düşük |
-| 3 | BYOA API key yönetimi | `chat.post.ts`'de feature flag | Düşük |
-| 4 | Settings UI rol seçenekleri | `settings.vue`'de plan-bazlı conditional render | Orta |
-
-### Taşınmayacak — Zaten Doğru Yerde
-
-| Bileşen | Neden Kalıyor |
-|---------|---------------|
-| `content-engine.ts` | Workflow-agnostic, branch oluşturur, merge kararı dışarıda |
-| Branch API routes (list, diff, merge, reject) | Permissions zaten role-gated, merge/reject 403 döner |
-| `useBranches.ts` | Pure data fetching, iş mantığı yok |
-| `BranchDetailView.vue` | Pure UI, `canManage` prop ile zaten gated |
-| Multi-locale logic | Plan-agnostic, config'den gelir |
-| Database schema | Tüm kolonlar mevcut, RLS ile korunuyor |
-
-### Neden Taşınmıyor — Detay
-
-**content-engine.ts:** Engine her zaman branch oluşturur. Auto-merge vs review kararı `chat.post.ts`'deki `shouldAutoMerge()` fonksiyonunda yapılıyor. Engine'in kendisi workflow bilmez.
-
-**Branch API routes:** `merge.post` ve `reject.post` zaten `resolveAgentPermissions` ile reviewer+ kontrolü yapıyor. Free tier'da kimse reviewer değil → 403. Code movement gerekmez.
-
-**Multi-locale:** Locale bilgisi `.contentrain/config.json`'dan gelir, herhangi bir plan kısıtlaması yok. 5 locale sınırı gibi bir limit istenirse sadece UI'da gating yeterli.
-
----
-
-## Dosya Yapısı
+## Dizin Yapısı
 
 ```
 ee/
 ├── LICENSE                          ← Proprietary license text
-├── README.md                        ← EE feature documentation
-├── permissions/
-│   └── advanced-roles.ts            ← Reviewer/Viewer + specificModels logic
+├── README.md                        ← EE documentation
 ├── cdn/
-│   ├── cloudflare-cdn.ts            ← Cloudflare R2 CDNProvider impl (Pro+)
-│   ├── aws-cdn.ts                   ← AWS S3 + CloudFront impl (future)
+│   ├── cloudflare-cdn.ts            ← Cloudflare R2 CDNProvider impl
 │   ├── cdn-usage.ts                 ← Usage metering, bandwidth tracking
-│   ├── cdn-rate-limiter.ts          ← Per-plan rate limiting logic
-│   └── cdn-advanced.ts              ← Custom domains, IP allowlist (Business+)
-├── media/
-│   ├── sharp-processor.ts           ← Sharp-based image processing (Pro+)
-│   ├── variant-generator.ts         ← Variant generation (resize, format, quality)
-│   ├── blurhash-calculator.ts       ← Blurhash loading placeholder
-│   ├── media-optimizer.ts           ← Original optimization (EXIF strip, normalize)
-│   ├── storage-usage.ts             ← Workspace storage metering + limits
-│   └── duplicate-detector.ts        ← Content hash duplicate detection
-├── connectors/
-│   ├── canva.ts                     ← Canva Connect API (Pro+)
-│   ├── figma.ts                     ← Figma REST API (Pro+)
-│   ├── recraft.ts                   ← Recraft API (Pro+)
-│   ├── google-drive.ts              ← Google Drive (Business+)
-│   └── notion.ts                    ← Notion API (Business+)
-├── ai/
-│   └── studio-key.ts               ← Studio-hosted key logic + metering
-├── workflow/
-│   ├── approval-chains.ts          ← Multi-step approval (Business+)
-│   └── scheduled-publish.ts        ← Scheduled content publishing
-├── sso/
-│   ├── saml.ts                     ← SAML 2.0 (Enterprise)
-│   └── oidc.ts                     ← OpenID Connect (Enterprise)
-└── branding/
-    └── white-label.ts              ← Custom branding (Enterprise)
+│   └── cdn-rate-limiter.ts          ← Per-key sliding window rate limiter
+├── enterprise/
+│   ├── index.ts                     ← Enterprise bridge factory
+│   ├── access.ts                    ← Model-specific access normalization (Pro+)
+│   ├── ai-keys.ts                   ← BYOA API key management
+│   ├── conversation-api.ts          ← External AI content operations API
+│   ├── conversation-keys.ts         ← Conversation API key CRUD
+│   ├── webhook-dispatch.ts          ← Webhook event emission + retry engine
+│   └── webhooks.ts                  ← Webhook endpoint CRUD + test + deliveries
+└── media/
+    ├── sharp-processor.ts           ← Sharp-based MediaProvider (full pipeline)
+    ├── variant-generator.ts         ← Image variant generation (resize, format, quality)
+    ├── blurhash-calculator.ts       ← Loading placeholder generation
+    └── media-optimizer.ts           ← Original image optimization (EXIF strip, sRGB)
 ```
 
-### CDN Core/EE Ayrışımı
+---
 
-CDN tamamen Pro+ feature. Core ve EE arasındaki sorumluluk dağılımı:
+## Core/EE Sorumluluk Dağılımı
 
-| Bileşen | Konum | Neden |
-|---------|-------|-------|
-| `CDNProvider` interface | Core (`server/providers/cdn.ts`) | Contract — tüm impl'ler bunu implement eder |
-| `cdn-builder.ts` | Core (`server/utils/`) | GitProvider + content-paths (core) kullanır |
-| CDN API routes | Core (`server/api/cdn/v1/`) | `hasFeature()` ile gated, free'de 403 |
-| API key yönetimi | Core (`server/utils/cdn-keys.ts`) | Key gen/hash/validate — generic |
-| DB schema | Core (`supabase/migrations/`) | Her zaman core'da |
-| Cloudflare R2 impl | **EE** (`ee/cdn/cloudflare-cdn.ts`) | Ticari storage implementasyonu |
-| Usage metering | **EE** (`ee/cdn/cdn-usage.ts`) | Billing ile entegre |
-| Rate limiter | **EE** (`ee/cdn/cdn-rate-limiter.ts`) | Plan-specific business logic |
-| Advanced config | **EE** (`ee/cdn/cdn-advanced.ts`) | Custom domain, IP allowlist (Business+) |
+### Genel Pattern
 
-**Core çalışır, EE yoksa:** CDN routes `hasFeature()` ile 403 döner. Builder çalışmaz çünkü CDNProvider implementasyonu yok. Graceful degradation.
+| Katman | Konum | Sorumluluk |
+|--------|-------|------------|
+| Interface | Core (`server/providers/`) | Contract tanımları |
+| API routes | Core (`server/api/`) | Thin shells — `hasFeature()` + `runEnterpriseRoute()` |
+| Feature matrix | Core (`shared/utils/license.ts`) | Plan/limit tanımları |
+| Enterprise bridge | Core (`server/utils/enterprise.ts`) | Dynamic import + delegation |
+| Implementations | **EE** (`ee/`) | Ticari iş mantığı |
+| Database schema | Core (`supabase/migrations/`) | Her zaman core'da |
+| UI components | Core (`app/components/`) | Her zaman core'da |
 
-Implemented in Phase 3.
-
-### Media Core/EE Ayrışımı
-
-Media Management tamamen Pro+ feature. Aynı R2 altyapısını CDN ile paylaşır.
+### CDN
 
 | Bileşen | Konum | Neden |
 |---------|-------|-------|
-| `MediaProvider` interface | Core (`server/providers/media.ts`) | Contract — upload, variant, metadata |
-| Variant preset definitions | Core (`server/utils/media-variants.ts`) | Preset config'ler generic |
-| Media API routes | Core (`server/api/.../media/`) | `hasFeature()` ile gated, free'de 403 |
-| Agent tools (search/upload/get) | Core (`server/utils/agent-tools.ts`) | Tool defs core'da, plan check execution'da |
-| Asset Manager UI | Core (`app/components/organisms/`) | UI her zaman core'da |
-| DB schema (media_assets, media_usage) | Core (`supabase/migrations/`) | Her zaman core'da |
-| Sharp image processor | **EE** (`ee/media/sharp-processor.ts`) | Image processing business logic |
-| Variant generator | **EE** (`ee/media/variant-generator.ts`) | Resize + format + quality |
-| Blurhash calculator | **EE** (`ee/media/blurhash-calculator.ts`) | Loading placeholder generation |
-| Storage usage tracking | **EE** (`ee/media/storage-usage.ts`) | Billing entegrasyonu, plan limits |
-| Duplicate detector | **EE** (`ee/media/duplicate-detector.ts`) | Content hash dedup |
+| `CDNProvider` interface | Core | Contract |
+| `cdn-builder.ts` | Core | GitProvider + content-paths kullanır |
+| CDN API routes | Core | Thin shell, limit check server-side |
+| API key yönetimi | Core | Key gen/hash/validate — generic |
+| Cloudflare R2 impl | **EE** | Ticari storage implementasyonu |
+| Usage metering | **EE** | Billing entegrasyonu |
+| Rate limiter | **EE** | Per-key iş mantığı |
 
-**Core çalışır, EE yoksa:** Media routes `hasFeature()` ile 403 döner. Image field'lar sadece manual path input olarak çalışır (mevcut davranış). Asset Manager "Upgrade to Pro" gösterir.
+### Media
 
-Implemented in Phase 4.
+| Bileşen | Konum | Neden |
+|---------|-------|-------|
+| `MediaProvider` interface | Core | Contract |
+| Variant preset definitions | Core | Config'ler generic |
+| Media API routes | Core | Thin shell, limit check server-side |
+| Agent tools (search/upload/get) | Core | Tool defs core'da |
+| Asset Manager UI | Core | UI her zaman core'da |
+| Sharp image processor | **EE** | Image processing iş mantığı |
+| Variant generator | **EE** | Resize + format + quality |
+| Blurhash calculator | **EE** | Loading placeholder |
+
+### Webhooks
+
+| Bileşen | Konum | Neden |
+|---------|-------|-------|
+| Webhook types + SSRF protection | Core (`server/utils/webhook-engine.ts`) | Güvenlik altyapısı |
+| Webhook API routes | Core | Thin shells via `runEnterpriseRoute()` |
+| Webhook CRUD + dispatch + retry | **EE** (`ee/enterprise/webhooks.ts` + `webhook-dispatch.ts`) | Ticari iş mantığı |
+
+### Conversation API
+
+| Bileşen | Konum | Neden |
+|---------|-------|-------|
+| API routes (/conversation/v1/) | Core | Thin shells |
+| Key CRUD + message handling | **EE** (`ee/enterprise/conversation-*.ts`) | Ticari iş mantığı |
+
+### AI Keys (BYOA)
+
+| Bileşen | Konum | Neden |
+|---------|-------|-------|
+| API routes (/ai-keys/) | Core | Thin shells |
+| Key CRUD + encryption | **EE** (`ee/enterprise/ai-keys.ts`) | Ticari iş mantığı |
 
 ---
 
 ## Feature Flag Mekanizması
 
 ```ts
-// server/utils/license.ts (core — AGPL)
-export type Plan = 'free' | 'pro' | 'business' | 'enterprise'
+// shared/utils/license.ts — single source of truth
+export type StudioPlan = 'starter' | 'pro' | 'enterprise'
 
-export function getWorkspacePlan(workspace: { plan?: string }): Plan {
-  return (workspace.plan as Plan) ?? 'free'
-}
+// Feature checks — most return true for ALL plans
+hasFeature(plan, 'cdn.delivery')        // starter, pro, enterprise
+hasFeature(plan, 'media.upload')        // starter, pro, enterprise
+hasFeature(plan, 'api.webhooks_outbound') // starter, pro, enterprise
 
-export function hasFeature(plan: Plan, feature: string): boolean {
-  const matrix: Record<string, Plan[]> = {
-    // Roles
-    'roles.reviewer': ['pro', 'business', 'enterprise'],
-    'roles.viewer': ['pro', 'business', 'enterprise'],
-    'roles.specific_models': ['pro', 'business', 'enterprise'],
+// Pro+ only features (limit-based differentiation isn't enough)
+hasFeature(plan, 'cdn.preview_branch')  // pro, enterprise
+hasFeature(plan, 'media.custom_variants') // pro, enterprise
+hasFeature(plan, 'roles.specific_models') // pro, enterprise
+hasFeature(plan, 'forms.spam_filter')   // pro, enterprise
 
-    // AI
-    'ai.byoa': ['pro', 'business', 'enterprise'],
-    'ai.studio_key': ['pro', 'business', 'enterprise'],
+// Enterprise-only
+hasFeature(plan, 'sso.saml')           // enterprise
+hasFeature(plan, 'sso.oidc')           // enterprise
+hasFeature(plan, 'branding.white_label') // enterprise
+hasFeature(plan, 'cdn.custom_domain')  // enterprise
 
-    // Connectors
-    'connector.canva': ['pro', 'business', 'enterprise'],
-    'connector.figma': ['pro', 'business', 'enterprise'],
-    'connector.recraft': ['pro', 'business', 'enterprise'],
-    'connector.google_drive': ['business', 'enterprise'],
-    'connector.notion': ['business', 'enterprise'],
-
-    // Workflow
-    'workflow.review': ['pro', 'business', 'enterprise'],
-    'workflow.approval_chains': ['business', 'enterprise'],
-    'workflow.scheduled_publish': ['business', 'enterprise'],
-
-    // Team
-    'team.audit_log': ['business', 'enterprise'],
-    'team.activity_feed': ['business', 'enterprise'],
-
-    // CDN
-    'cdn.delivery': ['pro', 'business', 'enterprise'],
-    'cdn.preview_branch': ['business', 'enterprise'],
-    'cdn.custom_domain': ['enterprise'],
-    'cdn.ip_allowlist': ['business', 'enterprise'],
-
-    // Media
-    'media.upload': ['pro', 'business', 'enterprise'],
-    'media.library': ['pro', 'business', 'enterprise'],
-    'media.connectors': ['pro', 'business', 'enterprise'],
-    'media.custom_variants': ['business', 'enterprise'],
-
-    // Enterprise
-    'sso.saml': ['enterprise'],
-    'sso.oidc': ['enterprise'],
-    'branding.white_label': ['enterprise'],
-    'api.webhooks_outbound': ['business', 'enterprise'],
-    'api.rest': ['business', 'enterprise'],
-  }
-  return matrix[feature]?.includes(plan) ?? false
-}
-
-// Plan-specific numeric limits (CDN + Media)
-export function getPlanLimit(plan: Plan, limit: string): number {
-  const limits: Record<string, Record<Plan, number>> = {
-    'cdn.api_keys': { free: 0, pro: 3, business: 10, enterprise: Infinity },
-    'cdn.requests_per_month': { free: 0, pro: 100_000, business: 1_000_000, enterprise: Infinity },
-    'cdn.bandwidth_gb': { free: 0, pro: 10, business: 100, enterprise: Infinity },
-    'media.storage_gb': { free: 0, pro: 1, business: 5, enterprise: Infinity },
-    'media.max_file_size_mb': { free: 0, pro: 10, business: 50, enterprise: 100 },
-    'media.variants_per_field': { free: 0, pro: 4, business: 10, enterprise: Infinity },
-  }
-  return limits[limit]?.[plan] ?? 0
-}
-```
-
----
-
-## Uygulama Noktaları
-
-### 1. agent-permissions.ts — Rol Gating
-
-```ts
-// CORE: resolveAgentPermissions()
-// Free tier: reviewer/viewer → fallback to editor (degraded)
-// EE: full role mapping
-
-const effectiveRole = projectRole ?? 'viewer'
-
-// Feature check: does plan support advanced roles?
-if (!hasFeature(plan, 'roles.reviewer') && effectiveRole === 'reviewer') {
-  effectiveRole = 'editor' // Degrade gracefully
-}
-if (!hasFeature(plan, 'roles.viewer') && effectiveRole === 'viewer') {
-  effectiveRole = 'editor' // Degrade gracefully
-}
-```
-
-### 2. chat.post.ts — BYOA Gating
-
-```ts
-// Only check ai_keys table if plan supports BYOA
-if (hasFeature(plan, 'ai.byoa')) {
-  const { data: byoaKey } = await client.from('ai_keys')...
-  if (byoaKey?.encrypted_key) {
-    apiKey = decryptApiKey(...)
-    usageSource = 'byoa'
-  }
-}
-```
-
-### 3. settings.vue — UI Conditional
-
-```ts
-const plan = activeWorkspace.value?.plan ?? 'free'
-const showAdvancedRoles = hasFeature(plan, 'roles.reviewer')
-const showSpecificModels = hasFeature(plan, 'roles.specific_models')
+// Limit checks — the real differentiator
+getPlanLimit(plan, 'ai.messages_per_month')  // 50 / 500 / ∞
+getPlanLimit(plan, 'cdn.bandwidth_gb')       // 2 / 20 / ∞
+getPlanLimit(plan, 'media.storage_gb')       // 1 / 5 / 100
+getPlanLimit(plan, 'team.members')           // 3 / 25 / ∞
 ```
 
 ---
 
 ## Plan Matrisi
 
-| Özellik | Free | Pro $29 | Business $99 | Enterprise |
-|---|---|---|---|---|
-| Workspace | 1 | 3 | Unlimited | Unlimited |
-| Team | 2 kişi | 10 | 50 | Unlimited |
-| Roller | Owner, Editor | + Reviewer, Viewer | + Custom | + SSO |
-| Locale | Unlimited | Unlimited | Unlimited | Unlimited |
-| AI Agent | Studio key | + BYOA | Unlimited | Custom model |
-| **CDN** | **—** | **✓ (100K req, 10GB, 3 key)** | **✓ (1M req, 100GB, 10 key)** | **Custom** |
-| CDN Advanced | — | — | + IP allowlist, preview branch | + Custom domain |
-| **Media** | **—** | **✓ (1GB, 10MB/file, 4 variant)** | **✓ (5GB, 50MB/file, 10 variant)** | **Custom** |
-| Media Advanced | — | — | + Custom variant config | + Unlimited |
-| Connector | URL, File | + Canva, Figma, Recraft | + Notion, Drive | Custom SDK |
-| Workflow | Auto-merge | + Review | + Approval chain | + Scheduled |
-| Audit | — | — | Full log | + Export |
-| API | — | — | Webhook | Full REST |
-| SSO | — | — | — | SAML + OIDC |
+| Özellik | Starter $9/mo | Pro $29/mo + $9/seat | Enterprise |
+|---|---|---|---|
+| **Tüm özellikler** | ✅ | ✅ | ✅ |
+| Team | 3 kişi | 25 (+ $9/seat) | ∞ |
+| AI (Studio key) | 50 msg/ay (Haiku) | 500 msg/ay (Sonnet) | ∞ (Custom) |
+| BYOA | ✅ (sınırsız) | ✅ | ✅ |
+| CDN | 2 GB, 3 key | 20 GB, 10 key | ∞ |
+| CDN preview branch | — | ✅ | ✅ |
+| CDN custom domain | — | — | ✅ |
+| Media | 1 GB, 5 MB/file, 4 variant | 5 GB, 50 MB/file, 10 variant | 100 GB, 100 MB/file |
+| Custom variants | — | ✅ | ✅ |
+| Forms | 1 form, 100 sub/ay | 5 form, 1K sub/ay | ∞ |
+| Spam filter | — | ✅ | ✅ |
+| Workflow | Review ✅ | Review ✅ | ✅ |
+| Roller | Owner, Editor, Reviewer, Viewer | + Model-specific access | ∞ |
+| Conversation API | 1 key, 100 msg/ay | 5 key, 1K msg/ay | ∞ |
+| Webhooks | 3 | 10 | ∞ |
+| SSO | — | — | SAML + OIDC |
+| White-label | — | — | ✅ |
+| **Overage** | AI $0.03, CDN $0.10/GB, Media $0.25/GB, Forms $0.01, API $0.05 |||
+| **Trial** | 14 gün | 14 gün | — |
+
+---
+
+## Graceful Degradation
+
+| Senaryo | Davranış |
+|---------|----------|
+| EE dizini yok (self-hosted) | CDN/Media/Webhook/API routes → 403, core features çalışır |
+| EE var, plan yetersiz (Pro+ feature) | hasFeature() → false, UI gated |
+| Limit aşımı | getPlanLimit() → 403 + overage info |
+| Rol normalizasyonu | specific_models: Pro+ yoksa false, roller her zaman korunur |
+
+---
+
+## Gelecek EE Implementasyonlar
+
+| Bileşen | Konum | Plan | Durum |
+|---------|-------|------|-------|
+| SSO (SAML/OIDC) | `ee/sso/` | Enterprise | Planlandı |
+| White-label | `ee/branding/` | Enterprise | Planlandı |
+| Premium connectors (Canva, Figma, etc.) | `ee/connectors/` | Pro+ | Interface var, impl yok |
+| CDN custom domain | `ee/cdn/` | Enterprise | Flag var, impl yok |
+| Approval chains | `ee/workflow/` | Pro+ | Planlandı |
+| Scheduled publish | `ee/workflow/` | Pro+ | Planlandı |
+| Audit log / Activity feed | `ee/audit/` | Pro+ | Planlandı |
 
 ---
 
@@ -272,21 +205,8 @@ const showSpecificModels = hasFeature(plan, 'roles.specific_models')
 - [x] Permissions system — role-based tool filtering
 - [x] Branch workflow — engine agnostic, merge kararı call site'da
 - [x] Content engine — partial update + merge, plan-agnostic
-- [x] UI gating — `canManage` prop pattern, conditional render
 - [x] Agent usage tracking — source column (studio/byoa) ayrımı
-
----
-
-## Implementasyon Sırası
-
-1. **`server/utils/license.ts`** — Feature flag fonksiyonları (hasFeature + getPlanLimit)
-2. **`ee/LICENSE`** — Proprietary license text
-3. **`ee/permissions/advanced-roles.ts`** — Reviewer/Viewer + specificModels
-4. **`agent-permissions.ts`** güncelle — plan check ekle
-5. **`chat.post.ts`** güncelle — BYOA feature flag
-6. **`settings.vue`** güncelle — conditional role UI
-7. **CDN altyapısı** ✅ Implemented (Phase 3)
-8. **Media altyapısı** ✅ Implemented (Phase 4)
-9. **Connector interface** — `server/providers/connector.ts`
-10. **İlk connector** — URL fetch (ücretsiz)
-11. **Pro connectors** — Canva, Figma, Recraft (ee/connectors/)
+- [x] Enterprise bridge — dynamic import, graceful degradation
+- [x] Plan content models — plans + plan-features in Contentrain
+- [x] Overage pricing — defined in plan-features content model
+- [x] Trial support — trial_ends_at on workspace, not a separate plan

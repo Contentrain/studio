@@ -11,7 +11,6 @@ import {
 
 const { t } = useContent()
 const toast = useToast()
-const { activeWorkspace } = useWorkspaces()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const props = defineProps<{
@@ -19,8 +18,7 @@ const props = defineProps<{
   projectId: string
 }>()
 
-const hasPlan = computed(() => hasFeature(activeWorkspace.value?.plan, 'api.webhooks_outbound'))
-const canManage = computed(() => hasPlan.value && isOwnerOrAdmin.value)
+const canManage = computed(() => isOwnerOrAdmin.value)
 
 interface Webhook {
   id: string
@@ -207,21 +205,6 @@ watch(createOpen, (isOpen) => {
     <!-- Loading -->
     <div v-if="loading" class="space-y-3 p-5">
       <AtomsSkeleton v-for="i in 3" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
-    </div>
-
-    <!-- Upgrade nudge -->
-    <div v-else-if="!hasPlan" class="flex h-full items-center justify-center p-8">
-      <AtomsEmptyState
-        icon="icon-[annon--bell]"
-        :title="t('webhooks.title')"
-        :description="t('webhooks.description')"
-      >
-        <template #action>
-          <AtomsBadge variant="info" size="md">
-            Business
-          </AtomsBadge>
-        </template>
-      </AtomsEmptyState>
     </div>
 
     <!-- Webhooks Management -->

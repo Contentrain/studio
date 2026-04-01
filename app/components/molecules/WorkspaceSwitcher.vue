@@ -40,14 +40,13 @@ async function handleCreate() {
 }
 
 const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary', label: string }> = {
-  free: { variant: 'secondary', label: 'Free' },
+  starter: { variant: 'secondary', label: 'Starter' },
   pro: { variant: 'primary', label: 'Pro' },
-  business: { variant: 'info', label: 'Business' },
   enterprise: { variant: 'warning', label: 'Enterprise' },
 }
 
 function getWorkspacePlan(ws: { plan?: string | null, workspace_members?: unknown }): string {
-  return (ws as { plan?: string }).plan ?? 'free'
+  return (ws as { plan?: string }).plan ?? 'starter'
 }
 
 onMounted(() => {
@@ -73,7 +72,7 @@ onMounted(() => {
           size="sm"
           class="font-display"
         >
-          {{ planBadge[getWorkspacePlan(activeWorkspace)]?.label ?? 'Free' }}
+          {{ planBadge[getWorkspacePlan(activeWorkspace)]?.label ?? 'Starter' }}
         </AtomsBadge>
         <span class="icon-[annon--chevron-down] size-3.5 shrink-0 text-muted" aria-hidden="true" />
       </PopoverTrigger>
@@ -108,7 +107,7 @@ onMounted(() => {
               size="sm"
               class="shrink-0 font-display"
             >
-              {{ planBadge[getWorkspacePlan(ws)]?.label ?? 'Free' }}
+              {{ planBadge[getWorkspacePlan(ws)]?.label ?? 'Starter' }}
             </AtomsBadge>
             <span v-if="ws.id === activeWorkspace?.id" class="icon-[annon--check] size-4 shrink-0" aria-hidden="true" />
           </button>

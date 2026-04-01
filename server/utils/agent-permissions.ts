@@ -5,9 +5,8 @@
  * Workspace owner/admin → full access to all tools.
  * Workspace member → check project_members for project-level role.
  *
- * EE gating: reviewer/viewer roles and specificModels require
- * 'roles.reviewer' / 'roles.viewer' / 'roles.specific_models' features.
- * Free tier degrades gracefully: reviewer/viewer → editor.
+ * EE gating: specificModels requires 'roles.specific_models' feature (Pro+).
+ * Reviewer/viewer roles available on all plans.
  */
 
 import { getWorkspacePlan } from './license'

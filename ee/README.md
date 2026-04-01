@@ -1,31 +1,28 @@
 # Contentrain Enterprise Edition
 
-This directory contains proprietary features available with Contentrain Pro, Business, and Enterprise plans.
+This directory contains proprietary feature implementations for Contentrain Studio.
+All plans (Starter, Pro, Enterprise) include all features — EE provides the implementations.
 
 ## Structure
 
 ```
 ee/
   cdn/             — CDN content delivery (Cloudflare R2, usage metering, rate limiting)
-  permissions/     — Advanced roles (reviewer, viewer, model restrictions)
-  connectors/      — Premium integrations (Canva, Figma, Recraft, etc.)
-  ai/              — Studio-hosted AI key management + metering
-  workflow/        — Approval chains, scheduled publishing
+  enterprise/      — Enterprise bridge: webhooks, conversation API, AI keys, role normalization
+  media/           — Media processing (Sharp image optimizer, variant generator, blurhash)
 ```
 
 ## How It Works
 
-Features are gated by `server/utils/license.ts`:
+Feature implementations are loaded dynamically via `server/utils/enterprise.ts`:
 
 ```ts
-import { hasFeature, type Plan } from '~/server/utils/license'
-
-if (hasFeature(plan, 'roles.reviewer')) {
-  // Enable reviewer role
-}
+// Core routes delegate to EE bridge — returns 403 if ee/ not present
+await runEnterpriseRoute('listProjectWebhooks', 'webhook.upgrade', event)
 ```
 
-Core (AGPL) always works without ee/. EE features activate when workspace plan matches.
+Usage limits are enforced via `getPlanLimit()` in `shared/utils/license.ts`.
+Core (AGPL) works without ee/ — EE routes return 403, core features unaffected.
 
 ## License
 

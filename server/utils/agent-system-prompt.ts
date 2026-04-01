@@ -335,7 +335,7 @@ function buildContextSection(
 // ─── Rules Section ───
 
 function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent, permissions: AgentPermissions, plan?: import('./license').Plan): string {
-  const effectivePlan = plan ?? 'free'
+  const effectivePlan = plan ?? 'starter'
   const workflow = config?.workflow ?? 'auto-merge'
   const isPrivileged = permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
 
@@ -388,19 +388,13 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
   }
 
   // Plan-aware rules — inform agent about available features and guide user
-  if (effectivePlan === 'free') {
-    rules.push(agentPrompt('plan.free'))
-    rules.push(agentPrompt('plan.free.upgrade_hint'))
+  if (effectivePlan === 'starter') {
+    rules.push(agentPrompt('plan.starter'))
+    rules.push(agentPrompt('plan.starter.upgrade_hint'))
   }
   else if (effectivePlan === 'pro') {
     rules.push(agentPrompt('plan.pro'))
-    rules.push(agentPrompt('plan.pro.cdn_guide'))
-    rules.push(agentPrompt('plan.pro.media_guide'))
     rules.push(agentPrompt('plan.pro.upgrade_hint'))
-  }
-  else if (effectivePlan === 'business') {
-    rules.push(agentPrompt('plan.team'))
-    rules.push(agentPrompt('plan.team.api_guide'))
   }
   else if (effectivePlan === 'enterprise') {
     rules.push(agentPrompt('plan.enterprise'))

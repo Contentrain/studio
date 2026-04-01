@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
   if (permissions.availableTools.length === 0)
     throw createError({ statusCode: 403, message: errorMessage('chat.no_permissions') })
 
-  // === API KEY (BYOA is ee/ feature — free uses studio key only) ===
+  // === API KEY (BYOA available on all plans — resolves user key or falls back to studio key) ===
   const runtimeConfig = useRuntimeConfig()
   let apiKey: string
   let usageSource: 'byoa' | 'studio' = 'studio'
@@ -175,12 +175,12 @@ export default defineEventHandler(async (event) => {
 
   // Model: plan-gated selection
   const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
-  const FREE_MODELS = ['claude-haiku-4-5-20251001']
-  const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : FREE_MODELS
+  const STARTER_MODELS = ['claude-haiku-4-5-20251001']
+  const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
   const requestedModel = body.model as string | undefined
   const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
 
-  // Workflow: free plan always auto-merges regardless of config
+  // Workflow: plans without review feature always auto-merge regardless of config
   const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
   const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
 
