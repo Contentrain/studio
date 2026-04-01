@@ -204,7 +204,7 @@ function getFieldTypeBadge(type: string): string {
     <section v-if="enabled">
       <div class="flex items-start gap-3">
         <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-50 dark:bg-info-900/20">
-          <span class="icon-[annon--task-square] size-4 text-info-600 dark:text-info-400" aria-hidden="true" />
+          <span class="icon-[annon--clipboard-text] size-4 text-info-600 dark:text-info-400" aria-hidden="true" />
         </div>
         <div class="flex-1">
           <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
@@ -243,7 +243,7 @@ function getFieldTypeBadge(type: string): string {
               @update:checked="toggleField(fieldId)"
             >
               <CheckboxIndicator>
-                <span class="icon-[annon--tick] block size-3 text-white" aria-hidden="true" />
+                <span class="icon-[annon--check] block size-3 text-white" aria-hidden="true" />
               </CheckboxIndicator>
             </CheckboxRoot>
             <span class="flex-1 text-sm text-heading dark:text-secondary-100">{{ fieldId }}</span>
@@ -265,7 +265,7 @@ function getFieldTypeBadge(type: string): string {
     <section v-if="enabled">
       <div class="flex items-start gap-3">
         <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning-50 dark:bg-warning-900/20">
-          <span class="icon-[annon--shield-tick] size-4 text-warning-600 dark:text-warning-400" aria-hidden="true" />
+          <span class="icon-[annon--shield-check] size-4 text-warning-600 dark:text-warning-400" aria-hidden="true" />
         </div>
         <div class="flex-1">
           <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
@@ -329,7 +329,7 @@ function getFieldTypeBadge(type: string): string {
     <section v-if="enabled">
       <div class="flex items-start gap-3">
         <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success-50 dark:bg-success-900/20">
-          <span class="icon-[annon--setting-2] size-4 text-success-600 dark:text-success-400" aria-hidden="true" />
+          <span class="icon-[annon--gear-2] size-4 text-success-600 dark:text-success-400" aria-hidden="true" />
         </div>
         <div class="flex-1">
           <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
