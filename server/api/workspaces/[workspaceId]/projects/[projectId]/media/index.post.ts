@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   const ws = await db.getWorkspaceById(workspaceId, 'plan, media_storage_bytes')
   const plan = getWorkspacePlan(ws ?? {})
   if (!hasFeature(plan, 'media.upload'))
-    throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade') })
+    throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade', getUpgradeParams(plan)) })
 
   const media = useMediaProvider()
   if (!media)

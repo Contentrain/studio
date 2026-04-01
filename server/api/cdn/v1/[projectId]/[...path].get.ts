@@ -34,8 +34,9 @@ export default defineEventHandler(async (event) => {
 
   const workspace = await db.getWorkspaceById(project.workspace_id as string, 'plan')
 
-  if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
-    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
+  const plan = getWorkspacePlan(workspace ?? {})
+  if (!hasFeature(plan, 'cdn.delivery'))
+    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 
   // Rate limiting per-key (uses stored limit from DB)
   const rateCheck = checkRateLimit(`cdn:${keyId}`, rateLimitPerHour, 3600_000)

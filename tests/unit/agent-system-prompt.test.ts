@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+import { PLAN_PRICING, getPlanParams, getUpgradeParams } from '../../shared/utils/license'
 import { buildSystemPrompt } from '../../server/utils/agent-system-prompt'
 
 vi.stubGlobal('agentPrompt', (key: string) => `[prompt:${key}]`)
+vi.stubGlobal('getPlanParams', getPlanParams)
+vi.stubGlobal('getUpgradeParams', getUpgradeParams)
+vi.stubGlobal('PLAN_PRICING', PLAN_PRICING)
 
 describe('buildSystemPrompt', () => {
   it('includes architecture, context, permissions, and vocabulary guidance', () => {
@@ -76,7 +80,7 @@ describe('buildSystemPrompt', () => {
           tr: 'Baslik',
         },
       },
-      'business',
+      'pro',
     )
 
     expect(prompt).toContain('[prompt:architecture.intro]')

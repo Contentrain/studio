@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
 
   const plan = getWorkspacePlan(workspace ?? {})
   if (!hasFeature(plan, 'cdn.delivery'))
-    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 
   // Check key limit
   const keyLimit = getPlanLimit(plan, 'cdn.api_keys')

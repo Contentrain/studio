@@ -110,3 +110,97 @@ export function hasFeatureForPlan(plan: StudioPlan | string | null | undefined, 
 export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined, limit: string): number {
   return PLAN_LIMITS[limit]?.[normalizePlan(plan)] ?? 0
 }
+
+/**
+ * Plan pricing: single source of truth for prices.
+ * Matches Contentrain plans model (plans/en.json).
+ */
+export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, pricePerSeat: number, seatsIncluded: number, name: string }> = {
+  starter: { priceMonthly: 9, pricePerSeat: 0, seatsIncluded: 3, name: 'Starter' },
+  pro: { priceMonthly: 29, pricePerSeat: 9, seatsIncluded: 10, name: 'Pro' },
+  enterprise: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 0, name: 'Enterprise' },
+}
+
+function formatLimit(value: number): string {
+  if (value === Infinity) return 'unlimited'
+  if (value >= 1000) return `${(value / 1000).toFixed(0).replace(/\.0$/, '')}K`
+  return String(value)
+}
+
+function formatStorage(gb: number): string {
+  if (gb === Infinity) return 'unlimited'
+  return `${gb}GB`
+}
+
+function formatFileSize(mb: number): string {
+  return `${mb}MB`
+}
+
+/**
+ * Build interpolation params for a given plan.
+ * Use with t() / agentMessage() / agentPrompt() / errorMessage().
+ *
+ * Returns all pricing + limit values so dictionary strings
+ * can use {price}, {aiMessages}, {seats}, etc. instead of hardcoded values.
+ */
+export function getPlanParams(plan: StudioPlan | string | null | undefined): Record<string, string | number> {
+  const p = normalizePlan(plan)
+  const pricing = PLAN_PRICING[p]
+
+  function limit(key: string): number {
+    return PLAN_LIMITS[key]?.[p] ?? 0
+  }
+
+  function limitOrUnlimited(key: string): string | number {
+    const v = limit(key)
+    return v === Infinity ? 'unlimited' : v
+  }
+
+  return {
+    plan: pricing.name,
+    price: `$${pricing.priceMonthly}`,
+    pricePerSeat: `$${pricing.pricePerSeat}`,
+    seatsIncluded: pricing.seatsIncluded,
+    aiMessages: formatLimit(limit('ai.messages_per_month')),
+    seats: limitOrUnlimited('team.members'),
+    cdnBandwidth: formatStorage(limit('cdn.bandwidth_gb')),
+    cdnKeys: limitOrUnlimited('cdn.api_keys'),
+    mediaStorage: formatStorage(limit('media.storage_gb')),
+    maxFileSize: formatFileSize(limit('media.max_file_size_mb')),
+    mediaVariants: limitOrUnlimited('media.variants_per_field'),
+    formModels: limitOrUnlimited('forms.models'),
+    formSubmissions: formatLimit(limit('forms.submissions_per_month')),
+    conversationKeys: limitOrUnlimited('api.conversation_keys'),
+    apiMessages: formatLimit(limit('api.messages_per_month')),
+    webhookEndpoints: limitOrUnlimited('api.webhooks'),
+  }
+}
+
+/**
+ * Get the next plan tier for upgrade suggestions.
+ * starter → pro, pro → enterprise, enterprise → enterprise.
+ */
+export function getNextPlan(plan: StudioPlan | string | null | undefined): StudioPlan {
+  const p = normalizePlan(plan)
+  if (p === 'starter') return 'pro'
+  if (p === 'pro') return 'enterprise'
+  return 'enterprise'
+}
+
+/**
+ * Build upgrade comparison params: current plan values + target plan values (prefixed with "to").
+ * Useful for upgrade strings that compare two plans side by side.
+ * If toPlan is omitted, uses the next tier automatically.
+ */
+export function getUpgradeParams(
+  fromPlan: StudioPlan | string | null | undefined,
+  toPlan?: StudioPlan | string | null | undefined,
+): Record<string, string | number> {
+  const from = getPlanParams(fromPlan)
+  const to = getPlanParams(toPlan ?? getNextPlan(fromPlan))
+  const prefixed: Record<string, string | number> = {}
+  for (const [k, v] of Object.entries(to)) {
+    prefixed[`to${k.charAt(0).toUpperCase()}${k.slice(1)}`] = v
+  }
+  return { ...from, ...prefixed }
+}
