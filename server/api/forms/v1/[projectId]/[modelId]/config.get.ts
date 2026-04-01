@@ -3,22 +3,12 @@
  *
  * Auth: NONE (public endpoint)
  * Rate limit: per-IP sliding window
- * Plan: requires forms.enabled feature
+ * Plan: requires forms.enabled feature + forms.models limit
  *
  * GET /api/forms/v1/{projectId}/{modelId}/config
  */
 
-interface FormConfig {
-  enabled: boolean
-  public: boolean
-  exposedFields: string[]
-  requiredOverrides?: Record<string, boolean>
-  honeypot?: boolean
-  captcha?: 'turnstile' | null
-  successMessage?: string
-  limits?: { rateLimitPerIp?: number, maxPerMonth?: number }
-  autoApprove?: boolean
-}
+import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -34,10 +24,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
 
   // Rate limit config endpoint to prevent enumeration
-  const ip = getHeader(event, 'x-forwarded-for')?.split(',').pop()?.trim()
-    ?? getHeader(event, 'cf-connecting-ip')
-    ?? getHeader(event, 'x-real-ip')
-    ?? 'unknown'
+  const ip = getClientIp(event)
   const rateCheck = checkRateLimit(`form-config:${ip}`, 30, 60_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
@@ -75,9 +62,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: errorMessage('forms.model_not_found') })
 
   // Check form config exists and is enabled + public
-  const formConfig = (model as unknown as { form?: FormConfig }).form
+  const formConfig = getFormConfig(model)
   if (!formConfig?.enabled || !formConfig?.public)
     throw createError({ statusCode: 404, message: errorMessage('forms.form_disabled') })
+
+  // Enforce forms.models plan limit — count enabled models vs plan cap
+  const formsModelLimit = getPlanLimit(plan, 'forms.models')
+  const enabledCount = countFormEnabledModels(brain.models)
+  if (enabledCount > formsModelLimit) {
+    // Check if THIS model is within the limit (sorted by model ID for determinism)
+    const enabledIds = [...brain.models.entries()]
+      .filter(([, m]) => getFormConfig(m)?.enabled)
+      .map(([id]) => id)
+      .sort()
+    const allowedIds = new Set(enabledIds.slice(0, formsModelLimit))
+    if (!allowedIds.has(modelId))
+      throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
+  }
 
   // Filter fields to only exposed ones
   const allFields = model.fields ?? {}
@@ -104,7 +105,7 @@ export default defineEventHandler(async (event) => {
     modelId,
     fields: publicFields,
     captcha: formConfig.captcha ?? null,
-    successMessage: formConfig.successMessage ?? 'Thank you!',
+    successMessage: formConfig.successMessage ?? errorMessage('forms.default_success'),
     honeypotField: formConfig.honeypot ? '_hp' : null,
   }
 })

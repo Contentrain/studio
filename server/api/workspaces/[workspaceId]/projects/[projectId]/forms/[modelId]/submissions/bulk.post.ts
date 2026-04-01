@@ -1,7 +1,12 @@
 /**
  * Bulk form submission operations: approve, reject, spam, or delete multiple submissions.
  * Only workspace owners and admins can perform bulk actions.
+ *
+ * Approve creates content entries in Git for each submission.
  */
+
+import { approveSubmissionAsContent } from '~~/server/utils/form-types'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const db = useDatabaseProvider()
@@ -29,6 +34,7 @@ export default defineEventHandler(async (event) => {
   if (body.submissionIds.length > 50)
     throw createError({ statusCode: 400, message: errorMessage('forms.bulk_limit') })
 
+  // Delete — sequential per-submission with ownership check
   if (body.action === 'delete') {
     const results: { id: string, success: boolean, error?: string }[] = []
 
@@ -50,9 +56,31 @@ export default defineEventHandler(async (event) => {
     return { results, updated: results.filter(r => r.success).length }
   }
 
-  // Map action to status
+  // Approve — create content entries in Git for each submission
+  if (body.action === 'approve') {
+    const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+    const results: { id: string, success: boolean, entryId?: string, error?: string }[] = []
+
+    for (const submissionId of body.submissionIds) {
+      try {
+        const existing = await db.getFormSubmission(submissionId)
+        if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId || existing.model_id !== modelId) {
+          results.push({ id: submissionId, success: false, error: 'Not found' })
+          continue
+        }
+        const entryId = await approveSubmissionAsContent(existing, git, contentRoot, projectId, session.user.id)
+        results.push({ id: submissionId, success: true, entryId: entryId ?? undefined })
+      }
+      catch (e: unknown) {
+        results.push({ id: submissionId, success: false, error: e instanceof Error ? e.message : 'Failed' })
+      }
+    }
+
+    return { results, updated: results.filter(r => r.success).length }
+  }
+
+  // Reject / spam — bulk status update
   const statusMap: Record<string, 'approved' | 'rejected' | 'spam'> = {
-    approve: 'approved',
     reject: 'rejected',
     spam: 'spam',
   }
@@ -60,7 +88,7 @@ export default defineEventHandler(async (event) => {
   const updated = await db.bulkUpdateSubmissions(
     body.submissionIds,
     statusMap[body.action]!,
-    body.action === 'approve' ? session.user.id : undefined,
+    undefined,
     { workspaceId, projectId, modelId },
   )
 
