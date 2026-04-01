@@ -93,7 +93,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
   commands.push({
     id: 'cmd:ws-members',
     labelKey: 'settings.members_tab',
-    icon: 'icon-[annon--user-group]',
+    icon: 'icon-[annon--users]',
     keywords: ['members', 'team', 'invite', 'people', 'roles'],
     group: 'workspace',
     scope: 'workspace',
@@ -123,7 +123,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
   commands.push({
     id: 'cmd:connect-repo',
     labelKey: 'projects.connect_repo',
-    icon: 'icon-[annon--link]',
+    icon: 'icon-[annon--link-1]',
     keywords: ['connect', 'repo', 'repository', 'new project', 'add project'],
     group: 'workspace',
     scope: 'workspace',
@@ -175,7 +175,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     commands.push({
       id: 'cmd:media',
       label: 'Media library',
-      icon: 'icon-[annon--photo]',
+      icon: 'icon-[annon--image]',
       keywords: ['media', 'assets', 'images', 'files', 'library', 'upload'],
       group: 'project',
       scope: 'project',
@@ -226,7 +226,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     commands.push({
       id: 'cmd:model-haiku',
       label: 'Switch to Haiku 4.5',
-      icon: 'icon-[annon--flash]',
+      icon: 'icon-[annon--lightning]',
       keywords: ['haiku', 'fast', 'economic', 'model', 'ai', 'switch'],
       group: 'ai-model',
       scope: 'project',
@@ -246,7 +246,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     commands.push({
       id: 'cmd:model-opus',
       label: 'Switch to Opus 4',
-      icon: 'icon-[annon--diamond]',
+      icon: 'icon-[annon--trophy]',
       keywords: ['opus', 'capable', 'best', 'model', 'ai', 'switch'],
       group: 'ai-model',
       scope: 'project',
@@ -312,7 +312,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     commands.push({
       id: 'cmd:analyze-quality',
       label: 'Analyze content quality',
-      icon: 'icon-[annon--chart]',
+      icon: 'icon-[annon--chart-bar]',
       keywords: ['analyze', 'quality', 'score', 'report'],
       group: 'agent',
       scope: 'project',
@@ -345,7 +345,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     commands.push({
       id: 'cmd:upload-media',
       label: 'Upload media',
-      icon: 'icon-[annon--upload]',
+      icon: 'icon-[annon--cloud-upload]',
       keywords: ['upload', 'media', 'image', 'url', 'file'],
       group: 'agent',
       scope: 'project',

@@ -116,8 +116,8 @@ export async function resolveProjectContext(
 ): Promise<ProjectContext> {
   const db = useDatabaseProvider()
 
-  const project = await db.getProjectForWorkspace('', workspaceId, projectId, 'id, repo_full_name, content_root, workspace_id, default_branch, detected_stack, status')
-  if (!project)
+  const project = await db.getProjectById(projectId, 'id, repo_full_name, content_root, workspace_id, default_branch, detected_stack, status')
+  if (!project || project.workspace_id !== workspaceId)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
   const workspace = await db.getWorkspaceById(workspaceId, 'id, github_installation_id, plan, slug, name, owner_id')
