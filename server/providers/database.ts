@@ -54,7 +54,11 @@ export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
 
   getProfile: (accessToken: string, userId: string) => Promise<DatabaseRow | null>
-  updateProfile: (accessToken: string, userId: string, updates: { display_name?: string }) => Promise<DatabaseRow>
+  updateProfile: (accessToken: string, userId: string, updates: {
+    display_name?: string
+    avatar_url?: string | null
+    theme?: 'light' | 'dark' | 'system'
+  }) => Promise<DatabaseRow>
 
   // ═══════════════════════════════════════════════════
   // WORKSPACES
@@ -92,6 +96,8 @@ export interface DatabaseProvider {
   clearWorkspaceGithubInstallation: (installationId: number) => Promise<void>
   deleteWorkspace: (workspaceId: string) => Promise<void>
   incrementWorkspaceStorageBytes: (workspaceId: string, deltaBytes: number) => Promise<void>
+  transferWorkspaceOwnership: (workspaceId: string, currentOwnerId: string, newOwnerId: string) => Promise<void>
+  listOwnedSecondaryWorkspacesWithMembers: (accessToken: string, ownerId: string) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
   // WORKSPACE MEMBERS

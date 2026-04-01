@@ -116,6 +116,20 @@ export function useWorkspaces() {
     }
   }
 
+  async function transferOwnership(workspaceId: string, memberId: string): Promise<boolean> {
+    try {
+      await $fetch(`/api/workspaces/${workspaceId}/transfer-owner`, {
+        method: 'POST',
+        body: { memberId },
+      })
+      await fetchWorkspaces()
+      return true
+    }
+    catch {
+      return false
+    }
+  }
+
   return {
     workspaces: readonly(workspaces),
     activeWorkspace,
@@ -124,6 +138,7 @@ export function useWorkspaces() {
     setActiveWorkspace,
     createWorkspace,
     deleteWorkspace,
+    transferOwnership,
     saveLastPath,
     getLastPath,
   }

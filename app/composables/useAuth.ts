@@ -4,6 +4,7 @@ interface AuthUser {
   avatarUrl: string | null
   provider: string | null
   displayName: string | null
+  theme: 'light' | 'dark' | 'system'
 }
 
 interface AuthState {

@@ -21,6 +21,8 @@ type WorkspaceMethods = Pick<
   | 'clearWorkspaceGithubInstallation'
   | 'deleteWorkspace'
   | 'incrementWorkspaceStorageBytes'
+  | 'transferWorkspaceOwnership'
+  | 'listOwnedSecondaryWorkspacesWithMembers'
 >
 
 export function workspaceMethods(): WorkspaceMethods {
@@ -200,6 +202,56 @@ export function workspaceMethods(): WorkspaceMethods {
       const { data } = await admin.from('workspaces').select('media_storage_bytes').eq('id', workspaceId).single()
       const current = (data as { media_storage_bytes: number } | null)?.media_storage_bytes ?? 0
       await admin.from('workspaces').update({ media_storage_bytes: Math.max(0, current + deltaBytes) }).eq('id', workspaceId)
+    },
+
+    async transferWorkspaceOwnership(workspaceId, currentOwnerId, newOwnerId) {
+      const admin = getAdmin()
+
+      // 1. Update workspaces.owner_id
+      const { error: ownerError } = await admin
+        .from('workspaces')
+        .update({ owner_id: newOwnerId })
+        .eq('id', workspaceId)
+        .eq('owner_id', currentOwnerId)
+
+      if (ownerError) throw createError({ statusCode: 500, message: ownerError.message })
+
+      // 2. Demote old owner to admin in workspace_members
+      const { error: demoteError } = await admin
+        .from('workspace_members')
+        .update({ role: 'admin' })
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', currentOwnerId)
+        .eq('role', 'owner')
+
+      if (demoteError) throw createError({ statusCode: 500, message: demoteError.message })
+
+      // 3. Promote new owner in workspace_members
+      const { error: promoteError } = await admin
+        .from('workspace_members')
+        .update({ role: 'owner' })
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', newOwnerId)
+
+      if (promoteError) throw createError({ statusCode: 500, message: promoteError.message })
+    },
+
+    async listOwnedSecondaryWorkspacesWithMembers(accessToken, ownerId) {
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('workspaces')
+        .select(`
+          id, name, slug, type, owner_id,
+          workspace_members(
+            id, role, user_id,
+            profiles:user_id(id, display_name, email, avatar_url)
+          )
+        `)
+        .eq('owner_id', ownerId)
+        .eq('type', 'secondary')
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data ?? []).map(toDatabaseRow)
     },
   }
 }
