@@ -207,7 +207,6 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 Critical (deploy öncesi):
 - Forms: auto-approve flow declared but not wired (`autoApprove` field unused in submit logic)
 - Forms: `forms.models` plan limit not enforced (free plan can enable unlimited form models)
-- Profile: workspace ownership transfer before account deletion
 
 High (deploy sonrası):
 - Monthly limit race condition: check+insert not atomic (forms + agent usage)
