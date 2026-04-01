@@ -73,7 +73,13 @@ const isFormEnabled = computed(() => {
   return form?.enabled === true
 })
 
-const modelSubTab = ref<'content' | 'submissions'>('content')
+// Check if active model is a collection (only collections can have forms)
+const isCollection = computed(() => {
+  if (!activeModel.value) return false
+  return activeModel.value.kind === 'collection' || activeModel.value.type === 'collection'
+})
+
+const modelSubTab = ref<'content' | 'submissions' | 'form'>('content')
 
 // Reset sub-tab when model changes
 watch(() => props.activeModelId, () => {
@@ -401,13 +407,14 @@ provide(sendChatPromptKey, sendChatPrompt)
 
       <!-- MODEL CONTENT -->
       <template v-else-if="panelState === 'model'">
-        <!-- Form-enabled: tab switcher -->
+        <!-- Tab switcher: Content + Form (collections) + Submissions (form enabled) -->
         <AtomsTabBar
-          v-if="isFormEnabled"
+          v-if="isCollection"
           v-model="modelSubTab"
           :tabs="[
             { value: 'content', label: t('forms.tab_content') },
-            { value: 'submissions', label: t('forms.tab_submissions') },
+            ...(isFormEnabled ? [{ value: 'submissions' as const, label: t('forms.tab_submissions') }] : []),
+            { value: 'form', label: t('forms.tab_form_settings') },
           ]"
         />
 
@@ -420,8 +427,17 @@ provide(sendChatPromptKey, sendChatPrompt)
           :editable="editable"
         />
 
+        <!-- Form settings tab -->
+        <OrganismsFormConfigSection
+          v-else-if="modelSubTab === 'form' && workspaceId && projectId && activeModelId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          :model-id="activeModelId"
+          :editable="editable"
+        />
+
         <!-- Content tab (default) -->
-        <template v-else-if="modelSubTab === 'content' || !isFormEnabled">
+        <template v-else-if="modelSubTab === 'content' || !isCollection">
           <div v-if="modelContentLoading" class="space-y-3 p-5">
             <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
           </div>

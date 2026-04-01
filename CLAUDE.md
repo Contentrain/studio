@@ -210,9 +210,7 @@ High (deploy sonrası):
 - GDPR audit logging: no trail when form submissions are deleted
 
 Medium:
-- FormConfigSection UI: form toggle + exposed fields in model settings
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
-- Hardcoded strings: `useMembers.ts` has 8 toast messages not using `t()`
 - Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
 - Webhook dead-letter queue for permanently failed deliveries
 
