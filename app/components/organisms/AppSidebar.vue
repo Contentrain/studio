@@ -345,12 +345,17 @@ function onProjectDeleted() {
       <!-- User -->
       <div class="border-t border-secondary-100 px-2 py-2 dark:border-secondary-800/50">
         <div class="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-          <AtomsAvatar :src="authState.user?.avatarUrl" :name="authState.user?.email" size="sm" />
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
-              {{ authState.user?.email?.split('@')[0] }}
+          <NuxtLink
+            to="/settings"
+            class="flex min-w-0 flex-1 items-center gap-2.5 rounded-md transition-colors hover:bg-primary-50 dark:hover:bg-primary-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+          >
+            <AtomsAvatar :src="authState.user?.avatarUrl" :name="authState.user?.displayName || authState.user?.email" size="sm" />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
+                {{ authState.user?.displayName || authState.user?.email?.split('@')[0] }}
+              </div>
             </div>
-          </div>
+          </NuxtLink>
           <AtomsIconButton icon="icon-[annon--log-out]" :label="t('common.sign_out')" @click="signOut" />
         </div>
       </div>

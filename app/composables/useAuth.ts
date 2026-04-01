@@ -3,6 +3,7 @@ interface AuthUser {
   email: string | null
   avatarUrl: string | null
   provider: string | null
+  displayName: string | null
 }
 
 interface AuthState {
@@ -59,6 +60,22 @@ export function useAuth() {
     await router.push('/auth/login')
   }
 
+  async function refreshUser() {
+    try {
+      const { user } = await $fetch<{ user: AuthUser }>('/api/auth/me')
+      state.value.user = user
+    }
+    catch {
+      // Silently fail — stale display is acceptable
+    }
+  }
+
+  async function deleteAccount() {
+    await $fetch('/api/profile', { method: 'DELETE' })
+    state.value.user = null
+    await router.push('/auth/login')
+  }
+
   return {
     state: readonly(state),
     isAuthenticated,
@@ -66,5 +83,7 @@ export function useAuth() {
     signInWithOAuth,
     signInWithMagicLink,
     signOut,
+    refreshUser,
+    deleteAccount,
   }
 }

@@ -120,6 +120,8 @@
   "members.workspace_limit_reached": "Team member limit reached for your plan. Upgrade to invite more members.",
   "model.access_denied": "You don't have access to this model. Your role is restricted to specific models.",
   "model.not_found": "Content model not found. It may have been deleted or renamed.",
+  "profile.delete_failed": "Failed to delete account. Please try again or contact support.",
+  "profile.name_invalid": "Display name must be between 1 and 100 characters.",
   "project.config_not_found": "Project configuration file (.contentrain/config.json) not found in the repository.",
   "project.not_found": "Project not found or you don't have access.",
   "project.not_found_in_workspace": "Project not found in this workspace. It may have been moved or deleted.",

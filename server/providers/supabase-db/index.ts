@@ -18,6 +18,7 @@ import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
+import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
 import { webhookMethods } from './webhooks'
 import { workspaceMethods } from './workspaces'
@@ -26,6 +27,7 @@ export { createSupabaseAdminClient, createSupabaseUserClient } from '../supabase
 
 export function createSupabaseDatabaseProvider(): DatabaseProvider {
   return {
+    ...profileMethods(),
     ...workspaceMethods(),
     ...memberMethods(),
     ...conversationMethods(),

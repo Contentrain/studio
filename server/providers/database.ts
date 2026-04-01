@@ -50,6 +50,13 @@ export interface PaginationOptions {
 
 export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
+  // PROFILES
+  // ═══════════════════════════════════════════════════
+
+  getProfile: (accessToken: string, userId: string) => Promise<DatabaseRow | null>
+  updateProfile: (accessToken: string, userId: string, updates: { display_name?: string }) => Promise<DatabaseRow>
+
+  // ═══════════════════════════════════════════════════
   // WORKSPACES
   // ═══════════════════════════════════════════════════
 
