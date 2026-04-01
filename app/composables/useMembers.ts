@@ -57,12 +57,12 @@ export function useMembers() {
         method: 'POST',
         body: { email, role },
       })
-      toast.success(`Invited ${email}`)
+      toast.success(t('members.invite_success'))
       await fetchMembers(workspaceId)
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Invite failed')
+      toast.error(e instanceof Error ? e.message : t('members.invite_error'))
       return false
     }
   }
@@ -73,12 +73,12 @@ export function useMembers() {
         method: 'PATCH',
         body: { role },
       })
-      toast.success('Role updated')
+      toast.success(t('members.role_update_success'))
       await fetchMembers(workspaceId)
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Update failed')
+      toast.error(e instanceof Error ? e.message : t('members.role_update_error'))
       return false
     }
   }
@@ -88,12 +88,12 @@ export function useMembers() {
       await $fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
         method: 'DELETE',
       })
-      toast.success('Member removed')
+      toast.success(t('members.remove_success'))
       members.value = members.value.filter(m => m.id !== memberId)
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Remove failed')
+      toast.error(e instanceof Error ? e.message : t('members.remove_error'))
       return false
     }
   }
@@ -121,12 +121,12 @@ export function useMembers() {
         method: 'POST',
         body: { email, role },
       })
-      toast.success(`Assigned ${email} as ${role}`)
+      toast.success(t('members.assign_success'))
       await fetchProjectMembers(workspaceId, projectId)
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Assignment failed')
+      toast.error(e instanceof Error ? e.message : t('members.assign_error'))
       return false
     }
   }
@@ -136,12 +136,12 @@ export function useMembers() {
       await $fetch(`/api/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}`, {
         method: 'DELETE',
       })
-      toast.success('Project access removed')
+      toast.success(t('members.project_remove_success'))
       projectMembers.value = projectMembers.value.filter(m => m.id !== memberId)
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Remove failed')
+      toast.error(e instanceof Error ? e.message : t('members.project_remove_error'))
       return false
     }
   }
