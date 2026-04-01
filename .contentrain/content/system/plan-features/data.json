@@ -1,0 +1,412 @@
+{
+  "ai-agent": {
+    "category": "ai",
+    "enterprise_value": "true",
+    "key": "ai.agent",
+    "name": "AI Content Agent",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "ai-byoa": {
+    "category": "ai",
+    "enterprise_value": "true",
+    "key": "ai.byoa",
+    "name": "Bring Your Own API Key",
+    "pro_value": "true",
+    "sort_order": 2,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "ai-messages-per-month": {
+    "category": "ai",
+    "enterprise_value": "unlimited",
+    "key": "ai.messages_per_month",
+    "name": "AI Messages per Month",
+    "overage_price": 0.03,
+    "overage_unit": "per message",
+    "pro_value": "500",
+    "sort_order": 1,
+    "starter_value": "50",
+    "type": "limit"
+  },
+  "ai-studio-key": {
+    "category": "ai",
+    "enterprise_value": "true",
+    "key": "ai.studio_key",
+    "name": "Studio-Hosted AI Key",
+    "pro_value": "true",
+    "sort_order": 3,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "api-conversation": {
+    "category": "api",
+    "enterprise_value": "true",
+    "key": "api.conversation",
+    "name": "Conversation API",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "api-conversation-keys": {
+    "category": "api",
+    "enterprise_value": "unlimited",
+    "key": "api.conversation_keys",
+    "name": "Conversation API Keys",
+    "pro_value": "5",
+    "sort_order": 1,
+    "starter_value": "1",
+    "type": "limit"
+  },
+  "api-custom-instructions": {
+    "category": "api",
+    "enterprise_value": "true",
+    "key": "api.custom_instructions",
+    "name": "Custom AI Instructions",
+    "pro_value": "true",
+    "sort_order": 4,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "api-messages-per-month": {
+    "category": "api",
+    "enterprise_value": "unlimited",
+    "key": "api.messages_per_month",
+    "name": "API Messages per Month",
+    "overage_price": 0.05,
+    "overage_unit": "per message",
+    "pro_value": "1000",
+    "sort_order": 2,
+    "starter_value": "100",
+    "type": "limit"
+  },
+  "api-rest": {
+    "category": "api",
+    "enterprise_value": "true",
+    "key": "api.rest",
+    "name": "Content REST API",
+    "pro_value": "true",
+    "sort_order": 5,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "api-webhooks": {
+    "category": "api",
+    "enterprise_value": "unlimited",
+    "key": "api.webhooks",
+    "name": "Webhook Endpoints",
+    "pro_value": "10",
+    "sort_order": 3,
+    "starter_value": "3",
+    "type": "limit"
+  },
+  "api-webhooks-outbound": {
+    "category": "api",
+    "enterprise_value": "true",
+    "key": "api.webhooks_outbound",
+    "name": "Outbound Webhooks",
+    "pro_value": "true",
+    "sort_order": 6,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "cdn-api-keys": {
+    "category": "cdn",
+    "enterprise_value": "unlimited",
+    "key": "cdn.api_keys",
+    "name": "CDN API Keys",
+    "pro_value": "10",
+    "sort_order": 2,
+    "starter_value": "3",
+    "type": "limit"
+  },
+  "cdn-bandwidth-gb": {
+    "category": "cdn",
+    "enterprise_value": "unlimited",
+    "key": "cdn.bandwidth_gb",
+    "name": "CDN Bandwidth (GB)",
+    "overage_price": 0.1,
+    "overage_unit": "per GB",
+    "pro_value": "20",
+    "sort_order": 1,
+    "starter_value": "2",
+    "type": "limit"
+  },
+  "cdn-custom-domain": {
+    "category": "cdn",
+    "enterprise_value": "true",
+    "key": "cdn.custom_domain",
+    "name": "Custom CDN Domain",
+    "pro_value": "false",
+    "sort_order": 4,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "cdn-delivery": {
+    "category": "cdn",
+    "enterprise_value": "true",
+    "key": "cdn.delivery",
+    "name": "CDN Content Delivery",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "cdn-metering": {
+    "category": "cdn",
+    "enterprise_value": "true",
+    "key": "cdn.metering",
+    "name": "CDN Usage Metering",
+    "pro_value": "true",
+    "sort_order": 5,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "cdn-preview-branch": {
+    "category": "cdn",
+    "enterprise_value": "true",
+    "key": "cdn.preview_branch",
+    "name": "CDN Preview Branches",
+    "pro_value": "true",
+    "sort_order": 3,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "forms-auto-approve": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.auto_approve",
+    "name": "Auto-Approve Submissions",
+    "pro_value": "true",
+    "sort_order": 5,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "forms-captcha": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.captcha",
+    "name": "Captcha Protection",
+    "pro_value": "true",
+    "sort_order": 3,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "forms-enabled": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.enabled",
+    "name": "Forms & Submissions",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "forms-file-upload": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.file_upload",
+    "name": "Form File Upload",
+    "pro_value": "true",
+    "sort_order": 6,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "forms-models": {
+    "category": "forms",
+    "enterprise_value": "unlimited",
+    "key": "forms.models",
+    "name": "Form-Enabled Models",
+    "pro_value": "5",
+    "sort_order": 1,
+    "starter_value": "1",
+    "type": "limit"
+  },
+  "forms-notifications": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.notifications",
+    "name": "Submission Notifications",
+    "pro_value": "true",
+    "sort_order": 7,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "forms-spam-filter": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.spam_filter",
+    "name": "Spam Filter",
+    "pro_value": "true",
+    "sort_order": 8,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "forms-submissions-per-month": {
+    "category": "forms",
+    "enterprise_value": "unlimited",
+    "key": "forms.submissions_per_month",
+    "name": "Form Submissions per Month",
+    "overage_price": 0.01,
+    "overage_unit": "per submission",
+    "pro_value": "1000",
+    "sort_order": 2,
+    "starter_value": "100",
+    "type": "limit"
+  },
+  "forms-webhook-notification": {
+    "category": "forms",
+    "enterprise_value": "true",
+    "key": "forms.webhook_notification",
+    "name": "Form Webhook Notifications",
+    "pro_value": "true",
+    "sort_order": 4,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "media-custom-variants": {
+    "category": "media",
+    "enterprise_value": "true",
+    "key": "media.custom_variants",
+    "name": "Custom Image Variants",
+    "pro_value": "true",
+    "sort_order": 4,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "media-library": {
+    "category": "media",
+    "enterprise_value": "true",
+    "key": "media.library",
+    "name": "Asset Manager",
+    "pro_value": "true",
+    "sort_order": 5,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "media-max-file-size-mb": {
+    "category": "media",
+    "enterprise_value": "100",
+    "key": "media.max_file_size_mb",
+    "name": "Max File Size (MB)",
+    "pro_value": "50",
+    "sort_order": 2,
+    "starter_value": "5",
+    "type": "limit"
+  },
+  "media-storage-gb": {
+    "category": "media",
+    "enterprise_value": "100",
+    "key": "media.storage_gb",
+    "name": "Media Storage (GB)",
+    "overage_price": 0.25,
+    "overage_unit": "per GB/month",
+    "pro_value": "5",
+    "sort_order": 1,
+    "starter_value": "1",
+    "type": "limit"
+  },
+  "media-upload": {
+    "category": "media",
+    "enterprise_value": "true",
+    "key": "media.upload",
+    "name": "Media Upload",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "media-variants-per-field": {
+    "category": "media",
+    "enterprise_value": "unlimited",
+    "key": "media.variants_per_field",
+    "name": "Variants per Field",
+    "pro_value": "10",
+    "sort_order": 3,
+    "starter_value": "4",
+    "type": "limit"
+  },
+  "roles-reviewer": {
+    "category": "roles",
+    "enterprise_value": "true",
+    "key": "roles.reviewer",
+    "name": "Reviewer Role",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "roles-specific-models": {
+    "category": "roles",
+    "enterprise_value": "true",
+    "key": "roles.specific_models",
+    "name": "Model-Specific Access",
+    "pro_value": "true",
+    "sort_order": 2,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "roles-viewer": {
+    "category": "roles",
+    "enterprise_value": "true",
+    "key": "roles.viewer",
+    "name": "Viewer Role",
+    "pro_value": "true",
+    "sort_order": 1,
+    "starter_value": "true",
+    "type": "feature"
+  },
+  "sso-oidc": {
+    "category": "enterprise",
+    "enterprise_value": "true",
+    "key": "sso.oidc",
+    "name": "OIDC Single Sign-On",
+    "pro_value": "false",
+    "sort_order": 1,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "sso-saml": {
+    "category": "enterprise",
+    "enterprise_value": "true",
+    "key": "sso.saml",
+    "name": "SAML Single Sign-On",
+    "pro_value": "false",
+    "sort_order": 0,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "team-members": {
+    "category": "roles",
+    "enterprise_value": "unlimited",
+    "key": "team.members",
+    "name": "Team Members",
+    "pro_value": "25",
+    "sort_order": 3,
+    "starter_value": "3",
+    "type": "limit"
+  },
+  "white-label": {
+    "category": "enterprise",
+    "enterprise_value": "true",
+    "key": "branding.white_label",
+    "name": "White-Label Branding",
+    "pro_value": "false",
+    "sort_order": 2,
+    "starter_value": "false",
+    "type": "feature"
+  },
+  "workflow-review": {
+    "category": "workflow",
+    "enterprise_value": "true",
+    "key": "workflow.review",
+    "name": "Review Workflow",
+    "pro_value": "true",
+    "sort_order": 0,
+    "starter_value": "true",
+    "type": "feature"
+  }
+}

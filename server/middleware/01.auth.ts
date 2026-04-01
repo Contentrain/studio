@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   '/api/health',
   '/api/webhooks/',
   '/api/cdn/',
+  '/api/billing/webhook',
 ]
 
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures

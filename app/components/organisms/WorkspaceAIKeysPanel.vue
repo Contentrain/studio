@@ -83,12 +83,12 @@ async function handleDeleteAIKey(keyId: string) {
         <AtomsIconButton icon="icon-[annon--trash]" label="Delete" size="sm" @click="handleDeleteAIKey(key.id)" />
       </li>
     </ul>
-    <div v-else-if="canByoa">
+    <div v-else>
       <AtomsEmptyState icon="icon-[annon--key]" :title="t('ai_keys.no_keys')" :description="t('ai_keys.no_keys_description')" />
     </div>
 
     <!-- Add key form -->
-    <form v-if="canByoa" class="space-y-3" @submit.prevent="handleSaveAIKey">
+    <form class="space-y-3" @submit.prevent="handleSaveAIKey">
       <div>
         <div class="flex items-center gap-1">
           <AtomsFormLabel :text="t('ai_keys.provider')" size="sm" />

@@ -93,7 +93,7 @@ describe('magic link and AI key route integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({
       from: vi.fn((table: string) => {
@@ -103,7 +103,7 @@ describe('magic link and AI key route integration', () => {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({ data: { plan: 'free' } }),
+              single: vi.fn().mockResolvedValue({ data: { plan: 'starter' } }),
             })),
           })),
         }

@@ -66,10 +66,6 @@ const roleVariant: Record<string, 'info' | 'primary' | 'warning'> = {
 async function loadKeys() {
   if (!props.workspaceId || !props.projectId) return
   loading.value = true
-  if (!hasPlan.value) {
-    loading.value = false
-    return
-  }
   try {
     keys.value = await $fetch<ConversationKey[]>(
       `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/conversation-keys`,

@@ -62,7 +62,7 @@ describe('project content and review e2e', () => {
 
     await mockProjectShell(page, {
       role: 'member',
-      plan: 'business',
+      plan: 'pro',
       brainSync: {
         treeSha: 'tree-1',
         delta: false,
@@ -118,7 +118,7 @@ describe('project content and review e2e', () => {
 
     await mockProjectShell(page, {
       role: 'owner',
-      plan: 'business',
+      plan: 'pro',
       brainSync: {
         treeSha: 'tree-2',
         delta: false,
@@ -195,7 +195,7 @@ describe('project content and review e2e', () => {
 
     await mockProjectShell(page, {
       role: 'owner',
-      plan: 'business',
+      plan: 'pro',
       branches: [{
         name: 'cr/content/posts/en/1234567890-review',
         sha: 'abc123',

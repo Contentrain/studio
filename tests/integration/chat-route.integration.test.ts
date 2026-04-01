@@ -31,11 +31,11 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
-      workspace: { id: 'workspace-1', plan: 'free' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
       git: createGitStub(),
       contentRoot: '',
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: [],
@@ -128,11 +128,11 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
-      workspace: { id: 'workspace-1', plan: 'free' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
       git: createGitStub(),
       contentRoot: '',
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['get_content'],
@@ -211,11 +211,11 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
-      workspace: { id: 'workspace-1', plan: 'free' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
       git: createGitStub(),
       contentRoot: '',
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
     vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
       allowed: false,
@@ -252,11 +252,11 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
-      workspace: { id: 'workspace-1', plan: 'free' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
       git: createGitStub(),
       contentRoot: '',
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['get_content'],
@@ -308,11 +308,11 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
-      workspace: { id: 'workspace-1', plan: 'free' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
       git: createGitStub(),
       contentRoot: '',
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(Infinity))
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['get_content'],

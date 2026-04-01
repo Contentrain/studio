@@ -1,5 +1,10 @@
 <script setup lang="ts">
 const contextOpen = ref(true)
+const planModalOpen = ref(false)
+
+const { activeWorkspace } = useWorkspaces()
+
+const trialEndsAt = computed(() => (activeWorkspace.value as { trial_ends_at?: string } | null)?.trial_ends_at ?? null)
 
 function toggleContext() {
   contextOpen.value = !contextOpen.value
@@ -19,8 +24,18 @@ provide('contextPanel', { open: contextOpen, toggle: toggleContext })
 
     <!-- Main -->
     <main class="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <MoleculesTrialBanner
+        :trial-ends-at="trialEndsAt"
+        @choose-plan="planModalOpen = true"
+      />
       <slot />
     </main>
+
+    <!-- Plan selection modal (triggered from trial banner) -->
+    <OrganismsPlanSelectionModal
+      :open="planModalOpen"
+      @update:open="planModalOpen = $event"
+    />
 
     <!-- Context panel -->
     <aside

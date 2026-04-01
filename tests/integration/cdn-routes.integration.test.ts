@@ -216,11 +216,11 @@ describe('CDN route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_enabled: true }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
-      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'free' }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'starter' }),
       updateProject: vi.fn(),
     }))
 

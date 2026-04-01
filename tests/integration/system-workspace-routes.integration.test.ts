@@ -39,8 +39,8 @@ describe('system and workspace route integration', () => {
 
   it('lists the authenticated user workspaces', async () => {
     const listUserWorkspaces = vi.fn().mockResolvedValue([
-      { id: 'workspace-1', slug: 'acme', plan: 'business' },
-      { id: 'workspace-2', slug: 'docs', plan: 'free' },
+      { id: 'workspace-1', slug: 'acme', plan: 'pro' },
+      { id: 'workspace-2', slug: 'docs', plan: 'starter' },
     ])
 
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
@@ -55,8 +55,8 @@ describe('system and workspace route integration', () => {
     const result = await handler({} as never)
 
     expect(result).toEqual([
-      { id: 'workspace-1', slug: 'acme', plan: 'business' },
-      { id: 'workspace-2', slug: 'docs', plan: 'free' },
+      { id: 'workspace-1', slug: 'acme', plan: 'pro' },
+      { id: 'workspace-2', slug: 'docs', plan: 'starter' },
     ])
     expect(listUserWorkspaces).toHaveBeenCalledWith('token-1', 'user-1')
   })
@@ -124,26 +124,22 @@ describe('system and workspace route integration', () => {
     })
   })
 
-  it('creates secondary workspaces when the plan limit allows it', async () => {
-    const listUserWorkspaces = vi.fn().mockResolvedValue([
-      { id: 'ws-primary', plan: 'business' },
-    ])
+  it('creates secondary workspaces with trial period', async () => {
     const createWorkspace = vi.fn().mockResolvedValue({
       id: 'workspace-2',
       slug: 'acme-team',
       type: 'secondary',
     })
+    const updateWorkspace = vi.fn().mockResolvedValue({})
 
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
     vi.stubGlobal('slugify', vi.fn().mockReturnValue('acme-team'))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('business'))
-    vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(5))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      listUserWorkspaces,
       createWorkspace,
+      updateWorkspace,
     }))
     vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
       name: 'Acme Team',
@@ -158,13 +154,18 @@ describe('system and workspace route integration', () => {
       slug: 'acme-team',
       type: 'secondary',
     })
-    expect(listUserWorkspaces).toHaveBeenCalledWith('token-1', 'user-1')
     expect(createWorkspace).toHaveBeenCalledWith('token-1', {
       ownerId: 'user-1',
       name: 'Acme Team',
       slug: 'acme-team',
       type: 'secondary',
     })
+    // Trial period should be set on new workspace
+    expect(updateWorkspace).toHaveBeenCalledWith(
+      'token-1',
+      'workspace-2',
+      expect.objectContaining({ trial_ends_at: expect.any(String) }),
+    )
   })
 
   it('blocks workspace-owner removal', async () => {

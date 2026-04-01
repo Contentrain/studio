@@ -122,7 +122,7 @@ describe('buildSystemPrompt', () => {
         inferred: {},
       },
       null,
-      'free',
+      'starter',
     )
 
     expect(prompt).toContain('[prompt:state.needs_init]')

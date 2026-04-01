@@ -44,9 +44,9 @@ describe('content route integration', () => {
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},
       contentRoot: '',
-      workspace: { plan: 'free' },
+      workspace: { plan: 'starter' },
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'auto-merge' } }))
     vi.stubGlobal('invalidateBrainCache', vi.fn())

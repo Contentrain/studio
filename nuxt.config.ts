@@ -35,6 +35,12 @@ export default defineNuxtConfig({
     resend: {
       apiKey: '', // NUXT_RESEND_API_KEY
     },
+    stripe: {
+      secretKey: '', // NUXT_STRIPE_SECRET_KEY
+      webhookSecret: '', // NUXT_STRIPE_WEBHOOK_SECRET
+      starterPriceId: '', // NUXT_STRIPE_STARTER_PRICE_ID
+      proPriceId: '', // NUXT_STRIPE_PRO_PRICE_ID
+    },
     public: {
       siteUrl: 'http://localhost:3000',
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
