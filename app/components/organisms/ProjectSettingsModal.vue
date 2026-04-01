@@ -12,7 +12,7 @@ const props = defineProps<{
   workspaceId: string
   projectId: string
   projectName?: string
-  initialTab?: 'general' | 'api' | 'webhooks'
+  initialTab?: 'general' | 'api' | 'webhooks' | 'danger'
   config?: {
     workflow?: string
     stack?: string
@@ -29,7 +29,7 @@ const emit = defineEmits<{
 const { deleteProject } = useProjects()
 const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
-const activeTab = ref<'general' | 'api' | 'webhooks'>(props.initialTab ?? 'general')
+const activeTab = ref<'general' | 'api' | 'webhooks' | 'danger'>(props.initialTab ?? 'general')
 
 // Sync tab when initialTab prop changes (e.g. from command palette)
 watch(() => props.initialTab, (tab) => {
@@ -153,7 +153,7 @@ async function save() {
         class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out"
       />
       <DialogContent
-        class="fixed left-1/2 top-1/2 z-50 flex w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-secondary-200 bg-white shadow-xl max-h-[85vh] dark:border-secondary-800 dark:bg-secondary-950"
+        class="fixed left-1/2 top-1/2 z-50 flex w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-secondary-200 bg-white shadow-xl h-[80vh] dark:border-secondary-800 dark:bg-secondary-950"
         @interact-outside.prevent
       >
         <!-- Header -->
@@ -186,6 +186,7 @@ async function save() {
             { value: 'general', label: t('project_settings.general') },
             { value: 'api', label: t('conversation_keys.title') },
             { value: 'webhooks', label: t('webhooks.title') },
+            { value: 'danger', label: t('danger_zone.title') },
           ]"
         />
 
@@ -196,7 +197,7 @@ async function save() {
             <section aria-labelledby="section-workflow">
               <div class="flex items-start gap-3">
                 <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 dark:bg-primary-900/20">
-                  <span class="icon-[annon--flash] size-4 text-primary-500" aria-hidden="true" />
+                  <span class="icon-[annon--lightning] size-4 text-primary-500" aria-hidden="true" />
                 </div>
                 <div class="min-w-0 flex-1">
                   <h3 id="section-workflow" class="text-sm font-semibold text-heading dark:text-secondary-100">
@@ -229,7 +230,7 @@ async function save() {
                     <div v-if="workflow === 'auto-merge'" class="size-2 rounded-full bg-primary-500 dark:bg-primary-400" />
                   </div>
                   <span
-                    class="icon-[annon--flash] size-5"
+                    class="icon-[annon--lightning] size-5"
                     :class="workflow === 'auto-merge' ? 'text-primary-500 dark:text-primary-400' : 'text-muted'"
                     aria-hidden="true"
                   />
@@ -456,29 +457,6 @@ async function save() {
           </div>
         </div>
 
-        <!-- Danger Zone (general tab only, pinned below scroll) -->
-        <div
-          v-if="activeTab === 'general'"
-          class="shrink-0 border-t border-danger-200 bg-danger-50/50 px-6 py-4 dark:border-danger-500/20 dark:bg-danger-500/5"
-        >
-          <div class="flex items-center justify-between gap-4">
-            <div class="flex min-w-0 flex-1 items-center gap-3">
-              <span class="icon-[annon--alert-triangle] size-4 shrink-0 text-danger-500" aria-hidden="true" />
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-medium text-danger-700 dark:text-danger-400">
-                  {{ t('danger_zone.project_delete_title') }}
-                </p>
-                <p class="mt-0.5 text-xs text-danger-600/70 dark:text-danger-400/70">
-                  {{ t('danger_zone.project_delete_description') }}
-                </p>
-              </div>
-            </div>
-            <AtomsBaseButton variant="danger" size="sm" class="shrink-0" @click="deleteConfirmOpen = true">
-              {{ t('danger_zone.project_delete_button') }}
-            </AtomsBaseButton>
-          </div>
-        </div>
-
         <!-- Conversation API Keys -->
         <div v-else-if="activeTab === 'api'" class="flex-1 overflow-y-auto">
           <OrganismsConversationKeysPanel
@@ -493,6 +471,36 @@ async function save() {
             :workspace-id="workspaceId"
             :project-id="projectId"
           />
+        </div>
+
+        <!-- Danger Zone -->
+        <div v-else-if="activeTab === 'danger'" class="flex-1 overflow-y-auto px-6 py-5">
+          <div class="flex items-start gap-3">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-danger-50 dark:bg-danger-900/20">
+              <span class="icon-[annon--alert-triangle] size-4 text-danger-500" aria-hidden="true" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <h3 class="text-sm font-semibold text-danger-700 dark:text-danger-400">
+                {{ t('danger_zone.project_delete_title') }}
+              </h3>
+              <p class="mt-0.5 text-xs text-muted">
+                {{ t('danger_zone.project_delete_description') }}
+              </p>
+            </div>
+          </div>
+          <div class="mt-4 flex items-center justify-between rounded-lg border border-danger-200 px-4 py-3 dark:border-danger-500/20">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-heading dark:text-secondary-100">
+                {{ projectName }}
+              </p>
+              <p class="mt-0.5 text-xs text-muted">
+                {{ t('danger_zone.project_delete_description') }}
+              </p>
+            </div>
+            <AtomsBaseButton variant="danger" size="sm" class="ml-4 shrink-0" @click="deleteConfirmOpen = true">
+              {{ t('danger_zone.project_delete_button') }}
+            </AtomsBaseButton>
+          </div>
         </div>
 
         <!-- Footer (general tab only) -->
