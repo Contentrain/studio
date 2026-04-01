@@ -13,7 +13,7 @@ describe('useWorkspaces', () => {
     localStorage.setItem('cr-active-workspace', 'workspace-2')
     useState('active-workspace-id').value = 'workspace-2'
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([
-      { id: 'workspace-1', name: 'Primary', slug: 'primary', type: 'primary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'free', created_at: '2026-03-25T00:00:00.000Z' },
+      { id: 'workspace-1', name: 'Primary', slug: 'primary', type: 'primary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'starter', created_at: '2026-03-25T00:00:00.000Z' },
       { id: 'workspace-2', name: 'Team', slug: 'team', type: 'secondary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'pro', created_at: '2026-03-25T00:00:00.000Z' },
     ]))
 
@@ -27,7 +27,7 @@ describe('useWorkspaces', () => {
     localStorage.setItem('cr-active-workspace', 'missing-workspace')
     useState('active-workspace-id').value = 'missing-workspace'
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([
-      { id: 'workspace-1', name: 'Primary', slug: 'primary', type: 'primary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'free', created_at: '2026-03-25T00:00:00.000Z' },
+      { id: 'workspace-1', name: 'Primary', slug: 'primary', type: 'primary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'starter', created_at: '2026-03-25T00:00:00.000Z' },
       { id: 'workspace-2', name: 'Team', slug: 'team', type: 'secondary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'pro', created_at: '2026-03-25T00:00:00.000Z' },
     ]))
 
@@ -57,7 +57,7 @@ describe('useWorkspaces', () => {
         owner_id: 'user-1',
         logo_url: null,
         github_installation_id: null,
-        plan: 'free',
+        plan: 'starter',
         created_at: '2026-03-25T00:00:00.000Z',
         workspace_members: [{ role: 'admin' }],
       },

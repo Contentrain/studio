@@ -62,10 +62,6 @@ const copied = ref(false)
 async function loadWebhooks() {
   if (!props.workspaceId || !props.projectId) return
   loading.value = true
-  if (!hasPlan.value) {
-    loading.value = false
-    return
-  }
   try {
     webhooks.value = await $fetch<Webhook[]>(
       `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/webhooks`,

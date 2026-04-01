@@ -9,21 +9,18 @@ export default defineEventHandler(async (event) => {
   if (!body.name || !body.slug)
     throw createError({ statusCode: 400, message: errorMessage('validation.name_slug_required') })
 
-  // Workspace count limit — check user's current plan (from primary workspace)
-  const existingWorkspaces = await db.listUserWorkspaces(session.accessToken, session.user.id)
-  if (existingWorkspaces.length > 0) {
-    const primaryWs = existingWorkspaces[0] as { plan?: string }
-    const plan = getWorkspacePlan(primaryWs)
-    const limit = getPlanLimit(plan, 'workspace.count')
-    if (existingWorkspaces.length >= limit)
-      throw createError({ statusCode: 403, message: errorMessage('workspace.limit_reached', { limit }) })
-  }
-
   // Owner is auto-added as workspace member via DB trigger
-  return db.createWorkspace(session.accessToken, {
+  // New workspaces start with a 14-day trial
+  const workspace = await db.createWorkspace(session.accessToken, {
     ownerId: session.user.id,
     name: body.name,
     slug: slugify(body.slug),
     type: 'secondary',
   })
+
+  // Set trial period
+  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+  await db.updateWorkspace(session.accessToken, (workspace as { id: string }).id, { trial_ends_at: trialEndsAt })
+
+  return workspace
 })

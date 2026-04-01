@@ -45,7 +45,7 @@ describe('auth callback e2e', () => {
       owner_id: 'user-1',
       logo_url: null,
       github_installation_id: 42,
-      plan: 'business',
+      plan: 'pro',
       created_at: '2026-03-25T00:00:00.000Z',
       workspace_members: [{ role: 'owner' }],
     }]))
@@ -129,7 +129,7 @@ describe('auth callback e2e', () => {
       owner_id: 'user-1',
       logo_url: null,
       github_installation_id: null,
-      plan: 'free',
+      plan: 'starter',
       created_at: '2026-03-25T00:00:00.000Z',
       workspace_members: [{ role: 'owner' }],
     }]))

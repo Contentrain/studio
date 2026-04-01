@@ -41,7 +41,7 @@ function togglePin(asset: { id: string, filename: string, originalPath: string, 
 }
 
 onMounted(() => {
-  if (isPro.value) fetchAssets(props.workspaceId, props.projectId)
+  fetchAssets(props.workspaceId, props.projectId)
 })
 
 let searchTimeout: ReturnType<typeof setTimeout>

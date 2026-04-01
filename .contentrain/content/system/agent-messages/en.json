@@ -35,6 +35,6 @@
   "model.deleted": "Model and all its content deleted.",
   "search.no_results": "No matching content found. Try different keywords or check the model name.",
   "upgrade.alternative": "In the meantime, here's what you can do on your current plan:",
-  "upgrade.free_to_pro": "This feature is available on the Pro plan ($12/mo). Pro includes CDN delivery, Asset Manager with image optimization, review workflow, and 500 AI messages/month. You can upgrade in your workspace settings.",
-  "upgrade.pro_to_team": "This feature is available on the Team plan ($29/mo + seats). Team includes Conversation API for bot integration, REST API, outbound webhooks, and custom AI instructions. You can upgrade in your workspace settings."
+  "upgrade.limit_reached": "You've reached the {resource} limit for your {plan} plan ({limit}). Upgrade to increase your limits, or usage will be billed at the overage rate.",
+  "upgrade.starter_to_pro": "Upgrade to Pro ($29/mo) for higher limits: 500 AI messages, 20GB CDN, 5GB media, 25 team members, and advanced features like custom variants and model-specific access."
 }

@@ -71,7 +71,7 @@ describe('cdn panel e2e', () => {
 
     await mockProjectShell(page, {
       role: 'member',
-      plan: 'business',
+      plan: 'pro',
       cdnEnabled: true,
     })
 
@@ -93,7 +93,7 @@ describe('cdn panel e2e', () => {
 
     await mockProjectShell(page, {
       role: 'owner',
-      plan: 'business',
+      plan: 'pro',
       cdnEnabled: false,
     })
 

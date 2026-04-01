@@ -38,10 +38,6 @@ const buildStatusVariant: Record<string, 'success' | 'danger' | 'warning' | 'sec
 async function loadCDNData() {
   if (!props.workspaceId || !props.projectId) return
   loading.value = true
-  if (!isPro.value) {
-    loading.value = false
-    return
-  }
   try {
     const requests = [
       $fetch<{ cdn_enabled: boolean, cdn_branch: string | null }>(

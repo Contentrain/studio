@@ -60,7 +60,7 @@ describe('member routes', () => {
             select: vi.fn(() => ({
               eq: vi.fn(() => ({
                 single: vi.fn().mockResolvedValue({
-                  data: { plan: 'free', name: 'Acme', slug: 'acme' },
+                  data: { plan: 'starter', name: 'Acme', slug: 'acme' },
                 }),
               })),
             })),
@@ -102,7 +102,7 @@ describe('member routes', () => {
     }
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       listWorkspaceMembers: vi.fn().mockResolvedValue([{ id: 'member-1' }]),
-      getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'free', name: 'Acme', slug: 'acme' }),
+      getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'starter', name: 'Acme', slug: 'acme' }),
       createWorkspaceMember: vi.fn().mockResolvedValue({ id: 'member-2' }),
       updateWorkspaceMemberRole: vi.fn().mockResolvedValue({ id: 'member-3', role: 'admin' }),
       deleteWorkspaceMember: vi.fn().mockResolvedValue(undefined),
@@ -115,7 +115,7 @@ describe('member routes', () => {
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
       listProjectMembers: vi.fn().mockResolvedValue([{ id: 'project-member-1' }]),
       getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
-      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'free', name: 'Acme', slug: 'acme' }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'starter', name: 'Acme', slug: 'acme' }),
       ensureWorkspaceMember: vi.fn().mockResolvedValue(undefined),
       createProjectMember: vi.fn().mockResolvedValue({
         id: 'project-member-1',
@@ -132,7 +132,7 @@ describe('member routes', () => {
       remaining: 2,
       retryAfterMs: 0,
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(2))
     vi.stubGlobal('inviteOrLookupUser', vi.fn().mockResolvedValue({ userId: 'user-2', isNewUser: true }))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
@@ -172,7 +172,7 @@ describe('member routes', () => {
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       listWorkspaceMembers: vi.fn().mockResolvedValue([{ id: '1' }, { id: '2' }]),
-      getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'free', name: 'Acme', slug: 'acme' }),
+      getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'starter', name: 'Acme', slug: 'acme' }),
       createWorkspaceMember: vi.fn(),
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
     }))

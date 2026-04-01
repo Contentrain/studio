@@ -49,9 +49,9 @@ describe('resolveAgentPermissions', () => {
   it('degrades reviewer and disables specificModels on free plan', async () => {
     setEnterpriseBridgeForTesting({
       normalizeProjectMemberAccess: ({ plan, role, specificModels, allowedModels }) => ({
-        role: plan === 'free' && role !== 'editor' ? 'editor' : (role ?? 'editor'),
-        specificModels: plan === 'free' ? false : !!specificModels,
-        allowedModels: plan === 'free' ? [] : (allowedModels ?? []),
+        role: plan === 'starter' && role !== 'editor' ? 'editor' : (role ?? 'editor'),
+        specificModels: plan === 'starter' ? false : !!specificModels,
+        allowedModels: plan === 'starter' ? [] : (allowedModels ?? []),
       }),
     } as never)
     vi.stubGlobal('useDatabaseProvider', () => createMockDatabaseProvider({
@@ -61,7 +61,7 @@ describe('resolveAgentPermissions', () => {
         specific_models: true,
         allowed_models: ['faq', 'docs'],
       },
-      workspace: { plan: 'free' },
+      workspace: { plan: 'starter' },
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')
@@ -88,7 +88,7 @@ describe('resolveAgentPermissions', () => {
         specific_models: true,
         allowed_models: ['faq', 'docs'],
       },
-      workspace: { plan: 'business' },
+      workspace: { plan: 'pro' },
     }))
 
     const permissions = await resolveAgentPermissions('user-1', 'ws-1', 'project-1', 'token')

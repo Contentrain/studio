@@ -1,0 +1,44 @@
+{
+  "enterprise": {
+    "ai_model_tier": "custom",
+    "badge_text": "Enterprise",
+    "cta_text": "Contact Sales",
+    "description": "Custom limits, SSO, white-label branding, and dedicated support for organizations.",
+    "has_trial": false,
+    "is_highlighted": false,
+    "name": "Enterprise",
+    "price_monthly": 0,
+    "price_per_seat": 0,
+    "seats_included": 0,
+    "slug": "enterprise",
+    "sort_order": 2
+  },
+  "pro": {
+    "ai_model_tier": "sonnet",
+    "badge_text": "Pro — $29/mo",
+    "cta_text": "Start free trial",
+    "description": "For teams that need collaboration, automation, and higher usage limits.",
+    "has_trial": true,
+    "is_highlighted": true,
+    "name": "Pro",
+    "price_monthly": 29,
+    "price_per_seat": 9,
+    "seats_included": 10,
+    "slug": "pro",
+    "sort_order": 1
+  },
+  "starter": {
+    "ai_model_tier": "haiku",
+    "badge_text": "Starter — $9/mo",
+    "cta_text": "Start free trial",
+    "description": "For solo developers and small projects with AI-powered content management.",
+    "has_trial": true,
+    "is_highlighted": false,
+    "name": "Starter",
+    "price_monthly": 9,
+    "price_per_seat": 0,
+    "seats_included": 3,
+    "slug": "starter",
+    "sort_order": 0
+  }
+}

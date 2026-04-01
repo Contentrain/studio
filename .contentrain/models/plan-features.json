@@ -1,0 +1,73 @@
+{
+  "description": "Feature flags, usage limits, and overage pricing per plan",
+  "domain": "system",
+  "fields": {
+    "category": {
+      "description": "Feature category for grouping in pricing UI",
+      "options": [
+        "ai",
+        "cdn",
+        "media",
+        "forms",
+        "api",
+        "workflow",
+        "roles",
+        "enterprise"
+      ],
+      "required": true,
+      "type": "select"
+    },
+    "enterprise_value": {
+      "description": "Enterprise plan value (number for limits, true/false for features, unlimited for Infinity)",
+      "required": true,
+      "type": "string"
+    },
+    "key": {
+      "description": "Dot-notation key used in hasFeature() and getPlanLimit() (e.g. cdn.delivery, ai.messages_per_month)",
+      "required": true,
+      "type": "string",
+      "unique": true
+    },
+    "name": {
+      "description": "Human-readable feature or limit name",
+      "required": true,
+      "type": "string"
+    },
+    "overage_price": {
+      "description": "Per-unit overage price in USD (null if not applicable)",
+      "type": "number"
+    },
+    "overage_unit": {
+      "description": "Overage billing unit (e.g. per message, per GB, per submission)",
+      "type": "string"
+    },
+    "pro_value": {
+      "description": "Pro plan value",
+      "required": true,
+      "type": "string"
+    },
+    "sort_order": {
+      "description": "Display order within category",
+      "required": true,
+      "type": "integer"
+    },
+    "starter_value": {
+      "description": "Starter plan value",
+      "required": true,
+      "type": "string"
+    },
+    "type": {
+      "description": "Whether this entry is a boolean feature flag or a numeric limit",
+      "options": [
+        "feature",
+        "limit"
+      ],
+      "required": true,
+      "type": "select"
+    }
+  },
+  "i18n": false,
+  "id": "plan-features",
+  "kind": "collection",
+  "name": "Plan Features"
+}

@@ -1,0 +1,70 @@
+{
+  "description": "Subscription plans with pricing, seat limits, and trial availability",
+  "domain": "system",
+  "fields": {
+    "ai_model_tier": {
+      "description": "Default AI model tier for this plan (e.g. haiku, sonnet)",
+      "required": true,
+      "type": "string"
+    },
+    "badge_text": {
+      "description": "Short label shown in upgrade badges (e.g. Pro — $29/mo)",
+      "required": true,
+      "type": "string"
+    },
+    "cta_text": {
+      "description": "Call-to-action button text (e.g. Start free trial)",
+      "required": true,
+      "type": "string"
+    },
+    "description": {
+      "description": "One-line plan description for pricing UI",
+      "required": true,
+      "type": "text"
+    },
+    "has_trial": {
+      "default": false,
+      "description": "Whether this plan offers a 14-day free trial",
+      "type": "boolean"
+    },
+    "is_highlighted": {
+      "default": false,
+      "description": "Visually highlight this plan in pricing UI (e.g. most popular)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Display name of the plan",
+      "required": true,
+      "type": "string"
+    },
+    "price_monthly": {
+      "description": "Base monthly price in USD (0 for custom pricing)",
+      "required": true,
+      "type": "number"
+    },
+    "price_per_seat": {
+      "description": "Additional cost per extra seat in USD (0 if no per-seat billing)",
+      "type": "number"
+    },
+    "seats_included": {
+      "description": "Number of seats included in base price",
+      "required": true,
+      "type": "integer"
+    },
+    "slug": {
+      "description": "Plan identifier used in database and code",
+      "required": true,
+      "type": "slug",
+      "unique": true
+    },
+    "sort_order": {
+      "description": "Display order in pricing UI (0 = first)",
+      "required": true,
+      "type": "integer"
+    }
+  },
+  "i18n": true,
+  "id": "plans",
+  "kind": "collection",
+  "name": "Plans"
+}

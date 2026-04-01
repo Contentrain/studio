@@ -50,14 +50,8 @@ export function checkRateLimit(
 
 /**
  * Plan-based monthly message limits.
- * Returns max messages per month for each plan.
+ * Delegates to the single source of truth in shared/utils/license.ts.
  */
 export function getMonthlyMessageLimit(plan: string): number {
-  switch (plan) {
-    case 'enterprise': return Infinity
-    case 'business': return 5000
-    case 'pro': return 2000
-    case 'free':
-    default: return 50
-  }
+  return getPlanLimit(plan, 'ai.messages_per_month')
 }

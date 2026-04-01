@@ -34,7 +34,7 @@ describe('project config and branch route integration', () => {
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
-      getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'workspace-1', plan: 'free', github_installation_id: 123 }),
+      getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'workspace-1', plan: 'starter', github_installation_id: 123 }),
       checkDuplicateProject: vi.fn().mockResolvedValue(false),
       createProject: vi.fn().mockResolvedValue({ id: 'project-1', status: 'setup', content_root: '/' }),
     }))
@@ -123,7 +123,7 @@ describe('project config and branch route integration', () => {
         commitFiles,
       },
       contentRoot: '',
-      workspace: { plan: 'business' },
+      workspace: { plan: 'pro' },
     }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('business'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
