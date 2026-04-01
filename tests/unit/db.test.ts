@@ -26,6 +26,15 @@ describe('db helpers', () => {
         detected_stack: 'nuxt',
         status: 'active',
       }),
+      getProjectById: vi.fn().mockResolvedValue({
+        id: 'project-1',
+        repo_full_name: 'contentrain/studio',
+        content_root: '/apps/web/',
+        workspace_id: 'workspace-1',
+        default_branch: 'main',
+        detected_stack: 'nuxt',
+        status: 'active',
+      }),
       getWorkspaceById: vi.fn().mockResolvedValue({
         id: 'workspace-1',
         github_installation_id: 123,
@@ -55,7 +64,7 @@ describe('db helpers', () => {
     expect(result.contentRoot).toBe('apps/web')
     expect(result.git).toBe(git)
     expect(result.workspace.id).toBe('workspace-1')
-    expect(mockDb.getProjectForWorkspace).toHaveBeenCalledWith('', 'workspace-1', 'project-1', expect.any(String))
+    expect(mockDb.getProjectById).toHaveBeenCalledWith('project-1', expect.any(String))
   })
 
   it('saves chat results via provider methods', async () => {
