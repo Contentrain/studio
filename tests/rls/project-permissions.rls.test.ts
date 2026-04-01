@@ -117,7 +117,7 @@ insert into public.profiles (id, display_name, email) values
   ('${ids.outsider}', 'Outsider', 'outsider@example.com');
 
 insert into public.workspaces (id, name, slug, type, owner_id, plan) values
-  ('${ids.workspace}', 'Studio', 'studio', 'primary', '${ids.owner}', 'team');
+  ('${ids.workspace}', 'Studio', 'studio', 'primary', '${ids.owner}', 'pro');
 
 insert into public.workspace_members (workspace_id, user_id, role, accepted_at) values
   ('${ids.workspace}', '${ids.member}', 'member', now());
