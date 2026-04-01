@@ -53,8 +53,6 @@ const activeBranch = computed(() => {
 })
 const isCDNActive = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
 const isAssetsActive = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
-const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
-const hasMedia = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
 const { healthScore } = useProjectHealth()
 
 // Fetch branches when project/workspace context becomes available.
@@ -223,29 +221,17 @@ function onProjectDeleted() {
             :active="isVocabularyActive" :count="vocabularyCount" compact @click="selectVocabulary"
           />
 
-          <!-- CDN (Pro feature) -->
+          <!-- CDN -->
           <MoleculesSidebarItem
             icon="icon-[annon--globe]" :label="t('cdn.title')" :active="isCDNActive" compact
             @click="selectCDN"
-          >
-            <template #trailing>
-              <AtomsBadge v-if="!isPro" variant="info" size="sm" class="text-[9px] px-1 py-0">
-                Pro
-              </AtomsBadge>
-            </template>
-          </MoleculesSidebarItem>
+          />
 
-          <!-- Assets (Pro feature) -->
+          <!-- Assets -->
           <MoleculesSidebarItem
             icon="icon-[annon--image]" :label="t('media.title')" :active="isAssetsActive" compact
             @click="selectAssets"
-          >
-            <template #trailing>
-              <AtomsBadge v-if="!hasMedia" variant="info" size="sm" class="text-[9px] px-1 py-0">
-                Pro
-              </AtomsBadge>
-            </template>
-          </MoleculesSidebarItem>
+          />
         </div>
 
         <!-- Pending branches -->

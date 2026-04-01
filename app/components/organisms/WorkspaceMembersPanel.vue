@@ -24,23 +24,17 @@ const assigning = ref(false)
 // Member removal confirmation
 const confirmRemoveId = ref<string | null>(null)
 
-const workspacePlan = computed(() => activeWorkspace.value?.plan ?? 'free')
-const hasPro = computed(() => hasFeature(workspacePlan.value, 'roles.reviewer'))
-
 const wsRoleOptions = [
   { value: 'admin', label: t('members.role_admin') },
   { value: 'member', label: t('members.role_member') },
 ]
 
 const projectRoleOptions = computed(() => {
-  const options = [{ value: 'editor', label: t('members.role_editor') }]
-  if (hasPro.value) {
-    options.push(
-      { value: 'reviewer', label: t('members.role_reviewer') },
-      { value: 'viewer', label: t('members.role_viewer') },
-    )
-  }
-  return options
+  return [
+    { value: 'editor', label: t('members.role_editor') },
+    { value: 'reviewer', label: t('members.role_reviewer') },
+    { value: 'viewer', label: t('members.role_viewer') },
+  ]
 })
 
 const projectOptions = computed(() =>

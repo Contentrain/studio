@@ -11,8 +11,6 @@ interface AIKeyInfo { id: string, provider: string, key_hint: string | null, cre
 const aiKeys = ref<AIKeyInfo[]>([])
 const aiKeyInput = ref('')
 const aiKeySaving = ref(false)
-const canByoa = computed(() => hasFeature(activeWorkspace.value?.plan, 'ai.byoa'))
-
 // Load keys on mount
 onMounted(async () => {
   if (!activeWorkspace.value) return
@@ -66,21 +64,6 @@ async function handleDeleteAIKey(keyId: string) {
         {{ t('ai_keys.description') }}
       </p>
     </div>
-
-    <!-- Pro required -->
-    <AtomsEmptyState
-      v-if="!canByoa"
-      illustration="/illustrations/unlock-ai.png"
-      :title="t('ai_keys.pro_required_title')"
-      :description="t('ai_keys.pro_required')"
-      compact
-    >
-      <template #action>
-        <AtomsBadge variant="info" size="md">
-          Pro — $14/mo
-        </AtomsBadge>
-      </template>
-    </AtomsEmptyState>
 
     <!-- Existing keys -->
     <ul

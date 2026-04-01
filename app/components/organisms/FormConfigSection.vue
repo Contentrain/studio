@@ -12,11 +12,6 @@ const props = defineProps<{
 const { t } = useContent()
 const toast = useToast()
 const brain = useContentBrain()
-const { activeWorkspace } = useWorkspaces()
-
-const plan = computed(() => activeWorkspace.value?.plan ?? 'free')
-const canCaptcha = computed(() => hasFeature(plan.value, 'forms.captcha'))
-const canAutoApprove = computed(() => hasFeature(plan.value, 'forms.auto_approve'))
 
 // Current model from brain cache
 const model = computed(() =>
@@ -296,12 +291,9 @@ function getFieldTypeBadge(type: string): string {
           <div>
             <div class="flex items-center gap-1.5">
               <span class="text-sm text-heading dark:text-secondary-100">{{ t('forms.captcha') }}</span>
-              <AtomsBadge v-if="!canCaptcha" variant="info" size="sm">
-                {{ t('forms.pro_badge') }}
-              </AtomsBadge>
             </div>
           </div>
-          <div :class="{ 'pointer-events-none opacity-50': !editable || !canCaptcha }">
+          <div :class="{ 'pointer-events-none opacity-50': !editable }">
             <AtomsFormSelect
               :model-value="captcha || ''"
               :options="[
@@ -352,15 +344,12 @@ function getFieldTypeBadge(type: string): string {
           <div>
             <div class="flex items-center gap-1.5">
               <span class="text-sm text-heading dark:text-secondary-100">{{ t('forms.auto_approve') }}</span>
-              <AtomsBadge v-if="!canAutoApprove" variant="info" size="sm">
-                {{ t('forms.pro_badge') }}
-              </AtomsBadge>
             </div>
             <p class="text-xs text-muted">
               {{ t('forms.auto_approve_description') }}
             </p>
           </div>
-          <AtomsFormSwitch :model-value="autoApprove" :disabled="!editable || !canAutoApprove" @update:model-value="autoApprove = $event" />
+          <AtomsFormSwitch :model-value="autoApprove" :disabled="!editable" @update:model-value="autoApprove = $event" />
         </div>
 
         <!-- Success message -->

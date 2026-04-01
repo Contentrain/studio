@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const { t } = useContent()
 const toast = useToast()
-const { activeWorkspace } = useWorkspaces()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const props = defineProps<{
@@ -9,8 +8,7 @@ const props = defineProps<{
   projectId: string
 }>()
 
-const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'cdn.delivery'))
-const canManageCDN = computed(() => isPro.value && isOwnerOrAdmin.value)
+const canManageCDN = computed(() => isOwnerOrAdmin.value)
 
 interface CDNKey { id: string, name: string, key_prefix: string, environment: string, created_at: string, revoked_at: string | null, key?: string }
 interface CDNBuild { id: string, status: string, trigger_type: string, commit_sha: string, file_count: number | null, build_duration_ms: number | null, error_message: string | null, started_at: string }
@@ -211,22 +209,7 @@ function copyKey() {
       <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
     </div>
 
-    <!-- Upgrade nudge (not Pro) -->
-    <div v-else-if="!isPro" class="flex h-full items-center justify-center p-8">
-      <AtomsEmptyState
-        illustration="/illustrations/unlock-cdn.png"
-        :title="t('cdn.title')"
-        :description="t('cdn.pro_required')"
-      >
-        <template #action>
-          <AtomsBadge variant="info" size="md">
-            Pro — $14/mo
-          </AtomsBadge>
-        </template>
-      </AtomsEmptyState>
-    </div>
-
-    <!-- CDN Management (Pro) -->
+    <!-- CDN Management -->
     <div v-else class="flex-1 overflow-y-auto">
       <!-- Toggle -->
       <div class="flex items-center justify-between border-b border-secondary-200 px-5 py-3 dark:border-secondary-800">

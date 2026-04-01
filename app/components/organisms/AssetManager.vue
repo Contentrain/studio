@@ -7,9 +7,6 @@ const props = defineProps<{
   editable?: boolean
 }>()
 
-const { activeWorkspace } = useWorkspaces()
-const isPro = computed(() => hasFeature(activeWorkspace.value?.plan, 'media.library'))
-
 const { assets, total, loading, filters, fetchAssets, deleteAsset, clearLibrary } = useMediaLibrary()
 const { toggle, isPinned } = useChatContext()
 const toast = useToast()
@@ -75,105 +72,87 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- Upgrade nudge for free plan -->
-    <div v-if="!isPro" class="flex flex-1 items-center justify-center p-8">
-      <AtomsEmptyState
-        icon="icon-[annon--image-3]"
-        :title="t('media.pro_required_title')"
-        :description="t('media.pro_required')"
-      >
-        <template #action>
-          <AtomsBadge variant="info" size="md">
-            Pro — $14/mo
-          </AtomsBadge>
-        </template>
-      </AtomsEmptyState>
+    <!-- Header -->
+    <div class="flex shrink-0 items-center gap-2 border-b border-secondary-200 px-4 py-2.5 dark:border-secondary-800">
+      <AtomsFormInput
+        v-model="filters.search"
+        :placeholder="t('media.search_placeholder')"
+        class="flex-1"
+      />
+      <AtomsIconButton
+        icon="icon-[annon--maximize]"
+        :label="t('media.open_full')"
+        size="sm"
+        @click="modalOpen = true"
+      />
     </div>
 
-    <!-- Full asset manager (Pro+) -->
-    <template v-else>
-      <!-- Header -->
-      <div class="flex shrink-0 items-center gap-2 border-b border-secondary-200 px-4 py-2.5 dark:border-secondary-800">
-        <AtomsFormInput
-          v-model="filters.search"
-          :placeholder="t('media.search_placeholder')"
-          class="flex-1"
+    <!-- Bulk actions bar -->
+    <div
+      v-if="isSelecting"
+      class="flex items-center gap-3 border-b border-warning-200 bg-warning-50 px-4 py-2 dark:border-warning-800 dark:bg-warning-900/20"
+    >
+      <span class="text-xs font-medium text-warning-700 dark:text-warning-400">
+        {{ selectedIds.size }} {{ t('media.selected') }}
+      </span>
+      <AtomsBaseButton type="button" variant="danger" size="sm" @click="handleBulkDelete">
+        {{ t('common.delete') }}
+      </AtomsBaseButton>
+      <AtomsBaseButton type="button" variant="ghost" size="sm" @click="clearSelection">
+        {{ t('media.clear_selection') }}
+      </AtomsBaseButton>
+    </div>
+
+    <!-- Body -->
+    <div class="flex-1 overflow-y-auto">
+      <!-- Upload zone -->
+      <div v-if="editable" class="p-4 pb-2">
+        <MoleculesAssetUploader
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          @uploaded="handleUploaded"
+          @error="handleUploadError"
         />
-        <AtomsIconButton
-          icon="icon-[annon--maximize]"
-          :label="t('media.open_full')"
-          size="sm"
-          @click="modalOpen = true"
+      </div>
+
+      <!-- Loading -->
+      <div v-if="loading" class="grid grid-cols-2 gap-2 p-4">
+        <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="aspect-square w-full rounded-lg" />
+      </div>
+
+      <!-- Empty state -->
+      <div v-else-if="assets.length === 0 && !loading" class="p-5">
+        <AtomsEmptyState
+          icon="icon-[annon--image-3]"
+          :title="t('media.empty_title')"
+          :description="t('media.empty_description')"
         />
       </div>
 
-      <!-- Bulk actions bar -->
-      <div
-        v-if="isSelecting"
-        class="flex items-center gap-3 border-b border-warning-200 bg-warning-50 px-4 py-2 dark:border-warning-800 dark:bg-warning-900/20"
-      >
-        <span class="text-xs font-medium text-warning-700 dark:text-warning-400">
-          {{ selectedIds.size }} {{ t('media.selected') }}
-        </span>
-        <AtomsBaseButton type="button" variant="danger" size="sm" @click="handleBulkDelete">
-          {{ t('common.delete') }}
-        </AtomsBaseButton>
-        <AtomsBaseButton type="button" variant="ghost" size="sm" @click="clearSelection">
-          {{ t('media.clear_selection') }}
-        </AtomsBaseButton>
+      <!-- Compact asset grid (2 cols for sidebar) -->
+      <div v-else class="grid grid-cols-2 gap-2 p-4">
+        <AtomsAssetCard
+          v-for="asset in assets"
+          :key="asset.id"
+          :asset-id="asset.id"
+          :filename="asset.filename"
+          :original-path="asset.originalPath"
+          :content-type="asset.contentType"
+          :preview-url="`/api/workspaces/${workspaceId}/projects/${projectId}/media/${asset.id}/preview`"
+          :format="asset.format"
+          :size="asset.size"
+          :alt="asset.alt"
+          :pinned="isPinned('asset', asset.id, undefined, undefined, asset.id)"
+          @click="openAssetDetail"
+          @pin="togglePin(asset)"
+        />
       </div>
 
-      <!-- Body -->
-      <div class="flex-1 overflow-y-auto">
-        <!-- Upload zone -->
-        <div v-if="editable" class="p-4 pb-2">
-          <MoleculesAssetUploader
-            :workspace-id="workspaceId"
-            :project-id="projectId"
-            @uploaded="handleUploaded"
-            @error="handleUploadError"
-          />
-        </div>
-
-        <!-- Loading -->
-        <div v-if="loading" class="grid grid-cols-2 gap-2 p-4">
-          <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="aspect-square w-full rounded-lg" />
-        </div>
-
-        <!-- Empty state -->
-        <div v-else-if="assets.length === 0 && !loading" class="p-5">
-          <AtomsEmptyState
-            icon="icon-[annon--image-3]"
-            :title="t('media.empty_title')"
-            :description="t('media.empty_description')"
-          />
-        </div>
-
-        <!-- Compact asset grid (2 cols for sidebar) -->
-        <div v-else class="grid grid-cols-2 gap-2 p-4">
-          <AtomsAssetCard
-            v-for="asset in assets"
-            :key="asset.id"
-            :asset-id="asset.id"
-            :filename="asset.filename"
-            :original-path="asset.originalPath"
-            :content-type="asset.contentType"
-            :preview-url="`/api/workspaces/${workspaceId}/projects/${projectId}/media/${asset.id}/preview`"
-            :format="asset.format"
-            :size="asset.size"
-            :alt="asset.alt"
-            :pinned="isPinned('asset', asset.id, undefined, undefined, asset.id)"
-            @click="openAssetDetail"
-            @pin="togglePin(asset)"
-          />
-        </div>
-
-        <!-- Footer -->
-        <div v-if="total > 0" class="border-t border-secondary-100 px-4 py-2 dark:border-secondary-800">
-          <span class="text-xs text-muted">{{ total }} {{ t('media.assets_count') }}</span>
-        </div>
+      <!-- Footer -->
+      <div v-if="total > 0" class="border-t border-secondary-100 px-4 py-2 dark:border-secondary-800">
+        <span class="text-xs text-muted">{{ total }} {{ t('media.assets_count') }}</span>
       </div>
-    </template>
+    </div>
 
     <!-- Full-screen modal -->
     <OrganismsAssetManagerModal
