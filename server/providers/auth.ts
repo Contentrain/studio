@@ -89,4 +89,10 @@ export interface AuthProvider {
    * Look up a user by their email address.
    */
   getUserByEmail: (email: string) => Promise<AuthUser | null>
+
+  /**
+   * Delete a user account permanently.
+   * Cascades to profiles, workspaces (owned), memberships, etc.
+   */
+  deleteUser: (userId: string) => Promise<void>
 }

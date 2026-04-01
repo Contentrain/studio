@@ -146,6 +146,14 @@ export function createSupabaseAuthProvider(): AuthProvider {
       if (!user) return null
       return mapSupabaseUser(user)
     },
+
+    async deleteUser(userId: string): Promise<void> {
+      const admin = createSupabaseAdminClient()
+      const { error } = await admin.auth.admin.deleteUser(userId)
+      if (error) {
+        throw createError({ statusCode: 500, message: error.message })
+      }
+    },
   }
 }
 
