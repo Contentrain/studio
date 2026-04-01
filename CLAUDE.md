@@ -71,9 +71,18 @@ This is an AGPL product — no marketing pages. All routes are authenticated:
 /w/:slug .................. Workspace dashboard — project list
 /w/:slug/projects/new ..... Connect repository
 /w/:slug/projects/:id ..... Project workspace (three-panel)
-/w/:slug/settings ......... Workspace settings, members, billing
-/settings ................. User/account settings
+/w/:slug/settings ......... Workspace settings (overview, members, github, ai-keys)
+/settings ................. User account settings (profile, account deletion)
 ```
+
+### Profile / Account Settings
+- `/settings` page with tabs: Profile, Account
+- Profile tab: display name (editable), avatar (read-only from OAuth), email (read-only), connected account badge
+- Account tab: danger zone — account deletion with email confirmation
+- API: `PATCH /api/profile` (update displayName), `DELETE /api/profile` (delete account — CASCADE)
+- Database: `profiles` table via DatabaseProvider (`getProfile`, `updateProfile`)
+- Auth: `AuthProvider.deleteUser()` for GDPR account deletion
+- Sidebar shows `displayName` (fallback: email prefix), clickable → `/settings`
 
 ## Color System — CRITICAL
 
@@ -141,7 +150,7 @@ Atomic design from old Contentrain CMS, refactored for Radix Vue + Tailwind 4:
 app/components/
   atoms/          — Radix Vue primitives + Tailwind (HeadingText, BaseButton, FormInput, FormLabel, Logo, Avatar, Badge)
   molecules/      — Composed atoms (ProviderButtons, AuthLink, EmailButton)
-  organisms/      — Business logic components (SigninWithProvider, SigninWithEmail)
+  organisms/      — Business logic components (SigninWithProvider, ProfileOverviewPanel, WorkspaceMembersPanel)
 ```
 
 > **Note:** No `templates/` layer — Nuxt layouts (`app/layouts/`) handle page-level wrappers.
@@ -195,11 +204,22 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 
 ## Deferred TODOs
 
-Tech debt (not phase-gated, fix when relevant):
+Critical (deploy öncesi):
+- Forms: auto-approve flow declared but not wired (`autoApprove` field unused in submit logic)
+- Forms: `forms.models` plan limit not enforced (free plan can enable unlimited form models)
+- Profile: workspace ownership transfer before account deletion
+
+High (deploy sonrası):
+- Monthly limit race condition: check+insert not atomic (forms + agent usage)
 - Rate limiting: in-memory → Redis/Upstash (production multi-instance deploy)
-- Mobile shell: hamburger + slide-over (UI work)
-- DatabaseProvider abstraction (only when adding second DB provider)
-- Hardcoded strings: ongoing `t('key')` migration
+- GDPR audit logging: no trail when form submissions are deleted
+
+Medium:
+- FormConfigSection UI: form toggle + exposed fields in model settings
+- Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
+- Hardcoded strings: `useMembers.ts` has 8 toast messages not using `t()`
+- Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
+- Webhook dead-letter queue for permanently failed deliveries
 
 ## Dev Tooling
 
@@ -253,27 +273,31 @@ Active specs in `.internal/`:
 - `git-architecture.md` — Git v2: contentrain SSOT branch, cr/* feature branches, two-step merge
 - `MARKETING.md` — go-to-market strategy
 - `IDEAS.md` — product ideas with feasibility analysis
-- `CONVERSATION-API.md` — external AI content ops (Business+) — not yet implemented
+- `CONVERSATION-API.md` — external AI content ops (Business+) — implemented
 - `FORMS-SUBMISSIONS.md` — content-in via public forms — implemented
 - `SCHEMA-VALIDATION.md` — model integrity & breaking change detection — implemented
 
 ## Current Phase
 
-**Phase 4 completed.** Media Management — upload, optimize, variants, blurhash, asset manager UI, agent tools, CDN integration.
+**All 8 phases completed + Profile/Account Settings.** Preparing for user testing deploy.
 
 Completed phases:
 - Phase 1: Foundation + Content Browsing
 - Phase 2: Chat Engine + Content Editing
 - Phase 3: CDN Content Delivery
 - Phase 4: Media Management
+- Phase 5: Schema Validation + Project Health Dashboard
+- Phase 6: Forms & Submissions
+- Phase 7: Conversation API (external AI content ops)
+- Phase 8: Webhook Outbound (event delivery, HMAC-SHA256, retry engine)
+- Profile/Account Settings (display name, account deletion, GDPR)
 
 ### Roadmap (next)
 
-| Sprint | Focus | Efor | Plan | Spec |
-|--------|-------|------|------|------|
-| Next | Conversation API + Content REST API | 2-3 hafta | Business+ | `CONVERSATION-API.md` |
-| +1 | Webhook Outbound | 2 hafta | Business+ | `IDEAS.md` |
-| +2 | Multi-Repo Governance | 2 hafta | Enterprise | İhtiyaç doğduğunda |
+| Sprint | Focus | Plan | Spec |
+|--------|-------|------|------|
+| Current | Deploy prep — deferred fixes, user testing | All | Deferred TODOs above |
+| Next | Multi-Repo Governance | Enterprise | İhtiyaç doğduğunda |
 
 ## Reference Codebase
 
