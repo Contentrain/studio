@@ -1495,8 +1495,15 @@ Client → Server (rare):
 Auth:
   GET  /auth/github/install     → GitHub App installation redirect
   GET  /auth/github/callback    → exchange code, create session
-  POST /auth/logout
-  GET  /auth/me
+  POST /auth/login              → OAuth redirect URL + state
+  POST /auth/verify             → exchange code/tokens for session
+  POST /auth/magic-link         → send magic link email
+  POST /auth/logout             → clear session
+  GET  /auth/me                 → current user (incl. displayName from profiles)
+
+Profile:
+  PATCH  /api/profile           → update displayName
+  DELETE /api/profile           → delete account (R2 cleanup + CASCADE)
 
 Projects:
   GET    /projects
@@ -1546,7 +1553,23 @@ CDN Public (separate domain):
   GET    cdn.contentrain.io/:project/manifest.json
   GET    cdn.contentrain.io/:project/:model/:locale.json
 
-Billing:
+Forms (public):
+  POST   /forms/v1/:projectId/:modelId/submit  → public form submission
+  GET    /forms/v1/:projectId/:modelId/config   → form config (allowed fields, captcha)
+
+Webhooks:
+  GET    /projects/:id/webhooks
+  POST   /projects/:id/webhooks          → create webhook endpoint
+  PATCH  /projects/:id/webhooks/:wid     → update webhook
+  DELETE /projects/:id/webhooks/:wid
+  POST   /projects/:id/webhooks/:wid/test → test delivery
+
+Conversation API (Business+):
+  POST   /projects/:id/conversation-keys → create API key
+  DELETE /projects/:id/conversation-keys/:kid
+  POST   /conversation/v1/:projectId/chat → external chat (API key auth)
+
+Billing (not yet implemented):
   GET    /billing
   POST   /billing/checkout               → Stripe checkout session
   POST   /billing/portal                 → Stripe customer portal
