@@ -18,8 +18,9 @@ export default defineEventHandler(async (event) => {
   // Plan check
   const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
-  if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
-    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
+  const plan = getWorkspacePlan(workspace ?? {})
+  if (!hasFeature(plan, 'cdn.delivery'))
+    throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 
   // Get project
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)

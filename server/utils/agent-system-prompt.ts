@@ -388,12 +388,14 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
   }
 
   // Plan-aware rules — inform agent about available features and guide user
+  const planParams = getPlanParams(effectivePlan)
   if (effectivePlan === 'starter') {
-    rules.push(agentPrompt('plan.starter'))
-    rules.push(agentPrompt('plan.starter.upgrade_hint'))
+    const upgradeParams = getUpgradeParams('starter', 'pro')
+    rules.push(agentPrompt('plan.starter', planParams))
+    rules.push(agentPrompt('plan.starter.upgrade_hint', upgradeParams))
   }
   else if (effectivePlan === 'pro') {
-    rules.push(agentPrompt('plan.pro'))
+    rules.push(agentPrompt('plan.pro', planParams))
     rules.push(agentPrompt('plan.pro.upgrade_hint'))
   }
   else if (effectivePlan === 'enterprise') {
@@ -402,7 +404,12 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
 
   // Feature upgrade guidance — when a tool returns a plan-gated error, help the user understand
   rules.push(agentPrompt('upgrade.guidance'))
-  rules.push(agentPrompt('plan.tiers'))
+  const tierParams = {
+    starterPrice: PLAN_PRICING.starter.priceMonthly ? `$${PLAN_PRICING.starter.priceMonthly}` : 'free',
+    proPrice: `$${PLAN_PRICING.pro.priceMonthly}`,
+    proPerSeat: `$${PLAN_PRICING.pro.pricePerSeat}`,
+  }
+  rules.push(agentPrompt('plan.tiers', tierParams))
 
   // Out of scope
   if (intent.category === 'out_of_scope') {

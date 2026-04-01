@@ -36,5 +36,5 @@
   "search.no_results": "No matching content found. Try different keywords or check the model name.",
   "upgrade.alternative": "In the meantime, here's what you can do on your current plan:",
   "upgrade.limit_reached": "You've reached the {resource} limit for your {plan} plan ({limit}). Upgrade to increase your limits, or usage will be billed at the overage rate.",
-  "upgrade.starter_to_pro": "Upgrade to Pro ($29/mo) for higher limits: 500 AI messages, 20GB CDN, 5GB media, 25 team members, and advanced features like custom variants and model-specific access."
+  "upgrade.starter_to_pro": "Upgrade to {toPlan} ({toPrice}/mo) for higher limits: {toAiMessages} AI messages, {toCdnBandwidth} CDN, {toMediaStorage} media, {toSeats} team members, and advanced features like custom variants and model-specific access."
 }

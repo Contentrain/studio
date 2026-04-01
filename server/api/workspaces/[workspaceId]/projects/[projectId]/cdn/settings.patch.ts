@@ -18,8 +18,9 @@ export default defineEventHandler(async (event) => {
   if (body.cdn_enabled === true) {
     const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
-    if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'cdn.delivery'))
-      throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade') })
+    const plan = getWorkspacePlan(workspace ?? {})
+    if (!hasFeature(plan, 'cdn.delivery'))
+      throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
   }
 
   const update: Record<string, unknown> = {}

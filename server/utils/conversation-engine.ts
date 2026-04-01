@@ -532,7 +532,7 @@ export async function executeToolWithAutoMerge(
           break
         }
         if (!hasFeature(plan, 'media.library')) {
-          result = { error: errorMessage('media.library_upgrade') }
+          result = { error: errorMessage('media.library_upgrade', getUpgradeParams(plan)) }
           break
         }
         const searchResult = await mediaProvider.listAssets(projectId, {
@@ -562,7 +562,7 @@ export async function executeToolWithAutoMerge(
           break
         }
         if (!hasFeature(plan, 'media.upload')) {
-          result = { error: errorMessage('media.upload_upgrade') }
+          result = { error: errorMessage('media.upload_upgrade', getUpgradeParams(plan)) }
           break
         }
         const url = params.url as string
@@ -623,7 +623,7 @@ export async function executeToolWithAutoMerge(
           break
         }
         if (!hasFeature(plan, 'media.library')) {
-          result = { error: errorMessage('media.library_upgrade') }
+          result = { error: errorMessage('media.library_upgrade', getUpgradeParams(plan)) }
           break
         }
         const asset = await mediaProvider.getAsset(params.assetId as string)
