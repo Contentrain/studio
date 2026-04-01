@@ -413,6 +413,8 @@
   "members.select_project": "Select project",
   "members.select_role": "Select role",
   "members.workspace_role": "Workspace role",
+  "mobile.tab_chat": "Chat",
+  "mobile.tab_content": "Content",
   "plans.contact_sales": "Contact Sales",
   "plans.current_plan": "Current plan",
   "plans.enterprise_description": "Need SSO, white-label, or custom limits? Let's talk.",
