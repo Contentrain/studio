@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Policy
+    url: https://github.com/Contentrain/studio/security/policy
+    about: Report security vulnerabilities privately and review the disclosure policy.
+  - name: GitHub Discussions
+    url: https://github.com/Contentrain/studio/discussions
+    about: Ask questions, discuss ideas, and validate proposals before opening issues.

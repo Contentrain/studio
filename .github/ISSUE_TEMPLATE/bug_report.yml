@@ -1,7 +1,56 @@
 name: Bug Report
-description: Report a bug
-labels: ["bug"]
+description: Report a reproducible bug in Contentrain Studio
+labels:
+  - bug
 body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and discussions for duplicates.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Studio version
+      description: Release tag, Docker image tag, or commit SHA.
+      placeholder: v0.1.0 / main / 1a2b3c4d
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local development
+        - Self-hosted Docker
+        - Self-hosted Kubernetes
+        - Self-hosted VM / bare metal
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Not applicable (server-side / API)
+        - Chrome
+        - Firefox
+        - Safari
+        - Edge
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: node_version
+    attributes:
+      label: Node.js version
+      description: Required for local development and self-hosted debugging.
+      placeholder: 22.0.0
+    validations:
+      required: false
   - type: textarea
     id: description
     attributes:
@@ -27,6 +76,6 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Any other context, screenshots, or logs.
+      description: Any other context, screenshots, logs, or request payloads.
     validations:
       required: false
