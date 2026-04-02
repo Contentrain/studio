@@ -132,11 +132,15 @@ export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined
 /**
  * Plan pricing: single source of truth for prices.
  * Matches Contentrain plans model (plans/en.json).
+ *
+ * NOTE: Per-seat pricing (pricePerSeat) is not yet implemented in Stripe checkout.
+ * Currently all plans charge a flat monthly rate. When per-seat billing is added,
+ * checkout must pass quantity = current member count and handle seat changes via webhooks.
  */
 export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, pricePerSeat: number, seatsIncluded: number, name: string }> = {
   free: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 1, name: 'Free' },
   starter: { priceMonthly: 9, pricePerSeat: 0, seatsIncluded: 3, name: 'Starter' },
-  pro: { priceMonthly: 29, pricePerSeat: 9, seatsIncluded: 10, name: 'Pro' },
+  pro: { priceMonthly: 29, pricePerSeat: 0, seatsIncluded: 10, name: 'Pro' },
   enterprise: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 0, name: 'Enterprise' },
 }
 

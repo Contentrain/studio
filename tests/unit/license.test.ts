@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getAvailableFeatures, getPlanLimit, getWorkspacePlan, hasFeature } from '../../server/utils/license'
 
+// Mock useRuntimeConfig — simulate Stripe configured (SaaS mode)
+vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+  stripe: { secretKey: 'sk_test_mock' },
+}))
+
 describe('license utilities', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
   it('normalizes legacy plan names', () => {
     expect(getWorkspacePlan({ plan: 'team' })).toBe('pro')
     expect(getWorkspacePlan({ plan: 'business' })).toBe('pro')
