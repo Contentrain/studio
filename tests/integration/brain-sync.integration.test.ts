@@ -17,6 +17,7 @@ describe('brain sync integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('requireProjectAccess', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},
@@ -65,6 +66,7 @@ describe('brain sync integration', () => {
       user: { id: 'user-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('requireProjectAccess', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},

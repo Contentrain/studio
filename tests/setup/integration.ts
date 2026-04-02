@@ -59,6 +59,7 @@ beforeEach(() => {
   vi.stubGlobal('readBody', readBody)
   vi.stubGlobal('readRawBody', readRawBody)
   vi.stubGlobal('requireAuth', requireAuth)
+  vi.stubGlobal('requireProjectAccess', vi.fn().mockResolvedValue(undefined))
   vi.stubGlobal('sendRedirect', sendRedirect)
   vi.stubGlobal('setAuthState', setAuthState)
   vi.stubGlobal('setResponseHeader', setResponseHeader)

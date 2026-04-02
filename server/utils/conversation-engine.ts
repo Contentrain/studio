@@ -364,12 +364,13 @@ export async function executeToolWithAutoMerge(
         // Schema validation from brain cache — comprehensive checks
         const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
         result = brainData.schemaValidation ?? {
-          valid: true,
+          valid: null,
           warnings: [],
-          healthScore: 100,
+          healthScore: null,
           modelCount: brainData.models.size,
-          validModels: brainData.models.size,
+          validModels: 0,
           timestamp: new Date().toISOString(),
+          unavailable: true,
         }
         break
       }

@@ -3,7 +3,7 @@
  * Returns file-level diffs with before/after content for JSON files.
  */
 export default defineEventHandler(async (event) => {
-  requireAuth(event)
+  const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
   const branch = getRouterParam(event, 'branch')
@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
   if (!branch.startsWith('cr/'))
     throw createError({ statusCode: 400, message: errorMessage('branches.contentrain_only') })
 
+  await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
   const { git } = await resolveProjectContext(workspaceId, projectId)
 
   // Diff against contentrain branch (cr/* branches are created from contentrain)

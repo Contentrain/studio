@@ -174,6 +174,7 @@
   "webhook.upgrade": "Outbound webhooks are available on all plans. Upgrade your plan for higher limits.",
   "webhook.url_required": "Webhook URL is required.",
   "workspace.slug_too_short": "Workspace slug must be at least 2 characters.",
+  "billing.no_subscription": "No active subscription found. Please subscribe first.",
   "billing.subscription_exists": "This workspace already has an active subscription. Manage it from the billing portal.",
   "members.resend_rate_limited": "Too many resend attempts. Please wait before trying again.",
   "members.resend_failed": "Failed to send invitation email. Please try again.",

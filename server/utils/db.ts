@@ -104,6 +104,26 @@ export interface FormSubmissionRow {
   created_at: string
 }
 
+/**
+ * Verify the authenticated user has access to a project.
+ * Checks workspace membership first, then project-level access for members.
+ * Owner/admin have implicit access to all projects.
+ */
+export async function requireProjectAccess(
+  userId: string,
+  workspaceId: string,
+  projectId: string,
+  accessToken: string,
+): Promise<void> {
+  const db = useDatabaseProvider()
+  const role = await db.requireWorkspaceRole(accessToken, userId, workspaceId, ['owner', 'admin', 'member'])
+  if (role === 'member') {
+    const pm = await db.getProjectMember(projectId, userId)
+    if (!pm)
+      throw createError({ statusCode: 403, message: errorMessage('project.access_denied') })
+  }
+}
+
 // ─── Cross-provider: DB + Git ───
 
 /**

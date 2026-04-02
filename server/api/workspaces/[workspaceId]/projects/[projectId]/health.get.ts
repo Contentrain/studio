@@ -4,13 +4,14 @@
  * Used by the project health dashboard and agent validate_schema tool.
  */
 export default defineEventHandler(async (event) => {
-  requireAuth(event)
+  const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
 
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
+  await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)

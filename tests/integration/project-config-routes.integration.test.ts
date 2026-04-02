@@ -166,6 +166,7 @@ describe('project config and branch route integration', () => {
       user: { id: 'editor-1' },
       accessToken: 'token-1',
     }))
+    vi.stubGlobal('requireProjectAccess', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
       availableTools: ['save_content'],
     }))

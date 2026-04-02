@@ -65,6 +65,7 @@ export default defineEventHandler(async (event) => {
     accessToken: session.accessToken,
     plan,
     sessionSecret: runtimeConfig.sessionSecret,
+    previousSessionSecret: runtimeConfig.sessionSecretPrevious || undefined,
     studioApiKey: runtimeConfig.anthropic.apiKey,
   })
 

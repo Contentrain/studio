@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ workspaceId: string }>(event)
 
   if (!body.workspaceId) {
-    throw createError({ statusCode: 400, message: 'Workspace ID is required.' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
   }
 
   // Only owner/admin can access billing portal
@@ -28,12 +28,12 @@ export default defineEventHandler(async (event) => {
 
   const stripeCustomerId = (workspace as { stripe_customer_id?: string }).stripe_customer_id
   if (!stripeCustomerId) {
-    throw createError({ statusCode: 400, message: 'No active subscription found. Please subscribe first.' })
+    throw createError({ statusCode: 400, message: errorMessage('billing.no_subscription') })
   }
 
   const payment = usePaymentProvider()
   if (!payment) {
-    throw createError({ statusCode: 503, message: 'Billing is not configured.' })
+    throw createError({ statusCode: 503, message: errorMessage('generic.server_error') })
   }
 
   const config = useRuntimeConfig()
