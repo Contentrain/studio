@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { t } = useContent()
 const { open: commandPaletteOpen } = useCommandPalette()
+const { toggle: toggleMobileSidebar } = useMobileSidebar()
 </script>
 
 <template>
@@ -19,13 +20,18 @@ const { open: commandPaletteOpen } = useCommandPalette()
         <AtomsLogo variant="icon" color="auto" class="h-6 w-auto" />
         <span class="text-xs font-semibold uppercase tracking-[0.2em] text-secondary-400">Studio</span>
       </NuxtLink>
-      <AtomsIconButton icon="icon-[annon--menu]" :label="t('common.menu')" />
+      <AtomsIconButton icon="icon-[annon--menu]" :label="t('common.menu')" @click="toggleMobileSidebar" />
     </div>
 
     <!-- Main content (with top padding on mobile for fixed header) -->
     <main class="flex-1 overflow-y-auto pt-14 md:pt-0">
       <slot />
     </main>
+
+    <!-- Mobile sidebar drawer -->
+    <ClientOnly>
+      <MoleculesMobileSidebarDrawer />
+    </ClientOnly>
 
     <!-- Command palette (⌘K) -->
     <ClientOnly>
