@@ -1,17 +1,14 @@
 {
   "lastOperation": {
-    "entries": [
-      "en"
-    ],
     "locale": "en",
-    "model": "ui-strings",
+    "model": "plan-features",
     "source": "mcp-local",
-    "timestamp": "2026-04-01T19:58:41.494Z",
-    "tool": "contentrain_content_save"
+    "timestamp": "2026-04-02T13:29:58.424Z",
+    "tool": "contentrain_model_save"
   },
   "stats": {
     "entries": 58,
-    "lastSync": "2026-04-01T19:58:41.496Z",
+    "lastSync": "2026-04-02T13:29:58.428Z",
     "locales": [
       "en"
     ],

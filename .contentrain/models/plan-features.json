@@ -1,6 +1,10 @@
 {
-  "description": "Feature flags, usage limits, and overage pricing per plan",
+  "id": "plan-features",
+  "name": "Plan Features",
+  "kind": "collection",
   "domain": "system",
+  "i18n": false,
+  "description": "Feature flags, usage limits, and overage pricing per plan",
   "fields": {
     "category": {
       "description": "Feature category for grouping in pricing UI",
@@ -19,6 +23,11 @@
     },
     "enterprise_value": {
       "description": "Enterprise plan value (number for limits, true/false for features, unlimited for Infinity)",
+      "required": true,
+      "type": "string"
+    },
+    "free_value": {
+      "description": "Free plan value (number for limits, true/false for features)",
       "required": true,
       "type": "string"
     },
@@ -65,9 +74,5 @@
       "required": true,
       "type": "select"
     }
-  },
-  "i18n": false,
-  "id": "plan-features",
-  "kind": "collection",
-  "name": "Plan Features"
+  }
 }
