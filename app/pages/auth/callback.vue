@@ -54,7 +54,7 @@ onMounted(async () => {
     }
   }
   catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : t('auth.failed')
+    error.value = resolveApiError(e, t('auth.failed'))
   }
 })
 </script>

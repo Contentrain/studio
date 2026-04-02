@@ -60,6 +60,8 @@ describe('useBranches', () => {
     const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
 
     expect(merged).toBe(false)
-    expect(error).toHaveBeenCalledWith('Merge failed on server')
+    // Error without statusCode → resolveApiError returns user-friendly fallback (not raw error)
+    expect(error).not.toHaveBeenCalledWith('Merge failed on server')
+    expect(error).toHaveBeenCalledTimes(1)
   })
 })

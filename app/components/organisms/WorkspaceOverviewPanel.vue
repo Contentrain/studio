@@ -75,8 +75,7 @@ async function saveOverview() {
     }
   }
   catch (e: unknown) {
-    const message = e instanceof Error ? e.message : t('settings.save_error')
-    toast.error(message)
+    toast.error(resolveApiError(e, t('settings.save_error')))
   }
   finally {
     saving.value = false

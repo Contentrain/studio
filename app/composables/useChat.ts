@@ -117,7 +117,8 @@ export function useChat(options?: {
       conversationId.value = convId
     }
     catch {
-      error.value = 'Failed to load conversation'
+      const { t } = useContent()
+      error.value = t('chat.load_error')
     }
   }
 
@@ -194,8 +195,13 @@ export function useChat(options?: {
       )
 
       if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}))
-        throw new Error((errBody as { message?: string }).message ?? `HTTP ${response.status}`)
+        const errBody = await response.json().catch(() => ({})) as { message?: string, statusCode?: number }
+        const status = errBody.statusCode ?? response.status
+        // 4xx errors have user-friendly messages from backend; 5xx use fallback
+        if (status >= 400 && status < 500 && errBody.message) {
+          throw Object.assign(new Error(errBody.message), { statusCode: status })
+        }
+        throw Object.assign(new Error(`HTTP ${response.status}`), { statusCode: status })
       }
 
       const reader = response.body?.getReader()
@@ -233,7 +239,8 @@ export function useChat(options?: {
       fetchConversations(workspaceId, projectId)
     }
     catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Chat failed'
+      const { t } = useContent()
+      error.value = resolveApiError(e, t('chat.send_error'))
       // Remove empty assistant message on error
       if (!assistantMsg.text && assistantMsg.toolCalls.length === 0) {
         messages.value.pop()
@@ -280,9 +287,12 @@ export function useChat(options?: {
         break
       }
 
-      case 'error':
-        error.value = event.message as string
+      case 'error': {
+        const { t } = useContent()
+        // SSE error events may contain raw backend messages — use fallback
+        error.value = t('chat.send_error')
         break
+      }
     }
   }
 

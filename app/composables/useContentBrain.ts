@@ -184,10 +184,12 @@ export function useContentBrain() {
         ready.value = false
         break
 
-      case 'error':
-        syncError.value = msg.message
+      case 'error': {
+        const { t } = useContent()
+        syncError.value = t('content.sync_error')
         syncing.value = false
         break
+      }
     }
   }
 
@@ -231,8 +233,9 @@ export function useContentBrain() {
       ready.value = true
       syncing.value = false
     }
-    catch (e: unknown) {
-      syncError.value = e instanceof Error ? e.message : 'Brain sync failed'
+    catch {
+      const { t } = useContent()
+      syncError.value = t('content.sync_error')
       syncing.value = false
 
       // If brain sync fails, request snapshot from worker cache (if available)

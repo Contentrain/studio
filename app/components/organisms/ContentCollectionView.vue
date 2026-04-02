@@ -34,7 +34,8 @@ async function togglePublish(entryId: string) {
     emit('saved')
   }
   catch (e: unknown) {
-    toast.error(e instanceof Error ? e.message : 'Failed to update status')
+    const { t } = useContent()
+    toast.error(resolveApiError(e, t('content.status_error')))
   }
 }
 

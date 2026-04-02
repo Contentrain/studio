@@ -19,7 +19,7 @@ async function handleOAuth(provider: 'github' | 'google') {
     await signInWithOAuth(provider)
   }
   catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : t('auth.login_failed')
+    error.value = resolveApiError(e, t('auth.login_failed'))
     loading.value = false
   }
 }
@@ -33,7 +33,7 @@ async function handleMagicLink(email: string) {
     magicLinkSent.value = true
   }
   catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : t('auth.magic_link_failed')
+    error.value = resolveApiError(e, t('auth.magic_link_failed'))
   }
   finally {
     loading.value = false

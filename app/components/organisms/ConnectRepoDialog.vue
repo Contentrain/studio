@@ -129,8 +129,7 @@ async function connectRepo() {
     open.value = false
   }
   catch (e: unknown) {
-    const message = e instanceof Error ? e.message : t('projects.connected_error')
-    toast.error(message)
+    toast.error(resolveApiError(e, t('projects.connected_error')))
   }
   finally {
     connecting.value = false
