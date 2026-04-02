@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.data_required') })
 
   const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
-  const plan = getWorkspacePlan(workspace)
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
 
   // Validate forms feature
   if (!hasFeature(plan, 'forms.enabled'))

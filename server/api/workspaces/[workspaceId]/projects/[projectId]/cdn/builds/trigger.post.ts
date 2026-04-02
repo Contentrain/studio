@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   // Plan check
   const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
-  const plan = getWorkspacePlan(workspace ?? {})
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {})
   if (!hasFeature(plan, 'cdn.delivery'))
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 

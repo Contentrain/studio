@@ -1,4 +1,4 @@
-interface Workspace {
+export interface Workspace {
   id: string
   name: string
   slug: string
@@ -9,6 +9,14 @@ interface Workspace {
   plan: string
   created_at: string
   workspace_members?: Array<{ role: string }>
+  // Billing fields (from 016_billing_redesign migration)
+  trial_ends_at?: string | null
+  subscription_status?: string | null
+  subscription_current_period_end?: string | null
+  subscription_cancel_at_period_end?: boolean
+  grace_period_ends_at?: string | null
+  stripe_customer_id?: string | null
+  stripe_subscription_id?: string | null
 }
 
 /** Get user's role in active workspace */

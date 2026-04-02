@@ -203,10 +203,10 @@ describe('media route integration', () => {
     }))
 
     const handler = await loadMediaUploadUrlHandler()
-    const result = await handler({} as never)
+    const result = await handler({ context: {} } as never)
 
     expect(result).toEqual(sampleAsset)
-    expect(setResponseStatus).toHaveBeenCalledWith({}, 201)
+    expect(setResponseStatus).toHaveBeenCalledWith({ context: {} }, 201)
     expect(upload).toHaveBeenCalledWith(expect.objectContaining({
       projectId: 'project-1',
       workspaceId: 'workspace-1',

@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const ws = await db.getWorkspaceById(workspaceId, 'plan')
-  const plan = getWorkspacePlan(ws ?? {})
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
   if (!hasFeature(plan, 'forms.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
 

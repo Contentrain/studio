@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Workflow-aware auto-merge (same logic as chat handler)
-  const plan = getWorkspacePlan(workspace)
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
   const configWorkflow = brain.config?.workflow ?? 'auto-merge'
   const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'

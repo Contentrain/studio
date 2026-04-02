@@ -15,6 +15,16 @@ export default defineEventHandler(async (event) => {
   if (!body.repoFullName)
     throw createError({ statusCode: 400, message: errorMessage('validation.repo_required') })
 
+  // Free plan cannot create projects — requires paid subscription
+  const billingPlan = event.context.billing?.effectivePlan
+  if (billingPlan === 'free') {
+    throw createError({
+      statusCode: 402,
+      message: 'A paid plan is required to connect repositories.',
+      data: { requiresCheckout: true, workspaceId },
+    })
+  }
+
   const db = useDatabaseProvider()
 
   // Prevent duplicate — same repo in same workspace

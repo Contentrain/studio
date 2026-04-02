@@ -179,7 +179,7 @@ describe('member routes', () => {
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/members/index.post')).default
 
-    await expect(handler({} as never)).rejects.toMatchObject({
+    await expect(handler({ context: {} } as never)).rejects.toMatchObject({
       statusCode: 403,
     })
   })
@@ -193,7 +193,7 @@ describe('member routes', () => {
     vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(10))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/members/index.post')).default
-    const result = await handler({} as never)
+    const result = await handler({ context: {} } as never)
 
     expect(result).toEqual({ id: 'member-2' })
     expect(useDatabaseProvider().createWorkspaceMember).toHaveBeenCalledWith('token-1', 'user-1', {
@@ -290,7 +290,7 @@ describe('member routes', () => {
     }))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/members/index.post')).default
-    const result = await handler({} as never)
+    const result = await handler({ context: {} } as never)
 
     expect(result).toMatchObject({
       role: 'editor',

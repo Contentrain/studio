@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   // Team size limit
   const ws = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'plan, name, slug')
-  const plan = getWorkspacePlan(ws ?? {})
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
   const currentMembers = await db.listWorkspaceMembers(session.accessToken, session.user.id, workspaceId)
   const memberLimit = getPlanLimit(plan, 'team.members')
   if (currentMembers.length >= memberLimit)

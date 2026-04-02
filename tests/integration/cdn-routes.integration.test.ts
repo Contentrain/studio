@@ -205,7 +205,7 @@ describe('CDN route integration', () => {
   })
 
   it('rejects enabling CDN on plans without the delivery feature', async () => {
-    const event = {} as never
+    const event = { context: {} } as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-1'
@@ -218,6 +218,7 @@ describe('CDN route integration', () => {
     vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_enabled: true }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('getUpgradeParams', vi.fn().mockReturnValue({ requiredPlan: 'pro' }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
       getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'starter' }),
@@ -280,7 +281,7 @@ describe('CDN route integration', () => {
   })
 
   it('streams a successful manual CDN rebuild', async () => {
-    const event = {} as never
+    const event = { context: {} } as never
     const updateCDNBuild = vi.fn().mockResolvedValue(undefined)
     eventStreamState.createEventStream.mockReturnValue(eventStreamState.stream)
 

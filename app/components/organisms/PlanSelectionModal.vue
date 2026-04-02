@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
+import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
-const { activeWorkspace, fetchWorkspaces } = useWorkspaces()
+const { billingState, effectivePlan, startCheckout, openPortal } = useBilling()
 const toast = useToast()
 
 const props = defineProps<{
@@ -17,13 +18,12 @@ const loading = ref<string | null>(null)
 
 const plans = [
   {
-    slug: 'starter',
-    name: 'Starter',
-    price: 9,
-    seat: 0,
-    seatsIncluded: 3,
+    slug: 'starter' as const,
+    name: PLAN_PRICING.starter.name,
+    price: PLAN_PRICING.starter.priceMonthly,
+    seat: PLAN_PRICING.starter.pricePerSeat,
+    seatsIncluded: PLAN_PRICING.starter.seatsIncluded,
     aiModel: 'Haiku',
-    description: t('plans.select_description'),
     highlighted: false,
     features: [
       '50 AI messages/mo',
@@ -37,13 +37,12 @@ const plans = [
     ],
   },
   {
-    slug: 'pro',
-    name: 'Pro',
-    price: 29,
-    seat: 9,
-    seatsIncluded: 10,
+    slug: 'pro' as const,
+    name: PLAN_PRICING.pro.name,
+    price: PLAN_PRICING.pro.priceMonthly,
+    seat: PLAN_PRICING.pro.pricePerSeat,
+    seatsIncluded: PLAN_PRICING.pro.seatsIncluded,
     aiModel: 'Sonnet',
-    description: t('plans.select_description'),
     highlighted: true,
     features: [
       '500 AI messages/mo',
@@ -61,20 +60,37 @@ const plans = [
   },
 ]
 
-const currentPlan = computed(() => activeWorkspace.value?.plan ?? 'starter')
+const hasActiveSubscription = computed(() =>
+  ['subscribed', 'trial_active', 'past_due', 'canceled'].includes(billingState.value),
+)
 
-async function selectPlan(slug: string) {
-  if (!activeWorkspace.value || slug === currentPlan.value) return
+const ctaLabel = computed(() => {
+  if (hasActiveSubscription.value) return t('billing.manage_subscription')
+  return t('billing.start_trial')
+})
+
+async function handlePlanAction(slug: 'starter' | 'pro') {
+  // If already subscribed, open Stripe Portal for plan changes
+  if (hasActiveSubscription.value) {
+    loading.value = slug
+    try {
+      await openPortal()
+    }
+    catch (err: unknown) {
+      const message = (err as { data?: { message?: string } })?.data?.message ?? t('generic.server_error')
+      toast.error(message)
+    }
+    finally {
+      loading.value = null
+    }
+    return
+  }
+
+  // Otherwise start Stripe Checkout with 14-day trial
   loading.value = slug
-
   try {
-    await $fetch(`/api/workspaces/${activeWorkspace.value.id}/select-plan`, {
-      method: 'POST',
-      body: { plan: slug },
-    })
-    await fetchWorkspaces()
-    toast.success(t('common.saved'))
-    emit('update:open', false)
+    await startCheckout(slug)
+    // Redirect happens in startCheckout — this code only runs if it fails
   }
   catch (err: unknown) {
     const message = (err as { data?: { message?: string } })?.data?.message ?? t('generic.server_error')
@@ -103,7 +119,7 @@ async function selectPlan(slug: string) {
               {{ t('plans.select_title') }}
             </DialogTitle>
             <DialogDescription class="mt-1 text-sm text-muted">
-              {{ t('plans.select_description') }}
+              {{ hasActiveSubscription ? t('plans.manage_description') : t('plans.trial_description') }}
             </DialogDescription>
           </div>
           <DialogClose
@@ -123,7 +139,7 @@ async function selectPlan(slug: string) {
               plan.highlighted
                 ? 'border-primary-500 bg-primary-50/50 dark:border-primary-400 dark:bg-primary-950/30'
                 : 'border-secondary-200 dark:border-secondary-800',
-              currentPlan === plan.slug && 'ring-2 ring-primary-500/50',
+              effectivePlan === plan.slug && 'ring-2 ring-primary-500/50',
             ]"
           >
             <!-- Popular badge -->
@@ -132,7 +148,7 @@ async function selectPlan(slug: string) {
             </AtomsBadge>
 
             <!-- Current plan badge -->
-            <AtomsBadge v-if="currentPlan === plan.slug" variant="success" size="sm" class="absolute -top-2.5 left-3">
+            <AtomsBadge v-if="effectivePlan === plan.slug" variant="success" size="sm" class="absolute -top-2.5 left-3">
               {{ t('plans.current_plan') }}
             </AtomsBadge>
 
@@ -153,6 +169,11 @@ async function selectPlan(slug: string) {
               </p>
             </div>
 
+            <!-- Trial info -->
+            <p v-if="!hasActiveSubscription" class="mb-3 text-xs font-medium text-success-600 dark:text-success-400">
+              {{ t('billing.trial_14_days') }}
+            </p>
+
             <!-- Features -->
             <ul class="mb-5 flex-1 space-y-2">
               <li v-for="feature in plan.features" :key="feature" class="flex items-start gap-2 text-sm text-body dark:text-secondary-300">
@@ -165,12 +186,12 @@ async function selectPlan(slug: string) {
             <AtomsBaseButton
               :variant="plan.highlighted ? 'primary' : 'secondary'"
               size="md"
-              :disabled="currentPlan === plan.slug || loading !== null"
+              :disabled="loading !== null"
               :loading="loading === plan.slug"
               class="w-full"
-              @click="selectPlan(plan.slug)"
+              @click="handlePlanAction(plan.slug)"
             >
-              {{ currentPlan === plan.slug ? t('plans.current_plan') : t('plans.subscribe') }}
+              {{ effectivePlan === plan.slug && hasActiveSubscription ? t('plans.current_plan') : ctaLabel }}
             </AtomsBaseButton>
           </div>
         </div>
