@@ -1,7 +1,7 @@
 import type { EntryMeta, ModelDefinition } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, generateBranchName } from './helpers'
+import { buildContextUpdate, createFeatureBranch } from './helpers'
 
 /**
  * Update entry status (publish/unpublish/archive).
@@ -35,8 +35,7 @@ export async function updateEntryStatus(
     } as EntryMeta
   }
 
-  const branchName = generateBranchName('content', modelId, locale)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const commit = await ctx.git.commitFiles(
     branchName,
@@ -118,8 +117,7 @@ export async function copyLocale(
   const projectInfo = await ctx.getProjectInfo(toLocale)
   const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'copy_locale', model: modelId, locale: toLocale }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-  const branchName = generateBranchName('content', modelId)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId)
 
   const message = `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`
   const commit = await ctx.git.commitFiles(

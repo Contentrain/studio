@@ -90,7 +90,7 @@ export default defineEventHandler(async (event) => {
   } as ModelDefinition & { form: FormConfig }
 
   // Save via content engine (branch → commit → merge)
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   const writeResult = await engine.saveModel(updatedModel as unknown as ModelDefinition, session.user.email ?? '')
 
   if (!writeResult.validation.valid) {

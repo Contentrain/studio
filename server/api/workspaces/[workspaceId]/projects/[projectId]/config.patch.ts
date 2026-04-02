@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Use content engine for branch lifecycle (ensureContentBranch + merge)
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.ensureContentBranch()
 
   // Commit directly — config changes always auto-merge

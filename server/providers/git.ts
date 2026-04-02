@@ -114,6 +114,7 @@ export interface GitProvider {
   getBranchDiff: (branch: string, base?: string) => Promise<FileDiff[]>
   mergeBranch: (branch: string, into: string) => Promise<MergeResult>
   deleteBranch: (branch: string) => Promise<void>
+  isMerged: (branch: string, into?: string) => Promise<boolean>
 
   // Commit operations
   commitFiles: (branch: string, files: FileChange[], message: string, author: CommitAuthor) => Promise<Commit>

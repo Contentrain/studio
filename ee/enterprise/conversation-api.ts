@@ -159,7 +159,7 @@ async function runConversationMessage(
   if (body.message.length > 10_000)
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
 
-  const rateCheck = checkRateLimit(`conv:${keyData.keyId}`, keyData.rateLimitPerMinute, 60_000)
+  const rateCheck = await checkRateLimit(`conv:${keyData.keyId}`, keyData.rateLimitPerMinute, 60_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
@@ -277,7 +277,7 @@ async function runConversationMessage(
   const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
   const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
 
-  const contentEngine = createContentEngine({ git, contentRoot })
+  const contentEngine = createContentEngine({ git, contentRoot, projectId: keyData.projectId })
   const toolResults: Array<{ id: string, name: string, result: unknown }> = []
   let responseText = ''
   let totalInputTokens = 0

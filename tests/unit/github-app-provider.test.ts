@@ -189,6 +189,77 @@ describe('github app provider', () => {
     })
   })
 
+  it('detects merged branches via compareCommits status', async () => {
+    githubState.octokit.repos.compareCommits
+      .mockResolvedValueOnce({ data: { status: 'behind' } })
+      .mockResolvedValueOnce({ data: { status: 'identical' } })
+      .mockResolvedValueOnce({ data: { status: 'ahead' } })
+      .mockResolvedValueOnce({ data: { status: 'diverged' } })
+
+    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
+    const provider = createGitHubAppProvider({
+      appId: 'app-1',
+      privateKey: 'private-key',
+      installationId: 1,
+      owner: 'contentrain',
+      repo: 'studio',
+    })
+
+    // "behind" = merged
+    await expect(provider.isMerged('cr/content/a/1-aa')).resolves.toBe(true)
+    // "identical" = merged
+    await expect(provider.isMerged('cr/content/b/2-bb')).resolves.toBe(true)
+    // "ahead" = not merged
+    await expect(provider.isMerged('cr/content/c/3-cc')).resolves.toBe(false)
+    // "diverged" = not merged
+    await expect(provider.isMerged('cr/content/d/4-dd')).resolves.toBe(false)
+
+    // Default base is 'contentrain'
+    expect(githubState.octokit.repos.compareCommits).toHaveBeenCalledWith({
+      owner: 'contentrain',
+      repo: 'studio',
+      base: 'contentrain',
+      head: 'cr/content/a/1-aa',
+    })
+  })
+
+  it('returns false when isMerged compare fails', async () => {
+    githubState.octokit.repos.compareCommits.mockRejectedValue(new Error('Not found'))
+
+    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
+    const provider = createGitHubAppProvider({
+      appId: 'app-1',
+      privateKey: 'private-key',
+      installationId: 1,
+      owner: 'contentrain',
+      repo: 'studio',
+    })
+
+    await expect(provider.isMerged('cr/nonexistent')).resolves.toBe(false)
+  })
+
+  it('uses custom base branch for isMerged', async () => {
+    githubState.octokit.repos.compareCommits.mockResolvedValue({ data: { status: 'behind' } })
+
+    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
+    const provider = createGitHubAppProvider({
+      appId: 'app-1',
+      privateKey: 'private-key',
+      installationId: 1,
+      owner: 'contentrain',
+      repo: 'studio',
+    })
+
+    await expect(provider.isMerged('cr/content/a/1-aa', 'main')).resolves.toBe(true)
+
+    expect(githubState.octokit.repos.compareCommits).toHaveBeenCalledWith({
+      owner: 'contentrain',
+      repo: 'studio',
+      base: 'main',
+      head: 'cr/content/a/1-aa',
+    })
+  })
+
   it('maps merge conflicts to non-merged results and returns null when branch protection is unavailable', async () => {
     githubState.octokit.repos.merge.mockRejectedValue({ status: 409 })
     githubState.octokit.repos.getBranchProtection.mockRejectedValue(Object.assign(new Error('Not protected'), { status: 404 }))

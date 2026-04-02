@@ -13,6 +13,7 @@ export interface WriteResult {
 export interface ContentEngineContext {
   git: GitProvider
   contentRoot: string
+  projectId?: string
 }
 
 // ── Internal shared context (passed to each operation function) ──────
@@ -20,6 +21,7 @@ export interface ContentEngineContext {
 export interface EngineInternalContext {
   git: GitProvider
   pathCtx: { contentRoot: string }
+  projectId?: string
   ensureContentBranch: () => Promise<void>
   getProjectInfo: (fallbackLocale: string) => Promise<{ modelCount: number, locales: string[] }>
 }

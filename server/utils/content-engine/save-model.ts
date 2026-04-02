@@ -1,7 +1,7 @@
 import type { ContentrainConfig, ModelDefinition } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, generateBranchName } from './helpers'
+import { buildContextUpdate, createFeatureBranch } from './helpers'
 
 /**
  * Save a model definition.
@@ -65,8 +65,7 @@ export async function saveModel(
   }
   const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales, CONTENT_BRANCH)
 
-  const branchName = generateBranchName('model', definition.id)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  const { branchName } = await createFeatureBranch(ctx, 'model', definition.id)
 
   const message = `contentrain: save model ${definition.id}\n\nCo-Authored-By: ${userEmail}`
   const commit = await ctx.git.commitFiles(

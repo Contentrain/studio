@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   vocabulary.terms = updatedTerms
 
   // Use content engine for branch lifecycle (ensureContentBranch + merge)
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.ensureContentBranch()
 
   // Commit + auto-merge

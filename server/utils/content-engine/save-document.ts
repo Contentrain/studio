@@ -1,7 +1,7 @@
 import type { EntryMeta, ModelDefinition } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, generateBranchName } from './helpers'
+import { buildContextUpdate, createFeatureBranch } from './helpers'
 
 /**
  * Save a document (markdown with frontmatter).
@@ -70,8 +70,7 @@ export async function saveDocument(
   const projectInfo = await ctx.getProjectInfo(locale)
   const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-  const branchName = generateBranchName('content', modelId, locale)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const message = `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`
   const commit = await ctx.git.commitFiles(

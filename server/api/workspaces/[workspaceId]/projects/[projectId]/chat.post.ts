@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
   // === RATE LIMIT ===
   const rateKey = `chat:${session.user.id}`
-  const rateCheck = checkRateLimit(rateKey)
+  const rateCheck = await checkRateLimit(rateKey)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
@@ -193,7 +193,7 @@ export default defineEventHandler(async (event) => {
 
   // === SSE STREAM ===
   const eventStream = createEventStream(event)
-  const contentEngine = createContentEngine({ git, contentRoot })
+  const contentEngine = createContentEngine({ git, contentRoot, projectId })
   const abortController = new AbortController()
 
   const processChat = async () => {

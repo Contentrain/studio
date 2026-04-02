@@ -174,7 +174,7 @@ export default defineEventHandler(async (event) => {
 
   // Rate limit per IP + model (uses form config limit or default 10/min)
   const rateLimitPerIp = formConfig.limits?.rateLimitPerIp ?? 10
-  const rateCheck = checkRateLimit(`form:${ip}:${modelId}`, rateLimitPerIp, 60_000)
+  const rateCheck = await checkRateLimit(`form:${ip}:${modelId}`, rateLimitPerIp, 60_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 
@@ -272,7 +272,7 @@ export default defineEventHandler(async (event) => {
   // Auto-approve: create content entry + update submission status
   if (shouldAutoApprove) {
     try {
-      const engine = createContentEngine({ git, contentRoot })
+      const engine = createContentEngine({ git, contentRoot, projectId })
       const entryId = generateEntryId()
       const entryData = { [entryId]: filteredData }
       const writeResult = await engine.saveContent(modelId, 'en', entryData, 'form-auto-approve@contentrain.io', { autoPublish: false })
