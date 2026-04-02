@@ -1,6 +1,7 @@
 import type { ContentrainConfig } from '@contentrain/types'
 import type { EngineInternalContext } from './types'
 import { CONTENT_BRANCH } from './types'
+import { checkBranchHealth, getHealthStatus } from '../branch-health'
 
 /**
  * Generate a v2 branch name following git-architecture.md §2.3:
@@ -15,6 +16,48 @@ export function generateBranchName(scope: string, target: string, locale?: strin
   if (locale) parts.push(locale)
   parts.push(`${timestamp}-${suffix}`)
   return parts.join('/')
+}
+
+/**
+ * Create a cr/* feature branch with branch health enforcement.
+ *
+ * Checks cached health status (or fetches fresh if stale) and blocks
+ * new branch creation when 80+ unmerged branches exist (git-architecture.md §8.2).
+ * Returns a warning message when 50+ unmerged branches exist.
+ */
+export async function createFeatureBranch(
+  ctx: EngineInternalContext,
+  scope: string,
+  target: string,
+  locale?: string,
+): Promise<{ branchName: string, healthWarning?: string }> {
+  // Check branch health before creating a new branch
+  if (ctx.projectId) {
+    const cached = getHealthStatus(ctx.projectId)
+    const health = cached ?? await checkBranchHealth(ctx.git, ctx.projectId)
+
+    if (health.status === 'blocked') {
+      throw createError({
+        statusCode: 429,
+        message: errorMessage('branches.health_blocked'),
+      })
+    }
+
+    const branchName = generateBranchName(scope, target, locale)
+    await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+
+    return {
+      branchName,
+      healthWarning: health.status === 'warning'
+        ? `Warning: ${health.unmergedCount} unmerged branches. Review and merge pending branches.`
+        : undefined,
+    }
+  }
+
+  // No projectId — skip health check (backward compatibility)
+  const branchName = generateBranchName(scope, target, locale)
+  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  return { branchName }
 }
 
 /**

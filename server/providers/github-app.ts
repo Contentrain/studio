@@ -269,6 +269,24 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
       })
     },
 
+    async isMerged(branch: string, into?: string): Promise<boolean> {
+      const base = into ?? 'contentrain'
+      try {
+        const { data } = await octokit.repos.compareCommits({
+          owner,
+          repo,
+          base,
+          head: branch,
+        })
+        // "behind" = branch has no new commits over base (fully merged)
+        // "identical" = same commit
+        return data.status === 'behind' || data.status === 'identical'
+      }
+      catch {
+        return false
+      }
+    },
+
     async commitFiles(branch: string, files: FileChange[], message: string, author: CommitAuthor): Promise<Commit> {
       // Multi-file atomic commit via Git Data API:
       // 1. Get branch HEAD

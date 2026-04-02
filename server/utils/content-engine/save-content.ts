@@ -2,7 +2,7 @@ import type { ModelDefinition, ValidationResult, EntryMeta } from '@contentrain/
 import type { ValidationContext } from '../content-validation'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, generateBranchName, toObjectMap } from './helpers'
+import { buildContextUpdate, createFeatureBranch, toObjectMap } from './helpers'
 
 /**
  * Save content for a model (create or update entries).
@@ -175,9 +175,8 @@ export async function saveContent(
   const projectInfo = await ctx.getProjectInfo(locale)
   const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'save_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-  // 9. Create feature branch from contentrain
-  const branchName = generateBranchName('content', modelId, locale)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  // 9. Create feature branch from contentrain (with health check)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   // 10. Commit content + meta + context
   const message = `contentrain: save ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`

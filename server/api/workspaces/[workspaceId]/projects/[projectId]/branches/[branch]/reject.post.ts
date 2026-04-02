@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.rejectBranch(branch)
   return { rejected: true }
 })

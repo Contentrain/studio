@@ -29,6 +29,7 @@ function createGitProvider(overrides: Partial<GitProvider> = {}): GitProvider {
     getBranchProtection: vi.fn(),
     getDefaultBranch: vi.fn().mockResolvedValue('main'),
     detectFramework: vi.fn(),
+    isMerged: vi.fn().mockResolvedValue(false),
     ...overrides,
   } as unknown as GitProvider
 }

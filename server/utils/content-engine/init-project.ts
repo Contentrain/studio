@@ -1,7 +1,7 @@
 import type { ContentrainConfig, ModelDefinition } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { generateBranchName } from './helpers'
+import { createFeatureBranch } from './helpers'
 
 /**
  * Initialize .contentrain/ structure in a repo that doesn't have one.
@@ -89,10 +89,9 @@ export async function initProject(
     }
   }
 
-  // Ensure contentrain branch + create feature branch
+  // Ensure contentrain branch + create feature branch (with health check)
   await ctx.ensureContentBranch()
-  const branchName = generateBranchName('new', 'init')
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  const { branchName } = await createFeatureBranch(ctx, 'new', 'init')
 
   const message = `contentrain: initialize project\n\nStack: ${stack}\nLocales: ${locales.join(', ')}\nDomains: ${domains.join(', ')}\nModels: ${models.map(m => m.id).join(', ')}\n\nCo-Authored-By: ${userEmail}`
 

@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
 
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   const result = await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
 
   if (!result.validation.valid) {

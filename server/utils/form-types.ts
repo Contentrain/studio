@@ -77,7 +77,7 @@ export async function approveSubmissionAsContent(
   const modelId = submission.model_id as string
   const data = submission.data as Record<string, unknown>
 
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   const entryId = generateEntryId()
   const entryData = { [entryId]: data }
 

@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
 
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
-  const engine = createContentEngine({ git, contentRoot })
+  const engine = createContentEngine({ git, contentRoot, projectId })
   const writeResult = await engine.updateEntryStatus(
     modelId, body.locale ?? 'en', body.entryIds, body.status, session.user.email ?? '',
   )

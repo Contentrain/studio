@@ -20,6 +20,7 @@ type ProjectMethods = Pick<
   | 'listUserAssignedProjects'
   | 'updateProjectContentTimestamp'
   | 'listCDNEnabledProjects'
+  | 'listAllActiveProjects'
   | 'listProjectMembers'
   | 'getProjectMember'
   | 'createProjectMember'
@@ -202,6 +203,18 @@ export function projectMethods(): ProjectMethods {
         .select('id, workspace_id, content_root, cdn_enabled, cdn_branch, default_branch')
         .eq('repo_full_name', repoFullName)
         .eq('cdn_enabled', true)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return data ?? []
+    },
+
+    async listAllActiveProjects(fields = 'id, repo_full_name, content_root, workspace_id') {
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('projects')
+        .select(fields as '*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
 
       if (error) throw createError({ statusCode: 500, message: error.message })
       return data ?? []

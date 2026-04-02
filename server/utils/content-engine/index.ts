@@ -18,13 +18,14 @@ import { copyLocale, updateEntryStatus } from './update-status'
  * Not MCP — implements the same standard independently.
  */
 export function createContentEngine(ctx: ContentEngineContext) {
-  const { git, contentRoot } = ctx
+  const { git, contentRoot, projectId } = ctx
   const pathCtx = { contentRoot }
 
   // Build internal context shared by all operations
   const internal: EngineInternalContext = {
     git,
     pathCtx,
+    projectId,
     ensureContentBranch: () => Promise.resolve(), // replaced below
     getProjectInfo: fallbackLocale => getProjectInfo(internal, fallbackLocale),
   }

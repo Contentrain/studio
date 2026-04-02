@@ -1,7 +1,7 @@
 import type { ModelDefinition } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, generateBranchName, toObjectMap } from './helpers'
+import { buildContextUpdate, createFeatureBranch, toObjectMap } from './helpers'
 
 /**
  * Delete content entries from a collection.
@@ -46,8 +46,7 @@ export async function deleteContent(
   const projectInfo = await ctx.getProjectInfo(locale)
   const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
 
-  const branchName = generateBranchName('content', modelId, locale)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const message = `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
   const commit = await ctx.git.commitFiles(
