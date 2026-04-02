@@ -173,5 +173,13 @@
   "webhook.not_found": "Webhook not found.",
   "webhook.upgrade": "Outbound webhooks are available on all plans. Upgrade your plan for higher limits.",
   "webhook.url_required": "Webhook URL is required.",
-  "workspace.slug_too_short": "Workspace slug must be at least 2 characters."
+  "workspace.slug_too_short": "Workspace slug must be at least 2 characters.",
+  "billing.subscription_exists": "This workspace already has an active subscription. Manage it from the billing portal.",
+  "members.resend_rate_limited": "Too many resend attempts. Please wait before trying again.",
+  "members.resend_failed": "Failed to send invitation email. Please try again.",
+  "members.already_accepted": "This member has already accepted the invitation.",
+  "members.no_email": "No email address found for this member.",
+  "project.access_denied": "You do not have access to this project.",
+  "project.config_validation_failed": "Project configuration is invalid: {errors}",
+  "validation.workspace_member_required": "Workspace ID and member ID are required."
 }

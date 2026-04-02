@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
   const ws = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'name, slug')
 
   const authProvider = useAuthProvider()
+  let emailSent = false
 
   try {
     // Try re-inviting via Supabase (works for users not yet confirmed)
@@ -43,6 +44,7 @@ export default defineEventHandler(async (event) => {
     await authProvider.inviteUserByEmail(invitedEmail, {
       redirectTo: `${config.public.siteUrl}/auth/callback?workspace=${ws?.slug ?? ''}`,
     })
+    emailSent = true
   }
   catch {
     // User already confirmed — send notification via EmailProvider
@@ -55,10 +57,15 @@ export default defineEventHandler(async (event) => {
         subject: `Reminder: You've been invited to ${ws.name} on Contentrain Studio`,
         html: `<p>Hi,</p><p>This is a reminder that you have a pending invitation to the <strong>${ws.name}</strong> workspace on Contentrain Studio.</p><p><a href="${workspaceUrl}">Open workspace</a></p>`,
       })
+      emailSent = true
     }
   }
 
-  // Update invited_at to reset timestamp
+  if (!emailSent) {
+    throw createError({ statusCode: 502, message: errorMessage('members.resend_failed') })
+  }
+
+  // Update invited_at only after successful email send
   await db.updateWorkspaceMemberInvitedAt(session.accessToken, session.user.id, workspaceId, memberId, new Date().toISOString())
 
   return { resent: true }

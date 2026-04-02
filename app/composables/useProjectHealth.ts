@@ -7,10 +7,11 @@
 export function useProjectHealth() {
   const brain = useContentBrain()
 
-  const healthScore = computed(() => brain.schemaValidation.value?.healthScore ?? 100)
+  const healthScore = computed(() => brain.schemaValidation.value?.healthScore ?? null)
 
   const healthTier = computed(() => {
     const score = healthScore.value
+    if (score === null) return 'unavailable'
     if (score >= 90) return 'excellent'
     if (score >= 70) return 'good'
     if (score >= 50) return 'fair'

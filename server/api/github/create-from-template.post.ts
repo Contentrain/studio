@@ -45,8 +45,10 @@ export default defineEventHandler(async (event) => {
   // Create repo from template
   let newRepo
   try {
+    const config = useRuntimeConfig()
+    const templateOwner = (config.public.templateOwner as string) || 'Contentrain'
     newRepo = await gitApp.createRepositoryFromTemplate({
-      templateOwner: 'Contentrain',
+      templateOwner,
       templateRepo: body.templateRepo,
       name: body.name,
       private: body.isPrivate ?? false,

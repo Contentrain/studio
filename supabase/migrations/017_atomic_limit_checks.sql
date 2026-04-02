@@ -123,6 +123,38 @@ END;
 $$;
 
 -- ============================================================
+-- 2b. increment_agent_usage_tokens
+--     Atomically increments token counters on an existing usage row.
+--     Prevents concurrent chat completions from overwriting each other.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.increment_agent_usage_tokens(
+  p_workspace_id UUID,
+  p_user_id UUID,
+  p_month TEXT,
+  p_source TEXT,
+  p_input_tokens BIGINT,
+  p_output_tokens BIGINT
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public.agent_usage
+  SET
+    input_tokens = input_tokens + p_input_tokens,
+    output_tokens = output_tokens + p_output_tokens,
+    updated_at = now()
+  WHERE workspace_id = p_workspace_id
+    AND user_id = p_user_id
+    AND month = p_month
+    AND source = p_source;
+END;
+$$;
+
+-- ============================================================
 -- 3. increment_storage_bytes
 --    Already called by app code (with fallback). Deploy the
 --    actual RPC so the fallback read+write path is never used.

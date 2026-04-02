@@ -51,7 +51,7 @@ function getWorkspacePlan(ws: { plan?: string | null, workspace_members?: unknow
 }
 
 function getPlanLabel(plan: string): string {
-  const labels: Record<string, string> = { free: t('billing.state_free'), starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
+  const labels: Record<string, string> = { free: t('billing.state_free'), starter: t('billing.plan_starter'), pro: t('billing.plan_pro'), enterprise: t('billing.plan_enterprise') }
   return labels[plan] ?? plan
 }
 
@@ -113,7 +113,7 @@ onMounted(() => {
               size="sm"
               class="shrink-0 font-display"
             >
-              {{ planBadge[getWorkspacePlan(ws)]?.label ?? 'Starter' }}
+              {{ getPlanLabel(getWorkspacePlan(ws)) }}
             </AtomsBadge>
             <span v-if="ws.id === activeWorkspace?.id" class="icon-[annon--check] size-4 shrink-0" aria-hidden="true" />
           </button>

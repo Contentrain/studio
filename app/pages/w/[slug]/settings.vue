@@ -9,6 +9,7 @@ const route = useRoute()
 const slug = computed(() => route.params.slug as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
+const { isOwnerOrAdmin } = useWorkspaceRole()
 const { t } = useContent()
 
 const validTabs = ['overview', 'members', 'billing', 'github', 'ai-keys'] as const
@@ -70,13 +71,13 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger value="overview" :class="tabTriggerClass">
           {{ t('settings.overview_tab') }}
         </TabsTrigger>
-        <TabsTrigger value="members" :class="tabTriggerClass">
+        <TabsTrigger v-if="isOwnerOrAdmin" value="members" :class="tabTriggerClass">
           {{ t('settings.members_tab') }}
         </TabsTrigger>
-        <TabsTrigger value="billing" :class="tabTriggerClass">
+        <TabsTrigger v-if="isOwnerOrAdmin" value="billing" :class="tabTriggerClass">
           {{ t('settings.billing_tab') }}
         </TabsTrigger>
-        <TabsTrigger value="github" :class="tabTriggerClass">
+        <TabsTrigger v-if="isOwnerOrAdmin" value="github" :class="tabTriggerClass">
           {{ t('settings.github_tab') }}
         </TabsTrigger>
         <TabsTrigger value="ai-keys" :class="tabTriggerClass">
@@ -88,15 +89,15 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <OrganismsWorkspaceOverviewPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent value="members" class="mt-6">
+      <TabsContent v-if="isOwnerOrAdmin" value="members" class="mt-6">
         <OrganismsWorkspaceMembersPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent value="billing" class="mt-6">
+      <TabsContent v-if="isOwnerOrAdmin" value="billing" class="mt-6">
         <OrganismsWorkspaceBillingPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent value="github" class="mt-6">
+      <TabsContent v-if="isOwnerOrAdmin" value="github" class="mt-6">
         <OrganismsWorkspaceGitHubPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 

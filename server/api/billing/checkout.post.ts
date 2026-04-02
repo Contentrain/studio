@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   }>(event)
 
   if (!body.workspaceId || !body.plan || !['starter', 'pro'].includes(body.plan)) {
-    throw createError({ statusCode: 400, message: 'Workspace ID and valid plan (starter or pro) are required.' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.params_required') })
   }
 
   // Only owner/admin can create checkout sessions
@@ -23,15 +23,25 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     body.workspaceId,
     ['owner', 'admin'],
+    'id, slug, name, stripe_subscription_id, subscription_status',
   )
 
   if (!workspace) {
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
   }
 
+  // Guard: prevent duplicate subscriptions for the same workspace
+  const wsData = workspace as { stripe_subscription_id?: string | null, subscription_status?: string | null }
+  if (wsData.stripe_subscription_id && wsData.subscription_status && !['canceled', 'incomplete_expired'].includes(wsData.subscription_status)) {
+    throw createError({
+      statusCode: 409,
+      message: errorMessage('billing.subscription_exists'),
+    })
+  }
+
   const payment = usePaymentProvider()
   if (!payment) {
-    throw createError({ statusCode: 503, message: 'Billing is not configured.' })
+    throw createError({ statusCode: 503, message: errorMessage('generic.server_error') })
   }
 
   const config = useRuntimeConfig()

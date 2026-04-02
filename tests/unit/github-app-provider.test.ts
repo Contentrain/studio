@@ -83,7 +83,7 @@ describe('github app provider', () => {
         data: [{ name: 'posts' }, { name: 'pages' }],
       })
       .mockResolvedValueOnce({ data: { content: 'exists' } })
-      .mockRejectedValueOnce(new Error('Not found'))
+      .mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }))
 
     const { createGitHubAppProvider } = await import('../../server/providers/github-app')
     const provider = createGitHubAppProvider({
@@ -191,7 +191,7 @@ describe('github app provider', () => {
 
   it('maps merge conflicts to non-merged results and returns null when branch protection is unavailable', async () => {
     githubState.octokit.repos.merge.mockRejectedValue({ status: 409 })
-    githubState.octokit.repos.getBranchProtection.mockRejectedValue(new Error('Not protected'))
+    githubState.octokit.repos.getBranchProtection.mockRejectedValue(Object.assign(new Error('Not protected'), { status: 404 }))
 
     const { createGitHubAppProvider } = await import('../../server/providers/github-app')
     const provider = createGitHubAppProvider({

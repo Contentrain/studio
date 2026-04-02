@@ -9,7 +9,10 @@ import type { EmailProvider } from './email'
  */
 export function createResendEmailProvider(apiKey: string): EmailProvider {
   const resend = new Resend(apiKey)
-  const defaultFrom = 'Contentrain Studio <noreply@contentrain.io>'
+  const config = useRuntimeConfig()
+  const senderEmail = (config.emailSenderAddress as string) || 'noreply@contentrain.io'
+  const senderName = (config.emailSenderName as string) || 'Contentrain Studio'
+  const defaultFrom = `${senderName} <${senderEmail}>`
 
   return {
     async sendEmail(options) {

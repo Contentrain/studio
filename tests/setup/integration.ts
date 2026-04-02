@@ -26,6 +26,7 @@ import {
 } from '../../server/utils/providers'
 import { clearServerSession, getServerSession, setAuthState, setServerSession, validateAuthState } from '../../server/utils/session'
 import { requireAuth } from '../../server/utils/auth'
+import { getClientIp } from '../../server/utils/form-types'
 
 const runtimeConfig = {
   sessionSecret: 'test-session-secret-32-characters-min',
@@ -80,6 +81,9 @@ beforeEach(() => {
   vi.stubGlobal('useGitAppProvider', useGitAppProvider)
   vi.stubGlobal('useGitProvider', useGitProvider)
   vi.stubGlobal('useMediaProvider', useMediaProvider)
+
+  vi.stubGlobal('getClientIp', getClientIp)
+  vi.stubGlobal('validateConfig', vi.fn().mockReturnValue([]))
 
   vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({
     allowed: true,
