@@ -59,7 +59,7 @@ function handleCta() {
       <span
         class="size-4"
         :class="[
-          isExpired || isPastDue ? 'icon-[annon--alert-triangle]' : isFree ? 'icon-[annon--sparkle]' : 'icon-[annon--clock]',
+          isExpired || isPastDue ? 'icon-[annon--alert-triangle]' : isFree ? 'icon-[annon--star]' : 'icon-[annon--clock]',
         ]"
         aria-hidden="true"
       />

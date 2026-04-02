@@ -7,7 +7,7 @@
  * SDK reads from pre-generated .contentrain/client/ — synchronous, zero I/O.
  */
 
-import { dictionary } from '#contentrain'
+import { dictionary, query } from '#contentrain'
 
 type Params = Record<string, string | number>
 
@@ -59,5 +59,28 @@ export function errorMessage(key: string, params?: Params, locale: string = 'en'
   }
   catch {
     return key
+  }
+}
+
+/**
+ * Get subject + body from email-templates collection.
+ * Looks up by slug, returns interpolated subject and body.
+ */
+export function emailTemplate(
+  slug: string,
+  params?: Params,
+  locale: string = 'en',
+): { subject: string, body: string } {
+  try {
+    const entries = query('email-templates').locale(locale).where('slug', slug).all()
+    const entry = entries[0] as { subject?: string, body?: string } | undefined
+    if (!entry) return { subject: slug, body: '' }
+    return {
+      subject: interpolate(entry.subject ?? slug, params),
+      body: interpolate(entry.body ?? '', params),
+    }
+  }
+  catch {
+    return { subject: slug, body: '' }
   }
 }
