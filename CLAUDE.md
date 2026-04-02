@@ -218,14 +218,14 @@ Medium:
 
 - Conventional Commits enforced by commitlint + husky
 - `pnpm lint` / `pnpm lint:fix` — @nuxt/eslint with Stylistic (no Prettier)
-- `pnpm release` — changelogen for changelog + version + tag
+- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow
 - lint-staged on pre-commit (only changed files)
 - GitHub Actions CI on PRs (commit lint + build)
 
 ## Enterprise Edition (ee/) — CRITICAL
 
 Studio uses **Open Core** model: AGPL core + proprietary `ee/` directory.
-Full spec: `.internal/EE-SEPARATION.md`
+The `ee/` boundary rules are enforced in code and contributor guidance; internal planning files are not tracked.
 
 ### Rules — never violate:
 
@@ -258,32 +258,9 @@ Full spec: `.internal/EE-SEPARATION.md`
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
 
-## Internal Documents
+## Internal Planning
 
-Active specs in `.internal/`:
-- `STUDIO-SPEC.md` — master product & architecture spec
-- `EE-SEPARATION.md` — Open Core / EE boundary rules
-- `git-architecture.md` — Git v2: contentrain SSOT branch, cr/* feature branches, two-step merge
-- `MARKETING.md` — go-to-market strategy
-- `IDEAS.md` — product ideas with feasibility analysis
-- `CONVERSATION-API.md` — external AI content ops (Business+) — implemented
-- `FORMS-SUBMISSIONS.md` — content-in via public forms — implemented
-- `SCHEMA-VALIDATION.md` — model integrity & breaking change detection — implemented
-
-## Current Phase
-
-**All 8 phases completed + Profile/Account Settings.** Preparing for user testing deploy.
-
-Completed phases:
-- Phase 1: Foundation + Content Browsing
-- Phase 2: Chat Engine + Content Editing
-- Phase 3: CDN Content Delivery
-- Phase 4: Media Management
-- Phase 5: Schema Validation + Project Health Dashboard
-- Phase 6: Forms & Submissions
-- Phase 7: Conversation API (external AI content ops)
-- Phase 8: Webhook Outbound (event delivery, HMAC-SHA256, retry engine)
-- Profile/Account Settings (display name, account deletion, GDPR)
+Long-form product, marketing, and implementation planning docs are kept outside the tracked repository on purpose.
 
 ### Roadmap (next)
 

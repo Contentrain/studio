@@ -195,7 +195,7 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 
 ## Deferred TODOs
 
-See `.internal/PHASE-1.md` → "Deferred TODOs" section for tracked items.
+Deferred roadmap and planning notes live outside the tracked repository.
 Key items:
 - GitHub webhook for installation lifecycle (Phase 2)
 - GitProvider write operations — stubs now, Phase 2
@@ -210,14 +210,14 @@ Key items:
 
 - Conventional Commits enforced by commitlint + husky
 - `pnpm lint` / `pnpm lint:fix` — @nuxt/eslint with Stylistic (no Prettier)
-- `pnpm release` — changelogen for changelog + version + tag
+- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow
 - lint-staged on pre-commit (only changed files)
 - GitHub Actions CI on PRs (commit lint + build)
 
 ## Enterprise Edition (ee/) — CRITICAL
 
 Studio uses **Open Core** model: AGPL core + proprietary `ee/` directory.
-Full spec: `.internal/EE-SEPARATION.md`
+The `ee/` boundary rules are enforced in code and contributor guidance; internal planning files are not tracked.
 
 ### Rules — never violate:
 
@@ -250,16 +250,9 @@ Full spec: `.internal/EE-SEPARATION.md`
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
 
-## Phase Documents
+## Planning Docs
 
-Implementation phases are tracked in `.internal/PHASE-2.md` (completed).
-Each phase document is kept as reference until the next phase starts.
-Internal spec: `.internal/STUDIO-SPEC.md` — planning document, not part of codebase.
-
-## Current Phase
-
-**Phase 2 completed.** Chat Engine + Content Editing — conversation-first content management.
-Phase 3 next: **CDN Content Delivery**. See `.internal/PHASE-3.md` for spec.
+Long-form planning specs and phase notes are intentionally kept out of the tracked repository.
 
 ## Reference Codebase
 
