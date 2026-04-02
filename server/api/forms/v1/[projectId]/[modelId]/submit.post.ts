@@ -178,12 +178,6 @@ export default defineEventHandler(async (event) => {
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 
-  // Monthly submission limit check
-  const monthlyCount = await db.countMonthlySubmissions(workspace.id as string)
-  const monthlyLimit = getPlanLimit(plan, 'forms.submissions_per_month')
-  if (monthlyCount >= monthlyLimit)
-    throw createError({ statusCode: 429, message: errorMessage('forms.monthly_limit') })
-
   // Honeypot check — silent reject (return 200 to fool bots)
   if (formConfig.honeypot && body._hp) {
     return { success: true, message: formConfig.successMessage ?? errorMessage('forms.default_success') }
@@ -250,19 +244,30 @@ export default defineEventHandler(async (event) => {
   const shouldAutoApprove = formConfig.autoApprove === true
     && hasFeature(plan, 'forms.auto_approve')
 
-  // Create form submission record
+  // Atomic: check monthly limit + insert submission (prevents race conditions)
   const userAgent = getHeader(event, 'user-agent') ?? null
   const referrer = getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? null
+  const monthlyLimit = getPlanLimit(plan, 'forms.submissions_per_month')
 
-  const submission = await db.createFormSubmission({
-    project_id: projectId,
-    workspace_id: workspace.id as string,
-    model_id: modelId,
-    data: filteredData,
-    source_ip: ip !== 'unknown' ? ip : undefined,
-    user_agent: userAgent ?? undefined,
-    referrer: referrer ?? undefined,
-  })
+  const { allowed, submission } = await db.createFormSubmissionIfAllowed(
+    workspace.id as string,
+    monthlyLimit,
+    {
+      project_id: projectId,
+      workspace_id: workspace.id as string,
+      model_id: modelId,
+      data: filteredData,
+      source_ip: ip !== 'unknown' ? ip : undefined,
+      user_agent: userAgent ?? undefined,
+      referrer: referrer ?? undefined,
+    },
+  )
+
+  if (!allowed)
+    throw createError({ statusCode: 429, message: errorMessage('forms.monthly_limit') })
+
+  if (!submission)
+    throw createError({ statusCode: 500, message: errorMessage('forms.submission_failed') })
 
   // Auto-approve: create content entry + update submission status
   if (shouldAutoApprove) {

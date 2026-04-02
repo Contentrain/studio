@@ -186,8 +186,10 @@ export async function inviteOrLookupUser(
 // ─── Cross-domain: Chat Persistence ───
 
 /**
- * Save chat messages + track usage.
- * Orchestrates multiple provider methods in sequence.
+ * Save chat messages + update token counts.
+ * Message count is already reserved atomically before the chat via
+ * incrementAgentUsageIfAllowed — this function only persists messages
+ * and updates the token metadata on the existing usage row.
  */
 export async function saveChatResult(
   conversationId: string,
@@ -200,7 +202,8 @@ export async function saveChatResult(
   workspaceId: string,
   userId: string,
   usageSource: 'byoa' | 'studio' | 'api',
-  apiKeyId?: string,
+  usageMonth: string,
+  _apiKeyId?: string,
 ) {
   const db = useDatabaseProvider()
 
@@ -216,14 +219,12 @@ export async function saveChatResult(
     model,
   })
 
-  const month = new Date().toISOString().substring(0, 7)
-  await db.upsertAgentUsage({
+  // Token counts only — message_count already reserved atomically
+  await db.updateAgentUsageTokens({
     workspaceId,
     userId,
-    apiKeyId,
-    month,
+    month: usageMonth,
     source: usageSource,
-    messageCount: 1,
     inputTokens,
     outputTokens,
   })

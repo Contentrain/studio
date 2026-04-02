@@ -163,11 +163,17 @@ async function runConversationMessage(
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
-  const month = new Date().toISOString().substring(0, 7)
-  const usageRow = await db.getAgentUsage(keyData.workspaceId, month, 'api', { apiKeyId: keyData.keyId })
-
-  const totalCount = usageRow ? Number(usageRow.message_count ?? 0) : 0
-  if (totalCount >= keyData.monthlyMessageLimit)
+  // Atomic: check monthly limit + reserve a message slot (prevents race conditions)
+  const usageMonth = new Date().toISOString().substring(0, 7)
+  const { allowed } = await db.incrementAgentUsageIfAllowed({
+    workspaceId: keyData.workspaceId,
+    userId: keyData.keyId,
+    apiKeyId: keyData.keyId,
+    month: usageMonth,
+    source: 'api',
+    limit: keyData.monthlyMessageLimit,
+  })
+  if (!allowed)
     throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: keyData.monthlyMessageLimit }) })
 
   const permissions = buildPermissions(keyData)
@@ -321,6 +327,7 @@ async function runConversationMessage(
     keyData.workspaceId,
     keyData.keyId,
     'api',
+    usageMonth,
     keyData.keyId,
   )
 

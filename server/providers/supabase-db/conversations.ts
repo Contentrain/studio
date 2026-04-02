@@ -17,6 +17,8 @@ type ConversationMethods = Pick<
   | 'getAgentUsage'
   | 'upsertAgentUsage'
   | 'getMonthlyUsageSummary'
+  | 'incrementAgentUsageIfAllowed'
+  | 'updateAgentUsageTokens'
   | 'getBYOAKey'
 >
 
@@ -191,6 +193,40 @@ export function conversationMethods(): ConversationMethods {
         .eq('month', month)
 
       return (data ?? []).reduce((sum: number, r: Record<string, unknown>) => sum + ((r.message_count as number) ?? 0), 0)
+    },
+
+    async incrementAgentUsageIfAllowed(input) {
+      const admin = getAdmin()
+      const { data, error } = await admin.rpc('increment_agent_usage_if_allowed', {
+        p_workspace_id: input.workspaceId,
+        p_user_id: input.userId,
+        p_api_key_id: input.apiKeyId ?? null,
+        p_month: input.month,
+        p_source: input.source,
+        p_limit: input.limit,
+      })
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Atomic usage check failed: ${error.message}` })
+      }
+
+      const result = data as { allowed: boolean, current_count: number }
+      return { allowed: result.allowed, currentCount: result.current_count }
+    },
+
+    async updateAgentUsageTokens(input) {
+      const admin = getAdmin()
+      await admin
+        .from('agent_usage')
+        .update({
+          input_tokens: input.inputTokens,
+          output_tokens: input.outputTokens,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', input.workspaceId)
+        .eq('user_id', input.userId)
+        .eq('month', input.month)
+        .eq('source', input.source)
     },
 
     // ─── BYOA Key ───

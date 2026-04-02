@@ -49,15 +49,6 @@ export default defineEventHandler(async (event) => {
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
-  // === MONTHLY LIMIT (aggregate across all sources: studio + byoa) ===
-  const monthlyLimit = getMonthlyMessageLimit(plan)
-  if (monthlyLimit !== Infinity) {
-    const month = new Date().toISOString().substring(0, 7)
-    const totalCount = await db.getMonthlyUsageSummary(workspaceId, session.user.id, month)
-    if (totalCount >= monthlyLimit)
-      throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: monthlyLimit }) })
-  }
-
   // === PERMISSIONS ===
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
   if (permissions.availableTools.length === 0)
@@ -86,6 +77,21 @@ export default defineEventHandler(async (event) => {
   }
   else {
     throw createError({ statusCode: 400, message: errorMessage('chat.no_api_key') })
+  }
+
+  // === MONTHLY LIMIT — atomic check + reserve (prevents race conditions) ===
+  const monthlyLimit = getMonthlyMessageLimit(plan)
+  const usageMonth = new Date().toISOString().substring(0, 7)
+  if (monthlyLimit !== Infinity) {
+    const { allowed } = await db.incrementAgentUsageIfAllowed({
+      workspaceId,
+      userId: session.user.id,
+      month: usageMonth,
+      source: usageSource,
+      limit: monthlyLimit,
+    })
+    if (!allowed)
+      throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: monthlyLimit }) })
   }
 
   // === CONVERSATION ===
@@ -234,7 +240,7 @@ export default defineEventHandler(async (event) => {
       await saveChatResult(
         conversationId, body.message, assistantText,
         lastAssistantContent, model, totalInputTokens, totalOutputTokens,
-        workspaceId, session.user.id, usageSource,
+        workspaceId, session.user.id, usageSource, usageMonth,
       )
 
       // Emit webhook events for content changes (fire-and-forget)
