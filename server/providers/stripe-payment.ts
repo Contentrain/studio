@@ -59,6 +59,7 @@ export function createStripePaymentProvider(): PaymentProvider {
 
       const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
+        client_reference_id: input.workspaceId,
         customer_email: input.customerEmail,
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: input.successUrl,

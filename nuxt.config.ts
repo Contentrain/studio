@@ -11,6 +11,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
     sessionSecret: '', // NUXT_SESSION_SECRET — min 32 chars, AES-256 cookie encryption
+    sessionSecretPrevious: '', // NUXT_SESSION_SECRET_PREVIOUS — old secret for key rotation migration
     github: {
       appId: '',
       clientId: '',

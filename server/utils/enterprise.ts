@@ -153,6 +153,7 @@ export async function resolveEnterpriseChatApiKey(input: {
   accessToken: string
   plan: EnterprisePlan
   sessionSecret: string
+  previousSessionSecret?: string
   studioApiKey?: string | null
 }): Promise<{ apiKey: string, usageSource: 'byoa' | 'studio' } | null> {
   const bridge = await loadEnterpriseBridge()

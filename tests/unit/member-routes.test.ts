@@ -237,7 +237,7 @@ describe('member routes', () => {
   })
 
   it('resends workspace invites through the database provider boundary', async () => {
-    const inviteUserByEmail = vi.fn().mockRejectedValue(new Error('confirmed'))
+    const inviteUserByEmail = vi.fn().mockRejectedValue(new Error('User already confirmed'))
     const sendEmail = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {

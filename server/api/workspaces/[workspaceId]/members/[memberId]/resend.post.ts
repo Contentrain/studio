@@ -46,7 +46,17 @@ export default defineEventHandler(async (event) => {
     })
     emailSent = true
   }
-  catch {
+  catch (inviteErr: unknown) {
+    // Only fall through to email if user is already confirmed (422 / "already" in msg).
+    // Transient provider errors should not silently degrade to email fallback.
+    const errMsg = (inviteErr as { message?: string })?.message ?? ''
+    const statusCode = (inviteErr as { statusCode?: number })?.statusCode
+    const isAlreadyConfirmed = errMsg.toLowerCase().includes('already') || statusCode === 422
+
+    if (!isAlreadyConfirmed) {
+      throw createError({ statusCode: 502, message: errorMessage('members.resend_failed') })
+    }
+
     // User already confirmed — send notification via EmailProvider
     const emailProvider = useEmailProvider()
     if (emailProvider && ws) {

@@ -2,7 +2,7 @@ import { createError, getRouterParam, readBody, type H3Event } from 'h3'
 import { useRuntimeConfig } from '#imports'
 import { requireAuth } from '../../server/utils/auth'
 import { errorMessage } from '../../server/utils/content-strings'
-import { decryptApiKey, encryptApiKey, getKeyHint } from '../../server/utils/encryption'
+import { decryptApiKey, encryptApiKey, getKeyHint, needsReEncryption } from '../../server/utils/encryption'
 import { getWorkspacePlan, hasFeature } from '../../server/utils/license'
 import { useDatabaseProvider } from '../../server/utils/providers'
 
@@ -12,6 +12,7 @@ export async function resolveEnterpriseChatApiKey(input: {
   accessToken: string
   plan: string | null | undefined
   sessionSecret: string
+  previousSessionSecret?: string
   studioApiKey?: string | null
 }): Promise<{ apiKey: string, usageSource: 'byoa' | 'studio' } | null> {
   if (!hasFeature(input.plan, 'ai.byoa'))
@@ -22,10 +23,22 @@ export async function resolveEnterpriseChatApiKey(input: {
   const encryptedKey = await db.getBYOAKey(input.accessToken, input.workspaceId, input.userId)
 
   if (encryptedKey) {
-    return {
-      apiKey: decryptApiKey(encryptedKey, input.sessionSecret),
-      usageSource: 'byoa',
+    const apiKey = decryptApiKey(encryptedKey, input.sessionSecret, input.previousSessionSecret)
+
+    // Auto re-encrypt if key was decrypted with previous secret or older format
+    if (needsReEncryption(encryptedKey, input.sessionSecret, input.previousSessionSecret)) {
+      const reEncrypted = encryptApiKey(apiKey, input.sessionSecret)
+      const keyHint = getKeyHint(apiKey)
+      db.upsertUserAIKey(input.accessToken, {
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        provider: 'anthropic',
+        encryptedKey: reEncrypted,
+        keyHint,
+      }).catch(() => { /* best-effort re-encryption */ })
     }
+
+    return { apiKey, usageSource: 'byoa' }
   }
 
   if (input.studioApiKey) {

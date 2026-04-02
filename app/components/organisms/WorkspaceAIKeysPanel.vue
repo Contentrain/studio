@@ -80,7 +80,7 @@ async function handleDeleteAIKey(keyId: string) {
             {{ t('ai_keys.hint') }} {{ key.key_hint }}
           </div>
         </div>
-        <AtomsIconButton icon="icon-[annon--trash]" label="Delete" size="sm" @click="handleDeleteAIKey(key.id)" />
+        <AtomsIconButton icon="icon-[annon--trash]" :label="t('common.delete')" size="sm" @click="handleDeleteAIKey(key.id)" />
       </li>
     </ul>
     <div v-else>

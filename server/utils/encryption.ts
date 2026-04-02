@@ -50,7 +50,7 @@ function parseVersioned(encrypted: string): { version: number, payload: string }
   return { version: 0, payload: encrypted }
 }
 
-export function decryptApiKey(encrypted: string, secret: string): string {
+function decryptWithSecret(encrypted: string, secret: string): string {
   const { payload } = parseVersioned(encrypted)
   const key = deriveKey(secret)
   const packed = Buffer.from(payload, 'base64')
@@ -71,12 +71,46 @@ export function decryptApiKey(encrypted: string, secret: string): string {
 }
 
 /**
- * Check if a ciphertext needs re-encryption (e.g., after secret rotation
- * or format upgrade). Returns true if the version is older than current.
+ * Decrypt an API key. Tries `secret` first, then `previousSecret` if provided.
+ * Returns `{ plaintext, rotated }` — `rotated` is true if decrypted with the
+ * previous secret, signaling the caller should re-encrypt with the current one.
  */
-export function needsReEncryption(encrypted: string): boolean {
+export function decryptApiKey(
+  encrypted: string,
+  secret: string,
+  previousSecret?: string,
+): string {
+  try {
+    return decryptWithSecret(encrypted, secret)
+  }
+  catch {
+    if (previousSecret) {
+      return decryptWithSecret(encrypted, previousSecret)
+    }
+    throw new Error('Decryption failed — the encryption secret may have been rotated without setting NUXT_SESSION_SECRET_PREVIOUS.')
+  }
+}
+
+/**
+ * Check if a ciphertext needs re-encryption (decryptable only with previous
+ * secret, or uses an older format version).
+ */
+export function needsReEncryption(encrypted: string, secret: string, previousSecret?: string): boolean {
+  // Format version check
   const { version } = parseVersioned(encrypted)
-  return version < CURRENT_VERSION
+  if (version < CURRENT_VERSION) return true
+
+  // Secret rotation check: try current secret — if it fails, key needs re-encrypt
+  if (previousSecret) {
+    try {
+      decryptWithSecret(encrypted, secret)
+      return false
+    }
+    catch {
+      return true
+    }
+  }
+  return false
 }
 
 /**

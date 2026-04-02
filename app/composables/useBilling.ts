@@ -79,7 +79,11 @@ export function useBilling() {
   })
 
   const effectivePlan = computed(() => {
-    if (!billingEnabled.value) return normalizePlan(activeWorkspace.value?.plan) || ('starter' as StudioPlan)
+    if (!billingEnabled.value) {
+      // Self-host: workspace.plan from DB, default to starter (not free)
+      const dbPlan = normalizePlan(activeWorkspace.value?.plan)
+      return (dbPlan === 'free' ? 'starter' : dbPlan) as StudioPlan
+    }
     return resolveEffectivePlan(activeWorkspace.value, billingState.value)
   })
 
