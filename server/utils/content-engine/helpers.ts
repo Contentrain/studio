@@ -33,7 +33,7 @@ export async function createFeatureBranch(
 ): Promise<{ branchName: string, healthWarning?: string }> {
   // Check branch health before creating a new branch
   if (ctx.projectId) {
-    const cached = getHealthStatus(ctx.projectId)
+    const cached = await getHealthStatus(ctx.projectId)
     const health = cached ?? await checkBranchHealth(ctx.git, ctx.projectId)
 
     if (health.status === 'blocked') {

@@ -7,8 +7,11 @@
  * - 80+  unmerged cr/*: BLOCKED — new write operations rejected
  *
  * Merged branches are auto-deleted after branchRetention days (default 30).
+ *
+ * Cache: Redis when available (multi-instance safe), in-memory Map fallback.
  */
 import type { GitProvider } from '../providers/git'
+import { getRedis } from './redis'
 
 // ── Types ────────────────────────────────────────────
 
@@ -32,29 +35,74 @@ const WARNING_THRESHOLD = 50
 const BLOCKED_THRESHOLD = 80
 const DEFAULT_RETENTION_DAYS = 30
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours
+const CACHE_TTL_SECONDS = Math.ceil(CACHE_TTL_MS / 1000)
+const REDIS_PREFIX = 'brh:'
 
-// ── In-memory cache ──────────────────────────────────
+// ── In-memory fallback cache ─────────────────────────
 
-const healthCache = new Map<string, BranchHealthReport>()
+const memoryCache = new Map<string, BranchHealthReport>()
 
-export function getHealthStatus(projectId: string): BranchHealthReport | undefined {
-  const cached = healthCache.get(projectId)
+// ── Cache operations (Redis → in-memory fallback) ────
+
+export async function getHealthStatus(projectId: string): Promise<BranchHealthReport | undefined> {
+  const r = getRedis()
+  if (r) {
+    try {
+      const raw = await r.get(`${REDIS_PREFIX}${projectId}`)
+      if (!raw) return undefined
+      return JSON.parse(raw) as BranchHealthReport
+    }
+    catch {
+      // Redis read failed — fall through to memory
+    }
+  }
+
+  const cached = memoryCache.get(projectId)
   if (!cached) return undefined
 
   const age = Date.now() - new Date(cached.lastChecked).getTime()
   if (age > CACHE_TTL_MS) {
-    healthCache.delete(projectId)
+    memoryCache.delete(projectId)
     return undefined
   }
   return cached
 }
 
-export function setHealthStatus(projectId: string, report: BranchHealthReport): void {
-  healthCache.set(projectId, report)
+export async function setHealthStatus(projectId: string, report: BranchHealthReport): Promise<void> {
+  // Always write to memory (fast local reads when Redis is slow)
+  memoryCache.set(projectId, report)
+
+  const r = getRedis()
+  if (r) {
+    try {
+      await r.set(`${REDIS_PREFIX}${projectId}`, JSON.stringify(report), 'EX', CACHE_TTL_SECONDS)
+    }
+    catch {
+      // Redis write failed — in-memory is still valid
+    }
+  }
 }
 
-export function clearHealthCache(): void {
-  healthCache.clear()
+export async function clearHealthCache(): Promise<void> {
+  memoryCache.clear()
+
+  const r = getRedis()
+  if (r) {
+    try {
+      // Scan + delete all brh:* keys
+      let cursor = '0'
+      do {
+        const [nextCursor, keys] = await r.scan(cursor, 'MATCH', `${REDIS_PREFIX}*`, 'COUNT', 100)
+        cursor = nextCursor
+        if (keys.length > 0) {
+          await r.del(...keys)
+        }
+      } while (cursor !== '0')
+    }
+    catch {
+      // Redis clear failed — in-memory already cleared
+    }
+  }
 }
 
 // ── Status calculation ───────────────────────────────
@@ -84,7 +132,7 @@ export async function checkBranchHealth(
     unmergedCount,
     lastChecked: new Date().toISOString(),
   }
-  setHealthStatus(projectId, report)
+  await setHealthStatus(projectId, report)
   return report
 }
 
@@ -124,7 +172,7 @@ export async function cleanupMergedBranches(
   }
 
   // Update cache after cleanup
-  setHealthStatus(projectId, {
+  await setHealthStatus(projectId, {
     status: report.status,
     unmergedCount: remaining,
     lastChecked: new Date().toISOString(),
