@@ -65,7 +65,7 @@ describe('branch health API', () => {
       const { checkBranchHealth, getHealthStatus, clearHealthCache } = await import('../../server/utils/branch-health')
       vi.stubGlobal('checkBranchHealth', checkBranchHealth)
       vi.stubGlobal('getHealthStatus', getHealthStatus)
-      clearHealthCache()
+      await clearHealthCache()
 
       const handler = await loadHealthHandler()
 
@@ -123,7 +123,7 @@ describe('branch health API', () => {
 
       const { cleanupMergedBranches, clearHealthCache } = await import('../../server/utils/branch-health')
       vi.stubGlobal('cleanupMergedBranches', cleanupMergedBranches)
-      clearHealthCache()
+      await clearHealthCache()
 
       const handler = await loadCleanupHandler()
 
@@ -181,7 +181,7 @@ describe('branch health API', () => {
 
       const { cleanupMergedBranches, clearHealthCache } = await import('../../server/utils/branch-health')
       vi.stubGlobal('cleanupMergedBranches', cleanupMergedBranches)
-      clearHealthCache()
+      await clearHealthCache()
 
       const handler = await loadCleanupHandler()
 

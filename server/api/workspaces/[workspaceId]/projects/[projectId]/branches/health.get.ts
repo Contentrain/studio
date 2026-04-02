@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
 
   await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
 
-  const cached = getHealthStatus(projectId)
+  const cached = await getHealthStatus(projectId)
   if (cached) return cached
 
   const { git } = await resolveProjectContext(workspaceId, projectId)

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitProvider } from '../../server/providers/git'
+
 import {
   calculateStatus,
   checkBranchHealth,
@@ -10,6 +11,11 @@ import {
   setHealthStatus,
   THRESHOLDS,
 } from '../../server/utils/branch-health'
+
+// Mock Redis to return null — tests use in-memory fallback
+vi.mock('../../server/utils/redis', () => ({
+  getRedis: vi.fn().mockReturnValue(null),
+}))
 
 function createGitProvider(overrides: Partial<GitProvider> = {}): GitProvider {
   return {
@@ -35,8 +41,8 @@ function createGitProvider(overrides: Partial<GitProvider> = {}): GitProvider {
 }
 
 describe('branch-health', () => {
-  beforeEach(() => {
-    clearHealthCache()
+  beforeEach(async () => {
+    await clearHealthCache()
     vi.stubGlobal('createError', ({ statusCode, message }: { statusCode: number, message: string }) =>
       Object.assign(new Error(message), { statusCode, message }),
     )
@@ -107,28 +113,28 @@ describe('branch-health', () => {
   // ── Health cache ────────────────────────────────────
 
   describe('health cache', () => {
-    it('returns undefined for uncached project', () => {
-      expect(getHealthStatus('unknown-project')).toBeUndefined()
+    it('returns undefined for uncached project', async () => {
+      expect(await getHealthStatus('unknown-project')).toBeUndefined()
     })
 
-    it('stores and retrieves health status', () => {
+    it('stores and retrieves health status', async () => {
       const report = { status: 'ok' as const, unmergedCount: 5, lastChecked: new Date().toISOString() }
-      setHealthStatus('project-1', report)
-      expect(getHealthStatus('project-1')).toEqual(report)
+      await setHealthStatus('project-1', report)
+      expect(await getHealthStatus('project-1')).toEqual(report)
     })
 
-    it('returns undefined for expired cache entries', () => {
+    it('returns undefined for expired cache entries', async () => {
       const staleDate = new Date(Date.now() - THRESHOLDS.CACHE_TTL_MS - 1000).toISOString()
-      setHealthStatus('project-1', { status: 'ok', unmergedCount: 5, lastChecked: staleDate })
-      expect(getHealthStatus('project-1')).toBeUndefined()
+      await setHealthStatus('project-1', { status: 'ok', unmergedCount: 5, lastChecked: staleDate })
+      expect(await getHealthStatus('project-1')).toBeUndefined()
     })
 
-    it('clears all entries on clearHealthCache', () => {
-      setHealthStatus('p1', { status: 'ok', unmergedCount: 0, lastChecked: new Date().toISOString() })
-      setHealthStatus('p2', { status: 'warning', unmergedCount: 55, lastChecked: new Date().toISOString() })
-      clearHealthCache()
-      expect(getHealthStatus('p1')).toBeUndefined()
-      expect(getHealthStatus('p2')).toBeUndefined()
+    it('clears all entries on clearHealthCache', async () => {
+      await setHealthStatus('p1', { status: 'ok', unmergedCount: 0, lastChecked: new Date().toISOString() })
+      await setHealthStatus('p2', { status: 'warning', unmergedCount: 55, lastChecked: new Date().toISOString() })
+      await clearHealthCache()
+      expect(await getHealthStatus('p1')).toBeUndefined()
+      expect(await getHealthStatus('p2')).toBeUndefined()
     })
   })
 
@@ -214,7 +220,7 @@ describe('branch-health', () => {
 
       await checkBranchHealth(git, 'project-1')
 
-      const cached = getHealthStatus('project-1')
+      const cached = await getHealthStatus('project-1')
       expect(cached).toBeDefined()
       expect(cached!.status).toBe('ok')
       expect(cached!.unmergedCount).toBe(0)
@@ -359,7 +365,7 @@ describe('branch-health', () => {
 
       await cleanupMergedBranches(git, 'project-1')
 
-      const cached = getHealthStatus('project-1')
+      const cached = await getHealthStatus('project-1')
       expect(cached).toBeDefined()
       expect(cached!.remaining).toBeUndefined() // cache stores unmergedCount, not remaining
       expect(cached!.status).toBe('ok')
@@ -387,7 +393,7 @@ describe('branch-health', () => {
       const { createFeatureBranch } = await import('../../server/utils/content-engine/helpers')
 
       // Pre-populate cache with blocked status
-      setHealthStatus('blocked-project', {
+      await setHealthStatus('blocked-project', {
         status: 'blocked',
         unmergedCount: 85,
         lastChecked: new Date().toISOString(),
@@ -409,7 +415,7 @@ describe('branch-health', () => {
     it('returns warning when 50+ unmerged branches exist', async () => {
       const { createFeatureBranch } = await import('../../server/utils/content-engine/helpers')
 
-      setHealthStatus('warn-project', {
+      await setHealthStatus('warn-project', {
         status: 'warning',
         unmergedCount: 55,
         lastChecked: new Date().toISOString(),
