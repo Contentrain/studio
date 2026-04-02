@@ -117,6 +117,7 @@ export interface DatabaseProvider {
   updateWorkspaceMemberInvitedAt: (accessToken: string, userId: string, workspaceId: string, memberId: string, invitedAt: string) => Promise<void>
   ensureWorkspaceMember: (accessToken: string, workspaceId: string, userId: string, email: string, role?: string) => Promise<void>
   acceptPendingInvitations: (userId: string, workspaceId: string) => Promise<boolean>
+  listWorkspaceAdminEmails: (workspaceId: string) => Promise<{ email: string, displayName: string | null }[]>
 
   // ═══════════════════════════════════════════════════
   // PROJECTS
@@ -137,6 +138,7 @@ export interface DatabaseProvider {
   listUserAssignedProjects: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
   updateProjectContentTimestamp: (repoFullName: string) => Promise<void>
   listCDNEnabledProjects: (repoFullName: string) => Promise<DatabaseRow[]>
+  listAllActiveProjects: (fields?: string) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
   // PROJECT MEMBERS

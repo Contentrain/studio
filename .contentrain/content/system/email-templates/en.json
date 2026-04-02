@@ -10,5 +10,11 @@
     "name": "Workspace Invite — Reminder",
     "slug": "invite-reminder",
     "subject": "Reminder: You've been invited to {workspaceName} on Contentrain Studio"
+  },
+  "webhook-dlq-alert": {
+    "body": "<p>Hi {recipientName},</p><p>A webhook in your <strong>{workspaceName}</strong> workspace has permanently failed after 5 delivery attempts.</p><table style=\"border-collapse:collapse;margin:16px 0\"><tr><td style=\"padding:4px 12px 4px 0;color:#64748b\">Webhook</td><td style=\"padding:4px 0\"><strong>{webhookName}</strong></td></tr><tr><td style=\"padding:4px 12px 4px 0;color:#64748b\">URL</td><td style=\"padding:4px 0\"><code>{webhookUrl}</code></td></tr><tr><td style=\"padding:4px 12px 4px 0;color:#64748b\">Event</td><td style=\"padding:4px 0\">{eventType}</td></tr></table><p>Please check the endpoint is reachable and responding with a 2xx status code.</p><p><a href=\"{settingsUrl}\">Review webhook settings</a></p>",
+    "name": "Webhook Delivery Failed",
+    "slug": "webhook-dlq-alert",
+    "subject": "Webhook delivery failed: {webhookName} — {workspaceName}"
   }
 }

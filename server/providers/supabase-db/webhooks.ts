@@ -44,7 +44,7 @@ export function webhookMethods(): WebhookMethods {
       const admin = getAdmin()
       let query = admin
         .from('webhooks')
-        .select('id, url, secret, active, name, events')
+        .select('id, url, secret, active, name, events, workspace_id, project_id')
         .eq('id', webhookId)
 
       if (options?.projectId) query = query.eq('project_id', options.projectId)

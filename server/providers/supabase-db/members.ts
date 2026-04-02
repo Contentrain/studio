@@ -26,6 +26,7 @@ type MemberMethods = Pick<
   | 'deleteUserAIKey'
   | 'getProjectForWorkspace'
   | 'acceptPendingInvitations'
+  | 'listWorkspaceAdminEmails'
   | 'countProjectWebhooks'
   | 'createWebhook'
 >
@@ -185,6 +186,24 @@ export function memberMethods(): MemberMethods {
       }
 
       return false
+    },
+
+    async listWorkspaceAdminEmails(workspaceId) {
+      const { data, error } = await getAdmin()
+        .from('workspace_members')
+        .select('role, profiles:user_id(email, display_name)')
+        .eq('workspace_id', workspaceId)
+        .in('role', ['owner', 'admin'])
+        .not('accepted_at', 'is', null)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+
+      return (data ?? [])
+        .filter((m: Record<string, unknown>) => (m.profiles as Record<string, unknown> | null)?.email)
+        .map((m: Record<string, unknown>) => {
+          const profile = m.profiles as Record<string, unknown>
+          return { email: profile.email as string, displayName: (profile.display_name as string) ?? null }
+        })
     },
 
     // ─── AI Keys ───
