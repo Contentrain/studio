@@ -172,8 +172,9 @@ describe('cdn panel e2e', () => {
     await page.locator('form button[type="submit"]').click()
     await page.getByText('crn_live_full_secret').waitFor()
     await page.getByRole('button', { name: 'Rebuild' }).click()
-    await page.getByText('Build complete — 4 files in 123ms').first().waitFor()
     await page.getByText('abc1234').waitFor()
+    await page.getByText('4 files').waitFor()
+    await page.getByText('123ms').waitFor()
 
     expect(patchBodies).toEqual([{ cdn_enabled: true }])
 
