@@ -150,7 +150,7 @@ export function createWebhooksBridge() {
 
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-      const rateCheck = checkRateLimit(`webhook-test:${webhookId}`, 5, 60_000)
+      const rateCheck = await checkRateLimit(`webhook-test:${webhookId}`, 5, 60_000)
       if (!rateCheck.allowed)
         throw createError({ statusCode: 429, message: errorMessage('rate.limit_exceeded') })
 

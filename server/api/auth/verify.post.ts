@@ -1,7 +1,7 @@
 export default defineEventHandler(async (event) => {
   // Rate limit
   const ip = getHeader(event, 'x-forwarded-for') ?? 'unknown'
-  const rateCheck = checkRateLimit(`auth-verify:${ip}`, 10, 60_000)
+  const rateCheck = await checkRateLimit(`auth-verify:${ip}`, 10, 60_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('auth.rate_limited') })
 

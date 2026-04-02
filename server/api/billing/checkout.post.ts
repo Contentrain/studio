@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Rate limit checkout creation per workspace — prevents duplicate sessions from rapid clicks
-  const rateCheck = checkRateLimit(`checkout:${body.workspaceId}`, 1, 30_000)
+  const rateCheck = await checkRateLimit(`checkout:${body.workspaceId}`, 1, 30_000)
   if (!rateCheck.allowed) {
     throw createError({ statusCode: 429, message: errorMessage('auth.rate_limited') })
   }
