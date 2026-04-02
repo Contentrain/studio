@@ -29,8 +29,7 @@ async function save() {
     toast.success(t('account_settings.save_success'))
   }
   catch (e: unknown) {
-    const message = e instanceof Error ? e.message : t('account_settings.save_error')
-    toast.error(message)
+    toast.error(resolveApiError(e, t('account_settings.save_error')))
   }
   finally {
     saving.value = false
@@ -79,8 +78,7 @@ async function handleAvatarUpload(event: Event) {
     toast.success(t('account_settings.avatar_upload_success'))
   }
   catch (e: unknown) {
-    const message = e instanceof Error ? e.message : t('account_settings.avatar_upload_error')
-    toast.error(message)
+    toast.error(resolveApiError(e, t('account_settings.avatar_upload_error')))
   }
   finally {
     uploading.value = false

@@ -133,9 +133,7 @@ async function createFromStarter() {
     await router.push(`/w/${slug}/projects/${project.id}`)
   }
   catch (e: unknown) {
-    const err = e as { data?: { message?: string } }
-    const message = err.data?.message || t('starters.created_error')
-    toast.error(message)
+    toast.error(resolveApiError(e, t('starters.created_error')))
   }
   finally {
     creating.value = false

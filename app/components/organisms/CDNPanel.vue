@@ -166,13 +166,13 @@ async function triggerRebuild() {
           buildProgress.value = event
 
           if (event.phase === 'complete') {
-            toast.success(event.message)
+            toast.success(t('cdn.build_complete'))
             builds.value = await $fetch<CDNBuild[]>(
               `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/builds`,
             )
           }
           else if (event.phase === 'error') {
-            toast.error(event.message)
+            toast.error(t('cdn.build_error'))
           }
         }
         catch { /* skip */ }

@@ -75,8 +75,7 @@ async function handlePlanAction(slug: string) {
       await openPortal()
     }
     catch (err: unknown) {
-      const message = (err as { data?: { message?: string } })?.data?.message ?? t('generic.server_error')
-      toast.error(message)
+      toast.error(resolveApiError(err, t('common.server_error')))
     }
     finally {
       loading.value = null

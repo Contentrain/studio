@@ -84,10 +84,14 @@ function uploadSingleFile(file: File): Promise<void> {
         phase.value = 'error'
         try {
           const err = JSON.parse(xhr.responseText)
-          errorMessage.value = err.message ?? `Upload failed (${xhr.status})`
+          const status = err.statusCode ?? xhr.status
+          // Only show backend message for 4xx (user-friendly); hide 5xx details
+          errorMessage.value = (status >= 400 && status < 500 && err.message)
+            ? err.message
+            : t('media.upload_error')
         }
         catch {
-          errorMessage.value = `Upload failed (${xhr.status})`
+          errorMessage.value = t('media.upload_error')
         }
         emit('error', errorMessage.value)
         setTimeout(() => {

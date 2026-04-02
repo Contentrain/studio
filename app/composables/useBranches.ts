@@ -82,7 +82,8 @@ export function useBranches() {
       return false
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Merge failed')
+      const { t } = useContent()
+      toast.error(resolveApiError(e, t('branch.merge_error')))
       return false
     }
   }
@@ -98,7 +99,8 @@ export function useBranches() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Reject failed')
+      const { t } = useContent()
+      toast.error(resolveApiError(e, t('branch.reject_error')))
       return false
     }
   }

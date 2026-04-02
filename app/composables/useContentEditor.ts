@@ -76,7 +76,8 @@ export function useContentEditor() {
       return true
     }
     catch (e: unknown) {
-      saveError.value = e instanceof Error ? e.message : 'Save failed'
+      const { t } = useContent()
+      saveError.value = resolveApiError(e, t('content.save_error'))
       toast.error(saveError.value)
       return false
     }
@@ -172,7 +173,8 @@ export function useContentEditor() {
       return true
     }
     catch (e: unknown) {
-      saveError.value = e instanceof Error ? e.message : 'Save failed'
+      const { t } = useContent()
+      saveError.value = resolveApiError(e, t('content.save_error'))
       toast.error(saveError.value)
       return false
     }

@@ -62,7 +62,7 @@ export function useMembers() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('members.invite_error'))
+      toast.error(resolveApiError(e, t('members.invite_error')))
       return false
     }
   }
@@ -78,7 +78,7 @@ export function useMembers() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('members.role_update_error'))
+      toast.error(resolveApiError(e, t('members.role_update_error')))
       return false
     }
   }
@@ -93,7 +93,7 @@ export function useMembers() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('members.remove_error'))
+      toast.error(resolveApiError(e, t('members.remove_error')))
       return false
     }
   }
@@ -126,7 +126,7 @@ export function useMembers() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('members.assign_error'))
+      toast.error(resolveApiError(e, t('members.assign_error')))
       return false
     }
   }
@@ -141,7 +141,7 @@ export function useMembers() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('members.project_remove_error'))
+      toast.error(resolveApiError(e, t('members.project_remove_error')))
       return false
     }
   }
@@ -157,7 +157,7 @@ export function useMembers() {
       return true
     }
     catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('members.resend_error'))
+      toast.error(resolveApiError(e, t('members.resend_error')))
       return false
     }
   }

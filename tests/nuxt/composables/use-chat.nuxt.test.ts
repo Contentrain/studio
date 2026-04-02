@@ -101,6 +101,8 @@ describe('useChat', () => {
 
     expect(chat.messages.value).toHaveLength(1)
     expect(chat.messages.value[0]?.role).toBe('user')
-    expect(chat.error.value).toBe('Network failed')
+    // Network error without statusCode → resolveApiError returns user-friendly fallback
+    expect(chat.error.value).not.toBe('Network failed')
+    expect(chat.error.value).toBeTruthy()
   })
 })
