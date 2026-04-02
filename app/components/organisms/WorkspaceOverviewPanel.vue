@@ -143,7 +143,7 @@ async function handleDeleteWorkspace() {
         @click="planModalOpen = true"
       >
         <AtomsBadge variant="primary" size="md" class="capitalize">
-          {{ activeWorkspace?.plan ?? 'starter' }}
+          {{ activeWorkspace?.plan ?? 'free' }}
         </AtomsBadge>
         <span class="icon-[annon--chevron-right] size-3.5 text-muted" aria-hidden="true" />
       </button>

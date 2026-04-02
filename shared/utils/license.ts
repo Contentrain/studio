@@ -4,33 +4,47 @@
  * Plan definitions live in Contentrain models (plans + plan-features).
  * This file provides the runtime lookup tables generated from that content.
  *
- * Plans: starter ($9/mo), pro ($29/mo + $9/seat), enterprise (custom)
- * Trial is a state (trial_ends_at on workspace), not a plan.
- * All features are available on all plans — difference is usage limits.
+ * Plans: free ($0), starter ($9/mo), pro ($29/mo + $9/seat), enterprise (custom)
+ * Free = personal workspace default (no Git, no projects, demo only).
+ * Paid plans require Stripe subscription (trial_period_days=14 on checkout).
  * Enterprise-only: SSO, white-label, custom CDN domain.
  */
 
-export type StudioPlan = 'starter' | 'pro' | 'enterprise'
+export type StudioPlan = 'free' | 'starter' | 'pro' | 'enterprise'
 
 /**
  * Feature matrix: which plans have access to each feature.
  * Generated from Contentrain plan-features model (type: "feature").
+ *
+ * Free plan ($0): demo-only landing zone. Can browse the dashboard and
+ * use the AI agent with studio key (10 msg/mo) but cannot connect repos,
+ * create projects, use BYOA, CDN, forms, or any API features.
+ * Upgrade trigger: "Connect Repository" → plan selection → Stripe Checkout.
+ *
+ * Paid plans (starter/pro): full platform access, differentiated by
+ * numeric PLAN_LIMITS (message quotas, storage, seats, etc.).
+ *
+ * Enterprise: everything + SSO, white-label, custom CDN domain.
+ *
+ * NOTE: ee/ features (webhooks, conversation API, AI keys, CDN, media
+ * processing) require the enterprise bridge to be loaded. If ee/ is absent,
+ * routes return 403 regardless of plan — graceful degradation.
  */
 export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
-  // AI
-  'ai.agent': ['starter', 'pro', 'enterprise'],
+  // AI — free gets studio key only (10 msg/mo), BYOA requires paid plan
+  'ai.agent': ['free', 'starter', 'pro', 'enterprise'],
   'ai.byoa': ['starter', 'pro', 'enterprise'],
   'ai.studio_key': ['starter', 'pro', 'enterprise'],
 
-  // CDN
+  // CDN — paid plans only (ee/ provides Cloudflare R2 implementation)
   'cdn.delivery': ['starter', 'pro', 'enterprise'],
   'cdn.preview_branch': ['pro', 'enterprise'],
   'cdn.custom_domain': ['enterprise'],
   'cdn.metering': ['starter', 'pro', 'enterprise'],
 
-  // Media
+  // Media — free can browse library only, upload requires paid plan
   'media.upload': ['starter', 'pro', 'enterprise'],
-  'media.library': ['starter', 'pro', 'enterprise'],
+  'media.library': ['free', 'starter', 'pro', 'enterprise'],
   'media.custom_variants': ['pro', 'enterprise'],
 
   // Forms
@@ -56,6 +70,10 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
   'api.custom_instructions': ['starter', 'pro', 'enterprise'],
   'api.webhooks_outbound': ['starter', 'pro', 'enterprise'],
 
+  // Git & Projects (paywall boundary)
+  'git.connect': ['starter', 'pro', 'enterprise'],
+  'projects.create': ['starter', 'pro', 'enterprise'],
+
   // Enterprise-only
   'sso.saml': ['enterprise'],
   'sso.oidc': ['enterprise'],
@@ -65,42 +83,42 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
 /**
  * Plan limits: numeric quotas per plan.
  * Generated from Contentrain plan-features model (type: "limit").
- * Infinity = unlimited.
+ * Infinity = unlimited. Free plan has severe limits — upgrade trigger.
  */
 export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = {
-  'ai.messages_per_month': { starter: 50, pro: 500, enterprise: Infinity },
-  'team.members': { starter: 3, pro: 25, enterprise: Infinity },
-  'cdn.api_keys': { starter: 3, pro: 10, enterprise: Infinity },
-  'cdn.bandwidth_gb': { starter: 2, pro: 20, enterprise: Infinity },
-  'media.storage_gb': { starter: 1, pro: 5, enterprise: 100 },
-  'media.max_file_size_mb': { starter: 5, pro: 50, enterprise: 100 },
-  'media.variants_per_field': { starter: 4, pro: 10, enterprise: Infinity },
-  'forms.models': { starter: 1, pro: 5, enterprise: Infinity },
-  'forms.submissions_per_month': { starter: 100, pro: 1_000, enterprise: Infinity },
-  'api.conversation_keys': { starter: 1, pro: 5, enterprise: Infinity },
-  'api.messages_per_month': { starter: 100, pro: 1_000, enterprise: Infinity },
-  'api.webhooks': { starter: 3, pro: 10, enterprise: Infinity },
+  'ai.messages_per_month': { free: 10, starter: 50, pro: 500, enterprise: Infinity },
+  'team.members': { free: 1, starter: 3, pro: 25, enterprise: Infinity },
+  'cdn.api_keys': { free: 0, starter: 3, pro: 10, enterprise: Infinity },
+  'cdn.bandwidth_gb': { free: 0, starter: 2, pro: 20, enterprise: Infinity },
+  'media.storage_gb': { free: 0.2, starter: 1, pro: 5, enterprise: 100 },
+  'media.max_file_size_mb': { free: 2, starter: 5, pro: 50, enterprise: 100 },
+  'media.variants_per_field': { free: 2, starter: 4, pro: 10, enterprise: Infinity },
+  'forms.models': { free: 0, starter: 1, pro: 5, enterprise: Infinity },
+  'forms.submissions_per_month': { free: 0, starter: 100, pro: 1_000, enterprise: Infinity },
+  'api.conversation_keys': { free: 0, starter: 1, pro: 5, enterprise: Infinity },
+  'api.messages_per_month': { free: 0, starter: 100, pro: 1_000, enterprise: Infinity },
+  'api.webhooks': { free: 0, starter: 3, pro: 10, enterprise: Infinity },
 }
 
 /**
  * Normalize legacy plan names to current plan types.
- * Backward compatibility: free→starter, business→pro, team→pro.
+ * Backward compatibility: business→pro, team→pro.
+ * Default (no plan) → 'free'.
  */
 export function normalizePlan(plan: StudioPlan | string | null | undefined): StudioPlan {
-  if (!plan) return 'starter'
+  if (!plan) return 'free'
 
   // Legacy plan name mappings
   const legacy: Record<string, StudioPlan> = {
-    free: 'starter',
     business: 'pro',
     team: 'pro',
   }
 
   const normalized = legacy[plan] ?? plan
-  if (['starter', 'pro', 'enterprise'].includes(normalized)) {
+  if (['free', 'starter', 'pro', 'enterprise'].includes(normalized)) {
     return normalized as StudioPlan
   }
-  return 'starter'
+  return 'free'
 }
 
 export function hasFeatureForPlan(plan: StudioPlan | string | null | undefined, feature: string): boolean {
@@ -116,6 +134,7 @@ export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined
  * Matches Contentrain plans model (plans/en.json).
  */
 export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, pricePerSeat: number, seatsIncluded: number, name: string }> = {
+  free: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 1, name: 'Free' },
   starter: { priceMonthly: 9, pricePerSeat: 0, seatsIncluded: 3, name: 'Starter' },
   pro: { priceMonthly: 29, pricePerSeat: 9, seatsIncluded: 10, name: 'Pro' },
   enterprise: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 0, name: 'Enterprise' },
@@ -178,10 +197,11 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
 
 /**
  * Get the next plan tier for upgrade suggestions.
- * starter → pro, pro → enterprise, enterprise → enterprise.
+ * free → starter, starter → pro, pro → enterprise, enterprise → enterprise.
  */
 export function getNextPlan(plan: StudioPlan | string | null | undefined): StudioPlan {
   const p = normalizePlan(plan)
+  if (p === 'free') return 'starter'
   if (p === 'starter') return 'pro'
   if (p === 'pro') return 'enterprise'
   return 'enterprise'

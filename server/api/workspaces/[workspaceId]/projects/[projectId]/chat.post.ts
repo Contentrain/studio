@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
 
   // === RESOLVE PROJECT + WORKSPACE ===
   const { project, workspace, git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
-  const plan = getWorkspacePlan(workspace)
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
 
   // === RATE LIMIT ===
   const rateKey = `chat:${session.user.id}`

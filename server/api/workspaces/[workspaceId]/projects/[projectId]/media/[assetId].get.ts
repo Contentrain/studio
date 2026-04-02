@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
   const ws = await db.getWorkspaceById(workspaceId, 'plan')
-  const plan = getWorkspacePlan(ws ?? {})
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
   if (!hasFeature(plan, 'media.library'))
     throw createError({ statusCode: 403, message: errorMessage('media.library_upgrade', getUpgradeParams(plan)) })
 

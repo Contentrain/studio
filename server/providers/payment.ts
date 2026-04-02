@@ -36,6 +36,14 @@ export interface WebhookResult {
   plan?: string
   subscriptionId?: string
   customerId?: string
+  /** Stripe subscription status: trialing, active, past_due, canceled, unpaid, incomplete */
+  subscriptionStatus?: string
+  /** ISO timestamp: when current billing period ends */
+  currentPeriodEnd?: string
+  /** Whether subscription will cancel at period end */
+  cancelAtPeriodEnd?: boolean
+  /** Stripe invoice ID (for payment events) */
+  invoiceId?: string
 }
 
 export interface PaymentProvider {

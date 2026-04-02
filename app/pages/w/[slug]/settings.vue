@@ -11,7 +11,7 @@ const slug = computed(() => route.params.slug as string)
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
 const { t } = useContent()
 
-const validTabs = ['overview', 'members', 'github', 'ai-keys'] as const
+const validTabs = ['overview', 'members', 'billing', 'github', 'ai-keys'] as const
 const tabFromQuery = computed(() => {
   const tab = route.query.tab as string | undefined
   return tab && (validTabs as readonly string[]).includes(tab) ? tab : null
@@ -24,6 +24,8 @@ watch(tabFromQuery, (tab) => {
   if (tab) activeTab.value = tab
 })
 
+const toast = useToast()
+
 async function loadSettingsData() {
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
@@ -34,7 +36,21 @@ async function loadSettingsData() {
   }
 }
 
-onMounted(loadSettingsData)
+onMounted(async () => {
+  await loadSettingsData()
+
+  // Handle Stripe checkout return
+  const billing = route.query.billing as string | undefined
+  if (billing === 'success') {
+    activeTab.value = 'billing'
+    // Refresh to pick up webhook updates
+    await fetchWorkspaces()
+    toast.success(t('billing.checkout_success'))
+  }
+  else if (billing === 'cancelled') {
+    activeTab.value = 'billing'
+  }
+})
 watch(slug, loadSettingsData)
 
 const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
@@ -57,6 +73,9 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger value="members" :class="tabTriggerClass">
           {{ t('settings.members_tab') }}
         </TabsTrigger>
+        <TabsTrigger value="billing" :class="tabTriggerClass">
+          {{ t('settings.billing_tab') }}
+        </TabsTrigger>
         <TabsTrigger value="github" :class="tabTriggerClass">
           {{ t('settings.github_tab') }}
         </TabsTrigger>
@@ -71,6 +90,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
 
       <TabsContent value="members" class="mt-6">
         <OrganismsWorkspaceMembersPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
+      </TabsContent>
+
+      <TabsContent value="billing" class="mt-6">
+        <OrganismsWorkspaceBillingPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
       <TabsContent value="github" class="mt-6">

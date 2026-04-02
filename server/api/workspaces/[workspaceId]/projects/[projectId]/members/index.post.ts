@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   // Plan-based role gating
   const ws = await db.getWorkspaceById(workspaceId, 'plan, name, slug')
-  const plan = getWorkspacePlan(ws ?? {})
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
   const normalizedAccess = await normalizeEnterpriseProjectMemberAccess({
     plan,
     role: body.role,

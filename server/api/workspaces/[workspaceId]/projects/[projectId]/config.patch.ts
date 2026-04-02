@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('project.settings_owner_only') })
 
   const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
-  const plan = getWorkspacePlan(workspace)
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
 
   // Plan gate: review workflow requires Pro+
   if (body.workflow === 'review' && !hasFeature(plan, 'workflow.review'))

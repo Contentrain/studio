@@ -160,12 +160,8 @@ describe('system and workspace route integration', () => {
       slug: 'acme-team',
       type: 'secondary',
     })
-    // Trial period should be set on new workspace
-    expect(updateWorkspace).toHaveBeenCalledWith(
-      'token-1',
-      'workspace-2',
-      expect.objectContaining({ trial_ends_at: expect.any(String) }),
-    )
+    // Trial is now handled by Stripe — no updateWorkspace call for trial_ends_at
+    expect(updateWorkspace).not.toHaveBeenCalled()
   })
 
   it('blocks workspace-owner removal', async () => {
