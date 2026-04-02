@@ -9,6 +9,11 @@ describe('member routes', () => {
     vi.resetModules()
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('createError', createErrorLike)
+    vi.stubGlobal('errorMessage', vi.fn((key: string) => key))
+    vi.stubGlobal('emailTemplate', vi.fn((slug: string) => ({
+      subject: `${slug}.subject`,
+      body: `<p>${slug}.body</p>`,
+    })))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
       accessToken: 'token-1',
@@ -237,7 +242,7 @@ describe('member routes', () => {
   })
 
   it('resends workspace invites through the database provider boundary', async () => {
-    const inviteUserByEmail = vi.fn().mockRejectedValue(new Error('User already confirmed'))
+    const inviteUserByEmail = vi.fn().mockRejectedValue(Object.assign(new Error('already confirmed'), { statusCode: 422 }))
     const sendEmail = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
@@ -263,6 +268,28 @@ describe('member routes', () => {
       'member-4',
       expect.any(String),
     )
+  })
+
+  it('returns 502 when resend invite fails with a transient provider error', async () => {
+    const inviteUserByEmail = vi.fn().mockRejectedValue(Object.assign(new Error('provider unavailable'), { statusCode: 500 }))
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'memberId') return 'member-4'
+      return undefined
+    }))
+    vi.stubGlobal('useAuthProvider', vi.fn().mockReturnValue({ inviteUserByEmail }))
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/members/[memberId]/resend.post')).default
+
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 502,
+      message: 'members.resend_failed',
+    })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(useDatabaseProvider().updateWorkspaceMemberInvitedAt).not.toHaveBeenCalled()
   })
 
   it('lists project members only when the project belongs to the workspace', async () => {

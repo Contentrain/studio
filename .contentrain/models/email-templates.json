@@ -1,0 +1,8 @@
+{
+  "id": "email-templates",
+  "name": "Email Templates",
+  "kind": "dictionary",
+  "domain": "system",
+  "i18n": true,
+  "description": "Transactional email templates with subject and HTML body. Keys use dot notation: template-slug.subject and template-slug.body. Supports {variable} interpolation."
+}

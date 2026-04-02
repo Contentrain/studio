@@ -121,4 +121,36 @@ describe('brain sync integration', () => {
       })
     })
   })
+
+  it('returns 403 when requireProjectAccess denies the user', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('getQuery', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'outsider-1' },
+      accessToken: 'token-outsider',
+    }))
+    vi.stubGlobal('requireProjectAccess', vi.fn().mockRejectedValue(
+      Object.assign(new Error('project.access_denied'), { statusCode: 403 }),
+    ))
+    const resolveCtx = vi.fn()
+    const buildBrain = vi.fn()
+    vi.stubGlobal('resolveProjectContext', resolveCtx)
+    vi.stubGlobal('getOrBuildBrainCache', buildBrain)
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/brain/sync', handler: await loadBrainSyncHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/brain/sync')
+
+      expect(response.status).toBe(403)
+      expect(resolveCtx).not.toHaveBeenCalled()
+      expect(buildBrain).not.toHaveBeenCalled()
+    })
+  })
 })

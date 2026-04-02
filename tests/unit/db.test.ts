@@ -17,6 +17,8 @@ describe('db helpers', () => {
     vi.stubGlobal('errorMessage', (key: string) => key)
 
     mockDb = {
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getProjectMember: vi.fn().mockResolvedValue(null),
       getProjectForWorkspace: vi.fn().mockResolvedValue({
         id: 'project-1',
         repo_full_name: 'contentrain/studio',
@@ -66,6 +68,37 @@ describe('db helpers', () => {
     expect(result.git).toBe(git)
     expect(result.workspace.id).toBe('workspace-1')
     expect(mockDb.getProjectById).toHaveBeenCalledWith('project-1', expect.any(String))
+  })
+
+  it('allows workspace owners to access any project without project membership', async () => {
+    mockDb.requireWorkspaceRole.mockResolvedValue('owner')
+
+    const { requireProjectAccess } = await loadDbModule()
+
+    await expect(requireProjectAccess('user-1', 'workspace-1', 'project-1', 'token-1')).resolves.toBeUndefined()
+    expect(mockDb.getProjectMember).not.toHaveBeenCalled()
+  })
+
+  it('allows workspace members when they are assigned to the project', async () => {
+    mockDb.requireWorkspaceRole.mockResolvedValue('member')
+    mockDb.getProjectMember.mockResolvedValue({ id: 'project-member-1', role: 'editor' })
+
+    const { requireProjectAccess } = await loadDbModule()
+
+    await expect(requireProjectAccess('user-1', 'workspace-1', 'project-1', 'token-1')).resolves.toBeUndefined()
+    expect(mockDb.getProjectMember).toHaveBeenCalledWith('project-1', 'user-1')
+  })
+
+  it('rejects workspace members who are not assigned to the project', async () => {
+    mockDb.requireWorkspaceRole.mockResolvedValue('member')
+    mockDb.getProjectMember.mockResolvedValue(null)
+
+    const { requireProjectAccess } = await loadDbModule()
+
+    await expect(requireProjectAccess('user-1', 'workspace-1', 'project-1', 'token-1')).rejects.toMatchObject({
+      statusCode: 403,
+      message: 'project.access_denied',
+    })
   })
 
   it('saves chat results via provider methods', async () => {
