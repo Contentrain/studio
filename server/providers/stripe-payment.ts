@@ -17,6 +17,25 @@ const PLAN_PRICE_MAP: Record<string, string> = {
   pro: process.env.NUXT_STRIPE_PRO_PRICE_ID ?? '',
 }
 
+/** Reverse lookup: price ID → plan name. Used to derive plan from Stripe Portal changes. */
+function planFromPriceId(priceId: string | undefined): string | undefined {
+  if (!priceId) return undefined
+  for (const [plan, id] of Object.entries(PLAN_PRICE_MAP)) {
+    if (id === priceId) return plan
+  }
+  return undefined
+}
+
+/** Extract the plan from a Stripe Subscription by checking items' price IDs first, metadata second. */
+function resolvePlanFromSubscription(subscription: Stripe.Subscription): string | undefined {
+  // 1. Price-based lookup (authoritative — works after Portal plan changes)
+  const priceId = subscription.items?.data?.[0]?.price?.id
+  const fromPrice = planFromPriceId(priceId)
+  if (fromPrice) return fromPrice
+  // 2. Metadata fallback (set at checkout, may be stale after Portal changes)
+  return subscription.metadata?.plan
+}
+
 /** Trial duration in days — matches Stripe subscription trial. */
 const TRIAL_PERIOD_DAYS = 14
 
@@ -106,10 +125,12 @@ export function createStripePaymentProvider(): PaymentProvider {
           const subscription = event.data.object as Stripe.Subscription
           // current_period_end lives on subscription items in Stripe SDK v21+
           const itemPeriodEnd = subscription.items?.data?.[0]?.current_period_end
+          // Derive plan from price ID (handles Portal-driven plan changes)
+          const resolvedPlan = resolvePlanFromSubscription(subscription)
           return {
             event: event.type,
             workspaceId: subscription.metadata?.workspace_id,
-            plan: subscription.metadata?.plan,
+            plan: resolvedPlan,
             subscriptionId: subscription.id,
             customerId: subscription.customer as string,
             subscriptionStatus: subscription.status,

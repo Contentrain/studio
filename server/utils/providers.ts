@@ -5,11 +5,13 @@ import type { GitAppProvider, GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import type { MediaProvider } from '../providers/media'
 import type { EmailProvider } from '../providers/email'
+import type { PaymentProvider } from '../providers/payment'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createSupabaseDatabaseProvider } from '../providers/supabase-db'
 import { createGitHubAppInstallationProvider, createGitHubAppProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
 import { createResendEmailProvider } from '../providers/resend-email'
+import { createStripePaymentProvider } from '../providers/stripe-payment'
 import { getLoadedEnterpriseBridge } from './enterprise'
 
 /**
@@ -166,4 +168,26 @@ export function useEmailProvider(): EmailProvider | null {
 
   _emailProvider = createResendEmailProvider(apiKey)
   return _emailProvider
+}
+
+/**
+ * Payment Provider (singleton).
+ *
+ * Returns null if Stripe is not configured (self-hosted mode).
+ * Current impl: Stripe. Swap to Paddle, LemonSqueezy, etc.
+ */
+let _paymentProvider: PaymentProvider | null | undefined
+export function usePaymentProvider(): PaymentProvider | null {
+  if (_paymentProvider !== undefined) return _paymentProvider
+
+  const config = useRuntimeConfig()
+  const secretKey = (config.stripe as { secretKey?: string })?.secretKey
+
+  if (!secretKey) {
+    _paymentProvider = null
+    return null
+  }
+
+  _paymentProvider = createStripePaymentProvider()
+  return _paymentProvider
 }

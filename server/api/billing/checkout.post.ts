@@ -29,8 +29,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
   }
 
-  const { createStripePaymentProvider } = await import('../../providers/stripe-payment')
-  const payment = createStripePaymentProvider()
+  const payment = usePaymentProvider()
+  if (!payment) {
+    throw createError({ statusCode: 503, message: 'Billing is not configured.' })
+  }
 
   const config = useRuntimeConfig()
   const siteUrl = config.public.siteUrl as string

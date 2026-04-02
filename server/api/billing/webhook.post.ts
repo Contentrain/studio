@@ -22,8 +22,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Missing webhook payload or signature.' })
   }
 
-  const { createStripePaymentProvider } = await import('../../providers/stripe-payment')
-  const payment = createStripePaymentProvider()
+  const payment = usePaymentProvider()
+  if (!payment) {
+    throw createError({ statusCode: 503, message: 'Billing is not configured.' })
+  }
 
   let result
   try {
@@ -129,12 +131,26 @@ export default defineEventHandler(async (event) => {
     }
 
     case 'invoice.paid': {
-      // Payment succeeded — clear grace period, ensure active status
+      // Payment succeeded — clear grace period.
+      // Only set 'active' if the workspace was past_due (recovery).
+      // Do NOT override 'trialing' — Stripe sends invoice.paid for $0 trial invoices.
       if (result.workspaceId) {
-        await db.updateWorkspace('', result.workspaceId, {
-          subscription_status: 'active',
-          grace_period_ends_at: null,
-        })
+        const ws = await db.getWorkspaceById(result.workspaceId, 'subscription_status')
+        const currentStatus = (ws as { subscription_status?: string } | null)?.subscription_status
+
+        if (currentStatus === 'past_due') {
+          await db.updateWorkspace('', result.workspaceId, {
+            subscription_status: 'active',
+            grace_period_ends_at: null,
+          })
+        }
+        else if (currentStatus !== 'trialing') {
+          // For non-trialing, non-past_due: just clear grace period if any
+          await db.updateWorkspace('', result.workspaceId, {
+            grace_period_ends_at: null,
+          })
+        }
+        // If trialing: do nothing — let subscription.updated handle trial→active transition
       }
       break
     }

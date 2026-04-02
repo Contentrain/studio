@@ -103,7 +103,9 @@ export function workspaceMethods(): WorkspaceMethods {
     },
 
     async updateWorkspace(accessToken, workspaceId, updates, fields = '*') {
-      const client = getUser(accessToken)
+      // Empty token = admin/system operation (webhooks, triggers) — use service role.
+      // Non-empty token = user-scoped client with RLS.
+      const client = accessToken ? getUser(accessToken) : getAdmin()
       const { data, error } = await client
         .from('workspaces').update(updates).eq('id', workspaceId).select(fields).single()
 

@@ -16,11 +16,27 @@ import type { StudioPlan } from '../../shared/utils/license'
 
 export type Plan = StudioPlan
 
+/** Whether Stripe billing is configured. Cached after first check. */
+let _stripeConfigured: boolean | null = null
+function isStripeConfigured(): boolean {
+  if (_stripeConfigured === null) {
+    _stripeConfigured = !!useRuntimeConfig().stripe?.secretKey
+  }
+  return _stripeConfigured
+}
+
 /**
  * Extract plan from workspace row. Defaults to 'free'.
+ *
+ * Self-hosted bypass: when Stripe is not configured, all workspaces
+ * are treated as 'starter' (core features). This ensures public routes
+ * (CDN, forms, conversation API) that read plan directly from DB
+ * get consistent behavior with the billing middleware.
  */
 export function getWorkspacePlan(workspace: { plan?: string | null }): Plan {
-  return normalizePlan(workspace?.plan)
+  const plan = normalizePlan(workspace?.plan)
+  if (plan === 'free' && !isStripeConfigured()) return 'starter'
+  return plan
 }
 
 /**
