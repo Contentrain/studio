@@ -2,6 +2,7 @@
   "ai-agent": {
     "category": "ai",
     "enterprise_value": "true",
+    "free_value": "true",
     "key": "ai.agent",
     "name": "AI Content Agent",
     "pro_value": "true",
@@ -12,6 +13,7 @@
   "ai-byoa": {
     "category": "ai",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "ai.byoa",
     "name": "Bring Your Own API Key",
     "pro_value": "true",
@@ -22,6 +24,7 @@
   "ai-messages-per-month": {
     "category": "ai",
     "enterprise_value": "unlimited",
+    "free_value": "10",
     "key": "ai.messages_per_month",
     "name": "AI Messages per Month",
     "overage_price": 0.03,
@@ -34,6 +37,7 @@
   "ai-studio-key": {
     "category": "ai",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "ai.studio_key",
     "name": "Studio-Hosted AI Key",
     "pro_value": "true",
@@ -44,6 +48,7 @@
   "api-conversation": {
     "category": "api",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "api.conversation",
     "name": "Conversation API",
     "pro_value": "true",
@@ -54,6 +59,7 @@
   "api-conversation-keys": {
     "category": "api",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "api.conversation_keys",
     "name": "Conversation API Keys",
     "pro_value": "5",
@@ -64,6 +70,7 @@
   "api-custom-instructions": {
     "category": "api",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "api.custom_instructions",
     "name": "Custom AI Instructions",
     "pro_value": "true",
@@ -74,6 +81,7 @@
   "api-messages-per-month": {
     "category": "api",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "api.messages_per_month",
     "name": "API Messages per Month",
     "overage_price": 0.05,
@@ -86,6 +94,7 @@
   "api-rest": {
     "category": "api",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "api.rest",
     "name": "Content REST API",
     "pro_value": "true",
@@ -96,6 +105,7 @@
   "api-webhooks": {
     "category": "api",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "api.webhooks",
     "name": "Webhook Endpoints",
     "pro_value": "10",
@@ -106,6 +116,7 @@
   "api-webhooks-outbound": {
     "category": "api",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "api.webhooks_outbound",
     "name": "Outbound Webhooks",
     "pro_value": "true",
@@ -116,6 +127,7 @@
   "cdn-api-keys": {
     "category": "cdn",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "cdn.api_keys",
     "name": "CDN API Keys",
     "pro_value": "10",
@@ -126,6 +138,7 @@
   "cdn-bandwidth-gb": {
     "category": "cdn",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "cdn.bandwidth_gb",
     "name": "CDN Bandwidth (GB)",
     "overage_price": 0.1,
@@ -138,6 +151,7 @@
   "cdn-custom-domain": {
     "category": "cdn",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "cdn.custom_domain",
     "name": "Custom CDN Domain",
     "pro_value": "false",
@@ -148,6 +162,7 @@
   "cdn-delivery": {
     "category": "cdn",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "cdn.delivery",
     "name": "CDN Content Delivery",
     "pro_value": "true",
@@ -158,6 +173,7 @@
   "cdn-metering": {
     "category": "cdn",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "cdn.metering",
     "name": "CDN Usage Metering",
     "pro_value": "true",
@@ -168,6 +184,7 @@
   "cdn-preview-branch": {
     "category": "cdn",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "cdn.preview_branch",
     "name": "CDN Preview Branches",
     "pro_value": "true",
@@ -178,6 +195,7 @@
   "forms-auto-approve": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.auto_approve",
     "name": "Auto-Approve Submissions",
     "pro_value": "true",
@@ -188,6 +206,7 @@
   "forms-captcha": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.captcha",
     "name": "Captcha Protection",
     "pro_value": "true",
@@ -198,6 +217,7 @@
   "forms-enabled": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.enabled",
     "name": "Forms & Submissions",
     "pro_value": "true",
@@ -208,6 +228,7 @@
   "forms-file-upload": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.file_upload",
     "name": "Form File Upload",
     "pro_value": "true",
@@ -218,6 +239,7 @@
   "forms-models": {
     "category": "forms",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "forms.models",
     "name": "Form-Enabled Models",
     "pro_value": "5",
@@ -228,6 +250,7 @@
   "forms-notifications": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.notifications",
     "name": "Submission Notifications",
     "pro_value": "true",
@@ -238,6 +261,7 @@
   "forms-spam-filter": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.spam_filter",
     "name": "Spam Filter",
     "pro_value": "true",
@@ -248,6 +272,7 @@
   "forms-submissions-per-month": {
     "category": "forms",
     "enterprise_value": "unlimited",
+    "free_value": "0",
     "key": "forms.submissions_per_month",
     "name": "Form Submissions per Month",
     "overage_price": 0.01,
@@ -260,6 +285,7 @@
   "forms-webhook-notification": {
     "category": "forms",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "forms.webhook_notification",
     "name": "Form Webhook Notifications",
     "pro_value": "true",
@@ -270,6 +296,7 @@
   "media-custom-variants": {
     "category": "media",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "media.custom_variants",
     "name": "Custom Image Variants",
     "pro_value": "true",
@@ -280,6 +307,7 @@
   "media-library": {
     "category": "media",
     "enterprise_value": "true",
+    "free_value": "true",
     "key": "media.library",
     "name": "Asset Manager",
     "pro_value": "true",
@@ -290,6 +318,7 @@
   "media-max-file-size-mb": {
     "category": "media",
     "enterprise_value": "100",
+    "free_value": "2",
     "key": "media.max_file_size_mb",
     "name": "Max File Size (MB)",
     "pro_value": "50",
@@ -300,6 +329,7 @@
   "media-storage-gb": {
     "category": "media",
     "enterprise_value": "100",
+    "free_value": "0.2",
     "key": "media.storage_gb",
     "name": "Media Storage (GB)",
     "overage_price": 0.25,
@@ -312,6 +342,7 @@
   "media-upload": {
     "category": "media",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "media.upload",
     "name": "Media Upload",
     "pro_value": "true",
@@ -322,6 +353,7 @@
   "media-variants-per-field": {
     "category": "media",
     "enterprise_value": "unlimited",
+    "free_value": "2",
     "key": "media.variants_per_field",
     "name": "Variants per Field",
     "pro_value": "10",
@@ -332,6 +364,7 @@
   "roles-reviewer": {
     "category": "roles",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "roles.reviewer",
     "name": "Reviewer Role",
     "pro_value": "true",
@@ -342,6 +375,7 @@
   "roles-specific-models": {
     "category": "roles",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "roles.specific_models",
     "name": "Model-Specific Access",
     "pro_value": "true",
@@ -352,6 +386,7 @@
   "roles-viewer": {
     "category": "roles",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "roles.viewer",
     "name": "Viewer Role",
     "pro_value": "true",
@@ -362,6 +397,7 @@
   "sso-oidc": {
     "category": "enterprise",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "sso.oidc",
     "name": "OIDC Single Sign-On",
     "pro_value": "false",
@@ -372,6 +408,7 @@
   "sso-saml": {
     "category": "enterprise",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "sso.saml",
     "name": "SAML Single Sign-On",
     "pro_value": "false",
@@ -382,6 +419,7 @@
   "team-members": {
     "category": "roles",
     "enterprise_value": "unlimited",
+    "free_value": "1",
     "key": "team.members",
     "name": "Team Members",
     "pro_value": "25",
@@ -392,6 +430,7 @@
   "white-label": {
     "category": "enterprise",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "branding.white_label",
     "name": "White-Label Branding",
     "pro_value": "false",
@@ -402,6 +441,7 @@
   "workflow-review": {
     "category": "workflow",
     "enterprise_value": "true",
+    "free_value": "false",
     "key": "workflow.review",
     "name": "Review Workflow",
     "pro_value": "true",
