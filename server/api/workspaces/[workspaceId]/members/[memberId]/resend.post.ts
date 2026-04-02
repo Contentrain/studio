@@ -61,11 +61,12 @@ export default defineEventHandler(async (event) => {
     const emailProvider = useEmailProvider()
     if (emailProvider && ws) {
       const config = useRuntimeConfig()
-      const workspaceUrl = `${config.public.siteUrl}/w/${ws.slug}`
+      const workspaceUrl = `${config.public.siteUrl}/w/${ws.slug as string}`
+      const tpl = emailTemplate('invite-reminder', { workspaceName: ws.name as string, workspaceUrl })
       await emailProvider.sendEmail({
         to: invitedEmail,
-        subject: `Reminder: You've been invited to ${ws.name} on Contentrain Studio`,
-        html: `<p>Hi,</p><p>This is a reminder that you have a pending invitation to the <strong>${ws.name}</strong> workspace on Contentrain Studio.</p><p><a href="${workspaceUrl}">Open workspace</a></p>`,
+        subject: tpl.subject,
+        html: tpl.body,
       })
       emailSent = true
     }
