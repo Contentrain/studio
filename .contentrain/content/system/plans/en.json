@@ -13,6 +13,20 @@
     "slug": "enterprise",
     "sort_order": 2
   },
+  "free": {
+    "ai_model_tier": "haiku",
+    "badge_text": "Free",
+    "cta_text": "Get Started",
+    "description": "Personal workspace with AI chat demo. Connect a repository to unlock the full platform.",
+    "has_trial": false,
+    "is_highlighted": false,
+    "name": "Free",
+    "price_monthly": 0,
+    "price_per_seat": 0,
+    "seats_included": 1,
+    "slug": "free",
+    "sort_order": -1
+  },
   "pro": {
     "ai_model_tier": "sonnet",
     "badge_text": "Pro — $29/mo",
