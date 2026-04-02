@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
 import { query } from '#contentrain'
-import type { Plans, PlanFeatures } from '#contentrain'
+import type { PlanFeatures } from '#contentrain'
 
 const { t } = useContent()
 const { billingState, effectivePlan, startCheckout, openPortal } = useBilling()
@@ -19,7 +19,7 @@ const loading = ref<string | null>(null)
 
 // Load plans from Contentrain — sorted by sort_order, exclude free (shown implicitly)
 const plans = computed(() =>
-  query<Plans>('plans')
+  query('plans')
     .locale('en')
     .sort('sort_order', 'asc')
     .all()
@@ -28,7 +28,7 @@ const plans = computed(() =>
 
 // Load features grouped by plan for display
 const allFeatures = computed(() =>
-  query<PlanFeatures>('plan-features')
+  query('plan-features')
     .sort('sort_order', 'asc')
     .all(),
 )
@@ -51,7 +51,7 @@ function planFeaturesList(planSlug: string): string[] {
 
 // Enterprise plan from Contentrain
 const enterprisePlan = computed(() =>
-  query<Plans>('plans')
+  query('plans')
     .locale('en')
     .where('slug', 'enterprise')
     .all()[0],

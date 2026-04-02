@@ -39,11 +39,11 @@ async function handleCreate() {
   }
 }
 
-const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary' }> = {
-  free: { variant: 'secondary' },
-  starter: { variant: 'secondary' },
-  pro: { variant: 'primary' },
-  enterprise: { variant: 'warning' },
+const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary', label: string }> = {
+  free: { variant: 'secondary', label: 'Free' },
+  starter: { variant: 'secondary', label: 'Starter' },
+  pro: { variant: 'primary', label: 'Pro' },
+  enterprise: { variant: 'warning', label: 'Enterprise' },
 }
 
 function getWorkspacePlan(ws: { plan?: string | null, workspace_members?: unknown }): string {
