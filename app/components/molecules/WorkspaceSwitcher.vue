@@ -39,14 +39,20 @@ async function handleCreate() {
   }
 }
 
-const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary', label: string }> = {
-  starter: { variant: 'secondary', label: 'Starter' },
-  pro: { variant: 'primary', label: 'Pro' },
-  enterprise: { variant: 'warning', label: 'Enterprise' },
+const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary' }> = {
+  free: { variant: 'secondary' },
+  starter: { variant: 'secondary' },
+  pro: { variant: 'primary' },
+  enterprise: { variant: 'warning' },
 }
 
 function getWorkspacePlan(ws: { plan?: string | null, workspace_members?: unknown }): string {
-  return (ws as { plan?: string }).plan ?? 'starter'
+  return (ws as { plan?: string }).plan ?? 'free'
+}
+
+function getPlanLabel(plan: string): string {
+  const labels: Record<string, string> = { free: t('billing.state_free'), starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
+  return labels[plan] ?? plan
 }
 
 onMounted(() => {
@@ -72,7 +78,7 @@ onMounted(() => {
           size="sm"
           class="font-display"
         >
-          {{ planBadge[getWorkspacePlan(activeWorkspace)]?.label ?? 'Starter' }}
+          {{ getPlanLabel(getWorkspacePlan(activeWorkspace)) }}
         </AtomsBadge>
         <span class="icon-[annon--chevron-down] size-3.5 shrink-0 text-muted" aria-hidden="true" />
       </PopoverTrigger>
