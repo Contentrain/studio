@@ -134,8 +134,7 @@ studio/
 ├─ ee/                  # Proprietary enterprise implementations
 ├─ tests/               # Unit, integration, Nuxt, RLS, and E2E suites
 ├─ .contentrain/        # Content models and generated query client
-├─ docs/                # Release-facing deployment and self-hosting docs
-└─ .internal/           # Internal planning/reference material (not public docs)
+└─ docs/                # Release-facing deployment and self-hosting docs
 ```
 
 ## Quick Start
@@ -171,6 +170,8 @@ Release-facing setup and deployment docs:
 - [Environment Reference](.env.example)
 - [Docker Guide](docs/DOCKER.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
+- [Releasing Guide](docs/RELEASING.md)
+- [Repository Hygiene](docs/REPOSITORY-HYGIENE.md)
 - [Self-Hosting Guide](docs/SELF_HOSTING.md)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
