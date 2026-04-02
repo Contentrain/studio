@@ -200,10 +200,15 @@ export async function inviteOrLookupUser(
       if (emailProvider) {
         const config = useRuntimeConfig()
         const workspaceUrl = `${config.public.siteUrl}/w/${context.workspaceSlug}`
+        const tpl = emailTemplate('invite-added', {
+          workspaceName: context.workspaceName,
+          inviterName: context.inviterName,
+          workspaceUrl,
+        })
         emailProvider.sendEmail({
           to: email,
-          subject: `You've been added to ${context.workspaceName} on Contentrain Studio`,
-          html: `<p>Hi,</p><p><strong>${context.inviterName}</strong> added you to the <strong>${context.workspaceName}</strong> workspace on Contentrain Studio.</p><p><a href="${workspaceUrl}">Open workspace</a></p>`,
+          subject: tpl.subject,
+          html: tpl.body,
         }).catch(() => { /* best-effort notification */ })
       }
     }

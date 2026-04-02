@@ -1,0 +1,14 @@
+{
+  "invite-added": {
+    "body": "<p>Hi,</p><p><strong>{inviterName}</strong> added you to the <strong>{workspaceName}</strong> workspace on Contentrain Studio.</p><p><a href=\"{workspaceUrl}\">Open workspace</a></p>",
+    "name": "Workspace Invite — Added",
+    "slug": "invite-added",
+    "subject": "You've been added to {workspaceName} on Contentrain Studio"
+  },
+  "invite-reminder": {
+    "body": "<p>Hi,</p><p>This is a reminder that you have a pending invitation to the <strong>{workspaceName}</strong> workspace on Contentrain Studio.</p><p><a href=\"{workspaceUrl}\">Open workspace</a></p>",
+    "name": "Workspace Invite — Reminder",
+    "slug": "invite-reminder",
+    "subject": "Reminder: You've been invited to {workspaceName} on Contentrain Studio"
+  }
+}

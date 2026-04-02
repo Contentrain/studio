@@ -1,8 +1,31 @@
 {
   "id": "email-templates",
   "name": "Email Templates",
-  "kind": "dictionary",
+  "kind": "collection",
   "domain": "system",
   "i18n": true,
-  "description": "Transactional email templates with subject and HTML body. Keys use dot notation: template-slug.subject and template-slug.body. Supports {variable} interpolation."
+  "description": "Transactional email templates with subject and HTML body. Supports {variable} interpolation at runtime.",
+  "fields": {
+    "slug": {
+      "description": "Template identifier used in code (e.g. invite-added)",
+      "required": true,
+      "type": "slug",
+      "unique": true
+    },
+    "name": {
+      "description": "Human-readable template name for admin reference",
+      "required": true,
+      "type": "string"
+    },
+    "subject": {
+      "description": "Email subject line — supports {variable} interpolation",
+      "required": true,
+      "type": "string"
+    },
+    "body": {
+      "description": "Email HTML body — supports {variable} interpolation",
+      "required": true,
+      "type": "richtext"
+    }
+  }
 }

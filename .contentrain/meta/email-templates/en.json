@@ -1,0 +1,12 @@
+{
+  "invite-added": {
+    "source": "human",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "invite-reminder": {
+    "source": "human",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  }
+}
