@@ -1,0 +1,3 @@
+* @Contentrain/core
+/ee/ @Contentrain/enterprise
+/supabase/migrations/ @Contentrain/core

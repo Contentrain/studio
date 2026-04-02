@@ -1,7 +1,42 @@
 name: Feature Request
-description: Suggest a new feature
-labels: ["enhancement"]
+description: Suggest a new feature or workflow improvement
+labels:
+  - enhancement
 body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and discussions for duplicates.
+          required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Editor UX
+        - AI / chat agent
+        - Git / repository workflow
+        - Content models / schema / validation
+        - Media / forms / CDN
+        - API / automation / webhooks
+        - Self-hosting / operations
+        - Documentation / developer experience
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Product area
+      description: Tell us whether this belongs in AGPL core or enterprise.
+      options:
+        - AGPL core
+        - Enterprise edition (ee/)
+        - Not sure
+    validations:
+      required: true
   - type: textarea
     id: description
     attributes:
