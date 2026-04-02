@@ -125,7 +125,7 @@ describe('project config and branch route integration', () => {
       contentRoot: '',
       workspace: { plan: 'pro' },
     }))
-    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('business'))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/config/1234567890-abcd'))
     vi.stubGlobal('invalidateBrainCache', vi.fn())

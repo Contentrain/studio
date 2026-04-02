@@ -51,7 +51,7 @@ watch(slug, async (newSlug) => {
 <template>
   <div class="mx-auto max-w-4xl px-6 py-8 lg:px-8">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <AtomsHeadingText :level="1" size="lg">
           {{ t('projects.title') }}

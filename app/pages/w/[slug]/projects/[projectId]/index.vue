@@ -218,6 +218,9 @@ async function handleContentChanged(affected: { models: string[], locales: strin
 
 // Vocabulary save handler
 const toast = useToast()
+
+// Mobile tab switching (Chat vs Content) — only affects <lg viewports
+const mobileTab = ref<'chat' | 'content'>('chat')
 async function handleVocabularySave(terms: Record<string, Record<string, string> | null>) {
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
@@ -238,50 +241,80 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
 </script>
 
 <template>
-  <div class="flex h-full">
-    <!-- Chat panel -->
-    <div class="flex min-w-0 flex-1 flex-col">
-      <OrganismsChatPanel
-        v-if="activeWorkspace"
-        ref="chatPanelRef"
-        :workspace-id="activeWorkspace.id"
-        :project-id="projectId"
-        :project-name="project?.repo_full_name?.split('/').pop() ?? t('common.loading')"
-        :project-status="effectiveProjectStatus"
-        :context="chatContext"
-        @content-changed="handleContentChanged"
-      />
+  <div class="flex h-full flex-col">
+    <div class="flex min-h-0 flex-1">
+      <!-- Chat panel: always visible on lg+, on mobile only when chat tab active -->
+      <div
+        class="min-w-0 flex-1 flex-col"
+        :class="mobileTab === 'chat' ? 'flex' : 'hidden lg:flex'"
+      >
+        <OrganismsChatPanel
+          v-if="activeWorkspace"
+          ref="chatPanelRef"
+          :workspace-id="activeWorkspace.id"
+          :project-id="projectId"
+          :project-name="project?.repo_full_name?.split('/').pop() ?? t('common.loading')"
+          :project-status="effectiveProjectStatus"
+          :context="chatContext"
+          @content-changed="handleContentChanged"
+        />
+      </div>
+
+      <!-- Content panel: always visible on lg+, on mobile only when content tab active -->
+      <div
+        class="min-w-0 shrink-0 flex-col border-l border-secondary-200 dark:border-secondary-800"
+        :class="mobileTab === 'content' ? 'flex flex-1 lg:w-80 lg:flex-initial xl:w-96' : 'hidden lg:flex lg:w-80 xl:w-96'"
+      >
+        <OrganismsContentPanel
+          v-model:locale="activeLocale"
+          :snapshot="snapshot"
+          :snapshot-loading="snapshotLoading"
+          :model-content="modelContent"
+          :model-content-kind="modelContentKind"
+          :model-content-meta="modelContentMeta"
+          :model-content-loading="modelContentLoading"
+          :active-model-id="activeModelId"
+          :active-branch="activeBranch"
+          :active-vocabulary="activeVocabulary"
+          :active-cdn="activeCDN"
+          :active-assets="activeAssets"
+          :active-health="activeHealth"
+          :branch-diff="branchDiff"
+          :branch-diff-loading="diffLoading"
+          :can-manage-branches="true"
+          :workspace-id="activeWorkspace?.id"
+          :project-id="projectId"
+          editable
+          @select-model="selectModel"
+          @back="backToOverview"
+          @send-chat-prompt="chatPanelRef?.handleSend($event)"
+          @branch-merge="handleBranchMerge"
+          @branch-reject="handleBranchReject"
+          @vocabulary-save="handleVocabularySave"
+        />
+      </div>
     </div>
 
-    <!-- Context panel -->
-    <div class="hidden w-80 min-w-0 shrink-0 border-l border-secondary-200 lg:flex lg:flex-col xl:w-96 dark:border-secondary-800">
-      <OrganismsContentPanel
-        v-model:locale="activeLocale"
-        :snapshot="snapshot"
-        :snapshot-loading="snapshotLoading"
-        :model-content="modelContent"
-        :model-content-kind="modelContentKind"
-        :model-content-meta="modelContentMeta"
-        :model-content-loading="modelContentLoading"
-        :active-model-id="activeModelId"
-        :active-branch="activeBranch"
-        :active-vocabulary="activeVocabulary"
-        :active-cdn="activeCDN"
-        :active-assets="activeAssets"
-        :active-health="activeHealth"
-        :branch-diff="branchDiff"
-        :branch-diff-loading="diffLoading"
-        :can-manage-branches="true"
-        :workspace-id="activeWorkspace?.id"
-        :project-id="projectId"
-        editable
-        @select-model="selectModel"
-        @back="backToOverview"
-        @send-chat-prompt="chatPanelRef?.handleSend($event)"
-        @branch-merge="handleBranchMerge"
-        @branch-reject="handleBranchReject"
-        @vocabulary-save="handleVocabularySave"
-      />
-    </div>
+    <!-- Mobile bottom tab bar (only visible below lg) -->
+    <nav class="flex shrink-0 border-t border-secondary-200 dark:border-secondary-800 lg:hidden">
+      <button
+        type="button"
+        class="flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500/50"
+        :class="mobileTab === 'chat' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400' : 'text-muted hover:text-body dark:hover:text-secondary-300'"
+        @click="mobileTab = 'chat'"
+      >
+        <span class="icon-[annon--comment-2] size-5" aria-hidden="true" />
+        <span>{{ t('mobile.tab_chat') }}</span>
+      </button>
+      <button
+        type="button"
+        class="flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500/50"
+        :class="mobileTab === 'content' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400' : 'text-muted hover:text-body dark:hover:text-secondary-300'"
+        @click="mobileTab = 'content'"
+      >
+        <span class="icon-[annon--layers] size-5" aria-hidden="true" />
+        <span>{{ t('mobile.tab_content') }}</span>
+      </button>
+    </nav>
   </div>
 </template>
