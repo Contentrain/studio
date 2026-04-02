@@ -113,8 +113,10 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
         })
         return true
       }
-      catch {
-        return false
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        if (status === 404) return false
+        throw err
       }
     },
 
@@ -408,8 +410,10 @@ export function createGitHubAppProvider(config: GitHubAppConfig): GitProvider {
           requirePR: !!data.required_pull_request_reviews,
         }
       }
-      catch {
-        return null
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        if (status === 404) return null
+        throw err
       }
     },
   }
@@ -491,8 +495,10 @@ export function createGitHubAppInstallationProvider(config: GitHubAppBaseConfig)
         await octokit.repos.get({ owner, repo })
         return true
       }
-      catch {
-        return false
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        if (status === 404 || status === 403) return false
+        throw err
       }
     },
   }

@@ -31,10 +31,16 @@ export function resolveContentPath(
 ): string {
   // Custom content_path override — files live OUTSIDE .contentrain/
   if (model.content_path) {
-    // Validate content_path — prevent path traversal
+    // Validate content_path — prevent path traversal and sensitive path access
     const normalized = model.content_path.replace(/\\/g, '/')
     if (normalized.includes('..') || normalized.startsWith('/') || normalized.includes('//')) {
       throw new Error(`Invalid content_path: "${model.content_path}" — path traversal detected`)
+    }
+    // Block sensitive repo paths that should never be content targets
+    const sensitivePatterns = ['.github', '.git', 'node_modules', '.env', '.ci', '.contentrain/models', '.contentrain/config']
+    const lowerNorm = normalized.toLowerCase()
+    if (sensitivePatterns.some(p => lowerNorm === p || lowerNorm.startsWith(`${p}/`))) {
+      throw new Error(`Invalid content_path: "${model.content_path}" — targets a protected directory`)
     }
     const basePath = prefixed(ctx.contentRoot, model.content_path)
     if (model.kind === 'document') {

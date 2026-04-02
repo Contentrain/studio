@@ -44,6 +44,16 @@ export default defineEventHandler(async (event) => {
     if (body.locales.supported) config.locales.supported = body.locales.supported
   }
 
+  // Validate merged config before writing to repo
+  const configWarnings = validateConfig(config)
+  const configErrors = configWarnings.filter(w => w.severity === 'critical' || w.severity === 'error')
+  if (configErrors.length > 0) {
+    throw createError({
+      statusCode: 422,
+      message: errorMessage('project.config_validation_failed', { errors: configErrors.map(e => e.message).join('; ') }),
+    })
+  }
+
   // Use content engine for branch lifecycle (ensureContentBranch + merge)
   const engine = createContentEngine({ git, contentRoot })
   await engine.ensureContentBranch()

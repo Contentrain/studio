@@ -254,7 +254,7 @@ provide(sendChatPromptKey, sendChatPrompt)
         />
       </template>
       <!-- Health score in header -->
-      <AtomsHealthScoreBadge v-if="panelState === 'health'" :score="healthScore" size="sm" class="ml-auto" />
+      <AtomsHealthScoreBadge v-if="panelState === 'health' && healthScore !== null" :score="healthScore" size="sm" class="ml-auto" />
       <!-- Branch badge -->
       <AtomsBadge v-if="panelState === 'branch'" variant="warning" size="sm" class="ml-auto">
         <span class="icon-[annon--arrow-swap] mr-1 size-3" aria-hidden="true" />
@@ -377,7 +377,7 @@ provide(sendChatPromptKey, sendChatPrompt)
             :model-count="stats.models"
             :entry-count="stats.entries"
             :locales="stats.locales"
-            :health-score="healthScore"
+            :health-score="healthScore ?? 0"
             @view-health="emit('selectModel', '__health__')"
           />
 

@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (Object.keys(updates).length === 0) {
-    throw createError({ statusCode: 400, message: 'No fields to update' })
+    throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })
   }
 
   return db.updateProfile(session.accessToken, session.user.id, updates as { display_name?: string, theme?: 'light' | 'dark' | 'system' })

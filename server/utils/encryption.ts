@@ -4,12 +4,17 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
  * AES-256-GCM encryption for BYOA API keys.
  * Uses the session secret as the encryption key.
  *
- * Format: base64(iv:12 + authTag:16 + ciphertext)
+ * Versioned format: "v{version}:{base64(iv:12 + authTag:16 + ciphertext)}"
+ * Legacy format (v0): plain base64 without version prefix.
+ *
+ * Versioning ensures that secret rotation can be detected and migrated
+ * rather than silently producing decryption failures.
  */
 
 const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 12
 const AUTH_TAG_LENGTH = 16
+const CURRENT_VERSION = 1
 
 function deriveKey(secret: string): Buffer {
   // Derive 32 bytes for AES-256 using SHA-256 (deterministic KDF)
@@ -30,12 +35,25 @@ export function encryptApiKey(plaintext: string, secret: string): string {
 
   // Pack: iv + authTag + ciphertext
   const packed = Buffer.concat([iv, authTag, encrypted])
-  return packed.toString('base64')
+  return `v${CURRENT_VERSION}:${packed.toString('base64')}`
+}
+
+/**
+ * Parse versioned ciphertext. Returns version number and raw base64 payload.
+ * Legacy (unversioned) ciphertexts are treated as v0.
+ */
+function parseVersioned(encrypted: string): { version: number, payload: string } {
+  const match = encrypted.match(/^v(\d+):(.+)$/)
+  if (match) {
+    return { version: Number.parseInt(match[1]!, 10), payload: match[2]! }
+  }
+  return { version: 0, payload: encrypted }
 }
 
 export function decryptApiKey(encrypted: string, secret: string): string {
+  const { payload } = parseVersioned(encrypted)
   const key = deriveKey(secret)
-  const packed = Buffer.from(encrypted, 'base64')
+  const packed = Buffer.from(payload, 'base64')
 
   const iv = packed.subarray(0, IV_LENGTH)
   const authTag = packed.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH)
@@ -50,6 +68,15 @@ export function decryptApiKey(encrypted: string, secret: string): string {
   ])
 
   return decrypted.toString('utf-8')
+}
+
+/**
+ * Check if a ciphertext needs re-encryption (e.g., after secret rotation
+ * or format upgrade). Returns true if the version is older than current.
+ */
+export function needsReEncryption(encrypted: string): boolean {
+  const { version } = parseVersioned(encrypted)
+  return version < CURRENT_VERSION
 }
 
 /**

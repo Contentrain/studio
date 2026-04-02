@@ -15,12 +15,17 @@ export default defineEventHandler(async (event) => {
 
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
 
-  return brain.schemaValidation ?? {
-    valid: true,
-    warnings: [],
-    healthScore: 100,
-    modelCount: brain.models.size,
-    validModels: brain.models.size,
-    timestamp: new Date().toISOString(),
+  if (!brain.schemaValidation) {
+    return {
+      valid: null,
+      warnings: [],
+      healthScore: null,
+      modelCount: brain.models.size,
+      validModels: 0,
+      timestamp: new Date().toISOString(),
+      unavailable: true,
+    }
   }
+
+  return brain.schemaValidation
 })

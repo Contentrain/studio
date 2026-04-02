@@ -69,12 +69,19 @@ function resolveEffectivePlan(ws: Workspace | null, state: BillingState): Studio
 
 export function useBilling() {
   const { activeWorkspace, fetchWorkspaces } = useWorkspaces()
+  const config = useRuntimeConfig()
+  const billingEnabled = computed(() => config.public.billingEnabled === 'true')
 
-  const billingState = computed(() => resolveState(activeWorkspace.value))
+  const billingState = computed(() => {
+    // Self-host bypass: no Stripe = starter-level access (mirrors server middleware)
+    if (!billingEnabled.value) return 'subscribed' as BillingState
+    return resolveState(activeWorkspace.value)
+  })
 
-  const effectivePlan = computed(() =>
-    resolveEffectivePlan(activeWorkspace.value, billingState.value),
-  )
+  const effectivePlan = computed(() => {
+    if (!billingEnabled.value) return normalizePlan(activeWorkspace.value?.plan) || ('starter' as StudioPlan)
+    return resolveEffectivePlan(activeWorkspace.value, billingState.value)
+  })
 
   const isLocked = computed(() =>
     ['trial_expired', 'grace_expired', 'canceled_expired'].includes(billingState.value),

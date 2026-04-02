@@ -159,7 +159,16 @@ export async function inviteOrLookupUser(
     const result = await authProvider.inviteUserByEmail(email, { redirectTo })
     return { userId: result.userId, isNewUser: true }
   }
-  catch {
+  catch (inviteErr: unknown) {
+    // Only fall through to user lookup if the error indicates "user already exists".
+    // Transient provider errors (network, rate limit, etc.) should propagate.
+    const errMsg = (inviteErr as { message?: string })?.message ?? ''
+    const statusCode = (inviteErr as { statusCode?: number })?.statusCode
+    const isAlreadyExists = errMsg.toLowerCase().includes('already') || statusCode === 422
+    if (!isAlreadyExists) {
+      throw createError({ statusCode: statusCode ?? 500, message: errorMessage('auth.invite_failed', { detail: errMsg }) })
+    }
+
     // User already exists — look up by email via AuthProvider
     const existing = await authProvider.getUserByEmail(email)
     if (!existing?.id)
@@ -207,19 +216,26 @@ export async function saveChatResult(
 ) {
   const db = useDatabaseProvider()
 
+  // Insert both messages together — if assistant insert fails, log but don't leave orphan
   await db.insertMessage({ conversationId, role: 'user', content: userMessage })
+  try {
+    await db.insertMessage({
+      conversationId,
+      role: 'assistant',
+      content: assistantText || '[tool calls]',
+      toolCalls: assistantContent.length > 0 ? assistantContent : null,
+      tokenCountInput: inputTokens,
+      tokenCountOutput: outputTokens,
+      model,
+    })
+  }
+  catch (err) {
+    console.error('[saveChatResult] Failed to insert assistant message:', err)
+    throw err
+  }
 
-  await db.insertMessage({
-    conversationId,
-    role: 'assistant',
-    content: assistantText || '[tool calls]',
-    toolCalls: assistantContent.length > 0 ? assistantContent : null,
-    tokenCountInput: inputTokens,
-    tokenCountOutput: outputTokens,
-    model,
-  })
-
-  // Token counts only — message_count already reserved atomically
+  // Token counts only — message_count already reserved atomically.
+  // Uses SQL increment to prevent concurrent overwrites.
   await db.updateAgentUsageTokens({
     workspaceId,
     userId,

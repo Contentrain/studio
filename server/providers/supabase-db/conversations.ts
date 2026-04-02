@@ -216,17 +216,15 @@ export function conversationMethods(): ConversationMethods {
 
     async updateAgentUsageTokens(input) {
       const admin = getAdmin()
-      await admin
-        .from('agent_usage')
-        .update({
-          input_tokens: input.inputTokens,
-          output_tokens: input.outputTokens,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('workspace_id', input.workspaceId)
-        .eq('user_id', input.userId)
-        .eq('month', input.month)
-        .eq('source', input.source)
+      // Use RPC for atomic token increment to prevent concurrent overwrites
+      await admin.rpc('increment_agent_usage_tokens', {
+        p_workspace_id: input.workspaceId,
+        p_user_id: input.userId,
+        p_month: input.month,
+        p_source: input.source,
+        p_input_tokens: input.inputTokens,
+        p_output_tokens: input.outputTokens,
+      })
     },
 
     // ─── BYOA Key ───

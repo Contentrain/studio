@@ -20,21 +20,25 @@ interface GitHubInstallation {
 
 const ghInstallation = ref<GitHubInstallation | null>(null)
 const ghLoading = ref(false)
+const ghFetchError = ref<string | null>(null)
 
 const ghIsSuspended = computed(() => !!ghInstallation.value?.suspendedAt)
-const ghHasError = computed(() => !!ghInstallation.value?.error)
+const ghHasError = computed(() => !!ghInstallation.value?.error || !!ghFetchError.value)
 const ghNeedsAttention = computed(() => ghIsSuspended.value || ghHasError.value)
 
 async function loadGitHubInstallation() {
   if (!activeWorkspace.value) return
   ghLoading.value = true
+  ghFetchError.value = null
   try {
     ghInstallation.value = await $fetch<GitHubInstallation>('/api/github/installation', {
       params: { workspaceId: activeWorkspace.value.id },
     })
   }
-  catch {
+  catch (err: unknown) {
     ghInstallation.value = null
+    const status = (err as { statusCode?: number })?.statusCode
+    ghFetchError.value = status === 403 ? t('auth.forbidden') : t('generic.server_error')
   }
   finally {
     ghLoading.value = false

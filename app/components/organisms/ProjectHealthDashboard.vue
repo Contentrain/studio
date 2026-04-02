@@ -29,20 +29,23 @@ const tierKeys: Record<string, string> = {
 }
 
 const scoreColor = computed(() => {
-  if (healthScore.value >= 90) return 'text-success-500'
-  if (healthScore.value >= 70) return 'text-warning-500'
+  const score = healthScore.value ?? 0
+  if (score >= 90) return 'text-success-500'
+  if (score >= 70) return 'text-warning-500'
   return 'text-danger-500'
 })
 
 const ringColor = computed(() => {
-  if (healthScore.value >= 90) return 'stroke-success-500'
-  if (healthScore.value >= 70) return 'stroke-warning-500'
+  const score = healthScore.value ?? 0
+  if (score >= 90) return 'stroke-success-500'
+  if (score >= 70) return 'stroke-warning-500'
   return 'stroke-danger-500'
 })
 
 const tierColor = computed(() => {
-  if (healthScore.value >= 90) return 'text-success-600 dark:text-success-400'
-  if (healthScore.value >= 70) return 'text-warning-600 dark:text-warning-400'
+  const score = healthScore.value ?? 0
+  if (score >= 90) return 'text-success-600 dark:text-success-400'
+  if (score >= 70) return 'text-warning-600 dark:text-warning-400'
   return 'text-danger-600 dark:text-danger-400'
 })
 
@@ -50,7 +53,7 @@ const tierColor = computed(() => {
 const RADIUS = 42
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 const strokeDashoffset = computed(() =>
-  CIRCUMFERENCE - (healthScore.value / 100) * CIRCUMFERENCE,
+  CIRCUMFERENCE - ((healthScore.value ?? 0) / 100) * CIRCUMFERENCE,
 )
 
 function handleAskAgent(prompt: string) {

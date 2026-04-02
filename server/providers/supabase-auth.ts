@@ -141,10 +141,17 @@ export function createSupabaseAuthProvider(): AuthProvider {
 
     async getUserByEmail(email: string): Promise<AuthUser | null> {
       const admin = createSupabaseAdminClient()
-      const { data } = await admin.auth.admin.listUsers()
-      const user = data?.users?.find(u => u.email === email)
-      if (!user) return null
-      return mapSupabaseUser(user)
+      let page = 1
+      const perPage = 1000
+      while (true) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
+        if (error) throw error
+        const user = data?.users?.find(u => u.email === email)
+        if (user) return mapSupabaseUser(user)
+        if (!data?.users || data.users.length < perPage) break
+        page++
+      }
+      return null
     },
 
     async deleteUser(userId: string): Promise<void> {

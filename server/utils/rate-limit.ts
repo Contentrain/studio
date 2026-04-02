@@ -2,7 +2,7 @@
  * In-memory sliding window rate limiter.
  *
  * Simple per-user rate limiting for chat messages.
- * Resets automatically — no cleanup needed.
+ * Includes periodic cleanup to prevent unbounded memory growth.
  *
  * For production at scale, replace with Redis-backed limiter.
  */
@@ -17,6 +17,22 @@ const store = new Map<string, RateWindow>()
 const DEFAULT_WINDOW_MS = 60_000
 const DEFAULT_MAX_REQUESTS = 10
 
+// Cleanup stale entries every 5 minutes to prevent memory leak
+const CLEANUP_INTERVAL_MS = 5 * 60_000
+let lastCleanup = Date.now()
+
+function cleanupStaleEntries(now: number) {
+  if (now - lastCleanup < CLEANUP_INTERVAL_MS) return
+  lastCleanup = now
+  for (const [key, window] of store) {
+    // Remove entries where all timestamps are expired (oldest window is 1 hour)
+    const maxAge = now - 60 * 60_000
+    if (window.timestamps.length === 0 || window.timestamps[window.timestamps.length - 1]! < maxAge) {
+      store.delete(key)
+    }
+  }
+}
+
 /**
  * Check rate limit for a key (typically userId or `userId:workspaceId`).
  * Returns { allowed, remaining, retryAfterMs }.
@@ -28,6 +44,8 @@ export function checkRateLimit(
 ): { allowed: boolean, remaining: number, retryAfterMs: number } {
   const now = Date.now()
   const cutoff = now - windowMs
+
+  cleanupStaleEntries(now)
 
   let window = store.get(key)
   if (!window) {

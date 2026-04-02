@@ -164,7 +164,7 @@ function onProjectDeleted() {
             {{ currentProject?.repo_full_name?.split('/')[1] ?? currentProjectId }}
           </span>
           <span
-            v-if="hasContentrain && healthScore < 90"
+            v-if="hasContentrain && healthScore !== null && healthScore < 90"
             class="size-1.5 shrink-0 rounded-full"
             :class="healthScore >= 70 ? 'bg-warning-400' : 'bg-danger-400'"
             :title="`${t('health.score_label')}: ${healthScore}/100`"

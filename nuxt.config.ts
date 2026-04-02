@@ -44,7 +44,11 @@ export default defineNuxtConfig({
     public: {
       siteUrl: 'http://localhost:3000',
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
+      billingEnabled: '', // NUXT_PUBLIC_BILLING_ENABLED — set to 'true' when Stripe is configured
+      templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER
     },
+    emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
+    emailSenderName: '', // NUXT_EMAIL_SENDER_NAME
   },
 
   alias: {
