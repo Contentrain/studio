@@ -73,10 +73,7 @@ Your reverse proxy should:
 Before shipping a Docker deployment:
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test:ci
-pnpm test:rls
-pnpm test:e2e
-pnpm build
+pnpm release:check
 ```
+
+The full release flow, image-tag policy, and GitHub Actions automation are documented in [RELEASING.md](RELEASING.md).
