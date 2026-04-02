@@ -13,6 +13,7 @@
  *   webhooks.ts      — webhooks, deliveries, conversation key CRUD
  */
 import type { DatabaseProvider } from '../database'
+import { auditMethods } from './audit'
 import { cdnMethods } from './cdn'
 import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
@@ -36,5 +37,6 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...projectMethods(),
     ...cdnMethods(),
     ...webhookMethods(),
+    ...auditMethods(),
   }
 }
