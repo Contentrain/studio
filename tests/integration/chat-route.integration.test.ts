@@ -72,7 +72,7 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getMonthlyUsageSummary: vi.fn().mockResolvedValue(3),
+      incrementAgentUsageIfAllowed: vi.fn().mockResolvedValue({ allowed: false, currentCount: 3 }),
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
@@ -86,6 +86,12 @@ describe('chat route integration', () => {
       availableTools: ['get_content'],
       specificModels: false,
       allowedModels: [],
+    }))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      sessionSecret: 'test-session-secret-32-characters-min',
+      anthropic: { apiKey: 'sk-test' },
+      public: { siteUrl: 'http://localhost:3000' },
     }))
 
     await withTestServer({
@@ -121,7 +127,7 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getMonthlyUsageSummary: vi.fn().mockResolvedValue(0),
+      incrementAgentUsageIfAllowed: vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 }),
       getConversation: vi.fn().mockResolvedValue(null),
       createConversation: mockCreateConversation,
       loadConversationMessages: mockLoadMessages,
@@ -195,6 +201,7 @@ describe('chat route integration', () => {
         'workspace-1',
         'user-1',
         'studio',
+        expect.any(String),
       )
     })
   })
@@ -301,7 +308,7 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getMonthlyUsageSummary: vi.fn().mockResolvedValue(0),
+      incrementAgentUsageIfAllowed: vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 }),
       getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
       createConversation: vi.fn().mockResolvedValue('conversation-existing'),
       loadConversationMessages: vi.fn().mockResolvedValue([]),

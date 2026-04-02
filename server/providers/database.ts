@@ -215,6 +215,26 @@ export interface DatabaseProvider {
   }) => Promise<void>
   getMonthlyUsageSummary: (workspaceId: string, userId: string, month: string) => Promise<number>
 
+  /** Atomic: check monthly limit + reserve a message slot. Prevents race conditions. */
+  incrementAgentUsageIfAllowed: (input: {
+    workspaceId: string
+    userId: string
+    apiKeyId?: string
+    month: string
+    source: string
+    limit: number
+  }) => Promise<{ allowed: boolean, currentCount: number }>
+
+  /** Update token counts on an existing agent_usage row (after chat completes). */
+  updateAgentUsageTokens: (input: {
+    workspaceId: string
+    userId: string
+    month: string
+    source: string
+    inputTokens: number
+    outputTokens: number
+  }) => Promise<void>
+
   // ═══════════════════════════════════════════════════
   // MEDIA ASSETS
   // ═══════════════════════════════════════════════════
@@ -262,6 +282,13 @@ export interface DatabaseProvider {
     modelId?: string
   }) => Promise<number>
   countMonthlySubmissions: (workspaceId: string) => Promise<number>
+
+  /** Atomic: check monthly limit + insert submission. Prevents race conditions. */
+  createFormSubmissionIfAllowed: (
+    workspaceId: string,
+    monthlyLimit: number,
+    submission: FormSubmissionInput,
+  ) => Promise<{ allowed: boolean, currentCount: number, submission?: DatabaseRow }>
 
   // ═══════════════════════════════════════════════════
   // WEBHOOKS
@@ -345,4 +372,20 @@ export interface DatabaseProvider {
   revokeConversationKey: (keyId: string, projectId: string, workspaceId: string) => Promise<void>
   countActiveConversationKeys: (projectId: string, workspaceId: string) => Promise<number>
   getConversationKeyUsage: (keyIds: string[], month: string) => Promise<DatabaseRow[]>
+
+  // ═══════════════════════════════════════════════════
+  // AUDIT LOGS
+  // ═══════════════════════════════════════════════════
+
+  createAuditLog: (entry: {
+    workspaceId?: string | null
+    actorId?: string | null
+    action: string
+    tableName: string
+    recordId: string
+    recordSnapshot?: Record<string, unknown> | null
+    sourceIp?: string | null
+    userAgent?: string | null
+    origin?: 'app' | 'cascade'
+  }) => Promise<void>
 }

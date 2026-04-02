@@ -44,6 +44,7 @@ describe('db helpers', () => {
       loadConversationMessages: vi.fn().mockResolvedValue([{ role: 'user', content: 'Hello', tool_calls: null }]),
       insertMessage: vi.fn().mockResolvedValue(undefined),
       upsertAgentUsage: vi.fn().mockResolvedValue(undefined),
+      updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
       updateConversationTimestamp: vi.fn().mockResolvedValue(undefined),
       getBYOAKey: vi.fn().mockResolvedValue(null),
     }
@@ -80,23 +81,24 @@ describe('db helpers', () => {
       'workspace-1',
       'user-1',
       'studio',
+      '2026-04',
     )
 
     expect(mockDb.insertMessage).toHaveBeenCalledTimes(2)
     expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'user', content: 'Hello' }))
     expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'assistant', content: 'World' }))
-    expect(mockDb.upsertAgentUsage).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',
+      month: '2026-04',
       source: 'studio',
-      messageCount: 1,
       inputTokens: 7,
       outputTokens: 3,
     }))
     expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-1')
   })
 
-  it('passes apiKeyId through to upsertAgentUsage', async () => {
+  it('updates token counts on the usage row reserved by the atomic limit check', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult(
       'conv-1',
@@ -109,12 +111,15 @@ describe('db helpers', () => {
       'workspace-1',
       'user-1',
       'byoa',
+      '2026-04',
       'key-123',
     )
 
-    expect(mockDb.upsertAgentUsage).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
       source: 'byoa',
-      apiKeyId: 'key-123',
+      month: '2026-04',
+      inputTokens: 4,
+      outputTokens: 2,
     }))
   })
 })

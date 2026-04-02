@@ -13,6 +13,7 @@ type FormMethods = Pick<
   | 'deleteFormSubmission'
   | 'bulkUpdateSubmissions'
   | 'countMonthlySubmissions'
+  | 'createFormSubmissionIfAllowed'
 >
 
 export function formMethods(): FormMethods {
@@ -131,6 +132,33 @@ export function formMethods(): FormMethods {
         .gte('created_at', monthStart.toISOString())
 
       return count ?? 0
+    },
+
+    async createFormSubmissionIfAllowed(workspaceId, monthlyLimit, submission) {
+      const admin = getAdmin()
+      const { data, error } = await admin.rpc('create_form_submission_if_allowed', {
+        p_workspace_id: workspaceId,
+        p_monthly_limit: monthlyLimit,
+        p_project_id: submission.project_id,
+        p_model_id: submission.model_id,
+        p_data: submission.data,
+        p_status: 'pending',
+        p_source_ip: submission.source_ip ?? null,
+        p_user_agent: submission.user_agent ?? null,
+        p_referrer: submission.referrer ?? null,
+        p_locale: submission.locale ?? 'en',
+      })
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Atomic submission check failed: ${error.message}` })
+      }
+
+      const result = data as { allowed: boolean, current_count: number, submission?: Record<string, unknown> }
+      return {
+        allowed: result.allowed,
+        currentCount: result.current_count,
+        submission: result.submission as DatabaseRow | undefined,
+      }
     },
   }
 }
