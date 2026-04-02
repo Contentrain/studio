@@ -1,5 +1,6 @@
 {
   "name": "contentrain-studio",
+  "version": "0.1.0-beta.1",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@10.26.2",
@@ -10,7 +11,8 @@
     "preview": "nuxt preview",
     "postinstall": "node ./scripts/fix-nuxt-test-utils-vitest-runtime.mjs && nuxt prepare",
     "prepare": "husky",
-    "release": "changelogen --release",
+    "release": "pnpm release:check && changelogen --release",
+    "release:check": "pnpm lint && pnpm typecheck && pnpm test:ci && pnpm test:rls && pnpm test:e2e && pnpm build",
     "changelog": "changelogen",
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",

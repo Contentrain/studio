@@ -120,10 +120,7 @@ After first deploy, verify:
 Run before cutting a release image:
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test:ci
-pnpm test:rls
-pnpm test:e2e
-pnpm build
+pnpm release:check
 ```
+
+For tag policy, container image tags, rollback, and GitHub release automation, see [RELEASING.md](RELEASING.md).
