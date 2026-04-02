@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.1.0-beta.2
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.1...v0.1.0-beta.2)
+
+### ✅ Tests
+
+- **e2e:** Stabilize cdn panel rebuild assertion ([ce228f7](https://github.com/Contentrain/studio/commit/ce228f7))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+
 ## 2ef41eebc54d947b051ffaf395c130b7e190ece0...HEAD
 
 [compare changes](https://github.com/Contentrain/studio/compare/2ef41eebc54d947b051ffaf395c130b7e190ece0...HEAD)
