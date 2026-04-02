@@ -15,8 +15,8 @@ importers:
         specifier: ^3.1014.0
         version: 3.1014.0
       '@contentrain/query':
-        specifier: ^5.1.0
-        version: 5.1.0
+        specifier: ^5.1.1
+        version: 5.1.1
       '@contentrain/types':
         specifier: 0.2.0
         version: 0.2.0
@@ -552,12 +552,15 @@ packages:
     resolution: {integrity: sha512-ZJoS8oSq2CAZEpc/YI9SulLrdiIyXeHb/OGqGrkUP6Q7YV+0ouNAa7GjqRdXeQPncHQIDz/jbCTlHScvYvO/gA==}
     engines: {node: '>=v18'}
 
-  '@contentrain/query@5.1.0':
-    resolution: {integrity: sha512-CbcV34YwN7FUNargFqmkL3/3apzXHXTHd5uh8T8NL/cYmFTnRAcmfBX2pR9yOkEFucdMPmZ2WFzz/j7+TzBqPA==}
+  '@contentrain/query@5.1.1':
+    resolution: {integrity: sha512-Cy5u+HpV44lktpjPYMuSnRsQjFokX2B6lYP6DO3k0klm8x8WNjoK5VFemUCPENUQdCUb7QHkKLq+ttLj1tQOlw==}
     hasBin: true
 
   '@contentrain/types@0.2.0':
     resolution: {integrity: sha512-tjql7ZQQelzXU69CqId9NcYX4Fa07HXRLa9zdAJjjT/gptJ5VKNRQBCuGEU86w41gzmhpZH/I+br/s+qVLhIbg==}
+
+  '@contentrain/types@0.3.0':
+    resolution: {integrity: sha512-lg5cjdCYcOTUdLecS/ayrX/sTMf0RQEIpzRA+eGBqVoup/42l7SC8TGeqgSdcElkBGDVd0EJn1Ic/RJoSSXCaA==}
 
   '@conventional-changelog/git-client@2.6.0':
     resolution: {integrity: sha512-T+uPDciKf0/ioNNDpMGc8FDsehJClZP0yR3Q5MN6wE/Y/1QZ7F+80OgznnTCOlMEG4AV0LvH2UJi3C/nBnaBUg==}
@@ -6849,11 +6852,13 @@ snapshots:
       conventional-commits-parser: 6.3.0
       picocolors: 1.1.1
 
-  '@contentrain/query@5.1.0':
+  '@contentrain/query@5.1.1':
     dependencies:
-      '@contentrain/types': 0.2.0
+      '@contentrain/types': 0.3.0
 
   '@contentrain/types@0.2.0': {}
+
+  '@contentrain/types@0.3.0': {}
 
   '@conventional-changelog/git-client@2.6.0(conventional-commits-parser@6.3.0)':
     dependencies:
