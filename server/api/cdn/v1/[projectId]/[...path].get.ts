@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 
   // Rate limiting per-key (uses stored limit from DB)
-  const rateCheck = checkRateLimit(`cdn:${keyId}`, rateLimitPerHour, 3600_000)
+  const rateCheck = await checkRateLimit(`cdn:${keyId}`, rateLimitPerHour, 3600_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('rate.limit_exceeded') })
   setResponseHeader(event, 'X-RateLimit-Remaining', String(rateCheck.remaining))

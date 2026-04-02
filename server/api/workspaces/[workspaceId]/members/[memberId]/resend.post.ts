@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_member_required') })
 
   // Rate limit: 3 resends per member per hour
-  const rateCheck = checkRateLimit(`resend-invite:${memberId}`, 3, 60 * 60 * 1000)
+  const rateCheck = await checkRateLimit(`resend-invite:${memberId}`, 3, 60 * 60 * 1000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('members.resend_rate_limited') })
 

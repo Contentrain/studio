@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   // Rate limit config endpoint to prevent enumeration
   const ip = getClientIp(event)
-  const rateCheck = checkRateLimit(`form-config:${ip}`, 30, 60_000)
+  const rateCheck = await checkRateLimit(`form-config:${ip}`, 30, 60_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('forms.rate_limited') })
 

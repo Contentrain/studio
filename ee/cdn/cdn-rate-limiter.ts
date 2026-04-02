@@ -1,45 +1,31 @@
 /**
  * CDN per-key rate limiter.
  *
- * In-memory sliding window, same pattern as chat rate limiter.
+ * Production: delegates to the shared Redis-backed rate limiter.
+ * Development: in-memory fallback via the same shared utility.
+ *
  * Each API key has its own rate limit (stored in cdn_api_keys.rate_limit_per_hour).
  *
  * LICENSE: Proprietary — Contentrain Enterprise Edition
  */
 
-interface RateWindow {
-  timestamps: number[]
-}
-
-const store = new Map<string, RateWindow>()
+import { checkRateLimit } from '../../server/utils/rate-limit'
 
 const DEFAULT_WINDOW_MS = 3600_000 // 1 hour
 
 /**
  * Check CDN rate limit for an API key.
  */
-export function checkCDNRateLimit(
+export async function checkCDNRateLimit(
   keyId: string,
   maxRequests: number = 1000,
-): { allowed: boolean, remaining: number, resetAt: number } {
-  const now = Date.now()
-  const cutoff = now - DEFAULT_WINDOW_MS
+): Promise<{ allowed: boolean, remaining: number, resetAt: number }> {
+  const result = await checkRateLimit(`cdn-key:${keyId}`, maxRequests, DEFAULT_WINDOW_MS)
+  const resetAt = Math.ceil((Date.now() + DEFAULT_WINDOW_MS) / 1000)
 
-  let window = store.get(keyId)
-  if (!window) {
-    window = { timestamps: [] }
-    store.set(keyId, window)
+  return {
+    allowed: result.allowed,
+    remaining: result.remaining,
+    resetAt,
   }
-
-  // Remove expired timestamps
-  window.timestamps = window.timestamps.filter(t => t > cutoff)
-
-  const resetAt = Math.ceil((now + DEFAULT_WINDOW_MS) / 1000)
-
-  if (window.timestamps.length >= maxRequests) {
-    return { allowed: false, remaining: 0, resetAt }
-  }
-
-  window.timestamps.push(now)
-  return { allowed: true, remaining: maxRequests - window.timestamps.length, resetAt }
 }

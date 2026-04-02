@@ -1,7 +1,7 @@
 export default defineEventHandler(async (event) => {
   // Rate limit: 10 login requests per minute per IP
   const ip = getClientIp(event)
-  const rateCheck = checkRateLimit(`auth-login:${ip}`, 10, 60_000)
+  const rateCheck = await checkRateLimit(`auth-login:${ip}`, 10, 60_000)
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('auth.rate_limited') })
 

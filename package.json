@@ -55,6 +55,7 @@
     "flexsearch": "^0.8.212",
     "gray-matter": "^4.0.3",
     "idb-keyval": "^6.2.2",
+    "ioredis": "^5.10.1",
     "marked": "^17.0.4",
     "nuxt": "^4.4.2",
     "radix-vue": "^1.9.17",
