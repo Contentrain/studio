@@ -5,7 +5,7 @@ RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
+COPY . .
 RUN pnpm install --frozen-lockfile --prod=false
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────────
@@ -15,8 +15,7 @@ RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY --from=deps /app ./
 
 RUN pnpm build
 
