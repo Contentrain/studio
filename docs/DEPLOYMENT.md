@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Contentrain Studio is designed for self-hosted deployment. The product is a single Nuxt/Nitro application with external dependencies for auth/data, GitHub integration, optional billing, optional object storage, and optional Redis.
+Contentrain Studio supports self-hosting of the AGPL core and managed operation of paid plans. The product is a single Nuxt/Nitro application with external dependencies for auth/data, GitHub integration, optional billing, optional object storage, and optional Redis. This guide focuses on deploying it yourself.
 
 ## Deployment Shapes
 
@@ -23,9 +23,9 @@ Optional but recommended:
 
 - Redis for distributed rate limiting
 - Resend or compatible app-email provider
-- Anthropic API key for Studio-hosted AI
+- Anthropic API key for the operator-managed AI surface
 - Cloudflare R2 for CDN/media delivery
-- Stripe for hosted billing
+- Stripe for billing when commercial plans are enabled
 
 ## Production Checklist
 
@@ -74,7 +74,7 @@ If billing is not enabled:
 
 - Leave Stripe keys unset
 - Leave `NUXT_PUBLIC_BILLING_ENABLED` unset
-- Studio will operate in self-host/no-billing mode
+- Studio will operate in no-billing mode
 
 ### CDN / Media
 

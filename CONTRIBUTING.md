@@ -79,7 +79,7 @@ The most important project rules are architectural, not stylistic.
 
 ### Provider Pattern
 
-Contentrain Studio is deployment-agnostic and self-hosted-first. External services are accessed only through provider interfaces in `server/providers/`.
+Contentrain Studio is deployment-flexible. The AGPL core can be self-hosted, and paid plans can also be operated as managed services. External services are accessed only through provider interfaces in `server/providers/`.
 
 Do not:
 

@@ -1,6 +1,6 @@
 # Self-Hosting Guide
 
-Contentrain Studio is self-hosted-first. There is no requirement to run it as a managed SaaS.
+Contentrain Studio supports self-hosting of the AGPL core. This guide covers the self-managed deployment path; managed Pro/Enterprise operation may also be available separately.
 
 This guide describes the practical model for operating Studio in your own environment.
 
@@ -48,7 +48,7 @@ Contentrain Studio (Nuxt/Nitro)
 
 ### Minimal Core Mode
 
-Use this when you want the AGPL core without premium operational surfaces.
+Use this when you want to run the AGPL core yourself without premium operational surfaces.
 
 Recommended config:
 

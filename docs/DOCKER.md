@@ -1,6 +1,6 @@
 # Docker Guide
 
-This repository ships with a production Dockerfile for self-hosted deployments.
+This repository ships with a production Dockerfile for self-hosted or operator-managed deployments.
 
 ## What the Docker Image Contains
 

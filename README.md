@@ -16,7 +16,7 @@
 
 ## What Contentrain Studio Is
 
-Contentrain Studio is a self-hosted, Git-backed content operations platform built with [Nuxt 4](https://nuxt.com/). It is designed for teams who want structured content, reviewable Git workflows, and an AI operator without giving up repository ownership.
+Contentrain Studio is an open-core, Git-backed content operations platform built with [Nuxt 4](https://nuxt.com/). Teams can self-host the AGPL core or use a managed Pro/Enterprise offering while keeping Git as the source of truth.
 
 The product model is:
 
@@ -26,7 +26,7 @@ The product model is:
 - changes become branches, commits, diffs, and merges
 - delivery can happen through media, CDN, and API surfaces
 
-This repository contains the AGPL core. Proprietary enterprise implementations live in [`ee/`](ee/) under a separate license.
+This repository contains the AGPL core. Proprietary enterprise implementations live in [`ee/`](ee/) under a separate license. Managed Pro/Enterprise deployments can be operated on top of the same product model.
 
 ## Why It Exists
 
@@ -36,7 +36,23 @@ Traditional CMS products hide content workflows behind opaque databases and admi
 - schema validation protects structured content quality
 - AI is bounded by tools and permissions, not used as an uncontrolled shell
 - workspaces and projects map cleanly to team and repository boundaries
-- self-hosting remains the first-class deployment model
+- self-hosting remains a supported trust path, and managed operation is also available
+
+## Relationship to Contentrain AI
+
+Studio shares the same `.contentrain/` contract with the MIT package surface in the `contentrain-ai` repository. Developers usually enter the ecosystem through local-first package workflows, then move into Studio when review, roles, and delivery become operational needs.
+
+| AI surface | Primary job | Studio bridge | Docs |
+| --- | --- | --- | --- |
+| `@contentrain/mcp` | Deterministic local content operations and normalize | Studio applies the same content contract through authenticated review and delivery workflows | [MCP Tools](https://ai.contentrain.io/packages/mcp) |
+| `contentrain` CLI | `init`, `serve`, `generate`, `diff`, `validate` | Studio takes over when teams need a web surface, project management, and approval | [CLI](https://ai.contentrain.io/packages/cli) |
+| `@contentrain/rules` | Shared quality and schema standards | Studio chat, review, and validation should stay aligned with the same rules | [Rules & Skills](https://ai.contentrain.io/packages/rules) |
+| `@contentrain/skills` | Agent playbooks and workflow hints | Studio mirrors these workflows in onboarding, chat-led operations, and handoffs | [Rules & Skills](https://ai.contentrain.io/packages/rules) |
+| `@contentrain/query` | Local typed consumption and CDN client transport | Studio extends the same content into remote delivery and API-key-based CDN access | [Query SDK](https://ai.contentrain.io/packages/sdk) |
+
+Typical path:
+
+`contentrain init` → normalize hardcoded content → review in Studio → invite teammates → deliver through CDN/API when needed
 
 ## Product Surface
 

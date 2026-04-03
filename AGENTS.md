@@ -1,6 +1,6 @@
 # Contentrain Studio
 
-AGPL-3.0 licensed cloud product for team content management over Git.
+Open-core product for team content management over Git. This repository contains the AGPL-3.0 core.
 Conversation-first CMS — chat with AI agent to manage structured content.
 
 ## Stack
@@ -17,7 +17,7 @@ Conversation-first CMS — chat with AI agent to manage structured content.
 
 ### Provider/Adapter Pattern — CRITICAL
 
-Studio is deployment-agnostic. There is no "hosted SaaS" — the product is self-hosted / on-premise first.
+Studio is deployment-flexible. The AGPL core is self-hostable, and the same product model can also be operated as a managed Pro/Enterprise service.
 All external services are accessed **only** through provider interfaces. No implementation detail ever leaks into components, pages, composables, or server routes.
 
 Provider interfaces live in `server/providers/`:
@@ -63,7 +63,7 @@ User → Workspace (billing entity) → Project (connected repo)
 - GitHub App installation lives on workspace (not project)
 
 ### Route Structure
-This is an AGPL product — no marketing pages. All routes are authenticated:
+This repository is the AGPL core product surface — no marketing pages. All routes are authenticated:
 ```
 /auth/login ............... Auth (public)
 /auth/callback ............ Auth callback (public)

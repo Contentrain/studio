@@ -1,6 +1,6 @@
 # Releasing Guide
 
-Contentrain Studio ships as a self-hosted application image, not as an npm package.
+Contentrain Studio ships as an application image used for self-hosted and managed deployments, not as an npm package.
 
 The release source of truth is:
 
