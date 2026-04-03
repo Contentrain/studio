@@ -25,7 +25,7 @@ Every rule is mandatory. Violations must be fixed before committing.
 
 - Length: 50-60 characters. Measure before committing.
 - Place the primary keyword within the first 30 characters.
-- Use action-oriented phrasing: "Build a REST API" not "REST API Overview".
+- Use action-oriented phrasing: "Build a Contact Form" not "Contact Form Overview".
 - No clickbait: "You Won't Believe..." is forbidden.
 - No ALL CAPS titles. Use sentence case or title case per project convention.
 - Every title must be unique within its collection.

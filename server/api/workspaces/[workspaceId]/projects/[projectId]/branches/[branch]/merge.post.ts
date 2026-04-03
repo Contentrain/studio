@@ -23,5 +23,13 @@ export default defineEventHandler(async (event) => {
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
   const engine = createContentEngine({ git, contentRoot, projectId })
-  return engine.mergeBranch(branch)
+  const mergeResult = await engine.mergeBranch(branch)
+
+  // Emit webhook event (fire-and-forget)
+  emitWebhookEvent(projectId, workspaceId, 'branch.merged', {
+    branch,
+    source: 'api',
+  }).catch(() => {})
+
+  return mergeResult
 })

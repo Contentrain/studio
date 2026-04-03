@@ -69,6 +69,6 @@ describe('license utilities', () => {
     expect(getAvailableFeatures('pro')).toContain('cdn.delivery')
     expect(getAvailableFeatures('free')).not.toContain('cdn.delivery')
     expect(getPlanLimit('starter', 'cdn.api_keys')).toBe(3)
-    expect(getPlanLimit('pro', 'team.members')).toBe(25)
+    expect(getPlanLimit('pro', 'team.members')).toBe(10)
   })
 })

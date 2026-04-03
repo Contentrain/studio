@@ -39,11 +39,6 @@
     "status": "draft",
     "updated_by": "contentrain-mcp"
   },
-  "api-rest": {
-    "source": "agent",
-    "status": "draft",
-    "updated_by": "contentrain-mcp"
-  },
   "api-webhooks": {
     "source": "agent",
     "status": "draft",

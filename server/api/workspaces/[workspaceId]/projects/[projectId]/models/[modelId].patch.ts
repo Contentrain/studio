@@ -106,5 +106,12 @@ export default defineEventHandler(async (event) => {
 
   invalidateBrainCache(projectId)
 
+  // Emit webhook event (fire-and-forget)
+  emitWebhookEvent(projectId, workspaceId, 'model.saved', {
+    modelId,
+    source: 'api',
+    merged,
+  }).catch(() => {})
+
   return { saved: true, merged, form: mergedForm }
 })

@@ -91,17 +91,6 @@
     "starter_value": "100",
     "type": "limit"
   },
-  "api-rest": {
-    "category": "api",
-    "enterprise_value": "true",
-    "free_value": "false",
-    "key": "api.rest",
-    "name": "Content REST API",
-    "pro_value": "true",
-    "sort_order": 5,
-    "starter_value": "true",
-    "type": "feature"
-  },
   "api-webhooks": {
     "category": "api",
     "enterprise_value": "unlimited",
@@ -422,7 +411,7 @@
     "free_value": "1",
     "key": "team.members",
     "name": "Team Members",
-    "pro_value": "25",
+    "pro_value": "10",
     "sort_order": 3,
     "starter_value": "3",
     "type": "limit"

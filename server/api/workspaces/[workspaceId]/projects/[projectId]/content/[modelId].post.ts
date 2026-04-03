@@ -91,5 +91,13 @@ export default defineEventHandler(async (event) => {
     // Usage tracking failure is non-fatal
   }
 
+  // Emit webhook event (fire-and-forget)
+  emitWebhookEvent(projectId, workspaceId, 'content.saved', {
+    models: [modelId],
+    locale: body.locale ?? 'en',
+    source: 'api',
+    merged,
+  }).catch(() => {})
+
   return { ...result, merged, workflow, pullRequestUrl }
 })

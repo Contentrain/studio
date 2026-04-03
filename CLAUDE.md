@@ -246,7 +246,7 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 - Approval chains, scheduled publish
 - Audit log, activity feed
 - White-label branding
-- Outbound webhooks, public REST API
+- Outbound webhooks
 
 ### What stays in core (AGPL):
 - All auth flows, workspace/project CRUD

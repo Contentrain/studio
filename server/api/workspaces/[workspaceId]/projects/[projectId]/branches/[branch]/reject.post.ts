@@ -26,5 +26,12 @@ export default defineEventHandler(async (event) => {
 
   const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.rejectBranch(branch)
+
+  // Emit webhook event (fire-and-forget)
+  emitWebhookEvent(projectId, workspaceId, 'branch.rejected', {
+    branch,
+    source: 'api',
+  }).catch(() => {})
+
   return { rejected: true }
 })

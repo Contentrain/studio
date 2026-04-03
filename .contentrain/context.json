@@ -31,7 +31,6 @@
       "api-messages-per-month",
       "api-webhooks",
       "api-custom-instructions",
-      "api-rest",
       "api-webhooks-outbound",
       "workflow-review",
       "roles-reviewer",

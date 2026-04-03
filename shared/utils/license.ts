@@ -86,7 +86,7 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
  */
 export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = {
   'ai.messages_per_month': { free: 10, starter: 50, pro: 500, enterprise: Infinity },
-  'team.members': { free: 1, starter: 3, pro: 25, enterprise: Infinity },
+  'team.members': { free: 1, starter: 3, pro: 10, enterprise: Infinity },
   'cdn.api_keys': { free: 0, starter: 3, pro: 10, enterprise: Infinity },
   'cdn.bandwidth_gb': { free: 0, starter: 2, pro: 20, enterprise: Infinity },
   'media.storage_gb': { free: 0.2, starter: 1, pro: 5, enterprise: 100 },
