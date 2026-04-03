@@ -206,13 +206,12 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 
 High (deploy sonrası):
 - Monthly limit race condition: check+insert not atomic (forms + agent usage)
-- Rate limiting: in-memory → Redis/Upstash (production multi-instance deploy)
 - GDPR audit logging: no trail when form submissions are deleted
 
 Medium:
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
 - Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
-- Webhook dead-letter queue for permanently failed deliveries
+- Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
 
 ## Dev Tooling
 
@@ -230,12 +229,12 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 ### Rules — never violate:
 
 - **ee/ directory** has its own proprietary LICENSE — NEVER mix ee/ code into core
-- **Core must work without ee/** — free tier is a fully functional product
+- **Core must work without ee/** — starter tier (AGPL core) is a fully functional product
 - **Feature flags** via `server/utils/license.ts` → `hasFeature(plan, 'feature.name')`
 - **NEVER hardcode plan checks** — always use `hasFeature()` function
 - **Provider interfaces in core**, implementations can be in ee/ (same pattern as AuthProvider)
 - **UI conditional rendering** based on plan — use `hasFeature()` in computed properties
-- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in free tier
+- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in starter tier
 - **Graceful degradation** — if ee/ feature is unavailable, degrade safely (reviewer → editor, not error)
 
 ### What belongs in ee/:
@@ -262,12 +261,9 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 
 Long-form product, marketing, and implementation planning docs are kept outside the tracked repository on purpose.
 
-### Roadmap (next)
+### Roadmap
 
-| Sprint | Focus | Plan | Spec |
-|--------|-------|------|------|
-| Current | Deploy prep — deferred fixes, user testing | All | Deferred TODOs above |
-| Next | Multi-Repo Governance | Enterprise | İhtiyaç doğduğunda |
+See `ROADMAP.md` (project root, git-tracked) for the full public roadmap.
 
 ## Reference Codebase
 

@@ -5,7 +5,10 @@
  * This file provides the runtime lookup tables generated from that content.
  *
  * Plans: free ($0), starter ($9/mo), pro ($29/mo), enterprise (custom)
- * Free = personal workspace default (no Git, no projects, demo only).
+ * Free = structural default for primary workspaces (no Git, no projects).
+ * Exists because every user needs a primary workspace on signup — invited
+ * content editors (Magic Link / Google OAuth) work in their invited workspace,
+ * not their own. Developers go straight to paid trial (starter/pro).
  * Paid plans require Stripe subscription (trial_period_days=14 on checkout).
  * Enterprise-only: SSO, white-label, custom CDN domain.
  */
@@ -16,9 +19,11 @@ export type StudioPlan = 'free' | 'starter' | 'pro' | 'enterprise'
  * Feature matrix: which plans have access to each feature.
  * Generated from Contentrain plan-features model (type: "feature").
  *
- * Free plan ($0): demo-only landing zone. Can browse the dashboard and
- * use the AI agent with studio key (10 msg/mo) but cannot connect repos,
- * create projects, use BYOA, CDN, forms, or any API features.
+ * Free plan ($0): structural default for primary workspaces. Cannot connect
+ * repos, create projects, or use BYOA, CDN, forms, or any API features.
+ * Not a product tier — exists because every user needs a primary workspace
+ * on signup. Invited content editors work in their invited workspace (paid).
+ * Developers arriving via GitHub OAuth should start a paid trial immediately.
  * Upgrade trigger: "Connect Repository" → plan selection → Stripe Checkout.
  *
  * Paid plans (starter/pro): full platform access, differentiated by

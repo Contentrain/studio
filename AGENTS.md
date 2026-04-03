@@ -222,12 +222,12 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 ### Rules — never violate:
 
 - **ee/ directory** has its own proprietary LICENSE — NEVER mix ee/ code into core
-- **Core must work without ee/** — free tier is a fully functional product
+- **Core must work without ee/** — starter tier (AGPL core) is a fully functional product
 - **Feature flags** via `server/utils/license.ts` → `hasFeature(plan, 'feature.name')`
 - **NEVER hardcode plan checks** — always use `hasFeature()` function
 - **Provider interfaces in core**, implementations can be in ee/ (same pattern as AuthProvider)
 - **UI conditional rendering** based on plan — use `hasFeature()` in computed properties
-- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in free tier
+- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in starter tier
 - **Graceful degradation** — if ee/ feature is unavailable, degrade safely (reviewer → editor, not error)
 
 ### What belongs in ee/:
