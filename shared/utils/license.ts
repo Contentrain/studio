@@ -4,7 +4,7 @@
  * Plan definitions live in Contentrain models (plans + plan-features).
  * This file provides the runtime lookup tables generated from that content.
  *
- * Plans: free ($0), starter ($9/mo), pro ($29/mo + $9/seat), enterprise (custom)
+ * Plans: free ($0), starter ($9/mo), pro ($29/mo), enterprise (custom)
  * Free = personal workspace default (no Git, no projects, demo only).
  * Paid plans require Stripe subscription (trial_period_days=14 on checkout).
  * Enterprise-only: SSO, white-label, custom CDN domain.
@@ -66,7 +66,6 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
 
   // API
   'api.conversation': ['starter', 'pro', 'enterprise'],
-  'api.rest': ['starter', 'pro', 'enterprise'],
   'api.custom_instructions': ['starter', 'pro', 'enterprise'],
   'api.webhooks_outbound': ['starter', 'pro', 'enterprise'],
 
@@ -133,15 +132,15 @@ export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined
  * Plan pricing: single source of truth for prices.
  * Matches Contentrain plans model (plans/en.json).
  *
- * NOTE: Per-seat pricing (pricePerSeat) is not yet implemented in Stripe checkout.
- * Currently all plans charge a flat monthly rate. When per-seat billing is added,
- * checkout must pass quantity = current member count and handle seat changes via webhooks.
+ * Flat-rate pricing: each plan has a fixed monthly price with included seats.
+ * Seat limits act as tier differentiators (3 → 10 → ∞).
+ * Usage-based limits (AI messages, CDN, storage) gate actual resource consumption.
  */
-export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, pricePerSeat: number, seatsIncluded: number, name: string }> = {
-  free: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 1, name: 'Free' },
-  starter: { priceMonthly: 9, pricePerSeat: 0, seatsIncluded: 3, name: 'Starter' },
-  pro: { priceMonthly: 29, pricePerSeat: 0, seatsIncluded: 10, name: 'Pro' },
-  enterprise: { priceMonthly: 0, pricePerSeat: 0, seatsIncluded: 0, name: 'Enterprise' },
+export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }> = {
+  free: { priceMonthly: 0, seatsIncluded: 1, name: 'Free' },
+  starter: { priceMonthly: 9, seatsIncluded: 3, name: 'Starter' },
+  pro: { priceMonthly: 29, seatsIncluded: 10, name: 'Pro' },
+  enterprise: { priceMonthly: 0, seatsIncluded: 0, name: 'Enterprise' },
 }
 
 function formatLimit(value: number): string {
@@ -182,7 +181,6 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
   return {
     plan: pricing.name,
     price: `$${pricing.priceMonthly}`,
-    pricePerSeat: `$${pricing.pricePerSeat}`,
     seatsIncluded: pricing.seatsIncluded,
     aiMessages: formatLimit(limit('ai.messages_per_month')),
     seats: limitOrUnlimited('team.members'),

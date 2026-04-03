@@ -406,8 +406,9 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
   rules.push(agentPrompt('upgrade.guidance'))
   const tierParams = {
     starterPrice: PLAN_PRICING.starter.priceMonthly ? `$${PLAN_PRICING.starter.priceMonthly}` : 'free',
+    starterSeats: PLAN_PRICING.starter.seatsIncluded,
     proPrice: `$${PLAN_PRICING.pro.priceMonthly}`,
-    proPerSeat: `$${PLAN_PRICING.pro.pricePerSeat}`,
+    proSeats: PLAN_PRICING.pro.seatsIncluded,
   }
   rules.push(agentPrompt('plan.tiers', tierParams))
 

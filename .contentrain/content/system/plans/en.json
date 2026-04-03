@@ -8,7 +8,6 @@
     "is_highlighted": false,
     "name": "Enterprise",
     "price_monthly": 0,
-    "price_per_seat": 0,
     "seats_included": 0,
     "slug": "enterprise",
     "sort_order": 2
@@ -22,7 +21,6 @@
     "is_highlighted": false,
     "name": "Free",
     "price_monthly": 0,
-    "price_per_seat": 0,
     "seats_included": 1,
     "slug": "free",
     "sort_order": -1
@@ -36,7 +34,6 @@
     "is_highlighted": true,
     "name": "Pro",
     "price_monthly": 29,
-    "price_per_seat": 9,
     "seats_included": 10,
     "slug": "pro",
     "sort_order": 1
@@ -50,7 +47,6 @@
     "is_highlighted": false,
     "name": "Starter",
     "price_monthly": 9,
-    "price_per_seat": 0,
     "seats_included": 3,
     "slug": "starter",
     "sort_order": 0

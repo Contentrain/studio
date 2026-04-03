@@ -42,10 +42,6 @@
       "required": true,
       "type": "number"
     },
-    "price_per_seat": {
-      "description": "Additional cost per extra seat in USD (0 if no per-seat billing)",
-      "type": "number"
-    },
     "seats_included": {
       "description": "Number of seats included in base price",
       "required": true,

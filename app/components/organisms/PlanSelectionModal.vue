@@ -156,9 +156,6 @@ async function handlePlanAction(slug: string) {
                 <span class="text-3xl font-bold text-heading dark:text-secondary-100">${{ plan.price_monthly }}</span>
                 <span class="text-sm text-muted">{{ t('plans.per_month') }}</span>
               </div>
-              <p v-if="plan.price_per_seat" class="mt-1 text-xs text-muted">
-                +${{ plan.price_per_seat }} {{ t('plans.per_seat') }}
-              </p>
               <p class="mt-1 text-xs text-muted">
                 {{ t('plans.seats_included', { count: plan.seats_included }) }}
               </p>
