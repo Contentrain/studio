@@ -1,6 +1,24 @@
 # Changelog
 
 
+## v0.1.0-beta.4
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.3...v0.1.0-beta.4)
+
+### 🩹 Fixes
+
+- **billing:** Remove per-seat pricing, adopt flat-rate model ([e706bcb](https://github.com/Contentrain/studio/commit/e706bcb))
+- **billing:** Align Pro seat limit to 10, remove per-seat remnants ([d2be160](https://github.com/Contentrain/studio/commit/d2be160))
+- **webhooks:** Complete all 8 webhook event dispatches and fix test coverage ([c6a36e1](https://github.com/Contentrain/studio/commit/c6a36e1))
+
+### 📖 Documentation
+
+- Add public ROADMAP.md, align deferred items across all docs ([04134b4](https://github.com/Contentrain/studio/commit/04134b4))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+
 ## v0.1.0-beta.3
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.2...v0.1.0-beta.3)
