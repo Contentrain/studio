@@ -202,7 +202,6 @@ export default defineEventHandler(async (event) => {
     let totalInputTokens = 0
     let totalOutputTokens = 0
     let lastAssistantContent: AIContentBlock[] = []
-    let lastAffected: Record<string, unknown> = {}
 
     try {
       for await (const evt of runConversationLoop(
@@ -218,7 +217,6 @@ export default defineEventHandler(async (event) => {
           totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
           totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
           lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
-          lastAffected = (evt.affected as Record<string, unknown>) ?? {}
 
           // Forward the done event without lastContent (not needed by client)
           await eventStream.push(JSON.stringify({
@@ -244,14 +242,7 @@ export default defineEventHandler(async (event) => {
         workspaceId, session.user.id, usageSource, usageMonth,
       )
 
-      // Emit webhook events for content changes (fire-and-forget)
-      if (lastAffected.snapshotChanged) {
-        emitWebhookEvent(projectId, workspaceId, 'content.saved', {
-          models: (lastAffected.models as string[]) ?? [],
-          source: 'studio',
-          conversationId,
-        }).catch(() => {})
-      }
+      // Webhook events are now emitted from conversation-engine.ts per tool execution
     }
     catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chat error'

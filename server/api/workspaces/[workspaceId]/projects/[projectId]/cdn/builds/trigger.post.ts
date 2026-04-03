@@ -86,6 +86,15 @@ export default defineEventHandler(async (event) => {
         completed_at: new Date().toISOString(),
       })
 
+      // Emit webhook event (fire-and-forget)
+      emitWebhookEvent(projectId, workspaceId, 'cdn.build_complete', {
+        buildId: build.id,
+        status: result.error ? 'failed' : 'success',
+        filesUploaded: result.filesUploaded,
+        durationMs: result.durationMs,
+        error: result.error ?? null,
+      }).catch(() => {})
+
       await eventStream.push(JSON.stringify({
         phase: 'complete',
         message: result.error ? `Build failed: ${result.error}` : `Build complete — ${result.filesUploaded} files in ${result.durationMs}ms`,

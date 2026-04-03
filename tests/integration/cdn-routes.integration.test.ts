@@ -303,6 +303,7 @@ describe('CDN route integration', () => {
       contentRoot: '.',
     }))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('executeCDNBuild', vi.fn().mockImplementation(async ({ onProgress }) => {
       onProgress?.({ phase: 'upload', message: 'Uploading files', current: 1, total: 2 })
       return {
@@ -337,6 +338,13 @@ describe('CDN route integration', () => {
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"complete"'))
     expect(eventStreamState.stream.close).toHaveBeenCalledOnce()
     expect(eventStreamState.stream.onClosed).toHaveBeenCalledOnce()
+
+    const emitMock = vi.mocked(globalThis.emitWebhookEvent as ReturnType<typeof vi.fn>)
+    expect(emitMock).toHaveBeenCalledWith('project-1', 'workspace-1', 'cdn.build_complete', expect.objectContaining({
+      buildId: 'build-1',
+      status: 'success',
+      filesUploaded: 2,
+    }))
   })
 
   it('returns 404 for CDN build history requested through the wrong workspace path', async () => {

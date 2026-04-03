@@ -17,6 +17,7 @@ function stubRouteGlobals(branch: string) {
     if (key === 'branch') return branch
     return undefined
   }))
+  vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
   vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
     getUserClient: vi.fn((accessToken: string) => {
       const userClient = (globalThis as typeof globalThis & {

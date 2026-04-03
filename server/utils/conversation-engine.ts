@@ -313,6 +313,13 @@ export async function executeToolWithAutoMerge(
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, workflow }
         }
+
+        // Emit webhook event (fire-and-forget)
+        emitWebhookEvent(projectId, workspaceId, 'content.saved', {
+          models: [modelId],
+          locale,
+          source: 'conversation',
+        }).catch(() => {})
         break
       }
 
@@ -340,6 +347,14 @@ export async function executeToolWithAutoMerge(
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
         }
+
+        // Emit webhook event (fire-and-forget)
+        emitWebhookEvent(projectId, workspaceId, 'content.deleted', {
+          models: [modelId],
+          locale,
+          entryIds: params.entryIds as string[],
+          source: 'conversation',
+        }).catch(() => {})
         break
       }
 
@@ -356,6 +371,12 @@ export async function executeToolWithAutoMerge(
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
         }
+
+        // Emit webhook event (fire-and-forget)
+        emitWebhookEvent(projectId, workspaceId, 'model.saved', {
+          modelId: (params as Record<string, unknown>).id as string,
+          source: 'conversation',
+        }).catch(() => {})
         break
       }
 
@@ -444,6 +465,12 @@ export async function executeToolWithAutoMerge(
         affected.snapshotChanged = true
         affected.branchesChanged = true
         result = mergeResult
+
+        // Emit webhook event (fire-and-forget)
+        emitWebhookEvent(projectId, workspaceId, 'branch.merged', {
+          branch: branchToMerge,
+          source: 'conversation',
+        }).catch(() => {})
         break
       }
 
@@ -460,6 +487,12 @@ export async function executeToolWithAutoMerge(
         await engine.rejectBranch(branchToReject)
         affected.branchesChanged = true
         result = { rejected: true }
+
+        // Emit webhook event (fire-and-forget)
+        emitWebhookEvent(projectId, workspaceId, 'branch.rejected', {
+          branch: branchToReject,
+          source: 'conversation',
+        }).catch(() => {})
         break
       }
 
