@@ -1,6 +1,6 @@
 {
   "name": "contentrain-studio",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@10.26.2",

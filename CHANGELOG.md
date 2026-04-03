@@ -1,6 +1,22 @@
 # Changelog
 
 
+## v0.1.0-beta.3
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.2...v0.1.0-beta.3)
+
+### 🩹 Fixes
+
+- **release:** Include full docker build context ([3dffa99](https://github.com/Contentrain/studio/commit/3dffa99))
+
+### 📖 Documentation
+
+- Align studio open-core positioning ([733ae3e](https://github.com/Contentrain/studio/commit/733ae3e))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+
 ## v0.1.0-beta.2
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.1...v0.1.0-beta.2)
