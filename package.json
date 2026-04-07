@@ -74,7 +74,7 @@
     "@iconify/tailwind4": "^1.2.3",
     "@nuxt/test-utils": "^4.0.0",
     "@tailwindcss/vite": "^4.2.1",
-    "@types/node": "^24.6.0",
+    "@types/node": "^25.5.2",
     "@vitest/coverage-v8": "^4.1.2",
     "@vue/test-utils": "^2.4.6",
     "changelogen": "^0.6.2",
