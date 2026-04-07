@@ -1,13 +1,9 @@
 # Changelog
 
 
-## v0.1.1
+## v0.1.0-beta.5
 
-[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0...v0.1.1)
-
-## v0.1.0
-
-[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.4...v0.1.0)
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.4...v0.1.0-beta.5)
 
 ### 🩹 Fixes
 
@@ -19,13 +15,14 @@
 
 ### 🏡 Chore
 
+- **deps:** Bump docker/setup-buildx-action from 3 to 4 ([9c7aa6f](https://github.com/Contentrain/studio/commit/9c7aa6f))
+- **deps:** Bump docker/login-action from 3 to 4 ([929c870](https://github.com/Contentrain/studio/commit/929c870))
+- **deps:** Bump docker/build-push-action from 6 to 7 ([709cdb4](https://github.com/Contentrain/studio/commit/709cdb4))
 - **deps-dev:** Bump the testing group with 4 updates ([e7525b8](https://github.com/Contentrain/studio/commit/e7525b8))
 - **deps-dev:** Bump eslint from 10.0.3 to 10.2.0 in the linting group ([054c567](https://github.com/Contentrain/studio/commit/054c567))
-- Add contentrain-ai symlink ignore and expand roadmap items ([805d564](https://github.com/Contentrain/studio/commit/805d564))
 - **deps-dev:** Bump tailwindcss from 4.2.1 to 4.2.2 ([3675b9b](https://github.com/Contentrain/studio/commit/3675b9b))
+- **deps:** Bump the vue group with 2 updates ([9c9c91b](https://github.com/Contentrain/studio/commit/9c9c91b))
 - **deps-dev:** Bump @types/node from 24.12.0 to 25.5.2 ([1eb0958](https://github.com/Contentrain/studio/commit/1eb0958))
-- **release:** V0.1.0 ([358a842](https://github.com/Contentrain/studio/commit/358a842))
-- **release:** V0.1.0" ([9748153](https://github.com/Contentrain/studio/commit/9748153))
 
 ### ❤️ Contributors
 
