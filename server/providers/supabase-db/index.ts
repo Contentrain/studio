@@ -22,6 +22,7 @@ import { memberMethods } from './members'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
 import { webhookMethods } from './webhooks'
+import { usageMethods } from './usage'
 import { workspaceMethods } from './workspaces'
 
 export { createSupabaseAdminClient, createSupabaseUserClient } from '../supabase-client'
@@ -38,5 +39,6 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...cdnMethods(),
     ...webhookMethods(),
     ...auditMethods(),
+    ...usageMethods(),
   }
 }

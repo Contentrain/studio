@@ -11,9 +11,13 @@
  * - checkout.session.completed — new subscription (trial starts)
  * - customer.subscription.updated — status/plan changes (trial→active, etc.)
  * - customer.subscription.deleted — subscription permanently removed
+ * - invoice.creating — add overage line items before invoice is finalized
  * - invoice.payment_failed — charge failed, begin grace period
  * - invoice.paid — charge succeeded, clear grace period
  */
+
+import { calculateAndBillOverages } from '../../utils/overage-billing'
+
 export default defineEventHandler(async (event) => {
   const body = await readRawBody(event)
   const signature = getRequestHeader(event, 'stripe-signature')
@@ -102,6 +106,18 @@ export default defineEventHandler(async (event) => {
           trial_ends_at: null,
           grace_period_ends_at: null,
         })
+      }
+      break
+    }
+
+    case 'invoice.creating': {
+      // Add overage line items before Stripe finalizes the invoice.
+      if (result.workspaceId && result.subscriptionId && result.customerId) {
+        await calculateAndBillOverages(
+          result.workspaceId,
+          result.customerId,
+          result.subscriptionId,
+        )
       }
       break
     }

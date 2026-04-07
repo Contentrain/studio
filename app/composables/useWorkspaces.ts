@@ -17,6 +17,8 @@ export interface Workspace {
   grace_period_ends_at?: string | null
   stripe_customer_id?: string | null
   stripe_subscription_id?: string | null
+  // Overage billing (from 020_overage_billing migration)
+  overage_settings?: Record<string, boolean> | null
 }
 
 /** Get user's role in active workspace */

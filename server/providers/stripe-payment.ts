@@ -9,7 +9,7 @@
  */
 
 import Stripe from 'stripe'
-import type { CheckoutInput, CheckoutResult, PaymentProvider, PortalInput, PortalResult, WebhookResult } from './payment'
+import type { CheckoutInput, CheckoutResult, InvoiceItemInput, PaymentProvider, PortalInput, PortalResult, WebhookResult } from './payment'
 
 // Stripe price IDs — set in Stripe Dashboard, referenced here
 const PLAN_PRICE_MAP: Record<string, string> = {
@@ -99,6 +99,25 @@ export function createStripePaymentProvider(): PaymentProvider {
 
       const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret)
 
+      // invoice.creating is not in Stripe SDK's discriminated event union but is a valid webhook event.
+      // Handle it before the typed switch to avoid TS narrowing issues.
+      const eventType: string = event.type
+      if (eventType === 'invoice.creating') {
+        const raw = (event as unknown as { data: { object: Record<string, unknown> } }).data.object
+        const subField = raw.subscription
+        const subId = typeof subField === 'string' ? subField : (subField as { id?: string })?.id
+        const custField = raw.customer
+        const custId = typeof custField === 'string' ? custField : (custField as { id?: string })?.id
+        const subDetails = raw.subscription_details as { metadata?: Record<string, string> } | null
+        return {
+          event: eventType,
+          workspaceId: subDetails?.metadata?.workspace_id,
+          subscriptionId: subId,
+          customerId: custId,
+          requiresOverageCalculation: true,
+        }
+      }
+
       switch (event.type) {
         case 'checkout.session.completed': {
           const session = event.data.object as Stripe.Checkout.Session
@@ -179,6 +198,18 @@ export function createStripePaymentProvider(): PaymentProvider {
 
     async cancelSubscription(subscriptionId: string): Promise<void> {
       await stripe.subscriptions.cancel(subscriptionId)
+    },
+
+    async addInvoiceItem(input: InvoiceItemInput): Promise<{ invoiceItemId: string }> {
+      const item = await stripe.invoiceItems.create({
+        customer: input.customerId,
+        subscription: input.subscriptionId,
+        description: input.description,
+        amount: input.amount,
+        currency: input.currency ?? 'usd',
+        metadata: input.metadata,
+      })
+      return { invoiceItemId: item.id }
     },
   }
 }

@@ -6,6 +6,7 @@ import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
+import { getEffectiveLimit } from '../../../../../utils/overage'
 
 /**
  * Chat SSE endpoint — Bounded Task Executor.
@@ -81,7 +82,11 @@ export default defineEventHandler(async (event) => {
   }
 
   // === MONTHLY LIMIT — atomic check + reserve (prevents race conditions) ===
-  const monthlyLimit = getMonthlyMessageLimit(plan)
+  // When overage is enabled, the effective limit is raised so requests aren't blocked.
+  // Overage cost is computed later from (actual_usage - plan_limit) * overage_price.
+  const basePlanLimit = getMonthlyMessageLimit(plan)
+  const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
+  const monthlyLimit = getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
   const usageMonth = new Date().toISOString().substring(0, 7)
   if (monthlyLimit !== Infinity) {
     const { allowed } = await db.incrementAgentUsageIfAllowed({
@@ -92,7 +97,7 @@ export default defineEventHandler(async (event) => {
       limit: monthlyLimit,
     })
     if (!allowed)
-      throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: monthlyLimit }) })
+      throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit }) })
   }
 
   // === CONVERSATION ===

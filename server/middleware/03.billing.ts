@@ -63,13 +63,14 @@ export default defineEventHandler(async (event) => {
     stripe_subscription_id: string | null
     subscription_current_period_end: string | null
     grace_period_ends_at: string | null
+    overage_settings?: Record<string, boolean> | null
   }
 
   const state = resolveBillingState(billingRow)
   const effectivePlan = getEffectivePlan(billingRow)
 
   // Attach billing context for downstream route handlers
-  event.context.billing = { state, effectivePlan }
+  event.context.billing = { state, effectivePlan, overageSettings: billingRow.overage_settings ?? {} }
 
   // Block locked states
   if (isBillingLocked(state)) {

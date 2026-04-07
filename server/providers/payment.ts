@@ -44,6 +44,18 @@ export interface WebhookResult {
   cancelAtPeriodEnd?: boolean
   /** Stripe invoice ID (for payment events) */
   invoiceId?: string
+  /** Whether this event requires overage calculation (invoice.creating) */
+  requiresOverageCalculation?: boolean
+}
+
+export interface InvoiceItemInput {
+  customerId: string
+  subscriptionId: string
+  description: string
+  /** Amount in cents (USD). */
+  amount: number
+  currency?: string
+  metadata?: Record<string, string>
 }
 
 export interface PaymentProvider {
@@ -66,4 +78,10 @@ export interface PaymentProvider {
    * Cancel a subscription.
    */
   cancelSubscription(subscriptionId: string): Promise<void>
+
+  /**
+   * Add a one-time invoice item to the customer's upcoming invoice.
+   * Used for overage billing at the end of a billing period.
+   */
+  addInvoiceItem(input: InvoiceItemInput): Promise<{ invoiceItemId: string }>
 }

@@ -396,6 +396,33 @@ export interface DatabaseProvider {
   getConversationKeyUsage: (keyIds: string[], month: string) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
+  // USAGE AGGREGATION (billing dashboard)
+  // ═══════════════════════════════════════════════════
+
+  /** Sum AI message count (source=studio) across all users in workspace for a month. */
+  getWorkspaceMonthlyAIUsage: (workspaceId: string, month: string) => Promise<number>
+  /** Sum API message count (source=api) across all API keys in workspace for a month. */
+  getWorkspaceMonthlyAPIUsage: (workspaceId: string, month: string) => Promise<number>
+  /** Sum CDN bandwidth bytes across all projects in workspace for a month. */
+  getWorkspaceMonthlyCDNBandwidth: (workspaceId: string, month: string) => Promise<number>
+
+  // ═══════════════════════════════════════════════════
+  // OVERAGE BILLING LOG
+  // ═══════════════════════════════════════════════════
+
+  getOverageBillingLog: (workspaceId: string, billingPeriod: string) => Promise<DatabaseRow[]>
+  createOverageBillingEntry: (entry: {
+    workspaceId: string
+    billingPeriod: string
+    category: string
+    unitsBilled: number
+    unitPrice: number
+    totalAmount: number
+    stripeInvoiceItemId?: string
+  }) => Promise<DatabaseRow>
+  hasOverageBeenBilled: (workspaceId: string, billingPeriod: string, category: string) => Promise<boolean>
+
+  // ═══════════════════════════════════════════════════
   // AUDIT LOGS
   // ═══════════════════════════════════════════════════
 

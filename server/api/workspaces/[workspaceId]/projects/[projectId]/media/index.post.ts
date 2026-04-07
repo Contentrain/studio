@@ -53,7 +53,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
 
   // Atomic storage quota check + reservation (prevents race condition on concurrent uploads)
-  const storageLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
+  // When overage is enabled, the effective limit is raised so uploads aren't blocked.
+  const basePlanLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
+  const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
+  const storageLimit = getEffectiveLimit(basePlanLimit, 'media.storage_gb', overageSettings)
   const reserveBytes = filePart.data.length
   let storageReserved = false
 

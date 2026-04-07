@@ -11,6 +11,7 @@
  */
 
 import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
+import { getEffectiveLimit } from '~~/server/utils/overage'
 import { createContentEngine } from '~~/server/utils/content-engine'
 import { generateEntryId } from '~~/server/utils/content-serialization'
 
@@ -125,7 +126,7 @@ export default defineEventHandler(async (event) => {
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id, overage_settings')
 
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
@@ -247,7 +248,9 @@ export default defineEventHandler(async (event) => {
   // Atomic: check monthly limit + insert submission (prevents race conditions)
   const userAgent = getHeader(event, 'user-agent') ?? null
   const referrer = getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? null
-  const monthlyLimit = getPlanLimit(plan, 'forms.submissions_per_month')
+  const basePlanLimit = getPlanLimit(plan, 'forms.submissions_per_month')
+  const overageSettings = workspace.overage_settings as Record<string, boolean> | null
+  const monthlyLimit = getEffectiveLimit(basePlanLimit, 'forms.submissions_per_month', overageSettings)
 
   const { allowed, submission } = await db.createFormSubmissionIfAllowed(
     workspace.id as string,

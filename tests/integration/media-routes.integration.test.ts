@@ -133,6 +133,7 @@ describe('media route integration', () => {
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('isAllowedMimeType', vi.fn().mockReturnValue(true))
     vi.stubGlobal('getPlanLimit', vi.fn((_: string, limit: string) => limit === 'media.storage_gb' ? 5 : 10))
+    vi.stubGlobal('getEffectiveLimit', vi.fn((planLimit: number) => planLimit))
     vi.stubGlobal('resolveVariantConfig', vi.fn().mockReturnValue({
       default: { width: 1200, fit: 'inside' },
     }))

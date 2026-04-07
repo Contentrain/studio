@@ -119,6 +119,12 @@ async function handleManageSubscription() {
       </div>
     </div>
 
+    <!-- Usage dashboard -->
+    <OrganismsWorkspaceUsagePanel
+      v-if="hasSubscription || effectivePlan !== 'free'"
+      :workspace-id="workspaceId"
+    />
+
     <!-- Plan selection modal -->
     <OrganismsPlanSelectionModal
       :open="planModalOpen"

@@ -148,6 +148,22 @@ export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsInclu
   enterprise: { priceMonthly: 0, seatsIncluded: 0, name: 'Enterprise' },
 }
 
+/**
+ * Overage pricing: per-unit cost when usage exceeds plan limit.
+ * Generated from Contentrain plan-features model (overage_price + overage_unit).
+ * `settingsKey` maps to keys inside the workspace `overage_settings` JSONB column.
+ */
+export const OVERAGE_PRICING: Record<string, { price: number, unit: string, settingsKey: string }> = {
+  'ai.messages_per_month': { price: 0.03, unit: 'message', settingsKey: 'ai_messages' },
+  'api.messages_per_month': { price: 0.05, unit: 'message', settingsKey: 'api_messages' },
+  'cdn.bandwidth_gb': { price: 0.10, unit: 'GB', settingsKey: 'cdn_bandwidth' },
+  'forms.submissions_per_month': { price: 0.01, unit: 'submission', settingsKey: 'form_submissions' },
+  'media.storage_gb': { price: 0.25, unit: 'GB/month', settingsKey: 'media_storage' },
+}
+
+/** Valid overage settings keys. */
+export const OVERAGE_SETTINGS_KEYS = Object.values(OVERAGE_PRICING).map(p => p.settingsKey)
+
 function formatLimit(value: number): string {
   if (value === Infinity) return 'unlimited'
   if (value >= 1000) return `${(value / 1000).toFixed(0).replace(/\.0$/, '')}K`

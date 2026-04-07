@@ -29,10 +29,11 @@ export interface WorkspaceBillingRow {
   stripe_subscription_id: string | null
   subscription_current_period_end: string | null
   grace_period_ends_at: string | null
+  overage_settings?: Record<string, boolean> | null
 }
 
 /** Columns needed for billing state resolution. */
-export const BILLING_SELECT_FIELDS = 'type, plan, trial_ends_at, subscription_status, stripe_subscription_id, subscription_current_period_end, grace_period_ends_at'
+export const BILLING_SELECT_FIELDS = 'type, plan, trial_ends_at, subscription_status, stripe_subscription_id, subscription_current_period_end, grace_period_ends_at, overage_settings'
 
 /**
  * Resolve the billing state of a workspace.
