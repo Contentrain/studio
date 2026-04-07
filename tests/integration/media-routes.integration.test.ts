@@ -79,6 +79,8 @@ function stubMediaRouteGlobals() {
     requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
     getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
     getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro', media_storage_bytes: 1024 }),
+    reserveStorageIfAllowed: vi.fn().mockResolvedValue({ allowed: true, currentBytes: 1024 }),
+    incrementWorkspaceStorageBytes: vi.fn().mockResolvedValue(undefined),
     getProjectMember: vi.fn().mockResolvedValue({ id: 'pm-1', role: 'editor' }),
     getUserClient: vi.fn().mockReturnValue({}),
     getAdminClient: vi.fn().mockReturnValue({

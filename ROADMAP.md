@@ -1,6 +1,6 @@
 # Contentrain Studio — Roadmap
 
-> Last updated: 2026-04-03 | Current release: v0.1.0-beta.3
+> Last updated: 2026-04-07 | Current release: v0.1.0-beta.4
 
 This roadmap reflects our current priorities. Items may shift based on user feedback and production learnings.
 
@@ -34,8 +34,8 @@ Focus: production readiness, monitoring, critical fixes.
 - [ ] **Sentry integration** — Client + server error monitoring and alerting
 - [x] **Open-source docs** — Self-hosting guide, contributing guide, security policy, code of conduct, Docker/deployment docs
 - [ ] **User testing & feedback loop** — Structured beta testing with real teams
-- [ ] **Monthly limit atomicity** — Race condition: form submission + agent usage check+insert not atomic
-- [ ] **GDPR audit for deletions** — No audit trail when form submissions are hard-deleted
+- [x] **Monthly limit atomicity** — Atomic RPC functions for workspace members, CDN keys, and storage quota (migration 019)
+- [x] **GDPR audit for deletions** — Bulk delete audit logging, 4 missing audit registry entries (CDN key, conversation key, webhook, AI key)
 
 ---
 

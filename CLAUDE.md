@@ -204,10 +204,6 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 
 ## Deferred TODOs
 
-High (deploy sonrası):
-- Monthly limit race condition: check+insert not atomic (forms + agent usage)
-- GDPR audit logging: no trail when form submissions are deleted
-
 Medium:
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
 - Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
