@@ -1,6 +1,10 @@
 # Changelog
 
 
+## v0.1.1
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0...v0.1.1)
+
 ## v0.1.0
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.4...v0.1.0)
