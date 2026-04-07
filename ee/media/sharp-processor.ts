@@ -135,8 +135,10 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
           source: options.source ?? 'upload',
         })
 
-        // Update workspace storage counter
-        await db.incrementWorkspaceStorageBytes(workspaceId, totalBytes)
+        // Update workspace storage counter (skip when caller manages quota via reserve/adjust)
+        if (!options.skipStorageIncrement) {
+          await db.incrementWorkspaceStorageBytes(workspaceId, totalBytes)
+        }
 
         return rowToAsset(row)
       }

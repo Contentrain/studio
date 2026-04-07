@@ -10,6 +10,8 @@ type CDNMethods = Pick<
   | 'updateCDNKeyLastUsed'
   | 'countActiveCDNKeys'
   | 'createCDNKey'
+  | 'createCDNKeyIfAllowed'
+  | 'getCDNKey'
   | 'listCDNKeys'
   | 'revokeCDNKey'
   | 'createCDNBuild'
@@ -69,6 +71,48 @@ export function cdnMethods(): CDNMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
       return data as DatabaseRow
+    },
+
+    async createCDNKeyIfAllowed(input) {
+      const admin = getAdmin()
+      const { data, error } = await admin.rpc('create_cdn_key_if_allowed', {
+        p_project_id: input.projectId,
+        p_workspace_id: input.workspaceId,
+        p_key_hash: input.keyHash,
+        p_key_prefix: input.keyPrefix,
+        p_name: input.name,
+        p_limit: input.limit,
+      })
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Atomic CDN key check failed: ${error.message}` })
+      }
+
+      const result = data as { allowed: boolean, current_count: number, key?: Record<string, unknown> }
+
+      if (!result.allowed) {
+        return { allowed: false, currentCount: result.current_count }
+      }
+
+      return {
+        allowed: true,
+        currentCount: result.current_count,
+        key: (result.key ?? undefined) as import('../database').DatabaseRow | undefined,
+      }
+    },
+
+    async getCDNKey(keyId) {
+      const { data, error } = await getAdmin()
+        .from('cdn_api_keys')
+        .select('id, name, key_prefix, environment, rate_limit_per_hour, allowed_origins, last_used_at, expires_at, created_at, revoked_at')
+        .eq('id', keyId)
+        .single()
+
+      if (error) {
+        if (error.code === 'PGRST116') return null
+        throw createError({ statusCode: 500, message: error.message })
+      }
+      return toDatabaseRowOrNull(data)
     },
 
     async listCDNKeys(accessToken, projectId, _workspaceId) {
@@ -136,39 +180,15 @@ export function cdnMethods(): CDNMethods {
 
     async incrementCDNUsage(projectId, apiKeyId, periodStart, requestCount, bandwidthBytes) {
       const admin = getAdmin()
-      const { error: rpcError } = await admin.rpc('increment_cdn_usage', {
+      const { error } = await admin.rpc('increment_cdn_usage', {
         p_project_id: projectId,
         p_api_key_id: apiKeyId,
         p_period_start: periodStart,
         p_request_count: requestCount,
         p_bandwidth_bytes: bandwidthBytes,
       })
-
-      if (!rpcError) return
-
-      // Fallback: read-then-update
-      const { data: existing } = await admin
-        .from('cdn_usage')
-        .select('id, request_count, bandwidth_bytes')
-        .eq('project_id', projectId)
-        .eq('api_key_id', apiKeyId)
-        .eq('period_start', periodStart)
-        .single()
-
-      if (existing) {
-        await admin.from('cdn_usage').update({
-          request_count: ((existing.request_count as number) ?? 0) + requestCount,
-          bandwidth_bytes: ((existing.bandwidth_bytes as number) ?? 0) + bandwidthBytes,
-        }).eq('id', existing.id)
-      }
-      else {
-        await admin.from('cdn_usage').insert({
-          project_id: projectId,
-          api_key_id: apiKeyId,
-          period_start: periodStart,
-          request_count: requestCount,
-          bandwidth_bytes: bandwidthBytes,
-        })
+      if (error) {
+        throw createError({ statusCode: 500, message: `CDN usage increment failed: ${error.message}` })
       }
     },
 

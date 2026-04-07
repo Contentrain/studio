@@ -21,6 +21,7 @@ type WorkspaceMethods = Pick<
   | 'clearWorkspaceGithubInstallation'
   | 'deleteWorkspace'
   | 'incrementWorkspaceStorageBytes'
+  | 'reserveStorageIfAllowed'
   | 'transferWorkspaceOwnership'
   | 'listOwnedSecondaryWorkspacesWithMembers'
 >
@@ -194,16 +195,29 @@ export function workspaceMethods(): WorkspaceMethods {
 
     async incrementWorkspaceStorageBytes(workspaceId, deltaBytes) {
       const admin = getAdmin()
-      const { error: rpcError } = await admin.rpc('increment_storage_bytes', {
+      const { error } = await admin.rpc('increment_storage_bytes', {
         p_workspace_id: workspaceId,
         p_delta: deltaBytes,
       })
-      if (!rpcError) return
+      if (error) {
+        throw createError({ statusCode: 500, message: `Storage increment failed: ${error.message}` })
+      }
+    },
 
-      // Fallback to read+write if RPC not deployed
-      const { data } = await admin.from('workspaces').select('media_storage_bytes').eq('id', workspaceId).single()
-      const current = (data as { media_storage_bytes: number } | null)?.media_storage_bytes ?? 0
-      await admin.from('workspaces').update({ media_storage_bytes: Math.max(0, current + deltaBytes) }).eq('id', workspaceId)
+    async reserveStorageIfAllowed(workspaceId, reserveBytes, limitBytes) {
+      const admin = getAdmin()
+      const { data, error } = await admin.rpc('reserve_storage_if_allowed', {
+        p_workspace_id: workspaceId,
+        p_reserve_bytes: reserveBytes,
+        p_limit_bytes: limitBytes,
+      })
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Atomic storage check failed: ${error.message}` })
+      }
+
+      const result = data as { allowed: boolean, current_bytes: number }
+      return { allowed: result.allowed, currentBytes: result.current_bytes }
     },
 
     async transferWorkspaceOwnership(workspaceId, currentOwnerId, newOwnerId) {

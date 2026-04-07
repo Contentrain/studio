@@ -70,6 +70,8 @@ export interface UploadOptions {
   variants: Record<string, VariantConfig>
   uploadedBy: string
   source?: 'upload' | 'url' | 'connector' | 'agent'
+  /** When true, caller manages storage quota (reserve/adjust pattern). */
+  skipStorageIncrement?: boolean
 }
 
 export interface MediaListOptions {

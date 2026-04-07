@@ -52,11 +52,17 @@ export default defineEventHandler(async (event) => {
   if (filePart.data.length > maxSizeMb * 1024 * 1024)
     throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
 
-  // Storage quota
+  // Atomic storage quota check + reservation (prevents race condition on concurrent uploads)
   const storageLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
-  const currentUsage = (ws as Record<string, unknown>)?.media_storage_bytes as number ?? 0
-  if (storageLimit > 0 && currentUsage + filePart.data.length > storageLimit)
-    throw createError({ statusCode: 403, message: errorMessage('storage.quota_exceeded') })
+  const reserveBytes = filePart.data.length
+  let storageReserved = false
+
+  if (storageLimit > 0) {
+    const reservation = await db.reserveStorageIfAllowed(workspaceId, reserveBytes, storageLimit)
+    if (!reservation.allowed)
+      throw createError({ statusCode: 403, message: errorMessage('storage.quota_exceeded') })
+    storageReserved = true
+  }
 
   // Extract form fields
   const altPart = formData.find(p => p.name === 'alt')
@@ -81,26 +87,45 @@ export default defineEventHandler(async (event) => {
     variants = resolveVariantConfig(undefined)
   }
 
-  const asset = await media.upload({
-    projectId,
-    workspaceId,
-    file: Buffer.from(filePart.data),
-    filename: filePart.filename,
-    contentType,
-    alt: altPart?.data?.toString('utf-8'),
-    tags: tagsPart?.data ? tagsPart.data.toString('utf-8').split(',').map(t => t.trim()).filter(Boolean) : [],
-    variants,
-    uploadedBy: session.user.id,
-    source: 'upload',
-  })
+  try {
+    const asset = await media.upload({
+      projectId,
+      workspaceId,
+      file: Buffer.from(filePart.data),
+      filename: filePart.filename,
+      contentType,
+      alt: altPart?.data?.toString('utf-8'),
+      tags: tagsPart?.data ? tagsPart.data.toString('utf-8').split(',').map(t => t.trim()).filter(Boolean) : [],
+      variants,
+      uploadedBy: session.user.id,
+      source: 'upload',
+      skipStorageIncrement: storageReserved,
+    })
 
-  // Emit webhook event (fire-and-forget)
-  emitWebhookEvent(projectId, workspaceId, 'media.uploaded', {
-    assetId: asset.id,
-    filename: asset.filename,
-    contentType: asset.contentType,
-  }).catch(() => {})
+    // Adjust reservation to actual bytes (optimization may change size)
+    if (storageReserved) {
+      const actualBytes = typeof asset.size === 'number' ? asset.size : 0
+      const delta = actualBytes - reserveBytes
+      if (delta !== 0) {
+        await db.incrementWorkspaceStorageBytes(workspaceId, delta)
+      }
+    }
 
-  setResponseStatus(event, 201)
-  return asset
+    // Emit webhook event (fire-and-forget)
+    emitWebhookEvent(projectId, workspaceId, 'media.uploaded', {
+      assetId: asset.id,
+      filename: asset.filename,
+      contentType: asset.contentType,
+    }).catch(() => {})
+
+    setResponseStatus(event, 201)
+    return asset
+  }
+  catch (e) {
+    // Release reservation on upload failure
+    if (storageReserved) {
+      await db.incrementWorkspaceStorageBytes(workspaceId, -reserveBytes).catch(() => {})
+    }
+    throw e
+  }
 })

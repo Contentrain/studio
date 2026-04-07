@@ -17,6 +17,7 @@ type MemberMethods = Pick<
   | 'listWorkspaceMembers'
   | 'getWorkspaceMember'
   | 'createWorkspaceMember'
+  | 'createWorkspaceMemberIfAllowed'
   | 'updateWorkspaceMemberRole'
   | 'deleteWorkspaceMember'
   | 'updateWorkspaceMemberInvitedAt'
@@ -80,6 +81,42 @@ export function memberMethods(): MemberMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
       return toDatabaseRow(data)
+    },
+
+    async createWorkspaceMemberIfAllowed(input) {
+      await requireRole(input.accessToken, input.callerUserId, input.workspaceId, ['owner', 'admin'])
+
+      const admin = getAdmin()
+      const { data, error } = await admin.rpc('create_workspace_member_if_allowed', {
+        p_workspace_id: input.workspaceId,
+        p_member_user_id: input.memberUserId,
+        p_role: input.role,
+        p_invited_email: input.invitedEmail,
+        p_accepted_at: input.acceptedAt ?? null,
+        p_limit: input.limit,
+      })
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Atomic member check failed: ${error.message}` })
+      }
+
+      const result = data as { allowed: boolean, current_count: number, member_id?: string, already_existed?: boolean }
+
+      if (!result.allowed) {
+        return { allowed: false, currentCount: result.current_count }
+      }
+
+      // Fetch profile-enriched row to match existing createWorkspaceMember response format
+      const member = result.member_id
+        ? await this.getWorkspaceMember(input.accessToken, input.callerUserId, input.workspaceId, result.member_id)
+        : null
+
+      return {
+        allowed: true,
+        currentCount: result.current_count,
+        member: member ?? undefined,
+        alreadyExisted: result.already_existed ?? false,
+      }
     },
 
     async updateWorkspaceMemberRole(accessToken, userId, workspaceId, memberId, role) {

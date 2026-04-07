@@ -60,12 +60,44 @@ const AUDITABLE_ROUTES: AuditableRoute[] = [
     extractIds: m => ({ workspaceId: m[1]!, recordId: m[3]! }),
     snapshot: async () => null, // Conversations don't have a single-row get; log the action only
   },
+  // CDN API key (soft delete — revoked_at set)
+  {
+    pattern: /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/cdn\/keys\/([^/]+)$/,
+    entity: 'cdn_api_key',
+    action: 'revoke_cdn_key',
+    extractIds: m => ({ workspaceId: m[1]!, recordId: m[3]! }),
+    snapshot: (db, ids) => db.getCDNKey(ids.recordId),
+  },
+  // Conversation API key (enterprise-delegated)
+  {
+    pattern: /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/conversation-keys\/([^/]+)$/,
+    entity: 'conversation_api_key',
+    action: 'delete_conversation_key',
+    extractIds: m => ({ workspaceId: m[1]!, recordId: m[3]! }),
+    snapshot: async () => null,
+  },
+  // Webhook (enterprise-delegated)
+  {
+    pattern: /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/webhooks\/([^/]+)$/,
+    entity: 'webhook',
+    action: 'delete_webhook',
+    extractIds: m => ({ workspaceId: m[1]!, recordId: m[3]! }),
+    snapshot: async () => null,
+  },
   // Project member
   {
     pattern: /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)$/,
     entity: 'project_member',
     action: 'delete_project_member',
     extractIds: m => ({ workspaceId: m[1]!, recordId: m[3]! }),
+    snapshot: async () => null,
+  },
+  // Workspace AI key (enterprise-delegated)
+  {
+    pattern: /^\/api\/workspaces\/([^/]+)\/ai-keys\/([^/]+)$/,
+    entity: 'ai_key',
+    action: 'delete_ai_key',
+    extractIds: m => ({ workspaceId: m[1]!, recordId: m[2]! }),
     snapshot: async () => null,
   },
   // Workspace member

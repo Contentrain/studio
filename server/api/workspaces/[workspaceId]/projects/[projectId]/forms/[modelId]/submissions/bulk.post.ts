@@ -34,9 +34,11 @@ export default defineEventHandler(async (event) => {
   if (body.submissionIds.length > 50)
     throw createError({ statusCode: 400, message: errorMessage('forms.bulk_limit') })
 
-  // Delete — sequential per-submission with ownership check
+  // Delete — sequential per-submission with ownership check + GDPR audit logging
   if (body.action === 'delete') {
     const results: { id: string, success: boolean, error?: string }[] = []
+    const sourceIp = getRequestIP(event, { xForwardedFor: true }) ?? null
+    const userAgent = getHeader(event, 'user-agent') ?? null
 
     for (const submissionId of body.submissionIds) {
       try {
@@ -46,6 +48,18 @@ export default defineEventHandler(async (event) => {
           continue
         }
         await db.deleteFormSubmission(submissionId)
+        // Explicit audit log — POST endpoint does not trigger DELETE audit middleware
+        await db.createAuditLog({
+          workspaceId,
+          actorId: session.user.id,
+          action: 'delete_form_submission',
+          tableName: 'form_submissions',
+          recordId: submissionId,
+          recordSnapshot: existing as Record<string, unknown>,
+          sourceIp,
+          userAgent,
+          origin: 'app',
+        }).catch(() => {}) // Audit failure must never block the user's operation
         results.push({ id: submissionId, success: true })
       }
       catch (e: unknown) {

@@ -28,24 +28,23 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(plan, 'cdn.delivery'))
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 
-  // Check key limit
-  const keyLimit = getPlanLimit(plan, 'cdn.api_keys')
-  const activeKeyCount = await db.countActiveCDNKeys(projectId)
-
-  if (activeKeyCount >= keyLimit)
-    throw createError({ statusCode: 403, message: errorMessage('cdn.key_limit_reached', { limit: keyLimit }) })
-
   // Generate key
   const { key, keyHash, keyPrefix } = generateCDNKey()
 
-  const data = await db.createCDNKey({
+  // Atomic: check key limit + insert in one transaction (prevents race condition)
+  const keyLimit = getPlanLimit(plan, 'cdn.api_keys')
+  const result = await db.createCDNKeyIfAllowed({
     projectId,
     workspaceId,
     keyHash,
     keyPrefix,
     name: body.name.trim(),
+    limit: keyLimit,
   })
 
+  if (!result.allowed)
+    throw createError({ statusCode: 403, message: errorMessage('cdn.key_limit_reached', { limit: keyLimit }) })
+
   // Return the FULL key — this is the only time it's shown
-  return { ...data, key }
+  return { ...result.key, key }
 })

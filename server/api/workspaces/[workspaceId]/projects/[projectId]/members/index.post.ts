@@ -44,15 +44,20 @@ export default defineEventHandler(async (event) => {
     workspaceSlug: wsSlug,
   })
 
-  // Ensure user is a workspace member (auto-add as 'member' if not)
-  const currentMembers = await db.listWorkspaceMembers(session.accessToken, session.user.id, workspaceId)
-  const isAlreadyMember = currentMembers.some(m => (m as { user_id?: string }).user_id === userId)
-  if (!isAlreadyMember) {
-    const memberLimit = getPlanLimit(plan, 'team.members')
-    if (currentMembers.length >= memberLimit)
-      throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
-  }
-  await db.ensureWorkspaceMember(session.accessToken, workspaceId, userId, body.email)
+  // Atomic: ensure user is a workspace member (auto-add as 'member' if not, with seat limit check)
+  const memberLimit = getPlanLimit(plan, 'team.members')
+  const memberResult = await db.createWorkspaceMemberIfAllowed({
+    workspaceId,
+    memberUserId: userId,
+    role: 'member',
+    invitedEmail: body.email,
+    acceptedAt: null,
+    limit: memberLimit,
+    accessToken: session.accessToken,
+    callerUserId: session.user.id,
+  })
+  if (!memberResult.allowed)
+    throw createError({ statusCode: 403, message: errorMessage('members.seat_limit_reached', { limit: memberLimit }) })
 
   return db.createProjectMember({
     projectId,

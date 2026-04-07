@@ -109,6 +109,7 @@ describe('member routes', () => {
       listWorkspaceMembers: vi.fn().mockResolvedValue([{ id: 'member-1' }]),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'starter', name: 'Acme', slug: 'acme' }),
       createWorkspaceMember: vi.fn().mockResolvedValue({ id: 'member-2' }),
+      createWorkspaceMemberIfAllowed: vi.fn().mockResolvedValue({ allowed: true, currentCount: 2, member: { id: 'member-2' } }),
       updateWorkspaceMemberRole: vi.fn().mockResolvedValue({ id: 'member-3', role: 'admin' }),
       deleteWorkspaceMember: vi.fn().mockResolvedValue(undefined),
       getWorkspaceMember: vi.fn().mockResolvedValue({
@@ -176,9 +177,8 @@ describe('member routes', () => {
       role: 'member',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      listWorkspaceMembers: vi.fn().mockResolvedValue([{ id: '1' }, { id: '2' }]),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ plan: 'starter', name: 'Acme', slug: 'acme' }),
-      createWorkspaceMember: vi.fn(),
+      createWorkspaceMemberIfAllowed: vi.fn().mockResolvedValue({ allowed: false, currentCount: 2 }),
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
     }))
 
@@ -201,12 +201,15 @@ describe('member routes', () => {
     const result = await handler({ context: {} } as never)
 
     expect(result).toEqual({ id: 'member-2' })
-    expect(useDatabaseProvider().createWorkspaceMember).toHaveBeenCalledWith('token-1', 'user-1', {
+    expect(useDatabaseProvider().createWorkspaceMemberIfAllowed).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',
       memberUserId: 'user-2',
       role: 'member',
       invitedEmail: 'new@example.com',
       acceptedAt: null,
+      limit: 10,
+      accessToken: 'token-1',
+      callerUserId: 'user-1',
     })
   })
 

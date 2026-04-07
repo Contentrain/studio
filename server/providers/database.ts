@@ -96,6 +96,7 @@ export interface DatabaseProvider {
   clearWorkspaceGithubInstallation: (installationId: number) => Promise<void>
   deleteWorkspace: (workspaceId: string) => Promise<void>
   incrementWorkspaceStorageBytes: (workspaceId: string, deltaBytes: number) => Promise<void>
+  reserveStorageIfAllowed: (workspaceId: string, reserveBytes: number, limitBytes: number) => Promise<{ allowed: boolean, currentBytes: number }>
   transferWorkspaceOwnership: (workspaceId: string, currentOwnerId: string, newOwnerId: string) => Promise<void>
   listOwnedSecondaryWorkspacesWithMembers: (accessToken: string, ownerId: string) => Promise<DatabaseRow[]>
 
@@ -115,6 +116,16 @@ export interface DatabaseProvider {
   updateWorkspaceMemberRole: (accessToken: string, userId: string, workspaceId: string, memberId: string, role: 'admin' | 'member') => Promise<DatabaseRow>
   deleteWorkspaceMember: (accessToken: string, userId: string, workspaceId: string, memberId: string) => Promise<void>
   updateWorkspaceMemberInvitedAt: (accessToken: string, userId: string, workspaceId: string, memberId: string, invitedAt: string) => Promise<void>
+  createWorkspaceMemberIfAllowed: (input: {
+    workspaceId: string
+    memberUserId: string
+    role: 'admin' | 'member'
+    invitedEmail: string
+    acceptedAt?: string | null
+    limit: number
+    accessToken: string
+    callerUserId: string
+  }) => Promise<{ allowed: boolean, currentCount: number, member?: DatabaseRow, alreadyExisted?: boolean }>
   ensureWorkspaceMember: (accessToken: string, workspaceId: string, userId: string, email: string, role?: string) => Promise<void>
   acceptPendingInvitations: (userId: string, workspaceId: string) => Promise<boolean>
   listWorkspaceAdminEmails: (workspaceId: string) => Promise<{ email: string, displayName: string | null }[]>
@@ -339,6 +350,15 @@ export interface DatabaseProvider {
     keyPrefix: string
     name: string
   }) => Promise<DatabaseRow>
+  createCDNKeyIfAllowed: (input: {
+    projectId: string
+    workspaceId: string
+    keyHash: string
+    keyPrefix: string
+    name: string
+    limit: number
+  }) => Promise<{ allowed: boolean, currentCount: number, key?: DatabaseRow }>
+  getCDNKey: (keyId: string) => Promise<DatabaseRow | null>
   listCDNKeys: (accessToken: string, projectId: string, workspaceId: string) => Promise<DatabaseRow[]>
   revokeCDNKey: (keyId: string, projectId: string) => Promise<void>
 
