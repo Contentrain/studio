@@ -1,6 +1,32 @@
 # Changelog
 
 
+## v0.1.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.4...v0.1.0)
+
+### 🩹 Fixes
+
+- **security:** Atomic plan limit checks and GDPR audit logging gaps ([5df4248](https://github.com/Contentrain/studio/commit/5df4248))
+
+### 📖 Documentation
+
+- Mark resolved deferred items and fix media route test mock ([42a85af](https://github.com/Contentrain/studio/commit/42a85af))
+
+### 🏡 Chore
+
+- **deps-dev:** Bump the testing group with 4 updates ([e7525b8](https://github.com/Contentrain/studio/commit/e7525b8))
+- **deps-dev:** Bump eslint from 10.0.3 to 10.2.0 in the linting group ([054c567](https://github.com/Contentrain/studio/commit/054c567))
+- Add contentrain-ai symlink ignore and expand roadmap items ([805d564](https://github.com/Contentrain/studio/commit/805d564))
+- **deps-dev:** Bump tailwindcss from 4.2.1 to 4.2.2 ([3675b9b](https://github.com/Contentrain/studio/commit/3675b9b))
+- **deps-dev:** Bump @types/node from 24.12.0 to 25.5.2 ([1eb0958](https://github.com/Contentrain/studio/commit/1eb0958))
+- **release:** V0.1.0 ([358a842](https://github.com/Contentrain/studio/commit/358a842))
+- **release:** V0.1.0" ([9748153](https://github.com/Contentrain/studio/commit/9748153))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+
 ## v0.1.0-beta.4
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.3...v0.1.0-beta.4)
