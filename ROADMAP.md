@@ -43,6 +43,7 @@ Focus: production readiness, monitoring, critical fixes.
 
 Focus: UX polish, operational resilience, mobile support.
 
+- [ ] **Usage-based overage billing** — Stripe metered billing for AI messages, CDN bandwidth, storage, form submissions. Currently hard-blocks at plan limit; needs soft-limit + overage invoicing.
 - [ ] **Mobile responsive shell** — Hamburger menu + slide-over drawer for mobile viewports
 - [ ] **Branch health warnings** — 80+ branch threshold alert, auto-cleanup of merged cr/* branches
 - [ ] **Brain cache webhook invalidation** — GitHub push webhook triggers cache invalidation (currently TTL-only)
@@ -54,8 +55,11 @@ Focus: UX polish, operational resilience, mobile support.
 
 No timeline commitment. Prioritized by user demand.
 
+- [ ] **Plain PostgreSQL provider** — DatabaseProvider implementation for self-hosted deployments without Supabase dependency. Interface exists (`server/providers/database.ts`), needs `pg-db/` implementation.
+- [ ] **OpenAI / Gemini AI providers** — Alternative AI backends (GPT-4o, Gemini) via existing AIProvider interface (`server/providers/ai.ts`). Currently only Anthropic implemented.
+- [ ] **Voice input** — Browser Speech-to-Text API, microphone button in chat panel. Speech-to-text transcription sent as regular chat message.
 - [ ] **Service Worker & PWA** — Background sync, offline write queue, push notifications, installable app experience. *Current state:* Content Brain Worker already provides offline read via IndexedDB + FlexSearch. Service Worker would add offline writes and push notifications.
-- [ ] **GitLab / Bitbucket providers** — ContentProvider implementations for GitLab and Bitbucket Git APIs
+- [ ] **GitLab / Bitbucket providers** — GitProvider implementations for GitLab and Bitbucket Git APIs. Interface exists (`server/providers/git.ts`), currently only GitHub implemented.
 - [ ] **Real-time collaboration** — Presence indicators, live cursors in content editor
 - [ ] **Plugin system** — User-installable extensions for custom field types, validators, integrations
 - [ ] **Advanced search** — Cross-project content search, saved filters, search history

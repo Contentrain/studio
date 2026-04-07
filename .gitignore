@@ -3,6 +3,9 @@
 .tmp/
 .temp/
 
+# Contentrain AI monorepo reference (symlink to ../contentrain-ai)
+.contentrain-ai
+
 # Nuxt dev/build outputs
 .output
 .data
