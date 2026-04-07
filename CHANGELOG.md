@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.1.0-beta.6
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.5...v0.1.0-beta.6)
+
+### 🚀 Enhancements
+
+- **billing:** Add overage billing system with usage dashboard ([bd981f1](https://github.com/Contentrain/studio/commit/bd981f1))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+
 ## v0.1.0-beta.5
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.4...v0.1.0-beta.5)
