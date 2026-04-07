@@ -1,59 +1,21 @@
 {
   "lastOperation": {
     "entries": [
-      "ai-agent",
-      "ai-byoa",
-      "ai-messages-per-month",
-      "ai-studio-key",
-      "cdn-delivery",
-      "cdn-bandwidth-gb",
-      "cdn-api-keys",
-      "cdn-preview-branch",
-      "cdn-custom-domain",
-      "cdn-metering",
-      "media-upload",
-      "media-storage-gb",
-      "media-max-file-size-mb",
-      "media-variants-per-field",
-      "media-custom-variants",
-      "media-library",
-      "forms-enabled",
-      "forms-models",
-      "forms-submissions-per-month",
-      "forms-captcha",
-      "forms-webhook-notification",
-      "forms-auto-approve",
-      "forms-file-upload",
-      "forms-notifications",
-      "forms-spam-filter",
-      "api-conversation",
-      "api-conversation-keys",
-      "api-messages-per-month",
-      "api-webhooks",
-      "api-custom-instructions",
-      "api-webhooks-outbound",
-      "workflow-review",
-      "roles-reviewer",
-      "roles-viewer",
-      "roles-specific-models",
-      "team-members",
-      "sso-saml",
-      "sso-oidc",
-      "white-label"
+      "en"
     ],
     "locale": "en",
-    "model": "plan-features",
+    "model": "ui-strings",
     "source": "mcp-local",
-    "timestamp": "2026-04-02T13:31:18.713Z",
+    "timestamp": "2026-04-07T19:04:37.361Z",
     "tool": "contentrain_content_save"
   },
   "stats": {
-    "entries": 59,
-    "lastSync": "2026-04-02T13:31:18.713Z",
+    "entries": 61,
+    "lastSync": "2026-04-07T19:04:37.366Z",
     "locales": [
       "en"
     ],
-    "models": 8
+    "models": 9
   },
   "version": "1"
 }
