@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   '/api/auth/callback',
   '/api/auth/magic-link',
   '/api/auth/verify',
+  '/api/auth/refresh',
   '/api/health',
   '/api/webhooks/',
   '/api/cdn/',

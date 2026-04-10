@@ -1,3 +1,13 @@
+/**
+ * POST /api/auth/verify
+ *
+ * Exchanges an OAuth code (or magic link tokens) for an authenticated session.
+ *
+ * Two modes:
+ *   1. Web (default): stores tokens in encrypted httpOnly cookie, returns { user }.
+ *   2. CLI (source: 'cli'): returns { user, tokens } — no cookie is set.
+ *      The CLI stores tokens locally and uses /api/auth/refresh when they expire.
+ */
 export default defineEventHandler(async (event) => {
   // Rate limit
   const ip = getHeader(event, 'x-forwarded-for') ?? 'unknown'
@@ -10,12 +20,15 @@ export default defineEventHandler(async (event) => {
     accessToken?: string
     refreshToken?: string
     state?: string
+    source?: 'cli'
   }>(event)
 
+  const isCli = body.source === 'cli'
+
   // OAuth state CSRF protection
-  // Code flow (OAuth): state is REQUIRED and validated
+  // Code flow (OAuth): state is REQUIRED and validated (web only — CLI manages its own state)
   // Token flow (magic link): state is optional (no redirect to hijack)
-  if (body.code) {
+  if (body.code && !isCli) {
     if (!body.state) {
       throw createError({ statusCode: 403, message: errorMessage('auth.invalid_state') })
     }
@@ -38,7 +51,19 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('auth.code_or_token_required') })
   }
 
-  // Store tokens in encrypted httpOnly cookie — never exposed to client
+  if (isCli) {
+    // CLI: return tokens directly — no cookie
+    return {
+      user: session.user,
+      tokens: {
+        accessToken: session.tokens.accessToken,
+        refreshToken: session.tokens.refreshToken,
+        expiresAt: session.tokens.expiresAt,
+      },
+    }
+  }
+
+  // Web: store tokens in encrypted httpOnly cookie — never exposed to client
   await setServerSession(event, {
     userId: session.user.id,
     accessToken: session.tokens.accessToken,

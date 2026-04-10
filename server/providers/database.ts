@@ -437,4 +437,11 @@ export interface DatabaseProvider {
     userAgent?: string | null
     origin?: 'app' | 'cascade'
   }) => Promise<void>
+
+  listAuditLogs: (workspaceId: string, options?: {
+    page?: number
+    limit?: number
+    action?: string
+    sort?: 'newest' | 'oldest'
+  }) => Promise<{ data: DatabaseRow[], total: number }>
 }

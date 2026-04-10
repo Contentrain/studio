@@ -115,6 +115,24 @@ export default defineEventHandler(async (event) => {
     return sum + (projectedOverage * c.overageUnitPrice)
   }, 0)
 
+  // CLI-compatible flat format: ?format=simple
+  const query = getQuery(event) as { format?: string }
+  if (query.format === 'simple') {
+    const keyMap: Record<string, string> = {
+      ai_messages: 'aiMessages',
+      form_submissions: 'formSubmissions',
+      cdn_bandwidth: 'cdnBandwidthGb',
+      media_storage: 'mediaStorageGb',
+      api_messages: 'apiMessages',
+    }
+    const simple: Record<string, { current: number, limit: number, percentage: number }> = {}
+    for (const c of categories) {
+      const key = keyMap[c.key] ?? c.key
+      simple[key] = { current: c.current, limit: c.limit, percentage: c.percentage }
+    }
+    return simple
+  }
+
   return {
     billingPeriod,
     categories,

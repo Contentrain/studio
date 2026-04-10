@@ -44,7 +44,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
       const { data, error } = await admin.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${config.public.siteUrl}${redirectTo}`,
+          redirectTo: redirectTo.startsWith('http') ? redirectTo : `${config.public.siteUrl}${redirectTo}`,
           skipBrowserRedirect: true,
           // Let Supabase handle default scopes per provider
         },
