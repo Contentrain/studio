@@ -15,11 +15,11 @@ importers:
         specifier: ^3.1014.0
         version: 3.1014.0
       '@contentrain/query':
-        specifier: ^5.1.0
-        version: 5.1.0
+        specifier: ^5.1.2
+        version: 5.1.2
       '@contentrain/types':
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: 0.4.1
+        version: 0.4.1
       '@nuxt/eslint':
         specifier: 1.15.2
         version: 1.15.2(@typescript-eslint/utils@8.57.1(eslint@10.2.0(jiti@2.6.1))(typescript@5.9.3))(@vue/compiler-sfc@3.5.32)(eslint@10.2.0(jiti@2.6.1))(magicast@0.5.2)(typescript@5.9.3)(vite@7.3.1(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.1)(yaml@2.8.3))
@@ -552,12 +552,15 @@ packages:
     resolution: {integrity: sha512-ZJoS8oSq2CAZEpc/YI9SulLrdiIyXeHb/OGqGrkUP6Q7YV+0ouNAa7GjqRdXeQPncHQIDz/jbCTlHScvYvO/gA==}
     engines: {node: '>=v18'}
 
-  '@contentrain/query@5.1.0':
-    resolution: {integrity: sha512-CbcV34YwN7FUNargFqmkL3/3apzXHXTHd5uh8T8NL/cYmFTnRAcmfBX2pR9yOkEFucdMPmZ2WFzz/j7+TzBqPA==}
+  '@contentrain/query@5.1.2':
+    resolution: {integrity: sha512-t4ogva5SYJXsRJNDhCpkDURoipmDlDEB6tsOIi697fuOpVKi60c9sKchdDYUEd7zNqcgx0d2dZGKae8qLfVMng==}
     hasBin: true
 
-  '@contentrain/types@0.2.0':
-    resolution: {integrity: sha512-tjql7ZQQelzXU69CqId9NcYX4Fa07HXRLa9zdAJjjT/gptJ5VKNRQBCuGEU86w41gzmhpZH/I+br/s+qVLhIbg==}
+  '@contentrain/types@0.4.0':
+    resolution: {integrity: sha512-saZ1qgdOfDmoNN2/KwUV59HEvcpOPtwdgZtmEWFFTxtJ1Cze1FZQCVElQfocikseNh5dE/rO/f/oVi/H1W/usw==}
+
+  '@contentrain/types@0.4.1':
+    resolution: {integrity: sha512-v6bjT4vuSLDi2XRdYhPIrcPHihAkKhbdYkRompIs0mCmZn8E8IHYJOtvTWttIetYot/04rn6tzw86JNdKDVceQ==}
 
   '@conventional-changelog/git-client@2.6.0':
     resolution: {integrity: sha512-T+uPDciKf0/ioNNDpMGc8FDsehJClZP0yR3Q5MN6wE/Y/1QZ7F+80OgznnTCOlMEG4AV0LvH2UJi3C/nBnaBUg==}
@@ -6873,11 +6876,13 @@ snapshots:
       conventional-commits-parser: 6.3.0
       picocolors: 1.1.1
 
-  '@contentrain/query@5.1.0':
+  '@contentrain/query@5.1.2':
     dependencies:
-      '@contentrain/types': 0.2.0
+      '@contentrain/types': 0.4.0
 
-  '@contentrain/types@0.2.0': {}
+  '@contentrain/types@0.4.0': {}
+
+  '@contentrain/types@0.4.1': {}
 
   '@conventional-changelog/git-client@2.6.0(conventional-commits-parser@6.3.0)':
     dependencies:

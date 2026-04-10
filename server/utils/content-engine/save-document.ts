@@ -1,4 +1,5 @@
 import type { EntryMeta, ModelDefinition } from '@contentrain/types'
+import { validateSlug } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
 import { buildContextUpdate, createFeatureBranch } from './helpers'
@@ -17,14 +18,15 @@ export async function saveDocument(
   userEmail: string,
   options?: { autoPublish?: boolean },
 ): Promise<WriteResult> {
-  // Sanitize slug — prevent path traversal
-  const safeSlug = slug.replace(/[^a-z0-9_-]/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
-  if (!safeSlug || safeSlug.includes('..') || safeSlug.startsWith('/')) {
+  // Validate slug format (lowercase alphanumeric + hyphens, no path traversal)
+  const safeSlug = slug.toLowerCase()
+  const slugError = validateSlug(safeSlug)
+  if (slugError) {
     return {
       branch: '',
       commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
       diff: [],
-      validation: { valid: false, errors: [{ field: 'slug', message: `Invalid slug: "${slug}"`, severity: 'error' as const }] },
+      validation: { valid: false, errors: [{ field: 'slug', message: slugError, severity: 'error' as const }] },
     }
   }
 
