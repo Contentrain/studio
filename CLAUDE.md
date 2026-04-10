@@ -9,7 +9,7 @@ Conversation-first CMS — chat with AI agent to manage structured content.
 - **UI:** Radix Vue (headless primitives) + Tailwind CSS 4 (CSS-based config, @theme)
 - **Auth:** AuthProvider interface — current impl: Supabase Auth (GitHub OAuth, Google OAuth, Magic Link)
 - **Database:** DatabaseProvider interface — current impl: Supabase PostgreSQL with RLS
-- **Content:** Contentrain MCP + @contentrain/query SDK for UI strings
+- **Content:** Contentrain MCP + @contentrain/query SDK for UI strings + @contentrain/types for shared validation/serialization
 - **Icons:** Annon custom icon set via @iconify/tailwind4
 - **Images:** @nuxt/image (NuxtImg for all images)
 
@@ -239,7 +239,7 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 - Premium connectors (Canva, Figma, Recraft, Notion, Google Drive)
 - SSO (SAML, OIDC)
 - Approval chains, scheduled publish
-- Audit log, activity feed
+- Advanced audit log UI (ee/ — core has read API endpoint)
 - White-label branding
 - Outbound webhooks
 

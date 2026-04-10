@@ -1,6 +1,6 @@
 # Contentrain Studio — Roadmap
 
-> Last updated: 2026-04-07 | Current release: v0.1.0-beta.4
+> Last updated: 2026-04-11 | Current release: v0.1.0-beta.7
 
 This roadmap reflects our current priorities. Items may shift based on user feedback and production learnings.
 
@@ -23,6 +23,8 @@ Core platform is feature-complete for beta:
 | Billing | Stripe integration, 4-tier flat-rate plans (Free / Starter / Pro / Enterprise) |
 | Content Brain | IndexedDB offline cache, semantic search, full-text index, delta sync |
 | Audit Logs | Application + database-level audit trail, 90-day retention |
+| Overage Billing | Stripe metered billing for AI, CDN, storage, forms, API with usage dashboard |
+| CLI Integration | Auth (OAuth + token refresh), activity feed, usage API for Studio CLI |
 | Self-Hosting | Docker Compose deployment, 3-stage build |
 
 ---
@@ -43,7 +45,7 @@ Focus: production readiness, monitoring, critical fixes.
 
 Focus: UX polish, operational resilience, mobile support.
 
-- [ ] **Usage-based overage billing** — Stripe metered billing for AI messages, CDN bandwidth, storage, form submissions. Currently hard-blocks at plan limit; needs soft-limit + overage invoicing.
+- [x] **Usage-based overage billing** — Stripe metered billing for AI messages, CDN bandwidth, storage, form submissions with overage settings and usage dashboard (shipped v0.1.0-beta.6)
 - [ ] **Mobile responsive shell** — Hamburger menu + slide-over drawer for mobile viewports
 - [ ] **Branch health warnings** — 80+ branch threshold alert, auto-cleanup of merged cr/* branches
 - [ ] **Brain cache webhook invalidation** — GitHub push webhook triggers cache invalidation (currently TTL-only)
