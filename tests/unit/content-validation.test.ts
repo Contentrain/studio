@@ -30,7 +30,7 @@ describe('content validation', () => {
     expect(result.valid).toBe(false)
     expect(result.errors).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ field: 'title', message: 'title is required', severity: 'error' }),
+        expect.objectContaining({ field: 'title', message: 'Required field is missing or empty', severity: 'error' }),
         expect.objectContaining({
           field: 'slug',
           message: 'slug must be unique — "hello-world" already exists in entry entry-1',
@@ -71,8 +71,8 @@ describe('content validation', () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ field: 'tags[1]', message: 'tags[1] must be a string' }),
-        expect.objectContaining({ field: 'seo[1].title', message: 'title is required' }),
-        expect.objectContaining({ field: 'status', message: 'status must be one of: draft, published' }),
+        expect.objectContaining({ field: 'seo[1].title', message: 'Required field is missing or empty' }),
+        expect.objectContaining({ field: 'status', message: 'Value "archived" is not in allowed options: [draft, published]' }),
       ]),
     )
   })
@@ -98,7 +98,7 @@ describe('content validation', () => {
       expect.arrayContaining([
         expect.objectContaining({ field: 'email', severity: 'warning', message: 'email may not be a valid email' }),
         expect.objectContaining({ field: 'website', severity: 'warning', message: 'website may not be a valid URL' }),
-        expect.objectContaining({ field: 'code', severity: 'warning', message: 'code has invalid regex pattern: [' }),
+        expect.objectContaining({ field: 'code', severity: 'warning', message: 'Invalid pattern regex: [' }),
       ]),
     )
   })

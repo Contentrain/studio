@@ -70,11 +70,21 @@ function validateField(
   }
 
   // ── Pure field validation (type, required, min/max, pattern, select) ──
-  const fieldErrors = validateFieldValue(value, def)
-  if (fieldErrors.length > 0) {
-    errors.push(...fieldErrors.map(e => ({ ...e, ...errCtx })))
-    // If there are errors from pure validation, skip stateful checks
-    if (fieldErrors.some(e => e.severity === 'error')) return errors
+  // Skip types' validateFieldValue for relation/relations — Studio handles these with richer checks below
+  const skipTypesValidation = def.type === 'relation' || def.type === 'relations'
+  if (!skipTypesValidation) {
+    const fieldErrors = validateFieldValue(value, def)
+    if (fieldErrors.length > 0) {
+      errors.push(...fieldErrors.map((e: ValidationError) => ({ ...e, ...errCtx })))
+      if (fieldErrors.some((e: ValidationError) => e.severity === 'error')) return errors
+    }
+  }
+  else {
+    // For relations, only check required ourselves
+    if (def.required && (value === null || value === undefined || value === '')) {
+      errors.push({ severity: 'error', ...errCtx, message: `${fieldId} is required` })
+      return errors
+    }
   }
 
   // Skip further checks if value is absent
@@ -88,6 +98,60 @@ function validateField(
         errors.push({ severity: 'error', ...errCtx, message: `${fieldId} must be unique — "${String(value)}" already exists in entry ${otherId}` })
         break
       }
+    }
+  }
+
+  // ── Supplementary checks not covered by validateFieldValue ──
+
+  // Email/URL heuristic warnings
+  if (def.type === 'email' && typeof value === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    errors.push({ severity: 'warning', ...errCtx, message: `${fieldId} may not be a valid email` })
+  }
+  if (def.type === 'url' && typeof value === 'string' && !/^https?:\/\/.+/.test(value) && !value.startsWith('/')) {
+    errors.push({ severity: 'warning', ...errCtx, message: `${fieldId} may not be a valid URL` })
+  }
+
+  // Relation: polymorphic model validation + scalar type check
+  if (def.type === 'relation' && def.model) {
+    const targets = Array.isArray(def.model) ? def.model : [def.model]
+    if (targets.length > 1) {
+      if (typeof value !== 'object' || value === null || !('model' in value) || !('ref' in value)) {
+        errors.push({ severity: 'error', ...errCtx, message: `${fieldId} must be { model, ref } for polymorphic relation` })
+      }
+      else {
+        const polyVal = value as { model: string, ref: string }
+        if (!targets.includes(polyVal.model)) {
+          errors.push({ severity: 'error', ...errCtx, message: `${fieldId} target model "${polyVal.model}" must be one of: ${targets.join(', ')}` })
+        }
+      }
+    }
+    else if (typeof value !== 'string') {
+      errors.push({ severity: 'error', ...errCtx, message: `${fieldId} must be a string (entry ID or slug)` })
+    }
+  }
+
+  // Relations: array of string IDs + min/max
+  if (def.type === 'relations') {
+    if (!Array.isArray(value)) {
+      errors.push({ severity: 'error', ...errCtx, message: `${fieldId} must be an array` })
+    }
+    else {
+      if (def.min !== undefined && value.length < def.min)
+        errors.push({ severity: 'error', ...errCtx, message: `${fieldId} must have at least ${def.min} items` })
+      if (def.max !== undefined && value.length > def.max)
+        errors.push({ severity: 'error', ...errCtx, message: `${fieldId} must have at most ${def.max} items` })
+      for (let i = 0; i < value.length; i++) {
+        if (typeof value[i] !== 'string')
+          errors.push({ severity: 'error', ...errCtx, message: `${fieldId}[${i}] must be a string (entry ID or slug)` })
+      }
+    }
+  }
+
+  // Array: simple item type validation
+  if (def.type === 'array' && Array.isArray(value) && def.items && typeof def.items === 'string') {
+    for (let i = 0; i < value.length; i++) {
+      const itemErrors = validateArrayItemType(value[i], def.items, errCtx, `${fieldId}[${i}]`)
+      errors.push(...itemErrors)
     }
   }
 
@@ -108,6 +172,29 @@ function validateField(
   }
 
   return errors
+}
+
+/** Validate simple array item types (not covered by types' validateFieldValue) */
+function validateArrayItemType(
+  value: unknown,
+  itemType: string,
+  errCtx: { model: string, locale: string, entry: string | undefined, field: string },
+  fieldPath: string,
+): ValidationError[] {
+  const ctx = { ...errCtx, field: fieldPath }
+  switch (itemType) {
+    case 'string': case 'email': case 'url': case 'slug': case 'image': case 'video': case 'file':
+      if (typeof value !== 'string') return [{ severity: 'error', ...ctx, message: `${fieldPath} must be a string` }]
+      break
+    case 'number': case 'integer': case 'decimal':
+      if (typeof value !== 'number') return [{ severity: 'error', ...ctx, message: `${fieldPath} must be a number` }]
+      if (itemType === 'integer' && !Number.isInteger(value)) return [{ severity: 'error', ...ctx, message: `${fieldPath} must be an integer` }]
+      break
+    case 'boolean':
+      if (typeof value !== 'boolean') return [{ severity: 'error', ...ctx, message: `${fieldPath} must be a boolean` }]
+      break
+  }
+  return []
 }
 
 /**
