@@ -1,6 +1,30 @@
 # Changelog
 
 
+## v0.1.0-beta.7
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.6...v0.1.0-beta.7)
+
+### 🚀 Enhancements
+
+- **api:** Add CLI integration endpoints for Studio CLI ([5824f89](https://github.com/Contentrain/studio/commit/5824f89))
+
+### 🩹 Fixes
+
+- **content:** Align validation/serialization tests with @contentrain/types ([32af5f0](https://github.com/Contentrain/studio/commit/32af5f0))
+
+### 💅 Refactors
+
+- **content:** Migrate validation and serialization to @contentrain/types ([e554bbe](https://github.com/Contentrain/studio/commit/e554bbe))
+
+### 📖 Documentation
+
+- Update roadmap and CLAUDE.md for CLI integration and overage billing ([1cd6dba](https://github.com/Contentrain/studio/commit/1cd6dba))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+
 ## v0.1.0-beta.6
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.5...v0.1.0-beta.6)
