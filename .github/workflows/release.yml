@@ -145,9 +145,22 @@ jobs:
             org.opencontainers.image.version=${{ steps.release_meta.outputs.version }}
             org.opencontainers.image.revision=${{ steps.release_meta.outputs.full_sha }}
 
+      - name: Extract changelog for this version
+        id: changelog
+        shell: bash
+        run: |
+          VERSION="${{ steps.release_meta.outputs.version }}"
+          # Extract the section between this version header and the next version header
+          BODY=$(awk "/^## v${VERSION//./\\.}/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            BODY="See [full changelog](https://github.com/${{ github.repository }}/compare/...v${VERSION})"
+          fi
+          # Write to file to avoid quoting issues
+          echo "$BODY" > /tmp/release-body.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          generate_release_notes: true
+          body_path: /tmp/release-body.md
           prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
