@@ -396,6 +396,36 @@ export interface DatabaseProvider {
   getConversationKeyUsage: (keyIds: string[], month: string) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
+  // MCP CLOUD KEYS
+  // ═══════════════════════════════════════════════════
+
+  getMcpCloudKeyByHash: (keyHash: string) => Promise<DatabaseRow | null>
+  touchMcpCloudKey: (keyId: string) => Promise<void>
+  listMcpCloudKeys: (workspaceId: string, projectId?: string) => Promise<DatabaseRow[]>
+  createMcpCloudKey: (input: {
+    workspaceId: string
+    projectId: string
+    name: string
+    keyHash: string
+    keyPrefix: string
+    allowedTools: string[]
+    rateLimitPerMinute?: number
+    monthlyCallLimit?: number | null
+    createdBy?: string | null
+  }) => Promise<DatabaseRow>
+  revokeMcpCloudKey: (keyId: string, workspaceId: string) => Promise<void>
+  countActiveMcpCloudKeys: (workspaceId: string, projectId?: string) => Promise<number>
+  /** Atomic: check monthly call limit + bump counter. Returns `{ allowed, used }`. */
+  incrementMcpCloudUsageIfAllowed: (input: {
+    workspaceId: string
+    keyId: string
+    month: string
+    limit: number | null
+  }) => Promise<{ allowed: boolean, used: number }>
+  /** Sum MCP Cloud call count across all keys in workspace for a month. */
+  getWorkspaceMonthlyMcpCloudUsage: (workspaceId: string, month: string) => Promise<number>
+
+  // ═══════════════════════════════════════════════════
   // USAGE AGGREGATION (billing dashboard)
   // ═══════════════════════════════════════════════════
 

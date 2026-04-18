@@ -17,6 +17,7 @@ import { auditMethods } from './audit'
 import { cdnMethods } from './cdn'
 import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
+import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
 import { profileMethods } from './profiles'
@@ -40,5 +41,6 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...webhookMethods(),
     ...auditMethods(),
     ...usageMethods(),
+    ...mcpCloudMethods(),
   }
 }
