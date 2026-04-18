@@ -8,7 +8,8 @@ import type { EmailProvider } from '../providers/email'
 import type { PaymentProvider } from '../providers/payment'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createSupabaseDatabaseProvider } from '../providers/supabase-db'
-import { createGitHubAppInstallationProvider, createGitHubAppProvider } from '../providers/github-app'
+import { createStudioGitProvider } from '../providers/git'
+import { createGitHubAppInstallationProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
 import { createResendEmailProvider } from '../providers/resend-email'
 import { createStripePaymentProvider } from '../providers/stripe-payment'
@@ -63,25 +64,18 @@ export function useAIProvider(): AIProvider {
  * Unlike AuthProvider (singleton), GitProvider is per-repo because
  * each repository has its own owner/repo/installationId context.
  *
- * Future: swap createGitHubAppProvider with createGitLabProvider, etc.
+ * Composes MCP's `GitHubProvider` (content-ops surface) with Studio
+ * extensions — see `../providers/git.ts`. GitLab support ships by
+ * swapping `createStudioGitProvider` for a GitLab equivalent that
+ * wraps `GitLabProvider` from `@contentrain/mcp/providers/gitlab`.
  */
 export function useGitProvider(options: {
   installationId: number
   owner: string
   repo: string
+  contentRoot?: string
 }): GitProvider {
-  const config = useRuntimeConfig()
-
-  // Decode base64 PEM
-  const privateKey = Buffer.from(config.github.privateKey, 'base64').toString('utf-8')
-
-  return createGitHubAppProvider({
-    appId: config.github.appId,
-    privateKey,
-    installationId: options.installationId,
-    owner: options.owner,
-    repo: options.repo,
-  })
+  return createStudioGitProvider(options)
 }
 
 export function useGitAppProvider(installationId: number): GitAppProvider {

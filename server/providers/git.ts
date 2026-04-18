@@ -1,44 +1,51 @@
+/**
+ * Studio Git Provider — a `RepoProvider` (from `@contentrain/mcp` via
+ * `@contentrain/types`) extended with Studio-specific operations that
+ * live outside MCP's commodity surface: tree listing for brain-cache,
+ * framework detection for project setup, PR helpers for branch-protected
+ * merges, permission / protection introspection for UI state.
+ *
+ * Commodity content operations (`readFile`, `applyPlan`, `listBranches`,
+ * ...) are provided by the wrapped MCP `GitHubProvider`. Studio-side
+ * extensions reuse the same Octokit client so auth, rate-limit and retry
+ * semantics stay consistent.
+ *
+ * See `.internal/refactor/02-studio-handoff.md` — Faz S1 for context.
+ */
+
+import { GitHubProvider } from '@contentrain/mcp/providers/github'
+import type {
+  ApplyPlanInput,
+  Commit,
+  CommitAuthor,
+  FileChange,
+  RepoProvider,
+} from '@contentrain/types'
+import { createGitHubExtensions, createInstallationOctokit } from './github-app'
+
+// ─── RepoProvider contracts (re-exported from @contentrain/types) ───
+
+export type {
+  ApplyPlanInput,
+  Branch,
+  Commit,
+  CommitAuthor,
+  FileChange,
+  FileDiff,
+  MergeResult,
+  ProviderCapabilities,
+  RepoProvider,
+  RepoReader,
+  RepoWriter,
+} from '@contentrain/types'
+
+// ─── Studio-specific types (no MCP equivalent) ───
+
 export interface TreeEntry {
   path: string
   type: 'blob' | 'tree'
   sha: string
   size?: number
-}
-
-export interface Branch {
-  name: string
-  sha: string
-  protected: boolean
-}
-
-export interface FileChange {
-  path: string
-  content: string | null // null = delete
-}
-
-export interface CommitAuthor {
-  name: string
-  email: string
-}
-
-export interface Commit {
-  sha: string
-  message: string
-  author: CommitAuthor
-  timestamp: string
-}
-
-export interface FileDiff {
-  path: string
-  status: 'added' | 'modified' | 'removed'
-  before: string | null
-  after: string | null
-}
-
-export interface MergeResult {
-  merged: boolean
-  sha: string | null
-  pullRequestUrl: string | null
 }
 
 export interface BranchProtection {
@@ -58,6 +65,8 @@ export interface FrameworkDetection {
   hasI18n: boolean
   suggestedContentPaths: Record<string, string>
 }
+
+// ─── GitHub App installation-scoped types (preserved) ───
 
 export interface InstallationAccount {
   login: string | null
@@ -101,33 +110,84 @@ export interface GitAppProvider {
   canAccessRepository: (owner: string, repo: string) => Promise<boolean>
 }
 
-export interface GitProvider {
-  // Tree operations (scoped to content_root + .contentrain/)
+// ─── GitProvider: RepoProvider + Studio extensions ───
+
+export interface GitProvider extends RepoProvider {
+  /** Full repo tree in one call. Used by brain-cache for SHA-level change detection. */
   getTree: (ref?: string) => Promise<TreeEntry[]>
-  readFile: (path: string, ref?: string) => Promise<string>
-  listDirectory: (path: string, ref?: string) => Promise<string[]>
-  fileExists: (path: string, ref?: string) => Promise<boolean>
 
-  // Branch operations
-  createBranch: (name: string, fromRef?: string) => Promise<void>
-  listBranches: (prefix?: string) => Promise<Branch[]>
-  getBranchDiff: (branch: string, base?: string) => Promise<FileDiff[]>
-  mergeBranch: (branch: string, into: string) => Promise<MergeResult>
-  deleteBranch: (branch: string) => Promise<void>
-  isMerged: (branch: string, into?: string) => Promise<boolean>
-
-  // Commit operations
+  /**
+   * Studio-side commit helper — delegates to `applyPlan` with the
+   * legacy signature preserved. Kept as a backward-compatibility shim
+   * so existing content-engine callers compile unchanged; Faz S2
+   * migrates callers to `applyPlan` directly and this member is
+   * removed once unused.
+   */
   commitFiles: (branch: string, files: FileChange[], message: string, author: CommitAuthor) => Promise<Commit>
 
-  // PR operations (when branch protection requires it)
+  /** Open a PR — merge fallback when direct merge is blocked by branch protection. */
   createPR: (head: string, base: string, title: string, body: string) => Promise<{ id: string, url: string }>
   mergePR: (id: string) => Promise<void>
 
-  // Permissions & config
   getPermissions: () => Promise<RepoPermissions>
   getBranchProtection: (branch: string) => Promise<BranchProtection | null>
-  getDefaultBranch: () => Promise<string>
-
-  // Detection
   detectFramework: () => Promise<FrameworkDetection>
+}
+
+// ─── Studio GitProvider factory ───
+
+export interface StudioGitHubInput {
+  installationId: number
+  owner: string
+  repo: string
+  contentRoot?: string
+}
+
+/**
+ * Compose a Studio `GitProvider` by wrapping MCP's `GitHubProvider` with
+ * Studio-specific extensions that drive off the same Octokit client.
+ *
+ * Installation-token lifecycle (1h TTL + auto-refresh) is handled
+ * internally by `@octokit/auth-app`'s strategy, so the composed
+ * instance remains usable across the full request lifetime without
+ * manual token management.
+ */
+export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
+  const config = useRuntimeConfig()
+  const privateKey = Buffer.from(config.github.privateKey, 'base64').toString('utf-8')
+
+  const octokit = createInstallationOctokit({
+    appId: config.github.appId,
+    privateKey,
+    installationId: opts.installationId,
+  })
+
+  const core = new GitHubProvider(octokit, {
+    owner: opts.owner,
+    name: opts.repo,
+    contentRoot: opts.contentRoot,
+  })
+
+  const extensions = createGitHubExtensions(octokit, opts.owner, opts.repo)
+
+  return {
+    get capabilities() { return core.capabilities },
+    readFile: (path: string, ref?: string) => core.readFile(path, ref),
+    listDirectory: (path: string, ref?: string) => core.listDirectory(path, ref),
+    fileExists: (path: string, ref?: string) => core.fileExists(path, ref),
+    applyPlan: (input: ApplyPlanInput) => core.applyPlan(input),
+    listBranches: (prefix?: string) => core.listBranches(prefix),
+    createBranch: (name: string, fromRef?: string) => core.createBranch(name, fromRef),
+    deleteBranch: (name: string) => core.deleteBranch(name),
+    getBranchDiff: (branch: string, base?: string) => core.getBranchDiff(branch, base),
+    mergeBranch: (branch: string, into: string) => core.mergeBranch(branch, into),
+    isMerged: (branch: string, into?: string) => core.isMerged(branch, into),
+    getDefaultBranch: () => core.getDefaultBranch(),
+
+    ...extensions,
+
+    async commitFiles(branch, files, message, author) {
+      return core.applyPlan({ branch, changes: files, message, author })
+    },
+  }
 }
