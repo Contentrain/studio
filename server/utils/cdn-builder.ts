@@ -10,6 +10,7 @@
  */
 
 import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
+import { parseMarkdownFrontmatter } from '@contentrain/types'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import { Marked } from 'marked'

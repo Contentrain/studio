@@ -10,7 +10,6 @@ import {
   resolveModelsDir,
   resolveVocabularyPath,
 } from '../../server/utils/content-paths'
-import { serializeCanonical } from '../../server/utils/content-serialization'
 
 const defaultCommit = {
   sha: 'commit-sha',
@@ -61,7 +60,6 @@ describe('content engine', () => {
     vi.stubGlobal('resolveConfigPath', resolveConfigPath)
     vi.stubGlobal('resolveVocabularyPath', resolveVocabularyPath)
     vi.stubGlobal('resolveModelsDir', resolveModelsDir)
-    vi.stubGlobal('serializeCanonical', serializeCanonical)
   })
 
   afterEach(() => {

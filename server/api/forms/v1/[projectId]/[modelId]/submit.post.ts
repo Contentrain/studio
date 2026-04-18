@@ -13,7 +13,7 @@
 import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { createContentEngine } from '~~/server/utils/content-engine'
-import { generateEntryId } from '~~/server/utils/content-serialization'
+import { generateEntryId } from '@contentrain/types'
 
 /**
  * Verify Cloudflare Turnstile captcha token.

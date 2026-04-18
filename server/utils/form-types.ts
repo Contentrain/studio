@@ -71,7 +71,7 @@ export async function approveSubmissionAsContent(
   approvedBy?: string,
 ): Promise<string | null> {
   const { createContentEngine } = await import('~~/server/utils/content-engine')
-  const { generateEntryId } = await import('~~/server/utils/content-serialization')
+  const { generateEntryId } = await import('@contentrain/types')
 
   const db = useDatabaseProvider()
   const modelId = submission.model_id as string
