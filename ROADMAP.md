@@ -40,7 +40,7 @@ Focus: production readiness, monitoring, critical fixes, alignment with
 - [x] **Monthly limit atomicity** — Atomic RPC functions for workspace members, CDN keys, and storage quota (migration 019)
 - [x] **GDPR audit for deletions** — Bulk delete audit logging, 4 missing audit registry entries (CDN key, conversation key, webhook, AI key)
 - [x] **MCP integration** — Content engine (save/delete/model CRUD + validation + canonical serialization) delegates to `@contentrain/mcp/core/ops`. `GitProvider` wraps MCP's `GitHubProvider`; Studio keeps brain-cache, branch lifecycle, and Studio-specific extensions (framework detection, PR helpers, tree listing). Faz S1–S5 in `.internal/refactor/02-studio-handoff.md`.
-- [ ] **MCP Cloud endpoint (`api.mcp_cloud`)** — Hosted HTTP MCP endpoint for external AI agents (Cursor, Claude Desktop, custom drivers). License + DB foundations shipped (`starter: 5K, pro: 50K, enterprise: ∞` calls/month at `$0.005/call` overage); HTTP route pending `@contentrain/mcp` `resolveProvider` callback. Faz S6.
+- [x] **MCP Cloud endpoint (`api.mcp_cloud`)** — Hosted HTTP MCP endpoint for external AI agents (Cursor, Claude Desktop, custom drivers). Shipped on `@contentrain/mcp@1.4.0`'s `resolveProvider` multi-tenant entry point (`starter: 5K, pro: 50K, enterprise: ∞` calls/month at `$0.005/call` overage). Architecture: internal loopback MCP HTTP server + Nuxt proxy route that handles auth / plan gate / rate limit / atomic quota / brain-cache invalidation. Workspace Settings → MCP Cloud tab for key management. Faz S6.
 
 ---
 
