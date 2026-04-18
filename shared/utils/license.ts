@@ -74,6 +74,17 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
   'api.custom_instructions': ['starter', 'pro', 'enterprise'],
   'api.webhooks_outbound': ['starter', 'pro', 'enterprise'],
 
+  // MCP Cloud — hosted MCP HTTP endpoint for external agents (Cursor,
+  // Claude Desktop, custom AI drivers). Shares provider + core ops with
+  // Conversation API but exposes raw tool execution (bring-your-own-AI).
+  // Commercial framing: Conversation API = "Agent API" (Studio thinks);
+  // MCP Cloud = "Tools API" (customer thinks).
+  'api.mcp_cloud': ['starter', 'pro', 'enterprise'],
+  // Enterprise-only bridges — ee/ layer attaches SSO + custom domain
+  // resolvers to the core endpoint; core runs without them.
+  'api.mcp_cloud_sso': ['enterprise'],
+  'api.mcp_cloud_custom_domain': ['enterprise'],
+
   // Git & Projects (paywall boundary)
   'git.connect': ['starter', 'pro', 'enterprise'],
   'projects.create': ['starter', 'pro', 'enterprise'],
@@ -102,6 +113,11 @@ export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = {
   'api.conversation_keys': { free: 0, starter: 1, pro: 5, enterprise: Infinity },
   'api.messages_per_month': { free: 0, starter: 100, pro: 1_000, enterprise: Infinity },
   'api.webhooks': { free: 0, starter: 3, pro: 10, enterprise: Infinity },
+  // MCP Cloud — raw tool execution. Quota sized 10× larger than the
+  // Conversation API because each customer AI turn typically produces
+  // several tool calls.
+  'api.mcp_keys': { free: 0, starter: 1, pro: 5, enterprise: Infinity },
+  'api.mcp_calls_per_month': { free: 0, starter: 5_000, pro: 50_000, enterprise: Infinity },
 }
 
 /**
@@ -156,6 +172,10 @@ export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsInclu
 export const OVERAGE_PRICING: Record<string, { price: number, unit: string, settingsKey: string }> = {
   'ai.messages_per_month': { price: 0.03, unit: 'message', settingsKey: 'ai_messages' },
   'api.messages_per_month': { price: 0.05, unit: 'message', settingsKey: 'api_messages' },
+  // MCP Cloud price is 1/10 of Conversation API — the orchestration
+  // value (brain cache, system prompt, phase detection) is bundled into
+  // the conversation rate, not the raw tool rate.
+  'api.mcp_calls_per_month': { price: 0.005, unit: 'call', settingsKey: 'mcp_calls' },
   'cdn.bandwidth_gb': { price: 0.10, unit: 'GB', settingsKey: 'cdn_bandwidth' },
   'forms.submissions_per_month': { price: 0.01, unit: 'submission', settingsKey: 'form_submissions' },
   'media.storage_gb': { price: 0.25, unit: 'GB/month', settingsKey: 'media_storage' },
@@ -215,6 +235,8 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
     conversationKeys: limitOrUnlimited('api.conversation_keys'),
     apiMessages: formatLimit(limit('api.messages_per_month')),
     webhookEndpoints: limitOrUnlimited('api.webhooks'),
+    mcpKeys: limitOrUnlimited('api.mcp_keys'),
+    mcpCalls: formatLimit(limit('api.mcp_calls_per_month')),
   }
 }
 
