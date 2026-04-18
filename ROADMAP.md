@@ -1,6 +1,6 @@
 # Contentrain Studio — Roadmap
 
-> Last updated: 2026-04-11 | Current release: v0.1.0-beta.7
+> Last updated: 2026-04-18 | Current release: v0.1.0-beta.7
 
 This roadmap reflects our current priorities. Items may shift based on user feedback and production learnings.
 
@@ -29,15 +29,18 @@ Core platform is feature-complete for beta:
 
 ---
 
-## Now — Stabilization (v0.1.x)
+## Now — Stabilization + MCP ecosystem alignment (v0.2.x)
 
-Focus: production readiness, monitoring, critical fixes.
+Focus: production readiness, monitoring, critical fixes, alignment with
+`@contentrain/mcp` ecosystem.
 
 - [ ] **Sentry integration** — Client + server error monitoring and alerting
 - [x] **Open-source docs** — Self-hosting guide, contributing guide, security policy, code of conduct, Docker/deployment docs
 - [ ] **User testing & feedback loop** — Structured beta testing with real teams
 - [x] **Monthly limit atomicity** — Atomic RPC functions for workspace members, CDN keys, and storage quota (migration 019)
 - [x] **GDPR audit for deletions** — Bulk delete audit logging, 4 missing audit registry entries (CDN key, conversation key, webhook, AI key)
+- [x] **MCP integration** — Content engine (save/delete/model CRUD + validation + canonical serialization) delegates to `@contentrain/mcp/core/ops`. `GitProvider` wraps MCP's `GitHubProvider`; Studio keeps brain-cache, branch lifecycle, and Studio-specific extensions (framework detection, PR helpers, tree listing). Faz S1–S5 in `.internal/refactor/02-studio-handoff.md`.
+- [ ] **MCP Cloud endpoint (`api.mcp_cloud`)** — Hosted HTTP MCP endpoint for external AI agents (Cursor, Claude Desktop, custom drivers). License + DB foundations shipped (`starter: 5K, pro: 50K, enterprise: ∞` calls/month at `$0.005/call` overage); HTTP route pending `@contentrain/mcp` `resolveProvider` callback. Faz S6.
 
 ---
 
@@ -61,7 +64,7 @@ No timeline commitment. Prioritized by user demand.
 - [ ] **OpenAI / Gemini AI providers** — Alternative AI backends (GPT-4o, Gemini) via existing AIProvider interface (`server/providers/ai.ts`). Currently only Anthropic implemented.
 - [ ] **Voice input** — Browser Speech-to-Text API, microphone button in chat panel. Speech-to-text transcription sent as regular chat message.
 - [ ] **Service Worker & PWA** — Background sync, offline write queue, push notifications, installable app experience. *Current state:* Content Brain Worker already provides offline read via IndexedDB + FlexSearch. Service Worker would add offline writes and push notifications.
-- [ ] **GitLab / Bitbucket providers** — GitProvider implementations for GitLab and Bitbucket Git APIs. Interface exists (`server/providers/git.ts`), currently only GitHub implemented.
+- [ ] **GitLab / Bitbucket providers** — GitLab support is mostly there via `@contentrain/mcp/providers/gitlab` (wire-up exists in `createStudioGitProvider`); remaining work: installation-level operations (repo listing, template creation) parity with the GitHub path. Bitbucket + Azure DevOps pending upstream MCP support.
 - [ ] **Real-time collaboration** — Presence indicators, live cursors in content editor
 - [ ] **Plugin system** — User-installable extensions for custom field types, validators, integrations
 - [ ] **Advanced search** — Cross-project content search, saved filters, search history
