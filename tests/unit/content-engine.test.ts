@@ -8,21 +8,39 @@ import {
   resolveMetaPath,
   resolveModelPath,
   resolveModelsDir,
+  resolveVocabularyPath,
 } from '../../server/utils/content-paths'
 import { serializeCanonical } from '../../server/utils/content-serialization'
 
+const defaultCommit = {
+  sha: 'commit-sha',
+  message: 'noop',
+  author: { name: 'bot', email: 'bot@example.com' },
+  timestamp: '2026-03-25T00:00:00.000Z',
+}
+
 function createGitProvider(overrides: Partial<GitProvider> = {}): GitProvider {
   return {
+    capabilities: {
+      localWorktree: false,
+      sourceRead: false,
+      sourceWrite: false,
+      pushRemote: true,
+      branchProtection: true,
+      pullRequestFallback: true,
+      astScan: false,
+    },
     getTree: vi.fn(),
     readFile: vi.fn(),
     listDirectory: vi.fn().mockResolvedValue([]),
-    fileExists: vi.fn(),
+    fileExists: vi.fn().mockResolvedValue(false),
     createBranch: vi.fn(),
     listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'abc', protected: false }]),
     getBranchDiff: vi.fn().mockResolvedValue([]),
     mergeBranch: vi.fn().mockResolvedValue({ merged: true, sha: 'merge-sha', pullRequestUrl: null }),
     deleteBranch: vi.fn(),
-    commitFiles: vi.fn(),
+    applyPlan: vi.fn().mockResolvedValue(defaultCommit),
+    commitFiles: vi.fn().mockResolvedValue(defaultCommit),
     createPR: vi.fn(),
     mergePR: vi.fn(),
     getPermissions: vi.fn(),
@@ -41,6 +59,7 @@ describe('content engine', () => {
     vi.stubGlobal('resolveMetaPath', resolveMetaPath)
     vi.stubGlobal('resolveContextPath', resolveContextPath)
     vi.stubGlobal('resolveConfigPath', resolveConfigPath)
+    vi.stubGlobal('resolveVocabularyPath', resolveVocabularyPath)
     vi.stubGlobal('resolveModelsDir', resolveModelsDir)
     vi.stubGlobal('serializeCanonical', serializeCanonical)
   })
@@ -58,7 +77,7 @@ describe('content engine', () => {
     expect(result.validation.valid).toBe(false)
     expect(result.validation.errors[0]?.field).toBe('slug')
     expect(git.readFile).not.toHaveBeenCalled()
-    expect(git.commitFiles).not.toHaveBeenCalled()
+    expect(git.applyPlan).not.toHaveBeenCalled()
   })
 
   it('deletes merged content branches after a successful two-step merge', async () => {
@@ -75,11 +94,8 @@ describe('content engine', () => {
 
     const result = await engine.mergeBranch('cr/content/faq/en/1234567890-abcd')
 
-    // Step 1: feature → contentrain
     expect(git.mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd', 'contentrain')
-    // Feature branch deleted after step 1
     expect(git.deleteBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
-    // Step 2: contentrain → main
     expect(git.mergeBranch).toHaveBeenCalledWith('contentrain', 'main')
     expect(result).toEqual({
       merged: true,
@@ -92,9 +108,7 @@ describe('content engine', () => {
     const git = createGitProvider({
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
       mergeBranch: vi.fn()
-        // Step 1 succeeds: feature → contentrain
         .mockResolvedValueOnce({ merged: true, sha: 'step1-sha', pullRequestUrl: null })
-        // Step 2 fails: contentrain → main (branch protection)
         .mockRejectedValueOnce(new Error('protected branch: not allowed')),
       deleteBranch: vi.fn().mockResolvedValue(undefined),
       createPR: vi.fn().mockResolvedValue({
@@ -106,11 +120,8 @@ describe('content engine', () => {
 
     const result = await engine.mergeBranch('cr/content/faq/en/1234567890-abcd')
 
-    // Step 1: feature → contentrain
     expect(git.mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd', 'contentrain')
-    // Step 2: contentrain → main (fails, fallback to PR)
     expect(git.mergeBranch).toHaveBeenCalledWith('contentrain', 'main')
-    // PR created from contentrain → main
     expect(git.createPR).toHaveBeenCalledWith(
       'contentrain',
       'main',
@@ -125,24 +136,18 @@ describe('content engine', () => {
   })
 
   it('deletes collection entries and their meta records together', async () => {
-    const commitFiles = vi.fn().mockResolvedValue({
-      sha: 'commit-sha',
-      message: 'delete',
-      author: { name: 'bot', email: 'bot@example.com' },
-      timestamp: '2026-03-25T00:00:00.000Z',
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const modelJson = JSON.stringify({
+      id: 'faq',
+      name: 'FAQ',
+      kind: 'collection',
+      domain: 'marketing',
+      i18n: true,
+      fields: {},
     })
     const git = createGitProvider({
       readFile: vi.fn(async (path: string) => {
-        if (path.endsWith('/faq.json')) {
-          return JSON.stringify({
-            id: 'faq',
-            name: 'FAQ',
-            kind: 'collection',
-            domain: 'marketing',
-            i18n: true,
-            fields: {},
-          })
-        }
+        if (path.endsWith('/faq.json')) return modelJson
         if (path.endsWith('/marketing/faq/en.json')) {
           return JSON.stringify({
             keep: { title: 'Keep' },
@@ -155,9 +160,6 @@ describe('content engine', () => {
             drop: { status: 'draft' },
           })
         }
-        if (path.endsWith('/context.json')) {
-          return JSON.stringify({ stats: { entries: 2 } })
-        }
         if (path.endsWith('/config.json')) {
           return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
         }
@@ -166,38 +168,38 @@ describe('content engine', () => {
       listDirectory: vi.fn().mockResolvedValue(['faq.json']),
       listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
-      createBranch: vi.fn().mockResolvedValue(undefined),
-      commitFiles,
+      applyPlan,
       getBranchDiff: vi.fn().mockResolvedValue([]),
     })
     const engine = createContentEngine({ git, contentRoot: '' })
 
     await engine.deleteContent('faq', 'en', ['drop'], 'user@example.com')
 
-    expect(commitFiles).toHaveBeenCalledWith(
-      expect.stringMatching(/^cr\/content\/faq\/en\//),
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: '.contentrain/content/marketing/faq/en.json',
-          content: '{\n  "keep": {\n    "title": "Keep"\n  }\n}\n',
-        }),
-        expect.objectContaining({
-          path: '.contentrain/meta/faq/en.json',
-          content: '{\n  "keep": {\n    "status": "published"\n  }\n}\n',
-        }),
-      ]),
-      expect.stringContaining('contentrain: delete 1 entries from faq [en]'),
-      expect.any(Object),
+    expect(applyPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: expect.stringMatching(/^cr\/content\/faq\/en\//),
+        message: expect.stringContaining('contentrain: delete 1 entries from faq [en]'),
+        base: 'contentrain',
+        changes: expect.arrayContaining([
+          expect.objectContaining({
+            path: '.contentrain/content/marketing/faq/en.json',
+            content: expect.stringContaining('"keep"'),
+          }),
+          expect.objectContaining({
+            path: '.contentrain/meta/faq/en.json',
+          }),
+        ]),
+      }),
     )
+
+    // The dropped entry must not appear in the remaining content file.
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    const contentChange = call.changes.find(c => c.path === '.contentrain/content/marketing/faq/en.json')
+    expect(contentChange?.content).not.toMatch(/"drop"/)
   })
 
   it('updates entry status in meta without touching content files', async () => {
-    const commitFiles = vi.fn().mockResolvedValue({
-      sha: 'commit-sha',
-      message: 'status',
-      author: { name: 'bot', email: 'bot@example.com' },
-      timestamp: '2026-03-25T00:00:00.000Z',
-    })
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({
       readFile: vi.fn(async (path: string) => {
         if (path.endsWith('/faq.json')) {
@@ -215,29 +217,34 @@ describe('content engine', () => {
             keep: { status: 'draft' },
           })
         }
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
+        }
         throw new Error(`Unexpected path: ${path}`)
       }),
       listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      listDirectory: vi.fn().mockResolvedValue(['faq.json']),
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
-      createBranch: vi.fn().mockResolvedValue(undefined),
-      commitFiles,
+      applyPlan,
       getBranchDiff: vi.fn().mockResolvedValue([]),
     })
     const engine = createContentEngine({ git, contentRoot: '' })
 
     await engine.updateEntryStatus('faq', 'en', ['keep', 'new-entry'], 'published', 'user@example.com')
 
-    expect(commitFiles).toHaveBeenCalledWith(
-      expect.stringMatching(/^cr\/content\/faq\/en\//),
-      [
-        {
-          path: '.contentrain/meta/faq/en.json',
-          content: '{\n  "keep": {\n    "status": "published",\n    "updated_by": "user@example.com"\n  },\n  "new-entry": {\n    "status": "published",\n    "updated_by": "user@example.com"\n  }\n}\n',
-        },
-      ],
-      expect.stringContaining('contentrain: published 2 entries in faq'),
-      expect.any(Object),
+    expect(applyPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: expect.stringMatching(/^cr\/content\/faq\/en\//),
+        message: expect.stringContaining('contentrain: published 2 entries in faq'),
+        base: 'contentrain',
+      }),
     )
+
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    const metaChange = call.changes.find(c => c.path === '.contentrain/meta/faq/en.json')
+    expect(metaChange?.content).toContain('"status": "published"')
+    expect(metaChange?.content).toContain('"updated_by": "user@example.com"')
+    expect(metaChange?.content).toContain('"new-entry"')
   })
 
   it('rejects locale copy on models without i18n support', async () => {
@@ -259,18 +266,10 @@ describe('content engine', () => {
     expect(result.validation.errors[0]?.message).toBe('Model does not support i18n')
   })
 
-  it('saves model definitions and tracks new model count in context', async () => {
-    const commitFiles = vi.fn().mockResolvedValue({
-      sha: 'commit-sha',
-      message: 'save model',
-      author: { name: 'bot', email: 'bot@example.com' },
-      timestamp: '2026-03-25T00:00:00.000Z',
-    })
+  it('saves model definitions and emits context change', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({
       readFile: vi.fn(async (path: string) => {
-        if (path.endsWith('/context.json')) {
-          return JSON.stringify({ stats: { entries: 0 } })
-        }
         if (path.endsWith('/config.json')) {
           return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
         }
@@ -279,8 +278,7 @@ describe('content engine', () => {
       listDirectory: vi.fn().mockResolvedValue(['faq.json']),
       listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
-      createBranch: vi.fn().mockResolvedValue(undefined),
-      commitFiles,
+      applyPlan,
       getBranchDiff: vi.fn().mockResolvedValue([]),
     })
     const engine = createContentEngine({ git, contentRoot: '' })
@@ -292,36 +290,29 @@ describe('content engine', () => {
       domain: 'marketing',
       i18n: true,
       fields: {
-        name: {
-          type: 'text',
-          label: 'Name',
-        },
+        name: { type: 'text' },
       },
     } as never, 'user@example.com')
 
-    expect(commitFiles).toHaveBeenCalledWith(
-      expect.stringMatching(/^cr\/model\/authors\//),
-      expect.arrayContaining([
-        expect.objectContaining({ path: '.contentrain/models/authors.json' }),
-        expect.objectContaining({ path: '.contentrain/context.json' }),
-      ]),
-      expect.stringContaining('contentrain: save model authors'),
-      expect.any(Object),
+    expect(applyPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: expect.stringMatching(/^cr\/model\/authors\//),
+        message: expect.stringContaining('contentrain: save model authors'),
+        base: 'contentrain',
+        changes: expect.arrayContaining([
+          expect.objectContaining({ path: '.contentrain/models/authors.json' }),
+          expect.objectContaining({ path: '.contentrain/context.json' }),
+        ]),
+      }),
     )
   })
 
   it('initializes a project with config, models, content, and meta files', async () => {
-    const commitFiles = vi.fn().mockResolvedValue({
-      sha: 'commit-sha',
-      message: 'init',
-      author: { name: 'bot', email: 'bot@example.com' },
-      timestamp: '2026-03-25T00:00:00.000Z',
-    })
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({
       listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
-      createBranch: vi.fn().mockResolvedValue(undefined),
-      commitFiles,
+      applyPlan,
       getBranchDiff: vi.fn().mockResolvedValue([]),
     })
     const engine = createContentEngine({ git, contentRoot: 'apps/web' })
@@ -343,20 +334,22 @@ describe('content engine', () => {
       'user@example.com',
     )
 
-    expect(commitFiles).toHaveBeenCalledWith(
-      expect.stringMatching(/^cr\/new\/init\//),
-      expect.arrayContaining([
-        expect.objectContaining({ path: 'apps/web/.contentrain/config.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/context.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/vocabulary.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/models/faq.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/content/marketing/faq/en.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/content/marketing/faq/tr.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/meta/faq/en.json' }),
-        expect.objectContaining({ path: 'apps/web/.contentrain/meta/faq/tr.json' }),
-      ]),
-      expect.stringContaining('contentrain: initialize project'),
-      expect.any(Object),
+    expect(applyPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: expect.stringMatching(/^cr\/new\/init\//),
+        message: expect.stringContaining('contentrain: initialize project'),
+        base: 'contentrain',
+        changes: expect.arrayContaining([
+          expect.objectContaining({ path: 'apps/web/.contentrain/config.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/context.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/vocabulary.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/models/faq.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/content/marketing/faq/en.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/content/marketing/faq/tr.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/meta/faq/en.json' }),
+          expect.objectContaining({ path: 'apps/web/.contentrain/meta/faq/tr.json' }),
+        ]),
+      }),
     )
   })
 })

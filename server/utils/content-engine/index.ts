@@ -1,7 +1,6 @@
 import type { ContentEngineContext, EngineInternalContext } from './types'
 import { createBranchGuard, listContentBranches, mergeBranch, rejectBranch } from './branch-ops'
 import { deleteContent } from './delete-content'
-import { getProjectInfo } from './helpers'
 import { initProject } from './init-project'
 import { saveContent } from './save-content'
 import { saveDocument } from './save-document'
@@ -11,26 +10,27 @@ import { copyLocale, updateEntryStatus } from './update-status'
 /**
  * Content Engine — Studio's write path for content operations.
  *
- * Orchestrates: validate -> serialize -> branch -> commit -> diff
- * Uses @contentrain/types for validation and serialization contracts.
- * Uses GitProvider for all Git operations (no disk, no clone).
+ * Thin orchestration layer over `@contentrain/mcp/core/ops`. Responsibilities:
  *
- * Not MCP — implements the same standard independently.
+ * - Validate inputs (Studio-owned; unified with MCP's validator in Faz S3).
+ * - Maintain the `contentrain` tracking branch invariant.
+ * - Run branch-health gates before creating new `cr/*` feature branches.
+ * - Fuse MCP's per-op FileChange plan with Studio's meta + context
+ *   overrides and commit atomically via `provider.applyPlan`.
+ * - Two-step merge (`cr/*` → `contentrain` → default branch) with PR
+ *   fallback on protected branches — Studio-specific lifecycle.
  */
 export function createContentEngine(ctx: ContentEngineContext) {
   const { git, contentRoot, projectId } = ctx
   const pathCtx = { contentRoot }
 
-  // Build internal context shared by all operations
   const internal: EngineInternalContext = {
     git,
     pathCtx,
     projectId,
-    ensureContentBranch: () => Promise.resolve(), // replaced below
-    getProjectInfo: fallbackLocale => getProjectInfo(internal, fallbackLocale),
+    ensureContentBranch: () => Promise.resolve(),
   }
 
-  // Wire up branch guard (has internal cache flag)
   internal.ensureContentBranch = createBranchGuard(internal)
 
   return {

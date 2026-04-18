@@ -1,6 +1,7 @@
-import type { ContentrainConfig } from '@contentrain/types'
-import type { EngineInternalContext } from './types'
-import { CONTENT_BRANCH } from './types'
+import { canonicalStringify, CONTENTRAIN_BRANCH } from '@contentrain/types'
+import type { EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import type { ContentEntry } from '@contentrain/mcp/core/content-manager'
+import type { EngineInternalContext, GitProvider } from './types'
 import { checkBranchHealth, getHealthStatus } from '../branch-health'
 
 /**
@@ -19,11 +20,13 @@ export function generateBranchName(scope: string, target: string, locale?: strin
 }
 
 /**
- * Create a cr/* feature branch with branch health enforcement.
+ * Pick a `cr/*` feature-branch name with the branch-health guard in
+ * front. Blocks above the 80-branch threshold, warns above 50.
  *
- * Checks cached health status (or fetches fresh if stale) and blocks
- * new branch creation when 80+ unmerged branches exist (git-architecture.md §8.2).
- * Returns a warning message when 50+ unmerged branches exist.
+ * Note: as of Faz S2 this helper no longer calls `createBranch` up
+ * front — `provider.applyPlan({ branch, base })` creates the branch
+ * atomically together with the first commit. The name is kept for
+ * backward compatibility with existing Studio callers and tests.
  */
 export async function createFeatureBranch(
   ctx: EngineInternalContext,
@@ -31,7 +34,6 @@ export async function createFeatureBranch(
   target: string,
   locale?: string,
 ): Promise<{ branchName: string, healthWarning?: string }> {
-  // Check branch health before creating a new branch
   if (ctx.projectId) {
     const cached = await getHealthStatus(ctx.projectId)
     const health = cached ?? await checkBranchHealth(ctx.git, ctx.projectId)
@@ -43,21 +45,15 @@ export async function createFeatureBranch(
       })
     }
 
-    const branchName = generateBranchName(scope, target, locale)
-    await ctx.git.createBranch(branchName, CONTENT_BRANCH)
-
     return {
-      branchName,
+      branchName: generateBranchName(scope, target, locale),
       healthWarning: health.status === 'warning'
         ? `Warning: ${health.unmergedCount} unmerged branches. Review and merge pending branches.`
         : undefined,
     }
   }
 
-  // No projectId — skip health check (backward compatibility)
-  const branchName = generateBranchName(scope, target, locale)
-  await ctx.git.createBranch(branchName, CONTENT_BRANCH)
-  return { branchName }
+  return { branchName: generateBranchName(scope, target, locale) }
 }
 
 /**
@@ -88,68 +84,106 @@ export function toObjectMap(data: unknown): Record<string, unknown> {
 }
 
 /**
- * Build updated context.json content for a write operation.
- * Reads existing context, merges with new operation data.
+ * Wrap a `RepoProvider`'s reader surface so every read defaults to the
+ * `contentrain` tracking branch when no explicit ref is given.
+ *
+ * MCP's core/ops helpers (planContentSave, buildContextChange, …) call
+ * `reader.readFile(path)` without a ref; without this wrapper, remote
+ * providers would resolve against the repository's default branch
+ * (`main` / `master` / …) — which is downstream of the content SSOT.
  */
-export async function buildContextUpdate(
-  ctx: EngineInternalContext,
-  contextPath: string,
-  operation: { tool: string, model: string, locale: string, entries?: string[] },
-  modelCount: number,
-  locales: string[],
-  ref?: string,
-): Promise<string> {
-  let existing: Record<string, unknown> = {}
-  try {
-    existing = JSON.parse(await ctx.git.readFile(contextPath, ref)) as Record<string, unknown>
+export function pinReaderToContentrain(git: GitProvider): RepoReader {
+  return {
+    readFile: (path, ref) => git.readFile(path, ref ?? CONTENTRAIN_BRANCH),
+    listDirectory: (path, ref) => git.listDirectory(path, ref ?? CONTENTRAIN_BRANCH),
+    fileExists: (path, ref) => git.fileExists(path, ref ?? CONTENTRAIN_BRANCH),
   }
-  catch { /* no existing context */ }
-
-  const now = new Date().toISOString()
-  const existingStats = existing.stats as { entries?: number } | undefined
-
-  const updated = {
-    version: '1',
-    lastOperation: {
-      tool: operation.tool,
-      model: operation.model,
-      locale: operation.locale,
-      entries: operation.entries,
-      timestamp: now,
-      source: 'mcp-studio',
-    },
-    stats: {
-      models: modelCount,
-      entries: existingStats?.entries ?? 0,
-      locales,
-      lastSync: now,
-    },
-  }
-
-  return serializeCanonical(updated)
 }
 
 /**
- * Helper: get current model count + supported locales for context.json.
- * Used by ensureContentBranch setup and exposed via EngineInternalContext.
+ * Override the meta FileChange produced by `planContentSave` with
+ * Studio's status semantics:
+ *
+ * - `source: 'agent'` (same as MCP)
+ * - `updated_by: userEmail` (MCP would set `'contentrain-mcp'`)
+ * - `status`: existing status preserved when already set, otherwise
+ *   `'published'` when `autoPublish`, else `'draft'`
+ *
+ * MCP's `defaultMeta` always resets status to `'draft'`; Studio needs to
+ * honour in-progress review states and the workspace's auto-publish
+ * workflow. The existing meta is read from `contentrain` (via the pinned
+ * reader) so the override is applied relative to post-commit state.
  */
-export async function getProjectInfo(
-  ctx: EngineInternalContext,
-  fallbackLocale: string,
-): Promise<{ modelCount: number, locales: string[] }> {
-  let modelCount = 0
-  try {
-    const files = await ctx.git.listDirectory(resolveModelsDir(ctx.pathCtx), CONTENT_BRANCH)
-    modelCount = files.filter(f => f.endsWith('.json')).length
-  }
-  catch { /* no models dir */ }
+export async function applyStudioMetaOverrides(args: {
+  planChanges: FileChange[]
+  metaPath: string
+  model: ModelDefinition
+  touchedIds: string[]
+  reader: RepoReader
+  autoPublish: boolean
+  userEmail: string
+}): Promise<FileChange[]> {
+  const { planChanges, metaPath, model, touchedIds, reader, autoPublish, userEmail } = args
 
-  let locales = [fallbackLocale]
+  let existingMeta: Record<string, unknown> = {}
   try {
-    const cfg = JSON.parse(await ctx.git.readFile(resolveConfigPath(ctx.pathCtx), CONTENT_BRANCH)) as ContentrainConfig
-    locales = cfg.locales?.supported ?? [fallbackLocale]
+    existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
   }
-  catch { /* no config */ }
+  catch { /* no existing meta */ }
 
-  return { modelCount, locales }
+  let updatedMeta: unknown
+  if (model.kind === 'collection') {
+    const metaMap = { ...existingMeta } as Record<string, EntryMeta>
+    for (const entryId of touchedIds) {
+      const existingStatus = metaMap[entryId]?.status
+      metaMap[entryId] = {
+        ...(metaMap[entryId] ?? {}),
+        status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
+        source: 'agent',
+        updated_by: userEmail,
+      } as EntryMeta
+    }
+    updatedMeta = metaMap
+  }
+  else {
+    const existingStatus = (existingMeta as unknown as EntryMeta).status
+    updatedMeta = {
+      ...existingMeta,
+      status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
+      source: 'agent' as const,
+      updated_by: userEmail,
+    }
+  }
+
+  const studioMetaChange: FileChange = {
+    path: metaPath,
+    content: canonicalStringify(updatedMeta),
+  }
+
+  return planChanges.map(c => c.path === metaPath ? studioMetaChange : c)
+}
+
+/**
+ * Convert Studio's `data: Record<string, unknown>` input shape into
+ * the `ContentEntry[]` shape that MCP's `planContentSave` consumes.
+ *
+ * - Collection: each entry becomes its own `ContentEntry`
+ *   (keyed by id). Array input is normalised first via `toObjectMap`.
+ * - Singleton / dictionary: the data goes through as a single entry.
+ */
+export function shapeEntriesForSave(
+  model: ModelDefinition,
+  data: Record<string, unknown>,
+  locale: string,
+): ContentEntry[] {
+  if (model.kind === 'collection') {
+    const map = toObjectMap(data)
+    return Object.entries(map).map(([id, fields]) => ({
+      id,
+      locale,
+      data: fields as Record<string, unknown>,
+    }))
+  }
+
+  return [{ locale, data }]
 }

@@ -1,12 +1,20 @@
-import type { EntryMeta, ModelDefinition } from '@contentrain/types'
-import { validateSlug } from '@contentrain/types'
+import type { ContentrainConfig, FileChange, ModelDefinition, Vocabulary } from '@contentrain/types'
+import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
+import { buildContextChange } from '@contentrain/mcp/core/context'
+import { planContentSave } from '@contentrain/mcp/core/ops'
+import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, createFeatureBranch } from './helpers'
+import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
- * Save a document (markdown with frontmatter).
- * Creates or updates a markdown file at the document path.
+ * Save a document entry (markdown with frontmatter).
+ *
+ * Delegates markdown serialization + path resolution to
+ * `planContentSave` (document kind); Studio overrides meta with its
+ * own status + user-email logic and wires `OverlayReader` around the
+ * pending changes so the committed `context.json` reflects post-commit
+ * stats.
  */
 export async function saveDocument(
   ctx: EngineInternalContext,
@@ -18,7 +26,6 @@ export async function saveDocument(
   userEmail: string,
   options?: { autoPublish?: boolean },
 ): Promise<WriteResult> {
-  // Validate slug format (lowercase alphanumeric + hyphens, no path traversal)
   const safeSlug = slug.toLowerCase()
   const slugError = validateSlug(safeSlug)
   if (slugError) {
@@ -32,10 +39,11 @@ export async function saveDocument(
 
   await ctx.ensureContentBranch()
 
-  const modelPath = resolveModelPath(ctx.pathCtx, modelId)
-  const modelDef = JSON.parse(await ctx.git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
+  const reader = pinReaderToContentrain(ctx.git)
 
-  // Validate frontmatter against model fields
+  const modelPath = resolveModelPath(ctx.pathCtx, modelId)
+  const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
+
   const fields = modelDef.fields ?? {}
   const validation = validateContent(frontmatter, fields, modelId, locale, safeSlug)
   if (!validation.valid) {
@@ -47,44 +55,74 @@ export async function saveDocument(
     }
   }
 
-  // Resolve document path (uses sanitized slug)
-  const docPath = resolveContentPath(ctx.pathCtx, modelDef, locale, safeSlug)
-  const serialized = serializeMarkdownFrontmatter({ ...frontmatter, slug: safeSlug }, body)
-
-  // Meta
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, safeSlug)
-  let existingMeta: Record<string, unknown> = {}
+  const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
+  let vocabulary: Vocabulary | null = null
   try {
-    existingMeta = JSON.parse(await ctx.git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, unknown>
+    vocabulary = JSON.parse(await reader.readFile(resolveVocabularyPath(ctx.pathCtx))) as Vocabulary
   }
-  catch { /* no existing meta */ }
-  const docDefaultStatus = options?.autoPublish ? 'published' : 'draft'
-  const existingDocStatus = (existingMeta as unknown as EntryMeta).status
-  const updatedMeta = {
-    ...existingMeta,
-    status: options?.autoPublish ? 'published' : (existingDocStatus ?? docDefaultStatus),
-    source: 'agent' as const,
-    updated_by: userEmail,
+  catch { /* no vocabulary */ }
+
+  // `planContentSave` for document kind expects frontmatter + body folded
+  // into `entry.data` under a `body` key. It strips `body` out before
+  // serializing frontmatter, so the final markdown contains frontmatter
+  // fields (minus `body`) + the body content.
+  const entryData = { ...frontmatter, slug: safeSlug, body }
+
+  let plan
+  try {
+    plan = await planContentSave(reader, {
+      model: modelDef,
+      entries: [{ slug: safeSlug, locale, data: entryData }],
+      config,
+      vocabulary,
+    })
+  }
+  catch (err) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      diff: [],
+      validation: {
+        valid: false,
+        errors: [{
+          field: '',
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error' as const,
+        }],
+      },
+    }
   }
 
-  // Context.json
-  const contextPath = resolveContextPath(ctx.pathCtx)
-  const projectInfo = await ctx.getProjectInfo(locale)
-  const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'save_content', model: modelId, locale, entries: [slug] }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
+  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, safeSlug)
+  const patchedChanges = await applyStudioMetaOverrides({
+    planChanges: plan.changes,
+    metaPath,
+    model: modelDef,
+    touchedIds: [],
+    reader,
+    autoPublish: options?.autoPublish ?? false,
+    userEmail,
+  })
+
+  const overlay = new OverlayReader(reader, patchedChanges)
+  const contextChange = await buildContextChange(
+    overlay,
+    { tool: 'save_content', model: modelId, locale, entries: [safeSlug] },
+    'mcp-studio',
+  )
+
+  const allChanges: FileChange[] = [...patchedChanges, contextChange]
+    .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
-  const message = `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`
-  const commit = await ctx.git.commitFiles(
-    branchName,
-    [
-      { path: docPath, content: serialized },
-      { path: metaPath, content: serializeCanonical(updatedMeta) },
-      { path: contextPath, content: contextJson },
-    ],
-    message,
-    BOT_AUTHOR,
-  )
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: allChanges,
+    message: `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
+    author: BOT_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
   return { branch: branchName, commit, diff, validation }

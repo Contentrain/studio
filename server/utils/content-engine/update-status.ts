@@ -1,11 +1,15 @@
-import type { EntryMeta, ModelDefinition } from '@contentrain/types'
+import type { EntryMeta, FileChange, ModelDefinition } from '@contentrain/types'
+import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
+import { buildContextChange } from '@contentrain/mcp/core/context'
+import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, createFeatureBranch } from './helpers'
+import { pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
- * Update entry status (publish/unpublish/archive).
- * Only modifies meta, not content.
+ * Update entry status (draft / published / archived). Meta-only change —
+ * no MCP plan helper covers this; Studio builds the `FileChange` itself
+ * and commits atomically via `applyPlan`.
  */
 export async function updateEntryStatus(
   ctx: EngineInternalContext,
@@ -17,13 +21,15 @@ export async function updateEntryStatus(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
+  const reader = pinReaderToContentrain(ctx.git)
+
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
-  const modelDef = JSON.parse(await ctx.git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
+  const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
   const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale)
 
   let existingMeta: Record<string, EntryMeta> = {}
   try {
-    existingMeta = JSON.parse(await ctx.git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, EntryMeta>
+    existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, EntryMeta>
   }
   catch { /* no meta */ }
 
@@ -35,22 +41,35 @@ export async function updateEntryStatus(
     } as EntryMeta
   }
 
+  const metaChange: FileChange = { path: metaPath, content: canonicalStringify(existingMeta) }
+
+  const overlay = new OverlayReader(reader, [metaChange])
+  const contextChange = await buildContextChange(
+    overlay,
+    { tool: 'update_status', model: modelId, locale, entries: entryIds },
+    'mcp-studio',
+  )
+
+  const allChanges: FileChange[] = [metaChange, contextChange]
+    .toSorted((a, b) => a.path.localeCompare(b.path))
+
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
-  const commit = await ctx.git.commitFiles(
-    branchName,
-    [{ path: metaPath, content: serializeCanonical(existingMeta) }],
-    `contentrain: ${status} ${entryIds.length} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
-    BOT_AUTHOR,
-  )
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: allChanges,
+    message: `contentrain: ${status} ${entryIds.length} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
+    author: BOT_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
   return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
 }
 
 /**
- * Copy content from one locale to another for a model.
- * Does NOT overwrite existing target content.
+ * Copy content from one locale to another. Does NOT overwrite existing
+ * target content. Studio-specific — no MCP plan helper.
  */
 export async function copyLocale(
   ctx: EngineInternalContext,
@@ -61,8 +80,10 @@ export async function copyLocale(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
+  const reader = pinReaderToContentrain(ctx.git)
+
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
-  const modelDef = JSON.parse(await ctx.git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
+  const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
 
   if (!modelDef.i18n) {
     return {
@@ -73,11 +94,10 @@ export async function copyLocale(
     }
   }
 
-  // Read source content
   const sourcePath = resolveContentPath(ctx.pathCtx, modelDef, fromLocale)
   let sourceContent: string
   try {
-    sourceContent = await ctx.git.readFile(sourcePath, CONTENT_BRANCH)
+    sourceContent = await reader.readFile(sourcePath)
   }
   catch {
     return {
@@ -88,10 +108,9 @@ export async function copyLocale(
     }
   }
 
-  // Check if target already exists
   const targetPath = resolveContentPath(ctx.pathCtx, modelDef, toLocale)
   try {
-    const existing = await ctx.git.readFile(targetPath, CONTENT_BRANCH)
+    const existing = await reader.readFile(targetPath)
     if (existing && existing.trim().length > 2) {
       return {
         branch: '',
@@ -103,33 +122,38 @@ export async function copyLocale(
   }
   catch { /* target doesn't exist — good */ }
 
-  // Copy source meta too
   const sourceMetaPath = resolveMetaPath(ctx.pathCtx, modelDef, fromLocale)
   let metaContent = '{}\n'
   try {
-    metaContent = await ctx.git.readFile(sourceMetaPath, CONTENT_BRANCH)
+    metaContent = await reader.readFile(sourceMetaPath)
   }
   catch { /* no meta */ }
   const targetMetaPath = resolveMetaPath(ctx.pathCtx, modelDef, toLocale)
 
-  // Context update
-  const contextPath = resolveContextPath(ctx.pathCtx)
-  const projectInfo = await ctx.getProjectInfo(toLocale)
-  const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'copy_locale', model: modelId, locale: toLocale }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
+  const copyChanges: FileChange[] = [
+    { path: targetPath, content: sourceContent },
+    { path: targetMetaPath, content: metaContent },
+  ]
+
+  const overlay = new OverlayReader(reader, copyChanges)
+  const contextChange = await buildContextChange(
+    overlay,
+    { tool: 'copy_locale', model: modelId, locale: toLocale },
+    'mcp-studio',
+  )
+
+  const allChanges: FileChange[] = [...copyChanges, contextChange]
+    .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId)
 
-  const message = `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`
-  const commit = await ctx.git.commitFiles(
-    branchName,
-    [
-      { path: targetPath, content: sourceContent },
-      { path: targetMetaPath, content: metaContent },
-      { path: contextPath, content: contextJson },
-    ],
-    message,
-    BOT_AUTHOR,
-  )
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: allChanges,
+    message: `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`,
+    author: BOT_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
   return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
