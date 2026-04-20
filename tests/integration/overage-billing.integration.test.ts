@@ -26,6 +26,7 @@ describe('overage billing engine', () => {
       getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(overrides.apiUsage ?? 0),
       countMonthlySubmissions: vi.fn().mockResolvedValue(overrides.formSubmissions ?? 0),
       getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(overrides.cdnBandwidth ?? 0),
+      getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       hasOverageBeenBilled,
       createOverageBillingEntry,
       updateWorkspace,
@@ -44,8 +45,8 @@ describe('overage billing engine', () => {
 
   describe('invoice.creating webhook triggers overage billing', () => {
     it('calculates and bills overage on invoice.creating event', async () => {
-      // Setup: AI overage enabled, 550 messages used on pro plan (limit 500)
-      mockProviders({ aiUsage: 550, overageSettings: { ai_messages: true } })
+      // Setup: AI overage enabled, 1550 messages used on pro plan (limit 1500)
+      mockProviders({ aiUsage: 1550, overageSettings: { ai_messages: true } })
 
       vi.stubGlobal('usePaymentProvider', vi.fn().mockReturnValue({
         handleWebhook: vi.fn().mockResolvedValue({
@@ -135,7 +136,7 @@ describe('overage billing engine', () => {
     it('bills multiple categories when overages exist', async () => {
       mockProviders({
         plan: 'starter',
-        aiUsage: 70, // limit 50 → 20 overage
+        aiUsage: 170, // limit 150 → 20 overage
         formSubmissions: 150, // limit 100 → 50 overage
         overageSettings: { ai_messages: true, form_submissions: true },
       })

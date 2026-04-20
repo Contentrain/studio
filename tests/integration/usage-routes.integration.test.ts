@@ -29,42 +29,45 @@ describe('usage API', () => {
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(10),
         countMonthlySubmissions: vi.fn().mockResolvedValue(80),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(500 * 1024 * 1024), // 500 MB
+        getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default
       const result = await handler({} as never)
 
       expect(result.billingPeriod).toMatch(/^\d{4}-\d{2}$/)
-      expect(result.categories).toHaveLength(5)
+      expect(result.categories).toHaveLength(6)
 
-      // AI Messages: 45/500 = 9%
+      // AI Messages: 45/1500 = 3%
       const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
       expect(ai).toMatchObject({
         key: 'ai_messages',
         current: 45,
-        limit: 500,
+        limit: 1500,
         overageEnabled: true,
         overageUnits: 0,
-        percentage: 9,
+        percentage: 3,
       })
 
-      // Form submissions: 80/1000 = 8%
+      // Form submissions: 80/3000 ≈ 3%
       const forms = result.categories.find((c: { key: string }) => c.key === 'form_submissions')
       expect(forms).toMatchObject({
         key: 'form_submissions',
         current: 80,
-        limit: 1000,
-        percentage: 8,
+        limit: 3000,
       })
+      expect(forms.percentage).toBeGreaterThanOrEqual(2)
+      expect(forms.percentage).toBeLessThanOrEqual(3)
 
-      // Media storage: 2GB/5GB = 40%
+      // Media storage: 2GB/15GB ≈ 13%
       const storage = result.categories.find((c: { key: string }) => c.key === 'media_storage')
       expect(storage).toMatchObject({
         key: 'media_storage',
         current: 2,
-        limit: 5,
-        percentage: 40,
+        limit: 15,
       })
+      expect(storage.percentage).toBeGreaterThanOrEqual(13)
+      expect(storage.percentage).toBeLessThanOrEqual(14)
     })
 
     it('calculates overage units when usage exceeds limit', async () => {
@@ -75,10 +78,11 @@ describe('usage API', () => {
           overage_settings: { ai_messages: true },
           media_storage_bytes: 0,
         }),
-        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(75), // 75 > 50 limit
+        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(175), // 175 > 150 starter limit
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
+        getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default
@@ -86,13 +90,14 @@ describe('usage API', () => {
 
       const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
       expect(ai).toMatchObject({
-        current: 75,
-        limit: 50,
+        current: 175,
+        limit: 150,
         overageUnits: 25,
         overageUnitPrice: 0.03,
         overageAmount: 0.75, // 25 * $0.03
-        percentage: 150, // 75/50 * 100
       })
+      expect(ai.percentage).toBeGreaterThanOrEqual(116)
+      expect(ai.percentage).toBeLessThanOrEqual(117)
 
       expect(result.totalOverageAmount).toBe(0.75)
     })
@@ -109,6 +114,7 @@ describe('usage API', () => {
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
+        getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default
@@ -134,6 +140,7 @@ describe('usage API', () => {
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
+        getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default

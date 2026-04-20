@@ -154,7 +154,8 @@ export default defineEventHandler(async (event) => {
   // === STATE MACHINE ===
   let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
   try {
-    pendingBranches = await git.listBranches('cr/')
+    const raw = await git.listBranches('cr/')
+    pendingBranches = raw.map(b => ({ name: b.name, sha: b.sha, protected: b.protected ?? false }))
   }
   catch { /* no branches */ }
 

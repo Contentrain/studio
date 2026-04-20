@@ -417,7 +417,7 @@ export async function executeToolWithAutoMerge(
         }
 
         // Create content entry in Git from submission data
-        const { generateEntryId } = await import('~~/server/utils/content-serialization')
+        const { generateEntryId } = await import('@contentrain/types')
         const subModelId = sub.model_id as string
         const subData = sub.data as Record<string, unknown>
         const entryId = generateEntryId()

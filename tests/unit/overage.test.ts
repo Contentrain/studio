@@ -3,10 +3,11 @@ import { getEffectiveLimit, isOverageEnabled, calculateOverageUnits } from '../.
 import { OVERAGE_PRICING, OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
 
 describe('OVERAGE_PRICING constant', () => {
-  it('contains all five metered categories', () => {
+  it('contains every metered category', () => {
     expect(Object.keys(OVERAGE_PRICING)).toEqual([
       'ai.messages_per_month',
       'api.messages_per_month',
+      'api.mcp_calls_per_month',
       'cdn.bandwidth_gb',
       'forms.submissions_per_month',
       'media.storage_gb',

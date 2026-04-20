@@ -12,7 +12,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = use
 const { isOwnerOrAdmin } = useWorkspaceRole()
 const { t } = useContent()
 
-const validTabs = ['overview', 'members', 'billing', 'github', 'ai-keys'] as const
+const validTabs = ['overview', 'members', 'billing', 'github', 'ai-keys', 'mcp-cloud'] as const
 const tabFromQuery = computed(() => {
   const tab = route.query.tab as string | undefined
   return tab && (validTabs as readonly string[]).includes(tab) ? tab : null
@@ -83,6 +83,9 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger value="ai-keys" :class="tabTriggerClass">
           {{ t('settings.ai_tab') }}
         </TabsTrigger>
+        <TabsTrigger value="mcp-cloud" :class="tabTriggerClass">
+          {{ t('settings.mcp_cloud_tab') }}
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview" class="mt-6">
@@ -103,6 +106,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
 
       <TabsContent value="ai-keys" class="mt-6">
         <OrganismsWorkspaceAIKeysPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
+      </TabsContent>
+
+      <TabsContent value="mcp-cloud" class="mt-6">
+        <OrganismsWorkspaceMcpCloudPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
     </TabsRoot>
   </div>

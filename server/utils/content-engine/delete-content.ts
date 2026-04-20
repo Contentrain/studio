@@ -1,10 +1,20 @@
-import type { ModelDefinition } from '@contentrain/types'
+import type { FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
+import { buildContextChange } from '@contentrain/mcp/core/context'
+import { planContentDelete } from '@contentrain/mcp/core/ops'
+import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, createFeatureBranch, toObjectMap } from './helpers'
+import { pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
  * Delete content entries from a collection.
+ *
+ * `planContentDelete` handles one entry id per call. Studio's public
+ * API accepts a batch, so we fan out and chain `OverlayReader`s:
+ * every subsequent plan sees the post-delete state of the prior plan,
+ * which keeps the running content-map + meta-map correct even when
+ * multiple deletions collapse into one file.
  */
 export async function deleteContent(
   ctx: EngineInternalContext,
@@ -15,57 +25,45 @@ export async function deleteContent(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
+  const reader = pinReaderToContentrain(ctx.git)
+
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
-  const modelDef = JSON.parse(await ctx.git.readFile(modelPath, CONTENT_BRANCH)) as ModelDefinition
-  const contentPath = resolveContentPath(ctx.pathCtx, modelDef, locale)
+  const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
 
-  // Read existing (normalize array -> object-map)
-  const raw = JSON.parse(await ctx.git.readFile(contentPath, CONTENT_BRANCH))
-  const existing = toObjectMap(raw)
+  let workingReader: RepoReader = reader
+  const changesByPath = new Map<string, FileChange>()
 
-  // Remove entries by rebuilding without deleted IDs
-  const filtered = Object.fromEntries(
-    Object.entries(existing).filter(([key]) => !entryIds.includes(key)),
-  )
-
-  const serialized = serializeCanonical(filtered)
-
-  // Clean meta entries too
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale)
-  let existingMeta: Record<string, unknown> = {}
-  try {
-    existingMeta = JSON.parse(await ctx.git.readFile(metaPath, CONTENT_BRANCH)) as Record<string, unknown>
+  for (const id of entryIds) {
+    const plan = await planContentDelete(workingReader, { model: modelDef, id, locale })
+    for (const change of plan.changes) {
+      changesByPath.set(change.path, change)
+    }
+    workingReader = new OverlayReader(workingReader, plan.changes)
   }
-  catch { /* no meta */ }
-  const filteredMeta = Object.fromEntries(
-    Object.entries(existingMeta).filter(([key]) => !entryIds.includes(key)),
+
+  const aggregatedChanges = [...changesByPath.values()]
+
+  const overlay = new OverlayReader(reader, aggregatedChanges)
+  const contextChange = await buildContextChange(
+    overlay,
+    { tool: 'delete_content', model: modelId, locale, entries: entryIds },
+    'mcp-studio',
   )
 
-  // Context.json update
-  const contextPath = resolveContextPath(ctx.pathCtx)
-  const projectInfo = await ctx.getProjectInfo(locale)
-  const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'delete_content', model: modelId, locale, entries: entryIds }, projectInfo.modelCount, projectInfo.locales, CONTENT_BRANCH)
+  const allChanges: FileChange[] = [...aggregatedChanges, contextChange]
+    .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
-  const message = `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`
-  const commit = await ctx.git.commitFiles(
-    branchName,
-    [
-      { path: contentPath, content: serialized },
-      { path: metaPath, content: serializeCanonical(filteredMeta) },
-      { path: contextPath, content: contextJson },
-    ],
-    message,
-    BOT_AUTHOR,
-  )
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: allChanges,
+    message: `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
+    author: BOT_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
 
-  return {
-    branch: branchName,
-    commit,
-    diff,
-    validation: { valid: true, errors: [] },
-  }
+  return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
 }

@@ -1,5 +1,5 @@
 import type { ValidationResult } from '@contentrain/types'
-import type { GitProvider, Commit, CommitAuthor, Branch, FileDiff, MergeResult } from '../../providers/git'
+import type { Branch, Commit, CommitAuthor, FileDiff, GitProvider, MergeResult } from '../../providers/git'
 
 // ── Public types (re-exported from index.ts) ────────────────────────
 
@@ -23,7 +23,6 @@ export interface EngineInternalContext {
   pathCtx: { contentRoot: string }
   projectId?: string
   ensureContentBranch: () => Promise<void>
-  getProjectInfo: (fallbackLocale: string) => Promise<{ modelCount: number, locales: string[] }>
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -41,4 +40,4 @@ export const BRANCH_PREFIX = 'cr/'
 
 // ── Re-export provider types used by operations ─────────────────────
 
-export type { GitProvider, Commit, CommitAuthor, Branch, FileDiff, MergeResult }
+export type { Branch, Commit, CommitAuthor, FileDiff, GitProvider, MergeResult }

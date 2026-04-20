@@ -83,10 +83,13 @@ export default defineEventHandler(async (event) => {
           updates.plan = result.plan
         }
 
-        // Trial ended → subscription became active: clear trial_ends_at
+        // Trial ended → subscription became active: clear trial_ends_at.
+        // Reset the reminder stage too so a future trial (if any — e.g.
+        // customer cancels, comes back later) starts the sequence fresh.
         if (result.subscriptionStatus === 'active') {
           updates.trial_ends_at = null
           updates.grace_period_ends_at = null
+          updates.trial_reminder_stage = 0
         }
 
         await db.updateWorkspace('', result.workspaceId, updates)
@@ -105,6 +108,7 @@ export default defineEventHandler(async (event) => {
           subscription_cancel_at_period_end: false,
           trial_ends_at: null,
           grace_period_ends_at: null,
+          trial_reminder_stage: 0,
         })
       }
       break

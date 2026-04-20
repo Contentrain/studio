@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const providerMocks = vi.hoisted(() => ({
   createSupabaseAuthProvider: vi.fn(() => ({ kind: 'auth-provider' })),
-  createGitHubAppProvider: vi.fn((options: unknown) => ({ kind: 'git-provider', options })),
+  createStudioGitProvider: vi.fn((options: unknown) => ({ kind: 'git-provider', options })),
   createAnthropicProvider: vi.fn(() => ({ kind: 'ai-provider' })),
   createSharpMediaProvider: vi.fn((options: unknown) => ({ kind: 'media-provider', options })),
 }))
@@ -11,8 +11,8 @@ vi.mock('../../server/providers/supabase-auth', () => ({
   createSupabaseAuthProvider: providerMocks.createSupabaseAuthProvider,
 }))
 
-vi.mock('../../server/providers/github-app', () => ({
-  createGitHubAppProvider: providerMocks.createGitHubAppProvider,
+vi.mock('../../server/providers/git', () => ({
+  createStudioGitProvider: providerMocks.createStudioGitProvider,
 }))
 
 vi.mock('../../server/providers/anthropic-ai', () => ({
@@ -27,7 +27,7 @@ describe('provider resolver utilities', () => {
   beforeEach(() => {
     vi.resetModules()
     providerMocks.createSupabaseAuthProvider.mockClear()
-    providerMocks.createGitHubAppProvider.mockClear()
+    providerMocks.createStudioGitProvider.mockClear()
     providerMocks.createAnthropicProvider.mockClear()
     providerMocks.createSharpMediaProvider.mockClear()
   })
@@ -46,16 +46,9 @@ describe('provider resolver utilities', () => {
     expect(providerMocks.createAnthropicProvider).toHaveBeenCalledTimes(1)
   })
 
-  it('creates git providers from runtime config with decoded private keys', async () => {
-    vi.stubGlobal('useRuntimeConfig', () => ({
-      github: {
-        appId: 'app-1',
-        privateKey: Buffer.from('pem-key', 'utf-8').toString('base64'),
-      },
-      cdn: {},
-    }))
-
+  it('creates a fresh git provider per call via createStudioGitProvider', async () => {
     const { useGitProvider } = await import('../../server/utils/providers')
+
     const provider = useGitProvider({
       installationId: 42,
       owner: 'contentrain',
@@ -65,13 +58,12 @@ describe('provider resolver utilities', () => {
     expect(provider).toEqual({
       kind: 'git-provider',
       options: {
-        appId: 'app-1',
-        privateKey: 'pem-key',
         installationId: 42,
         owner: 'contentrain',
         repo: 'studio',
       },
     })
+    expect(providerMocks.createStudioGitProvider).toHaveBeenCalledTimes(1)
   })
 
   it('returns null CDN/media providers when object storage is not configured', async () => {

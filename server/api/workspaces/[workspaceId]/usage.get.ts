@@ -48,11 +48,12 @@ export default defineEventHandler(async (event) => {
   const billingPeriod = new Date().toISOString().substring(0, 7) // YYYY-MM
 
   // Fetch all usage metrics in parallel
-  const [aiUsage, apiUsage, formSubmissions, cdnBandwidthBytes] = await Promise.all([
+  const [aiUsage, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls] = await Promise.all([
     db.getWorkspaceMonthlyAIUsage(workspaceId, billingPeriod),
     db.getWorkspaceMonthlyAPIUsage(workspaceId, billingPeriod),
     db.countMonthlySubmissions(workspaceId),
     db.getWorkspaceMonthlyCDNBandwidth(workspaceId, billingPeriod),
+    db.getWorkspaceMonthlyMcpCloudUsage(workspaceId, billingPeriod),
   ])
 
   const storageBytes = (workspace.media_storage_bytes as number) ?? 0
@@ -73,6 +74,7 @@ export default defineEventHandler(async (event) => {
     { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes / (1024 * 1024 * 1024), unit: 'GB' },
     { key: 'media_storage', limitKey: 'media.storage_gb', name: 'Media Storage', current: storageBytes / (1024 * 1024 * 1024), unit: 'GB' },
     { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Messages', current: apiUsage, unit: 'messages' },
+    { key: 'mcp_calls', limitKey: 'api.mcp_calls_per_month', name: 'MCP Cloud Calls', current: mcpCloudCalls, unit: 'calls' },
   ]
 
   for (const m of metricsConfig) {
@@ -124,6 +126,7 @@ export default defineEventHandler(async (event) => {
       cdn_bandwidth: 'cdnBandwidthGb',
       media_storage: 'mediaStorageGb',
       api_messages: 'apiMessages',
+      mcp_calls: 'mcpCalls',
     }
     const simple: Record<string, { current: number, limit: number, percentage: number }> = {}
     for (const c of categories) {

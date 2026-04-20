@@ -9,7 +9,7 @@ Conversation-first CMS — chat with AI agent to manage structured content.
 - **UI:** Radix Vue (headless primitives) + Tailwind CSS 4 (CSS-based config, @theme)
 - **Auth:** AuthProvider interface — current impl: Supabase Auth (GitHub OAuth, Google OAuth, Magic Link)
 - **Database:** DatabaseProvider interface — current impl: Supabase PostgreSQL with RLS
-- **Content:** Contentrain MCP + @contentrain/query SDK for UI strings + @contentrain/types for shared validation/serialization
+- **Content engine:** `@contentrain/mcp` (core/ops + overlay-reader + validator + providers) + `@contentrain/types` (canonical contracts) + `@contentrain/query` SDK for UI strings. Studio composes `GitHubProvider` from `@contentrain/mcp/providers/github` with Studio extensions (tree listing, framework detection, PR helpers) — see `server/providers/git.ts`
 - **Icons:** Annon custom icon set via @iconify/tailwind4
 - **Images:** @nuxt/image (NuxtImg for all images)
 
@@ -202,12 +202,52 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 - `default` — sidebar-first (AppSidebar 240px + full-width main). No header.
 - `workspace` — three-panel (sidebar 240px, chat, context 400px)
 
+## Content Engine — After Faz S2
+
+The write path delegates structural operations to
+`@contentrain/mcp/core/ops` instead of implementing file assembly
+itself. Every save / delete op composes:
+
+1. Studio field validation (`validateContent` — re-exported from MCP
+   since Faz S3, shape-aligned so call sites stay untouched).
+2. MCP plan helper (`planContentSave` / `planContentDelete` /
+   `planModelSave`) — produces a deterministic `FileChange[]` sorted
+   by path, with canonical JSON (or markdown frontmatter for
+   documents) already serialised via `canonicalStringify` from
+   `@contentrain/types`.
+3. Studio meta override (`applyStudioMetaOverrides` in
+   `content-engine/helpers.ts`) — replaces MCP's `defaultMeta`
+   (`status: 'draft'`, `updated_by: 'contentrain-mcp'`) with
+   Studio's `autoPublish` + existing-status preservation +
+   per-user `updated_by` semantics.
+4. `OverlayReader` + `buildContextChange` — wraps the plan changes
+   so `context.json` stats (entries per model, last-sync) reflect
+   the post-commit state, not the pre-change base branch.
+5. `provider.applyPlan({ branch, changes, message, author, base: 'contentrain' })`
+   — atomic branch+commit via the GitHub Data API. `createBranch`
+   is no longer called separately; `applyPlan` forks `base` when the
+   branch is missing.
+
+**Invariants to preserve** when touching this path:
+
+- Content SSOT is the `contentrain` branch. Feature branches always
+  fork from it via `applyPlan`'s default `base`. `config.repository
+  .default_branch` (`main` / `master`) is informational — never the
+  fork point.
+- Post-change reads (for validation or context) go through
+  `OverlayReader(reader, pendingChanges)` — raw reader shows the
+  pre-change tree and will emit stale stats.
+- Studio's `pinReaderToContentrain` wrapper defaults ref to
+  `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
+  `reader.readFile(path)` without a ref).
+
 ## Deferred TODOs
 
 Medium:
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
 - Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
+- MCP Cloud endpoint: `server/api/mcp/v1/[projectId]/[...].ts` awaits `@contentrain/mcp` `resolveProvider` callback (per-request provider resolution). Foundations (license entries, `mcp_cloud_keys` table, usage RPC) shipped in Faz S6 — route implementation pending.
 
 ## Dev Tooling
 

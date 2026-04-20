@@ -1,10 +1,20 @@
-import type { ContentrainConfig, ModelDefinition } from '@contentrain/types'
+import type { ContentrainConfig, FileChange, ModelDefinition } from '@contentrain/types'
+import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
+import { buildContextChange } from '@contentrain/mcp/core/context'
+import { planModelSave } from '@contentrain/mcp/core/ops'
+import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
-import { buildContextUpdate, createFeatureBranch } from './helpers'
+import { pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
- * Save a model definition.
+ * Save a model definition (create or update).
+ *
+ * Schema validation (Studio-owned today, pending S3 unification with MCP)
+ * runs first; if it passes, file assembly is delegated to
+ * `planModelSave` — it writes `.contentrain/models/{id}.json` in
+ * canonical form. Studio adds the `context.json` change on top via
+ * `buildContextChange` wrapped in an `OverlayReader`.
  */
 export async function saveModel(
   ctx: EngineInternalContext,
@@ -13,25 +23,24 @@ export async function saveModel(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
-  // Validate model definition before saving
+  const reader = pinReaderToContentrain(ctx.git)
+
   const { validateModelDefinition } = await import('../schema-validation')
-  // Get existing model IDs for relation target validation
+
   let existingModelIds: string[] = []
   try {
     const modelsDir = resolveModelsDir(ctx.pathCtx)
-    const files = await ctx.git.listDirectory(modelsDir, CONTENT_BRANCH)
+    const files = await reader.listDirectory(modelsDir)
     existingModelIds = files.filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''))
   }
   catch { /* no models dir yet */ }
-  // Include the current model in the list (it may be new)
   if (!existingModelIds.includes(definition.id)) {
     existingModelIds.push(definition.id)
   }
 
-  // Read config for domain validation
   let config: ContentrainConfig | null = null
   try {
-    config = JSON.parse(await ctx.git.readFile(resolveConfigPath(ctx.pathCtx), CONTENT_BRANCH)) as ContentrainConfig
+    config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
   }
   catch { /* no config */ }
 
@@ -44,39 +53,54 @@ export async function saveModel(
       diff: [],
       validation: {
         valid: false,
-        errors: criticalErrors.map(w => ({ field: w.field ?? '', message: w.message, severity: 'error' as const })),
+        errors: criticalErrors.map(w => ({
+          field: w.field ?? '',
+          message: w.message,
+          severity: 'error' as const,
+        })),
       },
     }
   }
 
-  const modelPath = resolveModelPath(ctx.pathCtx, definition.id)
-  const serialized = serializeCanonical(definition)
-
-  // Context.json update
-  const contextPath = resolveContextPath(ctx.pathCtx)
-  const projectInfo = await ctx.getProjectInfo('en')
-  // +1 if this is a new model
-  let isNew = false
+  let plan
   try {
-    await ctx.git.readFile(modelPath, CONTENT_BRANCH)
+    plan = await planModelSave(reader, { model: definition })
   }
-  catch {
-    isNew = true
+  catch (err) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      diff: [],
+      validation: {
+        valid: false,
+        errors: [{
+          field: '',
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error' as const,
+        }],
+      },
+    }
   }
-  const contextJson = await buildContextUpdate(ctx, contextPath, { tool: 'save_model', model: definition.id, locale: '' }, projectInfo.modelCount + (isNew ? 1 : 0), projectInfo.locales, CONTENT_BRANCH)
+
+  const overlay = new OverlayReader(reader, plan.changes)
+  const contextChange = await buildContextChange(
+    overlay,
+    { tool: 'save_model', model: definition.id, locale: '' },
+    'mcp-studio',
+  )
+
+  const allChanges: FileChange[] = [...plan.changes, contextChange]
+    .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'model', definition.id)
 
-  const message = `contentrain: save model ${definition.id}\n\nCo-Authored-By: ${userEmail}`
-  const commit = await ctx.git.commitFiles(
-    branchName,
-    [
-      { path: modelPath, content: serialized },
-      { path: contextPath, content: contextJson },
-    ],
-    message,
-    BOT_AUTHOR,
-  )
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: allChanges,
+    message: `contentrain: save model ${definition.id}\n\nCo-Authored-By: ${userEmail}`,
+    author: BOT_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
   return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }

@@ -2,9 +2,15 @@
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
 import { query } from '#contentrain'
 import type { PlanFeatures } from '#contentrain'
+import { ENTERPRISE_CONTACT_EMAIL } from '~~/shared/utils/license'
 
 const { t } = useContent()
 const { billingState, effectivePlan, startCheckout, openPortal } = useBilling()
+
+const enterpriseMailto = computed(() => {
+  const subject = encodeURIComponent('Contentrain Studio — Enterprise inquiry')
+  return `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${subject}`
+})
 const toast = useToast()
 
 const props = defineProps<{
@@ -198,9 +204,12 @@ async function handlePlanAction(slug: string) {
               {{ enterprisePlan.description }}
             </p>
           </div>
-          <AtomsBaseButton variant="ghost" size="sm">
+          <a
+            :href="enterpriseMailto"
+            class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-heading transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-800 dark:text-secondary-100 dark:hover:bg-secondary-900"
+          >
             {{ enterprisePlan.cta_text }}
-          </AtomsBaseButton>
+          </a>
         </div>
       </DialogContent>
     </DialogPortal>

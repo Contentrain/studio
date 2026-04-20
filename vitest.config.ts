@@ -8,6 +8,7 @@ process.env.NUXT_PUBLIC_SITE_URL ??= 'http://localhost:3000'
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  root: rootDir,
   resolve: {
     alias: {
       '~': rootDir,
@@ -17,6 +18,7 @@ export default defineConfig({
     },
   },
   test: {
+    root: rootDir,
     globals: true,
     passWithNoTests: false,
     coverage: {

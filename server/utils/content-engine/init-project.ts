@@ -1,11 +1,14 @@
-import type { ContentrainConfig, ModelDefinition } from '@contentrain/types'
+import type { ContentrainConfig, FileChange, ModelDefinition } from '@contentrain/types'
+import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
 import { createFeatureBranch } from './helpers'
 
 /**
- * Initialize .contentrain/ structure in a repo that doesn't have one.
- * Creates config, context, vocabulary, and empty directories.
+ * Initialize `.contentrain/` structure in a repo that doesn't have one.
+ * Studio-specific bootstrap — no MCP plan helper covers this composite
+ * write, so Studio assembles the `FileChange[]` directly and commits
+ * atomically via `applyPlan`.
  */
 export async function initProject(
   ctx: EngineInternalContext,
@@ -17,7 +20,6 @@ export async function initProject(
 ): Promise<WriteResult> {
   const prefix = ctx.pathCtx.contentRoot ? `${ctx.pathCtx.contentRoot}/` : ''
 
-  // Build config
   const config: ContentrainConfig = {
     version: 1,
     stack: stack as ContentrainConfig['stack'],
@@ -29,7 +31,6 @@ export async function initProject(
     domains,
   }
 
-  // Build context
   const context = {
     version: '1',
     lastOperation: {
@@ -47,60 +48,53 @@ export async function initProject(
     },
   }
 
-  // Build vocabulary
   const vocabulary = { version: 1, terms: {} }
 
-  // Collect all files to commit
-  const files: Array<{ path: string, content: string }> = [
-    { path: `${prefix}.contentrain/config.json`, content: serializeCanonical(config) },
-    { path: `${prefix}.contentrain/context.json`, content: serializeCanonical(context) },
-    { path: `${prefix}.contentrain/vocabulary.json`, content: serializeCanonical(vocabulary) },
+  const files: FileChange[] = [
+    { path: `${prefix}.contentrain/config.json`, content: canonicalStringify(config) },
+    { path: `${prefix}.contentrain/context.json`, content: canonicalStringify(context) },
+    { path: `${prefix}.contentrain/vocabulary.json`, content: canonicalStringify(vocabulary) },
   ]
 
-  // Add model files
   for (const model of models) {
     files.push({
       path: `${prefix}.contentrain/models/${model.id}.json`,
-      content: serializeCanonical(model),
+      content: canonicalStringify(model),
     })
 
-    // Create empty content file (non-i18n: single data.json, i18n: per locale)
     if (model.kind !== 'document') {
       const contentLocales = model.i18n ? locales : [locales[0] ?? 'en']
       for (const locale of contentLocales) {
         const effectiveLocale = model.i18n ? locale : 'data'
-        const contentPath = resolveContentPath(ctx.pathCtx, model, effectiveLocale)
         files.push({
-          path: contentPath,
-          content: serializeCanonical({}),
+          path: resolveContentPath(ctx.pathCtx, model, effectiveLocale),
+          content: canonicalStringify({}),
         })
       }
-    }
 
-    // Create empty meta file (skip document kind — meta is per-slug)
-    if (model.kind !== 'document') {
       for (const locale of locales) {
-        const metaPath = resolveMetaPath(ctx.pathCtx, model, locale)
         files.push({
-          path: metaPath,
-          content: serializeCanonical({}),
+          path: resolveMetaPath(ctx.pathCtx, model, locale),
+          content: canonicalStringify({}),
         })
       }
     }
   }
 
-  // Ensure contentrain branch + create feature branch (with health check)
+  files.sort((a, b) => a.path.localeCompare(b.path))
+
   await ctx.ensureContentBranch()
   const { branchName } = await createFeatureBranch(ctx, 'new', 'init')
 
   const message = `contentrain: initialize project\n\nStack: ${stack}\nLocales: ${locales.join(', ')}\nDomains: ${domains.join(', ')}\nModels: ${models.map(m => m.id).join(', ')}\n\nCo-Authored-By: ${userEmail}`
 
-  const commit = await ctx.git.commitFiles(
-    branchName,
-    files.map(f => ({ path: f.path, content: f.content })),
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: files,
     message,
-    BOT_AUTHOR,
-  )
+    author: BOT_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
 

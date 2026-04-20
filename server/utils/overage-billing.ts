@@ -122,6 +122,8 @@ async function getUsageForCategory(
       const bytes = (ws?.media_storage_bytes as number) ?? 0
       return bytes / (1024 * 1024 * 1024) // Convert to GB
     }
+    case 'api.mcp_calls_per_month':
+      return db.getWorkspaceMonthlyMcpCloudUsage(workspaceId, billingPeriod)
     default:
       return 0
   }

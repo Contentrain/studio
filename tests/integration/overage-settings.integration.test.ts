@@ -43,14 +43,14 @@ describe('overage settings API', () => {
 
       expect(result.overageSettings).toEqual({ ai_messages: true, cdn_bandwidth: false })
       expect(result.categories).toBeInstanceOf(Array)
-      expect(result.categories.length).toBe(5)
+      expect(result.categories.length).toBe(6)
 
       const aiCategory = result.categories.find((c: { settingsKey: string }) => c.settingsKey === 'ai_messages')
       expect(aiCategory).toMatchObject({
         limitKey: 'ai.messages_per_month',
         settingsKey: 'ai_messages',
         unitPrice: 0.03,
-        planLimit: 500, // pro plan
+        planLimit: 1500, // pro plan
         enabled: true,
       })
     })

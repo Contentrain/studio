@@ -23,7 +23,7 @@ describe('media license features', () => {
 describe('media plan limits', () => {
   it('returns correct storage limits', () => {
     expect(getPlanLimit('starter', 'media.storage_gb')).toBe(1)
-    expect(getPlanLimit('pro', 'media.storage_gb')).toBe(5)
+    expect(getPlanLimit('pro', 'media.storage_gb')).toBe(15)
     expect(getPlanLimit('enterprise', 'media.storage_gb')).toBe(100)
   })
 

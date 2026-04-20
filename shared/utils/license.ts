@@ -4,12 +4,21 @@
  * Plan definitions live in Contentrain models (plans + plan-features).
  * This file provides the runtime lookup tables generated from that content.
  *
- * Plans: free ($0), starter ($9/mo), pro ($29/mo), enterprise (custom)
- * Free = structural default for primary workspaces (no Git, no projects).
- * Exists because every user needs a primary workspace on signup — invited
- * content editors (Magic Link / Google OAuth) work in their invited workspace,
- * not their own. Developers go straight to paid trial (starter/pro).
- * Paid plans require Stripe subscription (trial_period_days=14 on checkout).
+ * Plans: free ($0), starter ($9/mo), pro ($49/mo), enterprise (custom)
+ *
+ * Free is a STRUCTURAL shell only — it exists because every user needs a
+ * primary workspace on signup (GitHub OAuth / Google OAuth / Magic Link).
+ * Content editors invited into a paid workspace work in that workspace
+ * (and consume the inviter's paid plan quota), not their personal free
+ * one. The personal free workspace never connects a repo, never runs
+ * the agent, never needs storage. Therefore free has NO feature rows
+ * and its limits are zero across the board — nothing to meter, nothing
+ * to waste LLM tokens on.
+ *
+ * Developers arriving via GitHub OAuth should start a paid trial
+ * immediately (`trial_period_days=14` on Stripe checkout). "Free" is
+ * not a product tier.
+ *
  * Enterprise-only: SSO, white-label, custom CDN domain.
  */
 
@@ -19,12 +28,12 @@ export type StudioPlan = 'free' | 'starter' | 'pro' | 'enterprise'
  * Feature matrix: which plans have access to each feature.
  * Generated from Contentrain plan-features model (type: "feature").
  *
- * Free plan ($0): structural default for primary workspaces. Cannot connect
- * repos, create projects, or use BYOA, CDN, forms, or any API features.
- * Not a product tier — exists because every user needs a primary workspace
- * on signup. Invited content editors work in their invited workspace (paid).
- * Developers arriving via GitHub OAuth should start a paid trial immediately.
- * Upgrade trigger: "Connect Repository" → plan selection → Stripe Checkout.
+ * Free is deliberately ABSENT from every feature row. A free workspace
+ * is a structural shell with no content operations — it has no repo
+ * connected, no project, no storage, no agent. Listing features for
+ * it would just waste LLM tokens and storage quota on accounts that
+ * never convert. Developer signups convert via the 14-day Stripe
+ * trial; invited editors consume the inviter workspace's quota.
  *
  * Paid plans (starter/pro): full platform access, differentiated by
  * numeric PLAN_LIMITS (message quotas, storage, seats, etc.).
@@ -36,8 +45,8 @@ export type StudioPlan = 'free' | 'starter' | 'pro' | 'enterprise'
  * routes return 403 regardless of plan — graceful degradation.
  */
 export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
-  // AI — free gets studio key only (10 msg/mo), BYOA requires paid plan
-  'ai.agent': ['free', 'starter', 'pro', 'enterprise'],
+  // AI
+  'ai.agent': ['starter', 'pro', 'enterprise'],
   'ai.byoa': ['starter', 'pro', 'enterprise'],
   'ai.studio_key': ['starter', 'pro', 'enterprise'],
 
@@ -47,9 +56,9 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
   'cdn.custom_domain': ['enterprise'],
   'cdn.metering': ['starter', 'pro', 'enterprise'],
 
-  // Media — free can browse library only, upload requires paid plan
+  // Media
   'media.upload': ['starter', 'pro', 'enterprise'],
-  'media.library': ['free', 'starter', 'pro', 'enterprise'],
+  'media.library': ['starter', 'pro', 'enterprise'],
   'media.custom_variants': ['pro', 'enterprise'],
 
   // Forms
@@ -74,6 +83,17 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
   'api.custom_instructions': ['starter', 'pro', 'enterprise'],
   'api.webhooks_outbound': ['starter', 'pro', 'enterprise'],
 
+  // MCP Cloud — hosted MCP HTTP endpoint for external agents (Cursor,
+  // Claude Desktop, custom AI drivers). Shares provider + core ops with
+  // Conversation API but exposes raw tool execution (bring-your-own-AI).
+  // Commercial framing: Conversation API = "Agent API" (Studio thinks);
+  // MCP Cloud = "Tools API" (customer thinks).
+  'api.mcp_cloud': ['starter', 'pro', 'enterprise'],
+  // Enterprise-only bridges — ee/ layer attaches SSO + custom domain
+  // resolvers to the core endpoint; core runs without them.
+  'api.mcp_cloud_sso': ['enterprise'],
+  'api.mcp_cloud_custom_domain': ['enterprise'],
+
   // Git & Projects (paywall boundary)
   'git.connect': ['starter', 'pro', 'enterprise'],
   'projects.create': ['starter', 'pro', 'enterprise'],
@@ -86,22 +106,41 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
 
 /**
  * Plan limits: numeric quotas per plan.
- * Generated from Contentrain plan-features model (type: "limit").
- * Infinity = unlimited. Free plan has severe limits — upgrade trigger.
+ *
+ * Free is zero across the board — it is a structural shell, not a usable
+ * tier (see FEATURE_MATRIX docstring). The only exception is
+ * `team.members: 1` because a workspace cannot exist without its owning
+ * member row; the value is a count, not a quota.
+ *
+ * Starter ($9/mo) is sized for a single developer running Contentrain
+ * with real traffic but without a team behind it — 150 AI messages is
+ * ~5/day, enough to not hit the wall in the first two weeks of onboarding.
+ *
+ * Pro ($49/mo) is sized for a 10–25 person team — 3× across the board
+ * over the old $29 Pro to give real headroom for marketing teams and
+ * developer collectives.
+ *
+ * Enterprise stays Infinity with a soft-cap applied at the ops layer
+ * (GitHub's 15K/hour app rate limit caps real-world usage anyway).
  */
 export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = {
-  'ai.messages_per_month': { free: 10, starter: 50, pro: 500, enterprise: Infinity },
-  'team.members': { free: 1, starter: 3, pro: 10, enterprise: Infinity },
-  'cdn.api_keys': { free: 0, starter: 3, pro: 10, enterprise: Infinity },
-  'cdn.bandwidth_gb': { free: 0, starter: 2, pro: 20, enterprise: Infinity },
-  'media.storage_gb': { free: 0.2, starter: 1, pro: 5, enterprise: 100 },
-  'media.max_file_size_mb': { free: 2, starter: 5, pro: 50, enterprise: 100 },
-  'media.variants_per_field': { free: 2, starter: 4, pro: 10, enterprise: Infinity },
-  'forms.models': { free: 0, starter: 1, pro: 5, enterprise: Infinity },
-  'forms.submissions_per_month': { free: 0, starter: 100, pro: 1_000, enterprise: Infinity },
-  'api.conversation_keys': { free: 0, starter: 1, pro: 5, enterprise: Infinity },
-  'api.messages_per_month': { free: 0, starter: 100, pro: 1_000, enterprise: Infinity },
-  'api.webhooks': { free: 0, starter: 3, pro: 10, enterprise: Infinity },
+  'ai.messages_per_month': { free: 0, starter: 150, pro: 1_500, enterprise: Infinity },
+  'team.members': { free: 1, starter: 3, pro: 25, enterprise: Infinity },
+  'cdn.api_keys': { free: 0, starter: 3, pro: 25, enterprise: Infinity },
+  'cdn.bandwidth_gb': { free: 0, starter: 2, pro: 60, enterprise: Infinity },
+  'media.storage_gb': { free: 0, starter: 1, pro: 15, enterprise: 100 },
+  'media.max_file_size_mb': { free: 0, starter: 5, pro: 50, enterprise: 100 },
+  'media.variants_per_field': { free: 0, starter: 4, pro: 10, enterprise: Infinity },
+  'forms.models': { free: 0, starter: 1, pro: 15, enterprise: Infinity },
+  'forms.submissions_per_month': { free: 0, starter: 100, pro: 3_000, enterprise: Infinity },
+  'api.conversation_keys': { free: 0, starter: 1, pro: 15, enterprise: Infinity },
+  'api.messages_per_month': { free: 0, starter: 100, pro: 3_000, enterprise: Infinity },
+  'api.webhooks': { free: 0, starter: 3, pro: 25, enterprise: Infinity },
+  // MCP Cloud — raw tool execution. Starter = 5K/mo (~150/day — enough
+  // for a single dev), Pro = 150K/mo (3× jump, fits team/agency workloads
+  // and matches the cross-limit scaling applied everywhere else).
+  'api.mcp_keys': { free: 0, starter: 1, pro: 15, enterprise: Infinity },
+  'api.mcp_calls_per_month': { free: 0, starter: 5_000, pro: 150_000, enterprise: Infinity },
 }
 
 /**
@@ -144,9 +183,12 @@ export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined
 export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }> = {
   free: { priceMonthly: 0, seatsIncluded: 1, name: 'Free' },
   starter: { priceMonthly: 9, seatsIncluded: 3, name: 'Starter' },
-  pro: { priceMonthly: 29, seatsIncluded: 10, name: 'Pro' },
+  pro: { priceMonthly: 49, seatsIncluded: 25, name: 'Pro' },
   enterprise: { priceMonthly: 0, seatsIncluded: 0, name: 'Enterprise' },
 }
+
+/** `mailto:` address the enterprise CTA button links to. */
+export const ENTERPRISE_CONTACT_EMAIL = 'sales@contentrain.io'
 
 /**
  * Overage pricing: per-unit cost when usage exceeds plan limit.
@@ -156,6 +198,10 @@ export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsInclu
 export const OVERAGE_PRICING: Record<string, { price: number, unit: string, settingsKey: string }> = {
   'ai.messages_per_month': { price: 0.03, unit: 'message', settingsKey: 'ai_messages' },
   'api.messages_per_month': { price: 0.05, unit: 'message', settingsKey: 'api_messages' },
+  // MCP Cloud price is 1/10 of Conversation API — the orchestration
+  // value (brain cache, system prompt, phase detection) is bundled into
+  // the conversation rate, not the raw tool rate.
+  'api.mcp_calls_per_month': { price: 0.005, unit: 'call', settingsKey: 'mcp_calls' },
   'cdn.bandwidth_gb': { price: 0.10, unit: 'GB', settingsKey: 'cdn_bandwidth' },
   'forms.submissions_per_month': { price: 0.01, unit: 'submission', settingsKey: 'form_submissions' },
   'media.storage_gb': { price: 0.25, unit: 'GB/month', settingsKey: 'media_storage' },
@@ -215,6 +261,8 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
     conversationKeys: limitOrUnlimited('api.conversation_keys'),
     apiMessages: formatLimit(limit('api.messages_per_month')),
     webhookEndpoints: limitOrUnlimited('api.webhooks'),
+    mcpKeys: limitOrUnlimited('api.mcp_keys'),
+    mcpCalls: formatLimit(limit('api.mcp_calls_per_month')),
   }
 }
 

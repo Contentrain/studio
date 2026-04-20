@@ -1,28 +1,34 @@
+/**
+ * Tests for Studio-specific GitHub extensions in `server/providers/github-app.ts`.
+ *
+ * Project-scoped content operations (readFile, applyPlan, listBranches,
+ * isMerged, mergeBranch conflict handling, ...) live in
+ * `@contentrain/mcp/providers/github` — `GitHubProvider` — and are
+ * tested upstream via MCP's conformance suite. This file covers only
+ * the Studio extensions (framework detection, tree listing, permissions,
+ * branch protection, PR helpers) plus the workspace-scoped installation
+ * provider.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const githubState = vi.hoisted(() => {
   const octokit = {
     request: vi.fn(),
     git: {
-      getRef: vi.fn(),
-      getCommit: vi.fn(),
-      createBlob: vi.fn(),
-      createTree: vi.fn(),
-      createCommit: vi.fn(),
-      updateRef: vi.fn(),
       getTree: vi.fn(),
-      deleteRef: vi.fn(),
     },
     repos: {
       get: vi.fn(),
-      listBranches: vi.fn(),
-      compareCommits: vi.fn(),
-      merge: vi.fn(),
       getBranchProtection: vi.fn(),
     },
     pulls: {
       create: vi.fn(),
       merge: vi.fn(),
+    },
+    apps: {
+      getInstallation: vi.fn(),
+      listReposAccessibleToInstallation: vi.fn(),
     },
   }
 
@@ -43,27 +49,23 @@ vi.mock('@octokit/auth-app', () => ({
   createAppAuth: githubState.createAppAuth,
 }))
 
-describe('github app provider', () => {
+describe('github extensions (Studio-specific)', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.stubGlobal('createError', ({ statusCode, message }: { statusCode: number, message: string }) =>
       Object.assign(new Error(message), { statusCode, message }),
     )
+    vi.stubGlobal('errorMessage', (key: string) => key)
 
     githubState.Octokit.mockClear()
     githubState.octokit.request.mockReset()
-    githubState.octokit.git.getRef.mockReset()
-    githubState.octokit.git.getCommit.mockReset()
-    githubState.octokit.git.createBlob.mockReset()
-    githubState.octokit.git.createTree.mockReset()
-    githubState.octokit.git.createCommit.mockReset()
-    githubState.octokit.git.updateRef.mockReset()
     githubState.octokit.git.getTree.mockReset()
     githubState.octokit.repos.get.mockReset()
-    githubState.octokit.repos.listBranches.mockReset()
-    githubState.octokit.repos.compareCommits.mockReset()
-    githubState.octokit.repos.merge.mockReset()
     githubState.octokit.repos.getBranchProtection.mockReset()
+    githubState.octokit.pulls.create.mockReset()
+    githubState.octokit.pulls.merge.mockReset()
+    githubState.octokit.apps.getInstallation.mockReset()
+    githubState.octokit.apps.listReposAccessibleToInstallation.mockReset()
   })
 
   afterEach(() => {
@@ -71,213 +73,191 @@ describe('github app provider', () => {
     vi.restoreAllMocks()
   })
 
-  it('reads files and directories through the GitHub contents API', async () => {
-    githubState.octokit.request
-      .mockResolvedValueOnce({
+  describe('createGitHubExtensions — detectFramework', () => {
+    it('detects Nuxt + i18n from package.json and flags hasContentDir', async () => {
+      githubState.octokit.request
+        .mockResolvedValueOnce({ data: { content: 'exists' } })
+        .mockResolvedValueOnce({
+          data: {
+            content: Buffer.from(JSON.stringify({
+              dependencies: { 'nuxt': '^4.0.0', '@nuxtjs/i18n': '^9.0.0' },
+            }), 'utf-8').toString('base64'),
+          },
+        })
+
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+
+      await expect(ext.detectFramework()).resolves.toEqual({
+        stack: 'nuxt',
+        hasContentDir: true,
+        hasI18n: true,
+        suggestedContentPaths: {
+          default: 'content/{model}/',
+          fallback: '.contentrain/content/{domain}/{model}/',
+        },
+      })
+    })
+
+    it('falls back to pubspec.yaml detection when package.json is absent', async () => {
+      githubState.octokit.request
+        // .contentrain/config.json check → 404
+        .mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }))
+        // package.json → reject (triggers fallback branch)
+        .mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }))
+        // pubspec.yaml → ok
+        .mockResolvedValueOnce({ data: { content: 'exists' } })
+
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+
+      await expect(ext.detectFramework()).resolves.toEqual({
+        stack: 'flutter',
+        hasContentDir: false,
+        hasI18n: false,
+        suggestedContentPaths: { default: '.contentrain/content/{domain}/{model}/' },
+      })
+    })
+  })
+
+  describe('createGitHubExtensions — tree + permissions + protection', () => {
+    it('falls back to default branch when getTree ref is omitted', async () => {
+      githubState.octokit.repos.get.mockResolvedValue({
+        data: { default_branch: 'main' },
+      })
+      githubState.octokit.git.getTree.mockResolvedValue({
         data: {
-          content: Buffer.from('hello world', 'utf-8').toString('base64'),
-          encoding: 'base64',
+          tree: [
+            { path: '.contentrain/config.json', type: 'blob', sha: 'abc', size: 42 },
+            { path: '.contentrain', type: 'tree', sha: 'def' },
+            { path: undefined, type: 'blob', sha: 'ghi' }, // filtered
+          ],
         },
       })
-      .mockResolvedValueOnce({
-        data: [{ name: 'posts' }, { name: 'pages' }],
-      })
-      .mockResolvedValueOnce({ data: { content: 'exists' } })
-      .mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }))
 
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+
+      await expect(ext.getTree()).resolves.toEqual([
+        { path: '.contentrain/config.json', type: 'blob', sha: 'abc', size: 42 },
+        { path: '.contentrain', type: 'tree', sha: 'def', size: undefined },
+      ])
+
+      expect(githubState.octokit.git.getTree).toHaveBeenCalledWith({
+        owner: 'contentrain',
+        repo: 'studio',
+        tree_sha: 'main',
+        recursive: 'true',
+      })
     })
 
-    await expect(provider.readFile('package.json')).resolves.toBe('hello world')
-    await expect(provider.listDirectory('content')).resolves.toEqual(['posts', 'pages'])
-    await expect(provider.fileExists('README.md')).resolves.toBe(true)
-    await expect(provider.fileExists('missing.md')).resolves.toBe(false)
+    it('maps repo permissions into RepoPermissions shape', async () => {
+      githubState.octokit.repos.get.mockResolvedValue({
+        data: { permissions: { push: true, pull: true, admin: false } },
+      })
+
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+
+      await expect(ext.getPermissions()).resolves.toEqual({
+        push: true,
+        pull: true,
+        admin: false,
+      })
+    })
+
+    it('returns null for unprotected branches and mapped details when protected', async () => {
+      githubState.octokit.repos.getBranchProtection
+        .mockRejectedValueOnce(Object.assign(new Error('Not protected'), { status: 404 }))
+        .mockResolvedValueOnce({
+          data: {
+            required_pull_request_reviews: { required_approving_review_count: 2 },
+          },
+        })
+
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+
+      await expect(ext.getBranchProtection('main')).resolves.toBeNull()
+      await expect(ext.getBranchProtection('main')).resolves.toEqual({
+        requiredReviews: 2,
+        requirePR: true,
+      })
+    })
   })
 
-  it('detects framework and content capabilities from repository files', async () => {
-    githubState.octokit.request
-      .mockResolvedValueOnce({ data: { content: 'exists' } })
-      .mockResolvedValueOnce({
+  describe('createGitHubExtensions — PR helpers', () => {
+    it('creates and merges pull requests via the pulls API', async () => {
+      githubState.octokit.pulls.create.mockResolvedValue({
+        data: { number: 42, html_url: 'https://github.com/contentrain/studio/pull/42' },
+      })
+      githubState.octokit.pulls.merge.mockResolvedValue({ data: {} })
+
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+
+      await expect(ext.createPR('cr/content/posts', 'contentrain', 'Title', 'Body')).resolves.toEqual({
+        id: '42',
+        url: 'https://github.com/contentrain/studio/pull/42',
+      })
+
+      await expect(ext.mergePR('42')).resolves.toBeUndefined()
+      expect(githubState.octokit.pulls.merge).toHaveBeenCalledWith({
+        owner: 'contentrain',
+        repo: 'studio',
+        pull_number: 42,
+      })
+    })
+  })
+
+  describe('createGitHubAppInstallationProvider — workspace-scoped ops', () => {
+    it('maps installation details including account and permissions', async () => {
+      githubState.octokit.apps.getInstallation.mockResolvedValue({
         data: {
-          content: Buffer.from(JSON.stringify({
-            dependencies: { 'nuxt': '^4.0.0', '@nuxtjs/i18n': '^9.0.0' },
-          }), 'utf-8').toString('base64'),
+          account: { login: 'contentrain', avatar_url: 'https://example.com/a.png' },
+          target_type: 'Organization',
+          repository_selection: 'selected',
+          permissions: { contents: 'write' },
+          suspended_at: null,
         },
       })
 
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
-    })
+      const { createGitHubAppInstallationProvider } = await import('../../server/providers/github-app')
+      const provider = createGitHubAppInstallationProvider({
+        appId: 'app-1',
+        privateKey: 'private-key',
+        installationId: 99,
+      })
 
-    await expect(provider.detectFramework()).resolves.toEqual({
-      stack: 'nuxt',
-      hasContentDir: true,
-      hasI18n: true,
-      suggestedContentPaths: {
-        default: 'content/{model}/',
-        fallback: '.contentrain/content/{domain}/{model}/',
-      },
-    })
-  })
-
-  it('creates atomic multi-file commits through the Git data API', async () => {
-    githubState.octokit.git.getRef.mockResolvedValue({
-      data: { object: { sha: 'head-sha' } },
-    })
-    githubState.octokit.git.getCommit.mockResolvedValue({
-      data: { tree: { sha: 'tree-sha' } },
-    })
-    githubState.octokit.git.createBlob
-      .mockResolvedValueOnce({ data: { sha: 'blob-1' } })
-      .mockResolvedValueOnce({ data: { sha: 'blob-2' } })
-    githubState.octokit.git.createTree.mockResolvedValue({
-      data: { sha: 'new-tree-sha' },
-    })
-    githubState.octokit.git.createCommit.mockResolvedValue({
-      data: {
-        sha: 'commit-sha',
-        message: 'Save content',
-        author: {
-          name: 'Studio Bot',
-          email: 'bot@example.com',
-          date: '2026-03-26T00:00:00.000Z',
+      await expect(provider.getInstallationDetails()).resolves.toEqual({
+        installationId: 99,
+        account: {
+          login: 'contentrain',
+          avatarUrl: 'https://example.com/a.png',
+          type: 'Organization',
         },
-      },
-    })
-    githubState.octokit.git.updateRef.mockResolvedValue({ data: {} })
-
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
+        selection: 'selected',
+        permissions: { contents: 'write' },
+        suspendedAt: null,
+      })
     })
 
-    await expect(provider.commitFiles('cr/content/posts/en/1234567890-abcd', [
-      { path: 'content/posts/en.json', content: '{"entry":1}' },
-      { path: 'content/pages/en.json', content: '{"entry":2}' },
-      { path: 'content/old.json', content: null },
-    ], 'Save content', { name: 'Studio Bot', email: 'bot@example.com' })).resolves.toEqual({
-      sha: 'commit-sha',
-      message: 'Save content',
-      author: {
-        name: 'Studio Bot',
-        email: 'bot@example.com',
-      },
-      timestamp: '2026-03-26T00:00:00.000Z',
+    it('treats 404/403 as inaccessible but surfaces other errors', async () => {
+      githubState.octokit.repos.get
+        .mockRejectedValueOnce({ status: 404 })
+        .mockRejectedValueOnce({ status: 403 })
+        .mockResolvedValueOnce({ data: {} })
+
+      const { createGitHubAppInstallationProvider } = await import('../../server/providers/github-app')
+      const provider = createGitHubAppInstallationProvider({
+        appId: 'app-1',
+        privateKey: 'private-key',
+        installationId: 99,
+      })
+
+      await expect(provider.canAccessRepository('a', 'b')).resolves.toBe(false)
+      await expect(provider.canAccessRepository('a', 'b')).resolves.toBe(false)
+      await expect(provider.canAccessRepository('a', 'b')).resolves.toBe(true)
     })
-
-    expect(githubState.octokit.git.createTree).toHaveBeenCalled()
-    expect(githubState.octokit.git.updateRef).toHaveBeenCalledWith({
-      owner: 'contentrain',
-      repo: 'studio',
-      ref: 'heads/cr/content/posts/en/1234567890-abcd',
-      sha: 'commit-sha',
-    })
-  })
-
-  it('detects merged branches via compareCommits status', async () => {
-    githubState.octokit.repos.compareCommits
-      .mockResolvedValueOnce({ data: { status: 'behind' } })
-      .mockResolvedValueOnce({ data: { status: 'identical' } })
-      .mockResolvedValueOnce({ data: { status: 'ahead' } })
-      .mockResolvedValueOnce({ data: { status: 'diverged' } })
-
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
-    })
-
-    // "behind" = merged
-    await expect(provider.isMerged('cr/content/a/1-aa')).resolves.toBe(true)
-    // "identical" = merged
-    await expect(provider.isMerged('cr/content/b/2-bb')).resolves.toBe(true)
-    // "ahead" = not merged
-    await expect(provider.isMerged('cr/content/c/3-cc')).resolves.toBe(false)
-    // "diverged" = not merged
-    await expect(provider.isMerged('cr/content/d/4-dd')).resolves.toBe(false)
-
-    // Default base is 'contentrain'
-    expect(githubState.octokit.repos.compareCommits).toHaveBeenCalledWith({
-      owner: 'contentrain',
-      repo: 'studio',
-      base: 'contentrain',
-      head: 'cr/content/a/1-aa',
-    })
-  })
-
-  it('returns false when isMerged compare fails', async () => {
-    githubState.octokit.repos.compareCommits.mockRejectedValue(new Error('Not found'))
-
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
-    })
-
-    await expect(provider.isMerged('cr/nonexistent')).resolves.toBe(false)
-  })
-
-  it('uses custom base branch for isMerged', async () => {
-    githubState.octokit.repos.compareCommits.mockResolvedValue({ data: { status: 'behind' } })
-
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
-    })
-
-    await expect(provider.isMerged('cr/content/a/1-aa', 'main')).resolves.toBe(true)
-
-    expect(githubState.octokit.repos.compareCommits).toHaveBeenCalledWith({
-      owner: 'contentrain',
-      repo: 'studio',
-      base: 'main',
-      head: 'cr/content/a/1-aa',
-    })
-  })
-
-  it('maps merge conflicts to non-merged results and returns null when branch protection is unavailable', async () => {
-    githubState.octokit.repos.merge.mockRejectedValue({ status: 409 })
-    githubState.octokit.repos.getBranchProtection.mockRejectedValue(Object.assign(new Error('Not protected'), { status: 404 }))
-
-    const { createGitHubAppProvider } = await import('../../server/providers/github-app')
-    const provider = createGitHubAppProvider({
-      appId: 'app-1',
-      privateKey: 'private-key',
-      installationId: 1,
-      owner: 'contentrain',
-      repo: 'studio',
-    })
-
-    await expect(provider.mergeBranch('cr/content/posts/en/1234567890-abcd', 'main')).resolves.toEqual({
-      merged: false,
-      sha: null,
-      pullRequestUrl: null,
-    })
-    await expect(provider.getBranchProtection('main')).resolves.toBeNull()
   })
 })

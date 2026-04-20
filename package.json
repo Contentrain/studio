@@ -5,7 +5,7 @@
   "private": true,
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "build": "nuxt build",
+    "build": "contentrain-query generate && nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -44,8 +44,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-s3": "^3.1014.0",
+    "@contentrain/mcp": "1.4.0",
     "@contentrain/query": "^5.1.2",
-    "@contentrain/types": "0.4.1",
+    "@contentrain/types": "0.5.0",
+    "@gitbeaker/rest": "^43.8.0",
     "@nuxt/eslint": "1.15.2",
     "@nuxt/image": "2.0.0",
     "@octokit/auth-app": "^8.2.0",

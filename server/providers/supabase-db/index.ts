@@ -17,10 +17,12 @@ import { auditMethods } from './audit'
 import { cdnMethods } from './cdn'
 import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
+import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
+import { trialReminderMethods } from './trial-reminders'
 import { webhookMethods } from './webhooks'
 import { usageMethods } from './usage'
 import { workspaceMethods } from './workspaces'
@@ -40,5 +42,7 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...webhookMethods(),
     ...auditMethods(),
     ...usageMethods(),
+    ...mcpCloudMethods(),
+    ...trialReminderMethods(),
   }
 }
