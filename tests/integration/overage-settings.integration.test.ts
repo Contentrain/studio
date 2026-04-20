@@ -50,7 +50,7 @@ describe('overage settings API', () => {
         limitKey: 'ai.messages_per_month',
         settingsKey: 'ai_messages',
         unitPrice: 0.03,
-        planLimit: 500, // pro plan
+        planLimit: 1500, // pro plan
         enabled: true,
       })
     })
