@@ -11,29 +11,22 @@
  *
  * Provider resolution (`resolveProvider`) reads project identity from
  * request headers the proxy attaches — MCP Cloud never resolves the
- * target repo itself.
+ * target repo itself. Plaintext installation tokens never transit the
+ * public boundary.
+ *
+ * The server URL is published through `server/utils/mcp-cloud-runtime`
+ * — plugins and utils are bundled by Nitro along different paths, so
+ * named exports from plugin files are unreliable in production builds.
  */
 
 import { startHttpMcpServerWith } from '@contentrain/mcp/server/http'
-import type { HttpMcpServerHandle } from '@contentrain/mcp/server/http'
 import { createStudioGitProvider } from '../providers/git'
+import { closeInternalMcp, setInternalMcp } from '../utils/mcp-cloud-runtime'
 
 const HEADER_INSTALLATION_ID = 'x-cr-installation-id'
 const HEADER_REPO_OWNER = 'x-cr-repo-owner'
 const HEADER_REPO_NAME = 'x-cr-repo-name'
 const HEADER_CONTENT_ROOT = 'x-cr-content-root'
-
-let mcpHandle: HttpMcpServerHandle | null = null
-let mcpUrl: string | null = null
-
-/**
- * Return the internal MCP server URL (e.g. `http://127.0.0.1:53211/mcp`)
- * or `null` if the plugin has not booted yet. Route handlers guard on
- * this and return 503 when unset.
- */
-export function getInternalMcpUrl(): string | null {
-  return mcpUrl
-}
 
 export default defineNitroPlugin(async (nitroApp) => {
   const handle = await startHttpMcpServerWith({
@@ -71,14 +64,9 @@ export default defineNitroPlugin(async (nitroApp) => {
     },
   })
 
-  mcpHandle = handle
-  mcpUrl = handle.url
+  setInternalMcp(handle.url, () => handle.close())
 
   nitroApp.hooks.hook('close', async () => {
-    if (mcpHandle) {
-      await mcpHandle.close()
-      mcpHandle = null
-      mcpUrl = null
-    }
+    await closeInternalMcp()
   })
 })
