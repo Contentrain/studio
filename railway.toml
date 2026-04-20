@@ -4,7 +4,11 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "node .output/server/index.mjs"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 90
+# healthcheckPath temporarily disabled — Railway's edge probe cannot
+# reach 0.0.0.0:3000 despite the container binding correctly (see
+# deploy logs). Re-enable once the port-routing mismatch is resolved
+# (likely a PORT env injection clash with Dockerfile NITRO_PORT).
+# healthcheckPath = "/api/health"
+# healthcheckTimeout = 90
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
