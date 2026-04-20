@@ -28,6 +28,7 @@ import { getInternalMcpUrl } from '~~/server/utils/mcp-cloud-runtime'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 import { checkRateLimit } from '~~/server/utils/rate-limit'
 import { getPlanLimit, getWorkspacePlan, hasFeature } from '~~/server/utils/license'
+import { getEffectiveLimit } from '~~/server/utils/overage'
 
 const WRITE_TOOL_NAMES = new Set([
   'contentrain_content_save',
@@ -104,13 +105,14 @@ export default defineEventHandler(async (event) => {
 
   const workspace = await db.getWorkspaceById(
     keyData.workspaceId,
-    'id, github_installation_id, plan',
+    'id, github_installation_id, plan, overage_settings',
   )
   if (!workspace?.github_installation_id) {
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
   }
 
   const plan = getWorkspacePlan(workspace)
+  const overageSettings = (workspace.overage_settings as Record<string, boolean> | null) ?? {}
   if (!hasFeature(plan, 'api.mcp_cloud')) {
     throw createError({ statusCode: 403, message: errorMessage('mcp_cloud.upgrade') })
   }
@@ -129,8 +131,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const planLimit = getPlanLimit(plan, 'api.mcp_calls_per_month')
+  const softenedPlanLimit = getEffectiveLimit(planLimit, 'api.mcp_calls_per_month', overageSettings)
   const effectiveLimit = resolveEffectiveMonthlyLimit(
-    getPlanLimit(plan, 'api.mcp_calls_per_month'),
+    softenedPlanLimit,
     keyData.monthlyCallLimit,
   )
 
