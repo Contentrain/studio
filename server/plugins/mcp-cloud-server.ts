@@ -17,6 +17,12 @@
  * The server URL is published through `server/utils/mcp-cloud-runtime`
  * — plugins and utils are bundled by Nitro along different paths, so
  * named exports from plugin files are unreliable in production builds.
+ *
+ * Boot is deliberately NON-BLOCKING: `startHttpMcpServerWith` is fired
+ * without `await` so Nitro's own HTTP listener comes up immediately
+ * and healthchecks pass even on cold start. The proxy route guards on
+ * `getInternalMcpUrl() === null` and returns 503 until the loopback
+ * server is ready — MCP clients retry on 503, so the window is benign.
  */
 
 import { startHttpMcpServerWith } from '@contentrain/mcp/server/http'
@@ -28,7 +34,21 @@ const HEADER_REPO_OWNER = 'x-cr-repo-owner'
 const HEADER_REPO_NAME = 'x-cr-repo-name'
 const HEADER_CONTENT_ROOT = 'x-cr-content-root'
 
-export default defineNitroPlugin(async (nitroApp) => {
+export default defineNitroPlugin((nitroApp) => {
+  // Fire-and-forget: we do not want to block Nitro's startup on an
+  // external HTTP listener coming up. The proxy route 503s until
+  // `setInternalMcp` fires.
+  void bootInternalMcpServer().catch((err) => {
+    // eslint-disable-next-line no-console -- background boot failure must surface somewhere
+    console.error('[mcp-cloud] Failed to start internal MCP server:', err)
+  })
+
+  nitroApp.hooks.hook('close', async () => {
+    await closeInternalMcp()
+  })
+})
+
+async function bootInternalMcpServer(): Promise<void> {
   const handle = await startHttpMcpServerWith({
     port: 0,
     host: '127.0.0.1',
@@ -65,8 +85,4 @@ export default defineNitroPlugin(async (nitroApp) => {
   })
 
   setInternalMcp(handle.url, () => handle.close())
-
-  nitroApp.hooks.hook('close', async () => {
-    await closeInternalMcp()
-  })
-})
+}
