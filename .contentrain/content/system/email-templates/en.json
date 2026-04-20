@@ -11,6 +11,12 @@
     "slug": "invite-reminder",
     "subject": "Reminder: You've been invited to {workspaceName} on Contentrain Studio"
   },
+  "trial-ending": {
+    "body": "<p>Hi,</p><p>Your Contentrain Studio trial for <strong>{workspaceName}</strong> ends <strong>{trialEndsText}</strong>.</p><p>Once the trial ends, your {planName} subscription starts automatically at {planPrice}/month — no action required if that's what you want.</p><p>If you'd like to change your plan or cancel before it renews, manage your subscription below:</p><p><a href=\"{billingUrl}\">Manage billing</a></p><p>Questions? Reply to this email.</p>",
+    "name": "Trial Ending Reminder",
+    "slug": "trial-ending",
+    "subject": "Your Contentrain Studio trial ends {trialEndsText}"
+  },
   "webhook-dlq-alert": {
     "body": "<p>Hi {recipientName},</p><p>A webhook in your <strong>{workspaceName}</strong> workspace has permanently failed after 5 delivery attempts.</p><table style=\"border-collapse:collapse;margin:16px 0\"><tr><td style=\"padding:4px 12px 4px 0;color:#64748b\">Webhook</td><td style=\"padding:4px 0\"><strong>{webhookName}</strong></td></tr><tr><td style=\"padding:4px 12px 4px 0;color:#64748b\">URL</td><td style=\"padding:4px 0\"><code>{webhookUrl}</code></td></tr><tr><td style=\"padding:4px 12px 4px 0;color:#64748b\">Event</td><td style=\"padding:4px 0\">{eventType}</td></tr></table><p>Please check the endpoint is reachable and responding with a 2xx status code.</p><p><a href=\"{settingsUrl}\">Review webhook settings</a></p>",
     "name": "Webhook Delivery Failed",

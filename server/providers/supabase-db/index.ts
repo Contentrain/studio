@@ -22,6 +22,7 @@ import { mediaMethods } from './media'
 import { memberMethods } from './members'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
+import { trialReminderMethods } from './trial-reminders'
 import { webhookMethods } from './webhooks'
 import { usageMethods } from './usage'
 import { workspaceMethods } from './workspaces'
@@ -42,5 +43,6 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...auditMethods(),
     ...usageMethods(),
     ...mcpCloudMethods(),
+    ...trialReminderMethods(),
   }
 }
