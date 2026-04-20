@@ -1,11 +1,19 @@
 -- Baseline schema — consolidates migrations 001..022 into a single canonical snapshot.
 -- Generated from local Supabase stack (pg_dump --schema=public --schema-only).
--- Apply to a fresh database.
+-- Apply to a fresh database. Works on managed Supabase, self-hosted Supabase,
+-- and plain Postgres 13+ (the latter needs a minimal auth-shim — see note below).
+
+-- NOTE on plain Postgres: references to auth.users and auth.uid() come from
+-- Supabase's GoTrue. On vanilla Postgres, provide a shim before running:
+--   create schema if not exists auth;
+--   create table if not exists auth.users (id uuid primary key);
+--   create or replace function auth.uid() returns uuid language sql stable as $$
+--     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+--   $$;
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -14,11 +22,10 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
 CREATE SCHEMA IF NOT EXISTS public;
+
+-- Required for gen_random_uuid() on plain Postgres. Supabase provisions this by default.
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA public;
 
 
 --
