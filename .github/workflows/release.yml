@@ -88,6 +88,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v6
+        with:
+          version: 10.26.2
 
       - uses: actions/setup-node@v4
         with:
