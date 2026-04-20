@@ -4,14 +4,14 @@
       "en"
     ],
     "locale": "en",
-    "model": "error-messages",
+    "model": "ui-strings",
     "source": "mcp-local",
-    "timestamp": "2026-04-07T19:05:19.777Z",
+    "timestamp": "2026-04-20T20:22:14.764Z",
     "tool": "contentrain_content_save"
   },
   "stats": {
-    "entries": 61,
-    "lastSync": "2026-04-07T19:05:19.777Z",
+    "entries": 62,
+    "lastSync": "2026-04-20T20:22:14.765Z",
     "locales": [
       "en"
     ],
