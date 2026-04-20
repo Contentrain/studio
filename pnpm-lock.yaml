@@ -78,8 +78,8 @@ importers:
         specifier: ^0.34.5
         version: 0.34.5
       slugify:
-        specifier: ^1.6.8
-        version: 1.6.8
+        specifier: ^1.6.9
+        version: 1.6.9
       stripe:
         specifier: ^21.0.1
         version: 21.0.1(@types/node@25.5.2)
@@ -5402,8 +5402,8 @@ packages:
     resolution: {integrity: sha512-stxByr12oeeOyY2BlviTNQlYV5xOj47GirPr4yA1hE9JCtxfQN0+tVbkxwCtYDQWhEKWFHsEK48ORg5jrouCAg==}
     engines: {node: '>=20'}
 
-  slugify@1.6.8:
-    resolution: {integrity: sha512-HVk9X1E0gz3mSpoi60h/saazLKXKaZThMLU3u/aNwoYn8/xQyX2MGxL0ui2eaokkD7tF+Zo+cKTHUbe1mmmGzA==}
+  slugify@1.6.9:
+    resolution: {integrity: sha512-vZ7rfeehZui7wQs438JXBckYLkIIdfHOXsaVEUMyS5fHo1483l1bMdo0EDSWYclY0yZKFOipDy4KHuKs6ssvdg==}
     engines: {node: '>=8.0.0'}
 
   smob@1.6.1:
@@ -12347,7 +12347,7 @@ snapshots:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
 
-  slugify@1.6.8: {}
+  slugify@1.6.9: {}
 
   smob@1.6.1: {}
 
