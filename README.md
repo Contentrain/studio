@@ -219,16 +219,11 @@ See [SECURITY.md](SECURITY.md) for scope, timelines, and disclosure guidance.
 
 ## Branch Model
 
-Studio ships through a two-tier Git flow:
+Studio is trunk-based. `main` is the single integration branch and the target for every PR. Staging is a Railway deployment environment fed from `main`, not a separate Git branch.
 
-| Branch    | Role                                                    | Deploy target              |
-|-----------|---------------------------------------------------------|----------------------------|
-| `main`    | Production, tagged releases, recommended for self-hosts | `contentrain.io`           |
-| `staging` | Integration — merged work awaiting promotion            | `staging.contentrain.io`   |
-
-- **Contributors**: open PRs against `staging` (GitHub's default PR base), not `main`.
-- **Self-hosters**: track `main` for stability. `staging` may break at any time.
-- **Releases**: maintainers promote `staging → main` through a release PR, then tag `v*` on `main`. See [docs/RELEASING.md](docs/RELEASING.md).
+- **Contributors**: open PRs against `main` (GitHub's default base, no extra step needed).
+- **Self-hosters**: deploy from tagged releases (`v0.1.0`, `v0.2.0`, …). Tags are the stability contract; `main` HEAD can include not-yet-released changes.
+- **Releases**: maintainers cut a version tag on `main` → production deploy. See [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Contributing
 

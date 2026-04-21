@@ -32,26 +32,28 @@ Not published from this repository:
 
 If Studio later exposes a publishable SDK or CLI, that should be extracted as a separate package boundary instead of publishing the root app.
 
-## Release Promotion: `staging → main`
+## Pre-Release Verification on Staging
 
-Contributor work lands on `staging` first (see [CONTRIBUTING.md](../CONTRIBUTING.md) → Branch Model). Releases are cut by promoting `staging` into `main`:
+Studio is trunk-based (see [CONTRIBUTING.md](../CONTRIBUTING.md) → Branch Model). Every merge to `main` is deployed automatically to `staging.contentrain.io` by Railway, so pre-release verification happens on that environment before a tag is cut — not on a separate branch.
 
-1. Verify the current `staging` has been deployed to `staging.contentrain.io` and smoke-tested (auth, workspace, GitHub, chat, content save, billing where applicable).
-2. Open a `staging → main` PR titled e.g. `release: vX.Y.Z` summarising the included changes.
-3. Wait for CI green + approval.
-4. Merge the promotion PR (preserve commits — do not squash, so history carries forward cleanly).
-5. Check out `main`, pull, run the local release gate below, then tag.
+Before tagging, confirm on `staging.contentrain.io`:
 
-Do not cut a tag directly from `staging` or from a branch that has not been promoted through `main`.
+- Auth flows (login, OAuth, magic link)
+- Workspace and project list load
+- GitHub App install and repo connection
+- A full chat/content save round-trip
+- Billing/media/CDN/forms surfaces applicable to this release
+
+If staging is healthy, proceed to the local release flow below.
 
 ## Local Release Flow
 
 Before cutting a tag, make sure:
 
-- You are on `main` and the `staging → main` promotion PR has been merged
-- `main` is clean and up to date
+- You are on `main` and it is up to date with `origin/main`
+- `main` is clean (no uncommitted changes)
 - `package.json` has the intended version
-- `.env` and deploy secrets are already validated on `staging.contentrain.io`
+- `staging.contentrain.io` is running the exact `main` HEAD you are about to tag
 
 Run the local release gate:
 

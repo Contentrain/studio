@@ -119,28 +119,25 @@ Do not copy enterprise-only behavior into core or make core depend on `ee/` impl
 
 ## Branch Model
 
-Studio uses a two-tier Git flow. Understand where your PR lands before opening it.
+Studio is trunk-based: `main` is the single integration branch and the PR target for all work.
 
-| Branch    | Role                                                | Deploy target              |
-|-----------|-----------------------------------------------------|----------------------------|
-| `main`    | Production — tagged releases, self-host source      | `contentrain.io`           |
-| `staging` | Integration — merged work awaiting promotion        | `staging.contentrain.io`   |
-| `feat/*`  | Per-task feature branches                           | (no auto-deploy)           |
-| `fix/*`   | Per-task bug branches                               | (no auto-deploy)           |
+| Branch   | Role                                                    | Deploy target                                    |
+|----------|---------------------------------------------------------|--------------------------------------------------|
+| `main`   | Trunk — default, PR target, OSS face                    | `staging.contentrain.io` auto; prod on `v*` tag  |
+| `feat/*` | Per-task feature branches                               | (no auto-deploy)                                 |
+| `fix/*`  | Per-task bug branches                                   | (no auto-deploy)                                 |
 
 ### PR flow
 
-1. **Branch off `staging`**, not `main`
-2. Open your PR with `staging` as the **base branch** (GitHub's default PR base is set to `staging`, so this is automatic)
+1. Fork the repo (or branch off `main` if you have push access)
+2. Open your PR with `main` as the base branch (GitHub's default — no action needed)
 3. CI runs lint, typecheck, tests, RLS, E2E, and build
-4. A maintainer reviews and merges → `staging` auto-deploys to `staging.contentrain.io`
-5. Changes ride into `main` through a later `staging → main` release PR cut by maintainers
-
-Please do not open PRs directly against `main`. `main` only receives code through release promotion PRs from `staging`.
+4. A maintainer reviews and merges → the change auto-deploys to `staging.contentrain.io` via Railway
+5. When the maintainers cut a version tag (`v*`), that tag triggers the production deploy
 
 ### Self-hoster note
 
-If you deploy Contentrain Studio yourself, track `main` for stability. `staging` can break at any time and carries pre-release code.
+If you deploy Contentrain Studio yourself, track **tagged releases** (`v0.1.0`, `v0.2.0`, …), not `main` HEAD. Tags are the supported stability contract. `main` is stable-at-HEAD for CI but may include not-yet-released changes at any moment. See [docs/RELEASING.md](docs/RELEASING.md) for the release cadence.
 
 ## Style and Commits
 

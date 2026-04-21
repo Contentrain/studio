@@ -1,9 +1,3 @@
-<!--
-  Base branch: `staging` (default).
-  `main` only receives code through maintainer-cut `staging → main` release PRs.
-  See CONTRIBUTING.md → Branch Model if unsure.
--->
-
 ## Summary
 
 <!-- What does this PR change? Keep it brief and concrete. -->
@@ -34,7 +28,6 @@
 
 ## Verification
 
-- [ ] Base branch is `staging` (unless this is a maintainer-cut release PR)
 - [ ] Commits are signed off (`git commit -s`)
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
 - [ ] `pnpm lint`
