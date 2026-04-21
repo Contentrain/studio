@@ -117,9 +117,32 @@ Contentrain Studio follows an open-core model:
 
 Do not copy enterprise-only behavior into core or make core depend on `ee/` implementation details. Graceful degradation should keep core functional without enterprise code present.
 
+## Branch Model
+
+Studio is trunk-based: `main` is the single integration branch and the PR target for all work.
+
+| Branch   | Role                                                    | Deploy target                                    |
+|----------|---------------------------------------------------------|--------------------------------------------------|
+| `main`   | Trunk — default, PR target, OSS face                    | `staging.contentrain.io` auto; prod on `v*` tag  |
+| `feat/*` | Per-task feature branches                               | (no auto-deploy)                                 |
+| `fix/*`  | Per-task bug branches                                   | (no auto-deploy)                                 |
+
+### PR flow
+
+1. Fork the repo (or branch off `main` if you have push access)
+2. Open your PR with `main` as the base branch (GitHub's default — no action needed)
+3. CI runs lint, typecheck, tests, RLS, E2E, and build
+4. A maintainer reviews and merges → the change auto-deploys to `staging.contentrain.io` via Railway
+5. When the maintainers cut a version tag (`v*`), that tag triggers the production deploy
+
+### Self-hoster note
+
+If you deploy Contentrain Studio yourself, track **tagged releases** (`v0.1.0`, `v0.2.0`, …), not `main` HEAD. Tags are the supported stability contract. `main` is stable-at-HEAD for CI but may include not-yet-released changes at any moment. See [docs/RELEASING.md](docs/RELEASING.md) for the release cadence.
+
 ## Style and Commits
 
-- Conventional Commits are enforced
+- Conventional Commits are enforced (commitlint + husky)
+- Commits authored by the Contentrain MCP bot (`[contentrain] ...`) are auto-ignored by commitlint; every human commit must follow the conventional format
 - Husky and lint-staged run on commits
 - ESLint is the formatter/linter of record
 - This repository does not use Prettier
