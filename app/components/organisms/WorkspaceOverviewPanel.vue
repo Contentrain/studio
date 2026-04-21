@@ -1,13 +1,19 @@
 <script setup lang="ts">
+import { PLAN_PRICING } from '~~/shared/utils/license'
+
 const props = defineProps<{
   workspaceId: string
 }>()
 
 const { workspaces, activeWorkspace, fetchWorkspaces, deleteWorkspace } = useWorkspaces()
+const { billingEnabled, effectivePlan } = useBilling()
 const { state: authState } = useAuth()
 const { t } = useContent()
 const toast = useToast()
 const router = useRouter()
+
+const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? 'Free')
+const planPrice = computed(() => PLAN_PRICING[effectivePlan.value]?.priceMonthly ?? 0)
 
 const saving = ref(false)
 const workspaceName = ref('')
@@ -134,18 +140,32 @@ async function handleDeleteWorkspace() {
     <div>
       <div class="flex items-center gap-1">
         <AtomsFormLabel :text="t('settings.plan_label')" size="sm" />
-        <AtomsInfoTooltip :text="t('settings.plan_info')" />
+        <AtomsInfoTooltip :text="billingEnabled ? t('settings.plan_info') : t('settings.plan_self_hosted_info')" />
       </div>
-      <button
-        type="button"
-        class="mt-1.5 inline-flex items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-        @click="planModalOpen = true"
+      <component
+        :is="billingEnabled ? 'button' : 'div'"
+        :type="billingEnabled ? 'button' : undefined"
+        class="mt-1.5 flex w-full items-center justify-between rounded-md border border-secondary-200 bg-white px-3.5 py-2.5 text-left transition-colors dark:border-secondary-800 dark:bg-secondary-900"
+        :class="billingEnabled && 'hover:border-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:border-primary-500'"
+        @click="billingEnabled && (planModalOpen = true)"
       >
-        <AtomsBadge variant="primary" size="md" class="capitalize">
-          {{ activeWorkspace?.plan ?? 'free' }}
-        </AtomsBadge>
-        <span class="icon-[annon--chevron-right] size-3.5 text-muted" aria-hidden="true" />
-      </button>
+        <div class="flex items-center gap-2.5">
+          <span class="text-sm font-medium text-heading dark:text-secondary-100">
+            {{ planName }}
+          </span>
+          <AtomsBadge v-if="!billingEnabled" variant="secondary" size="sm">
+            {{ t('billing.self_hosted_badge') }}
+          </AtomsBadge>
+          <span v-else-if="planPrice > 0" class="text-xs text-muted">
+            ${{ planPrice }}{{ t('plans.per_month') }}
+          </span>
+        </div>
+        <span
+          v-if="billingEnabled"
+          class="icon-[annon--chevron-right] size-4 text-muted"
+          aria-hidden="true"
+        />
+      </component>
     </div>
     <AtomsBaseButton
       variant="primary"

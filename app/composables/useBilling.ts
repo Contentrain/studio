@@ -148,6 +148,7 @@ export function useBilling() {
   }
 
   return {
+    billingEnabled,
     billingState,
     effectivePlan,
     isLocked,

@@ -2,7 +2,7 @@
 import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
-const { billingState, effectivePlan, isTrialing, trialDaysLeft, openPortal } = useBilling()
+const { billingEnabled, billingState, effectivePlan, isTrialing, trialDaysLeft, openPortal } = useBilling()
 
 defineProps<{
   workspaceId: string
@@ -15,7 +15,8 @@ const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? 'Free
 const planPrice = computed(() => PLAN_PRICING[effectivePlan.value]?.priceMonthly ?? 0)
 
 const hasSubscription = computed(() =>
-  ['subscribed', 'trial_active', 'past_due', 'canceled'].includes(billingState.value),
+  billingEnabled.value
+  && ['subscribed', 'trial_active', 'past_due', 'canceled'].includes(billingState.value),
 )
 
 const stateLabel = computed(() => {
@@ -61,8 +62,34 @@ async function handleManageSubscription() {
 
 <template>
   <div class="space-y-6">
-    <!-- Current plan -->
-    <div class="rounded-lg border border-secondary-200 p-5 dark:border-secondary-800">
+    <!-- Self-hosted notice -->
+    <div
+      v-if="!billingEnabled"
+      class="rounded-lg border border-secondary-200 p-5 dark:border-secondary-800"
+    >
+      <div class="flex items-start gap-3">
+        <span class="icon-[annon--info] mt-0.5 size-5 shrink-0 text-muted" aria-hidden="true" />
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-medium text-heading dark:text-secondary-100">
+              {{ t('billing.self_hosted_title') }}
+            </h3>
+            <AtomsBadge variant="secondary" size="sm">
+              {{ t('billing.self_hosted_badge') }}
+            </AtomsBadge>
+          </div>
+          <p class="mt-1 text-sm text-muted">
+            {{ t('billing.self_hosted_description') }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current plan (managed/Stripe-enabled only) -->
+    <div
+      v-else
+      class="rounded-lg border border-secondary-200 p-5 dark:border-secondary-800"
+    >
       <div class="flex items-center justify-between">
         <div>
           <h3 class="text-sm font-medium text-heading dark:text-secondary-100">
