@@ -249,13 +249,42 @@ Medium:
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
 - MCP Cloud endpoint: `server/api/mcp/v1/[projectId]/[...].ts` awaits `@contentrain/mcp` `resolveProvider` callback (per-request provider resolution). Foundations (license entries, `mcp_cloud_keys` table, usage RPC) shipped in Faz S6 — route implementation pending.
 
+## Branch Model & Deploy Flow — CRITICAL
+
+Studio runs a **two-tier Git flow** with `main` as prod and `staging` as the integration/pre-prod branch.
+
+| Branch    | Role                                             | Railway target               |
+|-----------|--------------------------------------------------|------------------------------|
+| `main`    | Production — contentrain.io, tagged releases     | `studio` production service  |
+| `staging` | Integration — merged work awaiting promotion     | `studio-staging` service     |
+| `feat/*`  | Per-task feature/bug branches                    | (no auto-deploy)             |
+| `fix/*`   | Per-task bug-fix branches                        | (no auto-deploy)             |
+| `cr/*`    | Contentrain MCP auto-generated content branches  | (auto-merged by MCP)         |
+
+### Rules — never violate
+
+- **Every feature/bug PR targets `staging`, not `main`.** `main` receives code only through `staging → main` release PRs.
+- **Never push directly to `main` or `staging`.** Both go through PR + CI gate.
+- **Release tags (`v*`) are cut from `main`** after a `staging → main` PR is merged. See `docs/RELEASING.md`.
+- **Self-hosters should track `main`** (stable). `staging` may be unstable at any moment.
+- **CI runs on both `main` and `staging`** pushes/PRs (see `.github/workflows/ci.yml`).
+- **Commitlint is lenient for MCP auto-commits** — messages prefixed with `[contentrain]` are ignored by commitlint (see `commitlint.config.ts`). All human commits must obey Conventional Commits.
+
+### Contributor flow
+
+1. Contributor forks, opens branch from `staging`
+2. PR targets `staging` (GitHub's default PR base is set to `staging`)
+3. Forked PRs run CI but cannot deploy (GitHub secrets are not exposed to forks — intended security boundary)
+4. Maintainer reviews + merges → `staging` auto-deploys to `staging.contentrain.io`
+5. Periodically, maintainer opens `staging → main` release PR → merge → prod deploy → tag
+
 ## Dev Tooling
 
-- Conventional Commits enforced by commitlint + husky
+- Conventional Commits enforced by commitlint + husky (MCP `[contentrain]` commits ignored)
 - `pnpm lint` / `pnpm lint:fix` — @nuxt/eslint with Stylistic (no Prettier)
-- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow
+- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow; run only from `main` after a `staging → main` merge
 - lint-staged on pre-commit (only changed files)
-- GitHub Actions CI on PRs (commit lint + build)
+- GitHub Actions CI on PRs to `main` or `staging` (commit lint + build)
 
 ## Enterprise Edition (ee/) — CRITICAL
 

@@ -117,9 +117,35 @@ Contentrain Studio follows an open-core model:
 
 Do not copy enterprise-only behavior into core or make core depend on `ee/` implementation details. Graceful degradation should keep core functional without enterprise code present.
 
+## Branch Model
+
+Studio uses a two-tier Git flow. Understand where your PR lands before opening it.
+
+| Branch    | Role                                                | Deploy target              |
+|-----------|-----------------------------------------------------|----------------------------|
+| `main`    | Production — tagged releases, self-host source      | `contentrain.io`           |
+| `staging` | Integration — merged work awaiting promotion        | `staging.contentrain.io`   |
+| `feat/*`  | Per-task feature branches                           | (no auto-deploy)           |
+| `fix/*`   | Per-task bug branches                               | (no auto-deploy)           |
+
+### PR flow
+
+1. **Branch off `staging`**, not `main`
+2. Open your PR with `staging` as the **base branch** (GitHub's default PR base is set to `staging`, so this is automatic)
+3. CI runs lint, typecheck, tests, RLS, E2E, and build
+4. A maintainer reviews and merges → `staging` auto-deploys to `staging.contentrain.io`
+5. Changes ride into `main` through a later `staging → main` release PR cut by maintainers
+
+Please do not open PRs directly against `main`. `main` only receives code through release promotion PRs from `staging`.
+
+### Self-hoster note
+
+If you deploy Contentrain Studio yourself, track `main` for stability. `staging` can break at any time and carries pre-release code.
+
 ## Style and Commits
 
-- Conventional Commits are enforced
+- Conventional Commits are enforced (commitlint + husky)
+- Commits authored by the Contentrain MCP bot (`[contentrain] ...`) are auto-ignored by commitlint; every human commit must follow the conventional format
 - Husky and lint-staged run on commits
 - ESLint is the formatter/linter of record
 - This repository does not use Prettier

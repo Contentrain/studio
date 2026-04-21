@@ -217,6 +217,19 @@ Report security issues privately:
 
 See [SECURITY.md](SECURITY.md) for scope, timelines, and disclosure guidance.
 
+## Branch Model
+
+Studio ships through a two-tier Git flow:
+
+| Branch    | Role                                                    | Deploy target              |
+|-----------|---------------------------------------------------------|----------------------------|
+| `main`    | Production, tagged releases, recommended for self-hosts | `contentrain.io`           |
+| `staging` | Integration — merged work awaiting promotion            | `staging.contentrain.io`   |
+
+- **Contributors**: open PRs against `staging` (GitHub's default PR base), not `main`.
+- **Self-hosters**: track `main` for stability. `staging` may break at any time.
+- **Releases**: maintainers promote `staging → main` through a release PR, then tag `v*` on `main`. See [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Contributing
 
 Community contributions are welcome for the AGPL core.
