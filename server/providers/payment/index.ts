@@ -16,6 +16,7 @@
  */
 
 import { registerPlugin } from './registry'
+import { polarPlugin } from './plugins/polar'
 import { stripePlugin } from './plugins/stripe'
 
 let bootstrapped = false
@@ -25,9 +26,13 @@ let bootstrapped = false
  *
  * Idempotent — safe to call from multiple entry points. The factory in
  * `server/utils/providers.ts` calls this lazily on first provider lookup.
+ *
+ * Registration order is incidental; the preference order lives in
+ * `registry.ts` (`DEFAULT_PREFERENCE`, currently polar → stripe).
  */
 export function bootstrapPaymentPlugins(): void {
   if (bootstrapped) return
+  registerPlugin(polarPlugin)
   registerPlugin(stripePlugin)
   bootstrapped = true
 }
