@@ -35,8 +35,19 @@ export interface PortalResult {
   url: string
 }
 
+/** Canonical webhook event names emitted to route handlers. Each plugin maps
+ *  its native events to these values inside `handleWebhook`. */
+export type CanonicalWebhookEvent
+  = | 'subscription.created'
+    | 'subscription.updated'
+    | 'subscription.canceled'
+    | 'invoice.paid'
+    | 'invoice.payment_failed'
+    | 'noop'
+
 export interface WebhookResult {
-  event: string
+  /** Canonical event name (see `CanonicalWebhookEvent`). */
+  event: CanonicalWebhookEvent
   workspaceId?: string
   plan?: string
   subscriptionId?: string
@@ -45,21 +56,25 @@ export interface WebhookResult {
   subscriptionStatus?: string
   /** ISO timestamp: when current billing period ends. */
   currentPeriodEnd?: string
+  /** ISO timestamp: when trial ends (trialing subscriptions only). */
+  trialEndsAt?: string
   /** Whether subscription will cancel at period end. */
   cancelAtPeriodEnd?: boolean
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
-  /** Legacy flag — Stripe uses `invoice.creating` for overage billing. */
-  requiresOverageCalculation?: boolean
 }
 
-export interface InvoiceItemInput {
+export interface UsageEventInput {
+  workspaceId: string
+  /** Provider-specific customer identifier (e.g. Stripe `cus_…`, Polar UUID). */
   customerId: string
-  subscriptionId: string
-  description: string
-  /** Amount in cents (USD). */
-  amount: number
-  currency?: string
+  /** Meter key — matches Polar meter slugs. See `shared/utils/usage-meters.ts`. */
+  meterName: string
+  value: number
+  /** Idempotency key — prevents double-ingestion across retries. */
+  idempotencyKey: string
+  /** Event timestamp; defaults to now in the plugin if omitted. */
+  occurredAt?: string
   metadata?: Record<string, string>
 }
 
@@ -70,19 +85,27 @@ export interface PaymentProvider {
   /** Create a customer portal session for subscription management. */
   createPortalSession: (input: PortalInput) => Promise<PortalResult>
 
-  /** Verify and process a webhook event. */
-  handleWebhook: (payload: string, signature: string) => Promise<WebhookResult>
+  /**
+   * Verify and process a webhook event.
+   *
+   * `headers` carries the raw request headers. Each plugin picks the
+   * signature/timestamp headers it needs (Stripe: `stripe-signature`;
+   * Polar / Standard Webhooks: `webhook-signature` + `webhook-timestamp`
+   * + `webhook-id`).
+   */
+  handleWebhook: (payload: string, headers: Record<string, string | undefined>) => Promise<WebhookResult>
 
-  /** Cancel a subscription. */
+  /** Cancel a subscription (immediate). */
   cancelSubscription: (subscriptionId: string) => Promise<void>
 
   /**
-   * Add a one-time invoice item to the customer's upcoming invoice.
-   * Used for overage billing at the end of a billing period.
-   * Legacy shape — Polar and other providers map this onto their native
-   * meter/adjustment model inside the plugin.
+   * Record a usage event for metered/overage billing.
+   *
+   * Plugins map this to their native model — Polar ingests to a meter
+   * via its events API; Stripe does not support real-time metering
+   * and logs a warning (overage billing is no-op under Stripe).
    */
-  addInvoiceItem: (input: InvoiceItemInput) => Promise<{ invoiceItemId: string }>
+  ingestUsageEvent: (input: UsageEventInput) => Promise<void>
 }
 
 /**

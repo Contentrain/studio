@@ -5,11 +5,13 @@
  * Attaches billing context to event.context.billing for downstream use.
  * Returns 402 for locked states (trial_expired, grace_expired, canceled_expired).
  *
- * Self-hosted bypass: if NUXT_STRIPE_SECRET_KEY is not set, treats all
+ * Self-hosted bypass: if no payment provider is configured, treats all
  * workspaces as subscribed with starter-level access (core features only).
  */
 
-import { BILLING_SELECT_FIELDS, getEffectivePlan, isBillingLocked, resolveBillingState } from '../utils/billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState, WORKSPACE_BILLING_SELECT_FIELDS } from '../utils/billing'
+import type { PaymentAccountState, WorkspaceBillingRow } from '../utils/billing'
+import { isBillingConfigured } from '../utils/license'
 
 const WORKSPACE_ROUTE_PREFIX = '/api/workspaces/'
 
@@ -39,40 +41,36 @@ export default defineEventHandler(async (event) => {
   if (!event.context.auth)
     return
 
-  // Self-hosted bypass: no Stripe key = starter-level access.
+  // Self-hosted bypass: no payment provider = starter-level access.
   // Core features work (Git, projects, chat, media). Premium features
   // (preview branches, custom variants, spam filter) stay gated.
   // ee/ features still require the enterprise bridge to be loaded.
-  const config = useRuntimeConfig()
-  if (!config.stripe?.secretKey) {
+  if (!isBillingConfigured()) {
     event.context.billing = { state: 'subscribed' as const, effectivePlan: 'starter' as const }
     return
   }
 
   const db = useDatabaseProvider()
-  const workspace = await db.getWorkspaceById(workspaceId, BILLING_SELECT_FIELDS)
+  const [workspace, account] = await Promise.all([
+    db.getWorkspaceById(workspaceId, WORKSPACE_BILLING_SELECT_FIELDS),
+    db.getActivePaymentAccount(workspaceId),
+  ])
 
   if (!workspace)
     return
 
-  const billingRow = workspace as {
-    type: string
-    plan: string | null
-    trial_ends_at: string | null
-    subscription_status: string | null
-    stripe_subscription_id: string | null
-    subscription_current_period_end: string | null
-    grace_period_ends_at: string | null
-    overage_settings?: Record<string, boolean> | null
+  const billingRow: WorkspaceBillingRow = {
+    type: workspace.type as string,
+    plan: (workspace.plan as string | null) ?? null,
+    payment_account: (account as unknown as PaymentAccountState | null) ?? null,
+    overage_settings: (workspace.overage_settings as Record<string, boolean> | null | undefined) ?? undefined,
   }
 
   const state = resolveBillingState(billingRow)
   const effectivePlan = getEffectivePlan(billingRow)
 
-  // Attach billing context for downstream route handlers
   event.context.billing = { state, effectivePlan, overageSettings: billingRow.overage_settings ?? {} }
 
-  // Block locked states
   if (isBillingLocked(state)) {
     throw createError({
       statusCode: 402,

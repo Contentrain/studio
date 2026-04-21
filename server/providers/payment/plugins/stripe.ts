@@ -4,18 +4,23 @@
  * Implements the `PaymentProvider` interface against the Stripe SDK.
  * Active when `NUXT_STRIPE_SECRET_KEY` is set. Trial is collected at
  * checkout (`trial_period_days=14`); a credit card is always required.
+ *
+ * Note — Stripe does not support real-time meter ingestion the way Polar
+ * does. `ingestUsageEvent` is a no-op here and logs a warning; new
+ * deployments should use the Polar plugin for overage billing.
  */
 
 import Stripe from 'stripe'
 import type {
+  CanonicalWebhookEvent,
   CheckoutInput,
   CheckoutResult,
-  InvoiceItemInput,
   PaymentPluginConfig,
   PaymentProvider,
   PaymentProviderPlugin,
   PortalInput,
   PortalResult,
+  UsageEventInput,
   WebhookResult,
 } from '../types'
 
@@ -39,7 +44,6 @@ function buildPriceMap(cfg: StripeConfig): Record<string, string> {
   }
 }
 
-/** Reverse lookup: price ID → plan name. Handles Portal-driven plan changes. */
 function planFromPriceId(priceId: string | undefined, priceMap: Record<string, string>): string | undefined {
   if (!priceId) return undefined
   for (const [plan, id] of Object.entries(priceMap)) {
@@ -56,6 +60,32 @@ function resolvePlanFromSubscription(
   const fromPrice = planFromPriceId(priceId, priceMap)
   if (fromPrice) return fromPrice
   return subscription.metadata?.plan
+}
+
+function secondsToIso(seconds: number | null | undefined): string | undefined {
+  if (!seconds) return undefined
+  return new Date(seconds * 1000).toISOString()
+}
+
+function mapSubscriptionToResult(
+  event: CanonicalWebhookEvent,
+  subscription: Stripe.Subscription,
+  priceMap: Record<string, string>,
+): WebhookResult {
+  const itemPeriodEnd = subscription.items?.data?.[0]?.current_period_end
+  return {
+    event,
+    workspaceId: subscription.metadata?.workspace_id,
+    plan: resolvePlanFromSubscription(subscription, priceMap),
+    subscriptionId: subscription.id,
+    customerId: subscription.customer as string,
+    subscriptionStatus: subscription.status,
+    currentPeriodEnd: secondsToIso(itemPeriodEnd),
+    trialEndsAt: subscription.status === 'trialing'
+      ? secondsToIso(subscription.trial_end) ?? secondsToIso(itemPeriodEnd)
+      : undefined,
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+  }
 }
 
 function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
@@ -111,31 +141,17 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
       return { url: session.url }
     },
 
-    async handleWebhook(payload: string, signature: string): Promise<WebhookResult> {
+    async handleWebhook(payload, headers): Promise<WebhookResult> {
       if (!webhookSecret) {
         throw new Error('NUXT_STRIPE_WEBHOOK_SECRET is required')
       }
 
-      const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret)
-
-      // invoice.creating is a valid Stripe webhook event but is not in the SDK's
-      // discriminated event union. Handle it before the typed switch.
-      const eventType: string = event.type
-      if (eventType === 'invoice.creating') {
-        const raw = (event as unknown as { data: { object: Record<string, unknown> } }).data.object
-        const subField = raw.subscription
-        const subId = typeof subField === 'string' ? subField : (subField as { id?: string })?.id
-        const custField = raw.customer
-        const custId = typeof custField === 'string' ? custField : (custField as { id?: string })?.id
-        const subDetails = raw.subscription_details as { metadata?: Record<string, string> } | null
-        return {
-          event: eventType,
-          workspaceId: subDetails?.metadata?.workspace_id,
-          subscriptionId: subId,
-          customerId: custId,
-          requiresOverageCalculation: true,
-        }
+      const signature = headers['stripe-signature']
+      if (!signature) {
+        throw new Error('Missing stripe-signature header')
       }
+
+      const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret)
 
       switch (event.type) {
         case 'checkout.session.completed': {
@@ -144,43 +160,26 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
             ? await stripe.subscriptions.retrieve(session.subscription as string)
             : null
 
-          const checkoutItemPeriodEnd = subscription?.items?.data?.[0]?.current_period_end
+          if (!subscription) {
+            return { event: 'subscription.created', workspaceId: session.metadata?.workspace_id }
+          }
+
           return {
-            event: event.type,
-            workspaceId: session.metadata?.workspace_id,
-            plan: session.metadata?.plan,
-            subscriptionId: session.subscription as string,
-            customerId: session.customer as string,
-            subscriptionStatus: subscription?.status,
-            currentPeriodEnd: checkoutItemPeriodEnd
-              ? new Date(checkoutItemPeriodEnd * 1000).toISOString()
-              : undefined,
-            cancelAtPeriodEnd: subscription?.cancel_at_period_end,
+            ...mapSubscriptionToResult('subscription.created', subscription, priceMap),
+            // Prefer checkout metadata for plan — Stripe may not return price yet
+            plan: session.metadata?.plan ?? resolvePlanFromSubscription(subscription, priceMap),
+            workspaceId: session.metadata?.workspace_id ?? subscription.metadata?.workspace_id,
           }
         }
 
         case 'customer.subscription.updated': {
-          const subscription = event.data.object as Stripe.Subscription
-          const itemPeriodEnd = subscription.items?.data?.[0]?.current_period_end
-          const resolvedPlan = resolvePlanFromSubscription(subscription, priceMap)
-          return {
-            event: event.type,
-            workspaceId: subscription.metadata?.workspace_id,
-            plan: resolvedPlan,
-            subscriptionId: subscription.id,
-            customerId: subscription.customer as string,
-            subscriptionStatus: subscription.status,
-            currentPeriodEnd: itemPeriodEnd
-              ? new Date(itemPeriodEnd * 1000).toISOString()
-              : undefined,
-            cancelAtPeriodEnd: subscription.cancel_at_period_end,
-          }
+          return mapSubscriptionToResult('subscription.updated', event.data.object as Stripe.Subscription, priceMap)
         }
 
         case 'customer.subscription.deleted': {
           const subscription = event.data.object as Stripe.Subscription
           return {
-            event: event.type,
+            event: 'subscription.canceled',
             workspaceId: subscription.metadata?.workspace_id,
             subscriptionId: subscription.id,
             customerId: subscription.customer as string,
@@ -197,7 +196,7 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
           const custId = typeof custField === 'string' ? custField : (custField as { id?: string })?.id
           const subDetails = raw.subscription_details as { metadata?: Record<string, string> } | null
           return {
-            event: event.type,
+            event: event.type === 'invoice.paid' ? 'invoice.paid' : 'invoice.payment_failed',
             workspaceId: subDetails?.metadata?.workspace_id,
             subscriptionId: subId,
             customerId: custId,
@@ -206,7 +205,7 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
         }
 
         default:
-          return { event: event.type }
+          return { event: 'noop' }
       }
     },
 
@@ -214,16 +213,10 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
       await stripe.subscriptions.cancel(subscriptionId)
     },
 
-    async addInvoiceItem(input: InvoiceItemInput): Promise<{ invoiceItemId: string }> {
-      const item = await stripe.invoiceItems.create({
-        customer: input.customerId,
-        subscription: input.subscriptionId,
-        description: input.description,
-        amount: input.amount,
-        currency: input.currency ?? 'usd',
-        metadata: input.metadata,
-      })
-      return { invoiceItemId: item.id }
+    async ingestUsageEvent(_input: UsageEventInput): Promise<void> {
+      // Stripe does not support real-time meter ingestion; overage billing
+      // under Stripe is not supported in this version. Silently drop so
+      // the outbox drain proceeds without piling up errors.
     },
   }
 }

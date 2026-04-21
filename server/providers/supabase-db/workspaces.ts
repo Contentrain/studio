@@ -2,7 +2,7 @@
  * Workspace CRUD methods for the Supabase DatabaseProvider.
  */
 import type { DatabaseProvider, DatabaseRow } from '../database'
-import { fetchWorkspaceById, getAdmin, getUser, requireRole, toDatabaseRow } from './helpers'
+import { attachActivePaymentAccount, attachActivePaymentAccounts, fetchWorkspaceById, getAdmin, getUser, requireRole, toDatabaseRow } from './helpers'
 
 type WorkspaceMethods = Pick<
   DatabaseProvider,
@@ -48,7 +48,8 @@ export function workspaceMethods(): WorkspaceMethods {
           .order('created_at', { ascending: true })
 
         if (error) throw createError({ statusCode: 500, message: error.message })
-        return (data ?? []).map((w: DatabaseRow) => ({ ...w, workspace_members: [{ role: 'owner' }] }))
+        const enriched = (data ?? []).map((w: DatabaseRow) => ({ ...w, workspace_members: [{ role: 'owner' }] }))
+        return attachActivePaymentAccounts(enriched) as unknown as Promise<DatabaseRow[]>
       }
 
       const workspaceIds = memberships.map(m => m.workspace_id)
@@ -62,10 +63,11 @@ export function workspaceMethods(): WorkspaceMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
 
-      return (data ?? []).map((w: DatabaseRow) => ({
+      const enriched = (data ?? []).map((w: DatabaseRow) => ({
         ...w,
         workspace_members: [{ role: roleMap[w.id as string] ?? 'member' }],
       }))
+      return attachActivePaymentAccounts(enriched) as unknown as Promise<DatabaseRow[]>
     },
 
     async createWorkspace(accessToken, input) {
@@ -90,13 +92,14 @@ export function workspaceMethods(): WorkspaceMethods {
 
     async getWorkspaceDetailForUser(accessToken, userId, workspaceId) {
       await requireRole(accessToken, userId, workspaceId, ['owner', 'admin', 'member'])
-      return fetchWorkspaceById(workspaceId, `
+      const workspace = await fetchWorkspaceById(workspaceId, `
         *,
         workspace_members(
           id, role, user_id, invited_email, accepted_at,
           profiles:user_id(id, display_name, email, avatar_url)
         )
       `)
+      return attachActivePaymentAccount(workspace)
     },
 
     async getWorkspaceById(workspaceId, fields = '*') {

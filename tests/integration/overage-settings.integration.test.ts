@@ -3,20 +3,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 describe('overage settings API', () => {
   const updateWorkspace = vi.fn().mockResolvedValue({})
 
-  function mockDb(overrides: Record<string, unknown> = {}) {
-    const getWorkspaceForUser = vi.fn().mockResolvedValue({
+  function mockDb(overrides: {
+    workspace?: Record<string, unknown>
+    paymentAccount?: Record<string, unknown> | null
+  } = {}) {
+    const defaultWorkspace = {
       id: 'ws-1',
       plan: 'pro',
       overage_settings: {},
-      stripe_customer_id: 'cus_123',
+    }
+    const defaultAccount = {
+      provider: 'polar',
+      customer_id: 'cus_123',
+      subscription_id: 'sub_123',
       subscription_status: 'active',
-      ...overrides,
-    })
+    }
+    const getWorkspaceForUser = vi.fn().mockResolvedValue({ ...defaultWorkspace, ...(overrides.workspace ?? {}) })
+    const getActivePaymentAccount = vi.fn().mockResolvedValue(
+      overrides.paymentAccount === null ? null : { ...defaultAccount, ...(overrides.paymentAccount ?? {}) },
+    )
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       getWorkspaceForUser,
+      getActivePaymentAccount,
       updateWorkspace,
     }))
-    return { getWorkspaceForUser }
+    return { getWorkspaceForUser, getActivePaymentAccount }
   }
 
   function mockAuth(userId = 'user-1') {
@@ -36,7 +47,7 @@ describe('overage settings API', () => {
 
   describe('GET /overage-settings', () => {
     it('returns overage settings with pricing for each category', async () => {
-      mockDb({ overage_settings: { ai_messages: true, cdn_bandwidth: false } })
+      mockDb({ workspace: { overage_settings: { ai_messages: true, cdn_bandwidth: false } } })
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
       const result = await handler({} as never)
@@ -57,9 +68,8 @@ describe('overage settings API', () => {
 
     it('returns canEnableOverage=true when subscription active with payment method', async () => {
       mockDb({
-        stripe_customer_id: 'cus_123',
-        subscription_status: 'active',
-        plan: 'pro',
+        workspace: { plan: 'pro' },
+        paymentAccount: { subscription_status: 'active', customer_id: 'cus_123' },
       })
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
@@ -69,7 +79,7 @@ describe('overage settings API', () => {
     })
 
     it('returns canEnableOverage=false for free plan', async () => {
-      mockDb({ plan: 'free', stripe_customer_id: null, subscription_status: null })
+      mockDb({ workspace: { plan: 'free' }, paymentAccount: null })
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
       const result = await handler({} as never)
@@ -88,7 +98,7 @@ describe('overage settings API', () => {
 
   describe('PATCH /overage-settings', () => {
     it('merges new settings with existing', async () => {
-      mockDb({ overage_settings: { ai_messages: true } })
+      mockDb({ workspace: { overage_settings: { ai_messages: true } } })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: true }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
@@ -101,7 +111,7 @@ describe('overage settings API', () => {
     })
 
     it('can disable an existing overage category', async () => {
-      mockDb({ overage_settings: { ai_messages: true, cdn_bandwidth: true } })
+      mockDb({ workspace: { overage_settings: { ai_messages: true, cdn_bandwidth: true } } })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: false }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
@@ -127,7 +137,7 @@ describe('overage settings API', () => {
     })
 
     it('rejects when no active subscription', async () => {
-      mockDb({ subscription_status: null, stripe_customer_id: null })
+      mockDb({ paymentAccount: null })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
@@ -135,7 +145,10 @@ describe('overage settings API', () => {
     })
 
     it('rejects for free plan workspace', async () => {
-      mockDb({ plan: 'free', subscription_status: 'active', stripe_customer_id: 'cus_123' })
+      mockDb({
+        workspace: { plan: 'free' },
+        paymentAccount: { subscription_status: 'active', customer_id: 'cus_123' },
+      })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default

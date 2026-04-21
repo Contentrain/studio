@@ -35,7 +35,11 @@ describe('billing checkout route', () => {
         id: 'workspace-1',
         slug: 'team',
         name: 'Team',
-        stripe_subscription_id: 'sub_123',
+      }),
+      getActivePaymentAccount: vi.fn().mockResolvedValue({
+        provider: 'polar',
+        customer_id: 'cus_123',
+        subscription_id: 'sub_123',
         subscription_status: 'active',
       }),
     }))
@@ -57,7 +61,7 @@ describe('billing checkout route', () => {
 
   it('rate limits duplicate checkout attempts for the same workspace', async () => {
     const createCheckoutSession = vi.fn().mockResolvedValue({
-      url: 'https://checkout.stripe.com/c/pay/test',
+      url: 'https://checkout.polar.sh/c/test',
       sessionId: 'cs_test_123',
     })
     const { checkRateLimit } = await import('../../server/utils/rate-limit')
@@ -67,9 +71,8 @@ describe('billing checkout route', () => {
         id: 'workspace-1',
         slug: 'team',
         name: 'Team',
-        stripe_subscription_id: null,
-        subscription_status: null,
       }),
+      getActivePaymentAccount: vi.fn().mockResolvedValue(null),
     }))
     vi.stubGlobal('checkRateLimit', checkRateLimit)
     vi.stubGlobal('usePaymentProvider', vi.fn().mockReturnValue({ createCheckoutSession }))
@@ -77,7 +80,7 @@ describe('billing checkout route', () => {
     const handler = (await import('../../server/api/billing/checkout.post')).default
 
     await expect(handler({} as never)).resolves.toEqual({
-      url: 'https://checkout.stripe.com/c/pay/test',
+      url: 'https://checkout.polar.sh/c/test',
     })
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 429,

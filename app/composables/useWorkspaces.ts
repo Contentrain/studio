@@ -1,3 +1,21 @@
+/**
+ * Embedded payment account shape returned by the `/api/workspaces` endpoints.
+ *
+ * Mirrors the server-side columns from `payment_accounts` that are safe to
+ * expose to the client (no internal IDs, timestamps, or plugin metadata).
+ */
+export interface WorkspacePaymentAccount {
+  provider: string
+  customer_id: string
+  subscription_id: string | null
+  subscription_status: string | null
+  current_period_end: string | null
+  trial_ends_at: string | null
+  cancel_at_period_end: boolean
+  grace_period_ends_at: string | null
+  plan: string | null
+}
+
 export interface Workspace {
   id: string
   name: string
@@ -9,16 +27,10 @@ export interface Workspace {
   plan: string
   created_at: string
   workspace_members?: Array<{ role: string }>
-  // Billing fields (from 016_billing_redesign migration)
-  trial_ends_at?: string | null
-  subscription_status?: string | null
-  subscription_current_period_end?: string | null
-  subscription_cancel_at_period_end?: boolean
-  grace_period_ends_at?: string | null
-  stripe_customer_id?: string | null
-  stripe_subscription_id?: string | null
-  // Overage billing (from 020_overage_billing migration)
+  /** Overage billing preferences (per category toggles). */
   overage_settings?: Record<string, boolean> | null
+  /** Active subscription row from `payment_accounts`, or null when no subscription. */
+  payment_account?: WorkspacePaymentAccount | null
 }
 
 /** Get user's role in active workspace */
