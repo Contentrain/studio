@@ -100,6 +100,9 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit }) })
   }
 
+  // Best-effort meter write for overage billing. Fire-and-forget.
+  recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
+
   // === CONVERSATION ===
   let conversationId: string | undefined = body.conversationId
 

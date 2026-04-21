@@ -176,6 +176,9 @@ async function runConversationMessage(
   if (!allowed)
     throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: keyData.monthlyMessageLimit }) })
 
+  // Best-effort meter write for overage billing. Fire-and-forget.
+  recordAPIUsage({ workspaceId: keyData.workspaceId, count: 1, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+
   const permissions = buildPermissions(keyData)
   const [owner, repo] = project.repo_full_name.split('/')
   if (!owner || !repo) {

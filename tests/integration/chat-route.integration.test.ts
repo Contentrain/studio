@@ -158,6 +158,7 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
     vi.stubGlobal('STUDIO_TOOLS', [])
+    vi.stubGlobal('recordAIUsage', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
       streamCompletion: async function* () {
         yield { type: 'text', content: 'Hello from the agent.' }
@@ -339,6 +340,7 @@ describe('chat route integration', () => {
     }))
     vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
     vi.stubGlobal('STUDIO_TOOLS', [])
+    vi.stubGlobal('recordAIUsage', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
       streamCompletion: () => ({
         [Symbol.asyncIterator]() {
