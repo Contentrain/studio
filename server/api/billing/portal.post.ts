@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
 
   const result = await payment.createPortalSession({
     workspaceId: body.workspaceId,
-    stripeCustomerId,
+    customerId: stripeCustomerId,
     returnUrl: `${siteUrl}/w/${wsSlug}/settings`,
   })
 

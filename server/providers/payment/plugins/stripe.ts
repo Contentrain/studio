@@ -1,58 +1,77 @@
 /**
- * Stripe PaymentProvider implementation.
+ * Stripe payment plugin.
  *
- * Handles checkout sessions, customer portal, and webhook events.
- * Requires NUXT_STRIPE_SECRET_KEY and NUXT_STRIPE_WEBHOOK_SECRET.
- *
- * Trial: 14-day Stripe trial (trial_period_days=14 on subscription).
- * No credit card is NOT collected before trial — CC is required at checkout.
+ * Implements the `PaymentProvider` interface against the Stripe SDK.
+ * Active when `NUXT_STRIPE_SECRET_KEY` is set. Trial is collected at
+ * checkout (`trial_period_days=14`); a credit card is always required.
  */
 
 import Stripe from 'stripe'
-import type { CheckoutInput, CheckoutResult, InvoiceItemInput, PaymentProvider, PortalInput, PortalResult, WebhookResult } from './payment'
+import type {
+  CheckoutInput,
+  CheckoutResult,
+  InvoiceItemInput,
+  PaymentPluginConfig,
+  PaymentProvider,
+  PaymentProviderPlugin,
+  PortalInput,
+  PortalResult,
+  WebhookResult,
+} from '../types'
 
-// Stripe price IDs — set in Stripe Dashboard, referenced here
-const PLAN_PRICE_MAP: Record<string, string> = {
-  starter: process.env.NUXT_STRIPE_STARTER_PRICE_ID ?? '',
-  pro: process.env.NUXT_STRIPE_PRO_PRICE_ID ?? '',
+interface StripeConfig {
+  secretKey?: string
+  webhookSecret?: string
+  starterPriceId?: string
+  proPriceId?: string
 }
 
-/** Reverse lookup: price ID → plan name. Used to derive plan from Stripe Portal changes. */
-function planFromPriceId(priceId: string | undefined): string | undefined {
+function readStripeConfig(config: PaymentPluginConfig): StripeConfig {
+  return (config.stripe as StripeConfig | undefined) ?? {}
+}
+
+const TRIAL_PERIOD_DAYS = 14
+
+function buildPriceMap(cfg: StripeConfig): Record<string, string> {
+  return {
+    starter: cfg.starterPriceId ?? '',
+    pro: cfg.proPriceId ?? '',
+  }
+}
+
+/** Reverse lookup: price ID → plan name. Handles Portal-driven plan changes. */
+function planFromPriceId(priceId: string | undefined, priceMap: Record<string, string>): string | undefined {
   if (!priceId) return undefined
-  for (const [plan, id] of Object.entries(PLAN_PRICE_MAP)) {
+  for (const [plan, id] of Object.entries(priceMap)) {
     if (id === priceId) return plan
   }
   return undefined
 }
 
-/** Extract the plan from a Stripe Subscription by checking items' price IDs first, metadata second. */
-function resolvePlanFromSubscription(subscription: Stripe.Subscription): string | undefined {
-  // 1. Price-based lookup (authoritative — works after Portal plan changes)
+function resolvePlanFromSubscription(
+  subscription: Stripe.Subscription,
+  priceMap: Record<string, string>,
+): string | undefined {
   const priceId = subscription.items?.data?.[0]?.price?.id
-  const fromPrice = planFromPriceId(priceId)
+  const fromPrice = planFromPriceId(priceId, priceMap)
   if (fromPrice) return fromPrice
-  // 2. Metadata fallback (set at checkout, may be stale after Portal changes)
   return subscription.metadata?.plan
 }
 
-/** Trial duration in days — matches Stripe subscription trial. */
-const TRIAL_PERIOD_DAYS = 14
-
-export function createStripePaymentProvider(): PaymentProvider {
-  const config = useRuntimeConfig()
-  const secretKey = config.stripe?.secretKey as string
-
+function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
+  const cfg = readStripeConfig(config)
+  const secretKey = cfg.secretKey
   if (!secretKey) {
     throw new Error('NUXT_STRIPE_SECRET_KEY is required for Stripe payment provider')
   }
 
   const stripe = new Stripe(secretKey)
-  const webhookSecret = config.stripe?.webhookSecret as string
+  const webhookSecret = cfg.webhookSecret ?? ''
+  const priceMap = buildPriceMap(cfg)
 
   return {
     async createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
-      const priceId = PLAN_PRICE_MAP[input.plan]
+      const priceId = priceMap[input.plan]
       if (!priceId) {
         throw new Error(`No Stripe price ID configured for plan: ${input.plan}`)
       }
@@ -85,7 +104,7 @@ export function createStripePaymentProvider(): PaymentProvider {
 
     async createPortalSession(input: PortalInput): Promise<PortalResult> {
       const session = await stripe.billingPortal.sessions.create({
-        customer: input.stripeCustomerId,
+        customer: input.customerId,
         return_url: input.returnUrl,
       })
 
@@ -99,8 +118,8 @@ export function createStripePaymentProvider(): PaymentProvider {
 
       const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret)
 
-      // invoice.creating is not in Stripe SDK's discriminated event union but is a valid webhook event.
-      // Handle it before the typed switch to avoid TS narrowing issues.
+      // invoice.creating is a valid Stripe webhook event but is not in the SDK's
+      // discriminated event union. Handle it before the typed switch.
       const eventType: string = event.type
       if (eventType === 'invoice.creating') {
         const raw = (event as unknown as { data: { object: Record<string, unknown> } }).data.object
@@ -125,7 +144,6 @@ export function createStripePaymentProvider(): PaymentProvider {
             ? await stripe.subscriptions.retrieve(session.subscription as string)
             : null
 
-          // current_period_end lives on subscription items in Stripe SDK v21+
           const checkoutItemPeriodEnd = subscription?.items?.data?.[0]?.current_period_end
           return {
             event: event.type,
@@ -143,10 +161,8 @@ export function createStripePaymentProvider(): PaymentProvider {
 
         case 'customer.subscription.updated': {
           const subscription = event.data.object as Stripe.Subscription
-          // current_period_end lives on subscription items in Stripe SDK v21+
           const itemPeriodEnd = subscription.items?.data?.[0]?.current_period_end
-          // Derive plan from price ID (handles Portal-driven plan changes)
-          const resolvedPlan = resolvePlanFromSubscription(subscription)
+          const resolvedPlan = resolvePlanFromSubscription(subscription, priceMap)
           return {
             event: event.type,
             workspaceId: subscription.metadata?.workspace_id,
@@ -174,8 +190,6 @@ export function createStripePaymentProvider(): PaymentProvider {
 
         case 'invoice.payment_failed':
         case 'invoice.paid': {
-          // Invoice webhook payloads have a looser shape than the typed SDK.
-          // Use a raw record to safely extract the fields we need.
           const raw = event.data.object as unknown as Record<string, unknown>
           const subField = raw.subscription
           const subId = typeof subField === 'string' ? subField : (subField as { id?: string })?.id
@@ -212,4 +226,15 @@ export function createStripePaymentProvider(): PaymentProvider {
       return { invoiceItemId: item.id }
     },
   }
+}
+
+export const stripePlugin: PaymentProviderPlugin = {
+  key: 'stripe',
+  label: 'Stripe',
+  isConfigured(config: PaymentPluginConfig): boolean {
+    return !!readStripeConfig(config).secretKey
+  },
+  create(config: PaymentPluginConfig): PaymentProvider {
+    return createStripeProvider(config)
+  },
 }
