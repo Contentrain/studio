@@ -92,6 +92,19 @@ For multi-instance production:
 
 Without Redis, rate limiting degrades to in-memory and is only suitable for single-instance or low-risk setups.
 
+## Deployment Environments
+
+Studio is trunk-based (see [CONTRIBUTING.md](../CONTRIBUTING.md) → Branch Model). The managed deployment topology mirrors that:
+
+| Environment | Source                                         | Trigger                              |
+|-------------|------------------------------------------------|--------------------------------------|
+| Staging     | `main` branch, built by Railway                | Every merge to `main` (auto)         |
+| Production  | `ghcr.io/contentrain/studio` image, specific tag | Maintainer promotes after tag release |
+
+Staging verification happens on the Railway-deployed environment fed directly from `main`. Production runs the container image published by [.github/workflows/release.yml](../.github/workflows/release.yml) on `v*` tag push — see [RELEASING.md](RELEASING.md) for the tag, image-tag policy, and promotion flow.
+
+Self-hosters deploy the published container image by tag, not the branch source — see [SELF_HOSTING.md](SELF_HOSTING.md) and [DOCKER.md](DOCKER.md).
+
 ## Railway Notes
 
 This repo includes [railway.toml](../railway.toml) for Docker-based deployment.
@@ -100,7 +113,7 @@ The current deployment profile:
 
 - builds from `Dockerfile`
 - starts with `node .output/server/index.mjs`
-- healthchecks `GET /api/health`
+- exposes `GET /api/health` (Railway healthcheck is temporarily disabled in `railway.toml` pending a port-routing fix — re-enable once resolved)
 
 ## Post-Deploy Smoke Checks
 
