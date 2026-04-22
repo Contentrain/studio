@@ -1,147 +1,183 @@
 /**
  * Plan & feature flag system — single source of truth.
  *
- * Plan definitions live in Contentrain models (plans + plan-features).
- * This file provides the runtime lookup tables generated from that content.
+ * All per-plan values (pricing, feature flags, numeric limits, overage
+ * prices) are derived from the `.contentrain/` content layer at build
+ * time. Concretely:
  *
- * Plans: free ($0), starter ($9/mo), pro ($49/mo), enterprise (custom)
+ *   `.contentrain/content/system/plans/en.json`          → PLAN_PRICING
+ *   `.contentrain/content/system/plan-features/data.json` → FEATURE_MATRIX
+ *                                                         + PLAN_LIMITS
+ *                                                         + OVERAGE_PRICING
  *
- * Free is a STRUCTURAL shell only — it exists because every user needs a
- * primary workspace on signup (GitHub OAuth / Google OAuth / Magic Link).
- * Content editors invited into a paid workspace work in that workspace
- * (and consume the inviter's paid plan quota), not their personal free
- * one. The personal free workspace never connects a repo, never runs
- * the agent, never needs storage. Therefore free has NO feature rows
- * and its limits are zero across the board — nothing to meter, nothing
- * to waste LLM tokens on.
+ * This module re-exports the same public API as before; call sites
+ * (`hasFeature`, `getPlanLimit`, `getPlanParams`, …) do not change.
+ * Editing a plan price or a feature row in Contentrain (via MCP) is
+ * enough — no code edit needed. The Polar sync script reads the same
+ * content to keep Polar products / prices aligned.
  *
- * Developers arriving via GitHub OAuth should start a paid trial
- * immediately (`trial_period_days=14` on Stripe checkout). "Free" is
- * not a product tier.
+ * Plans:
+ *   - free        — structural signup shell; deliberately ABSENT from
+ *                   every feature row and zero across every limit
+ *                   except `team.members` (one owner seat keeps the
+ *                   workspace row valid). Developer signups convert
+ *                   via the 14-day trial on a paid plan.
+ *   - starter     — $9/mo, 3 seats, solo developer sizing
+ *   - pro         — $49/mo, 25 seats, team sizing (3× of the old $29 Pro)
+ *   - enterprise  — custom pricing, unlimited where it makes sense,
+ *                   plus SSO / white-label / custom CDN domain
  *
- * Enterprise-only: SSO, white-label, custom CDN domain.
+ * Legacy plan names (`business`, `team`) map to `pro` via `normalizePlan`.
  */
+
+import plansData from '../../.contentrain/content/system/plans/en.json'
+import planFeaturesData from '../../.contentrain/content/system/plan-features/data.json'
 
 export type StudioPlan = 'free' | 'starter' | 'pro' | 'enterprise'
 
-/**
- * Feature matrix: which plans have access to each feature.
- * Generated from Contentrain plan-features model (type: "feature").
- *
- * Free is deliberately ABSENT from every feature row. A free workspace
- * is a structural shell with no content operations — it has no repo
- * connected, no project, no storage, no agent. Listing features for
- * it would just waste LLM tokens and storage quota on accounts that
- * never convert. Developer signups convert via the 14-day Stripe
- * trial; invited editors consume the inviter workspace's quota.
- *
- * Paid plans (starter/pro): full platform access, differentiated by
- * numeric PLAN_LIMITS (message quotas, storage, seats, etc.).
- *
- * Enterprise: everything + SSO, white-label, custom CDN domain.
- *
- * NOTE: ee/ features (webhooks, conversation API, AI keys, CDN, media
- * processing) require the enterprise bridge to be loaded. If ee/ is absent,
- * routes return 403 regardless of plan — graceful degradation.
- */
-export const FEATURE_MATRIX: Record<string, StudioPlan[]> = {
-  // AI
-  'ai.agent': ['starter', 'pro', 'enterprise'],
-  'ai.byoa': ['starter', 'pro', 'enterprise'],
-  'ai.studio_key': ['starter', 'pro', 'enterprise'],
+const PLAN_SLUGS: readonly StudioPlan[] = ['free', 'starter', 'pro', 'enterprise']
 
-  // CDN — paid plans only (ee/ provides Cloudflare R2 implementation)
-  'cdn.delivery': ['starter', 'pro', 'enterprise'],
-  'cdn.preview_branch': ['pro', 'enterprise'],
-  'cdn.custom_domain': ['enterprise'],
-  'cdn.metering': ['starter', 'pro', 'enterprise'],
+// ─── Content shape (narrow types — JSON literal widening) ───
 
-  // Media
-  'media.upload': ['starter', 'pro', 'enterprise'],
-  'media.library': ['starter', 'pro', 'enterprise'],
-  'media.custom_variants': ['pro', 'enterprise'],
-
-  // Forms
-  'forms.enabled': ['starter', 'pro', 'enterprise'],
-  'forms.file_upload': ['starter', 'pro', 'enterprise'],
-  'forms.captcha': ['starter', 'pro', 'enterprise'],
-  'forms.notifications': ['starter', 'pro', 'enterprise'],
-  'forms.webhook_notification': ['starter', 'pro', 'enterprise'],
-  'forms.spam_filter': ['pro', 'enterprise'],
-  'forms.auto_approve': ['starter', 'pro', 'enterprise'],
-
-  // Workflow
-  'workflow.review': ['starter', 'pro', 'enterprise'],
-
-  // Roles
-  'roles.reviewer': ['starter', 'pro', 'enterprise'],
-  'roles.viewer': ['starter', 'pro', 'enterprise'],
-  'roles.specific_models': ['pro', 'enterprise'],
-
-  // API
-  'api.conversation': ['starter', 'pro', 'enterprise'],
-  'api.custom_instructions': ['starter', 'pro', 'enterprise'],
-  'api.webhooks_outbound': ['starter', 'pro', 'enterprise'],
-
-  // MCP Cloud — hosted MCP HTTP endpoint for external agents (Cursor,
-  // Claude Desktop, custom AI drivers). Shares provider + core ops with
-  // Conversation API but exposes raw tool execution (bring-your-own-AI).
-  // Commercial framing: Conversation API = "Agent API" (Studio thinks);
-  // MCP Cloud = "Tools API" (customer thinks).
-  'api.mcp_cloud': ['starter', 'pro', 'enterprise'],
-  // Enterprise-only bridges — ee/ layer attaches SSO + custom domain
-  // resolvers to the core endpoint; core runs without them.
-  'api.mcp_cloud_sso': ['enterprise'],
-  'api.mcp_cloud_custom_domain': ['enterprise'],
-
-  // Git & Projects (paywall boundary)
-  'git.connect': ['starter', 'pro', 'enterprise'],
-  'projects.create': ['starter', 'pro', 'enterprise'],
-
-  // Enterprise-only
-  'sso.saml': ['enterprise'],
-  'sso.oidc': ['enterprise'],
-  'branding.white_label': ['enterprise'],
+interface PlanContent {
+  name: string
+  price_monthly: number
+  seats_included: number
+  ai_model_tier: string
+  badge_text: string
+  cta_text: string
+  description: string
+  has_trial?: boolean
+  is_highlighted?: boolean
+  slug: string
+  sort_order: number
 }
 
-/**
- * Plan limits: numeric quotas per plan.
- *
- * Free is zero across the board — it is a structural shell, not a usable
- * tier (see FEATURE_MATRIX docstring). The only exception is
- * `team.members: 1` because a workspace cannot exist without its owning
- * member row; the value is a count, not a quota.
- *
- * Starter ($9/mo) is sized for a single developer running Contentrain
- * with real traffic but without a team behind it — 150 AI messages is
- * ~5/day, enough to not hit the wall in the first two weeks of onboarding.
- *
- * Pro ($49/mo) is sized for a 10–25 person team — 3× across the board
- * over the old $29 Pro to give real headroom for marketing teams and
- * developer collectives.
- *
- * Enterprise stays Infinity with a soft-cap applied at the ops layer
- * (GitHub's 15K/hour app rate limit caps real-world usage anyway).
- */
-export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = {
-  'ai.messages_per_month': { free: 0, starter: 150, pro: 1_500, enterprise: Infinity },
-  'team.members': { free: 1, starter: 3, pro: 25, enterprise: Infinity },
-  'cdn.api_keys': { free: 0, starter: 3, pro: 25, enterprise: Infinity },
-  'cdn.bandwidth_gb': { free: 0, starter: 2, pro: 60, enterprise: Infinity },
-  'media.storage_gb': { free: 0, starter: 1, pro: 15, enterprise: 100 },
-  'media.max_file_size_mb': { free: 0, starter: 5, pro: 50, enterprise: 100 },
-  'media.variants_per_field': { free: 0, starter: 4, pro: 10, enterprise: Infinity },
-  'forms.models': { free: 0, starter: 1, pro: 15, enterprise: Infinity },
-  'forms.submissions_per_month': { free: 0, starter: 100, pro: 3_000, enterprise: Infinity },
-  'api.conversation_keys': { free: 0, starter: 1, pro: 15, enterprise: Infinity },
-  'api.messages_per_month': { free: 0, starter: 100, pro: 3_000, enterprise: Infinity },
-  'api.webhooks': { free: 0, starter: 3, pro: 25, enterprise: Infinity },
-  // MCP Cloud — raw tool execution. Starter = 5K/mo (~150/day — enough
-  // for a single dev), Pro = 150K/mo (3× jump, fits team/agency workloads
-  // and matches the cross-limit scaling applied everywhere else).
-  'api.mcp_keys': { free: 0, starter: 1, pro: 15, enterprise: Infinity },
-  'api.mcp_calls_per_month': { free: 0, starter: 5_000, pro: 150_000, enterprise: Infinity },
+interface PlanFeatureContent {
+  key: string
+  name: string
+  type: 'feature' | 'limit'
+  category: string
+  free_value: string
+  starter_value: string
+  pro_value: string
+  enterprise_value: string
+  overage_price?: number
+  overage_unit?: string
+  overage_settings_key?: string
+  sort_order: number
 }
+
+const plans = plansData as unknown as Record<StudioPlan, PlanContent>
+const planFeatures = planFeaturesData as unknown as Record<string, PlanFeatureContent>
+
+// ─── Derivation helpers ───
+
+function parseBoolValue(v: string): boolean {
+  return v === 'true'
+}
+
+function parseLimitValue(v: string): number {
+  if (v === 'unlimited') return Infinity
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+function valueForPlan(row: PlanFeatureContent, plan: StudioPlan): string {
+  switch (plan) {
+    case 'free': return row.free_value
+    case 'starter': return row.starter_value
+    case 'pro': return row.pro_value
+    case 'enterprise': return row.enterprise_value
+  }
+}
+
+// ─── Derived matrices ───
+
+/**
+ * Plan pricing: name + monthly price + included seats per plan.
+ * Derived from `plans/en.json`.
+ *
+ * Enterprise carries `priceMonthly: 0` / `seatsIncluded: 0` as sentinels
+ * for "contact sales" — callers must not display these as real numbers.
+ */
+export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }>
+  = Object.fromEntries(
+    PLAN_SLUGS.map(plan => [plan, {
+      priceMonthly: plans[plan].price_monthly,
+      seatsIncluded: plans[plan].seats_included,
+      name: plans[plan].name,
+    }]),
+  ) as Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }>
+
+/**
+ * Feature matrix: which plans grant each feature flag. Derived from
+ * plan-features rows with `type: 'feature'`.
+ *
+ * Free is naturally absent from every row because `free_value` is
+ * always `"false"` for features in content (see the invariant in the
+ * module docstring).
+ */
+export const FEATURE_MATRIX: Record<string, StudioPlan[]> = (() => {
+  const matrix: Record<string, StudioPlan[]> = {}
+  for (const row of Object.values(planFeatures)) {
+    if (row.type !== 'feature') continue
+    const grantedPlans = PLAN_SLUGS.filter(plan => parseBoolValue(valueForPlan(row, plan)))
+    matrix[row.key] = grantedPlans
+  }
+  return matrix
+})()
+
+/**
+ * Numeric plan limits per plan. Derived from plan-features rows with
+ * `type: 'limit'`. `"unlimited"` in content becomes `Infinity`.
+ *
+ * Free is zero across the board except `team.members` (the owner seat).
+ */
+export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = (() => {
+  const limits: Record<string, Record<StudioPlan, number>> = {}
+  for (const row of Object.values(planFeatures)) {
+    if (row.type !== 'limit') continue
+    limits[row.key] = {
+      free: parseLimitValue(row.free_value),
+      starter: parseLimitValue(row.starter_value),
+      pro: parseLimitValue(row.pro_value),
+      enterprise: parseLimitValue(row.enterprise_value),
+    }
+  }
+  return limits
+})()
+
+/**
+ * Overage pricing for limits that allow paid overflow. Derived from
+ * plan-features limit rows that carry `overage_price` +
+ * `overage_settings_key`.
+ *
+ * `settingsKey` matches the JSONB key inside `workspaces.overage_settings`
+ * — changing it in content has to be coordinated with an app migration.
+ */
+export const OVERAGE_PRICING: Record<string, { price: number, unit: string, settingsKey: string }> = (() => {
+  const pricing: Record<string, { price: number, unit: string, settingsKey: string }> = {}
+  for (const row of Object.values(planFeatures)) {
+    if (row.type !== 'limit') continue
+    if (typeof row.overage_price !== 'number') continue
+    if (!row.overage_settings_key) continue
+    pricing[row.key] = {
+      price: row.overage_price,
+      unit: row.overage_unit ?? 'unit',
+      settingsKey: row.overage_settings_key,
+    }
+  }
+  return pricing
+})()
+
+/** Valid overage settings keys — matches OVERAGE_PRICING values. */
+export const OVERAGE_SETTINGS_KEYS = Object.values(OVERAGE_PRICING).map(p => p.settingsKey)
+
+/** `mailto:` address the enterprise CTA button links to. */
+export const ENTERPRISE_CONTACT_EMAIL = 'sales@contentrain.io'
+
+// ─── Normalisation + lookups (unchanged public API) ───
 
 /**
  * Normalize legacy plan names to current plan types.
@@ -151,14 +187,13 @@ export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = {
 export function normalizePlan(plan: StudioPlan | string | null | undefined): StudioPlan {
   if (!plan) return 'free'
 
-  // Legacy plan name mappings
   const legacy: Record<string, StudioPlan> = {
     business: 'pro',
     team: 'pro',
   }
 
   const normalized = legacy[plan] ?? plan
-  if (['free', 'starter', 'pro', 'enterprise'].includes(normalized)) {
+  if ((PLAN_SLUGS as readonly string[]).includes(normalized)) {
     return normalized as StudioPlan
   }
   return 'free'
@@ -172,43 +207,7 @@ export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined
   return PLAN_LIMITS[limit]?.[normalizePlan(plan)] ?? 0
 }
 
-/**
- * Plan pricing: single source of truth for prices.
- * Matches Contentrain plans model (plans/en.json).
- *
- * Flat-rate pricing: each plan has a fixed monthly price with included seats.
- * Seat limits act as tier differentiators (3 → 10 → ∞).
- * Usage-based limits (AI messages, CDN, storage) gate actual resource consumption.
- */
-export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }> = {
-  free: { priceMonthly: 0, seatsIncluded: 1, name: 'Free' },
-  starter: { priceMonthly: 9, seatsIncluded: 3, name: 'Starter' },
-  pro: { priceMonthly: 49, seatsIncluded: 25, name: 'Pro' },
-  enterprise: { priceMonthly: 0, seatsIncluded: 0, name: 'Enterprise' },
-}
-
-/** `mailto:` address the enterprise CTA button links to. */
-export const ENTERPRISE_CONTACT_EMAIL = 'sales@contentrain.io'
-
-/**
- * Overage pricing: per-unit cost when usage exceeds plan limit.
- * Generated from Contentrain plan-features model (overage_price + overage_unit).
- * `settingsKey` maps to keys inside the workspace `overage_settings` JSONB column.
- */
-export const OVERAGE_PRICING: Record<string, { price: number, unit: string, settingsKey: string }> = {
-  'ai.messages_per_month': { price: 0.03, unit: 'message', settingsKey: 'ai_messages' },
-  'api.messages_per_month': { price: 0.05, unit: 'message', settingsKey: 'api_messages' },
-  // MCP Cloud price is 1/10 of Conversation API — the orchestration
-  // value (brain cache, system prompt, phase detection) is bundled into
-  // the conversation rate, not the raw tool rate.
-  'api.mcp_calls_per_month': { price: 0.005, unit: 'call', settingsKey: 'mcp_calls' },
-  'cdn.bandwidth_gb': { price: 0.10, unit: 'GB', settingsKey: 'cdn_bandwidth' },
-  'forms.submissions_per_month': { price: 0.01, unit: 'submission', settingsKey: 'form_submissions' },
-  'media.storage_gb': { price: 0.25, unit: 'GB/month', settingsKey: 'media_storage' },
-}
-
-/** Valid overage settings keys. */
-export const OVERAGE_SETTINGS_KEYS = Object.values(OVERAGE_PRICING).map(p => p.settingsKey)
+// ─── UI helpers (unchanged) ───
 
 function formatLimit(value: number): string {
   if (value === Infinity) return 'unlimited'
@@ -228,9 +227,6 @@ function formatFileSize(mb: number): string {
 /**
  * Build interpolation params for a given plan.
  * Use with t() / agentMessage() / agentPrompt() / errorMessage().
- *
- * Returns all pricing + limit values so dictionary strings
- * can use {price}, {aiMessages}, {seats}, etc. instead of hardcoded values.
  */
 export function getPlanParams(plan: StudioPlan | string | null | undefined): Record<string, string | number> {
   const p = normalizePlan(plan)

@@ -4,14 +4,16 @@ import { OVERAGE_PRICING, OVERAGE_SETTINGS_KEYS } from '../../shared/utils/licen
 
 describe('OVERAGE_PRICING constant', () => {
   it('contains every metered category', () => {
-    expect(Object.keys(OVERAGE_PRICING)).toEqual([
+    // Order-agnostic: derivation reads content keys alphabetically,
+    // which is not the same as the hand-authored order.
+    expect(new Set(Object.keys(OVERAGE_PRICING))).toEqual(new Set([
       'ai.messages_per_month',
       'api.messages_per_month',
       'api.mcp_calls_per_month',
       'cdn.bandwidth_gb',
       'forms.submissions_per_month',
       'media.storage_gb',
-    ])
+    ]))
   })
 
   it('each entry has price > 0, non-empty unit, and non-empty settingsKey', () => {
@@ -23,8 +25,9 @@ describe('OVERAGE_PRICING constant', () => {
   })
 
   it('OVERAGE_SETTINGS_KEYS matches pricing settingsKeys', () => {
-    const expected = Object.values(OVERAGE_PRICING).map(p => p.settingsKey)
-    expect(OVERAGE_SETTINGS_KEYS).toEqual(expected)
+    const expected = Object.values(OVERAGE_PRICING).map(p => p.settingsKey).sort()
+    const actual = [...OVERAGE_SETTINGS_KEYS].sort()
+    expect(actual).toEqual(expected)
   })
 })
 
