@@ -8,6 +8,7 @@
  */
 
 import { dictionary, query } from '#contentrain'
+import { wrapEmailHtml } from './email-layout'
 
 type Params = Record<string, string | number>
 
@@ -64,7 +65,10 @@ export function errorMessage(key: string, params?: Params, locale: string = 'en'
 
 /**
  * Get subject + body from email-templates collection.
- * Looks up by slug, returns interpolated subject and body.
+ * Looks up by slug, interpolates params, and wraps the inner body
+ * with the shared branded HTML layout. Content-layer bodies are
+ * inner-content only (paragraphs, buttons, links) — the chrome
+ * lives in `email-layout.ts`.
  */
 export function emailTemplate(
   slug: string,
@@ -75,9 +79,11 @@ export function emailTemplate(
     const entries = query('email-templates').locale(locale).where('slug', slug).all()
     const entry = entries[0] as { subject?: string, body?: string } | undefined
     if (!entry) return { subject: slug, body: '' }
+    const subject = interpolate(entry.subject ?? slug, params)
+    const innerBody = interpolate(entry.body ?? '', params)
     return {
-      subject: interpolate(entry.subject ?? slug, params),
-      body: interpolate(entry.body ?? '', params),
+      subject,
+      body: wrapEmailHtml({ title: subject, body: innerBody }),
     }
   }
   catch {

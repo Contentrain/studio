@@ -13,6 +13,8 @@
 
 import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payment'
 import type { PaymentPluginConfig } from '../../../providers/payment'
+import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
+import { emailTemplate } from '../../../utils/content-strings'
 
 /** Extract every request header as a plain `{[key]: string | undefined}` object. */
 function readAllHeaders(event: Parameters<typeof getRequestHeaders>[0]): Record<string, string | undefined> {
@@ -22,6 +24,73 @@ function readAllHeaders(event: Parameters<typeof getRequestHeaders>[0]): Record<
     result[key.toLowerCase()] = value
   }
   return result
+}
+
+/**
+ * Dispatch a templated billing email to the workspace owner.
+ *
+ * Best-effort — a failed send is logged but never propagates, so the
+ * webhook still acknowledges the provider even if Resend is down or
+ * the workspace has no reachable owner. `workspaceName`, `planName`,
+ * `planPrice`, and `billingUrl` are resolved centrally; the caller
+ * supplies any extra per-template params.
+ */
+async function sendBillingEmail(
+  workspaceId: string,
+  templateSlug: string,
+  planHint: string | null | undefined,
+  extraParams: Record<string, string | number> = {},
+): Promise<void> {
+  const email = useEmailProvider()
+  if (!email) return
+
+  const db = useDatabaseProvider()
+  const auth = useAuthProvider()
+
+  const ws = await db.getWorkspaceById(workspaceId, 'id, name, slug, owner_id, plan').catch(() => null)
+  if (!ws) return
+
+  const ownerId = ws.owner_id as string | null
+  if (!ownerId) return
+
+  const user = await auth.getUserById(ownerId).catch(() => null)
+  if (!user?.email) return
+
+  const config = useRuntimeConfig()
+  const siteUrl = (config.public as { siteUrl?: string } | null)?.siteUrl ?? ''
+  const wsSlug = (ws.slug as string | null) ?? workspaceId
+  const billingUrl = siteUrl
+    ? `${siteUrl}/w/${wsSlug}/settings?tab=billing`
+    : `/w/${wsSlug}/settings?tab=billing`
+
+  const planKey = normalizePlan(planHint ?? (ws.plan as string | null))
+  const pricing = PLAN_PRICING[planKey]
+
+  const tpl = emailTemplate(templateSlug, {
+    workspaceName: (ws.name as string | null) ?? wsSlug,
+    planName: pricing.name,
+    planPrice: pricing.priceMonthly > 0 ? `$${pricing.priceMonthly}` : 'custom pricing',
+    billingUrl,
+    ...extraParams,
+  })
+
+  await email.sendEmail({
+    to: user.email,
+    subject: tpl.subject,
+    html: tpl.body,
+  }).catch((err) => {
+    // eslint-disable-next-line no-console -- surface delivery failures without aborting the webhook
+    console.error('[billing-webhook] Failed to send', templateSlug, 'email:', err)
+  })
+}
+
+/** Format a timestamp for human-readable copy — e.g. "Tuesday, April 29". */
+function formatFriendlyDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
 }
 
 export default defineEventHandler(async (event) => {
@@ -76,11 +145,20 @@ export default defineEventHandler(async (event) => {
       if (result.plan) {
         await db.updateWorkspace('', result.workspaceId, { plan: result.plan })
       }
+      // Only email on direct paid activation — trialing workspaces are
+      // covered by the trial-reminder cron at T-3/T-1/T-0.
+      if (result.subscriptionStatus === 'active') {
+        await sendBillingEmail(result.workspaceId, 'subscription-activated', result.plan)
+      }
       break
     }
 
     case 'subscription.updated': {
       if (!result.workspaceId || !result.customerId) break
+      // Read the existing account BEFORE upsert so we can detect the
+      // trial→active transition (the only update-shape worth emailing on).
+      const existingAccount = await db.getActivePaymentAccount(result.workspaceId)
+      const wasTrialing = (existingAccount?.subscription_status as string | undefined) === 'trialing'
       const becameActive = result.subscriptionStatus === 'active'
       await db.upsertPaymentAccount({
         workspaceId: result.workspaceId,
@@ -106,16 +184,27 @@ export default defineEventHandler(async (event) => {
       if (Object.keys(workspaceUpdate).length > 0) {
         await db.updateWorkspace('', result.workspaceId, workspaceUpdate)
       }
+      // Trial→active is the only update-shape that deserves an email.
+      // Plan swaps, quantity changes, card updates all flow through
+      // subscription.updated too and would spam the owner otherwise.
+      if (becameActive && wasTrialing) {
+        await sendBillingEmail(result.workspaceId, 'subscription-activated', result.plan)
+      }
       break
     }
 
     case 'subscription.canceled': {
       if (!result.workspaceId) break
+      // Snapshot the plan BEFORE archive + downgrade so the email
+      // reflects what was canceled, not the post-cancel "free" state.
+      const priorAccount = await db.getActivePaymentAccount(result.workspaceId)
+      const canceledPlan = result.plan ?? (priorAccount?.plan as string | null)
       await db.archiveActivePaymentAccount(result.workspaceId)
       await db.updateWorkspace('', result.workspaceId, {
         plan: 'free',
         trial_reminder_stage: 0,
       })
+      await sendBillingEmail(result.workspaceId, 'subscription-canceled', canceledPlan)
       break
     }
 
@@ -143,6 +232,17 @@ export default defineEventHandler(async (event) => {
         plan: (account.plan as string | null) ?? null,
         isActive: true,
       })
+      // Email only on the FIRST failure in a window — subsequent
+      // failures carry the same existingGrace and would otherwise
+      // re-spam the owner every retry cycle.
+      if (!existingGrace) {
+        await sendBillingEmail(
+          result.workspaceId,
+          'payment-failed',
+          (account.plan as string | null) ?? null,
+          { gracePeriodEndsText: formatFriendlyDate(gracePeriodEnd) },
+        )
+      }
       break
     }
 
@@ -172,6 +272,15 @@ export default defineEventHandler(async (event) => {
         plan: (account.plan as string | null) ?? null,
         isActive: true,
       })
+      // Only email on recovery from past_due — regular monthly renewals
+      // shouldn't trigger a "payment received" email.
+      if (currentStatus === 'past_due') {
+        await sendBillingEmail(
+          result.workspaceId,
+          'payment-recovered',
+          (account.plan as string | null) ?? null,
+        )
+      }
       break
     }
 
