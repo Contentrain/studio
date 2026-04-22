@@ -95,7 +95,7 @@ This repository is the AGPL core product surface — no marketing pages. All rou
 ### Profile / Account Settings
 - `/settings` page with tabs: Profile, Account
 - Profile tab: display name (editable), avatar (read-only from OAuth), email (read-only), connected account badge
-- Account tab: danger zone — account deletion with email confirmation
+- Account tab: danger zone — account deletion guarded by typed-email confirmation (user re-types their own address in the UI; no outbound confirmation email is sent)
 - API: `PATCH /api/profile` (update displayName), `DELETE /api/profile` (delete account — CASCADE)
 - Database: `profiles` table via DatabaseProvider (`getProfile`, `updateProfile`)
 - Auth: `AuthProvider.deleteUser()` for GDPR account deletion
