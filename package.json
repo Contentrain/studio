@@ -37,7 +37,7 @@
     "db:diff": "pnpm dlx supabase db diff --workdir .",
     "db:studio": "open http://127.0.0.1:54323",
     "db:mail": "open http://127.0.0.1:54324",
-    "polar:sync": "tsx scripts/polar-sync.ts"
+    "polar:sync": "tsx --env-file=.env scripts/polar-sync.ts"
   },
   "lint-staged": {
     "*.{js,ts,mjs,vue}": "eslint --fix"

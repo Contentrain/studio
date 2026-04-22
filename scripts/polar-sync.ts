@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+/// <reference types="node" />
 /* eslint-disable no-console -- CLI script: console output is the intended UX */
 /**
  * Polar sync — content-driven product/price/meter bootstrap.
@@ -173,11 +174,13 @@ async function syncMeters(existingMeters: Array<{ id: string, name: string }>): 
 
 // ─── Product sync ────────────────────────────────────────────────────────
 
+type ProductSummary = Awaited<ReturnType<typeof listAllProducts>>[number]
+
 function findExistingProduct(
-  products: Array<{ id: string, name: string, metadata: Record<string, unknown> }>,
+  products: ProductSummary[],
   slug: BillablePlan,
   displayName: string,
-) {
+): ProductSummary | undefined {
   // Primary: metadata.contentrain_slug. Secondary: case-insensitive name match
   // (covers products that were created manually before this script existed).
   const byMeta = products.find(p => p.metadata?.contentrain_slug === slug)
@@ -200,28 +203,28 @@ interface ProductPriceRow {
 }
 
 function getPriceType(price: Record<string, unknown>): string | undefined {
-  const row = price as ProductPriceRow
+  const row = price as unknown as ProductPriceRow
   return row.amountType ?? row.amount_type
 }
 
 function getFixedPriceAmount(price: Record<string, unknown>): number | undefined {
-  const row = price as ProductPriceRow
+  const row = price as unknown as ProductPriceRow
   return row.priceAmount ?? row.price_amount
 }
 
 function getMeteredPriceMeterId(price: Record<string, unknown>): string | undefined {
-  const row = price as ProductPriceRow
+  const row = price as unknown as ProductPriceRow
   return row.meterId ?? row.meter_id
 }
 
 function getMeteredPriceUnitAmount(price: Record<string, unknown>): string | undefined {
-  const row = price as ProductPriceRow
+  const row = price as unknown as ProductPriceRow
   const value = row.unitAmount ?? row.unit_amount
   return value === undefined ? undefined : String(value)
 }
 
 function isPriceArchived(price: Record<string, unknown>): boolean {
-  const row = price as ProductPriceRow
+  const row = price as unknown as ProductPriceRow
   return Boolean(row.isArchived ?? row.is_archived)
 }
 
@@ -356,7 +359,7 @@ async function syncProduct(
     // Carry existing prices by id; append missing metered prices as creates.
     // Polar treats prices as a set — omitting is NOT an archive, update only
     // touches names, description, metadata, and new price creates.
-    const preservedPrices = prices.map(p => ({ id: (p as ProductPriceRow).id }))
+    const preservedPrices = prices.map(p => ({ id: (p as unknown as ProductPriceRow).id }))
     const newPrices = missingMeteredPrices.map(m => ({
       amountType: 'metered_unit' as const,
       meterId: m.meterId,
