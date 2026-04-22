@@ -13,10 +13,10 @@
     "sort_order": 2
   },
   "free": {
-    "ai_model_tier": "haiku",
+    "ai_model_tier": "none",
     "badge_text": "Free",
     "cta_text": "Get Started",
-    "description": "Personal workspace with AI chat demo. Connect a repository to unlock the full platform.",
+    "description": "Structural workspace shell for signup. Start a 14-day trial on Starter or Pro to unlock the platform.",
     "has_trial": false,
     "is_highlighted": false,
     "name": "Free",
@@ -27,14 +27,14 @@
   },
   "pro": {
     "ai_model_tier": "sonnet",
-    "badge_text": "Pro — $29/mo",
+    "badge_text": "Pro — $49/mo",
     "cta_text": "Start free trial",
     "description": "For teams that need collaboration, automation, and higher usage limits.",
     "has_trial": true,
     "is_highlighted": true,
     "name": "Pro",
-    "price_monthly": 29,
-    "seats_included": 10,
+    "price_monthly": 49,
+    "seats_included": 25,
     "slug": "pro",
     "sort_order": 1
   },

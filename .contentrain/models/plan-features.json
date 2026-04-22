@@ -50,6 +50,10 @@
       "description": "Overage billing unit (e.g. per message, per GB, per submission)",
       "type": "string"
     },
+    "overage_settings_key": {
+      "description": "JSONB key used inside workspaces.overage_settings to toggle this overage (e.g. ai_messages, cdn_bandwidth). Required when overage_price is set.",
+      "type": "string"
+    },
     "pro_value": {
       "description": "Pro plan value",
       "required": true,
