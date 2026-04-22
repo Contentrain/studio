@@ -9,6 +9,26 @@
     "status": "published",
     "updated_by": "contentrain-mcp"
   },
+  "payment-failed": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "payment-recovered": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "subscription-activated": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "subscription-canceled": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
   "trial-ending": {
     "source": "import",
     "status": "draft",
