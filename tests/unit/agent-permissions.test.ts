@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setEnterpriseBridgeForTesting } from '../../server/utils/enterprise'
 import { resolveAgentPermissions } from '../../server/utils/agent-permissions'
+import { __resetDeploymentCache } from '../../server/utils/deployment'
+import { __resetBillingConfiguredCache } from '../../server/utils/license'
 
 function createMockDatabaseProvider(rows: {
   workspaceMemberRole?: string | null
@@ -15,8 +17,22 @@ function createMockDatabaseProvider(rows: {
 }
 
 describe('resolveAgentPermissions', () => {
+  beforeEach(() => {
+    // Simulate Managed/Stripe config so `resolveDeployment()` reports
+    // `planSource: 'subscription'` and `getWorkspacePlan` honors the
+    // workspace.plan column directly (no community fallback).
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      stripe: { secretKey: 'sk_test_mock' },
+      polar: { accessToken: '' },
+    }))
+    __resetBillingConfiguredCache()
+    __resetDeploymentCache()
+  })
+
   afterEach(() => {
     setEnterpriseBridgeForTesting(null)
+    __resetDeploymentCache()
+    __resetBillingConfiguredCache()
     vi.unstubAllGlobals()
   })
 

@@ -107,7 +107,25 @@ export async function runEnterpriseRoute<T>(
   handlerName: EnterpriseRouteName,
   featureMessageKey: string,
   event: H3Event,
+  featureKey?: string,
 ): Promise<T> {
+  // Plan + edition gate — when a featureKey is supplied, reject the
+  // request before touching the bridge if the caller's plan doesn't
+  // grant the feature. This keeps Starter customers on Managed out of
+  // Pro+ endpoints even when the bridge itself is plan-agnostic.
+  // When featureKey is omitted, only the edition gate (via bridge
+  // nullability below) enforces access.
+  if (featureKey) {
+    const { hasFeature } = await import('./license')
+    const plan = (event.context.billing as { effectivePlan?: string } | undefined)?.effectivePlan
+    if (!hasFeature(plan, featureKey)) {
+      throw createError({
+        statusCode: 403,
+        message: errorMessage(featureMessageKey),
+      })
+    }
+  }
+
   const bridge = await loadEnterpriseBridge()
 
   if (!bridge || typeof bridge[handlerName] !== 'function') {

@@ -1,32 +1,50 @@
 /**
- * Auto-sync `runtimeConfig.public.billingEnabled` from the payment
- * plugin registry at boot.
+ * Deployment snapshot sync — exposes the resolved deployment profile
+ * to the client via `runtimeConfig.public.deployment` and derives the
+ * legacy `runtimeConfig.public.billingEnabled` boolean.
  *
- * Rationale: the client UI reads `billingEnabled` from public runtime
- * config to decide whether to render checkout/portal flows. The server
- * already has the truth via `isBillingConfigured()` (which checks the
- * registered payment plugins' `isConfigured()` gate). Deriving the
- * public flag from that source removes the need for self-hosters to
- * also set `NUXT_PUBLIC_BILLING_ENABLED` — configuring the provider
- * env vars (e.g. `NUXT_POLAR_*`) is enough.
+ * Runs before other plugins (`00.` prefix) and before
+ * `01.init-ee.ts`. The enterprise bridge is loaded after this plugin,
+ * so the first call to `resolveDeployment()` sees `edition='agpl'`
+ * even in Enterprise-configured deployments. That is why the plugin
+ * also resets the deployment cache and re-resolves at the end of boot
+ * via a microtask — by then `01.init-ee.ts` has awaited the dynamic
+ * import and the bridge is registered.
  *
- * Explicit override: if the deployment sets
- * `NUXT_PUBLIC_BILLING_ENABLED=true` (or `false`), that wins — useful
- * for staging where the provider is configured but billing UI should
- * stay hidden, or vice versa.
- *
- * Loaded before other plugins (`00.` prefix) so downstream plugins see
- * the resolved value.
+ * Explicit override: if the operator sets `NUXT_PUBLIC_BILLING_ENABLED`
+ * explicitly (either `true` or `false`), that value wins for the
+ * billingEnabled flag — useful for staging where the provider is
+ * configured but checkout should stay hidden, or vice versa.
  */
 
-import { isBillingConfigured } from '../utils/license'
+import { __resetDeploymentCache, resolveDeployment } from '../utils/deployment'
 
-export default defineNitroPlugin(() => {
+function applyDeploymentSnapshot(): void {
   const config = useRuntimeConfig()
   const publicConfig = config.public as Record<string, unknown>
+  const deployment = resolveDeployment()
 
-  // Explicit env override — respect it either way.
-  if (process.env.NUXT_PUBLIC_BILLING_ENABLED !== undefined) return
+  publicConfig.deployment = {
+    profile: deployment.profile,
+    edition: deployment.edition,
+    billingMode: deployment.billingMode,
+  }
 
-  publicConfig.billingEnabled = isBillingConfigured()
+  if (process.env.NUXT_PUBLIC_BILLING_ENABLED === undefined) {
+    publicConfig.billingEnabled = deployment.billingMode !== 'off'
+  }
+}
+
+export default defineNitroPlugin(() => {
+  // First pass — runs before the ee bridge loads, so edition may read
+  // as 'agpl' even when `ee/` is about to be imported.
+  applyDeploymentSnapshot()
+
+  // Second pass — after the ee init plugin has had a chance to load
+  // the bridge. We re-resolve with a cleared cache so the edition is
+  // accurate for the rest of the process lifetime.
+  queueMicrotask(() => {
+    __resetDeploymentCache()
+    applyDeploymentSnapshot()
+  })
 })

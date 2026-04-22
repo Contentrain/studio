@@ -54,7 +54,17 @@ export default defineNuxtConfig({
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
       billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override
       templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER
+      deployment: {
+        // NUXT_PUBLIC_DEPLOYMENT_PROFILE — client-visible mirror of the
+        // resolved deployment profile. Populated at boot by the billing-flag
+        // Nitro plugin; do not set this via env directly (use
+        // NUXT_DEPLOYMENT_PROFILE on the server instead).
+        profile: '', // 'managed' | 'dedicated' | 'on-premise' | 'community' | ''
+        edition: '', // 'ee' | 'agpl' | ''
+        billingMode: '', // 'polar' | 'stripe' | 'flat' | 'off' | ''
+      },
     },
+    deploymentProfile: '', // NUXT_DEPLOYMENT_PROFILE — 'managed' | 'dedicated' | 'on-premise' | 'community' (unset = auto-detect)
     emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
     emailSenderName: '', // NUXT_EMAIL_SENDER_NAME
   },

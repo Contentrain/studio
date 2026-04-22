@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { decryptApiKey, encryptApiKey } from '../../../server/utils/encryption'
+import { __resetDeploymentCache } from '../../../server/utils/deployment'
+import { setEnterpriseBridgeForTesting } from '../../../server/utils/enterprise'
+import type { EnterpriseBridge } from '../../../server/utils/enterprise'
 
 const useDatabaseProvider = vi.fn()
 
@@ -11,13 +14,38 @@ async function loadAiKeysModule() {
   return import('../../../ee/enterprise/ai-keys')
 }
 
+// Minimal EE bridge to flip the edition gate — the ai-keys module
+// reads `hasFeature(plan, 'ai.byoa')`, which force-disables in
+// Community Edition. Tests exercise Managed Pro behaviour.
+const FAKE_BRIDGE: EnterpriseBridge = {
+  listWorkspaceAiKeys: async () => null,
+  createWorkspaceAiKey: async () => null,
+  deleteWorkspaceAiKey: async () => null,
+  listProjectWebhooks: async () => null,
+  createProjectWebhook: async () => null,
+  updateProjectWebhook: async () => null,
+  deleteProjectWebhook: async () => null,
+  testProjectWebhook: async () => null,
+  listWebhookDeliveries: async () => null,
+  listProjectConversationKeys: async () => null,
+  createProjectConversationKey: async () => null,
+  updateProjectConversationKey: async () => null,
+  deleteProjectConversationKey: async () => null,
+  handleConversationApiMessage: async () => null,
+  handleConversationApiHistory: async () => null,
+}
+
 describe('enterprise ai key resolution', () => {
   beforeEach(() => {
     vi.resetModules()
     useDatabaseProvider.mockReset()
+    setEnterpriseBridgeForTesting(FAKE_BRIDGE)
+    __resetDeploymentCache()
   })
 
   afterEach(() => {
+    setEnterpriseBridgeForTesting(null)
+    __resetDeploymentCache()
     vi.unstubAllGlobals()
   })
 
