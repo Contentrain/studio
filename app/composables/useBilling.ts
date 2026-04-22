@@ -68,7 +68,7 @@ function resolveEffectivePlan(ws: Workspace | null, state: BillingState): Studio
 export function useBilling() {
   const { activeWorkspace, fetchWorkspaces } = useWorkspaces()
   const config = useRuntimeConfig()
-  const billingEnabled = computed(() => config.public.billingEnabled === 'true')
+  const billingEnabled = computed(() => config.public.billingEnabled === true)
 
   const activeAccount = computed<WorkspacePaymentAccount | null>(
     () => activeWorkspace.value?.payment_account ?? null,

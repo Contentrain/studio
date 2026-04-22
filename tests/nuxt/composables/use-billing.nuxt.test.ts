@@ -8,7 +8,7 @@ describe('useBilling', () => {
     useState('active-workspace-id').value = null
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
       public: {
-        billingEnabled: 'false',
+        billingEnabled: false,
       },
     }))
   })

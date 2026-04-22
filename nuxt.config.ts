@@ -52,7 +52,7 @@ export default defineNuxtConfig({
     public: {
       siteUrl: 'http://localhost:3000',
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
-      billingEnabled: '', // NUXT_PUBLIC_BILLING_ENABLED — set to 'true' when Stripe is configured
+      billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override
       templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER
     },
     emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
