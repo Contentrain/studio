@@ -25,16 +25,16 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     workspaceId,
     ['owner', 'admin'],
-    'id, plan, overage_settings, stripe_customer_id, subscription_status',
+    'id, plan, overage_settings',
   )
 
   if (!workspace)
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
 
-  // Require active paid subscription with payment method on file
-  const status = workspace.subscription_status as string | null
+  const account = await db.getActivePaymentAccount(workspaceId)
+  const status = (account?.subscription_status as string | null) ?? null
   const hasActiveSubscription = ['trialing', 'active', 'past_due'].includes(status ?? '')
-  if (!hasActiveSubscription || !workspace.stripe_customer_id) {
+  if (!hasActiveSubscription || !account?.customer_id) {
     throw createError({ statusCode: 402, message: errorMessage('billing.overage_requires_subscription') })
   }
 

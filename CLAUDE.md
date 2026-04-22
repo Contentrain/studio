@@ -42,6 +42,23 @@ Concrete implementations live alongside interfaces in `server/providers/`, named
 **Alternative implementations** (future): standard OAuth + plain PostgreSQL, Auth0, Clerk, etc.
 Any new provider implementation must satisfy the same interface — zero application code changes required.
 
+### Payment providers (plugin registry)
+
+Billing runs through a plugin registry at `server/providers/payment/`.
+Each provider ships as a `PaymentProviderPlugin` (`key`, `label`,
+`isConfigured`, `create`). The registry resolves the active plugin
+using a preference order (currently `polar` → `stripe`). Billing state
+lives on `payment_accounts` (one active row per workspace); meter
+events flow through `usage_events_outbox` and a drain cron.
+
+**Rules — never violate:**
+- NEVER call Stripe or Polar SDKs outside `server/providers/payment/plugins/<key>.ts`
+- NEVER read/write `payment_accounts` or `usage_events_outbox` outside
+  `DatabaseProvider` methods
+- To add a provider: new plugin file + one line in `bootstrapPaymentPlugins()`. No other core changes.
+- To record a usage event: call the typed helper in `server/utils/usage-metering.ts`. Don't write to the outbox directly.
+- See `docs/PAYMENT_PROVIDERS.md` for the full setup + extension guide.
+
 ### Auth
 - Owner: GitHub OAuth (needs repo access)
 - Invited users: Google OAuth or Magic Link (no password)
@@ -249,13 +266,43 @@ Medium:
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
 - MCP Cloud endpoint: `server/api/mcp/v1/[projectId]/[...].ts` awaits `@contentrain/mcp` `resolveProvider` callback (per-request provider resolution). Foundations (license entries, `mcp_cloud_keys` table, usage RPC) shipped in Faz S6 — route implementation pending.
 
+## Branch Model & Deploy Flow — CRITICAL
+
+Studio runs a **trunk-based Git flow**. `main` is the single integration branch and the PR target for all work (contributor, agent, internal). Staging is a Railway deployment environment fed from `main`, **not** a long-lived Git branch. This matches the OSS-SaaS norm observed in Grafana, Mastodon, Nextcloud, Supabase, PostHog, Mattermost, cal.com, and most AGPL / open-core peers.
+
+| Branch    | Role                                                     | Deploy target                 |
+|-----------|----------------------------------------------------------|-------------------------------|
+| `main`    | Trunk — default, PR target, OSS face, stable-at-HEAD     | `staging.contentrain.io` auto; prod on `v*` tag |
+| `feat/*`  | Per-task feature branches                                | (no auto-deploy)              |
+| `fix/*`   | Per-task bug-fix branches                                | (no auto-deploy)              |
+| `cr/*`    | Contentrain MCP auto-generated content branches          | (auto-merged by MCP)          |
+
+Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** `main` for backports to a shipped release line — they are downstream of `main`, never upstream.
+
+### Rules — never violate
+
+- **Every PR targets `main`.** There is no `staging`, `develop`, or `next` branch in this repo.
+- **Never push directly to `main`.** All changes go through PR + CI gate.
+- **Release tags (`v*`) are cut from `main`** — they trigger the production deploy. See `docs/RELEASING.md`.
+- **Self-hosters deploy from tagged releases** (`v0.1.0`, `v0.2.0`), not from `main` HEAD. `main` is stable-at-HEAD for CI purposes but tags are the supported deploy contract.
+- **Staging environment ≠ staging branch.** Railway deploys every merge to `main` into `staging.contentrain.io` automatically, so the pre-prod verification lives in the deploy pipeline rather than in Git topology.
+- **Commitlint is lenient for MCP auto-commits** — messages prefixed with `[contentrain]` are ignored by commitlint (see `commitlint.config.ts`). Every human commit must obey Conventional Commits.
+
+### Contributor flow
+
+1. Contributor forks, opens a branch from `main`
+2. PR targets `main` (GitHub's default base, no extra step needed)
+3. Forked PRs run CI but cannot deploy (GitHub secrets are not exposed to forks — intended security boundary)
+4. Maintainer reviews + merges → Railway auto-deploys to `staging.contentrain.io`
+5. When ready to ship, a maintainer cuts a version tag (`v*`) on `main` → prod deploy via `.github/workflows/release.yml`
+
 ## Dev Tooling
 
-- Conventional Commits enforced by commitlint + husky
+- Conventional Commits enforced by commitlint + husky (MCP `[contentrain]` commits ignored)
 - `pnpm lint` / `pnpm lint:fix` — @nuxt/eslint with Stylistic (no Prettier)
-- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow
+- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow; run from `main` on a clean tree
 - lint-staged on pre-commit (only changed files)
-- GitHub Actions CI on PRs (commit lint + build)
+- GitHub Actions CI on every push/PR to `main` (commit lint + build)
 
 ## Enterprise Edition (ee/) — CRITICAL
 

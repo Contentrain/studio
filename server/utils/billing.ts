@@ -1,19 +1,21 @@
 /**
  * Billing state machine.
  *
- * Resolves workspace billing state from DB columns and determines
- * the effective plan for limit enforcement.
+ * Resolves workspace billing state from the embedded `payment_account`
+ * (the single active row from `payment_accounts`) and determines the
+ * effective plan for limit enforcement.
  *
- * State transitions are driven by Stripe webhooks — never by app code.
- * The only exception is self-hosted mode (no Stripe key) which bypasses billing.
+ * State transitions are driven by provider webhooks — never by app
+ * code. Self-hosted deployments (no payment plugin configured) bypass
+ * the state machine via the middleware fast-path.
  */
 
 import type { StudioPlan } from '../../shared/utils/license'
 import { normalizePlan } from '../../shared/utils/license'
 
 export type BillingState
-  = 'free' // Primary workspace, free tier — no subscription needed
-    | 'trial_active' // Stripe trial period running (subscription_status='trialing')
+  = 'free' // Primary / free-tier workspace — no subscription needed
+    | 'trial_active' // Active provider trial (subscription_status='trialing')
     | 'trial_expired' // Trial ended without payment — workspace locked
     | 'subscribed' // Active paid subscription (subscription_status='active')
     | 'past_due' // Payment failed, in grace period — still accessible
@@ -21,86 +23,81 @@ export type BillingState
     | 'canceled' // Subscription canceled, still within paid period
     | 'canceled_expired' // Paid period ended after cancel — workspace locked
 
+/** Active payment account fields required by the state machine. */
+export interface PaymentAccountState {
+  subscription_id: string | null
+  subscription_status: string | null
+  current_period_end: string | null
+  trial_ends_at: string | null
+  grace_period_ends_at: string | null
+  cancel_at_period_end?: boolean | null
+}
+
 export interface WorkspaceBillingRow {
   type: string
   plan: string | null
-  trial_ends_at: string | null
-  subscription_status: string | null
-  stripe_subscription_id: string | null
-  subscription_current_period_end: string | null
-  grace_period_ends_at: string | null
+  /** Active payment account — null when workspace has no subscription. */
+  payment_account: PaymentAccountState | null
   overage_settings?: Record<string, boolean> | null
 }
 
-/** Columns needed for billing state resolution. */
-export const BILLING_SELECT_FIELDS = 'type, plan, trial_ends_at, subscription_status, stripe_subscription_id, subscription_current_period_end, grace_period_ends_at, overage_settings'
+/** Columns needed for billing state resolution (workspaces table only). */
+export const WORKSPACE_BILLING_SELECT_FIELDS = 'type, plan, overage_settings'
 
 /**
  * Resolve the billing state of a workspace.
  *
- * Priority: subscription_status (Stripe source of truth) > trial_ends_at > workspace type.
+ * Priority: payment_account.subscription_status (provider source of
+ * truth) > workspace type. Any legacy pre-plugin `trial_ends_at` on the
+ * workspace row is gone after migration 003.
  */
 export function resolveBillingState(workspace: WorkspaceBillingRow): BillingState {
-  const { subscription_status, type, trial_ends_at, stripe_subscription_id } = workspace
+  const account = workspace.payment_account
   const now = Date.now()
 
-  // 1. Active Stripe subscription
-  if (subscription_status === 'active' && stripe_subscription_id) {
-    return 'subscribed'
-  }
+  if (account) {
+    const { subscription_status, subscription_id, trial_ends_at, grace_period_ends_at, current_period_end } = account
 
-  // 2. Stripe trial (subscription exists with trialing status)
-  if (subscription_status === 'trialing' && stripe_subscription_id) {
-    // Double-check trial_ends_at if available
-    if (trial_ends_at && new Date(trial_ends_at).getTime() <= now) {
-      return 'trial_expired'
+    if (subscription_status === 'active' && subscription_id) {
+      return 'subscribed'
     }
-    return 'trial_active'
-  }
 
-  // 3. Payment failed — check grace period
-  if (subscription_status === 'past_due') {
-    const graceEnd = workspace.grace_period_ends_at
-    if (graceEnd && new Date(graceEnd).getTime() <= now) {
+    if (subscription_status === 'trialing' && subscription_id) {
+      if (trial_ends_at && new Date(trial_ends_at).getTime() <= now) {
+        return 'trial_expired'
+      }
+      return 'trial_active'
+    }
+
+    if (subscription_status === 'past_due') {
+      if (grace_period_ends_at && new Date(grace_period_ends_at).getTime() <= now) {
+        return 'grace_expired'
+      }
+      return 'past_due'
+    }
+
+    if (subscription_status === 'canceled') {
+      if (current_period_end && new Date(current_period_end).getTime() > now) {
+        return 'canceled'
+      }
+      return 'canceled_expired'
+    }
+
+    if (subscription_status === 'unpaid' || subscription_status === 'incomplete') {
       return 'grace_expired'
     }
-    return 'past_due'
   }
 
-  // 4. Subscription canceled — check if still within paid period
-  if (subscription_status === 'canceled') {
-    const periodEnd = workspace.subscription_current_period_end
-    if (periodEnd && new Date(periodEnd).getTime() > now) {
-      return 'canceled'
-    }
-    return 'canceled_expired'
-  }
-
-  // 5. Other Stripe statuses (unpaid, incomplete) — treat as locked
-  if (subscription_status === 'unpaid' || subscription_status === 'incomplete') {
-    return 'grace_expired'
-  }
-
-  // 6. No subscription — check workspace type
-  if (type === 'primary') {
+  // No active payment account — check workspace type
+  if (workspace.type === 'primary') {
     return 'free'
   }
 
-  // 7. Secondary workspace without subscription — check old trial_ends_at
-  if (trial_ends_at) {
-    if (new Date(trial_ends_at).getTime() > now) {
-      return 'trial_active'
-    }
-    return 'trial_expired'
-  }
-
-  // 8. Secondary workspace, no trial, no subscription — treat as free
+  // Secondary workspace without subscription — treat as free shell
   return 'free'
 }
 
-/**
- * States that allow full workspace access.
- */
+/** States that allow full workspace access. */
 const ACCESSIBLE_STATES: ReadonlySet<BillingState> = new Set([
   'free',
   'trial_active',
@@ -109,9 +106,7 @@ const ACCESSIBLE_STATES: ReadonlySet<BillingState> = new Set([
   'canceled',
 ])
 
-/**
- * States that require payment (402 response).
- */
+/** States that require payment (402 response). */
 const LOCKED_STATES: ReadonlySet<BillingState> = new Set([
   'trial_expired',
   'grace_expired',
@@ -129,9 +124,11 @@ export function isBillingLocked(state: BillingState): boolean {
 /**
  * Get the effective plan for limit enforcement.
  *
- * During trial: uses the plan from the Stripe subscription (what user selected at checkout).
+ * During trial: uses the plan from the payment account (what the user
+ * selected at checkout).
  * Free: returns 'free' (severe limits, no Git/projects).
- * Locked states: returns 'free' (fallback — routes should 402 before reaching limits).
+ * Locked states: returns 'free' (fallback — routes should 402 before
+ * reaching limits).
  */
 export function getEffectivePlan(workspace: WorkspaceBillingRow): StudioPlan {
   const state = resolveBillingState(workspace)

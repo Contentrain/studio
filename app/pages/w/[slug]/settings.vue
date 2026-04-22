@@ -40,7 +40,7 @@ async function loadSettingsData() {
 onMounted(async () => {
   await loadSettingsData()
 
-  // Handle Stripe checkout return
+  // Handle payment provider checkout return
   const billing = route.query.billing as string | undefined
   if (billing === 'success') {
     activeTab.value = 'billing'

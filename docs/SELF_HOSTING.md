@@ -11,6 +11,16 @@ This guide describes the practical model for operating Studio in your own enviro
 - auth/data are supplied through provider-backed integrations
 - enterprise features degrade safely when `ee/` functionality or external services are absent
 
+## What to Deploy
+
+Always deploy a **tagged release** container image, not `main` HEAD. Tags are the supported stability contract; `main` is stable-at-HEAD for CI purposes but may carry not-yet-released changes at any moment.
+
+```bash
+docker pull ghcr.io/contentrain/studio:v0.1.0-beta.7
+```
+
+See [DOCKER.md](DOCKER.md) for the full image-tag policy and [RELEASING.md](RELEASING.md) for the release cadence. Pinning to an exact `vX.Y.Z` tag makes upgrades explicit; avoid `:latest` in production.
+
 ## What You Need
 
 ### Required

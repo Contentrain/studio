@@ -39,20 +39,43 @@ const allFeatures = computed(() =>
     .all(),
 )
 
+// Plan tier ordering — used to compute "everything in previous tier, plus..."
+const PLAN_TIER_ORDER = ['free', 'starter', 'pro', 'enterprise'] as const
+
+function isTruthy(val: string | undefined): boolean {
+  return Boolean(val) && val !== 'false' && val !== '0'
+}
+
+function formatFeature(f: PlanFeatures, val: string): string {
+  if (f.type === 'limit') {
+    return val === 'unlimited' ? `${f.name}: ${t('common.unlimited')}` : `${val} ${f.name}`
+  }
+  return f.name
+}
+
+/**
+ * Returns the features that differentiate `planSlug` from the tier below it.
+ * For the lowest shown tier (starter), returns all its features.
+ * For higher tiers, returns only the delta (new features or upgraded limits).
+ */
 function planFeaturesList(planSlug: string): string[] {
   const valueKey = `${planSlug}_value` as keyof PlanFeatures
+  const tierIndex = PLAN_TIER_ORDER.indexOf(planSlug as (typeof PLAN_TIER_ORDER)[number])
+  const previousTier = tierIndex > 1 ? PLAN_TIER_ORDER[tierIndex - 1] : null
+  const prevValueKey = previousTier ? `${previousTier}_value` as keyof PlanFeatures : null
+
   return allFeatures.value
     .filter((f) => {
       const val = f[valueKey] as string | undefined
-      return val && val !== 'false' && val !== '0'
-    })
-    .map((f) => {
-      const val = f[valueKey] as string
-      if (f.type === 'limit') {
-        return val === 'unlimited' ? `${f.name}: ${t('common.unlimited')}` : `${val} ${f.name}`
+      if (!isTruthy(val)) return false
+      // For higher tiers, exclude features already in the previous tier at the same value.
+      if (prevValueKey) {
+        const prevVal = f[prevValueKey] as string | undefined
+        if (isTruthy(prevVal) && prevVal === val) return false
       }
-      return f.name
+      return true
     })
+    .map(f => formatFeature(f, f[valueKey] as string))
 }
 
 // Enterprise plan from Contentrain
@@ -110,7 +133,7 @@ async function handlePlanAction(slug: string) {
         class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out"
       />
       <DialogContent
-        class="fixed left-1/2 top-1/2 z-50 flex w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-secondary-200 bg-white shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
+        class="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-secondary-200 bg-white shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
         @interact-outside.prevent
       >
         <!-- Header -->
@@ -170,6 +193,14 @@ async function handlePlanAction(slug: string) {
             <!-- Trial info -->
             <p v-if="plan.has_trial && !hasActiveSubscription" class="mb-3 text-xs font-medium text-success-600 dark:text-success-400">
               {{ t('billing.trial_14_days') }}
+            </p>
+
+            <!-- "Everything in previous tier, plus..." header for non-base tiers -->
+            <p
+              v-if="plan.slug === 'pro'"
+              class="mb-2 text-xs font-medium text-heading dark:text-secondary-200"
+            >
+              {{ t('plans.everything_in_starter_plus') }}
             </p>
 
             <!-- Features from Contentrain plan-features -->

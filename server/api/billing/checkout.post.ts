@@ -1,8 +1,9 @@
 /**
  * POST /api/billing/checkout
  *
- * Creates a Stripe Checkout Session for plan subscription.
- * Redirects the user to Stripe's hosted payment page.
+ * Creates a checkout session for plan subscription via the active
+ * payment plugin (Polar by default, Stripe as fallback). Returns the
+ * hosted checkout URL for the client to redirect to.
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -23,20 +24,23 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     body.workspaceId,
     ['owner', 'admin'],
-    'id, slug, name, stripe_subscription_id, subscription_status',
+    'id, slug, name',
   )
 
   if (!workspace) {
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
   }
 
-  // Guard: prevent duplicate subscriptions for the same workspace
-  const wsData = workspace as { stripe_subscription_id?: string | null, subscription_status?: string | null }
-  if (wsData.stripe_subscription_id && wsData.subscription_status && !['canceled', 'incomplete_expired'].includes(wsData.subscription_status)) {
-    throw createError({
-      statusCode: 409,
-      message: errorMessage('billing.subscription_exists'),
-    })
+  // Guard: prevent duplicate subscriptions via the active payment account.
+  const account = await db.getActivePaymentAccount(body.workspaceId)
+  if (account?.subscription_id) {
+    const status = account.subscription_status as string | null
+    if (status && !['canceled', 'incomplete_expired'].includes(status)) {
+      throw createError({
+        statusCode: 409,
+        message: errorMessage('billing.subscription_exists'),
+      })
+    }
   }
 
   // Rate limit checkout creation per workspace — prevents duplicate sessions from rapid clicks

@@ -154,6 +154,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Best-effort meter write for overage billing. Fire-and-forget.
+  recordMCPCallUsage({
+    workspaceId: keyData.workspaceId,
+    count: 1,
+    keyId: keyData.keyId,
+    month,
+  }).catch(() => {})
+
   // Read the body once — we need it both for write-tool detection and to
   // forward explicitly to the loopback server (h3's default forward drops
   // the stream after the first consumption).

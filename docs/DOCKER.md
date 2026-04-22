@@ -11,11 +11,31 @@ This repository ships with a production Dockerfile for self-hosted or operator-m
 
 The container listens on port `3000`.
 
-## Build the Image
+## Pre-Built Images (Recommended for Production)
+
+Official container images are published to GHCR on every `v*` tag by the release workflow.
+
+```bash
+docker pull ghcr.io/contentrain/studio:v0.1.0-beta.7
+```
+
+Available image tags for each release:
+
+- `:vX.Y.Z` and `:vX.Y.Z-prerelease.N` — exact release pin (recommended for production)
+- `:sha-<shortsha>` — immutable commit pin
+- `:X.Y`, `:X`, `:latest` — floating tags, stable releases only
+
+Prereleases do **not** publish `:latest`. See [RELEASING.md](RELEASING.md) for the full image-tag policy.
+
+Self-hosters should pin to an exact `vX.Y.Z` tag rather than `:latest` so upgrades are explicit.
+
+## Build the Image Locally
 
 ```bash
 docker build -t contentrain-studio .
 ```
+
+Use this path for local iteration, forks, and patched builds. Production self-hosts should prefer the pre-built GHCR image above.
 
 ## Run the Image
 

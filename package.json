@@ -52,6 +52,7 @@
     "@nuxt/image": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
+    "@polar-sh/sdk": "^0.47.0",
     "@supabase/supabase-js": "^2.99.2",
     "@tailwindcss/typography": "^0.5.19",
     "blurhash": "^2.0.5",

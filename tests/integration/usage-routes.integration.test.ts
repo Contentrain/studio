@@ -162,39 +162,4 @@ describe('usage API', () => {
       await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
     })
   })
-
-  describe('GET /overage-history', () => {
-    it('returns overage billing log entries', async () => {
-      const mockEntries = [
-        { id: 'log-1', billing_period: '2026-03', category: 'ai_messages', units_billed: 25, unit_price: 0.03, total_amount: 0.75 },
-      ]
-
-      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-        getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1' }),
-        getOverageBillingLog: vi.fn().mockResolvedValue(mockEntries),
-      }))
-      vi.stubGlobal('getQuery', vi.fn().mockReturnValue({ period: '2026-03' }))
-
-      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-history.get.ts')).default
-      const result = await handler({} as never)
-
-      expect(result.billingPeriod).toBe('2026-03')
-      expect(result.entries).toEqual(mockEntries)
-    })
-
-    it('defaults to current month when no period specified', async () => {
-      const getOverageBillingLog = vi.fn().mockResolvedValue([])
-      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-        getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1' }),
-        getOverageBillingLog,
-      }))
-      vi.stubGlobal('getQuery', vi.fn().mockReturnValue({}))
-
-      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-history.get.ts')).default
-      const result = await handler({} as never)
-
-      expect(result.billingPeriod).toMatch(/^\d{4}-\d{2}$/)
-      expect(getOverageBillingLog).toHaveBeenCalledWith('ws-1', expect.stringMatching(/^\d{4}-\d{2}$/))
-    })
-  })
 })

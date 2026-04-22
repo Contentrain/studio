@@ -36,8 +36,15 @@ export default defineNuxtConfig({
     resend: {
       apiKey: '', // NUXT_RESEND_API_KEY
     },
+    polar: {
+      accessToken: '', // NUXT_POLAR_ACCESS_TOKEN
+      webhookSecret: '', // NUXT_POLAR_WEBHOOK_SECRET
+      starterProductId: '', // NUXT_POLAR_STARTER_PRODUCT_ID
+      proProductId: '', // NUXT_POLAR_PRO_PRODUCT_ID
+      server: 'production', // NUXT_POLAR_SERVER — 'sandbox' | 'production'
+    },
     stripe: {
-      secretKey: '', // NUXT_STRIPE_SECRET_KEY
+      secretKey: '', // NUXT_STRIPE_SECRET_KEY (optional — legacy Stripe plugin)
       webhookSecret: '', // NUXT_STRIPE_WEBHOOK_SECRET
       starterPriceId: '', // NUXT_STRIPE_STARTER_PRICE_ID
       proPriceId: '', // NUXT_STRIPE_PRO_PRICE_ID

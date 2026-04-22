@@ -20,16 +20,18 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     workspaceId,
     ['owner', 'admin'],
-    'id, plan, overage_settings, stripe_customer_id, subscription_status',
+    'id, plan, overage_settings',
   )
 
   if (!workspace)
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
 
+  const account = await db.getActivePaymentAccount(workspaceId)
   const plan = normalizePlan(workspace.plan as string | null)
   const overageSettings = (workspace.overage_settings as Record<string, boolean>) ?? {}
-  const hasPaymentMethod = !!(workspace.stripe_customer_id)
-  const hasActiveSubscription = ['trialing', 'active', 'past_due'].includes(workspace.subscription_status as string ?? '')
+  const hasPaymentMethod = !!account?.customer_id
+  const accountStatus = (account?.subscription_status as string | null) ?? null
+  const hasActiveSubscription = ['trialing', 'active', 'past_due'].includes(accountStatus ?? '')
 
   const categories = Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => ({
     limitKey,
