@@ -44,7 +44,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
-    "@aws-sdk/client-s3": "^3.1014.0",
+    "@aws-sdk/client-s3": "^3.1034.0",
     "@contentrain/mcp": "1.4.0",
     "@contentrain/query": "^5.1.2",
     "@contentrain/types": "0.5.0",
