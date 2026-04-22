@@ -1,17 +1,20 @@
 {
   "lastOperation": {
     "entries": [
-      "en"
+      "subscription-activated",
+      "subscription-canceled",
+      "payment-failed",
+      "payment-recovered"
     ],
     "locale": "en",
-    "model": "ui-strings",
+    "model": "email-templates",
     "source": "mcp-local",
-    "timestamp": "2026-04-20T20:28:27.116Z",
+    "timestamp": "2026-04-22T12:29:27.612Z",
     "tool": "contentrain_content_save"
   },
   "stats": {
-    "entries": 62,
-    "lastSync": "2026-04-20T20:28:27.116Z",
+    "entries": 73,
+    "lastSync": "2026-04-22T12:29:27.618Z",
     "locales": [
       "en"
     ],

@@ -20,6 +20,7 @@ import { formMethods } from './forms'
 import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
+import { paymentAccountMethods } from './payment-accounts'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
 import { trialReminderMethods } from './trial-reminders'
@@ -44,5 +45,6 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...usageMethods(),
     ...mcpCloudMethods(),
     ...trialReminderMethods(),
+    ...paymentAccountMethods(),
   }
 }

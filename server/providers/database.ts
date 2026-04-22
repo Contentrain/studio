@@ -456,20 +456,60 @@ export interface DatabaseProvider {
   getWorkspaceMonthlyCDNBandwidth: (workspaceId: string, month: string) => Promise<number>
 
   // ═══════════════════════════════════════════════════
-  // OVERAGE BILLING LOG
+  // PAYMENT ACCOUNTS (per-provider subscription state)
   // ═══════════════════════════════════════════════════
 
-  getOverageBillingLog: (workspaceId: string, billingPeriod: string) => Promise<DatabaseRow[]>
-  createOverageBillingEntry: (entry: {
+  /** Return the single active payment account for a workspace, if any. */
+  getActivePaymentAccount: (workspaceId: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Upsert a payment account keyed on (workspace_id, provider, customer_id).
+   *
+   * When a row is created or promoted to active, any previously active
+   * account on the same workspace is archived (`is_active=false`,
+   * `archived_at=now()`). This preserves history while enforcing the
+   * one-active-per-workspace invariant.
+   */
+  upsertPaymentAccount: (input: {
     workspaceId: string
-    billingPeriod: string
-    category: string
-    unitsBilled: number
-    unitPrice: number
-    totalAmount: number
-    stripeInvoiceItemId?: string
+    provider: string
+    customerId: string
+    subscriptionId?: string | null
+    subscriptionStatus?: string | null
+    currentPeriodEnd?: string | null
+    trialEndsAt?: string | null
+    cancelAtPeriodEnd?: boolean
+    gracePeriodEndsAt?: string | null
+    plan?: string | null
+    pluginMetadata?: Record<string, unknown>
+    isActive?: boolean
   }) => Promise<DatabaseRow>
-  hasOverageBeenBilled: (workspaceId: string, billingPeriod: string, category: string) => Promise<boolean>
+
+  /** Archive the active payment account for a workspace (no-op if none). */
+  archiveActivePaymentAccount: (workspaceId: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // USAGE EVENTS OUTBOX (provider-agnostic meter pipeline)
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Enqueue a usage event for later ingestion by the active PaymentProvider.
+   * Duplicate idempotency keys are silently ignored (constraint-safe).
+   */
+  enqueueUsageEvent: (input: {
+    workspaceId: string
+    meterName: string
+    value: number
+    idempotencyKey: string
+    occurredAt?: string
+    metadata?: Record<string, unknown>
+  }) => Promise<void>
+
+  /** List pending (not-yet-ingested) usage events, oldest first. */
+  listPendingUsageEvents: (limit: number) => Promise<DatabaseRow[]>
+
+  /** Mark an outbox row ingested (error=null) or record a failed attempt. */
+  markUsageEventIngested: (id: string, error?: string | null) => Promise<void>
 
   // ═══════════════════════════════════════════════════
   // AUDIT LOGS

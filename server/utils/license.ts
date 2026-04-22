@@ -11,31 +11,43 @@ import {
   hasFeatureForPlan,
   normalizePlan,
 } from '../../shared/utils/license'
+import { bootstrapPaymentPlugins, resolveDefaultPlugin } from '../providers/payment'
+import type { PaymentPluginConfig } from '../providers/payment'
 
 import type { StudioPlan } from '../../shared/utils/license'
 
 export type Plan = StudioPlan
 
-/** Whether Stripe billing is configured. Cached after first check. */
-let _stripeConfigured: boolean | null = null
-function isStripeConfigured(): boolean {
-  if (_stripeConfigured === null) {
-    _stripeConfigured = !!useRuntimeConfig().stripe?.secretKey
+/**
+ * Whether any payment provider is configured at runtime.
+ * Cached after first check. Used by self-hosted bypass and middleware.
+ */
+let _billingConfigured: boolean | null = null
+export function isBillingConfigured(): boolean {
+  if (_billingConfigured === null) {
+    bootstrapPaymentPlugins()
+    const config = useRuntimeConfig() as unknown as PaymentPluginConfig
+    _billingConfigured = resolveDefaultPlugin(config) !== null
   }
-  return _stripeConfigured
+  return _billingConfigured
+}
+
+/** Test helper — clear the cached configuration flag. */
+export function __resetBillingConfiguredCache(): void {
+  _billingConfigured = null
 }
 
 /**
  * Extract plan from workspace row. Defaults to 'free'.
  *
- * Self-hosted bypass: when Stripe is not configured, all workspaces
- * are treated as 'starter' (core features). This ensures public routes
- * (CDN, forms, conversation API) that read plan directly from DB
- * get consistent behavior with the billing middleware.
+ * Self-hosted bypass: when no payment provider is configured, all
+ * workspaces are treated as 'starter' (core features). This ensures
+ * public routes (CDN, forms, conversation API) that read plan directly
+ * from DB get consistent behavior with the billing middleware.
  */
 export function getWorkspacePlan(workspace: { plan?: string | null }): Plan {
   const plan = normalizePlan(workspace?.plan)
-  if (plan === 'free' && !isStripeConfigured()) return 'starter'
+  if (plan === 'free' && !isBillingConfigured()) return 'starter'
   return plan
 }
 

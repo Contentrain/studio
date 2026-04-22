@@ -42,6 +42,23 @@ Concrete implementations live alongside interfaces in `server/providers/`, named
 **Alternative implementations** (future): standard OAuth + plain PostgreSQL, Auth0, Clerk, etc.
 Any new provider implementation must satisfy the same interface — zero application code changes required.
 
+### Payment providers (plugin registry)
+
+Billing runs through a plugin registry at `server/providers/payment/`.
+Each provider ships as a `PaymentProviderPlugin` (`key`, `label`,
+`isConfigured`, `create`). The registry resolves the active plugin
+using a preference order (currently `polar` → `stripe`). Billing state
+lives on `payment_accounts` (one active row per workspace); meter
+events flow through `usage_events_outbox` and a drain cron.
+
+**Rules — never violate:**
+- NEVER call Stripe or Polar SDKs outside `server/providers/payment/plugins/<key>.ts`
+- NEVER read/write `payment_accounts` or `usage_events_outbox` outside
+  `DatabaseProvider` methods
+- To add a provider: new plugin file + one line in `bootstrapPaymentPlugins()`. No other core changes.
+- To record a usage event: call the typed helper in `server/utils/usage-metering.ts`. Don't write to the outbox directly.
+- See `docs/PAYMENT_PROVIDERS.md` for the full setup + extension guide.
+
 ### Auth
 - Owner: GitHub OAuth (needs repo access)
 - Invited users: Google OAuth or Magic Link (no password)
@@ -78,7 +95,7 @@ This repository is the AGPL core product surface — no marketing pages. All rou
 ### Profile / Account Settings
 - `/settings` page with tabs: Profile, Account
 - Profile tab: display name (editable), avatar (read-only from OAuth), email (read-only), connected account badge
-- Account tab: danger zone — account deletion with email confirmation
+- Account tab: danger zone — account deletion guarded by typed-email confirmation (user re-types their own address in the UI; no outbound confirmation email is sent)
 - API: `PATCH /api/profile` (update displayName), `DELETE /api/profile` (delete account — CASCADE)
 - Database: `profiles` table via DatabaseProvider (`getProfile`, `updateProfile`)
 - Auth: `AuthProvider.deleteUser()` for GDPR account deletion

@@ -5,14 +5,14 @@ import type { GitAppProvider, GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import type { MediaProvider } from '../providers/media'
 import type { EmailProvider } from '../providers/email'
-import type { PaymentProvider } from '../providers/payment'
+import type { PaymentPluginConfig, PaymentProvider } from '../providers/payment'
+import { bootstrapPaymentPlugins, resolveDefaultPlugin } from '../providers/payment'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createSupabaseDatabaseProvider } from '../providers/supabase-db'
 import { createStudioGitProvider } from '../providers/git'
 import { createGitHubAppInstallationProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
 import { createResendEmailProvider } from '../providers/resend-email'
-import { createStripePaymentProvider } from '../providers/stripe-payment'
 import { getLoadedEnterpriseBridge } from './enterprise'
 
 /**
@@ -167,21 +167,27 @@ export function useEmailProvider(): EmailProvider | null {
 /**
  * Payment Provider (singleton).
  *
- * Returns null if Stripe is not configured (self-hosted mode).
- * Current impl: Stripe. Swap to Paddle, LemonSqueezy, etc.
+ * Resolves the active payment plugin from the registry using runtime config.
+ * Returns null in self-hosted/no-billing mode (no plugin configured).
+ *
+ * Registered plugins live in `server/providers/payment/plugins/`. The
+ * preference order is defined in `payment/registry.ts` (currently
+ * `polar` → `stripe`). To add a provider: implement a plugin file and
+ * register it inside `bootstrapPaymentPlugins()`.
  */
 let _paymentProvider: PaymentProvider | null | undefined
 export function usePaymentProvider(): PaymentProvider | null {
   if (_paymentProvider !== undefined) return _paymentProvider
 
-  const config = useRuntimeConfig()
-  const secretKey = (config.stripe as { secretKey?: string })?.secretKey
+  bootstrapPaymentPlugins()
+  const config = useRuntimeConfig() as unknown as PaymentPluginConfig
+  const plugin = resolveDefaultPlugin(config)
 
-  if (!secretKey) {
+  if (!plugin) {
     _paymentProvider = null
     return null
   }
 
-  _paymentProvider = createStripePaymentProvider()
+  _paymentProvider = plugin.create(config)
   return _paymentProvider
 }

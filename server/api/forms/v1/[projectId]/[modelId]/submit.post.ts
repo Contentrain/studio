@@ -272,6 +272,14 @@ export default defineEventHandler(async (event) => {
   if (!submission)
     throw createError({ statusCode: 500, message: errorMessage('forms.submission_failed') })
 
+  // Best-effort meter write for overage billing. Fire-and-forget.
+  recordFormSubmissionUsage({
+    workspaceId: workspace.id as string,
+    submissionId: submission.id as string,
+    modelId,
+    projectId,
+  }).catch(() => {})
+
   // Auto-approve: create content entry + update submission status
   if (shouldAutoApprove) {
     try {

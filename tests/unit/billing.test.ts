@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { getEffectivePlan, isBillingAccessible, isBillingLocked, resolveBillingState } from '../../server/utils/billing'
-import type { WorkspaceBillingRow } from '../../server/utils/billing'
+import type { PaymentAccountState, WorkspaceBillingRow } from '../../server/utils/billing'
+
+function makeAccount(overrides: Partial<PaymentAccountState> = {}): PaymentAccountState {
+  return {
+    subscription_id: null,
+    subscription_status: null,
+    current_period_end: null,
+    trial_ends_at: null,
+    grace_period_ends_at: null,
+    cancel_at_period_end: false,
+    ...overrides,
+  }
+}
 
 function makeWorkspace(overrides: Partial<WorkspaceBillingRow> = {}): WorkspaceBillingRow {
   return {
     type: 'secondary',
     plan: 'free',
-    trial_ends_at: null,
-    subscription_status: null,
-    stripe_subscription_id: null,
-    subscription_current_period_end: null,
-    grace_period_ends_at: null,
+    payment_account: null,
     ...overrides,
   }
 }
@@ -23,65 +31,79 @@ describe('resolveBillingState', () => {
     expect(resolveBillingState(makeWorkspace({ type: 'primary' }))).toBe('free')
   })
 
-  it('returns "subscribed" for active Stripe subscription', () => {
+  it('returns "subscribed" for active subscription', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'active',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'active',
+        subscription_id: 'sub_123',
+      }),
       plan: 'pro',
     }))).toBe('subscribed')
   })
 
-  it('returns "trial_active" for Stripe trialing status', () => {
+  it('returns "trial_active" for trialing status', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'trialing',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'trialing',
+        subscription_id: 'sub_123',
+        trial_ends_at: FUTURE,
+      }),
       plan: 'starter',
-      trial_ends_at: FUTURE,
     }))).toBe('trial_active')
   })
 
-  it('returns "trial_expired" when Stripe trial ended', () => {
+  it('returns "trial_expired" when trial ended', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'trialing',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'trialing',
+        subscription_id: 'sub_123',
+        trial_ends_at: PAST,
+      }),
       plan: 'starter',
-      trial_ends_at: PAST,
     }))).toBe('trial_expired')
   })
 
   it('returns "past_due" during grace period', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'past_due',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'past_due',
+        subscription_id: 'sub_123',
+        grace_period_ends_at: FUTURE,
+      }),
       plan: 'pro',
-      grace_period_ends_at: FUTURE,
     }))).toBe('past_due')
   })
 
   it('returns "grace_expired" after grace period ends', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'past_due',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'past_due',
+        subscription_id: 'sub_123',
+        grace_period_ends_at: PAST,
+      }),
       plan: 'pro',
-      grace_period_ends_at: PAST,
     }))).toBe('grace_expired')
   })
 
   it('returns "canceled" when subscription canceled but still in period', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'canceled',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'canceled',
+        subscription_id: 'sub_123',
+        current_period_end: FUTURE,
+      }),
       plan: 'pro',
-      subscription_current_period_end: FUTURE,
     }))).toBe('canceled')
   })
 
   it('returns "canceled_expired" when period ended after cancel', () => {
     expect(resolveBillingState(makeWorkspace({
-      subscription_status: 'canceled',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'canceled',
+        subscription_id: 'sub_123',
+        current_period_end: PAST,
+      }),
       plan: 'pro',
-      subscription_current_period_end: PAST,
     }))).toBe('canceled_expired')
   })
 
@@ -90,8 +112,12 @@ describe('resolveBillingState', () => {
   })
 
   it('returns "grace_expired" for unpaid/incomplete status', () => {
-    expect(resolveBillingState(makeWorkspace({ subscription_status: 'unpaid' }))).toBe('grace_expired')
-    expect(resolveBillingState(makeWorkspace({ subscription_status: 'incomplete' }))).toBe('grace_expired')
+    expect(resolveBillingState(makeWorkspace({
+      payment_account: makeAccount({ subscription_status: 'unpaid' }),
+    }))).toBe('grace_expired')
+    expect(resolveBillingState(makeWorkspace({
+      payment_account: makeAccount({ subscription_status: 'incomplete' }),
+    }))).toBe('grace_expired')
   })
 })
 
@@ -118,50 +144,64 @@ describe('getEffectivePlan', () => {
 
   it('returns selected plan during trial', () => {
     expect(getEffectivePlan(makeWorkspace({
-      subscription_status: 'trialing',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'trialing',
+        subscription_id: 'sub_123',
+        trial_ends_at: FUTURE,
+      }),
       plan: 'pro',
-      trial_ends_at: FUTURE,
     }))).toBe('pro')
   })
 
   it('returns plan for active subscription', () => {
     expect(getEffectivePlan(makeWorkspace({
-      subscription_status: 'active',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'active',
+        subscription_id: 'sub_123',
+      }),
       plan: 'starter',
     }))).toBe('starter')
   })
 
   it('returns plan during grace period (past_due)', () => {
     expect(getEffectivePlan(makeWorkspace({
-      subscription_status: 'past_due',
+      payment_account: makeAccount({
+        subscription_status: 'past_due',
+        subscription_id: 'sub_123',
+        grace_period_ends_at: FUTURE,
+      }),
       plan: 'pro',
-      grace_period_ends_at: FUTURE,
     }))).toBe('pro')
   })
 
   it('returns plan during canceled period', () => {
     expect(getEffectivePlan(makeWorkspace({
-      subscription_status: 'canceled',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'canceled',
+        subscription_id: 'sub_123',
+        current_period_end: FUTURE,
+      }),
       plan: 'pro',
-      subscription_current_period_end: FUTURE,
     }))).toBe('pro')
   })
 
   it('returns "free" for locked states', () => {
     expect(getEffectivePlan(makeWorkspace({
-      subscription_status: 'past_due',
+      payment_account: makeAccount({
+        subscription_status: 'past_due',
+        subscription_id: 'sub_123',
+        grace_period_ends_at: PAST,
+      }),
       plan: 'pro',
-      grace_period_ends_at: PAST,
     }))).toBe('free')
 
     expect(getEffectivePlan(makeWorkspace({
-      subscription_status: 'canceled',
-      stripe_subscription_id: 'sub_123',
+      payment_account: makeAccount({
+        subscription_status: 'canceled',
+        subscription_id: 'sub_123',
+        current_period_end: PAST,
+      }),
       plan: 'pro',
-      subscription_current_period_end: PAST,
     }))).toBe('free')
   })
 })

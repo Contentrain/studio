@@ -1,8 +1,9 @@
 /**
  * POST /api/billing/portal
  *
- * Creates a Stripe Customer Portal session.
- * Allows users to manage their subscription, update payment, cancel.
+ * Creates a customer portal session via the active payment plugin.
+ * Allows the user to manage their subscription (payment method,
+ * cancel, plan change) through the provider's hosted portal.
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -26,8 +27,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
   }
 
-  const stripeCustomerId = (workspace as { stripe_customer_id?: string }).stripe_customer_id
-  if (!stripeCustomerId) {
+  const account = await db.getActivePaymentAccount(body.workspaceId)
+  const customerId = (account?.customer_id as string | undefined) ?? ''
+  if (!customerId) {
     throw createError({ statusCode: 400, message: errorMessage('billing.no_subscription') })
   }
 
@@ -42,7 +44,7 @@ export default defineEventHandler(async (event) => {
 
   const result = await payment.createPortalSession({
     workspaceId: body.workspaceId,
-    stripeCustomerId,
+    customerId,
     returnUrl: `${siteUrl}/w/${wsSlug}/settings`,
   })
 

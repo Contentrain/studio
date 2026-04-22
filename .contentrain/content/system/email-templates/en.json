@@ -11,6 +11,30 @@
     "slug": "invite-reminder",
     "subject": "Reminder: You've been invited to {workspaceName} on Contentrain Studio"
   },
+  "payment-failed": {
+    "body": "<p>Hi,</p><p>We couldn't charge your payment method for the <strong>{planName}</strong> subscription on <strong>{workspaceName}</strong>.</p><p>You have until <strong>{gracePeriodEndsText}</strong> to update your payment details. If the charge doesn't go through by then, the workspace will be downgraded to the free plan.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Update payment method</a></td></tr></table><p>If you think this is a mistake, check with your card issuer or reply to this email.</p>",
+    "name": "Payment — Failed",
+    "slug": "payment-failed",
+    "subject": "Action required: payment failed for {workspaceName}"
+  },
+  "payment-recovered": {
+    "body": "<p>Hi,</p><p>Good news — we've successfully charged your payment method for <strong>{workspaceName}</strong>. Your <strong>{planName}</strong> subscription is active again.</p><p>No action needed. Thanks for sticking with Contentrain Studio.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">View billing</a></td></tr></table>",
+    "name": "Payment — Recovered",
+    "slug": "payment-recovered",
+    "subject": "Payment received — {workspaceName} is active again"
+  },
+  "subscription-activated": {
+    "body": "<p>Hi,</p><p>Your <strong>{planName}</strong> subscription for <strong>{workspaceName}</strong> is now active at {planPrice}/month.</p><p>You'll be billed monthly until you cancel. You can manage your subscription anytime:</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Manage billing</a></td></tr></table><p>Questions? Just reply to this email.</p>",
+    "name": "Subscription — Activated",
+    "slug": "subscription-activated",
+    "subject": "Your {planName} plan is active on Contentrain Studio"
+  },
+  "subscription-canceled": {
+    "body": "<p>Hi,</p><p>Your <strong>{planName}</strong> subscription for <strong>{workspaceName}</strong> has been canceled. The workspace is now on the free plan.</p><p>Changed your mind? You can resubscribe anytime and pick up where you left off.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Reactivate</a></td></tr></table><p>If this was unexpected, reply to this email and we'll sort it out.</p>",
+    "name": "Subscription — Canceled",
+    "slug": "subscription-canceled",
+    "subject": "Your Contentrain Studio subscription has been canceled"
+  },
   "trial-ending": {
     "body": "<p>Hi,</p><p>Your Contentrain Studio trial for <strong>{workspaceName}</strong> ends <strong>{trialEndsText}</strong>.</p><p>Once the trial ends, your {planName} subscription starts automatically at {planPrice}/month — no action required if that's what you want.</p><p>If you'd like to change your plan or cancel before it renews, manage your subscription below:</p><p><a href=\"{billingUrl}\">Manage billing</a></p><p>Questions? Reply to this email.</p>",
     "name": "Trial Ending Reminder",
