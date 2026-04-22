@@ -18,8 +18,8 @@ importers:
         specifier: 1.4.0
         version: 1.4.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
       '@contentrain/query':
-        specifier: ^5.1.2
-        version: 5.1.2
+        specifier: ^5.1.5
+        version: 5.1.5
       '@contentrain/types':
         specifier: 0.5.0
         version: 0.5.0
@@ -577,12 +577,9 @@ packages:
       '@octokit/rest':
         optional: true
 
-  '@contentrain/query@5.1.2':
-    resolution: {integrity: sha512-t4ogva5SYJXsRJNDhCpkDURoipmDlDEB6tsOIi697fuOpVKi60c9sKchdDYUEd7zNqcgx0d2dZGKae8qLfVMng==}
+  '@contentrain/query@5.1.5':
+    resolution: {integrity: sha512-DVkOwH3wtI/ClGQfkSqvms4Hhd6K6KjAPQeUxpLjMlGEdvwVGOWlKEBdpC6psry3ymxZ7vUZ8cTyZCF8xiqu+Q==}
     hasBin: true
-
-  '@contentrain/types@0.4.0':
-    resolution: {integrity: sha512-saZ1qgdOfDmoNN2/KwUV59HEvcpOPtwdgZtmEWFFTxtJ1Cze1FZQCVElQfocikseNh5dE/rO/f/oVi/H1W/usw==}
 
   '@contentrain/types@0.5.0':
     resolution: {integrity: sha512-VWU2EERn3zVHYcDWyINqjiTM9p2kKl5H965qHRmWYlif+fWyzLUqsb7JzqOtvmGhsDSQfhT+8SLjs9duoLO6jg==}
@@ -7032,11 +7029,9 @@ snapshots:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@contentrain/query@5.1.2':
+  '@contentrain/query@5.1.5':
     dependencies:
-      '@contentrain/types': 0.4.0
-
-  '@contentrain/types@0.4.0': {}
+      '@contentrain/types': 0.5.0
 
   '@contentrain/types@0.5.0': {}
 
