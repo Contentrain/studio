@@ -326,6 +326,14 @@ function onProjectDeleted() {
           :icon="isDark ? 'icon-[annon--sun]' : 'icon-[annon--moon]'"
           :label="isDark ? t('common.light_mode') : t('common.dark_mode')" @click="toggleTheme"
         />
+
+        <NuxtLink
+          to="/about"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-primary-900/20 dark:hover:text-primary-400"
+        >
+          <span class="icon-[annon--info] size-4 shrink-0" aria-hidden="true" />
+          <span>{{ t('common.about') }}</span>
+        </NuxtLink>
       </div>
 
       <!-- User -->

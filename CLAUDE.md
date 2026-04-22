@@ -304,41 +304,85 @@ Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** 
 - lint-staged on pre-commit (only changed files)
 - GitHub Actions CI on every push/PR to `main` (commit lint + build)
 
-## Enterprise Edition (ee/) — CRITICAL
+## Open Core Model & Editions — CRITICAL
 
-Studio uses **Open Core** model: AGPL core + proprietary `ee/` directory.
-The `ee/` boundary rules are enforced in code and contributor guidance; internal planning files are not tracked.
+Studio ships as **open-core**: AGPL-3.0 core + proprietary `ee/` directory under a separate license (see `ee/LICENSE`). The public-facing legal + deployment surface lives in `docs/LICENSING.md`, `docs/EDITIONS.md`, and `docs/DEPLOYMENT_PROFILES.md` — update those when policy changes.
 
-### Rules — never violate:
+### Editions — what actually differs
 
-- **ee/ directory** has its own proprietary LICENSE — NEVER mix ee/ code into core
-- **Core must work without ee/** — starter tier (AGPL core) is a fully functional product
-- **Feature flags** via `server/utils/license.ts` → `hasFeature(plan, 'feature.name')`
-- **NEVER hardcode plan checks** — always use `hasFeature()` function
-- **Provider interfaces in core**, implementations can be in ee/ (same pattern as AuthProvider)
-- **UI conditional rendering** based on plan — use `hasFeature()` in computed properties
-- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in starter tier
-- **Graceful degradation** — if ee/ feature is unavailable, degrade safely (reviewer → editor, not error)
+Edition is **orthogonal to plan tier**: a managed Enterprise customer and a self-hosted Community user see different code paths, even though both models share the `free`/`starter`/`pro`/`enterprise` tier vocabulary.
 
-### What belongs in ee/:
-- Advanced roles (reviewer, viewer, specificModels)
-- BYOA API key management
-- Premium connectors (Canva, Figma, Recraft, Notion, Google Drive)
-- SSO (SAML, OIDC)
-- Approval chains, scheduled publish
-- Advanced audit log UI (ee/ — core has read API endpoint)
-- White-label branding
-- Outbound webhooks
+- **Community Edition** = `loadEnterpriseBridge()` returns `null` (either `ee/` is absent or failed to import). All workspaces resolve to the fixed `community` plan tier. Numerical limits are unenforced (self-hoster's own infrastructure). `requires_ee` features are hidden/404 regardless of plan.
+- **Enterprise Edition** = `loadEnterpriseBridge()` returns a bridge instance. Plan tier is determined by the deployment profile (`managed` / `dedicated` / `on-premise`). Full feature set available subject to plan gating.
 
-### What stays in core (AGPL):
-- All auth flows, workspace/project CRUD
-- Chat engine + all agent tools
-- Content CRUD (all 4 kinds, all 27 field types)
-- Auto-merge workflow, two-step merge (cr/* → contentrain → main)
-- Content editor modal, all UI components
-- Owner + Editor roles
+### Rules — never violate
+
+- **ee/ directory** is proprietary — NEVER mix `ee/` code into core paths. The boundary is enforced by convention + by the `EnterpriseBridge` interface in `server/utils/enterprise.ts`.
+- **Core must work without ee/** — every AGPL code path must degrade gracefully when the bridge is `null`. Current provider gaps in core (CDN provider, Media provider) are ee-resident by design; do not assume they exist in Community Edition.
+- **Feature gating goes through `hasFeature(plan, feature, { edition })`** in `shared/utils/license.ts`. The helper honors both plan tier and the `requires_ee` flag on the feature row.
+- **`requires_ee: true` is an AND gate, not OR** — even if the plan matrix grants a feature, `requires_ee` features are disabled in Community Edition.
+- **NEVER hardcode plan checks** (e.g. `if (plan === 'enterprise')`) — always route through `hasFeature()` or `getPlanLimit()`.
+- **Provider interfaces in core, implementations may be in ee/** — this is the pattern for CDN and Media today.
+- **UI conditional rendering** uses `useDeployment()` (edition + plan + billing mode) consistently. Every surface that renders plan/billing/edition info (sidebar, overview, billing tab, usage, members, plan modal, trial banner) reads from the same composable.
+- **Database schema stays in core** — `ee/`-related columns (e.g. `project_members.specific_models`) exist in migrations; RLS and application logic keep them unused in Community Edition.
+- **Graceful degradation** — bridge-null paths must return sensible defaults (role → editor, metering → no-op, optional features → hidden), never throw 500s.
+- **NEVER write to `payment_accounts` or `usage_events_outbox` outside `DatabaseProvider`** — the abstraction is part of the payment-plugin boundary.
+- **NEVER import Stripe or Polar SDKs outside `server/providers/payment/plugins/<key>.ts`**.
+
+### What belongs in ee/
+
+Under `ee/LICENSE` scope. Requires an active Contentrain subscription or separately executed agreement.
+
+- Advanced project roles: `reviewer`, `viewer`, `specificModels` (core degrades to `editor`)
+- BYOA API key management UI + key rotation + encryption (`ai.byoa`)
+- Studio-hosted AI key (`ai.studio_key`) — the Anthropic key billed to Contentrain
+- Conversation API + conversation keys (`api.conversation*`)
+- Outbound webhooks + delivery retry (`api.webhooks_outbound`, `api.webhooks`)
+- CDN provider implementation (R2 driver, custom variants, preview branches, custom domain)
+- Media provider implementation (upload, library, image processing)
+- Spam filter (`forms.spam_filter`)
+- Form file upload (`forms.file_upload` — depends on media stack)
+- Form webhook notifications (`forms.webhook_notification` — depends on outbound webhooks)
+- SSO (`sso.saml`, `sso.oidc`) — roadmap
+- White-label branding (`branding.white_label`) — roadmap
+- MCP Cloud custom domain + SSO — roadmap
+- Advanced audit log UI (core exposes the read API)
+- Approval chains, scheduled publish, premium connectors (Canva, Figma, Recraft, Notion, Google Drive)
+
+### What stays in core (AGPL)
+
+Always available, in every edition. Plan-independent.
+
+- All auth flows (Supabase Auth + OAuth providers + magic link), workspace/project CRUD, member management (Owner/Admin/Member)
+- Chat engine + every deterministic agent tool (content CRUD, validation, branch/merge, brain, search)
+- Content CRUD — all 4 kinds (collection, singleton, document, dictionary), all 27 field types
+- Auto-merge workflow (cr/* → contentrain → main), review workflow gating via `workflow.review`
+- Content editor modal, all form components, validation, health reporting
+- Owner + Admin + Editor workspace roles; Editor project role
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
+- Forms core (submission storage, captcha via Turnstile, auto-approve, notifications via Resend)
+- AI chat with operator-provided `NUXT_ANTHROPIC_API_KEY`
+
+### Deployment profiles
+
+Four profiles, auto-detected from `ee/` presence + billing env, overridable via `NUXT_DEPLOYMENT_PROFILE`:
+
+- `managed` — ee required, subscription-driven plan (contentrain.io)
+- `dedicated` — ee required, operator-set plan, single-tenant hosted
+- `on-premise` — ee required, operator-set plan, customer infrastructure
+- `community` — agpl only, fixed `community` tier, no billing
+
+See `docs/DEPLOYMENT_PROFILES.md` for the 12-scenario matrix.
+
+### AGPL §13 + trademark notices
+
+`LICENSE-EXCEPTIONS` publishes two §7 additional terms for the core: attribution (§7(c)) and no-trademark (§7(e)). `/about` page and app footer expose the source-code link per §13. Do not remove these without legal review.
+
+### Commercial safety rails
+
+- Reselling or embedding `ee/` without an executed agreement is prohibited by `ee/LICENSE` §3.3, §3.4.
+- Commercial SaaS resale of the AGPL core is **technically permitted** by AGPL-3.0 but the Contentrain trademark cannot be used for the reseller's product identity (`LICENSE-EXCEPTIONS` §7(e)). If stronger resale control is needed in the future, the model to evaluate is BSL (Business Source License) migration — this is a roadmap-level decision, not a patch-level change.
 
 ## Internal Planning
 
