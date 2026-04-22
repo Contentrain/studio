@@ -34,21 +34,38 @@ it's explicitly disabled by leaving `NUXT_POLAR_ACCESS_TOKEN` unset.
   $49 at the time of writing).
 - Note each product's UUID — those go into the env file below.
 
-**2. Create meters.** Run the idempotent bootstrap script:
+**2. Sync meters + products + prices.** Run the content-driven sync:
 
 ```bash
 NUXT_POLAR_ACCESS_TOKEN=polar_oat_… NUXT_POLAR_SERVER=sandbox \
-  node ./scripts/polar-setup-meters.mjs
+  pnpm polar:sync
 ```
 
-This creates six meters matching `shared/utils/usage-meters.ts`:
-`ai_messages`, `api_messages`, `mcp_calls`, `form_submissions`,
-`cdn_bandwidth_bytes`, and `media_storage_byte_hours`. Re-running
-skips meters that already exist by name.
+The script is idempotent and content-driven. On every run it:
 
-Attach the meters to the Pro product's metered prices in the Polar
-dashboard. The prices (per-unit costs) live in `OVERAGE_PRICING` in
-`shared/utils/license.ts` — keep them in sync.
+- Creates the six meters if missing (`ai_messages`, `api_messages`,
+  `mcp_calls`, `form_submissions`, `cdn_bandwidth_bytes`,
+  `media_storage_byte_hours` — from `shared/utils/usage-meters.ts`).
+- Creates Starter + Pro products if missing, stamped with
+  `metadata.contentrain_slug` so future runs find them reliably.
+  Name and description mutate in place when content changes.
+- Creates the fixed monthly price (from `plans/en.json`) and the six
+  metered prices (from `plan-features` overage rows + `OVERAGE_PRICING`)
+  if any are missing on the product.
+- Detects **price drift**: if an existing price on Polar disagrees
+  with the content-defined amount, the script warns and exits 1.
+  Polar prices cannot be legally mutated once an active subscription
+  references them — to change prices, archive the old price in the
+  Polar dashboard, create a new one, and switch the product's default.
+  The script refuses to do this automatically so it never risks
+  breaking live customer billing.
+
+First run prints a copy-paste block of product IDs for your env:
+
+```
+  NUXT_POLAR_STARTER_PRODUCT_ID=…
+  NUXT_POLAR_PRO_PRODUCT_ID=…
+```
 
 **3. Webhook endpoint.** In the Polar dashboard:
 

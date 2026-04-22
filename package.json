@@ -36,7 +36,8 @@
     "db:migrate": "pnpm dlx supabase migration up --workdir . --local",
     "db:diff": "pnpm dlx supabase db diff --workdir .",
     "db:studio": "open http://127.0.0.1:54323",
-    "db:mail": "open http://127.0.0.1:54324"
+    "db:mail": "open http://127.0.0.1:54324",
+    "polar:sync": "tsx scripts/polar-sync.ts"
   },
   "lint-staged": {
     "*.{js,ts,mjs,vue}": "eslint --fix"
@@ -90,6 +91,7 @@
     "nuxt-mcp-dev": "^0.3.2",
     "playwright-core": "^1.59.1",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.4",
     "vue-tsc": "^3.2.6"
