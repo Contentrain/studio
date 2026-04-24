@@ -67,6 +67,53 @@ export function resolveVariantConfig(
 }
 
 /**
+ * Resolve variant config with plan enforcement.
+ *
+ * Gating:
+ * - Custom variant objects require `media.custom_variants` (Pro+ in
+ *   the default matrix). Plans that lack the feature fall back to the
+ *   DEFAULT_PRESET so the upload still succeeds — we don't 403 on
+ *   variant choice, we just refuse the customisation.
+ * - The total number of variants per field is capped by
+ *   `media.variants_per_field`. Exceeding the cap throws 403 (this
+ *   always signals intent; silently truncating the set would surprise
+ *   callers).
+ *
+ * Accepts the current plan + a `hasFeature` / `getPlanLimit` pair
+ * (kept as injected closures to avoid a circular import from the
+ * license util — media-variants.ts is also consumed by client
+ * bundlers via conversation-engine.ts).
+ */
+export interface VariantPlanGate {
+  hasCustomVariants: boolean
+  variantsPerFieldLimit: number
+}
+
+export function resolveVariantConfigWithPlan(
+  fieldVariants: string | Record<string, VariantConfig> | undefined,
+  gate: VariantPlanGate,
+): Record<string, VariantConfig> {
+  // Custom config → require the feature; otherwise fall through to the
+  // default preset. The plan matrix marks `media.custom_variants` as
+  // `requires_ee: true`, so Community Edition always lands here.
+  const resolved = (typeof fieldVariants === 'object' && fieldVariants !== null && !gate.hasCustomVariants)
+    ? VARIANT_PRESETS[DEFAULT_PRESET]!
+    : resolveVariantConfig(fieldVariants)
+
+  // Limit check runs on the resolved set — a preset with more
+  // variants than the plan allows is also caught here.
+  if (gate.variantsPerFieldLimit > 0 && Object.keys(resolved).length > gate.variantsPerFieldLimit) {
+    throw createError({
+      statusCode: 403,
+      message: 'Variant count exceeds your plan limit. Upgrade your plan or reduce the variant set.',
+      data: { limit: gate.variantsPerFieldLimit, requested: Object.keys(resolved).length },
+    })
+  }
+
+  return resolved
+}
+
+/**
  * MIME types allowed for media upload.
  */
 export const ALLOWED_MIME_TYPES = new Set([

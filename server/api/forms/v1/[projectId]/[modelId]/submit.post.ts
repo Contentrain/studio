@@ -302,12 +302,19 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Emit webhook event (fire-and-forget)
-  emitWebhookEvent(projectId, workspace.id as string, 'form.submitted', {
-    submissionId: submission.id,
-    modelId,
-    status: shouldAutoApprove ? 'approved' : submission.status,
-  }).catch(() => {})
+  // Emit webhook event (fire-and-forget) — gated by the
+  // `forms.webhook_notification` feature so only plans that grant it
+  // (and deployments with the enterprise bridge loaded) dispatch to
+  // outbound webhook subscribers. Community Edition and Free plan
+  // silently skip; ee/ bridge already no-ops without subscribers, but
+  // the explicit gate keeps the intent readable.
+  if (hasFeature(plan, 'forms.webhook_notification')) {
+    emitWebhookEvent(projectId, workspace.id as string, 'form.submitted', {
+      submissionId: submission.id,
+      modelId,
+      status: shouldAutoApprove ? 'approved' : submission.status,
+    }).catch(() => {})
+  }
 
   return {
     success: true,

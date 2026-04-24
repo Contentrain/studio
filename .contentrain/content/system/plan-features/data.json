@@ -76,6 +76,7 @@
     "name": "Custom AI Instructions",
     "pro_value": "true",
     "requires_ee": "true",
+    "roadmap": "true",
     "sort_order": 4,
     "starter_value": "false",
     "type": "feature"
@@ -323,6 +324,7 @@
     "name": "Form File Upload",
     "pro_value": "true",
     "requires_ee": "true",
+    "roadmap": "true",
     "sort_order": 6,
     "starter_value": "true",
     "type": "feature"
@@ -349,6 +351,7 @@
     "name": "Submission Notifications",
     "pro_value": "true",
     "requires_ee": "false",
+    "roadmap": "true",
     "sort_order": 7,
     "starter_value": "true",
     "type": "feature"
@@ -362,6 +365,7 @@
     "name": "Spam Filter",
     "pro_value": "true",
     "requires_ee": "true",
+    "roadmap": "true",
     "sort_order": 8,
     "starter_value": "false",
     "type": "feature"

@@ -85,6 +85,24 @@ const REQUIRED_OVERAGE_KEYS = [
   'media.storage_gb',
 ] as const
 
+// Features that are advertised in the matrix but have no runtime
+// enforcement yet — the UI renders a "Coming Soon" chip for these.
+// When a feature graduates (real enforcement lands), its row should
+// drop the `roadmap` flag and move to EE_REQUIRED_FEATURES.
+const ROADMAP_FEATURES = [
+  'api.custom_instructions',
+  'api.mcp_cloud_custom_domain',
+  'api.mcp_cloud_sso',
+  'cdn.custom_domain',
+  'cdn.preview_branch',
+  'forms.file_upload',
+  'forms.notifications',
+  'forms.spam_filter',
+  'sso.saml',
+  'sso.oidc',
+  'branding.white_label',
+] as const
+
 // Features that must be flagged `requires_ee: true` so Community
 // Edition force-disables them regardless of plan.
 const EE_REQUIRED_FEATURES = [
@@ -169,7 +187,24 @@ describe('license ↔ content parity', () => {
       expect(entry?.requires_ee, `${key} must require ee bridge`).toBe(true)
     })
 
+    it.each(ROADMAP_FEATURES)('"%s" carries roadmap=true (advertised, not yet enforced)', (key) => {
+      const entry = FEATURE_MATRIX[key]
+      expect(entry?.roadmap, `${key} must be flagged roadmap until enforcement lands`).toBe(true)
+    })
+
+    it('shipped features do NOT carry the roadmap flag', () => {
+      const shipped = ['cdn.delivery', 'media.upload', 'ai.byoa', 'api.conversation', 'api.webhooks_outbound', 'workflow.review']
+      for (const key of shipped) {
+        const entry = FEATURE_MATRIX[key]!
+        expect(entry.roadmap, `${key} has runtime enforcement; roadmap must be false`).toBe(false)
+      }
+    })
+
     it('core forms features do NOT require the ee bridge', () => {
+      // `forms.notifications` stays requires_ee=false because the
+      // email path is planned for core (operator-provided Resend),
+      // not ee/-only. It carries roadmap=true until implementation
+      // lands — the pair is valid.
       const coreForms = ['forms.enabled', 'forms.captcha', 'forms.auto_approve', 'forms.notifications']
       for (const key of coreForms) {
         const entry = FEATURE_MATRIX[key]!

@@ -75,17 +75,15 @@ export default defineEventHandler(async (event) => {
   const urlPath = new URL(body.url).pathname
   const filename = urlPath.split('/').pop() ?? 'imported-file'
 
-  // Resolve variants
-  let variants: Record<string, import('~~/server/providers/media').VariantConfig>
-  if (body.variants && typeof body.variants === 'string') {
-    variants = resolveVariantConfig(body.variants)
-  }
-  else if (body.variants && typeof body.variants === 'object') {
-    variants = body.variants as Record<string, import('~~/server/providers/media').VariantConfig>
-  }
-  else {
-    variants = resolveVariantConfig(undefined)
-  }
+  // Resolve variants with plan enforcement — see media/index.post.ts
+  // for the rationale on `hasCustomVariants` + `variantsPerFieldLimit`.
+  const variants = resolveVariantConfigWithPlan(
+    body.variants as string | Record<string, import('~~/server/providers/media').VariantConfig> | undefined,
+    {
+      hasCustomVariants: hasFeature(plan, 'media.custom_variants'),
+      variantsPerFieldLimit: getPlanLimit(plan, 'media.variants_per_field'),
+    },
+  )
 
   const asset = await media.upload({
     projectId,
