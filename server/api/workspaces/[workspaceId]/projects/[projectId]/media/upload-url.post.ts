@@ -1,3 +1,6 @@
+// Explicit relative import — see media/index.post.ts for rationale.
+import { resolveVariantConfigWithPlan } from '../../../../../../utils/media-variants'
+
 /**
  * Import a media asset from an external URL.
  * Fetches the file server-side, then processes through the same pipeline as direct upload.

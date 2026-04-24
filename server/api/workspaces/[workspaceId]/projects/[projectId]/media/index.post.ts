@@ -1,3 +1,10 @@
+// Explicit relative import so the integration-test setup (which
+// bypasses Nuxt's auto-import scan and the `~~` alias resolution)
+// still resolves the symbol. Auto-import works at Nuxt build time;
+// ad-hoc test harnesses that `await import(...)` the handler module
+// need a concrete ES binding.
+import { resolveVariantConfigWithPlan } from '../../../../../../utils/media-variants'
+
 /**
  * Upload a media asset.
  * Accepts multipart/form-data with file + optional alt/tags.
