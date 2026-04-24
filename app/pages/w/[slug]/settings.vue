@@ -12,18 +12,35 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = use
 const { isOwnerOrAdmin } = useWorkspaceRole()
 const { t } = useContent()
 
-const validTabs = ['overview', 'members', 'billing', 'github', 'ai-keys', 'mcp-cloud'] as const
-const tabFromQuery = computed(() => {
-  const tab = route.query.tab as string | undefined
-  return tab && (validTabs as readonly string[]).includes(tab) ? tab : null
+// AI Keys tab hosts BYOA key management — backed by runEnterpriseRoute
+// on the server and gated by `ai.byoa` (requires_ee). Hide in Community
+// so users don't see a tab that 403s. MCP Cloud stays visible even in
+// Community because `api.mcp_cloud` itself is core; only MCP custom
+// domain / SSO are ee-gated and those are rendered inside that panel.
+const aiKeysEnabled = useFeature('ai.byoa')
+
+const validTabs = computed(() => {
+  const base = ['overview', 'members', 'billing', 'github', 'mcp-cloud'] as const
+  return aiKeysEnabled.value ? [...base, 'ai-keys'] as const : base
 })
 
-const activeTab = ref(tabFromQuery.value ?? 'overview')
+const tabFromQuery = computed(() => {
+  const tab = route.query.tab as string | undefined
+  return tab && (validTabs.value as readonly string[]).includes(tab) ? tab : null
+})
+
+const activeTab = ref<string>(tabFromQuery.value ?? 'overview')
 
 // Deep-link: sync tab from ?tab= query param
 watch(tabFromQuery, (tab) => {
   if (tab) activeTab.value = tab
 })
+
+// If the active tab becomes unavailable (e.g. user lands on ?tab=ai-keys
+// in Community), fall back to overview.
+watch(validTabs, (tabs) => {
+  if (!(tabs as readonly string[]).includes(activeTab.value)) activeTab.value = 'overview'
+}, { immediate: true })
 
 const toast = useToast()
 
@@ -80,7 +97,7 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger v-if="isOwnerOrAdmin" value="github" :class="tabTriggerClass">
           {{ t('settings.github_tab') }}
         </TabsTrigger>
-        <TabsTrigger value="ai-keys" :class="tabTriggerClass">
+        <TabsTrigger v-if="aiKeysEnabled" value="ai-keys" :class="tabTriggerClass">
           {{ t('settings.ai_tab') }}
         </TabsTrigger>
         <TabsTrigger value="mcp-cloud" :class="tabTriggerClass">
@@ -104,7 +121,7 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <OrganismsWorkspaceGitHubPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent value="ai-keys" class="mt-6">
+      <TabsContent v-if="aiKeysEnabled" value="ai-keys" class="mt-6">
         <OrganismsWorkspaceAIKeysPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 

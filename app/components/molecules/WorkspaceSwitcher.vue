@@ -4,7 +4,7 @@ import { PopoverAnchor, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigg
 const { t } = useContent()
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, createWorkspace } = useWorkspaces()
 const { projects } = useProjects()
-const { billingEnabled } = useBilling()
+const deployment = useDeployment()
 const route = useRoute()
 const router = useRouter()
 
@@ -43,6 +43,7 @@ async function handleCreate() {
 type BadgeVariant = 'primary' | 'info' | 'warning' | 'secondary'
 
 const planBadgeVariant: Record<string, BadgeVariant> = {
+  community: 'secondary',
   free: 'secondary',
   starter: 'secondary',
   pro: 'primary',
@@ -50,21 +51,31 @@ const planBadgeVariant: Record<string, BadgeVariant> = {
 }
 
 /**
- * Resolve the plan tier displayed on each workspace row. Mirrors the
- * server-side self-host fallback (`getWorkspacePlan`) and the active
- * workspace's `useBilling().effectivePlan`: when billing is not
- * configured, DB plan "free" is rendered as "starter" so every
- * surface agrees on the effective tier.
+ * Resolve the plan tier displayed on each workspace row.
+ *
+ * - Community Edition: every row collapses to the `community` tier —
+ *   there is no managed subscription and the AGPL core runs with
+ *   unlimited usage on the operator's infrastructure.
+ * - Operator-managed profiles (on-premise / dedicated-flat): the
+ *   workspace.plan column is set by the operator; display it as-is,
+ *   falling back to `enterprise` if unset (matches the server-side
+ *   `defaultPlan` for these profiles).
+ * - Managed profile: workspace.plan reflects the subscription state
+ *   (webhook-synced); display it directly, falling back to `free`
+ *   for workspaces that never completed checkout.
  *
  * Subscription granularity (trial / past_due / canceled) is
- * intentionally flattened here — the full state lives on
- * /settings/billing. The "Self-hosted" context is communicated on
- * Overview and Billing panels, not duplicated inside this badge.
+ * intentionally flattened here — the full state lives on the Billing
+ * tab. The "Community Edition" / "On-premise" context is communicated
+ * on Overview and Billing panels, not duplicated inside this badge.
  */
 function resolveDisplayPlan(ws: { plan?: string | null }): string {
-  const plan = ws.plan ?? 'free'
-  if (!billingEnabled.value && plan === 'free') return 'starter'
-  return plan
+  if (deployment.isCommunity.value) return 'community'
+  if (deployment.isOperatorManagedPlan.value) {
+    const plan = ws.plan ?? 'enterprise'
+    return plan === 'free' ? 'enterprise' : plan
+  }
+  return ws.plan ?? 'free'
 }
 
 function badgeVariantFor(ws: { plan?: string | null }): BadgeVariant {
@@ -74,6 +85,7 @@ function badgeVariantFor(ws: { plan?: string | null }): BadgeVariant {
 function badgeLabelFor(ws: { plan?: string | null }): string {
   const plan = resolveDisplayPlan(ws)
   const labels: Record<string, string> = {
+    community: t('billing.plan_community'),
     free: t('billing.state_free'),
     starter: t('billing.plan_starter'),
     pro: t('billing.plan_pro'),

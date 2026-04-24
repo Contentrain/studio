@@ -29,10 +29,34 @@ const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
 const activeTab = ref<'general' | 'api' | 'webhooks' | 'danger'>(props.initialTab ?? 'general')
 
+// Edition gates: Conversation API and outbound webhooks are ee/-backed
+// (runEnterpriseRoute paths). Hide the tabs in Community Edition so
+// users don't click through to a 403. Managed / on-premise profiles
+// (edition='ee') keep both tabs.
+const conversationApiEnabled = useFeature('api.conversation')
+const webhooksEnabled = useFeature('api.webhooks_outbound')
+
+const availableTabs = computed(() => {
+  const tabs: Array<{ value: 'general' | 'api' | 'webhooks' | 'danger', label: string }> = [
+    { value: 'general', label: t('project_settings.general') },
+  ]
+  if (conversationApiEnabled.value) tabs.push({ value: 'api', label: t('conversation_keys.title') })
+  if (webhooksEnabled.value) tabs.push({ value: 'webhooks', label: t('webhooks.title') })
+  tabs.push({ value: 'danger', label: t('danger_zone.title') })
+  return tabs
+})
+
 // Sync tab when initialTab prop changes (e.g. from command palette)
 watch(() => props.initialTab, (tab) => {
   if (tab) activeTab.value = tab
 })
+
+// If the active tab becomes unavailable (edition change or initialTab
+// pointing at a hidden tab), fall back to 'general'.
+watch(availableTabs, (tabs) => {
+  const allowed = tabs.map(t => t.value)
+  if (!allowed.includes(activeTab.value)) activeTab.value = 'general'
+}, { immediate: true })
 
 async function handleDeleteProject() {
   deleting.value = true
@@ -180,12 +204,7 @@ async function save() {
         <!-- Tab bar -->
         <AtomsTabBar
           v-model="activeTab"
-          :tabs="[
-            { value: 'general', label: t('project_settings.general') },
-            { value: 'api', label: t('conversation_keys.title') },
-            { value: 'webhooks', label: t('webhooks.title') },
-            { value: 'danger', label: t('danger_zone.title') },
-          ]"
+          :tabs="availableTabs"
         />
 
         <!-- General Settings -->

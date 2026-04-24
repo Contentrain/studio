@@ -3,6 +3,7 @@ const contextOpen = ref(true)
 const planModalOpen = ref(false)
 
 const { openPortal } = useBilling()
+const deployment = useDeployment()
 
 function toggleContext() {
   contextOpen.value = !contextOpen.value
@@ -29,8 +30,10 @@ provide('contextPanel', { open: contextOpen, toggle: toggleContext })
       <slot />
     </main>
 
-    <!-- Plan selection modal (triggered from trial banner) -->
+    <!-- Plan selection modal (managed profiles only — trial banner itself
+         is already hidden elsewhere in community / on-premise). -->
     <OrganismsPlanSelectionModal
+      v-if="deployment.hasManagedBilling.value"
       :open="planModalOpen"
       @update:open="planModalOpen = $event"
     />

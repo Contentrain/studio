@@ -6,7 +6,8 @@ const props = defineProps<{
 }>()
 
 const { workspaces, activeWorkspace, fetchWorkspaces, deleteWorkspace } = useWorkspaces()
-const { billingEnabled, effectivePlan } = useBilling()
+const { effectivePlan } = useBilling()
+const deployment = useDeployment()
 const { state: authState } = useAuth()
 const { t } = useContent()
 const toast = useToast()
@@ -14,6 +15,31 @@ const router = useRouter()
 
 const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? 'Free')
 const planPrice = computed(() => PLAN_PRICING[effectivePlan.value]?.priceMonthly ?? 0)
+
+/**
+ * Plan card is clickable only on Managed deployments with a live
+ * payment provider. Community and operator-managed (on-premise /
+ * dedicated-flat) deployments render it read-only — the former has
+ * no subscription concept, the latter is controlled by the operator
+ * via the database.
+ */
+const planCardClickable = computed(() => deployment.hasManagedBilling.value)
+
+const planInfoTooltip = computed(() => {
+  if (deployment.isCommunity.value) return t('settings.plan_community_info')
+  if (deployment.isOperatorManagedPlan.value) return t('settings.plan_on_premise_info')
+  return t('settings.plan_info')
+})
+
+const editionBadge = computed(() => {
+  if (deployment.isCommunity.value) {
+    return { label: t('billing.community_badge'), variant: 'secondary' as const }
+  }
+  if (deployment.isOperatorManagedPlan.value) {
+    return { label: t('billing.on_premise_badge'), variant: 'secondary' as const }
+  }
+  return null
+})
 
 const saving = ref(false)
 const workspaceName = ref('')
@@ -140,28 +166,28 @@ async function handleDeleteWorkspace() {
     <div>
       <div class="flex items-center gap-1">
         <AtomsFormLabel :text="t('settings.plan_label')" size="sm" />
-        <AtomsInfoTooltip :text="billingEnabled ? t('settings.plan_info') : t('settings.plan_self_hosted_info')" />
+        <AtomsInfoTooltip :text="planInfoTooltip" />
       </div>
       <component
-        :is="billingEnabled ? 'button' : 'div'"
-        :type="billingEnabled ? 'button' : undefined"
+        :is="planCardClickable ? 'button' : 'div'"
+        :type="planCardClickable ? 'button' : undefined"
         class="mt-1.5 flex w-full items-center justify-between rounded-md border border-secondary-200 bg-white px-3.5 py-2.5 text-left transition-colors dark:border-secondary-800 dark:bg-secondary-900"
-        :class="billingEnabled && 'hover:border-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:border-primary-500'"
-        @click="billingEnabled && (planModalOpen = true)"
+        :class="planCardClickable && 'hover:border-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:border-primary-500'"
+        @click="planCardClickable && (planModalOpen = true)"
       >
         <div class="flex items-center gap-2.5">
           <span class="text-sm font-medium text-heading dark:text-secondary-100">
             {{ planName }}
           </span>
-          <AtomsBadge v-if="!billingEnabled" variant="secondary" size="sm">
-            {{ t('billing.self_hosted_badge') }}
+          <AtomsBadge v-if="editionBadge" :variant="editionBadge.variant" size="sm">
+            {{ editionBadge.label }}
           </AtomsBadge>
           <span v-else-if="planPrice > 0" class="text-xs text-muted">
             ${{ planPrice }}{{ t('plans.per_month') }}
           </span>
         </div>
         <span
-          v-if="billingEnabled"
+          v-if="planCardClickable"
           class="icon-[annon--chevron-right] size-4 text-muted"
           aria-hidden="true"
         />
@@ -215,8 +241,9 @@ async function handleDeleteWorkspace() {
     @confirm="handleDeleteWorkspace"
   />
 
-  <!-- Plan selection modal -->
+  <!-- Plan selection modal (managed profiles only) -->
   <OrganismsPlanSelectionModal
+    v-if="planCardClickable"
     :open="planModalOpen"
     @update:open="planModalOpen = $event"
   />
