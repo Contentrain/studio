@@ -36,4 +36,35 @@ describe('app smoke', () => {
 
     expect(response.status).toBe(401)
   })
+
+  it('serves the public /about page without authentication (AGPL §13 source offer)', async () => {
+    const response = await fetch('/about')
+    const html = await response.text()
+
+    expect(response.status).toBe(200)
+    // SSR is off — so the raw response ships the Nuxt shell, not the
+    // rendered content. The Corresponding Source link is hydrated on
+    // the client. We still pin the shell + payload here so a broken
+    // auth middleware redirect (which would send us to /auth/login)
+    // surfaces as a failing test.
+    expect(html).toContain('<div id="__nuxt"></div>')
+    expect(html).toContain('__NUXT_DATA__')
+  })
+
+  it('exposes the resolved deployment snapshot in the runtime config payload', async () => {
+    // `server/plugins/00.billing-flag.ts` writes the resolved profile
+    // into `runtimeConfig.public.deployment` at boot. The SPA shell
+    // serialises runtime config into the page payload so the client
+    // composables can read it. This test asserts the plumbing end-to-
+    // end: a fresh SSR render carries the snapshot.
+    const response = await fetch('/auth/login')
+    const html = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(html).toContain('deployment')
+    // Nothing in the test setup configures ee/ or billing — we expect
+    // the community fallback (edition=agpl, billingMode=off). Plain-
+    // string match is enough since the payload is JSON-encoded.
+    expect(html).toContain('"community"')
+  })
 })
