@@ -4,6 +4,7 @@ import { PopoverAnchor, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigg
 const { t } = useContent()
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, createWorkspace } = useWorkspaces()
 const { projects } = useProjects()
+const deployment = useDeployment()
 const route = useRoute()
 const router = useRouter()
 
@@ -39,19 +40,57 @@ async function handleCreate() {
   }
 }
 
-const planBadge: Record<string, { variant: 'primary' | 'info' | 'warning' | 'secondary', label: string }> = {
-  free: { variant: 'secondary', label: 'Free' },
-  starter: { variant: 'secondary', label: 'Starter' },
-  pro: { variant: 'primary', label: 'Pro' },
-  enterprise: { variant: 'warning', label: 'Enterprise' },
+type BadgeVariant = 'primary' | 'info' | 'warning' | 'secondary'
+
+const planBadgeVariant: Record<string, BadgeVariant> = {
+  community: 'secondary',
+  free: 'secondary',
+  starter: 'secondary',
+  pro: 'primary',
+  enterprise: 'warning',
 }
 
-function getWorkspacePlan(ws: { plan?: string | null, workspace_members?: unknown }): string {
-  return (ws as { plan?: string }).plan ?? 'free'
+/**
+ * Resolve the plan tier displayed on each workspace row.
+ *
+ * - Community Edition: every row collapses to the `community` tier —
+ *   there is no managed subscription and the AGPL core runs with
+ *   unlimited usage on the operator's infrastructure.
+ * - Operator-managed profiles (on-premise / dedicated-flat): the
+ *   workspace.plan column is set by the operator; display it as-is,
+ *   falling back to `enterprise` if unset (matches the server-side
+ *   `defaultPlan` for these profiles).
+ * - Managed profile: workspace.plan reflects the subscription state
+ *   (webhook-synced); display it directly, falling back to `free`
+ *   for workspaces that never completed checkout.
+ *
+ * Subscription granularity (trial / past_due / canceled) is
+ * intentionally flattened here — the full state lives on the Billing
+ * tab. The "Community Edition" / "On-premise" context is communicated
+ * on Overview and Billing panels, not duplicated inside this badge.
+ */
+function resolveDisplayPlan(ws: { plan?: string | null }): string {
+  if (deployment.isCommunity.value) return 'community'
+  if (deployment.isOperatorManagedPlan.value) {
+    const plan = ws.plan ?? 'enterprise'
+    return plan === 'free' ? 'enterprise' : plan
+  }
+  return ws.plan ?? 'free'
 }
 
-function getPlanLabel(plan: string): string {
-  const labels: Record<string, string> = { free: t('billing.state_free'), starter: t('billing.plan_starter'), pro: t('billing.plan_pro'), enterprise: t('billing.plan_enterprise') }
+function badgeVariantFor(ws: { plan?: string | null }): BadgeVariant {
+  return planBadgeVariant[resolveDisplayPlan(ws)] ?? 'secondary'
+}
+
+function badgeLabelFor(ws: { plan?: string | null }): string {
+  const plan = resolveDisplayPlan(ws)
+  const labels: Record<string, string> = {
+    community: t('billing.plan_community'),
+    free: t('billing.state_free'),
+    starter: t('billing.plan_starter'),
+    pro: t('billing.plan_pro'),
+    enterprise: t('billing.plan_enterprise'),
+  }
   return labels[plan] ?? plan
 }
 
@@ -74,11 +113,11 @@ onMounted(() => {
         </span>
         <AtomsBadge
           v-if="activeWorkspace"
-          :variant="planBadge[getWorkspacePlan(activeWorkspace)]?.variant ?? 'secondary'"
+          :variant="badgeVariantFor(activeWorkspace)"
           size="sm"
           class="font-display"
         >
-          {{ getPlanLabel(getWorkspacePlan(activeWorkspace)) }}
+          {{ badgeLabelFor(activeWorkspace) }}
         </AtomsBadge>
         <span class="icon-[annon--chevron-down] size-3.5 shrink-0 text-muted" aria-hidden="true" />
       </PopoverTrigger>
@@ -109,11 +148,11 @@ onMounted(() => {
             </span>
             <span class="min-w-0 flex-1 truncate">{{ ws.name }}</span>
             <AtomsBadge
-              :variant="planBadge[getWorkspacePlan(ws)]?.variant ?? 'secondary'"
+              :variant="badgeVariantFor(ws)"
               size="sm"
               class="shrink-0 font-display"
             >
-              {{ getPlanLabel(getWorkspacePlan(ws)) }}
+              {{ badgeLabelFor(ws) }}
             </AtomsBadge>
             <span v-if="ws.id === activeWorkspace?.id" class="icon-[annon--check] size-4 shrink-0" aria-hidden="true" />
           </button>

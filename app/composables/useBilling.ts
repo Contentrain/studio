@@ -2,9 +2,14 @@
  * Client-side billing state composable.
  *
  * Resolves billing state from the embedded `payment_account` on the
- * active workspace. Mirrors server-side logic in `server/utils/billing.ts`.
+ * active workspace. Mirrors server-side logic in `server/utils/billing.ts`
+ * and `server/utils/license.ts`.
  *
- * Client-side state is UX-only — authoritative enforcement is on the server.
+ * The deployment profile (edition + billing mode) is the primary gate —
+ * non-managed profiles short-circuit to a stable "subscribed" state so
+ * UI surfaces that depend on `billingState` render correctly without
+ * subscription plumbing. Authoritative enforcement is always on the
+ * server; this composable is UX only.
  */
 
 import type { StudioPlan } from '../../shared/utils/license'
@@ -67,24 +72,36 @@ function resolveEffectivePlan(ws: Workspace | null, state: BillingState): Studio
 
 export function useBilling() {
   const { activeWorkspace, fetchWorkspaces } = useWorkspaces()
-  const config = useRuntimeConfig()
-  const billingEnabled = computed(() => config.public.billingEnabled === 'true')
+  const deployment = useDeployment()
+
+  /**
+   * True when managed subscription UI should be visible (checkout,
+   * plan modal, portal). False in Community and in operator-managed
+   * profiles (on-premise, dedicated-flat).
+   *
+   * Kept as a named export for backward compatibility; new call sites
+   * should prefer `useDeployment().hasManagedBilling` directly.
+   */
+  const billingEnabled = deployment.hasManagedBilling
 
   const activeAccount = computed<WorkspacePaymentAccount | null>(
     () => activeWorkspace.value?.payment_account ?? null,
   )
 
-  const billingState = computed(() => {
-    // Self-host bypass: no billing = starter-level access (mirrors server middleware)
-    if (!billingEnabled.value) return 'subscribed' as BillingState
+  const billingState = computed<BillingState>(() => {
+    if (deployment.isCommunity.value) return 'subscribed'
+    if (deployment.isOperatorManagedPlan.value) return 'subscribed'
     return resolveState(activeWorkspace.value)
   })
 
-  const effectivePlan = computed(() => {
-    if (!billingEnabled.value) {
-      // Self-host: workspace.plan from DB, default to starter (not free)
+  const effectivePlan = computed<StudioPlan>(() => {
+    if (deployment.isCommunity.value) return 'community'
+    if (deployment.isOperatorManagedPlan.value) {
+      // On-premise / flat-fee dedicated: workspace.plan is operator-set.
+      // Honor it directly; fall back to enterprise (the profile default
+      // on the server) so the UI matches `resolveDeployment().defaultPlan`.
       const dbPlan = normalizePlan(activeWorkspace.value?.plan)
-      return (dbPlan === 'free' ? 'starter' : dbPlan) as StudioPlan
+      return dbPlan === 'free' ? 'enterprise' : dbPlan
     }
     return resolveEffectivePlan(activeWorkspace.value, billingState.value)
   })

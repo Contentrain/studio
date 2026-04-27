@@ -1,8 +1,10 @@
 # Contentrain Studio — Roadmap
 
-> Last updated: 2026-04-18 | Current release: v0.1.0-beta.7
+> Last updated: 2026-04-24 | Current release: v0.1.0-beta.7
 
 This roadmap reflects our current priorities. Items may shift based on user feedback and production learnings.
+
+See [docs/EDITIONS.md](docs/EDITIONS.md) for the Community vs Enterprise feature matrix and [docs/DEPLOYMENT_PROFILES.md](docs/DEPLOYMENT_PROFILES.md) for the 12 supported deployment scenarios.
 
 ---
 
@@ -73,14 +75,44 @@ No timeline commitment. Prioritized by user demand.
 
 ## Enterprise Edition (ee/)
 
-Proprietary features under `ee/` directory. Core (AGPL) is a fully functional product without these.
+Proprietary features under `ee/` directory. Community Edition (AGPL core without `ee/`) is a fully functional product — see [docs/EDITIONS.md](docs/EDITIONS.md) for the full feature matrix.
+
+### Shipped in ee/
+
+| Feature | Matrix key | Plans |
+|---|---|---|
+| BYOA API key management | `ai.byoa` | Pro, Enterprise |
+| Conversation API + keys | `api.conversation`, `api.conversation_keys` | Pro, Enterprise |
+| Outbound webhooks | `api.webhooks_outbound`, `api.webhooks` | Starter+ |
+| CDN content delivery + metering | `cdn.delivery`, `cdn.metering` | Starter+ |
+| Media upload / library / variants | `media.upload`, `media.library`, `media.custom_variants` | Starter+ (custom variants Pro+) |
+| Reviewer / Viewer project roles | `roles.reviewer`, `roles.viewer` | Starter+ |
+| Model-specific access | `roles.specific_models` | Pro, Enterprise |
+| Studio-hosted AI key | `ai.studio_key` | Starter+ |
+
+### Advertised, implementation pending (`roadmap: true` in `plan-features`)
+
+These rows exist in the plan matrix as marketing and carry `roadmap: true`. UI surfaces should render a "Coming Soon" chip. Enforcement call sites land when implementation does.
+
+- [ ] **SSO (SAML 2.0)** — `sso.saml` — federated login for enterprise workspaces
+- [ ] **SSO (OIDC)** — `sso.oidc` — same, OIDC flavor
+- [ ] **White-label branding** — `branding.white_label` — custom domain, logo, color overrides
+- [ ] **CDN custom domain** — `cdn.custom_domain` — bring-your-own domain for CDN delivery
+- [ ] **CDN preview branches** — `cdn.preview_branch` — per-branch CDN endpoints for previews
+- [ ] **MCP Cloud custom domain** — `api.mcp_cloud_custom_domain`
+- [ ] **MCP Cloud SSO** — `api.mcp_cloud_sso`
+
+### Beyond roadmap features — exploratory
 
 - [ ] **Multi-repo governance** — Cross-repository content management and standards enforcement
-- [ ] **Advanced roles** — Reviewer, Viewer, model-specific access control (specificModels + allowedModels)
-- [ ] **SSO** — SAML 2.0 and OIDC federation
 - [ ] **Premium connectors** — Canva, Figma, Recraft, Notion, Google Drive integrations
 - [ ] **Approval chains** — Multi-step review workflows with scheduled publish
-- [ ] **White-label branding** — Custom domain, logo, color overrides for Studio instances
+- [ ] **Form spam filter (server-side)** — `forms.spam_filter` — beyond Turnstile captcha, a real heuristic/ML filter
+- [ ] **Media variants per-field enforcement** — `media.variants_per_field` limit check in variant creation path
+
+### License model evaluation
+
+- [ ] **AGPL → BSL migration study** — evaluate whether to move core from AGPL-3.0 to a Business Source License (Change Date = +4 years). Context: AGPL §7 cannot enforce commercial SaaS resale restrictions; only trademark (via `LICENSE-EXCEPTIONS` §7(e)) is enforceable today. BSL would add real resale protection at the cost of OSI "open source" designation. Decision criteria: market signals of reseller arbitrage on the core; willingness of the community to accept BSL terms.
 
 ---
 

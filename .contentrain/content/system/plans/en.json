@@ -1,4 +1,17 @@
 {
+  "community": {
+    "ai_model_tier": "none",
+    "badge_text": "Community",
+    "cta_text": "Self-hosted",
+    "description": "AGPL-3.0 self-hosted deployment. No managed billing; you run your own infrastructure. Use your own Anthropic API key for chat.",
+    "has_trial": false,
+    "is_highlighted": false,
+    "name": "Community",
+    "price_monthly": 0,
+    "seats_included": 0,
+    "slug": "community",
+    "sort_order": -2
+  },
   "enterprise": {
     "ai_model_tier": "custom",
     "badge_text": "Enterprise",

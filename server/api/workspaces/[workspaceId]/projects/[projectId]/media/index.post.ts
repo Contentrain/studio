@@ -1,3 +1,10 @@
+// Explicit relative import so the integration-test setup (which
+// bypasses Nuxt's auto-import scan and the `~~` alias resolution)
+// still resolves the symbol. Auto-import works at Nuxt build time;
+// ad-hoc test harnesses that `await import(...)` the handler module
+// need a concrete ES binding.
+import { resolveVariantConfigWithPlan } from '../../../../../../utils/media-variants'
+
 /**
  * Upload a media asset.
  * Accepts multipart/form-data with file + optional alt/tags.
@@ -71,24 +78,22 @@ export default defineEventHandler(async (event) => {
   const altPart = formData.find(p => p.name === 'alt')
   const tagsPart = formData.find(p => p.name === 'tags')
 
-  // Resolve variant config from target field
+  // Resolve variant config from target field, enforcing both the
+  // `media.custom_variants` feature gate (custom objects only) and the
+  // `media.variants_per_field` plan limit.
+  const variantGate = {
+    hasCustomVariants: hasFeature(plan, 'media.custom_variants'),
+    variantsPerFieldLimit: getPlanLimit(plan, 'media.variants_per_field'),
+  }
   const variantsPart = formData.find(p => p.name === 'variants')
-  let variants: Record<string, import('~~/server/providers/media').VariantConfig> = {}
+  let variantInput: string | Record<string, import('~~/server/providers/media').VariantConfig> | undefined
   if (variantsPart?.data) {
     try {
-      const parsed = JSON.parse(variantsPart.data.toString('utf-8'))
-      if (typeof parsed === 'string') {
-        variants = resolveVariantConfig(parsed)
-      }
-      else {
-        variants = parsed
-      }
+      variantInput = JSON.parse(variantsPart.data.toString('utf-8'))
     }
     catch { /* use default */ }
   }
-  if (Object.keys(variants).length === 0) {
-    variants = resolveVariantConfig(undefined)
-  }
+  const variants = resolveVariantConfigWithPlan(variantInput, variantGate)
 
   try {
     const asset = await media.upload({

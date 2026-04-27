@@ -1,20 +1,424 @@
 Contentrain Enterprise Edition License
+Version 1.0
+Effective 2026-04-24
 
-Copyright (c) 2026 Contentrain, LLC.
+Copyright (c) 2026 Contentrain, LLC. All rights reserved.
 
-This directory and all files within it ("Enterprise Edition") are
-proprietary software of Contentrain, LLC.
+This License has been drafted against the current market pattern for
+open-core enterprise editions (GitLab EE, Elastic License 2.0, FSL,
+BSL 1.1, GitLab Commercial). The parties acknowledge that independent
+legal counsel should review the executed form of this License before
+entering into any material commercial commitment, and in particular
+before entering Managed Use, On-Premises Deployment, OEM, or
+White-Label relationships of a scale that would make the contract
+value material to either party.
 
-Use of the Enterprise Edition requires a valid Contentrain Pro,
-Business, or Enterprise subscription license.
+PLEASE READ THIS LICENSE CAREFULLY BEFORE DOWNLOADING, INSTALLING,
+ACCESSING, OR USING THE ENTERPRISE EDITION. BY DOWNLOADING, INSTALLING,
+ACCESSING, OR USING THE ENTERPRISE EDITION, YOU AGREE TO BE BOUND BY
+THE TERMS OF THIS LICENSE. IF YOU DO NOT AGREE, DO NOT DOWNLOAD,
+INSTALL, ACCESS, OR USE THE ENTERPRISE EDITION.
 
-You may NOT:
-- Use, copy, or distribute this software without a valid license
-- Modify this software for use outside a licensed Contentrain instance
-- Sublicense, sell, or transfer this software to third parties
-- Remove or alter this license notice
+-------------------------------------------------------------------------
+1. DEFINITIONS
+-------------------------------------------------------------------------
 
-The Enterprise Edition is NOT licensed under the AGPL-3.0 that covers
-the rest of the Contentrain Studio codebase.
+1.1 "Licensor" means Contentrain, LLC, a company organized under the laws
+of the Republic of Türkiye, and its affiliates.
 
-For licensing inquiries: license@contentrain.io
+1.2 "Licensee" means the individual or legal entity exercising rights
+under this License. If the Licensee is an entity, "Licensee" includes
+its Affiliates controlled by majority ownership.
+
+1.3 "Contentrain Studio" means the open-source software distributed by
+the Licensor under the GNU Affero General Public License v3.0
+(AGPL-3.0), excluding the Enterprise Edition.
+
+1.4 "Enterprise Edition" or "EE" means all software, source code,
+object code, configuration, documentation, and other materials located
+in the `ee/` directory of the Contentrain Studio repository, together
+with any updates, modifications, or derivative works thereof distributed
+by the Licensor.
+
+1.5 "Subscription" means a paid, time-limited entitlement issued by the
+Licensor that authorizes use of the Enterprise Edition under a specific
+SKU (currently: "Pro", "Enterprise", or any successor SKU designated by
+the Licensor in writing). The legacy "Business" SKU is superseded and
+has no effect under this License.
+
+1.6 "Managed Service" means the hosted instance of Contentrain Studio
+operated by the Licensor at contentrain.io (or any successor domain).
+
+1.7 "Managed Use" means use of the Enterprise Edition solely by
+accessing the Managed Service over the public internet, without
+receiving, copying, deploying, or executing the EE source code or
+binaries outside the Managed Service.
+
+1.8 "On-Premises Deployment" means any installation, execution, or
+operation of the Enterprise Edition on infrastructure not controlled
+by the Licensor, including Licensee-controlled servers, private cloud,
+public cloud accounts owned by the Licensee, or air-gapped environments.
+
+1.9 "Authorized Users" means named individuals (human end users) who
+are employees, contractors, or agents of the Licensee and who are
+permitted to access the Enterprise Edition, counted per the Subscription
+tier. Each distinct human identity counts as one Authorized User,
+regardless of how many devices or accounts they use.
+
+1.10 "Production Use" means any use of the Enterprise Edition to
+support revenue-generating activity, live customer content, or
+business operations. All other use is "Non-Production Use", which
+includes development, staging, QA, training, and demonstration.
+
+1.11 "Instance" means a single logical deployment of Contentrain Studio
+that includes the Enterprise Edition. A highly-available cluster
+serving a single workspace tenant counts as one Instance.
+
+-------------------------------------------------------------------------
+2. LICENSE GRANTS
+-------------------------------------------------------------------------
+
+The Licensor grants the Licensee one (and only one) of the following
+license types, determined by the Licensee's active Subscription and any
+separately executed order form or master agreement between the parties.
+Absent a valid grant under 2.1–2.5, no rights are granted in the
+Enterprise Edition.
+
+2.1 MANAGED USE LICENSE
+
+If the Licensee holds an active Subscription to the Managed Service,
+the Licensor grants the Licensee a non-exclusive, non-transferable,
+non-sublicensable, worldwide right, during the Subscription term, to
+use the Enterprise Edition solely via the Managed Service.
+
+A Managed Use License does NOT grant the Licensee any right to:
+ (a) download, copy, or retain the Enterprise Edition source or
+     binaries;
+ (b) deploy or execute the Enterprise Edition on any infrastructure
+     other than the Managed Service;
+ (c) use the Enterprise Edition after the Subscription ends.
+
+For clarity, web browser payloads served by the Managed Service may
+include transformed client-side code that is derived from, but does
+not include, the Enterprise Edition source. The Licensee receives
+such client-side code solely for the operation of the Managed Service
+in the Licensee's own browser and not as a transferable copy of the
+Enterprise Edition source or binaries.
+
+2.2 ON-PREMISES DEPLOYMENT LICENSE
+
+If and only if the parties have executed a separate written order form
+or master subscription agreement explicitly granting On-Premises
+Deployment rights, the Licensor grants the Licensee a non-exclusive,
+non-transferable, non-sublicensable, worldwide right, during the
+Subscription term, to install, execute, and operate the Enterprise
+Edition on Licensee-controlled infrastructure, limited to:
+
+ (a) the number of Instances specified in the order form;
+ (b) the number of Authorized Users specified in the order form;
+ (c) Production Use and/or Non-Production Use as specified in the
+     order form.
+
+If any of (a), (b), or (c) is not specified, the default is one (1)
+Instance, Authorized Users capped at the Subscription tier's documented
+limit, and Non-Production Use only.
+
+2.3 EVALUATION LICENSE
+
+The Licensor grants any individual or entity a non-exclusive,
+non-transferable, non-sublicensable, worldwide right to install and
+execute the Enterprise Edition for the sole purpose of internal
+evaluation, subject to all of the following:
+
+ (a) evaluation period does not exceed sixty (60) days from first use;
+ (b) use is limited to one (1) Instance and a maximum of five (5)
+     Authorized Users;
+ (c) Non-Production Use only;
+ (d) no benchmark, competitive analysis, or public performance claim
+     may be published without the Licensor's prior written consent;
+ (e) at the end of the evaluation period, the Licensee must either
+     obtain a paid Subscription covering the Enterprise Edition or
+     cease all use and destroy all copies of the Enterprise Edition.
+
+2.4 OEM / EMBEDDED LICENSE
+
+Any distribution, sublicensing, or embedding of the Enterprise Edition
+within a product or service offered by the Licensee to third parties
+REQUIRES a separately executed OEM agreement with the Licensor. This
+License alone grants no OEM, embedding, or sublicensing rights. Contact
+licensing@contentrain.io.
+
+2.5 WHITE-LABEL / RESELLER LICENSE
+
+Any rebranding of Contentrain Studio or the Enterprise Edition, removal
+or replacement of Licensor trademarks, or resale of Subscriptions to
+third parties REQUIRES a separately executed white-label or reseller
+agreement with the Licensor. This License alone grants no white-label
+or reseller rights. Contact licensing@contentrain.io.
+
+-------------------------------------------------------------------------
+3. RESTRICTIONS
+-------------------------------------------------------------------------
+
+Regardless of license type, the Licensee shall NOT, and shall not
+permit any third party to:
+
+3.1 use the Enterprise Edition except as expressly permitted under
+    Section 2;
+
+3.2 copy, reproduce, or redistribute the Enterprise Edition source or
+    binaries outside the Licensee's own licensed Instances;
+
+3.3 sublicense, sell, rent, lease, or transfer the Enterprise Edition
+    or any rights under this License to a third party;
+
+3.4 host, operate, or offer the Enterprise Edition (in whole or in
+    part, modified or unmodified, alone or combined with other
+    software) as a commercial service to third parties;
+
+3.5 remove, alter, or obscure any copyright, trademark, license, or
+    attribution notice in the Enterprise Edition;
+
+3.6 reverse engineer, decompile, or disassemble the Enterprise Edition,
+    except to the extent such restriction is prohibited by applicable
+    law;
+
+3.7 exceed the Instance, Authorized User, or Production/Non-Production
+    scope specified in the applicable order form or Subscription tier;
+
+3.8 use the Enterprise Edition to build, train, benchmark, or improve
+    a Competing Product. A "Competing Product" means any product or
+    service that (a) substitutes for Contentrain Studio or the Managed
+    Service, (b) exposes a substantially similar API surface, or (c)
+    offers substantially similar Git-backed structured content
+    management functionality to a general audience. Internal use by
+    the Licensee for its own non-commercial operations is not a
+    Competing Product;
+
+3.9 publish benchmark results, competitive analyses, or performance
+    comparisons involving the Enterprise Edition without the Licensor's
+    prior written consent;
+
+3.10 use the Enterprise Edition in any manner that violates applicable
+     law, including export control and sanctions laws;
+
+3.11 combine the Enterprise Edition with AGPL-3.0 licensed code in a
+     manner that would purport to relicense the Enterprise Edition
+     under the AGPL-3.0 — the AGPL-3.0 does NOT apply to the Enterprise
+     Edition, and any such purported relicensing is void;
+
+3.12 circumvent any technical license enforcement, metering, or
+     feature-flag mechanism in the Enterprise Edition.
+
+-------------------------------------------------------------------------
+4. RELATIONSHIP TO AGPL-3.0 CORE
+-------------------------------------------------------------------------
+
+4.1 The Contentrain Studio code outside the `ee/` directory is licensed
+under the AGPL-3.0, a copy of which is distributed in the root `LICENSE`
+file of the repository. The AGPL-3.0 governs that code exclusively.
+
+4.2 The Enterprise Edition is NOT licensed under the AGPL-3.0. Nothing
+in this License or in the AGPL-3.0 shall be interpreted as granting
+AGPL-3.0 rights in the Enterprise Edition.
+
+4.3 The Enterprise Edition interacts with the AGPL-3.0 core through
+defined interface boundaries (e.g., the `EnterpriseBridge` interface).
+This interaction is an "aggregate" as contemplated by AGPL-3.0 §5 and
+does not cause the Enterprise Edition to become a covered work under
+the AGPL-3.0.
+
+4.4 The Licensor publishes additional terms under AGPL-3.0 §7 for the
+core in the `LICENSE-EXCEPTIONS` file, limited to §7(c) attribution
+and §7(e) no-trademark terms. These additional terms apply only to
+the AGPL-3.0 core and not to the Enterprise Edition. No further
+restrictions beyond those expressly permitted by AGPL-3.0 §7(a)–(f)
+are imposed on the AGPL-3.0 core.
+
+-------------------------------------------------------------------------
+5. INTELLECTUAL PROPERTY
+-------------------------------------------------------------------------
+
+5.1 The Enterprise Edition is licensed, not sold. All right, title, and
+interest in and to the Enterprise Edition, including all intellectual
+property rights, remain with the Licensor.
+
+5.2 The names "Contentrain", "Contentrain Studio", and all associated
+logos are trademarks of the Licensor. This License does not grant any
+right to use such trademarks except as required for reasonable and
+customary use in describing the origin of the Enterprise Edition.
+
+5.3 No contribution (pull request, patch, or otherwise) will be accepted
+into the `ee/` directory from any party other than the Licensor and its
+authorized employees or contractors. Contributions to the AGPL-3.0 core
+are accepted under the project's Developer Certificate of Origin (DCO)
+as published in `CONTRIBUTING.md`.
+
+-------------------------------------------------------------------------
+6. FEES AND AUDIT
+-------------------------------------------------------------------------
+
+6.1 Subscription fees, renewal terms, and payment schedules are set
+forth in the applicable order form or online checkout at the time of
+purchase.
+
+6.2 The Licensee shall maintain accurate records of Instance count and
+Authorized Users sufficient to verify compliance with this License.
+Upon no less than thirty (30) days' prior written notice and no more
+than once per calendar year, the Licensor (or an independent auditor
+acting on the Licensor's behalf under confidentiality) may audit such
+records during normal business hours. If an audit reveals
+under-reporting in excess of five percent (5%), the Licensee shall
+bear the reasonable cost of the audit in addition to paying the
+underreported fees.
+
+-------------------------------------------------------------------------
+7. TERM AND TERMINATION
+-------------------------------------------------------------------------
+
+7.1 This License is effective on the date the Licensee first downloads,
+installs, accesses, or uses the Enterprise Edition and continues for
+the duration of the applicable Subscription term, unless earlier
+terminated.
+
+7.2 The Licensor may terminate this License immediately upon written
+notice if the Licensee materially breaches any term of this License
+and fails to cure such breach within thirty (30) days after written
+notice. For breaches of Section 3 (Restrictions) or Section 5
+(Intellectual Property), termination is immediate and no cure period
+applies.
+
+7.3 The Licensee may terminate this License at any time by ceasing all
+use of the Enterprise Edition and destroying all copies under its
+control. Fees already paid are non-refundable except as expressly
+provided in the applicable order form.
+
+7.4 Upon termination or expiration of this License for any reason, the
+Licensee shall, within fifteen (15) days:
+ (a) cease all use of the Enterprise Edition;
+ (b) uninstall and delete all copies of the Enterprise Edition from
+     all Instances under the Licensee's control;
+ (c) upon written request, certify such destruction in writing to the
+     Licensor.
+
+7.5 Sections 3, 4, 5, 7.4, 8, 9, 10, and 11 survive termination.
+
+-------------------------------------------------------------------------
+8. WARRANTY DISCLAIMER
+-------------------------------------------------------------------------
+
+THE ENTERPRISE EDITION IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT
+WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION
+THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, TITLE, AND NON-INFRINGEMENT. THE LICENSOR DOES NOT WARRANT
+THAT THE ENTERPRISE EDITION WILL BE UNINTERRUPTED, ERROR-FREE, OR FREE
+OF HARMFUL COMPONENTS, OR THAT ANY DATA STORED OR PROCESSED BY IT WILL
+NOT BE LOST, ALTERED, OR CORRUPTED.
+
+-------------------------------------------------------------------------
+9. LIMITATION OF LIABILITY
+-------------------------------------------------------------------------
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL
+THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF
+PROFITS, REVENUE, DATA, OR BUSINESS OPPORTUNITY, ARISING OUT OF OR
+RELATED TO THIS LICENSE OR THE ENTERPRISE EDITION, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGES.
+
+THE LICENSOR'S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATED TO
+THIS LICENSE SHALL NOT EXCEED THE TOTAL FEES PAID BY THE LICENSEE TO
+THE LICENSOR UNDER THE APPLICABLE SUBSCRIPTION DURING THE TWELVE (12)
+MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO THE CLAIM, OR
+FIVE HUNDRED U.S. DOLLARS (USD 500), WHICHEVER IS GREATER.
+
+The foregoing cap does not apply to (a) the Licensee's payment
+obligations under Section 6, (b) the Licensee's indemnification
+obligations, if any, expressly set forth in an executed order form,
+(c) damages arising from the Licensee's breach of Section 3
+(Restrictions) or Section 5 (Intellectual Property), or (d) damages
+arising from gross negligence or willful misconduct.
+
+-------------------------------------------------------------------------
+10. GOVERNING LAW AND DISPUTE RESOLUTION
+-------------------------------------------------------------------------
+
+10.1 This License shall be governed by and construed in accordance
+with the laws of the Republic of Türkiye, excluding its conflict of
+laws principles.
+
+10.2 Any dispute, controversy, or claim arising out of or relating to
+this License, including its formation, interpretation, breach, or
+termination, shall be finally settled by arbitration under the Rules
+of Arbitration of the International Chamber of Commerce (ICC) by one
+arbitrator appointed in accordance with said Rules. The seat of
+arbitration shall be Istanbul, Türkiye. The language of the
+arbitration shall be English.
+
+10.3 Notwithstanding Section 10.2, the Licensor may seek injunctive
+or other equitable relief in any court of competent jurisdiction to
+protect its intellectual property rights under this License.
+
+-------------------------------------------------------------------------
+11. GENERAL
+-------------------------------------------------------------------------
+
+11.1 Entire Agreement. This License, together with any order form or
+master agreement executed between the parties, constitutes the entire
+agreement regarding the Enterprise Edition and supersedes all prior
+agreements. In case of conflict between this License and an executed
+order form, the order form controls.
+
+11.2 Amendments. The Licensor may update this License for future
+versions of the Enterprise Edition. The Licensee's use of a given
+version of the Enterprise Edition is governed by the License
+distributed with that version.
+
+11.3 Assignment. The Licensee may not assign this License without the
+Licensor's prior written consent. The Licensor may assign this License
+in connection with a merger, acquisition, or sale of substantially all
+of its assets.
+
+11.4 Severability. If any provision of this License is held
+unenforceable, the remaining provisions shall remain in full force
+and effect.
+
+11.5 No Waiver. Failure to enforce any provision is not a waiver.
+
+11.6 Export. The Licensee shall comply with all applicable export
+control and sanctions laws, including without limitation U.S. Export
+Administration Regulations (EAR), U.S. Office of Foreign Assets
+Control (OFAC) sanctions, European Union dual-use export regulations,
+and Turkish export control laws administered by the Ministry of Trade.
+The Licensee represents that it is not located in, and will not
+provide the Enterprise Edition to persons in, any country or to any
+person subject to applicable export embargoes or sanctions.
+
+11.7 Notices. Notices to the Licensor shall be sent to
+legal@contentrain.io and licensing@contentrain.io.
+
+11.8 Data Protection. When the operation of the Managed Service or a
+On-Premises Deployment involves the processing of personal data on
+behalf of the Licensee, the parties shall enter into a separate Data
+Processing Addendum (DPA). The DPA shall incorporate the Standard
+Contractual Clauses applicable to the Licensee's data subjects,
+including the EU Standard Contractual Clauses for EEA/UK personal
+data and the Turkish Personal Data Protection Authority's Standard
+Contractual Clauses for personal data subject to Türkiye's KVKK
+(Law No. 6698). The DPA, once executed, forms an integral part of
+this License and supersedes any conflicting provision herein with
+respect to personal data processing.
+
+-------------------------------------------------------------------------
+12. CONTACT
+-------------------------------------------------------------------------
+
+Licensing inquiries, OEM/white-label agreements, and audit notices:
+   licensing@contentrain.io
+
+Legal notices:
+   legal@contentrain.io
+
+-------------------------------------------------------------------------
+END OF CONTENTRAIN ENTERPRISE EDITION LICENSE
+-------------------------------------------------------------------------

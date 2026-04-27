@@ -113,32 +113,54 @@ User → Workspace → Project → Repository
 | Git | Provider interface, currently GitHub App |
 | AI | Provider interface, currently Anthropic |
 | Email | Provider interface, currently Resend |
-| Billing | Provider interface, currently Stripe |
-| CDN / Media | Enterprise bridge-backed implementations |
+| Billing | Plugin registry, default Polar (MoR), Stripe fallback |
+| CDN / Media | Enterprise bridge-backed implementations (ee/-resident) |
 
 The architectural rule is strict: application code talks to provider interfaces and shared utilities, not vendor SDKs directly.
 
+## Editions
+
+Studio ships in two editions, distinguished by whether the `ee/` directory is loaded at runtime. Edition is **orthogonal to plan tier** — a managed Enterprise customer and a self-hosted Community user share the same tier vocabulary but different code paths.
+
+| | Community Edition | Enterprise Edition |
+|---|---|---|
+| License | AGPL-3.0 + `LICENSE-EXCEPTIONS` | AGPL core + `ee/LICENSE` (proprietary) |
+| `ee/` directory | Absent or not loaded | Present and loaded |
+| Billing | Off | Polar / Stripe / flat-fee / off |
+| Plan tier | Fixed `community` (unlimited) | `free` / `starter` / `pro` / `enterprise` |
+| Typical scenarios | AGPL self-host, forks, hosting resellers, local eval | Managed SaaS (contentrain.io), on-premise enterprise, managed dedicated, OEM, white-label |
+
+See [docs/EDITIONS.md](docs/EDITIONS.md) for the full feature matrix.
+
+## Deployment Profiles
+
+Studio auto-detects a deployment profile at boot from (a) `ee/` presence and (b) configured payment plugins. `NUXT_DEPLOYMENT_PROFILE` overrides.
+
+| Profile | Edition | Billing mode | Plan source |
+|---|---|---|---|
+| `managed` | ee required | polar / stripe | subscription |
+| `dedicated` | ee required | flat or subscription | operator or subscription |
+| `on-premise` | ee required | off | operator-set (default `enterprise`) |
+| `community` | agpl only | off | fixed `community` |
+
+See [docs/DEPLOYMENT_PROFILES.md](docs/DEPLOYMENT_PROFILES.md) for the 12-scenario matrix and per-profile env checklist.
+
 ## Plans and Licensing
 
-Studio uses an open-core model and a plan/limit system.
+Current runtime plans: `community` (auto-assigned in Community Edition, not purchasable) / `free` / `starter` / `pro` / `enterprise`.
 
-Current runtime plans:
+Plan-differentiated capability examples:
 
-- `free`
-- `starter`
-- `pro`
-- `enterprise`
-
-Examples of plan-differentiated capability:
-
-- AI usage and BYOA
-- CDN delivery and preview branches
-- Media upload and custom variants
-- Review workflow and advanced roles
+- AI usage, Studio-hosted key, BYOA (Pro+)
+- CDN delivery, preview branches, custom domain
+- Media upload / library / custom variants
+- Review workflow and advanced project roles (Reviewer, Viewer)
 - Conversation API and outbound webhooks
-- Enterprise-only SSO, white-label, and custom domain surfaces
+- Enterprise-only SSO, white-label, custom MCP domain
 
-The source of truth for limits and feature checks lives in [`shared/utils/license.ts`](shared/utils/license.ts).
+The source of truth lives in [`shared/utils/license.ts`](shared/utils/license.ts) and [`.contentrain/content/system/plan-features/`](.contentrain/content/system/plan-features/). Feature gating runs through `hasFeature(plan, key)` with the current edition applied.
+
+For license inquiries, see [docs/LICENSING.md](docs/LICENSING.md) and contact `licensing@contentrain.io`.
 
 ## Repository Structure
 
@@ -184,14 +206,19 @@ Local app URL:
 Release-facing setup and deployment docs:
 
 - [Environment Reference](.env.example)
+- [Editions](docs/EDITIONS.md) — Community vs Enterprise feature matrix
+- [Deployment Profiles](docs/DEPLOYMENT_PROFILES.md) — 12 scenarios × profile × env
+- [Licensing Overview](docs/LICENSING.md) — SKU × license type × scenario
+- [Self-Hosting Guide](docs/SELF_HOSTING.md)
 - [Docker Guide](docs/DOCKER.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
+- [Payment Providers](docs/PAYMENT_PROVIDERS.md)
 - [Releasing Guide](docs/RELEASING.md)
 - [Repository Hygiene](docs/REPOSITORY-HYGIENE.md)
-- [Self-Hosting Guide](docs/SELF_HOSTING.md)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Enterprise Edition README](ee/README.md)
 
 ## Testing
 
@@ -237,10 +264,11 @@ Before opening a PR, read:
 
 ## License
 
-- Core: [GNU Affero General Public License v3.0](LICENSE)
-- Enterprise directory: [Proprietary license](ee/LICENSE)
+- Core: [GNU Affero General Public License v3.0](LICENSE) + [`LICENSE-EXCEPTIONS`](LICENSE-EXCEPTIONS) (AGPL §7(c) attribution + §7(e) no-trademark)
+- Enterprise directory: [Proprietary license](ee/LICENSE) — Managed Use, On-Premises Deployment, Evaluation, OEM, and White-Label grants
+- Dual-license index: [`NOTICE`](NOTICE)
 
-If you run a modified version of the AGPL core as a network service, you must provide the corresponding source code to users of that service, consistent with AGPL obligations.
+If you run a modified version of the AGPL core as a network service, you must make the Corresponding Source available to interacting users — the built-in `/about` page satisfies this obligation by linking to the upstream repository. See [docs/LICENSING.md](docs/LICENSING.md) for the full mapping of SKU × license type × supported scenario.
 
 ---
 

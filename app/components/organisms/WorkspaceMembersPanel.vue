@@ -29,13 +29,28 @@ const wsRoleOptions = [
   { value: 'member', label: t('members.role_member') },
 ]
 
+// Reviewer and Viewer project roles are backed by the enterprise
+// bridge (`normalizeEnterpriseProjectMemberAccess` in ee/). In
+// Community Edition, assigning either role silently degrades to
+// Editor, so surface only the roles that actually work.
+const reviewerRoleEnabled = useFeature('roles.reviewer')
+const viewerRoleEnabled = useFeature('roles.viewer')
+
 const projectRoleOptions = computed(() => {
-  return [
+  const options: Array<{ value: 'editor' | 'reviewer' | 'viewer', label: string }> = [
     { value: 'editor', label: t('members.role_editor') },
-    { value: 'reviewer', label: t('members.role_reviewer') },
-    { value: 'viewer', label: t('members.role_viewer') },
   ]
+  if (reviewerRoleEnabled.value) options.push({ value: 'reviewer', label: t('members.role_reviewer') })
+  if (viewerRoleEnabled.value) options.push({ value: 'viewer', label: t('members.role_viewer') })
+  return options
 })
+
+const showRoleEEHint = computed(() => !reviewerRoleEnabled.value || !viewerRoleEnabled.value)
+
+// Reset assignRole if the current value is no longer available.
+watch(projectRoleOptions, (options) => {
+  if (!options.some(o => o.value === assignRole.value)) assignRole.value = 'editor'
+}, { immediate: true })
 
 const projectOptions = computed(() =>
   projects.value.map(p => ({ value: p.id, label: p.repo_full_name.split('/').pop() ?? p.repo_full_name })),
@@ -261,6 +276,7 @@ function getMemberEmail(member: { profiles?: { email?: string } | null, invited_
               size="md"
               @update:model-value="assignRole = ($event as 'editor' | 'reviewer' | 'viewer')"
             />
+            <AtomsInfoTooltip v-if="showRoleEEHint" :text="t('settings.role_ee_hint')" />
             <AtomsBaseButton
               type="submit"
               variant="primary"

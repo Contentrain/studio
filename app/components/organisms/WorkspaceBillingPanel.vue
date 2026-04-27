@@ -2,7 +2,8 @@
 import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
-const { billingEnabled, billingState, effectivePlan, isTrialing, trialDaysLeft, openPortal } = useBilling()
+const { billingState, effectivePlan, isTrialing, trialDaysLeft, openPortal } = useBilling()
+const deployment = useDeployment()
 
 defineProps<{
   workspaceId: string
@@ -14,8 +15,13 @@ const loading = ref(false)
 const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? 'Free')
 const planPrice = computed(() => PLAN_PRICING[effectivePlan.value]?.priceMonthly ?? 0)
 
+/**
+ * Active subscription = Managed profile with a live subscription-
+ * driven billing state. Community and operator-managed profiles
+ * never surface subscription controls here.
+ */
 const hasSubscription = computed(() =>
-  billingEnabled.value
+  deployment.hasManagedBilling.value
   && ['subscribed', 'trial_active', 'past_due', 'canceled'].includes(billingState.value),
 )
 
@@ -46,6 +52,29 @@ const stateBadgeVariant = computed(() => {
   }
 })
 
+/**
+ * Non-managed surfaces render a single information card instead of
+ * the subscription widget. Community explains the AGPL deployment;
+ * on-premise explains that the operator controls the plan.
+ */
+const infoCard = computed(() => {
+  if (deployment.isCommunity.value) {
+    return {
+      title: t('billing.community_title'),
+      description: t('billing.community_description'),
+      badge: t('billing.community_badge'),
+    }
+  }
+  if (deployment.isOperatorManagedPlan.value) {
+    return {
+      title: t('billing.on_premise_title'),
+      description: t('billing.on_premise_description'),
+      badge: t('billing.on_premise_badge'),
+    }
+  }
+  return null
+})
+
 async function handleManageSubscription() {
   loading.value = true
   try {
@@ -62,9 +91,9 @@ async function handleManageSubscription() {
 
 <template>
   <div class="space-y-6">
-    <!-- Self-hosted notice -->
+    <!-- Community or on-premise notice (non-managed surfaces) -->
     <div
-      v-if="!billingEnabled"
+      v-if="infoCard"
       class="rounded-lg border border-secondary-200 p-5 dark:border-secondary-800"
     >
       <div class="flex items-start gap-3">
@@ -72,20 +101,20 @@ async function handleManageSubscription() {
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-medium text-heading dark:text-secondary-100">
-              {{ t('billing.self_hosted_title') }}
+              {{ infoCard.title }}
             </h3>
             <AtomsBadge variant="secondary" size="sm">
-              {{ t('billing.self_hosted_badge') }}
+              {{ infoCard.badge }}
             </AtomsBadge>
           </div>
           <p class="mt-1 text-sm text-muted">
-            {{ t('billing.self_hosted_description') }}
+            {{ infoCard.description }}
           </p>
         </div>
       </div>
     </div>
 
-    <!-- Current plan (managed/Stripe-enabled only) -->
+    <!-- Current plan (managed profiles only) -->
     <div
       v-else
       class="rounded-lg border border-secondary-200 p-5 dark:border-secondary-800"
@@ -146,14 +175,15 @@ async function handleManageSubscription() {
       </div>
     </div>
 
-    <!-- Usage dashboard -->
+    <!-- Usage dashboard — shown for any workspace with a non-free effective plan, which covers managed subscribers, on-premise enterprise, and community (always 'community' tier → still useful for metering visibility). -->
     <OrganismsWorkspaceUsagePanel
       v-if="hasSubscription || effectivePlan !== 'free'"
       :workspace-id="workspaceId"
     />
 
-    <!-- Plan selection modal -->
+    <!-- Plan selection modal (managed only) -->
     <OrganismsPlanSelectionModal
+      v-if="deployment.hasManagedBilling.value"
       :open="planModalOpen"
       @update:open="planModalOpen = $event"
     />

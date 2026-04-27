@@ -81,8 +81,9 @@ NUXT_POLAR_WEBHOOK_SECRET=…
 NUXT_POLAR_STARTER_PRODUCT_ID=…
 NUXT_POLAR_PRO_PRODUCT_ID=…
 NUXT_POLAR_SERVER=sandbox   # or production
-NUXT_PUBLIC_BILLING_ENABLED=true
 ```
+
+Note: `NUXT_PUBLIC_BILLING_ENABLED` is derived automatically at boot by the `server/plugins/00.billing-flag.ts` Nitro plugin — when the Polar access token resolves the plugin registry's `isConfigured()` gate, the public flag flips to `true`. You only need to set it explicitly to override (e.g. staging with Polar configured but checkout intentionally hidden).
 
 ## Adding a new provider
 
@@ -111,6 +112,19 @@ legacy one was removed with the Polar migration.
 
 ## Self-hosted / no billing
 
-When no plugin reports `isConfigured(config) === true`, the middleware
-bypass treats all workspaces as starter-level and the usage drainer is
-inert. This is the expected self-host default.
+When no plugin reports `isConfigured(config) === true`, the deployment
+resolver picks one of two non-managed profiles:
+
+- **community** — `ee/` directory absent. Every workspace resolves to
+  the fixed `community` tier; subscription UI is hidden; the usage
+  drainer never runs; requires_ee features are force-disabled
+  regardless of plan matrix values. See [EDITIONS.md](EDITIONS.md).
+- **on-premise** — `ee/` directory present under a separately
+  executed On-Premises Deployment License. Plan tier comes from
+  `workspaces.plan` (operator-managed, default `enterprise`);
+  subscription UI is hidden; the usage drainer is inert because no
+  payment plugin can accept events.
+
+You can pin the profile explicitly with `NUXT_DEPLOYMENT_PROFILE`. See
+[DEPLOYMENT_PROFILES.md](DEPLOYMENT_PROFILES.md) for the full 12-scenario
+matrix and per-profile env checklist.

@@ -21,6 +21,11 @@
       "required": true,
       "type": "select"
     },
+    "community_value": {
+      "description": "Community Edition value (AGPL-only self-host, no ee/ bridge). Typically 'true'/'unlimited' for core features and 'false' for ee/-dependent features.",
+      "required": true,
+      "type": "string"
+    },
     "enterprise_value": {
       "description": "Enterprise plan value (number for limits, true/false for features, unlimited for Infinity)",
       "required": true,
@@ -29,6 +34,15 @@
     "free_value": {
       "description": "Free plan value (number for limits, true/false for features)",
       "required": true,
+      "type": "string"
+    },
+    "requires_ee": {
+      "description": "Whether this feature requires the Enterprise Edition bridge (ee/) to function. When true, the feature is force-disabled in Community Edition regardless of plan-tier values.",
+      "required": true,
+      "type": "string"
+    },
+    "roadmap": {
+      "description": "True when the feature appears in the plan matrix as marketing but has no runtime enforcement yet. UI surfaces show a 'Coming Soon' badge.",
       "type": "string"
     },
     "key": {

@@ -1,9 +1,7 @@
 <script setup lang="ts">
 const { t } = useContent()
 const { usage, loading, fetchUsage, toggleOverage } = useUsage()
-const { billingState } = useBilling()
-const config = useRuntimeConfig()
-const billingEnabled = computed(() => config.public.billingEnabled === 'true')
+const { billingState, billingEnabled } = useBilling()
 const toast = useToast()
 
 defineProps<{

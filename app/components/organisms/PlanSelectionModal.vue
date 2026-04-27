@@ -53,12 +53,21 @@ function formatFeature(f: PlanFeatures, val: string): string {
   return f.name
 }
 
+interface PlanFeatureEntry {
+  label: string
+  roadmap: boolean
+}
+
 /**
  * Returns the features that differentiate `planSlug` from the tier below it.
  * For the lowest shown tier (starter), returns all its features.
  * For higher tiers, returns only the delta (new features or upgraded limits).
+ *
+ * Each entry carries a `roadmap` flag so the UI can render "Coming
+ * Soon" for advertised-but-unimplemented features. The flag comes from
+ * the `roadmap` column on `plan-features` content rows.
  */
-function planFeaturesList(planSlug: string): string[] {
+function planFeaturesList(planSlug: string): PlanFeatureEntry[] {
   const valueKey = `${planSlug}_value` as keyof PlanFeatures
   const tierIndex = PLAN_TIER_ORDER.indexOf(planSlug as (typeof PLAN_TIER_ORDER)[number])
   const previousTier = tierIndex > 1 ? PLAN_TIER_ORDER[tierIndex - 1] : null
@@ -75,7 +84,10 @@ function planFeaturesList(planSlug: string): string[] {
       }
       return true
     })
-    .map(f => formatFeature(f, f[valueKey] as string))
+    .map(f => ({
+      label: formatFeature(f, f[valueKey] as string),
+      roadmap: isTruthy(f.roadmap),
+    }))
 }
 
 // Enterprise plan from Contentrain
@@ -205,9 +217,14 @@ async function handlePlanAction(slug: string) {
 
             <!-- Features from Contentrain plan-features -->
             <ul class="mb-5 flex-1 space-y-2">
-              <li v-for="feature in planFeaturesList(plan.slug)" :key="feature" class="flex items-start gap-2 text-sm text-body dark:text-secondary-300">
+              <li v-for="feature in planFeaturesList(plan.slug)" :key="feature.label" class="flex items-start gap-2 text-sm text-body dark:text-secondary-300">
                 <span class="icon-[annon--check] mt-0.5 size-4 shrink-0 text-success-500" aria-hidden="true" />
-                {{ feature }}
+                <span class="flex-1">
+                  {{ feature.label }}
+                  <AtomsBadge v-if="feature.roadmap" variant="secondary" size="sm" class="ml-1.5 align-middle">
+                    {{ t('billing.roadmap_badge') }}
+                  </AtomsBadge>
+                </span>
               </li>
             </ul>
 

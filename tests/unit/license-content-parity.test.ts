@@ -8,6 +8,10 @@
  * toward "free" behavior. These assertions pin the canonical set of
  * keys + a few critical values so any drift shows up in CI before it
  * can reach production.
+ *
+ * Matrix shape (post-edition-orthogonality):
+ *   FEATURE_MATRIX[key] = { plans: StudioPlan[], requires_ee: boolean, roadmap: boolean }
+ *   PLAN_LIMITS[key]    = { values: Record<StudioPlan, number>, requires_ee: boolean }
  */
 
 import { describe, expect, it } from 'vitest'
@@ -19,8 +23,11 @@ import {
   PLAN_PRICING,
 } from '../../shared/utils/license'
 
+// Feature keys that must be in the matrix. Note: `ai.agent`,
+// `git.connect`, and `projects.create` were removed intentionally
+// because they represent core product capabilities that are always
+// on — plan differentiation made no business sense.
 const REQUIRED_FEATURES = [
-  'ai.agent',
   'ai.byoa',
   'ai.studio_key',
   'cdn.delivery',
@@ -47,8 +54,6 @@ const REQUIRED_FEATURES = [
   'api.mcp_cloud',
   'api.mcp_cloud_sso',
   'api.mcp_cloud_custom_domain',
-  'git.connect',
-  'projects.create',
   'sso.saml',
   'sso.oidc',
   'branding.white_label',
@@ -80,9 +85,56 @@ const REQUIRED_OVERAGE_KEYS = [
   'media.storage_gb',
 ] as const
 
+// Features that are advertised in the matrix but have no runtime
+// enforcement yet — the UI renders a "Coming Soon" chip for these.
+// When a feature graduates (real enforcement lands), its row should
+// drop the `roadmap` flag and move to EE_REQUIRED_FEATURES.
+const ROADMAP_FEATURES = [
+  'api.custom_instructions',
+  'api.mcp_cloud_custom_domain',
+  'api.mcp_cloud_sso',
+  'cdn.custom_domain',
+  'cdn.preview_branch',
+  'forms.file_upload',
+  'forms.notifications',
+  'forms.spam_filter',
+  'sso.saml',
+  'sso.oidc',
+  'branding.white_label',
+] as const
+
+// Features that must be flagged `requires_ee: true` so Community
+// Edition force-disables them regardless of plan.
+const EE_REQUIRED_FEATURES = [
+  'ai.byoa',
+  'ai.studio_key',
+  'api.conversation',
+  'api.custom_instructions',
+  'api.webhooks_outbound',
+  'cdn.delivery',
+  'cdn.metering',
+  'cdn.custom_domain',
+  'cdn.preview_branch',
+  'media.upload',
+  'media.library',
+  'media.custom_variants',
+  'roles.reviewer',
+  'roles.viewer',
+  'roles.specific_models',
+  'sso.saml',
+  'sso.oidc',
+  'branding.white_label',
+  'forms.file_upload',
+  'forms.spam_filter',
+  'forms.webhook_notification',
+  'api.mcp_cloud_sso',
+  'api.mcp_cloud_custom_domain',
+] as const
+
 describe('license ↔ content parity', () => {
   describe('PLAN_PRICING (derived from plans/en.json)', () => {
-    it('exposes free / starter / pro / enterprise rows', () => {
+    it('exposes community / free / starter / pro / enterprise rows', () => {
+      expect(PLAN_PRICING.community).toBeDefined()
       expect(PLAN_PRICING.free).toBeDefined()
       expect(PLAN_PRICING.starter).toBeDefined()
       expect(PLAN_PRICING.pro).toBeDefined()
@@ -90,6 +142,7 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins canonical monthly prices', () => {
+      expect(PLAN_PRICING.community.priceMonthly).toBe(0)
       expect(PLAN_PRICING.free.priceMonthly).toBe(0)
       expect(PLAN_PRICING.starter.priceMonthly).toBe(9)
       expect(PLAN_PRICING.pro.priceMonthly).toBe(49)
@@ -108,23 +161,64 @@ describe('license ↔ content parity', () => {
     })
 
     it('free plan is excluded from every feature row (structural shell)', () => {
-      for (const [key, plans] of Object.entries(FEATURE_MATRIX)) {
-        expect(plans, `free must not be in FEATURE_MATRIX.${key}`).not.toContain('free')
+      for (const [key, entry] of Object.entries(FEATURE_MATRIX)) {
+        expect(entry.plans, `free must not be in FEATURE_MATRIX.${key}.plans`).not.toContain('free')
       }
     })
 
-    it('enterprise-only features exclude starter and pro', () => {
+    it('enterprise-only features are only granted to enterprise', () => {
       const enterpriseOnly = ['sso.saml', 'sso.oidc', 'branding.white_label', 'cdn.custom_domain', 'api.mcp_cloud_sso', 'api.mcp_cloud_custom_domain']
       for (const key of enterpriseOnly) {
-        expect(FEATURE_MATRIX[key]).toEqual(['enterprise'])
+        const entry = FEATURE_MATRIX[key]!
+        expect(entry.plans, `${key} should be enterprise-only`).toEqual(['enterprise'])
       }
     })
 
-    it('pro-tier features exclude starter', () => {
-      const proOnly = ['cdn.preview_branch', 'media.custom_variants', 'roles.specific_models', 'forms.spam_filter']
-      for (const key of proOnly) {
-        expect(FEATURE_MATRIX[key]).toEqual(['pro', 'enterprise'])
+    it('pro-tier features are exposed to pro and enterprise only', () => {
+      const proAndAbove = ['cdn.preview_branch', 'media.custom_variants', 'roles.specific_models', 'forms.spam_filter']
+      for (const key of proAndAbove) {
+        const entry = FEATURE_MATRIX[key]!
+        expect(entry.plans, `${key} should be pro+`).toEqual(['pro', 'enterprise'])
       }
+    })
+
+    it.each(EE_REQUIRED_FEATURES)('"%s" carries requires_ee=true', (key) => {
+      const entry = FEATURE_MATRIX[key]
+      expect(entry?.requires_ee, `${key} must require ee bridge`).toBe(true)
+    })
+
+    it.each(ROADMAP_FEATURES)('"%s" carries roadmap=true (advertised, not yet enforced)', (key) => {
+      const entry = FEATURE_MATRIX[key]
+      expect(entry?.roadmap, `${key} must be flagged roadmap until enforcement lands`).toBe(true)
+    })
+
+    it('shipped features do NOT carry the roadmap flag', () => {
+      const shipped = ['cdn.delivery', 'media.upload', 'ai.byoa', 'api.conversation', 'api.webhooks_outbound', 'workflow.review']
+      for (const key of shipped) {
+        const entry = FEATURE_MATRIX[key]!
+        expect(entry.roadmap, `${key} has runtime enforcement; roadmap must be false`).toBe(false)
+      }
+    })
+
+    it('core forms features do NOT require the ee bridge', () => {
+      // `forms.notifications` stays requires_ee=false because the
+      // email path is planned for core (operator-provided Resend),
+      // not ee/-only. It carries roadmap=true until implementation
+      // lands — the pair is valid.
+      const coreForms = ['forms.enabled', 'forms.captcha', 'forms.auto_approve', 'forms.notifications']
+      for (const key of coreForms) {
+        const entry = FEATURE_MATRIX[key]!
+        expect(entry.requires_ee, `${key} must be core (no ee dependency)`).toBe(false)
+      }
+    })
+
+    it('community tier gets core features but not requires_ee features', () => {
+      expect(FEATURE_MATRIX['forms.enabled']!.plans).toContain('community')
+      expect(FEATURE_MATRIX['workflow.review']!.plans).toContain('community')
+      expect(FEATURE_MATRIX['api.mcp_cloud']!.plans).toContain('community')
+      expect(FEATURE_MATRIX['cdn.delivery']!.plans).not.toContain('community')
+      expect(FEATURE_MATRIX['media.upload']!.plans).not.toContain('community')
+      expect(FEATURE_MATRIX['roles.reviewer']!.plans).not.toContain('community')
     })
   })
 
@@ -134,32 +228,42 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins Pro canonical AI message limit', () => {
-      expect(PLAN_LIMITS['ai.messages_per_month']!.pro).toBe(1500)
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(1500)
     })
 
     it('pins Pro canonical API message limit', () => {
-      expect(PLAN_LIMITS['api.messages_per_month']!.pro).toBe(3000)
+      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(3000)
     })
 
     it('pins Starter AI message limit', () => {
-      expect(PLAN_LIMITS['ai.messages_per_month']!.starter).toBe(150)
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(150)
     })
 
     it('team.members keeps the structural owner seat on free', () => {
-      expect(PLAN_LIMITS['team.members']!.free).toBe(1)
+      expect(PLAN_LIMITS['team.members']!.values.free).toBe(1)
     })
 
     it('free plan has zero everywhere except team.members', () => {
-      for (const [key, perPlan] of Object.entries(PLAN_LIMITS)) {
+      for (const [key, entry] of Object.entries(PLAN_LIMITS)) {
         if (key === 'team.members') continue
-        expect(perPlan.free, `${key}.free must be 0`).toBe(0)
+        expect(entry.values.free, `${key}.free must be 0`).toBe(0)
       }
     })
 
     it('enterprise limits are Infinity or a finite hard cap', () => {
-      for (const [, perPlan] of Object.entries(PLAN_LIMITS)) {
-        expect(perPlan.enterprise).toBeGreaterThan(0)
+      for (const [, entry] of Object.entries(PLAN_LIMITS)) {
+        expect(entry.values.enterprise).toBeGreaterThan(0)
       }
+    })
+
+    it('community limits are unlimited for core limits and zero for ee-gated limits', () => {
+      // Core: team.members has no ee requirement → unlimited
+      expect(PLAN_LIMITS['team.members']!.values.community).toBe(Infinity)
+      expect(PLAN_LIMITS['forms.submissions_per_month']!.values.community).toBe(Infinity)
+      // EE-gated limits (still stored as unlimited on the row) — but
+      // the gating happens inside getPlanLimit, not the matrix itself.
+      expect(PLAN_LIMITS['cdn.bandwidth_gb']!.requires_ee).toBe(true)
+      expect(PLAN_LIMITS['media.storage_gb']!.requires_ee).toBe(true)
     })
   })
 

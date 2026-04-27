@@ -2,6 +2,15 @@
 
 Contentrain Studio supports self-hosting of the AGPL core and managed operation of paid plans. The product is a single Nuxt/Nitro application with external dependencies for auth/data, GitHub integration, optional billing, optional object storage, and optional Redis. This guide focuses on deploying it yourself.
 
+## Editions and Profiles
+
+Before picking a topology, pick an **edition** (Community or Enterprise) and a **profile** (`managed` / `dedicated` / `on-premise` / `community`). These choices decide which features are available and how billing behaves.
+
+- **Edition** — whether the `ee/` directory is present at build time. See [EDITIONS.md](EDITIONS.md).
+- **Profile** — the preset that configures billing mode and plan source. See [DEPLOYMENT_PROFILES.md](DEPLOYMENT_PROFILES.md) for the 12 supported scenarios.
+
+Auto-detection picks the profile at boot from the combination of `ee/` presence + configured payment plugins; `NUXT_DEPLOYMENT_PROFILE` overrides. For dedicated single-tenant hosting you **must** set it explicitly.
+
 ## Deployment Shapes
 
 Recommended options:
@@ -64,17 +73,19 @@ Optional but recommended:
 
 ### Billing
 
-If billing is enabled:
+Managed profile (Polar or Stripe):
 
-- Set Stripe server keys and price IDs
-- Set `NUXT_PUBLIC_BILLING_ENABLED=true`
-- Verify webhook delivery to the billing webhook route
+- Set Polar env vars (recommended) or Stripe server keys + price IDs
+- `NUXT_PUBLIC_BILLING_ENABLED` is derived automatically at boot — set it only to override
+- Verify webhook delivery to `/api/billing/webhook/polar` (or `/stripe`)
 
-If billing is not enabled:
+On-premise / Community (no managed billing):
 
-- Leave Stripe keys unset
-- Leave `NUXT_PUBLIC_BILLING_ENABLED` unset
-- Studio will operate in no-billing mode
+- Leave Polar + Stripe env vars unset
+- `NUXT_PUBLIC_BILLING_ENABLED` auto-resolves to `false`
+- Plan is set via `UPDATE workspaces SET plan = 'enterprise'` on on-premise; fixed to `community` on Community Edition
+
+See [PAYMENT_PROVIDERS.md](PAYMENT_PROVIDERS.md) for the Polar setup and [DEPLOYMENT_PROFILES.md](DEPLOYMENT_PROFILES.md) for the profile × env matrix.
 
 ### CDN / Media
 
@@ -121,12 +132,15 @@ After first deploy, verify:
 
 - `/api/health` returns `200`
 - login page loads
+- `/about` page renders and links to the Corresponding Source (AGPL §13)
+- Deployment snapshot on `/about` shows the correct profile / edition / billing mode
 - OAuth callback URLs are correct
 - a workspace can be created and listed
 - GitHub installation flow completes
 - a repository can be scanned/connected
 - at least one chat/content flow works
-- billing, email, CDN, and media surfaces behave according to your configured environment
+- billing, email, CDN, and media surfaces behave according to your configured profile (see [DEPLOYMENT_PROFILES.md](DEPLOYMENT_PROFILES.md))
+- For Community Edition: AI Keys, Conversation API, Webhook tabs are hidden; Members panel offers only the Editor project role
 
 ## Release Validation
 

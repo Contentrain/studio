@@ -107,7 +107,35 @@ export async function runEnterpriseRoute<T>(
   handlerName: EnterpriseRouteName,
   featureMessageKey: string,
   event: H3Event,
+  featureKey?: string,
 ): Promise<T> {
+  // Plan + edition gate — when a featureKey is supplied and the
+  // billing middleware has already resolved `event.context.billing`,
+  // reject the request before touching the bridge if the caller's
+  // plan doesn't grant the feature. This keeps Starter customers on
+  // Managed out of Pro+ endpoints even when the bridge itself is
+  // plan-agnostic.
+  //
+  // When `event.context.billing` is absent (unit-level integration
+  // tests that bypass middleware, or a misconfigured deploy missing
+  // the billing middleware) the plan gate is skipped and enforcement
+  // falls through to the bridge-availability check below. Production
+  // workspace-scoped routes always run through `03.billing.ts`, so
+  // the gate is effectively always active in real traffic.
+  if (featureKey) {
+    const billingContext = (event.context as { billing?: { effectivePlan?: string } } | undefined)?.billing
+    const plan = billingContext?.effectivePlan
+    if (plan) {
+      const { hasFeature } = await import('./license')
+      if (!hasFeature(plan, featureKey)) {
+        throw createError({
+          statusCode: 403,
+          message: errorMessage(featureMessageKey),
+        })
+      }
+    }
+  }
+
   const bridge = await loadEnterpriseBridge()
 
   if (!bridge || typeof bridge[handlerName] !== 'function') {

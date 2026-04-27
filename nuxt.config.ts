@@ -52,9 +52,21 @@ export default defineNuxtConfig({
     public: {
       siteUrl: 'http://localhost:3000',
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
-      billingEnabled: '', // NUXT_PUBLIC_BILLING_ENABLED — set to 'true' when Stripe is configured
+      billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override
       templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER
+      deployment: {
+        // Client-visible deployment snapshot. In dev, `server/plugins/
+        // 00.billing-flag.ts` mutates this at boot from the auto-detected
+        // server-side `resolveDeployment()`. In production builds the
+        // public runtime config may be frozen, so operators should set
+        // the values explicitly via the corresponding env vars (Nuxt
+        // automatically maps NUXT_PUBLIC_DEPLOYMENT_<KEY> to public.deployment.<key>).
+        profile: '', // NUXT_PUBLIC_DEPLOYMENT_PROFILE — managed | dedicated | on-premise | community
+        edition: '', // NUXT_PUBLIC_DEPLOYMENT_EDITION — ee | agpl
+        billingMode: '', // NUXT_PUBLIC_DEPLOYMENT_BILLING_MODE — polar | stripe | flat | off
+      },
     },
+    deploymentProfile: '', // NUXT_DEPLOYMENT_PROFILE — 'managed' | 'dedicated' | 'on-premise' | 'community' (unset = auto-detect)
     emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
     emailSenderName: '', // NUXT_EMAIL_SENDER_NAME
   },

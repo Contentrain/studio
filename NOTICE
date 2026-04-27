@@ -1,0 +1,31 @@
+Contentrain Studio
+Copyright (c) 2026 Contentrain, LLC.
+
+This repository contains software released under TWO DIFFERENT LICENSES:
+
+1. AGPL-3.0-only
+   Applies to:    all files EXCEPT those in the `ee/` directory.
+   License text:  LICENSE (repository root)
+   Attribution:   see top of source files.
+
+2. Contentrain Enterprise Edition License v1.0
+   Applies to:    all files in the `ee/` directory.
+   License text:  ee/LICENSE
+   Use requires:  a valid Contentrain Subscription (Pro or Enterprise)
+                  or a separately executed agreement with Contentrain, LLC.
+
+The Enterprise Edition is NOT licensed under the AGPL-3.0. The AGPL-3.0
+grant in the root LICENSE does NOT extend to the `ee/` directory.
+
+The AGPL-3.0 core may carry additional terms under AGPL-3.0 §7; such
+terms, if any, are published in LICENSE-EXCEPTIONS or the root LICENSE
+itself. See docs/LICENSING.md for the practical overview of how the two
+licenses interact across supported deployment scenarios.
+
+Third-party components and their respective licenses are declared in
+the package manifests (package.json, pnpm-lock.yaml). A consolidated
+THIRD_PARTY_NOTICES file may be added in a future release.
+
+For licensing inquiries:     licensing@contentrain.io
+For legal notices:           legal@contentrain.io
+For security disclosures:    see SECURITY.md

@@ -1,3 +1,3 @@
 import { runEnterpriseRoute } from '../../../../../../utils/enterprise'
 
-export default defineEventHandler(event => runEnterpriseRoute('updateProjectWebhook', 'webhook.upgrade', event))
+export default defineEventHandler(event => runEnterpriseRoute('updateProjectWebhook', 'webhook.upgrade', event, 'api.webhooks_outbound'))

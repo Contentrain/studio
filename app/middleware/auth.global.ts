@@ -1,6 +1,12 @@
 const PUBLIC_ROUTES = ['/auth/login', '/auth/callback']
 
 export default defineNuxtRouteMiddleware(async (to) => {
+  // Routes that carry `definePageMeta({ auth: false })` are rendered
+  // for every visitor regardless of authentication — neither
+  // redirected to login nor bounced back to the dashboard. Used by
+  // the public `/about` page (AGPL §13 source offer).
+  if (to.meta.auth === false) return
+
   const { isAuthenticated, state } = useAuth()
 
   // Wait for auth to initialize before making decisions

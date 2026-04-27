@@ -33,9 +33,27 @@
 import plansData from '../../.contentrain/content/system/plans/en.json'
 import planFeaturesData from '../../.contentrain/content/system/plan-features/data.json'
 
-export type StudioPlan = 'free' | 'starter' | 'pro' | 'enterprise'
+/**
+ * All runtime plan tiers. `community` is the AGPL-only self-host tier
+ * and is assigned automatically when the enterprise bridge is absent;
+ * it is not purchasable on the managed service.
+ */
+export type StudioPlan = 'community' | 'free' | 'starter' | 'pro' | 'enterprise'
 
-const PLAN_SLUGS: readonly StudioPlan[] = ['free', 'starter', 'pro', 'enterprise']
+/**
+ * Edition gates whether ee/-dependent features are usable at runtime.
+ *   'ee'   — enterprise bridge loaded; respect plan-tier gating.
+ *   'agpl' — bridge absent; force-disable every `requires_ee` feature.
+ *
+ * Pass `{ edition }` to `hasFeature` / `getPlanLimit` so matrix rows
+ * that claim `requires_ee: true` are filtered out in Community Edition.
+ * The helpers default to `'ee'` to preserve existing call sites in the
+ * managed service; server code that has access to `resolveDeployment()`
+ * should pass the real edition explicitly.
+ */
+export type Edition = 'ee' | 'agpl'
+
+const PLAN_SLUGS: readonly StudioPlan[] = ['community', 'free', 'starter', 'pro', 'enterprise']
 
 // ─── Content shape (narrow types — JSON literal widening) ───
 
@@ -58,10 +76,13 @@ interface PlanFeatureContent {
   name: string
   type: 'feature' | 'limit'
   category: string
+  community_value: string
   free_value: string
   starter_value: string
   pro_value: string
   enterprise_value: string
+  requires_ee: string
+  roadmap?: string
   overage_price?: number
   overage_unit?: string
   overage_settings_key?: string
@@ -85,6 +106,7 @@ function parseLimitValue(v: string): number {
 
 function valueForPlan(row: PlanFeatureContent, plan: StudioPlan): string {
   switch (plan) {
+    case 'community': return row.community_value
     case 'free': return row.free_value
     case 'starter': return row.starter_value
     case 'pro': return row.pro_value
@@ -100,6 +122,8 @@ function valueForPlan(row: PlanFeatureContent, plan: StudioPlan): string {
  *
  * Enterprise carries `priceMonthly: 0` / `seatsIncluded: 0` as sentinels
  * for "contact sales" — callers must not display these as real numbers.
+ * Community carries the same zeroed pricing; it is not purchasable and
+ * is only ever assigned automatically in Community Edition.
  */
 export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }>
   = Object.fromEntries(
@@ -111,19 +135,28 @@ export const PLAN_PRICING: Record<StudioPlan, { priceMonthly: number, seatsInclu
   ) as Record<StudioPlan, { priceMonthly: number, seatsIncluded: number, name: string }>
 
 /**
- * Feature matrix: which plans grant each feature flag. Derived from
+ * Feature matrix: which plans grant each feature flag, plus the
+ * `requires_ee` and `roadmap` flags per row. Derived from
  * plan-features rows with `type: 'feature'`.
  *
- * Free is naturally absent from every row because `free_value` is
- * always `"false"` for features in content (see the invariant in the
- * module docstring).
+ * The matrix layer does NOT filter `requires_ee` — that decision is
+ * made by `hasFeature` when the caller supplies an edition.
  */
-export const FEATURE_MATRIX: Record<string, StudioPlan[]> = (() => {
-  const matrix: Record<string, StudioPlan[]> = {}
+export interface FeatureMatrixEntry {
+  plans: StudioPlan[]
+  requires_ee: boolean
+  roadmap: boolean
+}
+
+export const FEATURE_MATRIX: Record<string, FeatureMatrixEntry> = (() => {
+  const matrix: Record<string, FeatureMatrixEntry> = {}
   for (const row of Object.values(planFeatures)) {
     if (row.type !== 'feature') continue
-    const grantedPlans = PLAN_SLUGS.filter(plan => parseBoolValue(valueForPlan(row, plan)))
-    matrix[row.key] = grantedPlans
+    matrix[row.key] = {
+      plans: PLAN_SLUGS.filter(plan => parseBoolValue(valueForPlan(row, plan))),
+      requires_ee: parseBoolValue(row.requires_ee),
+      roadmap: parseBoolValue(row.roadmap ?? 'false'),
+    }
   }
   return matrix
 })()
@@ -132,17 +165,29 @@ export const FEATURE_MATRIX: Record<string, StudioPlan[]> = (() => {
  * Numeric plan limits per plan. Derived from plan-features rows with
  * `type: 'limit'`. `"unlimited"` in content becomes `Infinity`.
  *
- * Free is zero across the board except `team.members` (the owner seat).
+ * `requires_ee` for a limit means: in Community Edition, callers
+ * should treat the limit as 0 regardless of the community_value
+ * (because the underlying feature cannot function without the bridge).
+ * `getPlanLimit` applies this gate when an edition is supplied.
  */
-export const PLAN_LIMITS: Record<string, Record<StudioPlan, number>> = (() => {
-  const limits: Record<string, Record<StudioPlan, number>> = {}
+export interface LimitMatrixEntry {
+  values: Record<StudioPlan, number>
+  requires_ee: boolean
+}
+
+export const PLAN_LIMITS: Record<string, LimitMatrixEntry> = (() => {
+  const limits: Record<string, LimitMatrixEntry> = {}
   for (const row of Object.values(planFeatures)) {
     if (row.type !== 'limit') continue
     limits[row.key] = {
-      free: parseLimitValue(row.free_value),
-      starter: parseLimitValue(row.starter_value),
-      pro: parseLimitValue(row.pro_value),
-      enterprise: parseLimitValue(row.enterprise_value),
+      values: {
+        community: parseLimitValue(row.community_value),
+        free: parseLimitValue(row.free_value),
+        starter: parseLimitValue(row.starter_value),
+        pro: parseLimitValue(row.pro_value),
+        enterprise: parseLimitValue(row.enterprise_value),
+      },
+      requires_ee: parseBoolValue(row.requires_ee),
     }
   }
   return limits
@@ -199,12 +244,45 @@ export function normalizePlan(plan: StudioPlan | string | null | undefined): Stu
   return 'free'
 }
 
-export function hasFeatureForPlan(plan: StudioPlan | string | null | undefined, feature: string): boolean {
-  return FEATURE_MATRIX[feature]?.includes(normalizePlan(plan)) ?? false
+export interface HasFeatureOptions {
+  /**
+   * Runtime edition. Defaults to `'ee'` for backward compatibility with
+   * existing call sites in the managed service. Community Edition code
+   * paths must pass `'agpl'` so that `requires_ee` features are
+   * force-disabled.
+   */
+  edition?: Edition
 }
 
-export function getPlanLimitForPlan(plan: StudioPlan | string | null | undefined, limit: string): number {
-  return PLAN_LIMITS[limit]?.[normalizePlan(plan)] ?? 0
+/**
+ * Returns true when the given plan tier grants the given feature AND
+ * the edition supports it.
+ *
+ * Gating rule: `plans.includes(plan) AND (!requires_ee OR edition === 'ee')`.
+ * Roadmap features are still reported as "granted" so UI can render
+ * their "Coming Soon" state; enforcement call sites should cross-check
+ * the `roadmap` flag via `FEATURE_MATRIX[key].roadmap`.
+ */
+export function hasFeatureForPlan(
+  plan: StudioPlan | string | null | undefined,
+  feature: string,
+  options: HasFeatureOptions = {},
+): boolean {
+  const entry = FEATURE_MATRIX[feature]
+  if (!entry) return false
+  if (entry.requires_ee && options.edition === 'agpl') return false
+  return entry.plans.includes(normalizePlan(plan))
+}
+
+export function getPlanLimitForPlan(
+  plan: StudioPlan | string | null | undefined,
+  limit: string,
+  options: HasFeatureOptions = {},
+): number {
+  const entry = PLAN_LIMITS[limit]
+  if (!entry) return 0
+  if (entry.requires_ee && options.edition === 'agpl') return 0
+  return entry.values[normalizePlan(plan)] ?? 0
 }
 
 // ─── UI helpers (unchanged) ───
@@ -233,7 +311,7 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
   const pricing = PLAN_PRICING[p]
 
   function limit(key: string): number {
-    return PLAN_LIMITS[key]?.[p] ?? 0
+    return PLAN_LIMITS[key]?.values[p] ?? 0
   }
 
   function limitOrUnlimited(key: string): string | number {
@@ -264,10 +342,14 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
 
 /**
  * Get the next plan tier for upgrade suggestions.
- * free → starter, starter → pro, pro → enterprise, enterprise → enterprise.
+ * community → starter, free → starter, starter → pro, pro → enterprise,
+ * enterprise → enterprise. Community is treated as pre-free for upgrade
+ * suggestions even though it is edition-specific; the managed upgrade
+ * path is a separate conversation from edition switching.
  */
 export function getNextPlan(plan: StudioPlan | string | null | undefined): StudioPlan {
   const p = normalizePlan(plan)
+  if (p === 'community') return 'starter'
   if (p === 'free') return 'starter'
   if (p === 'starter') return 'pro'
   if (p === 'pro') return 'enterprise'

@@ -1,0 +1,91 @@
+Contentrain Studio — AGPL-3.0 Additional Terms
+Copyright (c) 2026 Contentrain, LLC.
+
+The Contentrain Studio AGPL-3.0 core (every file EXCEPT those in the
+`ee/` directory) is distributed under the GNU Affero General Public
+License, version 3 (see the root LICENSE file). The following
+additional terms are published under AGPL-3.0 §7 and apply to the
+core only.
+
+The Enterprise Edition (`ee/` directory) is NOT covered by these
+terms; the Enterprise Edition is governed exclusively by ee/LICENSE.
+
+-------------------------------------------------------------------------
+§7(c) — ATTRIBUTION REQUIREMENT
+-------------------------------------------------------------------------
+
+If you convey the AGPL-3.0 core, whether modified or unmodified, or
+make it available to the public over a network (AGPL-3.0 §13), you
+must preserve the following:
+
+ (a) the copyright notice "Copyright (c) 2026 Contentrain, LLC.";
+ (b) a visible link or reference to the Corresponding Source as
+     required by AGPL-3.0 §13, reachable by all interacting users
+     (for example, in the application footer, an /about page, or an
+     equivalent location accessible without authentication);
+ (c) the following notice, reproduced verbatim, in user-facing
+     "About" or equivalent metadata:
+
+     "Powered by Contentrain Studio — https://github.com/Contentrain/studio"
+
+The attribution notice may appear as plain text or as a link using
+the Licensor's name. The Licensor grants no trademark or logo use
+beyond this attribution line.
+
+-------------------------------------------------------------------------
+§7(e) — NO TRADEMARK LICENSE
+-------------------------------------------------------------------------
+
+Per AGPL-3.0 §7(e), the names "Contentrain", "Contentrain Studio",
+"Contentrain Cloud", and all associated logos and icons are
+trademarks of Contentrain, LLC. This License grants no right to use
+any of these trademarks, except:
+
+ (a) as required for the attribution notice in §7(c) above;
+ (b) as reasonably necessary to describe the origin of the software
+     in documentation, changelogs, or commit messages, in a manner
+     that does not suggest endorsement or affiliation by the
+     Licensor.
+
+Any redistributed, modified, or rebranded build of the AGPL-3.0 core
+that is offered as a product or service must use a distinct product
+name and branding that is not confusingly similar to "Contentrain" or
+"Contentrain Studio".
+
+-------------------------------------------------------------------------
+§7 — COMMERCIAL USE NOTICE (informational)
+-------------------------------------------------------------------------
+
+This section is informational and imposes no additional obligation
+beyond AGPL-3.0 and the terms above.
+
+The AGPL-3.0 permits commercial use, including hosting the core as a
+paid service to third parties, provided that AGPL-3.0 §13
+obligations (source disclosure to network users) are met and the
+terms above are respected.
+
+For commercial hosting providers, managed-service operators,
+white-label resellers, OEM integrators, and similar commercial
+offerings, the Licensor also provides commercial agreements that may
+include:
+
+ - Enterprise Edition (ee/) rights under ee/LICENSE;
+ - official support, SLA, and security response;
+ - trademark and co-marketing rights;
+ - indemnification for patent and copyright claims.
+
+Contact commercial@contentrain.io or licensing@contentrain.io for
+details.
+
+-------------------------------------------------------------------------
+RELATIONSHIP TO AGPL-3.0
+-------------------------------------------------------------------------
+
+Per AGPL-3.0 §7, the additional terms in this document may be
+removed by any recipient of the core only to the extent AGPL-3.0 §7
+permits. The attribution (§7(c)) and no-trademark (§7(e)) terms are
+expressly permitted by AGPL-3.0 §7 and therefore cannot be stripped
+by downstream recipients.
+
+No other restrictions beyond those expressly permitted by AGPL-3.0
+§7(a)–(f) are imposed on the AGPL-3.0 core by this document.

@@ -1,17 +1,27 @@
 /**
  * Billing enforcement middleware.
  *
- * Resolves workspace billing state on workspace-scoped API routes.
- * Attaches billing context to event.context.billing for downstream use.
- * Returns 402 for locked states (trial_expired, grace_expired, canceled_expired).
+ * Resolves workspace billing state on workspace-scoped API routes and
+ * attaches `event.context.billing` for downstream use. Returns 402 for
+ * locked states (trial_expired, grace_expired, canceled_expired).
  *
- * Self-hosted bypass: if no payment provider is configured, treats all
- * workspaces as subscribed with starter-level access (core features only).
+ * Behavior depends on the deployment profile:
+ *
+ *   managed     → full subscription state machine, 402 on locked states
+ *   dedicated   → same as managed when billing=polar/stripe; treated as
+ *                 on-premise when billing=flat/off
+ *   on-premise  → no subscription checks; effectivePlan comes from
+ *                 workspace.plan (operator-set) with defaultPlan
+ *                 fallback. Never locks.
+ *   community   → effectivePlan fixed to `community`. Never locks.
+ *                 ee/ features are gated separately via `requires_ee`
+ *                 in hasFeature().
  */
 
 import { getEffectivePlan, isBillingLocked, resolveBillingState, WORKSPACE_BILLING_SELECT_FIELDS } from '../utils/billing'
 import type { PaymentAccountState, WorkspaceBillingRow } from '../utils/billing'
-import { isBillingConfigured } from '../utils/license'
+import { getWorkspacePlan } from '../utils/license'
+import { resolveDeployment } from '../utils/deployment'
 
 const WORKSPACE_ROUTE_PREFIX = '/api/workspaces/'
 
@@ -41,12 +51,21 @@ export default defineEventHandler(async (event) => {
   if (!event.context.auth)
     return
 
-  // Self-hosted bypass: no payment provider = starter-level access.
-  // Core features work (Git, projects, chat, media). Premium features
-  // (preview branches, custom variants, spam filter) stay gated.
-  // ee/ features still require the enterprise bridge to be loaded.
-  if (!isBillingConfigured()) {
-    event.context.billing = { state: 'subscribed' as const, effectivePlan: 'starter' as const }
+  const deployment = resolveDeployment()
+
+  // Profiles without a subscription state machine: plan comes from the
+  // workspace row (or fixed tier), no 402 ever thrown here.
+  if (deployment.planSource !== 'subscription') {
+    const db = useDatabaseProvider()
+    const workspace = await db.getWorkspaceById(workspaceId, 'type,plan,overage_settings')
+    if (!workspace) return
+
+    const effectivePlan = getWorkspacePlan({ plan: (workspace.plan as string | null) ?? null })
+    event.context.billing = {
+      state: 'subscribed' as const,
+      effectivePlan,
+      overageSettings: (workspace.overage_settings as Record<string, boolean> | null | undefined) ?? {},
+    }
     return
   }
 

@@ -18,6 +18,15 @@ const marketing = singleton('auth-marketing').locale('en').get()
           <slot />
         </div>
       </div>
+      <!-- AGPL §13 attribution + source offer (LICENSE-EXCEPTIONS §7(c)) -->
+      <div class="mt-6 text-center text-xs text-muted">
+        <NuxtLink
+          to="/about"
+          class="rounded underline underline-offset-2 transition-colors hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+        >
+          About &amp; Source
+        </NuxtLink>
+      </div>
     </div>
 
     <!-- Right: Marketing visual — sticky so it never causes page scroll -->
