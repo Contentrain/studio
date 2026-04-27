@@ -55,13 +55,15 @@ export default defineNuxtConfig({
       billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override
       templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER
       deployment: {
-        // NUXT_PUBLIC_DEPLOYMENT_PROFILE — client-visible mirror of the
-        // resolved deployment profile. Populated at boot by the billing-flag
-        // Nitro plugin; do not set this via env directly (use
-        // NUXT_DEPLOYMENT_PROFILE on the server instead).
-        profile: '', // 'managed' | 'dedicated' | 'on-premise' | 'community' | ''
-        edition: '', // 'ee' | 'agpl' | ''
-        billingMode: '', // 'polar' | 'stripe' | 'flat' | 'off' | ''
+        // Client-visible deployment snapshot. In dev, `server/plugins/
+        // 00.billing-flag.ts` mutates this at boot from the auto-detected
+        // server-side `resolveDeployment()`. In production builds the
+        // public runtime config may be frozen, so operators should set
+        // the values explicitly via the corresponding env vars (Nuxt
+        // automatically maps NUXT_PUBLIC_DEPLOYMENT_<KEY> to public.deployment.<key>).
+        profile: '', // NUXT_PUBLIC_DEPLOYMENT_PROFILE — managed | dedicated | on-premise | community
+        edition: '', // NUXT_PUBLIC_DEPLOYMENT_EDITION — ee | agpl
+        billingMode: '', // NUXT_PUBLIC_DEPLOYMENT_BILLING_MODE — polar | stripe | flat | off
       },
     },
     deploymentProfile: '', // NUXT_DEPLOYMENT_PROFILE — 'managed' | 'dedicated' | 'on-premise' | 'community' (unset = auto-detect)
