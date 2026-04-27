@@ -77,7 +77,7 @@ The deployment profile is set by the `NUXT_DEPLOYMENT_PROFILE` environment varia
 ## License enforcement (runtime)
 
 - **Managed Service:** subscription state flows from the active payment provider (Polar by default) into `payment_accounts`, then into `workspaces.plan`. Feature access is checked via `hasFeature(plan, 'feature.name', { edition })`.
-- **On-Premises Deployment:** plan is set by the operator on `workspaces.plan` (or fixed by `NUXT_DEPLOYMENT_PROFILE=dedicated|on-premise`). Offline license key mechanism pending — [LAWYER REVIEW: offline key format + renewal policy].
+- **On-Premises Deployment:** plan is set by the operator on `workspaces.plan` (or fixed by `NUXT_DEPLOYMENT_PROFILE=dedicated|on-premise`). Offline license-key enforcement (signed JWT + expiration + grace period for air-gapped deployments) is a roadmap item for a later Enterprise Edition release — see `ROADMAP.md`. v1.0 deployments rely on the executed order form + audit rights in `ee/LICENSE` §6.2 as the enforcement mechanism.
 - **Community Edition:** plan is fixed to `community` and `requires_ee` features are force-disabled at `hasFeature()`.
 
 ## Commercial contact

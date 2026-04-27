@@ -74,7 +74,7 @@ NUXT_DEPLOYMENT_PROFILE=on-premise
 - `ee/` must be present — licensed separately via `ee/LICENSE` §2.2.
 - Authorized Users and Instance count per the executed order form.
 - Webhooks disabled; usage metering outbox drains locally as a no-op.
-- License key enforcement (offline) — [LAWYER REVIEW: offline key policy].
+- License-key enforcement (offline signed JWT + grace period) is a roadmap item for a future Enterprise Edition release; v1.0 deployments rely on the executed order form + `ee/LICENSE` §6.2 audit rights.
 
 ### Scenario 3 — Managed dedicated (single tenant hosted by Contentrain)
 
@@ -151,7 +151,7 @@ NUXT_DEPLOYMENT_PROFILE=on-premise
 # - GitHub App can be replaced by a GitHub Enterprise Server instance
 ```
 
-- License key must support offline validation with grace period — [LAWYER REVIEW: offline policy].
+- Air-gapped deployments rely on the executed order form's stated term + the `ee/LICENSE` §6.2 audit mechanism. Offline license-key signing (JWT + grace period) is a roadmap item — see `ROADMAP.md`.
 - Usage metering outbox accumulates rows but never drains (no outbound webhooks).
 - Auto-update cadence is manual — customer pins to a specific release tag and upgrades on their schedule.
 
