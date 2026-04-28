@@ -73,7 +73,7 @@
     "vue-router": "^5.0.4"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.5.0",
+    "@commitlint/cli": "^20.5.2",
     "@commitlint/config-conventional": "^20.5.0",
     "@iconify/tailwind4": "^1.2.3",
     "@nuxt/test-utils": "^4.0.2",
@@ -82,7 +82,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "@vue/test-utils": "^2.4.6",
     "changelogen": "^0.6.2",
-    "eslint": "^10.2.0",
+    "eslint": "^10.2.1",
     "fake-indexeddb": "^6.2.5",
     "h3": "^1.15.8",
     "happy-dom": "^20.9.0",
