@@ -218,10 +218,34 @@ async function loadEnterpriseBridge(): Promise<EnterpriseBridge | null> {
   if (!state[ENTERPRISE_BRIDGE_PROMISE_KEY]) {
     state[ENTERPRISE_BRIDGE_PROMISE_KEY] = import('../../ee/enterprise')
       .then((mod) => {
-        if (typeof mod.createEnterpriseBridge !== 'function') return null
-        return mod.createEnterpriseBridge()
+        if (typeof mod.createEnterpriseBridge !== 'function') {
+          // eslint-disable-next-line no-console
+          console.warn('[ee] Enterprise module loaded but createEnterpriseBridge() export is missing.')
+          return null
+        }
+        try {
+          const bridge = mod.createEnterpriseBridge()
+          // eslint-disable-next-line no-console
+          console.info('[ee] Enterprise bridge loaded successfully.')
+          return bridge
+        }
+        catch (err) {
+          // Surface factory errors instead of silently downgrading.
+          // eslint-disable-next-line no-console
+          console.error('[ee] createEnterpriseBridge() threw at construction time:', err instanceof Error ? `${err.name}: ${err.message}` : err)
+          return null
+        }
       })
-      .catch(() => null)
+      .catch((err) => {
+        // Real cause for "bridge did not load" surfaces here. Without
+        // this log we'd silently fall back to community in production
+        // and never know whether ee/ is missing, the bundle path is
+        // wrong, or a top-level import (e.g. native sharp binary) is
+        // failing on the deployment platform.
+        // eslint-disable-next-line no-console
+        console.error('[ee] Failed to import ee/enterprise:', err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : err)
+        return null
+      })
   }
 
   state[ENTERPRISE_BRIDGE_KEY] = await state[ENTERPRISE_BRIDGE_PROMISE_KEY]
