@@ -29,7 +29,7 @@
  */
 
 import { isBillingConfigured } from './license'
-import { getLoadedEnterpriseBridge } from './enterprise'
+import { getLoadedEnterpriseBridge, isEnterpriseBridgeSettled } from './enterprise'
 import type { Edition, StudioPlan } from '../../shared/utils/license'
 
 export type DeploymentProfile = 'managed' | 'dedicated' | 'on-premise' | 'community'
@@ -133,18 +133,31 @@ export function resolveDeployment(): DeploymentState {
   const billingMode = detectBillingMode()
   const explicit = readExplicitProfile()
   const profile = explicit ?? autoDetectProfile(edition, billingMode)
+  const settled = isEnterpriseBridgeSettled()
 
   // Validate explicit profile against edition — an operator asking for
   // `managed` without ee/ is a misconfiguration.
+  //
+  // Before the bridge promise settles, `edition === 'agpl'` is a
+  // transient reading (the dynamic `import('ee/enterprise')` may still
+  // be in flight). Returning a community shape is the right failsafe,
+  // but we must NOT latch `_cached` or emit the warning until the
+  // bridge has settled — otherwise a pre-boot caller would freeze the
+  // state to community for the process lifetime even though ee/ is
+  // about to load successfully.
   if (explicit && explicit !== 'community' && edition === 'agpl') {
+    if (!settled) {
+      return profileToState('community', edition, billingMode)
+    }
     // eslint-disable-next-line no-console
     console.warn(`[deployment] NUXT_DEPLOYMENT_PROFILE="${explicit}" requires the Enterprise Edition (ee/) but the enterprise bridge did not load; falling back to 'community'.`)
     _cached = profileToState('community', edition, billingMode)
     return _cached
   }
 
-  _cached = profileToState(profile, edition, billingMode)
-  return _cached
+  const state = profileToState(profile, edition, billingMode)
+  if (settled) _cached = state
+  return state
 }
 
 /** Test helper — clear the cached state. */

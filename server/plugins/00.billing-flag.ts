@@ -3,13 +3,24 @@
  * to the client via `runtimeConfig.public.deployment` and derives the
  * legacy `runtimeConfig.public.billingEnabled` boolean.
  *
- * Runs before other plugins (`00.` prefix) and before
- * `01.init-ee.ts`. The enterprise bridge is loaded after this plugin,
- * so the first call to `resolveDeployment()` sees `edition='agpl'`
- * even in Enterprise-configured deployments. That is why the plugin
- * also resets the deployment cache and re-resolves at the end of boot
- * via a microtask — by then `01.init-ee.ts` has awaited the dynamic
- * import and the bridge is registered.
+ * Boot ordering:
+ *   1. `await initEnterpriseBridge()` — wait for the dynamic
+ *      `import('ee/enterprise')` to settle (resolved bridge or proven
+ *       absent for Community Edition).
+ *   2. `applyDeploymentSnapshot()` — write `runtimeConfig.public.deployment`
+ *      once, after `resolveDeployment()` can see a settled edition.
+ *
+ * Why this matters: `resolveDeployment()` reads the bridge state
+ * synchronously via `getLoadedEnterpriseBridge()`. Calling it before
+ * the import has settled would return a transient `edition: 'agpl'`
+ * reading — and prior to the settle-aware cache rule in
+ * `server/utils/deployment.ts`, it used to latch that reading into
+ * `_cached` for the process lifetime, breaking every EE feature gate.
+ *
+ * `01.init-ee.ts` also awaits the bridge; this plugin awaiting it again
+ * is a cheap no-op (the promise is memoized in the enterprise globals)
+ * and removes the dependency on plugin filename ordering for the
+ * snapshot's correctness.
  *
  * Override paths (in priority order):
  *   1. `NUXT_PUBLIC_DEPLOYMENT_PROFILE` / `_EDITION` / `_BILLING_MODE`
@@ -29,7 +40,8 @@
  * works without operator intervention.
  */
 
-import { __resetDeploymentCache, resolveDeployment } from '../utils/deployment'
+import { initEnterpriseBridge } from '../utils/enterprise'
+import { resolveDeployment } from '../utils/deployment'
 
 let mutationFailedWarned = false
 
@@ -71,16 +83,11 @@ function applyDeploymentSnapshot(): void {
   }
 }
 
-export default defineNitroPlugin(() => {
-  // First pass — runs before the ee bridge loads, so edition may read
-  // as 'agpl' even when `ee/` is about to be imported.
+export default defineNitroPlugin(async () => {
+  // Wait for the EE bridge import to settle before resolving the
+  // deployment state. This guarantees `resolveDeployment()` sees the
+  // correct `edition` on first call instead of the transient `agpl`
+  // reading the dynamic import would yield mid-flight.
+  await initEnterpriseBridge()
   applyDeploymentSnapshot()
-
-  // Second pass — after the ee init plugin has had a chance to load
-  // the bridge. We re-resolve with a cleared cache so the edition is
-  // accurate for the rest of the process lifetime.
-  queueMicrotask(() => {
-    __resetDeploymentCache()
-    applyDeploymentSnapshot()
-  })
 })

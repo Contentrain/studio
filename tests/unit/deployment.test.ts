@@ -183,4 +183,56 @@ describe('resolveDeployment', () => {
       expect(second.edition).toBe('ee')
     })
   })
+
+  describe('cache settlement (race-condition regression)', () => {
+    // These tests guard against the boot-order race where
+    // `resolveDeployment()` was called before the dynamic
+    // `import('ee/enterprise')` had settled — locking `_cached` to
+    // 'community' for the rest of the process lifetime even though the
+    // bridge would resolve successfully a moment later.
+
+    it('does not latch _cached when bridge is not yet settled', () => {
+      // Pre-settle state: bridge global is `undefined` (the dynamic
+      // import has not resolved yet, neither to a bridge nor to null).
+      setEnterpriseBridgeForTesting(undefined)
+      mockRuntime({})
+      process.env.NUXT_DEPLOYMENT_PROFILE = 'managed'
+
+      const first = resolveDeployment()
+      expect(first.profile).toBe('community')
+      expect(first.edition).toBe('agpl')
+
+      // Bridge settles to an ee instance (the production scenario).
+      setEnterpriseBridgeForTesting(FAKE_BRIDGE)
+
+      // Next call must reflect ee/managed, NOT the latched community.
+      const second = resolveDeployment()
+      expect(second.profile).toBe('managed')
+      expect(second.edition).toBe('ee')
+
+      // Now that the bridge has settled, the result is cached.
+      const third = resolveDeployment()
+      expect(third).toBe(second)
+    })
+
+    it('does not emit the misconfig warning before bridge settles', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      setEnterpriseBridgeForTesting(undefined)
+      mockRuntime({})
+      process.env.NUXT_DEPLOYMENT_PROFILE = 'managed'
+
+      // Pre-settle: silent (transient agpl reading is not a misconfig).
+      resolveDeployment()
+      expect(warn).not.toHaveBeenCalled()
+
+      // Settle to null — genuine Community Edition misconfiguration
+      // (operator asked for `managed` but ee/ is absent).
+      setEnterpriseBridgeForTesting(null)
+      resolveDeployment()
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0]?.[0]).toMatch(/did not load/)
+
+      warn.mockRestore()
+    })
+  })
 })
