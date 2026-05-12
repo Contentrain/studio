@@ -58,8 +58,9 @@ watch(open, (isOpen) => {
 })
 
 function installGitHubApp() {
+  if (!activeWorkspace.value) return
   window.open(
-    getGitHubAppInstallUrl(),
+    getGitHubAppInstallUrl(activeWorkspace.value.id),
     '_blank',
     'noopener,noreferrer',
   )
