@@ -103,6 +103,17 @@ export function getLoadedEnterpriseBridge(): EnterpriseBridge | null {
   return enterpriseGlobals()[ENTERPRISE_BRIDGE_KEY] ?? null
 }
 
+/**
+ * True once the dynamic `import('ee/enterprise')` promise has settled —
+ * either resolved to a bridge instance, or proven to be `null` (ee/
+ * absent / import failed in Community Edition). Callers that read the
+ * bridge synchronously (e.g. `resolveDeployment`) use this to avoid
+ * caching a transient `null` reading made before the import has resolved.
+ */
+export function isEnterpriseBridgeSettled(): boolean {
+  return enterpriseGlobals()[ENTERPRISE_BRIDGE_KEY] !== undefined
+}
+
 export async function runEnterpriseRoute<T>(
   handlerName: EnterpriseRouteName,
   featureMessageKey: string,
