@@ -113,9 +113,15 @@ export function useWorkspaces() {
     return workspace
   }
 
-  async function deleteWorkspace(workspaceId: string): Promise<boolean> {
+  async function deleteWorkspace(
+    workspaceId: string,
+    options?: { uninstallGithubApp?: boolean, cancelSubscription?: boolean },
+  ): Promise<boolean> {
     try {
-      await $fetch(`/api/workspaces/${workspaceId}`, { method: 'DELETE' })
+      await $fetch(`/api/workspaces/${workspaceId}`, {
+        method: 'DELETE',
+        body: options ?? undefined,
+      })
       workspaces.value = workspaces.value.filter(w => w.id !== workspaceId)
       // Reset active workspace to primary or first available
       if (activeWorkspaceId.value === workspaceId) {

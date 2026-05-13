@@ -88,6 +88,11 @@ watch(open, (isOpen) => {
               autocomplete="off"
             />
           </div>
+
+          <!-- Optional caller-supplied extras (additional options / toggles) -->
+          <div v-if="$slots.extra" class="mt-4">
+            <slot name="extra" />
+          </div>
         </div>
 
         <!-- Footer -->

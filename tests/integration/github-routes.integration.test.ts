@@ -6,16 +6,26 @@ const providerState = vi.hoisted(() => ({
     getWorkspaceForUser: vi.fn(),
     findWorkspaceByGithubInstallation: vi.fn(),
     updateWorkspaceGithubInstallation: vi.fn(),
+    getOAuthProviderToken: vi.fn(),
+  },
+  authProvider: {
+    refreshProviderToken: vi.fn(),
   },
   gitAppProvider: {
     listInstallationRepositories: vi.fn(),
+  },
+  gitAppService: {
+    listInstallationsForUser: vi.fn(),
+    verifyUserHasAccessToInstallation: vi.fn(),
   },
   gitProviderFactory: vi.fn(),
 }))
 
 vi.mock('../../server/utils/providers', () => ({
   useDatabaseProvider: vi.fn(() => providerState.databaseProvider),
+  useAuthProvider: vi.fn(() => providerState.authProvider),
   useGitAppProvider: vi.fn(() => providerState.gitAppProvider),
+  useGitAppService: vi.fn(() => providerState.gitAppService),
   useGitProvider: providerState.gitProviderFactory,
 }))
 
@@ -33,10 +43,28 @@ async function loadScanHandler() {
 
 describe('GitHub route integration', () => {
   beforeEach(() => {
+    // The `vi.mock` above routes named imports inside setup.get / repos /
+    // scan to the providerState. But `server/utils/github-token.ts` (used
+    // by setup.get for the ownership-verification branch) consumes
+    // `useDatabaseProvider` and `useAuthProvider` via Nuxt auto-import,
+    // not via named import — auto-import bypasses module mocks. We mirror
+    // the mocks onto the global namespace so the helper sees the same
+    // providerState the named imports do.
+    vi.stubGlobal('useDatabaseProvider', () => providerState.databaseProvider)
+    vi.stubGlobal('useAuthProvider', () => providerState.authProvider)
+
     providerState.databaseProvider.getWorkspaceForUser.mockReset()
     providerState.databaseProvider.findWorkspaceByGithubInstallation.mockReset()
     providerState.databaseProvider.updateWorkspaceGithubInstallation.mockReset()
+    providerState.databaseProvider.getOAuthProviderToken.mockReset()
+    // Default: no stored GitHub user token. setup.get.ts treats this as
+    // "skip ownership verification" (Google sign-in / magic-link path);
+    // tests that exercise the ownership-verify branch override per-case.
+    providerState.databaseProvider.getOAuthProviderToken.mockResolvedValue(null)
+    providerState.authProvider.refreshProviderToken.mockReset()
     providerState.gitAppProvider.listInstallationRepositories.mockReset()
+    providerState.gitAppService.listInstallationsForUser.mockReset()
+    providerState.gitAppService.verifyUserHasAccessToInstallation.mockReset()
     providerState.gitProviderFactory.mockReset()
   })
 

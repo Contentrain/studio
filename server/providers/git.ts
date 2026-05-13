@@ -108,6 +108,62 @@ export interface GitAppProvider {
   listInstallationRepositories: () => Promise<InstallationRepository[]>
   createRepositoryFromTemplate: (input: TemplateRepositoryInput) => Promise<InstallationRepository>
   canAccessRepository: (owner: string, repo: string) => Promise<boolean>
+  /**
+   * Revoke (uninstall) the GitHub App from the account/org this
+   * installation is bound to. Auth context: App JWT (not the
+   * installation token). Returns true on success, false if GitHub
+   * returned 404 (installation already gone — idempotent success).
+   * Other errors propagate so callers can decide whether to swallow.
+   */
+  revokeInstallation: () => Promise<boolean>
+}
+
+/**
+ * Summary of a GitHub App installation as seen from a user's
+ * perspective (via `GET /user/installations`). Note this is a
+ * different shape from `InstallationDetails` (which is the App-JWT
+ * view of a single installation) — the user-scoped listing returns
+ * less metadata and includes `app_id` so the caller can filter to
+ * the Studio App's installations only.
+ */
+export interface UserInstallationSummary {
+  id: number
+  appId: number
+  account: InstallationAccount
+  repositorySelection: 'all' | 'selected' | null
+  targetType: 'User' | 'Organization' | string | null
+}
+
+/**
+ * App-level GitHub operations that are NOT scoped to a single
+ * installation. Uses an App JWT for App-administration calls and the
+ * user's OAuth access token for user-scoped calls — neither requires
+ * an installation_id at construction time, so this is intentionally
+ * separated from `GitAppProvider` (which is installation-scoped).
+ */
+export interface GitAppService {
+  /**
+   * Enumerate installations the authenticated user can see.
+   * `userAccessToken` is the GitHub user-to-server OAuth token (`gho_*`
+   * for legacy OAuth Apps, `ghu_*` for GitHub Apps with expiring
+   * user tokens). Result is filtered to the configured Studio App ID.
+   */
+  listInstallationsForUser: (userAccessToken: string) => Promise<UserInstallationSummary[]>
+
+  /**
+   * Verify that the authenticated user has access to a specific
+   * installation. Returns true when GitHub returns 200 on
+   * `GET /user/installations/{id}/repositories?per_page=1`, false on
+   * 404. Used at attach time to prevent installation_id parameter
+   * spoofing (a user could otherwise attach an installation they
+   * have no GitHub-side access to, modulo the in-app 409 collision
+   * check). Pattern adapted from PostHog's
+   * `verify_user_installation_access` (MIT-licensed).
+   */
+  verifyUserHasAccessToInstallation: (
+    userAccessToken: string,
+    installationId: number,
+  ) => Promise<boolean>
 }
 
 // ─── GitProvider: RepoProvider + Studio extensions ───

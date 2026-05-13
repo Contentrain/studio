@@ -117,14 +117,108 @@ export default defineEventHandler(async (event) => {
     const action = body.action as string
     const installationId = (body.installation as { id?: number })?.id
 
-    if (action === 'deleted' && installationId) {
-      // Clear installation from workspaces
-      await db.clearWorkspaceGithubInstallation(installationId)
+    if (!installationId)
+      return { ok: true, event: 'installation', action }
 
+    if (action === 'deleted') {
+      // Clear installation from workspaces (also flips status to 'unbound').
+      await db.clearWorkspaceGithubInstallation(installationId)
       return { ok: true, event: 'installation', action: 'deleted' }
     }
 
+    if (action === 'suspend') {
+      // User suspended the App from GitHub settings — installation token
+      // calls will start failing with 403 until unsuspended. Mark workspaces
+      // accordingly so the UI can render a banner ("GitHub App suspended,
+      // reactivate to continue") instead of showing surprise 5xx errors.
+      await db.updateWorkspaceInstallationStatus({ installationId }, 'suspended')
+      return { ok: true, event: 'installation', action: 'suspend' }
+    }
+
+    if (action === 'unsuspend') {
+      await db.updateWorkspaceInstallationStatus({ installationId }, 'active')
+      return { ok: true, event: 'installation', action: 'unsuspend' }
+    }
+
+    if (action === 'created') {
+      // The setup callback writes installation_id + status='active' directly.
+      // The webhook arrives async and may race; defensively re-mark
+      // status='active' for any workspace already pointing at this id.
+      await db.updateWorkspaceInstallationStatus({ installationId }, 'active')
+      return { ok: true, event: 'installation', action: 'created' }
+    }
+
     return { ok: true, event: 'installation', action }
+  }
+
+  // Repo-level access changes within a single installation. Fired when
+  // the installation owner edits the App's "Repository access" setting
+  // (toggle "All repositories" ↔ "Only select repositories" or add/
+  // remove specific repos). Without this handling, a project bound to
+  // a now-revoked repo would silently 404 on every commit/branch call.
+  if (eventType === 'installation_repositories') {
+    const action = body.action as string
+    const installationId = (body.installation as { id?: number })?.id
+    if (!installationId)
+      return { ok: true, event: 'installation_repositories', action }
+
+    if (action === 'added') {
+      // Repos the installation can now access. If a project for one of
+      // these existed in a degraded state (previously flipped to
+      // 'inaccessible' by a prior `removed` event), restore it.
+      const repos = (body.repositories_added as Array<{ full_name?: string }> | undefined) ?? []
+      for (const repo of repos) {
+        if (repo.full_name)
+          await db.updateProjectAccessStatus({ installationId, repoFullName: repo.full_name }, 'accessible')
+      }
+      return { ok: true, event: 'installation_repositories', action: 'added', count: repos.length }
+    }
+
+    if (action === 'removed') {
+      const repos = (body.repositories_removed as Array<{ full_name?: string }> | undefined) ?? []
+      for (const repo of repos) {
+        if (repo.full_name)
+          await db.updateProjectAccessStatus({ installationId, repoFullName: repo.full_name }, 'inaccessible')
+      }
+      return { ok: true, event: 'installation_repositories', action: 'removed', count: repos.length }
+    }
+
+    return { ok: true, event: 'installation_repositories', action }
+  }
+
+  // Repo lifecycle on GitHub's side (independent of App installation).
+  // Fires for renames + deletes of any repo the App has access to.
+  // We don't need separate `installation_id` lookups because the event
+  // payload includes the installation context and the repo's full_name
+  // is sufficient to identify our project — but we still scope by
+  // installation_id to avoid cross-tenant collisions.
+  if (eventType === 'repository') {
+    const action = body.action as string
+    const installationId = (body.installation as { id?: number })?.id
+    if (!installationId)
+      return { ok: true, event: 'repository', action }
+
+    if (action === 'deleted') {
+      const repoFullName = (body.repository as { full_name?: string })?.full_name
+      if (repoFullName)
+        await db.updateProjectAccessStatus({ installationId, repoFullName }, 'deleted')
+      return { ok: true, event: 'repository', action: 'deleted' }
+    }
+
+    if (action === 'renamed') {
+      // GitHub's `repository.renamed` payload format:
+      //   { changes: { repository: { name: { from: '<old>' } } },
+      //     repository: { full_name: '<new>', owner: {...} } }
+      const newFullName = (body.repository as { full_name?: string })?.full_name
+      const ownerLogin = ((body.repository as { owner?: { login?: string } })?.owner)?.login
+      const oldName = ((body.changes as { repository?: { name?: { from?: string } } })?.repository?.name)?.from
+      const oldFullName = ownerLogin && oldName ? `${ownerLogin}/${oldName}` : null
+      if (newFullName && oldFullName)
+        await db.renameProjectRepo({ installationId, oldFullName }, newFullName)
+      return { ok: true, event: 'repository', action: 'renamed' }
+    }
+
+    return { ok: true, event: 'repository', action }
   }
 
   return { ok: true, event: eventType }

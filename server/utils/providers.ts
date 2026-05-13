@@ -1,7 +1,7 @@
 import type { AuthProvider } from '../providers/auth'
 import type { AIProvider } from '../providers/ai'
 import type { DatabaseProvider } from '../providers/database'
-import type { GitAppProvider, GitProvider } from '../providers/git'
+import type { GitAppProvider, GitAppService, GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import type { MediaProvider } from '../providers/media'
 import type { EmailProvider } from '../providers/email'
@@ -10,7 +10,7 @@ import { bootstrapPaymentPlugins, resolveDefaultPlugin } from '../providers/paym
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createSupabaseDatabaseProvider } from '../providers/supabase-db'
 import { createStudioGitProvider } from '../providers/git'
-import { createGitHubAppInstallationProvider } from '../providers/github-app'
+import { createGitAppService, createGitHubAppInstallationProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
 import { createResendEmailProvider } from '../providers/resend-email'
 import { getLoadedEnterpriseBridge } from './enterprise'
@@ -87,6 +87,32 @@ export function useGitAppProvider(installationId: number): GitAppProvider {
     privateKey,
     installationId,
   })
+}
+
+/**
+ * App-level GitHub service (not installation-scoped).
+ *
+ * Use this for operations that enumerate or verify installations
+ * against either an App JWT or a user's OAuth token — e.g. listing
+ * the installations a user can see (`GET /user/installations`),
+ * verifying user access before binding an installation
+ * (PostHog-style ownership check), or App-administration calls that
+ * don't fit a single installation scope.
+ *
+ * Per-installation operations (repo list, framework detect, revoke,
+ * repo create) still go through `useGitAppProvider(installationId)`.
+ */
+let _gitAppService: GitAppService | null = null
+export function useGitAppService(): GitAppService {
+  if (_gitAppService) return _gitAppService
+
+  const config = useRuntimeConfig()
+  const privateKey = Buffer.from(config.github.privateKey, 'base64').toString('utf-8')
+  _gitAppService = createGitAppService({
+    appId: config.github.appId,
+    privateKey,
+  })
+  return _gitAppService
 }
 
 /**

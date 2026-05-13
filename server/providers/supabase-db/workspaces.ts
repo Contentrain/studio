@@ -19,6 +19,7 @@ type WorkspaceMethods = Pick<
   | 'findWorkspaceByGithubInstallation'
   | 'updateWorkspaceGithubInstallation'
   | 'clearWorkspaceGithubInstallation'
+  | 'updateWorkspaceInstallationStatus'
   | 'deleteWorkspace'
   | 'incrementWorkspaceStorageBytes'
   | 'reserveStorageIfAllowed'
@@ -176,13 +177,27 @@ export function workspaceMethods(): WorkspaceMethods {
 
     async updateWorkspaceGithubInstallation(workspaceId, installationId) {
       const { error } = await getAdmin()
-        .from('workspaces').update({ github_installation_id: installationId }).eq('id', workspaceId)
+        .from('workspaces')
+        .update({ github_installation_id: installationId, github_installation_status: 'active' })
+        .eq('id', workspaceId)
       if (error) throw createError({ statusCode: 500, message: error.message })
     },
 
     async clearWorkspaceGithubInstallation(installationId) {
       const { error } = await getAdmin()
-        .from('workspaces').update({ github_installation_id: null }).eq('github_installation_id', installationId)
+        .from('workspaces')
+        .update({ github_installation_id: null, github_installation_status: 'unbound' })
+        .eq('github_installation_id', installationId)
+      if (error) throw createError({ statusCode: 500, message: error.message })
+    },
+
+    async updateWorkspaceInstallationStatus(target, status) {
+      const admin = getAdmin()
+      const update = admin.from('workspaces').update({ github_installation_status: status })
+      const query = 'workspaceId' in target
+        ? update.eq('id', target.workspaceId)
+        : update.eq('github_installation_id', target.installationId)
+      const { error } = await query
       if (error) throw createError({ statusCode: 500, message: error.message })
     },
 

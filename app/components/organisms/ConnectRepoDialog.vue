@@ -8,9 +8,25 @@ const toast = useToast()
 const open = defineModel<boolean>('open', { default: false })
 
 // State machine
-type DialogState = 'install' | 'select' | 'confirm'
+type DialogState = 'install' | 'connect-existing' | 'select' | 'confirm'
+
+interface AvailableInstallation {
+  id: number
+  account: {
+    login: string | null
+    avatarUrl: string | null
+    type: string | null
+  }
+  repositorySelection: 'all' | 'selected' | null
+  targetType: 'User' | 'Organization' | string | null
+  boundWorkspace: { id: string, name: string, slug: string } | null
+}
 
 const state = ref<DialogState>('install')
+const availableInstallations = ref<AvailableInstallation[]>([])
+const availableLoading = ref(false)
+const availableError = ref<'unauthorized' | 'generic' | null>(null)
+const connectingInstallation = ref<number | null>(null)
 const repos = ref<Array<{
   id: number
   fullName: string
@@ -42,6 +58,8 @@ watch(open, async (isOpen) => {
     selectedRepo.value = null
     scanResult.value = null
     searchQuery.value = ''
+    availableInstallations.value = []
+    availableError.value = null
     return
   }
 
@@ -157,6 +175,69 @@ function installGitHubApp() {
   )
 }
 
+async function openConnectExisting() {
+  if (!activeWorkspace.value) return
+  state.value = 'connect-existing'
+  availableLoading.value = true
+  availableError.value = null
+  availableInstallations.value = []
+
+  try {
+    const result = await $fetch<{ installations: AvailableInstallation[] }>(
+      '/api/github/installations/available',
+      { params: { workspaceId: activeWorkspace.value.id } },
+    )
+    availableInstallations.value = result.installations
+  }
+  catch (e: unknown) {
+    const status = (e as { statusCode?: number, data?: { data?: { code?: string } } }).statusCode
+    const code = (e as { data?: { data?: { code?: string } } }).data?.data?.code
+    if (status === 401 || code === 'GITHUB_REAUTH_REQUIRED') {
+      availableError.value = 'unauthorized'
+    }
+    else {
+      availableError.value = 'generic'
+    }
+  }
+  finally {
+    availableLoading.value = false
+  }
+}
+
+async function connectExistingInstallation(installation: AvailableInstallation) {
+  if (!activeWorkspace.value || installation.boundWorkspace) return
+  connectingInstallation.value = installation.id
+
+  try {
+    await $fetch('/api/github/installations/connect', {
+      method: 'POST',
+      body: {
+        workspaceId: activeWorkspace.value.id,
+        installationId: installation.id,
+      },
+    })
+
+    // Refresh workspace so github_installation_id is current, then load repos.
+    const { fetchWorkspaces } = useWorkspaces()
+    await fetchWorkspaces()
+    state.value = 'select'
+    await loadRepos()
+  }
+  catch (e: unknown) {
+    toast.error(resolveApiError(e, t('github.connect_existing_error')))
+  }
+  finally {
+    connectingInstallation.value = null
+  }
+}
+
+function reconnectGitHub() {
+  // Trigger Supabase GitHub OAuth flow; on return the OAuth callback
+  // captures and persists provider_token. After success, the user
+  // re-opens this dialog and the available list resolves.
+  window.location.href = `/api/auth/login?provider=github&redirect_to=${encodeURIComponent(window.location.pathname + window.location.search)}`
+}
+
 // Auto-detect GitHub App installation when user returns to tab
 const checkingInstall = ref(false)
 
@@ -240,10 +321,137 @@ onUnmounted(() => window.removeEventListener('focus', onWindowFocus))
           <p class="mt-4 text-xs text-muted">
             {{ t('github.install_hint') }}
           </p>
+
+          <!-- Or connect an existing installation -->
+          <div class="mx-auto mt-6 flex max-w-xs items-center gap-3">
+            <div class="h-px flex-1 bg-secondary-200 dark:bg-secondary-800" />
+            <span class="text-xs uppercase tracking-wider text-disabled">{{ t('common.or') }}</span>
+            <div class="h-px flex-1 bg-secondary-200 dark:bg-secondary-800" />
+          </div>
+          <button
+            type="button"
+            class="mt-4 inline-flex items-center gap-1.5 rounded text-sm text-primary-600 transition-colors hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-400 dark:hover:text-primary-300"
+            @click="openConnectExisting"
+          >
+            <span class="icon-[annon--link-1] size-3.5" aria-hidden="true" />
+            <span>{{ t('github.connect_existing_button') }}</span>
+          </button>
+          <p class="mt-2 text-xs text-muted">
+            {{ t('github.connect_existing_hint') }}
+          </p>
+
           <!-- Auto-checking indicator -->
           <div v-if="checkingInstall" class="mt-3 flex items-center justify-center gap-2 text-xs text-muted">
             <div class="size-3 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500" />
             <span>{{ t('common.loading') }}</span>
+          </div>
+        </div>
+
+        <!-- STATE: Connect existing installation -->
+        <div v-else-if="state === 'connect-existing'" class="flex max-h-[60vh] flex-col">
+          <!-- Header sub-row -->
+          <div class="flex items-center gap-3 border-b border-secondary-200 px-6 py-3 dark:border-secondary-800">
+            <button
+              type="button"
+              class="rounded p-1 text-muted transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+              @click="state = 'install'"
+            >
+              <span class="icon-[annon--arrow-left] block size-4" aria-hidden="true" />
+              <span class="sr-only">{{ t('common.back') }}</span>
+            </button>
+            <p class="text-sm font-medium text-heading dark:text-secondary-100">
+              {{ t('github.connect_existing_picker_title') }}
+            </p>
+          </div>
+
+          <!-- Body -->
+          <div class="flex-1 overflow-y-auto px-3 py-2">
+            <!-- Reauth required -->
+            <div v-if="availableError === 'unauthorized'" class="px-3 py-6">
+              <AtomsEmptyState
+                icon="icon-[annon--alert-circle]"
+                :title="t('github.user_token_missing_title')"
+                :description="t('github.user_token_missing')"
+              >
+                <template #action>
+                  <AtomsBaseButton size="sm" variant="primary" @click="reconnectGitHub">
+                    <template #prepend>
+                      <span class="icon-[annon--arrow-swap] size-3.5" aria-hidden="true" />
+                    </template>
+                    {{ t('github.reconnect_button') }}
+                  </AtomsBaseButton>
+                </template>
+              </AtomsEmptyState>
+            </div>
+
+            <!-- Generic error -->
+            <div v-else-if="availableError === 'generic'" class="px-3 py-6">
+              <AtomsEmptyState
+                icon="icon-[annon--alert-triangle]"
+                :title="t('github.connect_existing_error')"
+                :description="t('github.connect_existing_error_hint')"
+              />
+            </div>
+
+            <!-- Loading -->
+            <div v-else-if="availableLoading" class="space-y-2 px-3 py-2">
+              <AtomsSkeleton v-for="i in 3" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
+            </div>
+
+            <!-- Empty -->
+            <div v-else-if="availableInstallations.length === 0" class="px-3 py-6">
+              <AtomsEmptyState
+                icon="icon-[annon--search]"
+                :title="t('github.no_existing_installations')"
+                :description="t('github.no_existing_installations_hint')"
+              >
+                <template #action>
+                  <AtomsBaseButton size="sm" variant="primary" @click="installGitHubApp">
+                    <template #prepend>
+                      <span class="icon-[annon--external-link] size-3.5" aria-hidden="true" />
+                    </template>
+                    {{ t('github.install_button') }}
+                  </AtomsBaseButton>
+                </template>
+              </AtomsEmptyState>
+            </div>
+
+            <!-- List -->
+            <ul v-else class="space-y-1">
+              <li v-for="inst in availableInstallations" :key="inst.id">
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:hover:bg-secondary-900"
+                  :disabled="!!inst.boundWorkspace || connectingInstallation === inst.id"
+                  @click="connectExistingInstallation(inst)"
+                >
+                  <AtomsAvatar
+                    v-if="inst.account.avatarUrl"
+                    :src="inst.account.avatarUrl"
+                    :name="inst.account.login"
+                    size="sm"
+                  />
+                  <div v-else class="flex size-8 items-center justify-center rounded-full bg-secondary-100 dark:bg-secondary-800">
+                    <span class="icon-[annon--user] size-4 text-muted" aria-hidden="true" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate text-sm font-medium text-heading dark:text-secondary-100">
+                        {{ inst.account.login ?? '—' }}
+                      </span>
+                      <AtomsBadge :variant="inst.targetType === 'Organization' ? 'info' : 'secondary'" size="sm">
+                        {{ inst.targetType === 'Organization' ? t('settings.github_org') : t('settings.github_user') }}
+                      </AtomsBadge>
+                    </div>
+                    <div v-if="inst.boundWorkspace" class="mt-0.5 truncate text-xs text-muted">
+                      {{ t('github.installation_already_bound').replace('{workspace}', inst.boundWorkspace.name) }}
+                    </div>
+                  </div>
+                  <div v-if="connectingInstallation === inst.id" class="size-4 shrink-0 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500" />
+                  <span v-else-if="!inst.boundWorkspace" class="icon-[annon--chevron-right] size-4 shrink-0 text-muted" aria-hidden="true" />
+                </button>
+              </li>
+            </ul>
           </div>
         </div>
 

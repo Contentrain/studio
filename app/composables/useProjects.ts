@@ -6,6 +6,13 @@ interface Project {
   content_root: string
   detected_stack: string | null
   status: string
+  /**
+   * Repo-level access state on GitHub's side, separate from the setup-
+   * lifecycle `status` field above. Set by webhook handlers
+   * (`installation_repositories.removed` / `repository.deleted`) and
+   * reflected in the project page banner + sidebar badge.
+   */
+  access_status?: 'accessible' | 'inaccessible' | 'deleted'
   created_at: string
 }
 
