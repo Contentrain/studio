@@ -19,6 +19,8 @@ type ProjectMethods = Pick<
   | 'listWorkspaceProjectsByIds'
   | 'listUserAssignedProjects'
   | 'updateProjectContentTimestamp'
+  | 'updateProjectAccessStatus'
+  | 'renameProjectRepo'
   | 'listCDNEnabledProjects'
   | 'listAllActiveProjects'
   | 'listProjectMembers'
@@ -194,6 +196,48 @@ export function projectMethods(): ProjectMethods {
         .from('projects')
         .update({ content_updated_at: new Date().toISOString() })
         .eq('repo_full_name', repoFullName)
+    },
+
+    async updateProjectAccessStatus(target, status) {
+      const admin = getAdmin()
+      // Resolve workspaces matching the installation_id, then UPDATE
+      // projects whose workspace_id is in that set AND whose
+      // repo_full_name matches. Two-step instead of a JOIN because
+      // PostgREST doesn't expose join updates via the supabase-js
+      // builder; a direct SQL function would be cleaner but pulls
+      // in migration churn.
+      const { data: wsRows, error: wsErr } = await admin
+        .from('workspaces')
+        .select('id')
+        .eq('github_installation_id', target.installationId)
+      if (wsErr) throw createError({ statusCode: 500, message: wsErr.message })
+      const workspaceIds = (wsRows ?? []).map(w => w.id as string)
+      if (workspaceIds.length === 0) return
+
+      const { error } = await admin
+        .from('projects')
+        .update({ access_status: status })
+        .in('workspace_id', workspaceIds)
+        .eq('repo_full_name', target.repoFullName)
+      if (error) throw createError({ statusCode: 500, message: error.message })
+    },
+
+    async renameProjectRepo(target, newFullName) {
+      const admin = getAdmin()
+      const { data: wsRows, error: wsErr } = await admin
+        .from('workspaces')
+        .select('id')
+        .eq('github_installation_id', target.installationId)
+      if (wsErr) throw createError({ statusCode: 500, message: wsErr.message })
+      const workspaceIds = (wsRows ?? []).map(w => w.id as string)
+      if (workspaceIds.length === 0) return
+
+      const { error } = await admin
+        .from('projects')
+        .update({ repo_full_name: newFullName })
+        .in('workspace_id', workspaceIds)
+        .eq('repo_full_name', target.oldFullName)
+      if (error) throw createError({ statusCode: 500, message: error.message })
     },
 
     async listCDNEnabledProjects(repoFullName) {

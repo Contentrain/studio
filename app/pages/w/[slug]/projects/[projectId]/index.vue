@@ -242,6 +242,53 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
 
 <template>
   <div class="flex h-full flex-col">
+    <!-- Repo access banner: rendered above the panels when GitHub revoked
+         access to this project's repo (manual unselect in App settings,
+         org admin action, or repo deletion). Without this, every chat
+         action would 404 with a generic error. -->
+    <div
+      v-if="project && project.access_status && project.access_status !== 'accessible'"
+      class="flex shrink-0 items-start gap-3 border-b px-6 py-3"
+      :class="project.access_status === 'deleted'
+        ? 'border-danger-200 bg-danger-50 dark:border-danger-500/20 dark:bg-danger-500/10'
+        : 'border-warning-200 bg-warning-50 dark:border-warning-500/20 dark:bg-warning-500/10'"
+    >
+      <span
+        class="size-5 shrink-0"
+        :class="project.access_status === 'deleted'
+          ? 'icon-[annon--alert-triangle] text-danger-500'
+          : 'icon-[annon--alert-circle] text-warning-500'"
+        aria-hidden="true"
+      />
+      <div class="min-w-0 flex-1">
+        <p
+          class="text-sm font-medium"
+          :class="project.access_status === 'deleted'
+            ? 'text-danger-700 dark:text-danger-400'
+            : 'text-warning-700 dark:text-warning-400'"
+        >
+          {{ project.access_status === 'deleted' ? t('github.repo_deleted_title') : t('github.repo_access_revoked_title') }}
+        </p>
+        <p
+          class="mt-0.5 text-xs"
+          :class="project.access_status === 'deleted'
+            ? 'text-danger-600 dark:text-danger-400/80'
+            : 'text-warning-700 dark:text-warning-400/80'"
+        >
+          {{ project.access_status === 'deleted' ? t('github.repo_deleted_hint') : t('github.repo_access_revoked_hint') }}
+        </p>
+      </div>
+      <a
+        v-if="activeWorkspace?.github_installation_id && project.access_status !== 'deleted'"
+        :href="`https://github.com/settings/installations/${activeWorkspace.github_installation_id}`"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="shrink-0 rounded-md border border-warning-300 bg-white px-3 py-1.5 text-xs font-medium text-warning-700 transition-colors hover:bg-warning-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning-500/50 dark:border-warning-500/40 dark:bg-secondary-900 dark:text-warning-400 dark:hover:bg-secondary-800"
+      >
+        {{ t('github.manage_app_settings_button') }}
+      </a>
+    </div>
+
     <div class="flex min-h-0 flex-1">
       <!-- Chat panel: always visible on lg+, on mobile only when chat tab active -->
       <div

@@ -191,6 +191,26 @@ export interface DatabaseProvider {
   listWorkspaceProjectsByIds: (workspaceId: string, projectIds: string[]) => Promise<DatabaseRow[]>
   listUserAssignedProjects: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
   updateProjectContentTimestamp: (repoFullName: string) => Promise<void>
+  /**
+   * Flip a project's repo-level access state. Scoped to projects owned
+   * by a workspace bound to `installationId` (joined via workspaces),
+   * because the same `repo_full_name` could in theory exist under
+   * multiple installations and we only want to touch the ones the
+   * webhook event applies to.
+   */
+  updateProjectAccessStatus: (
+    target: { installationId: number, repoFullName: string },
+    status: 'accessible' | 'inaccessible' | 'deleted',
+  ) => Promise<void>
+  /**
+   * Rename a project's `repo_full_name` when the underlying GitHub repo
+   * is renamed. Scoped by installation_id so a webhook for one tenant
+   * doesn't accidentally rename a same-named project in another.
+   */
+  renameProjectRepo: (
+    target: { installationId: number, oldFullName: string },
+    newFullName: string,
+  ) => Promise<void>
   listCDNEnabledProjects: (repoFullName: string) => Promise<DatabaseRow[]>
   listAllActiveProjects: (fields?: string) => Promise<DatabaseRow[]>
 

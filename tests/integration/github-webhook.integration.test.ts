@@ -109,6 +109,140 @@ describe('GitHub webhook integration', () => {
     })
   })
 
+  it('flips matching projects to inaccessible on installation_repositories.removed', async () => {
+    const updateProjectAccessStatus = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      github: { webhookSecret: 'webhook-secret' },
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateProjectAccessStatus,
+    }))
+
+    const { raw, signature } = signGithubBody('webhook-secret', {
+      action: 'removed',
+      installation: { id: 42 },
+      repositories_removed: [
+        { full_name: 'alice/repo-one' },
+        { full_name: 'alice/repo-two' },
+      ],
+    })
+
+    await withTestServer({
+      routes: [{ path: '/api/webhooks/github', handler: await loadWebhookHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/webhooks/github', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'installation_repositories',
+          'x-hub-signature-256': signature,
+        },
+        body: raw,
+      })
+      expect(response.status).toBe(200)
+      expect(updateProjectAccessStatus).toHaveBeenCalledTimes(2)
+      expect(updateProjectAccessStatus).toHaveBeenCalledWith({ installationId: 42, repoFullName: 'alice/repo-one' }, 'inaccessible')
+      expect(updateProjectAccessStatus).toHaveBeenCalledWith({ installationId: 42, repoFullName: 'alice/repo-two' }, 'inaccessible')
+    })
+  })
+
+  it('restores matching projects to accessible on installation_repositories.added', async () => {
+    const updateProjectAccessStatus = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      github: { webhookSecret: 'webhook-secret' },
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateProjectAccessStatus,
+    }))
+
+    const { raw, signature } = signGithubBody('webhook-secret', {
+      action: 'added',
+      installation: { id: 42 },
+      repositories_added: [{ full_name: 'alice/repo-one' }],
+    })
+
+    await withTestServer({
+      routes: [{ path: '/api/webhooks/github', handler: await loadWebhookHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/webhooks/github', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'installation_repositories',
+          'x-hub-signature-256': signature,
+        },
+        body: raw,
+      })
+      expect(response.status).toBe(200)
+      expect(updateProjectAccessStatus).toHaveBeenCalledWith({ installationId: 42, repoFullName: 'alice/repo-one' }, 'accessible')
+    })
+  })
+
+  it('flips matching project to deleted on repository.deleted', async () => {
+    const updateProjectAccessStatus = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      github: { webhookSecret: 'webhook-secret' },
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateProjectAccessStatus,
+    }))
+
+    const { raw, signature } = signGithubBody('webhook-secret', {
+      action: 'deleted',
+      installation: { id: 42 },
+      repository: { full_name: 'alice/repo-one' },
+    })
+
+    await withTestServer({
+      routes: [{ path: '/api/webhooks/github', handler: await loadWebhookHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/webhooks/github', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'repository',
+          'x-hub-signature-256': signature,
+        },
+        body: raw,
+      })
+      expect(response.status).toBe(200)
+      expect(updateProjectAccessStatus).toHaveBeenCalledWith({ installationId: 42, repoFullName: 'alice/repo-one' }, 'deleted')
+    })
+  })
+
+  it('renames matching project on repository.renamed', async () => {
+    const renameProjectRepo = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      github: { webhookSecret: 'webhook-secret' },
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      renameProjectRepo,
+    }))
+
+    const { raw, signature } = signGithubBody('webhook-secret', {
+      action: 'renamed',
+      installation: { id: 42 },
+      changes: { repository: { name: { from: 'repo-old' } } },
+      repository: { full_name: 'alice/repo-new', owner: { login: 'alice' } },
+    })
+
+    await withTestServer({
+      routes: [{ path: '/api/webhooks/github', handler: await loadWebhookHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/webhooks/github', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'repository',
+          'x-hub-signature-256': signature,
+        },
+        body: raw,
+      })
+      expect(response.status).toBe(200)
+      expect(renameProjectRepo).toHaveBeenCalledWith({ installationId: 42, oldFullName: 'alice/repo-old' }, 'alice/repo-new')
+    })
+  })
+
   it('clears linked workspaces when GitHub sends an installation.deleted event', async () => {
     const clearWorkspaceGithubInstallation = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({

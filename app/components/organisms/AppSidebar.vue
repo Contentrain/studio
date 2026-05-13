@@ -74,6 +74,7 @@ const sidebarLinks = computed(() => {
     label: p.repo_full_name.split('/').pop() ?? p.repo_full_name,
     to: `/w/${slug}/projects/${p.id}`,
     active: p.id === currentProjectId.value,
+    accessStatus: (p as { access_status?: 'accessible' | 'inaccessible' | 'deleted' }).access_status ?? 'accessible',
   }))
 })
 
@@ -284,7 +285,13 @@ function onProjectDeleted() {
                 class="icon-[annon--folder] size-4 shrink-0" :class="link.active ? 'opacity-100' : 'opacity-60'"
                 aria-hidden="true"
               />
-              <span class="min-w-0 truncate">{{ link.label }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ link.label }}</span>
+              <span
+                v-if="link.accessStatus !== 'accessible'"
+                class="size-1.5 shrink-0 rounded-full"
+                :class="link.accessStatus === 'deleted' ? 'bg-danger-400' : 'bg-warning-400'"
+                :title="link.accessStatus === 'deleted' ? t('projects.access_deleted_badge') : t('projects.access_inaccessible_badge')"
+              />
             </NuxtLink>
           </li>
           <li v-if="activeWorkspace && isOwnerOrAdmin" class="pt-1">
