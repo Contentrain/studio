@@ -15,7 +15,7 @@
 interface FetchError {
   statusCode?: number
   status?: number
-  data?: { message?: string, statusCode?: number, statusMessage?: string }
+  data?: { message?: string, statusCode?: number, statusMessage?: string, requiresCheckout?: boolean }
   message?: string
 }
 
@@ -43,6 +43,19 @@ export function resolveApiError(error: unknown, fallback: string): string {
     ?? err.status
     ?? err.data?.statusCode
     ?? 0
+
+  // 402 + requiresCheckout → trigger the global plan-selection modal so the
+  // user can pay instead of staring at a toast. Falls back to toast text below
+  // when no modal is mounted (e.g. /auth, error page).
+  if (status === 402 && err.data?.requiresCheckout && import.meta.client) {
+    try {
+      usePlanModal().show()
+    }
+    catch {
+      // No Nuxt context (rare — e.g. utility called outside setup). Swallow;
+      // the caller will still render the toast string from the return value.
+    }
+  }
 
   // 4xx client errors — backend message is user-friendly (from errorMessage())
   if (status >= 400 && status < 500) {

@@ -2,6 +2,8 @@
 const { t } = useContent()
 const { open: commandPaletteOpen } = useCommandPalette()
 const { toggle: toggleMobileSidebar } = useMobileSidebar()
+const { open: planModalOpen } = usePlanModal()
+const deployment = useDeployment()
 </script>
 
 <template>
@@ -37,5 +39,14 @@ const { toggle: toggleMobileSidebar } = useMobileSidebar()
     <ClientOnly>
       <OrganismsCommandPalette v-model:open="commandPaletteOpen" />
     </ClientOnly>
+
+    <!-- Plan selection modal — opened by usePlanModal() globally on
+         402 + requiresCheckout, plus any explicit upgrade CTA. Hidden
+         on profiles without managed billing. -->
+    <OrganismsPlanSelectionModal
+      v-if="deployment.hasManagedBilling.value"
+      :open="planModalOpen"
+      @update:open="planModalOpen = $event"
+    />
   </div>
 </template>

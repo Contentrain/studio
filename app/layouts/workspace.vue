@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const contextOpen = ref(true)
-const planModalOpen = ref(false)
+const { open: planModalOpen, show: showPlanModal } = usePlanModal()
 
 const { openPortal } = useBilling()
 const deployment = useDeployment()
@@ -24,7 +24,7 @@ provide('contextPanel', { open: contextOpen, toggle: toggleContext })
     <!-- Main -->
     <main class="flex min-w-0 flex-1 flex-col overflow-y-auto">
       <MoleculesTrialBanner
-        @choose-plan="planModalOpen = true"
+        @choose-plan="showPlanModal()"
         @manage-billing="openPortal()"
       />
       <slot />

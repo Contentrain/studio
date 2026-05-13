@@ -129,6 +129,18 @@ async function connectRepo() {
     open.value = false
   }
   catch (e: unknown) {
+    const status = (e as { statusCode?: number, data?: { statusCode?: number, requiresCheckout?: boolean } }).statusCode
+      ?? (e as { data?: { statusCode?: number } }).data?.statusCode
+    const requiresCheckout = (e as { data?: { requiresCheckout?: boolean } }).data?.requiresCheckout
+
+    // Plan modal is opened globally by resolveApiError. Close this dialog so
+    // the user lands on the plan picker, not a stacked surface.
+    if (status === 402 && requiresCheckout) {
+      open.value = false
+      resolveApiError(e, t('projects.connected_error'))
+      return
+    }
+
     toast.error(resolveApiError(e, t('projects.connected_error')))
   }
   finally {
