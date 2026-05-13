@@ -231,11 +231,25 @@ async function connectExistingInstallation(installation: AvailableInstallation) 
   }
 }
 
-function reconnectGitHub() {
-  // Trigger Supabase GitHub OAuth flow; on return the OAuth callback
-  // captures and persists provider_token. After success, the user
-  // re-opens this dialog and the available list resolves.
-  window.location.href = `/api/auth/login?provider=github&redirect_to=${encodeURIComponent(window.location.pathname + window.location.search)}`
+async function reconnectGitHub() {
+  // Trigger Supabase GitHub OAuth flow via the same POST endpoint
+  // (and CSRF-state cookie) that the standard sign-in screen uses.
+  // The auth callback handler captures `provider_token` and persists
+  // it via `auth/verify.post.ts` → DatabaseProvider.upsertOAuthProviderToken,
+  // so on return the user's available installations list will resolve.
+  //
+  // Save the current path so the user lands back here after callback —
+  // `useWorkspaces.saveLastPath` is what the workspace bootstrap reads
+  // when deciding where to redirect post-callback.
+  const { saveLastPath } = useWorkspaces()
+  const { signInWithOAuth } = useAuth()
+  saveLastPath(window.location.pathname + window.location.search)
+  try {
+    await signInWithOAuth('github')
+  }
+  catch (e: unknown) {
+    toast.error(resolveApiError(e, t('github.connect_existing_error')))
+  }
 }
 
 // Auto-detect GitHub App installation when user returns to tab
