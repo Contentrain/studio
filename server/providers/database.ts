@@ -61,6 +61,39 @@ export interface DatabaseProvider {
   }) => Promise<DatabaseRow>
 
   // ═══════════════════════════════════════════════════
+  // OAUTH PROVIDER TOKENS
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Persist an encrypted OAuth provider token (currently only GitHub).
+   * Tokens are encrypted with AES-256-GCM (NUXT_SESSION_SECRET-derived
+   * key) and stored in `oauth_provider_tokens`. Upsert on (user_id, provider).
+   */
+  upsertOAuthProviderToken: (input: {
+    userId: string
+    provider: 'github'
+    accessToken: string
+    refreshToken: string | null
+    expiresAt: number | null
+    refreshTokenExpiresAt: number | null
+  }) => Promise<void>
+
+  /**
+   * Retrieve a stored provider token. Returns null when missing OR when
+   * decryption fails (secret rotation without _PREVIOUS, etc.) — the
+   * caller treats both as "no usable token" and drives re-auth.
+   */
+  getOAuthProviderToken: (userId: string, provider: 'github') => Promise<{
+    accessToken: string
+    refreshToken: string | null
+    expiresAt: number | null
+    refreshTokenExpiresAt: number | null
+  } | null>
+
+  /** Remove a stored provider token (e.g. after a refresh-token failure). */
+  deleteOAuthProviderToken: (userId: string, provider: 'github') => Promise<void>
+
+  // ═══════════════════════════════════════════════════
   // WORKSPACES
   // ═══════════════════════════════════════════════════
 
@@ -94,6 +127,16 @@ export interface DatabaseProvider {
   findWorkspaceByGithubInstallation: (installationId: number, excludeWorkspaceId?: string) => Promise<DatabaseRow | null>
   updateWorkspaceGithubInstallation: (workspaceId: string, installationId: number) => Promise<void>
   clearWorkspaceGithubInstallation: (installationId: number) => Promise<void>
+  /**
+   * Update `workspaces.github_installation_status` ('active'|'suspended'|'unbound').
+   * Lookup target is either a single workspace (by id) or every workspace bound
+   * to the given installation_id (for webhook fan-out). Multi-row update is
+   * intentional: the schema does not enforce UNIQUE on github_installation_id.
+   */
+  updateWorkspaceInstallationStatus: (
+    target: { workspaceId: string } | { installationId: number },
+    status: 'active' | 'suspended' | 'unbound',
+  ) => Promise<void>
   deleteWorkspace: (workspaceId: string) => Promise<void>
   incrementWorkspaceStorageBytes: (workspaceId: string, deltaBytes: number) => Promise<void>
   reserveStorageIfAllowed: (workspaceId: string, reserveBytes: number, limitBytes: number) => Promise<{ allowed: boolean, currentBytes: number }>

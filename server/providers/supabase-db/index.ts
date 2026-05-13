@@ -20,6 +20,7 @@ import { formMethods } from './forms'
 import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
+import { oauthTokenMethods } from './oauth-tokens'
 import { paymentAccountMethods } from './payment-accounts'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
@@ -33,6 +34,7 @@ export { createSupabaseAdminClient, createSupabaseUserClient } from '../supabase
 export function createSupabaseDatabaseProvider(): DatabaseProvider {
   return {
     ...profileMethods(),
+    ...oauthTokenMethods(),
     ...workspaceMethods(),
     ...memberMethods(),
     ...conversationMethods(),

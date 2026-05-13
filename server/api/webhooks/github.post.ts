@@ -117,11 +117,35 @@ export default defineEventHandler(async (event) => {
     const action = body.action as string
     const installationId = (body.installation as { id?: number })?.id
 
-    if (action === 'deleted' && installationId) {
-      // Clear installation from workspaces
-      await db.clearWorkspaceGithubInstallation(installationId)
+    if (!installationId)
+      return { ok: true, event: 'installation', action }
 
+    if (action === 'deleted') {
+      // Clear installation from workspaces (also flips status to 'unbound').
+      await db.clearWorkspaceGithubInstallation(installationId)
       return { ok: true, event: 'installation', action: 'deleted' }
+    }
+
+    if (action === 'suspend') {
+      // User suspended the App from GitHub settings — installation token
+      // calls will start failing with 403 until unsuspended. Mark workspaces
+      // accordingly so the UI can render a banner ("GitHub App suspended,
+      // reactivate to continue") instead of showing surprise 5xx errors.
+      await db.updateWorkspaceInstallationStatus({ installationId }, 'suspended')
+      return { ok: true, event: 'installation', action: 'suspend' }
+    }
+
+    if (action === 'unsuspend') {
+      await db.updateWorkspaceInstallationStatus({ installationId }, 'active')
+      return { ok: true, event: 'installation', action: 'unsuspend' }
+    }
+
+    if (action === 'created') {
+      // The setup callback writes installation_id + status='active' directly.
+      // The webhook arrives async and may race; defensively re-mark
+      // status='active' for any workspace already pointing at this id.
+      await db.updateWorkspaceInstallationStatus({ installationId }, 'active')
+      return { ok: true, event: 'installation', action: 'created' }
     }
 
     return { ok: true, event: 'installation', action }

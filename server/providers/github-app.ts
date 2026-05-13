@@ -29,11 +29,13 @@ import type {
   BranchProtection,
   FrameworkDetection,
   GitAppProvider,
+  GitAppService,
   InstallationDetails,
   InstallationRepository,
   RepoPermissions,
   TemplateRepositoryInput,
   TreeEntry,
+  UserInstallationSummary,
 } from './git'
 
 interface GitHubAppBaseConfig {
@@ -55,6 +57,25 @@ export function createInstallationOctokit(config: GitHubAppBaseConfig): Octokit 
       appId: config.appId,
       privateKey: config.privateKey,
       installationId: config.installationId,
+    },
+  })
+}
+
+/**
+ * Build an App-JWT-authenticated Octokit client (no installation scope).
+ *
+ * Use this for App-administration operations the installation token
+ * cannot perform: deleting an installation (`DELETE /app/installations/{id}`),
+ * suspending/unsuspending installations, reading App-level metadata.
+ * `@octokit/auth-app` signs a short-lived JWT (~10min TTL) with the
+ * App's private key.
+ */
+export function createAppOctokit(config: { appId: string, privateKey: string }): Octokit {
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: config.appId,
+      privateKey: config.privateKey,
     },
   })
 }
@@ -272,6 +293,100 @@ export function createGitHubAppInstallationProvider(config: GitHubAppBaseConfig)
       catch (err: unknown) {
         const status = (err as { status?: number }).status
         if (status === 404 || status === 403) return false
+        throw err
+      }
+    },
+
+    async revokeInstallation(): Promise<boolean> {
+      // `DELETE /app/installations/{id}` is an App-administration call
+      // that requires a JWT, NOT an installation token. We mint a
+      // fresh App-JWT Octokit here rather than reusing the
+      // installation-scoped one above.
+      const appOctokit = createAppOctokit({ appId: config.appId, privateKey: config.privateKey })
+      try {
+        await appOctokit.request('DELETE /app/installations/{installation_id}', {
+          installation_id: config.installationId,
+        })
+        return true
+      }
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        // 404 = installation already gone (uninstalled from GitHub UI in
+        // parallel with our delete, or webhook lost the race). Treat as
+        // idempotent success so the caller doesn't need to special-case.
+        if (status === 404) return false
+        throw err
+      }
+    },
+  }
+}
+
+/**
+ * App-level GitHub operations that are not installation-scoped.
+ * Composes against an App JWT for App-administration calls and a
+ * raw user OAuth token for user-scoped calls — neither requires an
+ * installationId at construction time.
+ *
+ * Implementation note: user-scoped Octokit instances are short-lived
+ * (one per method call) because they're keyed by the caller's user
+ * token, not a long-lived credential. The App JWT instance can be
+ * cached safely (single App per Studio deploy) — `@octokit/auth-app`
+ * refreshes the JWT internally before each request.
+ */
+export function createGitAppService(config: { appId: string, privateKey: string }): GitAppService {
+  // App JWT Octokit kept available even when no current method uses it —
+  // factory shape matches the rest of the provider layer and leaves room
+  // for future App-administration methods (suspend installation,
+  // permission accept, etc.). Underscore prefix opts out of the
+  // "unused variable" lint rule.
+  const _appOctokit = createAppOctokit(config)
+  const numericAppId = Number(config.appId)
+
+  return {
+    async listInstallationsForUser(userAccessToken: string): Promise<UserInstallationSummary[]> {
+      const userOctokit = new Octokit({ auth: userAccessToken })
+      const { data } = await userOctokit.request('GET /user/installations', { per_page: 100 })
+      // GitHub returns every installation visible to the user, across
+      // every App they've authorized. Filter to the Studio App only —
+      // listing installations of unrelated apps would leak App identity
+      // and is not useful for the UI.
+      return data.installations
+        .filter(inst => inst.app_id === numericAppId)
+        .map(inst => ({
+          id: inst.id,
+          appId: inst.app_id,
+          account: {
+            login: (inst.account as { login?: string } | null)?.login ?? null,
+            avatarUrl: (inst.account as { avatar_url?: string } | null)?.avatar_url ?? null,
+            type: (inst.account as { type?: string } | null)?.type ?? inst.target_type ?? null,
+          },
+          repositorySelection: (inst.repository_selection as 'all' | 'selected' | null) ?? null,
+          targetType: inst.target_type ?? null,
+        }))
+    },
+
+    async verifyUserHasAccessToInstallation(userAccessToken: string, installationId: number): Promise<boolean> {
+      const userOctokit = new Octokit({ auth: userAccessToken })
+      try {
+        await userOctokit.request('GET /user/installations/{installation_id}/repositories', {
+          installation_id: installationId,
+          per_page: 1,
+        })
+        return true
+      }
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        // 404 = user has no access to this installation (or it doesn't
+        // exist for them). 403 = installation exists but user is not
+        // an admin of the account. Both = "cannot bind", returned as
+        // false; non-404/403 errors propagate as 5xx.
+        if (status === 404 || status === 403) return false
+        // App JWT not silently used as fallback; this method is
+        // intentionally user-scoped. Spurious 401 should bubble up to
+        // expose token-storage / refresh issues rather than silently
+        // failing closed.
+        // eslint-disable-next-line no-console
+        if (status === 401) console.warn('[github-app] user OAuth token rejected by GET /user/installations/{id}/repositories — token may be expired or revoked')
         throw err
       }
     },

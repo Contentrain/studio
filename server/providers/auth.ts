@@ -30,9 +30,33 @@ export interface AuthTokens {
   expiresAt: number // Unix timestamp in seconds
 }
 
+/**
+ * OAuth provider tokens (e.g. GitHub `gho_*`/`ghu_*` user-to-server tokens
+ * obtained via Supabase OAuth sign-in). Surfaced separately from
+ * `AuthTokens` (which are the AuthProvider's own session tokens, e.g.
+ * Supabase JWT) because they have different lifecycles and storage
+ * requirements: provider tokens need encrypted persistence to enable
+ * later API calls against the provider (e.g. `GET /user/installations`).
+ */
+export interface ProviderTokens {
+  accessToken: string
+  refreshToken: string | null
+  /** Unix seconds. `null` = non-expiring (legacy OAuth Apps; GitHub Apps with expiring tokens off). */
+  expiresAt: number | null
+  /** Unix seconds. `null` = non-expiring refresh token. */
+  refreshTokenExpiresAt: number | null
+}
+
 export interface AuthSession {
   user: AuthUser
   tokens: AuthTokens
+  /**
+   * Provider-side OAuth tokens, when the sign-in used an external OAuth
+   * provider (GitHub / Google). `null` for magic-link or non-OAuth flows.
+   * Captured at exchange time only — AuthProvider does not persist these
+   * itself; caller is responsible for storing them via DatabaseProvider.
+   */
+  providerTokens?: ProviderTokens | null
 }
 
 export interface OAuthRedirectResult {
@@ -53,6 +77,18 @@ export interface AuthProvider {
    * Returns new token set, or null if refresh is not possible.
    */
   refreshSession: (refreshToken: string) => Promise<AuthTokens | null>
+
+  /**
+   * Refresh an expired OAuth provider token (e.g. GitHub user-to-server
+   * token, 8h TTL). Implementations call the provider's own refresh
+   * endpoint — Supabase does not refresh provider tokens itself.
+   *
+   * Returns the new provider token set, or null if refresh failed
+   * (refresh token expired, revoked, or provider returned an error).
+   * Callers must treat null as "user must re-authenticate with the
+   * provider" and clear any stored copy.
+   */
+  refreshProviderToken: (provider: 'github' | 'google', refreshToken: string) => Promise<ProviderTokens | null>
 
   /**
    * Generate OAuth redirect URL for a given provider.

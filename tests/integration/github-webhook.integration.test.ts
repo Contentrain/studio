@@ -42,6 +42,73 @@ describe('GitHub webhook integration', () => {
     })
   })
 
+  it('flips workspaces to suspended status when GitHub sends an installation.suspend event', async () => {
+    const updateWorkspaceInstallationStatus = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      github: { webhookSecret: 'webhook-secret' },
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateWorkspaceInstallationStatus,
+    }))
+
+    const { raw, signature } = signGithubBody('webhook-secret', {
+      action: 'suspend',
+      installation: { id: 88 },
+    })
+
+    await withTestServer({
+      routes: [{ path: '/api/webhooks/github', handler: await loadWebhookHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/webhooks/github', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'installation',
+          'x-hub-signature-256': signature,
+        },
+        body: raw,
+      })
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({
+        ok: true,
+        event: 'installation',
+        action: 'suspend',
+      })
+      expect(updateWorkspaceInstallationStatus).toHaveBeenCalledWith({ installationId: 88 }, 'suspended')
+    })
+  })
+
+  it('flips workspaces back to active when GitHub sends installation.unsuspend', async () => {
+    const updateWorkspaceInstallationStatus = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      github: { webhookSecret: 'webhook-secret' },
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      updateWorkspaceInstallationStatus,
+    }))
+
+    const { raw, signature } = signGithubBody('webhook-secret', {
+      action: 'unsuspend',
+      installation: { id: 88 },
+    })
+
+    await withTestServer({
+      routes: [{ path: '/api/webhooks/github', handler: await loadWebhookHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/webhooks/github', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-github-event': 'installation',
+          'x-hub-signature-256': signature,
+        },
+        body: raw,
+      })
+      expect(response.status).toBe(200)
+      expect(updateWorkspaceInstallationStatus).toHaveBeenCalledWith({ installationId: 88 }, 'active')
+    })
+  })
+
   it('clears linked workspaces when GitHub sends an installation.deleted event', async () => {
     const clearWorkspaceGithubInstallation = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({

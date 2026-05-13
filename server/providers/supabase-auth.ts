@@ -1,5 +1,41 @@
-import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult } from './auth'
+import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult, ProviderTokens } from './auth'
 import { createSupabaseAdminClient } from './supabase-client'
+
+/**
+ * Extract provider-side OAuth tokens from a Supabase session, if the
+ * sign-in used an external OAuth provider. Supabase surfaces these as
+ * `provider_token` / `provider_refresh_token` on the session response
+ * but does NOT persist them server-side — they're only available on
+ * the immediate code-exchange or refresh response. Callers must persist
+ * the result via DatabaseProvider to enable later provider API calls.
+ *
+ * GitHub Apps with expiring user-to-server tokens also surface expiry
+ * fields (`provider_token_expires_in`, `provider_refresh_token_expires_in`)
+ * — when omitted, the OAuth App is configured for non-expiring tokens
+ * and `expiresAt` is null.
+ */
+function extractProviderTokens(
+  session: Record<string, unknown> | null,
+): ProviderTokens | null {
+  if (!session) return null
+  const accessToken = session.provider_token
+  if (typeof accessToken !== 'string' || !accessToken) return null
+
+  const refreshToken = typeof session.provider_refresh_token === 'string' && session.provider_refresh_token
+    ? session.provider_refresh_token
+    : null
+
+  const now = Math.floor(Date.now() / 1000)
+  const accessTtl = typeof session.provider_token_expires_in === 'number' ? session.provider_token_expires_in : null
+  const refreshTtl = typeof session.provider_refresh_token_expires_in === 'number' ? session.provider_refresh_token_expires_in : null
+
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt: accessTtl !== null ? now + accessTtl : null,
+    refreshTokenExpiresAt: refreshTtl !== null ? now + refreshTtl : null,
+  }
+}
 
 /**
  * Supabase implementation of AuthProvider.
@@ -30,6 +66,58 @@ export function createSupabaseAuthProvider(): AuthProvider {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token ?? null,
         expiresAt: data.session.expires_at ?? Math.floor(Date.now() / 1000) + 3600,
+      }
+    },
+
+    async refreshProviderToken(provider: 'github' | 'google', refreshToken: string): Promise<ProviderTokens | null> {
+      // Supabase does NOT refresh provider tokens — its `refreshSession`
+      // refreshes only the Supabase JWT. We call the provider's own
+      // refresh endpoint directly. See:
+      //   https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens
+      if (provider !== 'github')
+        return null
+
+      const config = useRuntimeConfig()
+      const clientId = (config.github as { clientId?: string } | undefined)?.clientId
+      const clientSecret = (config.github as { clientSecret?: string } | undefined)?.clientSecret
+      if (!clientId || !clientSecret)
+        return null
+
+      try {
+        const response = await $fetch<{
+          access_token?: string
+          refresh_token?: string
+          expires_in?: number
+          refresh_token_expires_in?: number
+          error?: string
+        }>('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: { Accept: 'application/json' },
+          body: {
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+          },
+        })
+
+        // GitHub returns 200 with an `error` field on bad/expired tokens.
+        // The most common error codes are `bad_refresh_token` and
+        // `bad_verification_code` — both unrecoverable, caller must
+        // re-authenticate.
+        if (response.error || !response.access_token)
+          return null
+
+        const now = Math.floor(Date.now() / 1000)
+        return {
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token ?? null,
+          expiresAt: response.expires_in ? now + response.expires_in : null,
+          refreshTokenExpiresAt: response.refresh_token_expires_in ? now + response.refresh_token_expires_in : null,
+        }
+      }
+      catch {
+        return null
       }
     },
 
@@ -74,6 +162,7 @@ export function createSupabaseAuthProvider(): AuthProvider {
           refreshToken: data.session.refresh_token ?? null,
           expiresAt: data.session.expires_at ?? Math.floor(Date.now() / 1000) + 3600,
         },
+        providerTokens: extractProviderTokens(data.session as unknown as Record<string, unknown>),
       }
     },
 
@@ -99,6 +188,13 @@ export function createSupabaseAuthProvider(): AuthProvider {
           refreshToken: refreshToken ?? null,
           expiresAt,
         },
+        // exchangeTokens is used by the hash-fragment callback (magic link
+        // and implicit-flow paths) where we receive an already-issued
+        // access_token + refresh_token from the URL, not a fresh Supabase
+        // session. `getUser` returns the AuthUser but no provider tokens.
+        // If the caller has provider tokens, they must come from the URL
+        // fragment / cookie before invoking this method.
+        providerTokens: null,
       }
     },
 

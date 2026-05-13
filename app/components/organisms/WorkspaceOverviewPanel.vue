@@ -114,15 +114,23 @@ async function saveOverview() {
   }
 }
 
+const wsDeleteUninstallApp = ref(false)
+const wsDeleteCancelSubscription = ref(false)
+
 async function handleDeleteWorkspace() {
   if (!activeWorkspace.value) return
   wsDeleting.value = true
-  const ok = await deleteWorkspace(activeWorkspace.value.id)
+  const ok = await deleteWorkspace(activeWorkspace.value.id, {
+    uninstallGithubApp: wsDeleteUninstallApp.value,
+    cancelSubscription: wsDeleteCancelSubscription.value,
+  })
   wsDeleting.value = false
 
   if (ok) {
     toast.success(t('danger_zone.workspace_deleted'))
     wsDeleteConfirmOpen.value = false
+    wsDeleteUninstallApp.value = false
+    wsDeleteCancelSubscription.value = false
     const primary = workspaces.value.find(w => w.type === 'primary')
     if (primary) router.push(`/w/${primary.slug}`)
     else router.push('/')
@@ -239,7 +247,41 @@ async function handleDeleteWorkspace() {
     :delete-label="wsDeleting ? t('danger_zone.deleting') : t('danger_zone.workspace_delete_button')"
     :deleting="wsDeleting"
     @confirm="handleDeleteWorkspace"
-  />
+  >
+    <template #extra>
+      <!-- Uninstall GitHub App — shown only when this workspace has a binding -->
+      <label
+        v-if="activeWorkspace?.github_installation_id"
+        class="flex items-start justify-between gap-3 rounded-lg border border-secondary-200 px-3 py-2.5 dark:border-secondary-800"
+      >
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-heading dark:text-secondary-100">
+            {{ t('danger_zone.uninstall_app_label') }}
+          </p>
+          <p class="mt-0.5 text-xs text-muted">
+            {{ t('danger_zone.uninstall_app_hint') }}
+          </p>
+        </div>
+        <AtomsFormSwitch v-model="wsDeleteUninstallApp" />
+      </label>
+
+      <!-- Cancel subscription — shown only when there's an active subscription -->
+      <label
+        v-if="activeWorkspace?.payment_account?.subscription_id"
+        class="mt-2 flex items-start justify-between gap-3 rounded-lg border border-secondary-200 px-3 py-2.5 dark:border-secondary-800"
+      >
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-heading dark:text-secondary-100">
+            {{ t('danger_zone.cancel_subscription_label') }}
+          </p>
+          <p class="mt-0.5 text-xs text-muted">
+            {{ t('danger_zone.cancel_subscription_hint') }}
+          </p>
+        </div>
+        <AtomsFormSwitch v-model="wsDeleteCancelSubscription" />
+      </label>
+    </template>
+  </MoleculesConfirmDeleteDialog>
 
   <!-- Plan selection modal (managed profiles only) -->
   <OrganismsPlanSelectionModal

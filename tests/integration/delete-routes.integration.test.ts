@@ -42,6 +42,119 @@ describe('workspace and project delete route integration', () => {
     })
   })
 
+  it('revokes the GitHub installation when uninstallGithubApp flag is set and no other workspace shares it', async () => {
+    const revokeInstallation = vi.fn().mockResolvedValue(true)
+    const findWorkspaceByGithubInstallation = vi.fn().mockResolvedValue(null)
+
+    vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'owner-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ uninstallGithubApp: true }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue(null))
+    vi.stubGlobal('useGitAppProvider', vi.fn().mockReturnValue({ revokeInstallation }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({
+        id: 'workspace-1',
+        type: 'secondary',
+        owner_id: 'owner-1',
+        github_installation_id: 12345,
+      }),
+      findWorkspaceByGithubInstallation,
+      listWorkspaceProjects: vi.fn().mockResolvedValue([]),
+      deleteWorkspace: vi.fn().mockResolvedValue(undefined),
+    }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1', handler: await loadWorkspaceDeleteHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ uninstallGithubApp: true }),
+      })
+      expect(response.status).toBe(200)
+      expect(findWorkspaceByGithubInstallation).toHaveBeenCalledWith(12345, 'workspace-1')
+      expect(revokeInstallation).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('skips revokeInstallation when another workspace still shares the installation', async () => {
+    const revokeInstallation = vi.fn().mockResolvedValue(true)
+
+    vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'owner-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ uninstallGithubApp: true }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue(null))
+    vi.stubGlobal('useGitAppProvider', vi.fn().mockReturnValue({ revokeInstallation }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({
+        id: 'workspace-1',
+        type: 'secondary',
+        owner_id: 'owner-1',
+        github_installation_id: 12345,
+      }),
+      findWorkspaceByGithubInstallation: vi.fn().mockResolvedValue({ id: 'workspace-shared' }),
+      listWorkspaceProjects: vi.fn().mockResolvedValue([]),
+      deleteWorkspace: vi.fn().mockResolvedValue(undefined),
+    }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1', handler: await loadWorkspaceDeleteHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ uninstallGithubApp: true }),
+      })
+      expect(response.status).toBe(200)
+      expect(revokeInstallation).not.toHaveBeenCalled()
+    })
+  })
+
+  it('cancels the active subscription when cancelSubscription flag is set', async () => {
+    const cancelSubscription = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'owner-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cancelSubscription: true }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue(null))
+    vi.stubGlobal('usePaymentProvider', vi.fn().mockReturnValue({ cancelSubscription }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({
+        id: 'workspace-1',
+        type: 'secondary',
+        owner_id: 'owner-1',
+        github_installation_id: null,
+      }),
+      getActivePaymentAccount: vi.fn().mockResolvedValue({ subscription_id: 'sub_test_123' }),
+      listWorkspaceProjects: vi.fn().mockResolvedValue([]),
+      deleteWorkspace: vi.fn().mockResolvedValue(undefined),
+    }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1', handler: await loadWorkspaceDeleteHandler() }],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cancelSubscription: true }),
+      })
+      expect(response.status).toBe(200)
+      expect(cancelSubscription).toHaveBeenCalledWith('sub_test_123')
+    })
+  })
+
   it('deletes a workspace after cleaning project storage and ignores storage cleanup failures', async () => {
     const deletePrefix = vi.fn()
       .mockRejectedValueOnce(new Error('r2 unavailable'))

@@ -71,5 +71,30 @@ export default defineEventHandler(async (event) => {
     expiresAt: session.tokens.expiresAt,
   })
 
+  // Persist provider-side OAuth tokens (GitHub `gho_*`/`ghu_*`) when the
+  // sign-in used GitHub OAuth. Supabase surfaces these only on the
+  // immediate exchange response and does NOT persist them server-side,
+  // so this is the only window we can capture them. Without this, later
+  // server-side calls to `GET /user/installations` are impossible
+  // without re-OAuthing the user. Failures are logged but never block
+  // the sign-in itself.
+  if (session.providerTokens?.accessToken && session.user.provider === 'github') {
+    try {
+      const db = useDatabaseProvider()
+      await db.upsertOAuthProviderToken({
+        userId: session.user.id,
+        provider: 'github',
+        accessToken: session.providerTokens.accessToken,
+        refreshToken: session.providerTokens.refreshToken,
+        expiresAt: session.providerTokens.expiresAt,
+        refreshTokenExpiresAt: session.providerTokens.refreshTokenExpiresAt,
+      })
+    }
+    catch (err: unknown) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth] failed to persist GitHub provider token:', err instanceof Error ? err.message : err)
+    }
+  }
+
   return { user: session.user }
 })
