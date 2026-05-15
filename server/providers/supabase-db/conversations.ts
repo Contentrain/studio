@@ -43,12 +43,11 @@ export function conversationMethods(): ConversationMethods {
       const admin = getAdmin()
       let query = admin
         .from('conversations')
-        .select('id, title, status, user_id, workspace_id, created_at, updated_at')
+        .select('id, title, user_id, created_at, updated_at')
         .eq('id', conversationId)
         .eq('project_id', projectId)
 
       if (filters?.userId) query = query.eq('user_id', filters.userId)
-      if (filters?.workspaceId) query = query.eq('workspace_id', filters.workspaceId)
 
       const { data, error } = await query.single()
       if (error) {
