@@ -34,12 +34,13 @@ export function usageMethods(): UsageMethods {
     },
 
     async getWorkspaceMonthlyAPIUsage(workspaceId, month) {
+      // Conversation API usage is keyed by `api_key_id`, not `user_id`,
+      // and lives in its own aggregate table — see migration 006.
       const { data } = await getAdmin()
-        .from('agent_usage')
+        .from('api_message_usage')
         .select('message_count')
         .eq('workspace_id', workspaceId)
         .eq('month', month)
-        .eq('source', 'api')
 
       return (data ?? []).reduce(
         (sum: number, r: Record<string, unknown>) => sum + ((r.message_count as number) ?? 0),

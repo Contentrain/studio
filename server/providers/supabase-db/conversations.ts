@@ -8,6 +8,7 @@ import { getAdmin, getUser } from './helpers'
 type ConversationMethods = Pick<
   DatabaseProvider,
   | 'createConversation'
+  | 'createApiConversation'
   | 'getConversation'
   | 'listConversations'
   | 'deleteConversation'
@@ -19,6 +20,8 @@ type ConversationMethods = Pick<
   | 'getMonthlyUsageSummary'
   | 'incrementAgentUsageIfAllowed'
   | 'updateAgentUsageTokens'
+  | 'incrementAPIUsageIfAllowed'
+  | 'updateAPIUsageTokens'
   | 'getBYOAKey'
 >
 
@@ -39,15 +42,31 @@ export function conversationMethods(): ConversationMethods {
       return data?.id ?? null
     },
 
+    async createApiConversation(projectId, apiKeyId, title) {
+      const admin = getAdmin()
+      const { data } = await admin
+        .from('conversations')
+        .insert({
+          project_id: projectId,
+          api_key_id: apiKeyId,
+          title: title.substring(0, 100),
+        })
+        .select('id')
+        .single()
+
+      return data?.id ?? null
+    },
+
     async getConversation(conversationId, projectId, filters) {
       const admin = getAdmin()
       let query = admin
         .from('conversations')
-        .select('id, title, user_id, created_at, updated_at')
+        .select('id, title, user_id, api_key_id, created_at, updated_at')
         .eq('id', conversationId)
         .eq('project_id', projectId)
 
-      if (filters?.userId) query = query.eq('user_id', filters.userId)
+      if (filters && 'userId' in filters) query = query.eq('user_id', filters.userId)
+      else if (filters && 'apiKeyId' in filters) query = query.eq('api_key_id', filters.apiKeyId)
 
       const { data, error } = await query.single()
       if (error) {
@@ -221,6 +240,37 @@ export function conversationMethods(): ConversationMethods {
         p_user_id: input.userId,
         p_month: input.month,
         p_source: input.source,
+        p_input_tokens: input.inputTokens,
+        p_output_tokens: input.outputTokens,
+      })
+    },
+
+    // ─── API Message Usage (Conversation API) ───
+
+    async incrementAPIUsageIfAllowed(input) {
+      const admin = getAdmin()
+      const { data, error } = await admin.rpc('increment_api_usage_if_allowed', {
+        p_workspace_id: input.workspaceId,
+        p_api_key_id: input.apiKeyId,
+        p_month: input.month,
+        p_key_limit: input.keyLimit,
+        p_workspace_limit: input.workspaceLimit,
+      })
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Atomic API usage check failed: ${error.message}` })
+      }
+
+      const result = data as { allowed: boolean, reason: 'ok' | 'key_limit' | 'workspace_limit', current: number }
+      return result
+    },
+
+    async updateAPIUsageTokens(input) {
+      const admin = getAdmin()
+      await admin.rpc('increment_api_usage_tokens', {
+        p_workspace_id: input.workspaceId,
+        p_api_key_id: input.apiKeyId,
+        p_month: input.month,
         p_input_tokens: input.inputTokens,
         p_output_tokens: input.outputTokens,
       })
