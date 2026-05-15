@@ -7,7 +7,7 @@ import type { ChatUIContext } from '../../server/utils/agent-types'
 import { toAITools } from '../../server/utils/agent-types'
 import { classifyIntent } from '../../server/utils/agent-context'
 import { deriveProjectPhase } from '../../server/utils/agent-state-machine'
-import { buildSystemPrompt } from '../../server/utils/agent-system-prompt'
+import { buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
 import { STUDIO_TOOLS, filterToolsByPermissions } from '../../server/utils/agent-tools'
 import { buildContentIndex, getOrBuildBrainCache } from '../../server/utils/brain-cache'
 import { createContentEngine } from '../../server/utils/content-engine'
@@ -252,25 +252,29 @@ async function runConversationMessage(
     const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
     const intent = classifyIntent(body.message, uiContext, phase)
 
-    let systemPrompt = buildSystemPrompt(
+    const contentIndex = buildContentIndex(brain)
+    const promptBlocks = buildSystemPromptBlocks(
       projectConfig,
       models,
       permissions,
       { initialized: !!projectConfig, pendingBranches, projectStatus: project.status ?? 'active', phase, contentContext },
       uiContext,
       intent,
+      contentIndex || null,
       vocabulary,
       plan,
       keyData.customInstructions,
     )
-
-    const contentIndex = buildContentIndex(brain)
-    if (contentIndex)
-      systemPrompt += `\n\n${contentIndex}`
+    const systemPrompt = toSystemBlocks(promptBlocks)
 
     const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as typeof STUDIO_TOOLS
     const phaseFiltered = permissionFiltered.filter(tool => tool.requiredPhase.includes(phase))
     const aiTools = toAITools(phaseFiltered)
+
+    // Cache the tools array — same rationale as the Studio chat path.
+    if (aiTools.length > 0) {
+      aiTools[aiTools.length - 1]!.cacheControl = { type: 'ephemeral' }
+    }
 
     const runtimeConfig = useRuntimeConfig()
     const apiKey = runtimeConfig.anthropic.apiKey
@@ -312,6 +316,8 @@ async function runConversationMessage(
     let responseText = ''
     let totalInputTokens = 0
     let totalOutputTokens = 0
+    let totalCacheCreationInputTokens = 0
+    let totalCacheReadInputTokens = 0
     let lastAssistantContent: AIContentBlock[] = []
 
     for await (const evt of runConversationLoop(
@@ -346,26 +352,32 @@ async function runConversationMessage(
         case 'tool_result':
           toolResults.push({ id: evt.id as string, name: evt.name as string, result: evt.result })
           break
-        case 'done':
-          totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
-          totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
+        case 'done': {
+          const u = evt.usage as { inputTokens?: number, outputTokens?: number, cacheCreationInputTokens?: number, cacheReadInputTokens?: number } | undefined
+          totalInputTokens = u?.inputTokens ?? 0
+          totalOutputTokens = u?.outputTokens ?? 0
+          totalCacheCreationInputTokens = u?.cacheCreationInputTokens ?? 0
+          totalCacheReadInputTokens = u?.cacheReadInputTokens ?? 0
           lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
           break
+        }
       }
     }
 
-    await saveApiChatResult(
+    await saveApiChatResult({
       conversationId,
-      body.message,
-      responseText,
-      lastAssistantContent,
+      userMessage: body.message,
+      assistantText: responseText,
+      assistantContent: lastAssistantContent,
       model,
-      totalInputTokens,
-      totalOutputTokens,
-      keyData.workspaceId,
-      keyData.keyId,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      cacheCreationInputTokens: totalCacheCreationInputTokens,
+      cacheReadInputTokens: totalCacheReadInputTokens,
+      workspaceId: keyData.workspaceId,
+      apiKeyId: keyData.keyId,
       usageMonth,
-    )
+    })
 
     return {
       conversationId,
@@ -374,6 +386,8 @@ async function runConversationMessage(
       usage: {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
+        cacheCreationInputTokens: totalCacheCreationInputTokens,
+        cacheReadInputTokens: totalCacheReadInputTokens,
       },
     }
   }

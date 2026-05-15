@@ -134,6 +134,8 @@ export function conversationMethods(): ConversationMethods {
       if (input.toolCalls) row.tool_calls = input.toolCalls
       if (input.tokenCountInput) row.token_count_input = input.tokenCountInput
       if (input.tokenCountOutput) row.token_count_output = input.tokenCountOutput
+      if (input.cacheCreationInputTokens) row.cache_creation_input_tokens = input.cacheCreationInputTokens
+      if (input.cacheReadInputTokens) row.cache_read_input_tokens = input.cacheReadInputTokens
       if (input.model) row.model = input.model
 
       await admin.from('messages').insert(row)
@@ -236,14 +238,19 @@ export function conversationMethods(): ConversationMethods {
 
     async updateAgentUsageTokens(input) {
       const admin = getAdmin()
-      // Use RPC for atomic token increment to prevent concurrent overwrites
-      await admin.rpc('increment_agent_usage_tokens', {
+      // _v2 RPC carries the cache token columns alongside the base
+      // input/output counters; the legacy _v1 entry point stays
+      // registered for rolling-deploy safety but is no longer called
+      // from app code.
+      await admin.rpc('increment_agent_usage_tokens_v2', {
         p_workspace_id: input.workspaceId,
         p_user_id: input.userId,
         p_month: input.month,
         p_source: input.source,
         p_input_tokens: input.inputTokens,
         p_output_tokens: input.outputTokens,
+        p_cache_creation_input_tokens: input.cacheCreationInputTokens,
+        p_cache_read_input_tokens: input.cacheReadInputTokens,
       })
     },
 
@@ -282,12 +289,14 @@ export function conversationMethods(): ConversationMethods {
 
     async updateAPIUsageTokens(input) {
       const admin = getAdmin()
-      await admin.rpc('increment_api_usage_tokens', {
+      await admin.rpc('increment_api_usage_tokens_v2', {
         p_workspace_id: input.workspaceId,
         p_api_key_id: input.apiKeyId,
         p_month: input.month,
         p_input_tokens: input.inputTokens,
         p_output_tokens: input.outputTokens,
+        p_cache_creation_input_tokens: input.cacheCreationInputTokens,
+        p_cache_read_input_tokens: input.cacheReadInputTokens,
       })
     },
 

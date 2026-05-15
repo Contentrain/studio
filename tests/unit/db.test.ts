@@ -106,19 +106,21 @@ describe('db helpers', () => {
 
   it('saves chat results via provider methods', async () => {
     const { saveChatResult } = await loadDbModule()
-    await saveChatResult(
-      'conv-1',
-      'Hello',
-      'World',
-      [{ type: 'text', text: 'World' }],
-      'claude-sonnet-4-20250514',
-      7,
-      3,
-      'workspace-1',
-      'user-1',
-      'studio',
-      '2026-04',
-    )
+    await saveChatResult({
+      conversationId: 'conv-1',
+      userMessage: 'Hello',
+      assistantText: 'World',
+      assistantContent: [{ type: 'text', text: 'World' }],
+      model: 'claude-sonnet-4-20250514',
+      inputTokens: 7,
+      outputTokens: 3,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      usageSource: 'studio',
+      usageMonth: '2026-04',
+    })
 
     expect(mockDb.insertMessage).toHaveBeenCalledTimes(2)
     expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'user', content: 'Hello' }))
@@ -130,25 +132,29 @@ describe('db helpers', () => {
       source: 'studio',
       inputTokens: 7,
       outputTokens: 3,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
     }))
     expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-1')
   })
 
   it('updates token counts on the usage row reserved by the atomic limit check', async () => {
     const { saveChatResult } = await loadDbModule()
-    await saveChatResult(
-      'conv-1',
-      'Hello',
-      '',
-      [],
-      'claude-haiku-4-5-20251001',
-      4,
-      2,
-      'workspace-1',
-      'user-1',
-      'byoa',
-      '2026-04',
-    )
+    await saveChatResult({
+      conversationId: 'conv-1',
+      userMessage: 'Hello',
+      assistantText: '',
+      assistantContent: [],
+      model: 'claude-haiku-4-5-20251001',
+      inputTokens: 4,
+      outputTokens: 2,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      usageSource: 'byoa',
+      usageMonth: '2026-04',
+    })
 
     expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
       source: 'byoa',
@@ -158,20 +164,60 @@ describe('db helpers', () => {
     }))
   })
 
+  it('propagates cache token buckets through saveChatResult', async () => {
+    // Second turn of a cached conversation — most input is cache_read
+    // (cheap), a small slice is cache_creation, base input/output are
+    // small. All four buckets must land on agent_usage row + message row.
+    const { saveChatResult } = await loadDbModule()
+    await saveChatResult({
+      conversationId: 'conv-1',
+      userMessage: 'follow up',
+      assistantText: 'short',
+      assistantContent: [{ type: 'text', text: 'short' }],
+      model: 'claude-sonnet-4-5',
+      inputTokens: 80,
+      outputTokens: 12,
+      cacheCreationInputTokens: 150,
+      cacheReadInputTokens: 9000,
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      usageSource: 'studio',
+      usageMonth: '2026-04',
+    })
+
+    expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      month: '2026-04',
+      source: 'studio',
+      inputTokens: 80,
+      outputTokens: 12,
+      cacheCreationInputTokens: 150,
+      cacheReadInputTokens: 9000,
+    })
+    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'assistant',
+      cacheCreationInputTokens: 150,
+      cacheReadInputTokens: 9000,
+    }))
+  })
+
   it('saveApiChatResult writes to api_message_usage, not agent_usage', async () => {
     const { saveApiChatResult } = await loadDbModule()
-    await saveApiChatResult(
-      'conv-2',
-      'Hello',
-      'World',
-      [{ type: 'text', text: 'World' }],
-      'claude-sonnet-4-5',
-      11,
-      5,
-      'workspace-1',
-      'key-abc',
-      '2026-04',
-    )
+    await saveApiChatResult({
+      conversationId: 'conv-2',
+      userMessage: 'Hello',
+      assistantText: 'World',
+      assistantContent: [{ type: 'text', text: 'World' }],
+      model: 'claude-sonnet-4-5',
+      inputTokens: 11,
+      outputTokens: 5,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      workspaceId: 'workspace-1',
+      apiKeyId: 'key-abc',
+      usageMonth: '2026-04',
+    })
 
     // Messages persist into the shared messages table the same way as
     // the Studio path; the difference is only in which usage table the
@@ -186,6 +232,8 @@ describe('db helpers', () => {
       month: '2026-04',
       inputTokens: 11,
       outputTokens: 5,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
     })
     // Critical: must NOT touch the user-keyed agent_usage path.
     expect(mockDb.updateAgentUsageTokens).not.toHaveBeenCalled()

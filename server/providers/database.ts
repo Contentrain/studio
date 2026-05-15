@@ -285,6 +285,8 @@ export interface DatabaseProvider {
     toolCalls?: unknown[] | null
     tokenCountInput?: number
     tokenCountOutput?: number
+    cacheCreationInputTokens?: number
+    cacheReadInputTokens?: number
     model?: string
   }) => Promise<void>
 
@@ -318,7 +320,13 @@ export interface DatabaseProvider {
     limit: number
   }) => Promise<{ allowed: boolean, currentCount: number }>
 
-  /** Update token counts on an existing agent_usage row (after chat completes). */
+  /**
+   * Update token counts on an existing `agent_usage` row after the
+   * chat completes. Cache token fields are required (callers pass 0
+   * when the provider didn't report cache usage) so the call shape
+   * stays stable and the underlying `_v2` RPC always receives all
+   * four values.
+   */
   updateAgentUsageTokens: (input: {
     workspaceId: string
     userId: string
@@ -326,6 +334,8 @@ export interface DatabaseProvider {
     source: string
     inputTokens: number
     outputTokens: number
+    cacheCreationInputTokens: number
+    cacheReadInputTokens: number
   }) => Promise<void>
 
   /**
@@ -366,13 +376,19 @@ export interface DatabaseProvider {
     current: number
   }>
 
-  /** Increment token counters on the `api_message_usage` row after the AI call settles. */
+  /**
+   * Increment token counters on the `api_message_usage` row after the
+   * AI call settles. Cache token fields are required for the same
+   * stability reason as `updateAgentUsageTokens`.
+   */
   updateAPIUsageTokens: (input: {
     workspaceId: string
     apiKeyId: string
     month: string
     inputTokens: number
     outputTokens: number
+    cacheCreationInputTokens: number
+    cacheReadInputTokens: number
   }) => Promise<void>
 
   /**

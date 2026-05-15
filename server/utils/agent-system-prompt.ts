@@ -1,4 +1,5 @@
 import type { ModelDefinition, ContentrainConfig, FieldDef } from '@contentrain/types'
+import type { AISystemBlock } from '../providers/ai'
 import type { Branch } from '../providers/git'
 import type { AgentPermissions } from './agent-permissions'
 import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-types'
@@ -6,8 +7,22 @@ import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-type
 /**
  * Bounded Task Executor system prompt.
  *
- * Structure: Role → Contentrain Architecture → UI Context → Intent → State → Schema → Permissions → Rules
- * Each section is purpose-built to constrain the agent's behavior.
+ * Two ways to consume:
+ *
+ *   - `buildSystemPrompt(...)` returns a single concatenated string,
+ *     preserved for callers that don't want prompt-cache markers
+ *     (legacy paths, tests, alternative providers).
+ *
+ *   - `buildSystemPromptBlocks(...)` returns a `static` /
+ *     `contentIndex` / `dynamic` split shaped for Anthropic's
+ *     `cache_control` breakpoints. The caller assembles the final
+ *     `AISystemBlock[]` and places markers on the first two blocks.
+ *
+ * Static/dynamic split rule: a section is "static" only if its
+ * content is byte-identical across requests within the same project
+ * (modulo brain refreshes). Anything keyed on `uiContext`, `intent`,
+ * or `state` lives in the dynamic block so a single-character change
+ * doesn't invalidate the cached prefix.
  */
 
 export interface ProjectState {
@@ -19,29 +34,103 @@ export interface ProjectState {
   contentContext?: Record<string, unknown> | null
 }
 
-export function buildSystemPrompt(
+/**
+ * Static prompt body — content that does NOT vary with `uiContext`,
+ * `intent`, or `state`. Safe to wrap in a cached system block.
+ */
+function buildStaticBody(
   config: ContentrainConfig | null,
   models: ModelDefinition[],
   permissions: AgentPermissions,
-  state: ProjectState,
-  uiContext: ChatUIContext,
-  intent: ClassifiedIntent,
   vocabulary?: Record<string, Record<string, string>> | null,
   plan?: import('./license').Plan,
   customInstructions?: string | null,
 ): string {
   const sections: string[] = []
 
-  // 1. ROLE — strict, bounded
+  // ROLE
   sections.push(agentPrompt('role.definition'))
 
-  // 2. CONTENTRAIN ARCHITECTURE — the agent must know this to work correctly
+  // CONTENTRAIN ARCHITECTURE
   sections.push(buildArchitectureSection())
 
-  // 3. UI CONTEXT — what the user is looking at RIGHT NOW
+  // CONFIG
+  if (config) {
+    sections.push(`## Configuration
+- Stack: ${config.stack}
+- Locales: ${config.locales.supported.join(', ')} (default: ${config.locales.default})
+- Domains: ${config.domains.join(', ')}
+- Workflow: ${config.workflow}`)
+  }
+
+  // SCHEMA — model list without active-model marker
+  if (models.length > 0) {
+    sections.push(buildSchemaSection(models))
+  }
+
+  // RELATION GRAPH
+  const relationGraph = buildRelationGraph(models)
+  if (relationGraph) {
+    sections.push(relationGraph)
+  }
+
+  // VOCABULARY
+  if (vocabulary && Object.keys(vocabulary).length > 0) {
+    const termCount = Object.keys(vocabulary).length
+    const sampleTerms = Object.entries(vocabulary).slice(0, 10)
+    const termLines = sampleTerms.map(([key, translations]) => {
+      const locales = Object.entries(translations).map(([l, v]) => `${l}: "${v}"`).join(', ')
+      return `  - ${key}: ${locales}`
+    })
+    let vocabSection = `## Vocabulary (${termCount} terms)\nShared terminology from .contentrain/vocabulary.json:\n${termLines.join('\n')}`
+    if (termCount > 10) {
+      vocabSection += `\n  ... and ${termCount - 10} more terms`
+    }
+    sections.push(vocabSection)
+  }
+
+  // PERMISSIONS
+  const roleDisplay = permissions.projectRole
+    ? `${permissions.workspaceRole} / ${permissions.projectRole}`
+    : permissions.workspaceRole
+
+  sections.push(`## Permissions
+- Role: ${roleDisplay}
+- Available tools: ${permissions.availableTools.join(', ')}${
+  permissions.specificModels
+    ? `\n- Model access restricted to: ${permissions.allowedModels.join(', ')}`
+    : ''
+}`)
+
+  // BASE RULES — intent-independent
+  sections.push(buildBaseRulesSection(config, permissions, plan))
+
+  // CUSTOM INSTRUCTIONS (per Conversation API key, stable across the key's lifetime)
+  if (customInstructions) {
+    sections.push(`### Custom Instructions (from project admin)\n${customInstructions}`)
+  }
+
+  return sections.join('\n\n')
+}
+
+/**
+ * Dynamic prompt body — UI context, intent, state, intent-specific
+ * rules. Anything that changes per request lives here so the cache
+ * marker on the static block stays valid.
+ */
+function buildDynamicBody(
+  models: ModelDefinition[],
+  state: ProjectState,
+  uiContext: ChatUIContext,
+  intent: ClassifiedIntent,
+  config: ContentrainConfig | null,
+): string {
+  const sections: string[] = []
+
+  // UI CONTEXT — what the user is looking at RIGHT NOW (includes active model annotation)
   sections.push(buildContextSection(uiContext, models, config))
 
-  // 4. INFERRED INTENT
+  // INFERRED INTENT
   if (intent.category !== 'out_of_scope') {
     const inferredLines: string[] = [`## Inferred Intent: ${intent.category}`]
     if (intent.inferred.modelId) inferredLines.push(`Default model: ${intent.inferred.modelId}`)
@@ -53,7 +142,7 @@ export function buildSystemPrompt(
     sections.push(inferredLines.join('\n'))
   }
 
-  // 5. PROJECT STATE
+  // PROJECT STATE
   const stateLines: string[] = ['## Project State']
   stateLines.push(`- Phase: ${state.phase}`)
   stateLines.push(`- Initialized: ${state.initialized ? 'YES' : 'NO'}`)
@@ -65,7 +154,6 @@ export function buildSystemPrompt(
     }
   }
 
-  // Context.json — last operation tracking
   if (state.contentContext) {
     const lastOp = state.contentContext.lastOperation as { tool?: string, model?: string, locale?: string, timestamp?: string } | undefined
     const stats = state.contentContext.stats as { models?: number, entries?: number, locales?: string[] } | undefined
@@ -86,63 +174,95 @@ export function buildSystemPrompt(
 
   sections.push(stateLines.join('\n'))
 
-  // 6. PROJECT CONFIG
-  if (config) {
-    sections.push(`## Configuration
-- Stack: ${config.stack}
-- Locales: ${config.locales.supported.join(', ')} (default: ${config.locales.default})
-- Domains: ${config.domains.join(', ')}
-- Workflow: ${config.workflow}`)
-  }
-
-  // 7. SCHEMA — full detail for all models with relation graph
-  if (models.length > 0) {
-    sections.push(buildSchemaSection(models, uiContext))
-  }
-
-  // 8. RELATION GRAPH — cross-model references
-  const relationGraph = buildRelationGraph(models)
-  if (relationGraph) {
-    sections.push(relationGraph)
-  }
-
-  // 9. VOCABULARY — shared terminology across locales
-  if (vocabulary && Object.keys(vocabulary).length > 0) {
-    const termCount = Object.keys(vocabulary).length
-    const sampleTerms = Object.entries(vocabulary).slice(0, 10)
-    const termLines = sampleTerms.map(([key, translations]) => {
-      const locales = Object.entries(translations).map(([l, v]) => `${l}: "${v}"`).join(', ')
-      return `  - ${key}: ${locales}`
-    })
-    let vocabSection = `## Vocabulary (${termCount} terms)\nShared terminology from .contentrain/vocabulary.json:\n${termLines.join('\n')}`
-    if (termCount > 10) {
-      vocabSection += `\n  ... and ${termCount - 10} more terms`
-    }
-    sections.push(vocabSection)
-  }
-
-  // 9. PERMISSIONS
-  const roleDisplay = permissions.projectRole
-    ? `${permissions.workspaceRole} / ${permissions.projectRole}`
-    : permissions.workspaceRole
-
-  sections.push(`## Permissions
-- Role: ${roleDisplay}
-- Available tools: ${permissions.availableTools.join(', ')}${
-  permissions.specificModels
-    ? `\n- Model access restricted to: ${permissions.allowedModels.join(', ')}`
-    : ''
-}`)
-
-  // 10. RULES — hardened, workflow-aware, architecture-aware, role-aware, plan-aware
-  sections.push(buildRulesSection(config, intent, permissions, plan))
-
-  // Custom instructions (Conversation API keys)
-  if (customInstructions) {
-    sections.push(`### Custom Instructions (from project admin)\n${customInstructions}`)
-  }
+  // INTENT-SPECIFIC RULES (out-of-scope, etc.)
+  const intentRules = buildIntentRulesSection(intent)
+  if (intentRules) sections.push(intentRules)
 
   return sections.join('\n\n')
+}
+
+/**
+ * Structured system prompt split into prompt-cache friendly blocks.
+ *
+ * - `static`: stable across requests; safe behind a `cache_control`
+ *   marker (Block 1).
+ * - `contentIndex`: brain content index, refreshes on its own TTL;
+ *   gets its own cache breakpoint (Block 2) so a schema change
+ *   doesn't invalidate the content cache and vice versa.
+ * - `dynamic`: UI context / intent / state — must come after the
+ *   cache breakpoints so request-by-request changes don't break the
+ *   cached prefix.
+ *
+ * Callers compose `AISystemBlock[]` and place markers on the first
+ * two blocks. The `contentIndex` field is `null` when the brain
+ * hasn't produced one.
+ */
+export interface SystemPromptBlocks {
+  static: string
+  contentIndex: string | null
+  dynamic: string
+}
+
+export function buildSystemPromptBlocks(
+  config: ContentrainConfig | null,
+  models: ModelDefinition[],
+  permissions: AgentPermissions,
+  state: ProjectState,
+  uiContext: ChatUIContext,
+  intent: ClassifiedIntent,
+  contentIndex: string | null,
+  vocabulary?: Record<string, Record<string, string>> | null,
+  plan?: import('./license').Plan,
+  customInstructions?: string | null,
+): SystemPromptBlocks {
+  return {
+    static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions),
+    contentIndex: contentIndex && contentIndex.trim() ? contentIndex : null,
+    dynamic: buildDynamicBody(models, state, uiContext, intent, config),
+  }
+}
+
+/**
+ * Materialize the cache-aware blocks as an `AISystemBlock[]` ready
+ * to hand to `AIProvider`. The first two blocks (static + brain
+ * content index) get `cache_control` markers; the dynamic block
+ * stays uncached so request-level changes don't poison the prefix.
+ */
+export function toSystemBlocks(prompt: SystemPromptBlocks): AISystemBlock[] {
+  const blocks: AISystemBlock[] = []
+  blocks.push({ type: 'text', text: prompt.static, cacheControl: { type: 'ephemeral' } })
+  if (prompt.contentIndex) {
+    blocks.push({ type: 'text', text: prompt.contentIndex, cacheControl: { type: 'ephemeral' } })
+  }
+  if (prompt.dynamic.trim()) {
+    blocks.push({ type: 'text', text: prompt.dynamic })
+  }
+  return blocks
+}
+
+/**
+ * Legacy single-string composition, preserved for callers that don't
+ * want cache markers (alternative providers, certain test paths).
+ * Equivalent to `buildSystemPromptBlocks(...)` concatenated, no
+ * cache_control markers — semantically identical to the old function.
+ */
+export function buildSystemPrompt(
+  config: ContentrainConfig | null,
+  models: ModelDefinition[],
+  permissions: AgentPermissions,
+  state: ProjectState,
+  uiContext: ChatUIContext,
+  intent: ClassifiedIntent,
+  vocabulary?: Record<string, Record<string, string>> | null,
+  plan?: import('./license').Plan,
+  customInstructions?: string | null,
+): string {
+  const blocks = buildSystemPromptBlocks(
+    config, models, permissions, state, uiContext, intent,
+    null, // contentIndex appended by caller via `${prompt}\n\n${contentIndex}`
+    vocabulary, plan, customInstructions,
+  )
+  return [blocks.static, blocks.dynamic].filter(Boolean).join('\n\n')
 }
 
 // ─── Architecture Section ───
@@ -162,19 +282,18 @@ function buildArchitectureSection(): string {
 
 // ─── Schema Section ───
 
-function buildSchemaSection(models: ModelDefinition[], uiContext: ChatUIContext): string {
-  const activeModel = uiContext.activeModelId
-    ? models.find(m => m.id === uiContext.activeModelId)
-    : null
-
+/**
+ * Pure model-list rendering — no active-model marker. The active
+ * model annotation lives in the dynamic UI Context block so the
+ * schema itself stays byte-identical across requests and the
+ * cache_control marker placed on the static system block can
+ * actually hit.
+ */
+function buildSchemaSection(models: ModelDefinition[]): string {
   const lines: string[] = ['## Content Schema']
 
-  // Show ALL models with full field details (not just active one)
   for (const model of models) {
-    const isActive = model.id === activeModel?.id
-    const prefix = isActive ? '### ▶ ' : '### '
-
-    lines.push(`${prefix}${model.name} (\`${model.id}\`)`)
+    lines.push(`### ${model.name} (\`${model.id}\`)`)
     lines.push(`Kind: ${model.kind}, domain: ${model.domain}, i18n: ${model.i18n}`)
 
     if (model.fields && Object.keys(model.fields).length > 0) {
@@ -334,7 +453,12 @@ function buildContextSection(
 
 // ─── Rules Section ───
 
-function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedIntent, permissions: AgentPermissions, plan?: import('./license').Plan): string {
+/**
+ * Base rules block — depends on `config` (project-stable),
+ * `permissions` (role-stable per request), and `plan` (workspace-
+ * stable). No intent dependency, so safe for the cached prefix.
+ */
+function buildBaseRulesSection(config: ContentrainConfig | null, permissions: AgentPermissions, plan?: import('./license').Plan): string {
   const effectivePlan = plan ?? 'starter'
   const workflow = config?.workflow ?? 'auto-merge'
   const isPrivileged = permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
@@ -412,10 +536,17 @@ function buildRulesSection(config: ContentrainConfig | null, intent: ClassifiedI
   }
   rules.push(agentPrompt('plan.tiers', tierParams))
 
-  // Out of scope
-  if (intent.category === 'out_of_scope') {
-    rules.push(agentPrompt('rules.off_topic'))
-  }
-
   return `## Rules\n${rules.map(r => `- ${r}`).join('\n')}`
+}
+
+/**
+ * Intent-dependent rules. Returns `null` when no intent-specific rule
+ * applies (the common case), so the caller can omit the section
+ * entirely and keep the dynamic block minimal.
+ */
+function buildIntentRulesSection(intent: ClassifiedIntent): string | null {
+  if (intent.category === 'out_of_scope') {
+    return `## Additional Rules\n- ${agentPrompt('rules.off_topic')}`
+  }
+  return null
 }

@@ -13,6 +13,12 @@ export interface AITool {
   name: string
   description: string
   inputSchema: Record<string, unknown> // JSON Schema
+  /**
+   * Provider-agnostic prompt cache marker. When set on the LAST tool
+   * in the array, supporting providers (Anthropic) cache the full
+   * tools block. Unsupported providers ignore the field.
+   */
+  cacheControl?: AICacheControl
 }
 
 export interface AIMessage {
@@ -25,6 +31,43 @@ export type AIContentBlock
     | { type: 'tool_use', id: string, name: string, input: unknown }
     | { type: 'tool_result', toolUseId: string, content: string }
 
+/**
+ * Prompt cache marker. `ephemeral` is Anthropic's 5-minute TTL bucket.
+ * Provider-agnostic shape — providers that don't support prompt
+ * caching ignore the marker entirely and the request still works
+ * (just without cache benefits).
+ */
+export interface AICacheControl {
+  type: 'ephemeral'
+}
+
+/**
+ * Structured system prompt block. Use the array form of
+ * `AICompletionRequest.system` to place cache breakpoints between
+ * blocks. A plain `string` is equivalent to a single uncached block
+ * and stays accepted for backward compatibility.
+ */
+export interface AISystemBlock {
+  type: 'text'
+  text: string
+  cacheControl?: AICacheControl
+}
+
+/**
+ * Token usage on a single completion. Anthropic returns four disjoint
+ * buckets — `input_tokens` semantic is "non-cached input only," so
+ * the existing dashboards that sum it stay correct after this change.
+ * Total billable input cost (Contentrain-side) is approximately:
+ *   inputTokens * 1x + cacheCreationInputTokens * 1.25x + cacheReadInputTokens * 0.1x
+ * at the base per-MTok price for the model.
+ */
+export interface AIUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+}
+
 export interface AIStreamEvent {
   type: 'text' | 'tool_use_start' | 'tool_use_input' | 'tool_use_end' | 'message_end' | 'error'
   // text
@@ -35,14 +78,20 @@ export interface AIStreamEvent {
   toolInput?: unknown
   // message_end
   stopReason?: 'end_turn' | 'tool_use' | 'max_tokens'
-  usage?: { inputTokens: number, outputTokens: number }
+  usage?: AIUsage
   // error
   error?: string
 }
 
 export interface AICompletionRequest {
   model: string
-  system: string
+  /**
+   * String form is treated as a single uncached system block. Array
+   * form lets callers place cache breakpoints between blocks; up to
+   * 4 cache_control markers are honored per request (Anthropic
+   * limit), shared across system + tools + messages.
+   */
+  system: string | AISystemBlock[]
   messages: AIMessage[]
   tools: AITool[]
   maxTokens: number
@@ -52,7 +101,7 @@ export interface AICompletionRequest {
 export interface AICompletionResponse {
   content: AIContentBlock[]
   stopReason: 'end_turn' | 'tool_use' | 'max_tokens'
-  usage: { inputTokens: number, outputTokens: number }
+  usage: AIUsage
 }
 
 export interface AIProvider {

@@ -4,6 +4,7 @@ import { withTestServer } from '../helpers/http'
 vi.mock('~~/server/utils/agent-types', async () => await import('../../server/utils/agent-types'))
 vi.mock('~~/server/utils/agent-state-machine', async () => await import('../../server/utils/agent-state-machine'))
 vi.mock('~~/server/utils/agent-context', async () => await import('../../server/utils/agent-context'))
+vi.mock('~~/server/utils/agent-system-prompt', async () => await import('../../server/utils/agent-system-prompt'))
 vi.mock('~~/server/utils/conversation-engine', async () => await import('../../server/utils/conversation-engine'))
 vi.mock('~~/server/utils/conversation-history', async () => await import('../../server/utils/conversation-history'))
 
