@@ -251,7 +251,7 @@ export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
 
   createConversation: (projectId: string, userId: string, title: string) => Promise<string | null>
-  getConversation: (conversationId: string, projectId: string, filters?: { userId?: string, workspaceId?: string }) => Promise<DatabaseRow | null>
+  getConversation: (conversationId: string, projectId: string, filters?: { userId?: string }) => Promise<DatabaseRow | null>
   listConversations: (accessToken: string, projectId: string, userId: string) => Promise<DatabaseRow[]>
   deleteConversation: (accessToken: string, conversationId: string, userId: string, projectId: string) => Promise<void>
   updateConversationTimestamp: (conversationId: string) => Promise<void>
