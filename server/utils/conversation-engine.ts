@@ -1,5 +1,5 @@
 import type { ModelDefinition } from '@contentrain/types'
-import type { AIMessage, AIContentBlock, AITool } from '~~/server/providers/ai'
+import type { AIMessage, AIContentBlock, AISystemBlock, AITool } from '~~/server/providers/ai'
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 
@@ -29,7 +29,13 @@ export interface ConversationEvent {
 export interface ConversationConfig {
   model: string
   apiKey: string
-  systemPrompt: string
+  /**
+   * Either a plain string (single uncached system block) or an array
+   * of `AISystemBlock`s with optional cache markers. The engine
+   * forwards the value verbatim to the provider — callers that want
+   * prompt-cache hits build their blocks via `buildSystemPromptBlocks`.
+   */
+  systemPrompt: string | AISystemBlock[]
   messages: AIMessage[]
   tools: AITool[]
   maxToolIterations?: number
@@ -84,6 +90,8 @@ export async function* runConversationLoop(
 
   let totalInputTokens = 0
   let totalOutputTokens = 0
+  let totalCacheCreationInputTokens = 0
+  let totalCacheReadInputTokens = 0
   let lastAssistantContent: AIContentBlock[] = []
   let accumulatedAffected: AffectedResources = emptyAffected()
 
@@ -142,6 +150,8 @@ export async function* runConversationLoop(
             flushText()
             totalInputTokens += streamEvent.usage?.inputTokens ?? 0
             totalOutputTokens += streamEvent.usage?.outputTokens ?? 0
+            totalCacheCreationInputTokens += streamEvent.usage?.cacheCreationInputTokens ?? 0
+            totalCacheReadInputTokens += streamEvent.usage?.cacheReadInputTokens ?? 0
             stopReason = streamEvent.stopReason
             break
           case 'error':
@@ -157,6 +167,8 @@ export async function* runConversationLoop(
       )
       totalInputTokens += response.usage.inputTokens
       totalOutputTokens += response.usage.outputTokens
+      totalCacheCreationInputTokens += response.usage.cacheCreationInputTokens ?? 0
+      totalCacheReadInputTokens += response.usage.cacheReadInputTokens ?? 0
       stopReason = response.stopReason
 
       for (const block of response.content) {
@@ -224,7 +236,12 @@ export async function* runConversationLoop(
   // === DONE with affected resources ===
   yield {
     type: 'done',
-    usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+    usage: {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      cacheCreationInputTokens: totalCacheCreationInputTokens,
+      cacheReadInputTokens: totalCacheReadInputTokens,
+    },
     affected: accumulatedAffected,
     lastContent: lastAssistantContent,
   }

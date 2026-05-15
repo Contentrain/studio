@@ -4,6 +4,7 @@ import { withTestServer } from '../helpers/http'
 vi.mock('~~/server/utils/agent-types', async () => await import('../../server/utils/agent-types'))
 vi.mock('~~/server/utils/agent-state-machine', async () => await import('../../server/utils/agent-state-machine'))
 vi.mock('~~/server/utils/agent-context', async () => await import('../../server/utils/agent-context'))
+vi.mock('~~/server/utils/agent-system-prompt', async () => await import('../../server/utils/agent-system-prompt'))
 vi.mock('~~/server/utils/conversation-engine', async () => await import('../../server/utils/conversation-engine'))
 vi.mock('~~/server/utils/conversation-history', async () => await import('../../server/utils/conversation-history'))
 
@@ -149,7 +150,8 @@ describe('chat route integration', () => {
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('saveChatResult', saveChatResult)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildSystemPromptBlocks', vi.fn().mockReturnValue({ static: 'system', contentIndex: null, dynamic: '' }))
+    vi.stubGlobal('toSystemBlocks', vi.fn().mockReturnValue([{ type: 'text', text: 'system' }]))
     vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       config: null,
@@ -195,19 +197,19 @@ describe('chat route integration', () => {
       // budget math is covered by conversation-history.test.ts. Here we only
       // check that the handler asked for some bounded history slice.
       expect(mockLoadMessages).toHaveBeenCalledWith('conversation-new', expect.any(Number))
-      expect(saveChatResult).toHaveBeenCalledWith(
-        'conversation-new',
-        'hello',
-        'Hello from the agent.',
-        [{ type: 'text', text: 'Hello from the agent.' }],
-        expect.any(String),
-        12,
-        24,
-        'workspace-1',
-        'user-1',
-        'studio',
-        expect.any(String),
-      )
+      expect(saveChatResult).toHaveBeenCalledWith(expect.objectContaining({
+        conversationId: 'conversation-new',
+        userMessage: 'hello',
+        assistantText: 'Hello from the agent.',
+        assistantContent: [{ type: 'text', text: 'Hello from the agent.' }],
+        model: expect.any(String),
+        inputTokens: 12,
+        outputTokens: 24,
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        usageSource: 'studio',
+        usageMonth: expect.any(String),
+      }))
     })
   })
 
@@ -334,7 +336,8 @@ describe('chat route integration', () => {
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('saveChatResult', saveChatResult)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildSystemPromptBlocks', vi.fn().mockReturnValue({ static: 'system', contentIndex: null, dynamic: '' }))
+    vi.stubGlobal('toSystemBlocks', vi.fn().mockReturnValue([{ type: 'text', text: 'system' }]))
     vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       config: null,
@@ -418,7 +421,8 @@ describe('chat route integration', () => {
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('saveChatResult', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildSystemPromptBlocks', vi.fn().mockReturnValue({ static: 'system', contentIndex: null, dynamic: '' }))
+    vi.stubGlobal('toSystemBlocks', vi.fn().mockReturnValue([{ type: 'text', text: 'system' }]))
     vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       config: null,
@@ -501,7 +505,8 @@ describe('chat route integration', () => {
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('saveChatResult', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildSystemPromptBlocks', vi.fn().mockReturnValue({ static: 'system', contentIndex: null, dynamic: '' }))
+    vi.stubGlobal('toSystemBlocks', vi.fn().mockReturnValue([{ type: 'text', text: 'system' }]))
     vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       config: null,

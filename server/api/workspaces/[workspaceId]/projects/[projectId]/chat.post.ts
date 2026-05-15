@@ -189,18 +189,31 @@ export default defineEventHandler(async (event) => {
       contentContext,
     }
 
-    let systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary, plan)
-
-    // Append content index from brain cache (compact summary of all content)
+    // Build the system prompt as cache-aware blocks: the static body
+    // (role, architecture, schema, vocab, permissions, base rules,
+    // custom instructions) and the brain content index get their own
+    // `cache_control` markers; the dynamic block (UI context, intent,
+    // state) follows uncached so request-by-request changes never
+    // invalidate the cached prefix.
     const contentIndex = buildContentIndex(brain)
-    if (contentIndex) {
-      systemPrompt += `\n\n${contentIndex}`
-    }
+    const promptBlocks = buildSystemPromptBlocks(
+      projectConfig, models, permissions, projectState, uiContext, intent,
+      contentIndex || null,
+      vocabulary, plan,
+    )
+    const systemPrompt = toSystemBlocks(promptBlocks)
 
     // === FILTER TOOLS by permissions + phase ===
     const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
     const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
     const aiTools = toAITools(phaseFiltered)
+
+    // Mark the last tool with cache_control so Anthropic caches the
+    // entire tools block. Tools rarely change within a session — this
+    // is a high-hit-rate third breakpoint after the two system blocks.
+    if (aiTools.length > 0) {
+      aiTools[aiTools.length - 1]!.cacheControl = { type: 'ephemeral' }
+    }
 
     // Workflow: plans without review feature always auto-merge regardless of config
     const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
@@ -216,6 +229,8 @@ export default defineEventHandler(async (event) => {
 
       let totalInputTokens = 0
       let totalOutputTokens = 0
+      let totalCacheCreationInputTokens = 0
+      let totalCacheReadInputTokens = 0
       let lastAssistantContent: AIContentBlock[] = []
 
       try {
@@ -238,9 +253,15 @@ export default defineEventHandler(async (event) => {
 
           // Forward all events to SSE stream
           if (evt.type === 'done') {
-          // Extract final state from done event before forwarding
-            totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
-            totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
+            // Extract final state from done event before forwarding.
+            // Engine accumulates all four token buckets (regular
+            // input/output + cache creation + cache read) across
+            // streaming and non-streaming iterations.
+            const u = evt.usage as { inputTokens?: number, outputTokens?: number, cacheCreationInputTokens?: number, cacheReadInputTokens?: number } | undefined
+            totalInputTokens = u?.inputTokens ?? 0
+            totalOutputTokens = u?.outputTokens ?? 0
+            totalCacheCreationInputTokens = u?.cacheCreationInputTokens ?? 0
+            totalCacheReadInputTokens = u?.cacheReadInputTokens ?? 0
             lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
 
             // Forward the done event without lastContent (not needed by client)
@@ -261,11 +282,21 @@ export default defineEventHandler(async (event) => {
           .map(b => (b as { text: string }).text)
           .join('')
 
-        await saveChatResult(
-          conversationId, body.message, assistantText,
-          lastAssistantContent, model, totalInputTokens, totalOutputTokens,
-          workspaceId, session.user.id, usageSource, usageMonth,
-        )
+        await saveChatResult({
+          conversationId,
+          userMessage: body.message,
+          assistantText,
+          assistantContent: lastAssistantContent,
+          model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cacheCreationInputTokens: totalCacheCreationInputTokens,
+          cacheReadInputTokens: totalCacheReadInputTokens,
+          workspaceId,
+          userId: session.user.id,
+          usageSource,
+          usageMonth,
+        })
 
       // Webhook events are now emitted from conversation-engine.ts per tool execution
       }

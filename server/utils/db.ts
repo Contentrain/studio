@@ -227,6 +227,8 @@ async function persistChatMessages(input: {
   model: string
   inputTokens: number
   outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
 }) {
   const db = useDatabaseProvider()
   await db.insertMessage({ conversationId: input.conversationId, role: 'user', content: input.userMessage })
@@ -238,6 +240,8 @@ async function persistChatMessages(input: {
       toolCalls: input.assistantContent.length > 0 ? input.assistantContent : null,
       tokenCountInput: input.inputTokens,
       tokenCountOutput: input.outputTokens,
+      cacheCreationInputTokens: input.cacheCreationInputTokens,
+      cacheReadInputTokens: input.cacheReadInputTokens,
       model: input.model,
     })
   }
@@ -258,41 +262,47 @@ async function persistChatMessages(input: {
  * Conversation API has its own actor model (key-keyed, not user-keyed)
  * and a dedicated `api_message_usage` table — use `saveApiChatResult`.
  */
-export async function saveChatResult(
-  conversationId: string,
-  userMessage: string,
-  assistantText: string,
-  assistantContent: unknown[],
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-  workspaceId: string,
-  userId: string,
-  usageSource: 'byoa' | 'studio',
-  usageMonth: string,
-) {
+export async function saveChatResult(input: {
+  conversationId: string
+  userMessage: string
+  assistantText: string
+  assistantContent: unknown[]
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+  workspaceId: string
+  userId: string
+  usageSource: 'byoa' | 'studio'
+  usageMonth: string
+}) {
   const db = useDatabaseProvider()
 
   await persistChatMessages({
-    conversationId,
-    userMessage,
-    assistantText,
-    assistantContent,
-    model,
-    inputTokens,
-    outputTokens,
+    conversationId: input.conversationId,
+    userMessage: input.userMessage,
+    assistantText: input.assistantText,
+    assistantContent: input.assistantContent,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cacheCreationInputTokens: input.cacheCreationInputTokens,
+    cacheReadInputTokens: input.cacheReadInputTokens,
   })
 
   await db.updateAgentUsageTokens({
-    workspaceId,
-    userId,
-    month: usageMonth,
-    source: usageSource,
-    inputTokens,
-    outputTokens,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    month: input.usageMonth,
+    source: input.usageSource,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cacheCreationInputTokens: input.cacheCreationInputTokens,
+    cacheReadInputTokens: input.cacheReadInputTokens,
   })
 
-  await db.updateConversationTimestamp(conversationId)
+  await db.updateConversationTimestamp(input.conversationId)
 }
 
 /**
@@ -300,37 +310,43 @@ export async function saveChatResult(
  * chat. The actor here is an API key (no workspace member identity),
  * so usage flows through `api_message_usage` instead of `agent_usage`.
  */
-export async function saveApiChatResult(
-  conversationId: string,
-  userMessage: string,
-  assistantText: string,
-  assistantContent: unknown[],
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-  workspaceId: string,
-  apiKeyId: string,
-  usageMonth: string,
-) {
+export async function saveApiChatResult(input: {
+  conversationId: string
+  userMessage: string
+  assistantText: string
+  assistantContent: unknown[]
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+  workspaceId: string
+  apiKeyId: string
+  usageMonth: string
+}) {
   const db = useDatabaseProvider()
 
   await persistChatMessages({
-    conversationId,
-    userMessage,
-    assistantText,
-    assistantContent,
-    model,
-    inputTokens,
-    outputTokens,
+    conversationId: input.conversationId,
+    userMessage: input.userMessage,
+    assistantText: input.assistantText,
+    assistantContent: input.assistantContent,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cacheCreationInputTokens: input.cacheCreationInputTokens,
+    cacheReadInputTokens: input.cacheReadInputTokens,
   })
 
   await db.updateAPIUsageTokens({
-    workspaceId,
-    apiKeyId,
-    month: usageMonth,
-    inputTokens,
-    outputTokens,
+    workspaceId: input.workspaceId,
+    apiKeyId: input.apiKeyId,
+    month: input.usageMonth,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cacheCreationInputTokens: input.cacheCreationInputTokens,
+    cacheReadInputTokens: input.cacheReadInputTokens,
   })
 
-  await db.updateConversationTimestamp(conversationId)
+  await db.updateConversationTimestamp(input.conversationId)
 }
