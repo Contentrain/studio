@@ -5,6 +5,7 @@ vi.mock('~~/server/utils/agent-types', async () => await import('../../server/ut
 vi.mock('~~/server/utils/agent-state-machine', async () => await import('../../server/utils/agent-state-machine'))
 vi.mock('~~/server/utils/agent-context', async () => await import('../../server/utils/agent-context'))
 vi.mock('~~/server/utils/conversation-engine', async () => await import('../../server/utils/conversation-engine'))
+vi.mock('~~/server/utils/conversation-history', async () => await import('../../server/utils/conversation-history'))
 
 async function loadChatHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/chat.post')).default

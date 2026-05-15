@@ -5,6 +5,7 @@ vi.mock('~~/server/utils/agent-types', async () => await import('../../server/ut
 vi.mock('~~/server/utils/agent-state-machine', async () => await import('../../server/utils/agent-state-machine'))
 vi.mock('~~/server/utils/agent-context', async () => await import('../../server/utils/agent-context'))
 vi.mock('~~/server/utils/conversation-engine', async () => await import('../../server/utils/conversation-engine'))
+vi.mock('~~/server/utils/conversation-history', async () => await import('../../server/utils/conversation-history'))
 
 async function loadChatHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/chat.post')).default
@@ -190,7 +191,10 @@ describe('chat route integration', () => {
       expect(payload).toContain('"id":"conversation-new"')
       expect(payload).toContain('"type":"done"')
       expect(mockCreateConversation).toHaveBeenCalledWith('project-1', 'user-1', 'hello')
-      expect(mockLoadMessages).toHaveBeenCalledWith('conversation-new', 50)
+      // rowLimit is derived from selectHistoryBudget(plan, model, source);
+      // budget math is covered by conversation-history.test.ts. Here we only
+      // check that the handler asked for some bounded history slice.
+      expect(mockLoadMessages).toHaveBeenCalledWith('conversation-new', expect.any(Number))
       expect(saveChatResult).toHaveBeenCalledWith(
         'conversation-new',
         'hello',
