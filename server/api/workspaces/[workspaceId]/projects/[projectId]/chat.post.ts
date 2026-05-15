@@ -1,10 +1,11 @@
-import type { AIMessage, AIContentBlock } from '~~/server/providers/ai'
+import type { AIContentBlock } from '~~/server/providers/ai'
 import type { ChatRequest } from '~~/server/utils/agent-types'
 import { createEventStream } from 'h3'
 import { toAITools } from '~~/server/utils/agent-types'
 import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
+import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEffectiveLimit } from '../../../../../utils/overage'
 
@@ -17,8 +18,6 @@ import { getEffectiveLimit } from '../../../../../utils/overage'
  * Endpoint-specific concerns (auth, rate limit, conversation DB, SSE transport) stay here.
  * The AI loop + tool execution logic lives in the reusable engine.
  */
-
-const HISTORY_TOKEN_BUDGET = 8000
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -143,32 +142,23 @@ export default defineEventHandler(async (event) => {
     if (!conversationId)
       throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
+    // Model: plan-gated selection. Picked here (before history) because
+    // `selectHistoryBudget` is model-aware — Haiku gets a smaller window
+    // than Sonnet/Opus.
+    const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
+    const STARTER_MODELS = ['claude-haiku-4-5-20251001']
+    const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
+    const requestedModel = body.model as string | undefined
+    const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
+
     // === HISTORY ===
-    const historyRows = await db.loadConversationMessages(conversationId, 50)
-
-    // Build message history: chronological order, newest messages prioritized within budget
-    const allHistory = historyRows ?? []
-    const messages: AIMessage[] = []
-
-    // Walk backwards to find budget cutoff, then take from that point forward
-    const budgetStart = (() => {
-      let tokens = 0
-      for (let i = allHistory.length - 1; i >= 0; i--) {
-        const row = allHistory[i]!
-        const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
-        const estimate = typeof content === 'string' ? Math.ceil(content.length / 4) : Math.ceil(JSON.stringify(content).length / 4)
-        tokens += estimate
-        if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
-      }
-      return 0
-    })()
-
-    for (let i = budgetStart; i < allHistory.length; i++) {
-      const row = allHistory[i]!
-      const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
-      messages.push({ role: row.role as 'user' | 'assistant', content })
-    }
-    messages.push({ role: 'user', content: body.message })
+    const budget = selectHistoryBudget({ plan, model, source: usageSource })
+    const historyRows = await db.loadConversationMessages(conversationId, budget.rowLimit)
+    const messages = buildPromptMessages({
+      history: historyRows ?? [],
+      newUserMessage: body.message,
+      budget,
+    })
 
     // === LOAD SCHEMA (from brain cache) ===
     const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
@@ -211,13 +201,6 @@ export default defineEventHandler(async (event) => {
     const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
     const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
     const aiTools = toAITools(phaseFiltered)
-
-    // Model: plan-gated selection
-    const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
-    const STARTER_MODELS = ['claude-haiku-4-5-20251001']
-    const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
-    const requestedModel = body.model as string | undefined
-    const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
 
     // Workflow: plans without review feature always auto-merge regardless of config
     const configWorkflow = projectConfig?.workflow ?? 'auto-merge'

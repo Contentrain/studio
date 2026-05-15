@@ -1,6 +1,6 @@
 import { createError, getHeader, getQuery, getRouterParam, readBody, type H3Event } from 'h3'
 import { useRuntimeConfig } from '#imports'
-import type { AIContentBlock, AIMessage } from '../../server/providers/ai'
+import type { AIContentBlock } from '../../server/providers/ai'
 import type { DatabaseProvider } from '../../server/providers/database'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext } from '../../server/utils/agent-types'
@@ -14,6 +14,7 @@ import { createContentEngine } from '../../server/utils/content-engine'
 import { errorMessage } from '../../server/utils/content-strings'
 import { normalizeContentRoot } from '../../server/utils/content-paths'
 import { runConversationLoop } from '../../server/utils/conversation-engine'
+import { buildPromptMessages, selectHistoryBudget } from '../../server/utils/conversation-history'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
 import { getPlanLimit, getWorkspacePlan, hasFeature } from '../../server/utils/license'
@@ -124,7 +125,13 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
   return { db, keyData, project: project as ConversationApiContext['project'], workspace: workspace as ConversationApiContext['workspace'], plan }
 }
 
-async function loadConversationMessages(
+/**
+ * Format conversation messages for the `/history.get` route's JSON
+ * response. The runtime chat path (`runConversationMessage`) goes
+ * through `selectHistoryBudget` + `buildPromptMessages` instead — this
+ * shape is purely for external API consumers reading their thread.
+ */
+async function loadConversationHistoryForResponse(
   db: DatabaseProvider,
   conversationId: string,
   limit: number,
@@ -284,32 +291,19 @@ async function runConversationMessage(
     if (!conversationId)
       throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
-    const historyRows = await loadConversationMessages(db, conversationId, 50)
-    const messages: AIMessage[] = []
-    const HISTORY_TOKEN_BUDGET = 8000
-
-    const budgetStart = (() => {
-      let tokens = 0
-      for (let i = historyRows.length - 1; i >= 0; i--) {
-        const row = historyRows[i]!
-        const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : row.content
-        const estimate = typeof content === 'string'
-          ? Math.ceil(content.length / 4)
-          : Math.ceil(JSON.stringify(content).length / 4)
-        tokens += estimate
-        if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
-      }
-      return 0
-    })()
-
-    for (let i = budgetStart; i < historyRows.length; i++) {
-      const row = historyRows[i]!
-      const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
-      messages.push({ role: row.role as 'user' | 'assistant', content })
-    }
-    messages.push({ role: 'user', content: body.message })
-
     const model = keyData.aiModel
+    const budget = selectHistoryBudget({ plan, model, source: 'api' })
+    const historyRows = await db.loadConversationMessages(
+      conversationId,
+      budget.rowLimit,
+      'role, content, tool_calls',
+    )
+    const messages = buildPromptMessages({
+      history: historyRows ?? [],
+      newUserMessage: body.message,
+      budget,
+    })
+
     const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
     const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
 
@@ -406,7 +400,7 @@ async function runConversationHistory(event: H3Event) {
     throw createError({ statusCode: 404, message: errorMessage('chat.conversation_not_found') })
 
   const limit = Math.min(Number(query.limit ?? 50), 100)
-  const messages = await loadConversationMessages(db, conversationId, limit)
+  const messages = await loadConversationHistoryForResponse(db, conversationId, limit)
 
   return { conversationId, messages }
 }
