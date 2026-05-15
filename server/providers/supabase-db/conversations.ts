@@ -20,8 +20,10 @@ type ConversationMethods = Pick<
   | 'getMonthlyUsageSummary'
   | 'incrementAgentUsageIfAllowed'
   | 'updateAgentUsageTokens'
+  | 'decrementAgentUsage'
   | 'incrementAPIUsageIfAllowed'
   | 'updateAPIUsageTokens'
+  | 'decrementAPIUsage'
   | 'getBYOAKey'
 >
 
@@ -245,6 +247,19 @@ export function conversationMethods(): ConversationMethods {
       })
     },
 
+    async decrementAgentUsage(input) {
+      const admin = getAdmin()
+      const { error } = await admin.rpc('decrement_agent_usage', {
+        p_workspace_id: input.workspaceId,
+        p_user_id: input.userId,
+        p_month: input.month,
+        p_source: input.source,
+      })
+      if (error) {
+        throw createError({ statusCode: 500, message: `Agent usage revert failed: ${error.message}` })
+      }
+    },
+
     // ─── API Message Usage (Conversation API) ───
 
     async incrementAPIUsageIfAllowed(input) {
@@ -274,6 +289,18 @@ export function conversationMethods(): ConversationMethods {
         p_input_tokens: input.inputTokens,
         p_output_tokens: input.outputTokens,
       })
+    },
+
+    async decrementAPIUsage(input) {
+      const admin = getAdmin()
+      const { error } = await admin.rpc('decrement_api_usage', {
+        p_workspace_id: input.workspaceId,
+        p_api_key_id: input.apiKeyId,
+        p_month: input.month,
+      })
+      if (error) {
+        throw createError({ statusCode: 500, message: `API usage revert failed: ${error.message}` })
+      }
     },
 
     // ─── BYOA Key ───

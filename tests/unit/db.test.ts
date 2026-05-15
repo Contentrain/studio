@@ -47,7 +47,9 @@ describe('db helpers', () => {
       insertMessage: vi.fn().mockResolvedValue(undefined),
       upsertAgentUsage: vi.fn().mockResolvedValue(undefined),
       updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
+      decrementAgentUsage: vi.fn().mockResolvedValue(undefined),
       updateAPIUsageTokens: vi.fn().mockResolvedValue(undefined),
+      decrementAPIUsage: vi.fn().mockResolvedValue(undefined),
       updateConversationTimestamp: vi.fn().mockResolvedValue(undefined),
       getBYOAKey: vi.fn().mockResolvedValue(null),
     }

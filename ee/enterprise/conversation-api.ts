@@ -175,183 +175,220 @@ async function runConversationMessage(
   const workspaceLimit = getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
   const keyLimit = getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)
 
-  const usageCheck = await db.incrementAPIUsageIfAllowed({
-    workspaceId: keyData.workspaceId,
-    apiKeyId: keyData.keyId,
-    month: usageMonth,
-    keyLimit,
-    workspaceLimit,
-  })
-  if (!usageCheck.allowed) {
-    const limitForMessage = usageCheck.reason === 'workspace_limit' ? workspacePlanLimit : keyData.monthlyMessageLimit
-    throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: limitForMessage }) })
+  // Billing semantic mirrors the Studio chat path: reservation is made
+  // up front for race-free cap enforcement, but a message only becomes
+  // billable once Anthropic streams a real provider event (text or
+  // tool_use). Any failure before that point refunds the slot via the
+  // finally below.
+  let reserved = false
+  let committed = false
+  const tryRevert = async (reason: string) => {
+    if (!reserved || committed) return
+    try {
+      await db.decrementAPIUsage({
+        workspaceId: keyData.workspaceId,
+        apiKeyId: keyData.keyId,
+        month: usageMonth,
+      })
+    }
+    catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[conversation-api] usage revert failed (${reason}):`, err)
+    }
   }
 
-  // Best-effort meter write for overage billing. Fire-and-forget.
-  recordAPIUsage({ workspaceId: keyData.workspaceId, count: 1, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
-
-  const permissions = buildPermissions(keyData)
-  const [owner, repo] = project.repo_full_name.split('/')
-  if (!owner || !repo) {
-    throw createError({ statusCode: 400, message: errorMessage('github.repo_required') })
-  }
-
-  const git = useGitProvider({
-    installationId: workspace.github_installation_id ?? 0,
-    owner,
-    repo,
-  })
-
-  const contentRoot = normalizeContentRoot(project.content_root)
-  const brain = await getOrBuildBrainCache(git, contentRoot, keyData.projectId)
-  const projectConfig = brain.config
-  const models = [...brain.models.values()]
-  const vocabulary = brain.vocabulary
-  const contentContext = brain.contentContext
-
-  const uiContext = parseConversationContext(body.context)
-
-  let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
   try {
-    const raw = await git.listBranches('cr/')
-    pendingBranches = raw.map(b => ({ name: b.name, sha: b.sha, protected: b.protected ?? false }))
-  }
-  catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[conversation-api] Failed to list branches:', err)
-  }
-
-  const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
-  const intent = classifyIntent(body.message, uiContext, phase)
-
-  let systemPrompt = buildSystemPrompt(
-    projectConfig,
-    models,
-    permissions,
-    { initialized: !!projectConfig, pendingBranches, projectStatus: project.status ?? 'active', phase, contentContext },
-    uiContext,
-    intent,
-    vocabulary,
-    plan,
-    keyData.customInstructions,
-  )
-
-  const contentIndex = buildContentIndex(brain)
-  if (contentIndex)
-    systemPrompt += `\n\n${contentIndex}`
-
-  const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as typeof STUDIO_TOOLS
-  const phaseFiltered = permissionFiltered.filter(tool => tool.requiredPhase.includes(phase))
-  const aiTools = toAITools(phaseFiltered)
-
-  const runtimeConfig = useRuntimeConfig()
-  const apiKey = runtimeConfig.anthropic.apiKey
-  if (!apiKey)
-    throw createError({ statusCode: 500, message: errorMessage('chat.no_api_key') })
-
-  let conversationId = body.conversationId
-  if (conversationId) {
-    const conv = await db.getConversation(conversationId, keyData.projectId, { apiKeyId: keyData.keyId })
-
-    if (!conv) conversationId = undefined
-  }
-
-  if (!conversationId) {
-    conversationId = await db.createApiConversation(keyData.projectId, keyData.keyId, body.message.substring(0, 100)) ?? undefined
-  }
-
-  if (!conversationId)
-    throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
-
-  const historyRows = await loadConversationMessages(db, conversationId, 50)
-  const messages: AIMessage[] = []
-  const HISTORY_TOKEN_BUDGET = 8000
-
-  const budgetStart = (() => {
-    let tokens = 0
-    for (let i = historyRows.length - 1; i >= 0; i--) {
-      const row = historyRows[i]!
-      const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : row.content
-      const estimate = typeof content === 'string'
-        ? Math.ceil(content.length / 4)
-        : Math.ceil(JSON.stringify(content).length / 4)
-      tokens += estimate
-      if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
-    }
-    return 0
-  })()
-
-  for (let i = budgetStart; i < historyRows.length; i++) {
-    const row = historyRows[i]!
-    const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
-    messages.push({ role: row.role as 'user' | 'assistant', content })
-  }
-  messages.push({ role: 'user', content: body.message })
-
-  const model = keyData.aiModel
-  const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
-  const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
-
-  const contentEngine = createContentEngine({ git, contentRoot, projectId: keyData.projectId })
-  const toolResults: Array<{ id: string, name: string, result: unknown }> = []
-  let responseText = ''
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
-  let lastAssistantContent: AIContentBlock[] = []
-
-  for await (const evt of runConversationLoop(
-    { model, apiKey, systemPrompt, messages, tools: aiTools },
-    {
-      engine: contentEngine,
-      git,
-      userEmail: `api-key:${keyData.name}`,
-      userId: keyData.keyId,
-      contentRoot,
-      workflow,
-      permissions,
-      plan,
-      projectId: keyData.projectId,
+    const usageCheck = await db.incrementAPIUsageIfAllowed({
       workspaceId: keyData.workspaceId,
+      apiKeyId: keyData.keyId,
+      month: usageMonth,
+      keyLimit,
+      workspaceLimit,
+    })
+    if (!usageCheck.allowed) {
+      const limitForMessage = usageCheck.reason === 'workspace_limit' ? workspacePlanLimit : keyData.monthlyMessageLimit
+      throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: limitForMessage }) })
+    }
+    reserved = true
+
+    const permissions = buildPermissions(keyData)
+    const [owner, repo] = project.repo_full_name.split('/')
+    if (!owner || !repo) {
+      throw createError({ statusCode: 400, message: errorMessage('github.repo_required') })
+    }
+
+    const git = useGitProvider({
+      installationId: workspace.github_installation_id ?? 0,
+      owner,
+      repo,
+    })
+
+    const contentRoot = normalizeContentRoot(project.content_root)
+    const brain = await getOrBuildBrainCache(git, contentRoot, keyData.projectId)
+    const projectConfig = brain.config
+    const models = [...brain.models.values()]
+    const vocabulary = brain.vocabulary
+    const contentContext = brain.contentContext
+
+    const uiContext = parseConversationContext(body.context)
+
+    let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
+    try {
+      const raw = await git.listBranches('cr/')
+      pendingBranches = raw.map(b => ({ name: b.name, sha: b.sha, protected: b.protected ?? false }))
+    }
+    catch (err) {
+    // eslint-disable-next-line no-console
+      console.error('[conversation-api] Failed to list branches:', err)
+    }
+
+    const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
+    const intent = classifyIntent(body.message, uiContext, phase)
+
+    let systemPrompt = buildSystemPrompt(
+      projectConfig,
+      models,
+      permissions,
+      { initialized: !!projectConfig, pendingBranches, projectStatus: project.status ?? 'active', phase, contentContext },
       uiContext,
-      phase,
-    },
-  )) {
-    switch (evt.type) {
-      case 'text':
-        responseText += evt.content as string
-        break
-      case 'tool_result':
-        toolResults.push({ id: evt.id as string, name: evt.name as string, result: evt.result })
-        break
-      case 'done':
-        totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
-        totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
-        lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
-        break
+      intent,
+      vocabulary,
+      plan,
+      keyData.customInstructions,
+    )
+
+    const contentIndex = buildContentIndex(brain)
+    if (contentIndex)
+      systemPrompt += `\n\n${contentIndex}`
+
+    const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as typeof STUDIO_TOOLS
+    const phaseFiltered = permissionFiltered.filter(tool => tool.requiredPhase.includes(phase))
+    const aiTools = toAITools(phaseFiltered)
+
+    const runtimeConfig = useRuntimeConfig()
+    const apiKey = runtimeConfig.anthropic.apiKey
+    if (!apiKey)
+      throw createError({ statusCode: 500, message: errorMessage('chat.no_api_key') })
+
+    let conversationId = body.conversationId
+    if (conversationId) {
+      const conv = await db.getConversation(conversationId, keyData.projectId, { apiKeyId: keyData.keyId })
+
+      if (!conv) conversationId = undefined
+    }
+
+    if (!conversationId) {
+      conversationId = await db.createApiConversation(keyData.projectId, keyData.keyId, body.message.substring(0, 100)) ?? undefined
+    }
+
+    if (!conversationId)
+      throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
+
+    const historyRows = await loadConversationMessages(db, conversationId, 50)
+    const messages: AIMessage[] = []
+    const HISTORY_TOKEN_BUDGET = 8000
+
+    const budgetStart = (() => {
+      let tokens = 0
+      for (let i = historyRows.length - 1; i >= 0; i--) {
+        const row = historyRows[i]!
+        const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : row.content
+        const estimate = typeof content === 'string'
+          ? Math.ceil(content.length / 4)
+          : Math.ceil(JSON.stringify(content).length / 4)
+        tokens += estimate
+        if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
+      }
+      return 0
+    })()
+
+    for (let i = budgetStart; i < historyRows.length; i++) {
+      const row = historyRows[i]!
+      const content = row.toolCalls ? (row.toolCalls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
+      messages.push({ role: row.role as 'user' | 'assistant', content })
+    }
+    messages.push({ role: 'user', content: body.message })
+
+    const model = keyData.aiModel
+    const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
+    const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
+
+    const contentEngine = createContentEngine({ git, contentRoot, projectId: keyData.projectId })
+    const toolResults: Array<{ id: string, name: string, result: unknown }> = []
+    let responseText = ''
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
+    let lastAssistantContent: AIContentBlock[] = []
+
+    for await (const evt of runConversationLoop(
+      { model, apiKey, systemPrompt, messages, tools: aiTools },
+      {
+        engine: contentEngine,
+        git,
+        userEmail: `api-key:${keyData.name}`,
+        userId: keyData.keyId,
+        contentRoot,
+        workflow,
+        permissions,
+        plan,
+        projectId: keyData.projectId,
+        workspaceId: keyData.workspaceId,
+        uiContext,
+        phase,
+      },
+    )) {
+    // Commit on first real provider event — see Studio chat handler
+    // for the same semantic. `tool_result` is internal, `done` is
+    // synthetic, neither counts.
+      if (!committed && (evt.type === 'text' || evt.type === 'tool_use')) {
+        committed = true
+        recordAPIUsage({ workspaceId: keyData.workspaceId, count: 1, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+      }
+
+      switch (evt.type) {
+        case 'text':
+          responseText += evt.content as string
+          break
+        case 'tool_result':
+          toolResults.push({ id: evt.id as string, name: evt.name as string, result: evt.result })
+          break
+        case 'done':
+          totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
+          totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
+          lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
+          break
+      }
+    }
+
+    await saveApiChatResult(
+      conversationId,
+      body.message,
+      responseText,
+      lastAssistantContent,
+      model,
+      totalInputTokens,
+      totalOutputTokens,
+      keyData.workspaceId,
+      keyData.keyId,
+      usageMonth,
+    )
+
+    return {
+      conversationId,
+      message: responseText,
+      toolResults: toolResults.length > 0 ? toolResults : undefined,
+      usage: {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      },
     }
   }
-
-  await saveApiChatResult(
-    conversationId,
-    body.message,
-    responseText,
-    lastAssistantContent,
-    model,
-    totalInputTokens,
-    totalOutputTokens,
-    keyData.workspaceId,
-    keyData.keyId,
-    usageMonth,
-  )
-
-  return {
-    conversationId,
-    message: responseText,
-    toolResults: toolResults.length > 0 ? toolResults : undefined,
-    usage: {
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
-    },
+  finally {
+    // Refund the reserved API slot if no real provider event ever
+    // flipped `committed` (auth failure to Anthropic, brain/tool init
+    // failures after reserve, etc.). After the first text or tool_use
+    // event we keep the reservation regardless of downstream outcome.
+    await tryRevert('reserve-scope')
   }
 }
 
