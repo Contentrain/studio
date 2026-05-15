@@ -15,8 +15,9 @@ import { errorMessage } from '../../server/utils/content-strings'
 import { normalizeContentRoot } from '../../server/utils/content-paths'
 import { runConversationLoop } from '../../server/utils/conversation-engine'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
-import { saveChatResult } from '../../server/utils/db'
-import { getWorkspacePlan, hasFeature } from '../../server/utils/license'
+import { saveApiChatResult } from '../../server/utils/db'
+import { getPlanLimit, getWorkspacePlan, hasFeature } from '../../server/utils/license'
+import { getEffectiveLimit } from '../../server/utils/overage'
 import { checkRateLimit } from '../../server/utils/rate-limit'
 import { useDatabaseProvider, useGitProvider } from '../../server/utils/providers'
 
@@ -163,18 +164,28 @@ async function runConversationMessage(
   if (!rateCheck.allowed)
     throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: Math.ceil(rateCheck.retryAfterMs / 1000) }) })
 
-  // Atomic: check monthly limit + reserve a message slot (prevents race conditions)
+  // Atomic: enforce per-key AND per-workspace caps in one RPC, then
+  // reserve a message slot. `getEffectiveLimit` raises the cap to
+  // SOFT_CAP_MAX when overage is enabled or the plan is Infinity, so
+  // the RPC stays integer-typed and overage requests fall through to
+  // the meter outbox below.
   const usageMonth = new Date().toISOString().substring(0, 7)
-  const { allowed } = await db.incrementAgentUsageIfAllowed({
+  const overageSettings = (event.context as { billing?: { overageSettings?: Record<string, boolean> } }).billing?.overageSettings
+  const workspacePlanLimit = getPlanLimit(plan, 'api.messages_per_month')
+  const workspaceLimit = getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
+  const keyLimit = getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)
+
+  const usageCheck = await db.incrementAPIUsageIfAllowed({
     workspaceId: keyData.workspaceId,
-    userId: keyData.keyId,
     apiKeyId: keyData.keyId,
     month: usageMonth,
-    source: 'api',
-    limit: keyData.monthlyMessageLimit,
+    keyLimit,
+    workspaceLimit,
   })
-  if (!allowed)
-    throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: keyData.monthlyMessageLimit }) })
+  if (!usageCheck.allowed) {
+    const limitForMessage = usageCheck.reason === 'workspace_limit' ? workspacePlanLimit : keyData.monthlyMessageLimit
+    throw createError({ statusCode: 429, message: errorMessage('conversation.monthly_limit', { limit: limitForMessage }) })
+  }
 
   // Best-effort meter write for overage billing. Fire-and-forget.
   recordAPIUsage({ workspaceId: keyData.workspaceId, count: 1, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
@@ -240,13 +251,13 @@ async function runConversationMessage(
 
   let conversationId = body.conversationId
   if (conversationId) {
-    const conv = await db.getConversation(conversationId, keyData.projectId, { userId: keyData.keyId })
+    const conv = await db.getConversation(conversationId, keyData.projectId, { apiKeyId: keyData.keyId })
 
     if (!conv) conversationId = undefined
   }
 
   if (!conversationId) {
-    conversationId = await db.createConversation(keyData.projectId, keyData.keyId, body.message.substring(0, 100)) ?? undefined
+    conversationId = await db.createApiConversation(keyData.projectId, keyData.keyId, body.message.substring(0, 100)) ?? undefined
   }
 
   if (!conversationId)
@@ -320,7 +331,7 @@ async function runConversationMessage(
     }
   }
 
-  await saveChatResult(
+  await saveApiChatResult(
     conversationId,
     body.message,
     responseText,
@@ -330,9 +341,7 @@ async function runConversationMessage(
     totalOutputTokens,
     keyData.workspaceId,
     keyData.keyId,
-    'api',
     usageMonth,
-    keyData.keyId,
   )
 
   return {
@@ -354,7 +363,7 @@ async function runConversationHistory(event: H3Event) {
   if (!conversationId)
     throw createError({ statusCode: 400, message: errorMessage('validation.conversation_id_required') })
 
-  const conv = await db.getConversation(conversationId, keyData.projectId, { userId: keyData.keyId })
+  const conv = await db.getConversation(conversationId, keyData.projectId, { apiKeyId: keyData.keyId })
 
   if (!conv)
     throw createError({ statusCode: 404, message: errorMessage('chat.conversation_not_found') })

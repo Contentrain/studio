@@ -149,11 +149,19 @@ export function createConversationKeysBridge() {
 
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-      if (body.customInstructions !== undefined) {
+      // Resolve plan once if any plan-gated field is being updated.
+      // monthlyMessageLimit must be clamped to the workspace plan cap
+      // — otherwise a downgraded workspace could carry a stale per-key
+      // limit that exceeds its current `api.messages_per_month`.
+      const needsPlan = body.customInstructions !== undefined || body.monthlyMessageLimit !== undefined
+      let plan: ReturnType<typeof getWorkspacePlan> | null = null
+      if (needsPlan) {
         const workspace = await db.getWorkspaceById(workspaceId, 'plan')
+        plan = getWorkspacePlan(workspace ?? {})
+      }
 
-        const plan = getWorkspacePlan(workspace ?? {})
-        if (!hasFeature(plan, 'api.custom_instructions') && body.customInstructions)
+      if (body.customInstructions !== undefined) {
+        if (!hasFeature(plan!, 'api.custom_instructions') && body.customInstructions)
           throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
       }
 
@@ -170,7 +178,10 @@ export function createConversationKeysBridge() {
       if (body.customInstructions !== undefined) updates.custom_instructions = body.customInstructions ? body.customInstructions.substring(0, 2000) : body.customInstructions
       if (body.aiModel !== undefined && validModels.includes(body.aiModel)) updates.ai_model = body.aiModel
       if (body.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = Math.max(1, Math.min(body.rateLimitPerMinute, 60))
-      if (body.monthlyMessageLimit !== undefined) updates.monthly_message_limit = Math.max(1, Math.min(body.monthlyMessageLimit, 100_000))
+      if (body.monthlyMessageLimit !== undefined) {
+        const planCap = getPlanLimit(plan!, 'api.messages_per_month')
+        updates.monthly_message_limit = Math.max(1, Math.min(body.monthlyMessageLimit, planCap))
+      }
 
       if (Object.keys(updates).length === 0)
         throw createError({ statusCode: 400, message: errorMessage('validation.no_fields_to_update') })

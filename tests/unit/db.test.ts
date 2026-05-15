@@ -47,6 +47,7 @@ describe('db helpers', () => {
       insertMessage: vi.fn().mockResolvedValue(undefined),
       upsertAgentUsage: vi.fn().mockResolvedValue(undefined),
       updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
+      updateAPIUsageTokens: vi.fn().mockResolvedValue(undefined),
       updateConversationTimestamp: vi.fn().mockResolvedValue(undefined),
       getBYOAKey: vi.fn().mockResolvedValue(null),
     }
@@ -145,7 +146,6 @@ describe('db helpers', () => {
       'user-1',
       'byoa',
       '2026-04',
-      'key-123',
     )
 
     expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
@@ -154,5 +154,39 @@ describe('db helpers', () => {
       inputTokens: 4,
       outputTokens: 2,
     }))
+  })
+
+  it('saveApiChatResult writes to api_message_usage, not agent_usage', async () => {
+    const { saveApiChatResult } = await loadDbModule()
+    await saveApiChatResult(
+      'conv-2',
+      'Hello',
+      'World',
+      [{ type: 'text', text: 'World' }],
+      'claude-sonnet-4-5',
+      11,
+      5,
+      'workspace-1',
+      'key-abc',
+      '2026-04',
+    )
+
+    // Messages persist into the shared messages table the same way as
+    // the Studio path; the difference is only in which usage table the
+    // token counters land on.
+    expect(mockDb.insertMessage).toHaveBeenCalledTimes(2)
+    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'user', content: 'Hello' }))
+    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'assistant', content: 'World' }))
+
+    expect(mockDb.updateAPIUsageTokens).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      apiKeyId: 'key-abc',
+      month: '2026-04',
+      inputTokens: 11,
+      outputTokens: 5,
+    })
+    // Critical: must NOT touch the user-keyed agent_usage path.
+    expect(mockDb.updateAgentUsageTokens).not.toHaveBeenCalled()
+    expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-2')
   })
 })

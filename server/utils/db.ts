@@ -219,11 +219,44 @@ export async function inviteOrLookupUser(
 
 // ─── Cross-domain: Chat Persistence ───
 
+async function persistChatMessages(input: {
+  conversationId: string
+  userMessage: string
+  assistantText: string
+  assistantContent: unknown[]
+  model: string
+  inputTokens: number
+  outputTokens: number
+}) {
+  const db = useDatabaseProvider()
+  await db.insertMessage({ conversationId: input.conversationId, role: 'user', content: input.userMessage })
+  try {
+    await db.insertMessage({
+      conversationId: input.conversationId,
+      role: 'assistant',
+      content: input.assistantText || '[tool calls]',
+      toolCalls: input.assistantContent.length > 0 ? input.assistantContent : null,
+      tokenCountInput: input.inputTokens,
+      tokenCountOutput: input.outputTokens,
+      model: input.model,
+    })
+  }
+  catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[chat-persist] Failed to insert assistant message:', err)
+    throw err
+  }
+}
+
 /**
- * Save chat messages + update token counts.
- * Message count is already reserved atomically before the chat via
- * incrementAgentUsageIfAllowed — this function only persists messages
- * and updates the token metadata on the existing usage row.
+ * Save chat messages + update token counts for a Studio (workspace
+ * member) chat. Message count is already reserved atomically before
+ * the AI call via `incrementAgentUsageIfAllowed`; this function only
+ * persists messages and bumps the token metadata on the row that the
+ * reservation created.
+ *
+ * Conversation API has its own actor model (key-keyed, not user-keyed)
+ * and a dedicated `api_message_usage` table — use `saveApiChatResult`.
  */
 export async function saveChatResult(
   conversationId: string,
@@ -235,37 +268,66 @@ export async function saveChatResult(
   outputTokens: number,
   workspaceId: string,
   userId: string,
-  usageSource: 'byoa' | 'studio' | 'api',
+  usageSource: 'byoa' | 'studio',
   usageMonth: string,
-  _apiKeyId?: string,
 ) {
   const db = useDatabaseProvider()
 
-  // Insert both messages together — if assistant insert fails, log but don't leave orphan
-  await db.insertMessage({ conversationId, role: 'user', content: userMessage })
-  try {
-    await db.insertMessage({
-      conversationId,
-      role: 'assistant',
-      content: assistantText || '[tool calls]',
-      toolCalls: assistantContent.length > 0 ? assistantContent : null,
-      tokenCountInput: inputTokens,
-      tokenCountOutput: outputTokens,
-      model,
-    })
-  }
-  catch (err) {
-    console.error('[saveChatResult] Failed to insert assistant message:', err)
-    throw err
-  }
+  await persistChatMessages({
+    conversationId,
+    userMessage,
+    assistantText,
+    assistantContent,
+    model,
+    inputTokens,
+    outputTokens,
+  })
 
-  // Token counts only — message_count already reserved atomically.
-  // Uses SQL increment to prevent concurrent overwrites.
   await db.updateAgentUsageTokens({
     workspaceId,
     userId,
     month: usageMonth,
     source: usageSource,
+    inputTokens,
+    outputTokens,
+  })
+
+  await db.updateConversationTimestamp(conversationId)
+}
+
+/**
+ * Save chat messages + update token counts for a Conversation API
+ * chat. The actor here is an API key (no workspace member identity),
+ * so usage flows through `api_message_usage` instead of `agent_usage`.
+ */
+export async function saveApiChatResult(
+  conversationId: string,
+  userMessage: string,
+  assistantText: string,
+  assistantContent: unknown[],
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  workspaceId: string,
+  apiKeyId: string,
+  usageMonth: string,
+) {
+  const db = useDatabaseProvider()
+
+  await persistChatMessages({
+    conversationId,
+    userMessage,
+    assistantText,
+    assistantContent,
+    model,
+    inputTokens,
+    outputTokens,
+  })
+
+  await db.updateAPIUsageTokens({
+    workspaceId,
+    apiKeyId,
+    month: usageMonth,
     inputTokens,
     outputTokens,
   })

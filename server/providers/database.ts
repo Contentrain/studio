@@ -251,7 +251,24 @@ export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
 
   createConversation: (projectId: string, userId: string, title: string) => Promise<string | null>
-  getConversation: (conversationId: string, projectId: string, filters?: { userId?: string }) => Promise<DatabaseRow | null>
+  /**
+   * Create a Conversation API-owned chat thread. The API key acts as
+   * the actor in place of a workspace member; `conversations.user_id`
+   * stays NULL and `api_key_id` carries the owner reference. Enforced
+   * by `conversations_actor_xor` — exactly one of user_id / api_key_id
+   * is non-null per row.
+   */
+  createApiConversation: (projectId: string, apiKeyId: string, title: string) => Promise<string | null>
+  /**
+   * Ownership check before continuing a conversation. Pass either a
+   * `userId` (Studio chat) or an `apiKeyId` (Conversation API) — never
+   * both. The XOR is mirrored from the DB-level CHECK on `conversations`.
+   */
+  getConversation: (
+    conversationId: string,
+    projectId: string,
+    filters?: { userId: string } | { apiKeyId: string },
+  ) => Promise<DatabaseRow | null>
   listConversations: (accessToken: string, projectId: string, userId: string) => Promise<DatabaseRow[]>
   deleteConversation: (accessToken: string, conversationId: string, userId: string, projectId: string) => Promise<void>
   updateConversationTimestamp: (conversationId: string) => Promise<void>
@@ -307,6 +324,40 @@ export interface DatabaseProvider {
     userId: string
     month: string
     source: string
+    inputTokens: number
+    outputTokens: number
+  }) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // API MESSAGE USAGE (Conversation API)
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Atomic: enforce BOTH per-key and per-workspace monthly caps in
+   * one RPC and reserve a message slot. Reason discriminator lets the
+   * caller surface the right 429 message ("your key is over" vs "the
+   * workspace plan is over").
+   *
+   * Pass `SOFT_CAP_MAX` (from `getEffectiveLimit`) for either limit
+   * when overage is enabled or the plan grants Infinity.
+   */
+  incrementAPIUsageIfAllowed: (input: {
+    workspaceId: string
+    apiKeyId: string
+    month: string
+    keyLimit: number
+    workspaceLimit: number
+  }) => Promise<{
+    allowed: boolean
+    reason: 'ok' | 'key_limit' | 'workspace_limit'
+    current: number
+  }>
+
+  /** Increment token counters on the `api_message_usage` row after the AI call settles. */
+  updateAPIUsageTokens: (input: {
+    workspaceId: string
+    apiKeyId: string
+    month: string
     inputTokens: number
     outputTokens: number
   }) => Promise<void>
