@@ -95,28 +95,51 @@ export async function* runConversationLoop(
     iteration++
     const isFirstIteration = iteration === 1
     const currentToolCalls: Array<{ id: string, name: string, input: unknown }> = []
+    const assistantBlocks: AIContentBlock[] = []
     let stopReason: string | undefined
 
     if (isFirstIteration) {
+      let currentText = ''
+      const flushText = () => {
+        if (!currentText) return
+        assistantBlocks.push({ type: 'text', text: currentText })
+        currentText = ''
+      }
+
       for await (const streamEvent of aiProvider.streamCompletion(
         { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 4096, abortSignal: config.abortSignal },
         config.apiKey,
       )) {
         switch (streamEvent.type) {
           case 'text':
+            currentText += streamEvent.content ?? ''
             yield { type: 'text', content: streamEvent.content }
             break
           case 'tool_use_start':
+            flushText()
             yield { type: 'tool_use', id: streamEvent.toolId, name: streamEvent.toolName }
             break
-          case 'tool_use_end':
-            currentToolCalls.push({
+          case 'tool_use_end': {
+            const toolCall = {
               id: streamEvent.toolId!,
               name: streamEvent.toolName!,
               input: (typeof streamEvent.toolInput === 'object' && streamEvent.toolInput !== null) ? streamEvent.toolInput : {},
+            }
+            currentToolCalls.push({
+              id: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.input,
+            })
+            assistantBlocks.push({
+              type: 'tool_use',
+              id: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.input,
             })
             break
+          }
           case 'message_end':
+            flushText()
             totalInputTokens += streamEvent.usage?.inputTokens ?? 0
             totalOutputTokens += streamEvent.usage?.outputTokens ?? 0
             stopReason = streamEvent.stopReason
@@ -148,20 +171,15 @@ export async function* runConversationLoop(
             input: (typeof block.input === 'object' && block.input !== null) ? block.input : {},
           })
         }
+        assistantBlocks.push(block)
       }
-      lastAssistantContent = response.content
     }
+
+    lastAssistantContent = assistantBlocks
 
     if (stopReason !== 'tool_use' || currentToolCalls.length === 0) break
 
     // === TOOL EXECUTION with state guard + workflow-aware auto-merge ===
-    const assistantBlocks: AIContentBlock[] = currentToolCalls.map(tc => ({
-      type: 'tool_use' as const,
-      id: tc.id,
-      name: tc.name,
-      input: tc.input,
-    }))
-
     const toolResultBlocks: AIContentBlock[] = []
 
     for (const tc of currentToolCalls) {

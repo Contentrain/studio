@@ -194,8 +194,8 @@ describe('chat route integration', () => {
       expect(saveChatResult).toHaveBeenCalledWith(
         'conversation-new',
         'hello',
-        '',
-        [],
+        'Hello from the agent.',
+        [{ type: 'text', text: 'Hello from the agent.' }],
         expect.any(String),
         12,
         24,

@@ -1,10 +1,88 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AIMessage, AIProvider } from '../../server/providers/ai'
 import type { GitProvider } from '../../server/providers/git'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
-import type { ChatUIContext } from '../../server/utils/agent-types'
+import type { ChatUIContext, ProjectPhase } from '../../server/utils/agent-types'
 
 async function loadConversationEngineModule() {
   return import('../../server/utils/conversation-engine')
+}
+
+function emptyAffectedValue() {
+  return { models: [], locales: [], snapshotChanged: false, branchesChanged: false }
+}
+
+function stubLoopGlobals(aiProvider: Partial<AIProvider>) {
+  vi.stubGlobal('emptyAffected', vi.fn(emptyAffectedValue))
+  vi.stubGlobal('mergeAffected', vi.fn((a, b) => ({
+    models: [...new Set([...a.models, ...b.models])],
+    locales: [...new Set([...a.locales, ...b.locales])],
+    snapshotChanged: a.snapshotChanged || b.snapshotChanged,
+    branchesChanged: a.branchesChanged || b.branchesChanged,
+  })))
+  vi.stubGlobal('checkStateTransition', vi.fn().mockReturnValue({
+    allowed: false,
+    reason: 'blocked by test',
+    suggestion: 'continue',
+  }))
+  vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue(aiProvider))
+}
+
+function createToolContext() {
+  return {
+    engine: {} as never,
+    git: {} as GitProvider,
+    userEmail: 'user@example.com',
+    userId: 'user-1',
+    contentRoot: 'content',
+    workflow: 'auto-merge',
+    permissions: {
+      workspaceRole: 'owner',
+      projectRole: null,
+      specificModels: false,
+      allowedModels: [],
+      allowedLocales: [],
+      availableTools: ['test_tool', 'second_tool'],
+    } as AgentPermissions,
+    plan: 'pro',
+    projectId: 'project-1',
+    workspaceId: 'workspace-1',
+    uiContext: {
+      activeModelId: null,
+      activeLocale: 'en',
+      activeEntryId: null,
+      panelState: 'overview',
+      activeBranch: null,
+    } as ChatUIContext,
+    phase: 'active' as ProjectPhase,
+  }
+}
+
+async function collectConversationEvents(input: {
+  aiProvider: Partial<AIProvider>
+  messages?: AIMessage[]
+  maxToolIterations?: number
+}) {
+  stubLoopGlobals(input.aiProvider)
+  const { runConversationLoop } = await loadConversationEngineModule()
+  const messages = input.messages ?? [{ role: 'user', content: 'hello' } as AIMessage]
+  const events = []
+
+  for await (const evt of runConversationLoop(
+    {
+      model: 'claude-test',
+      apiKey: 'sk-test',
+      systemPrompt: 'system',
+      messages,
+      tools: [{ name: 'test_tool', description: 'test', inputSchema: { type: 'object' } }],
+      maxToolIterations: input.maxToolIterations,
+    },
+    createToolContext(),
+  )) {
+    events.push(evt)
+  }
+
+  return { events, messages }
 }
 
 describe('conversation engine regression', () => {
@@ -14,6 +92,136 @@ describe('conversation engine regression', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('returns streamed text-only responses in done.lastContent', async () => {
+    const { events, messages } = await collectConversationEvents({
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'text', content: 'Hello ' }
+          yield { type: 'text', content: 'world.' }
+          yield {
+            type: 'message_end',
+            stopReason: 'end_turn',
+            usage: { inputTokens: 7, outputTokens: 3 },
+          }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    const done = events[events.length - 1]!
+    expect(done).toMatchObject({
+      type: 'done',
+      usage: { inputTokens: 7, outputTokens: 3 },
+      lastContent: [{ type: 'text', text: 'Hello world.' }],
+    })
+    expect(messages).toHaveLength(1)
+  })
+
+  it('preserves streamed assistant text before tool use in the next model message', async () => {
+    const { events, messages } = await collectConversationEvents({
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'text', content: 'I will inspect the project.' }
+          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { model: 'posts' } }
+          yield {
+            type: 'message_end',
+            stopReason: 'tool_use',
+            usage: { inputTokens: 10, outputTokens: 5 },
+          }
+        },
+        createCompletion: vi.fn().mockResolvedValue({
+          content: [{ type: 'text', text: 'Done.' }],
+          stopReason: 'end_turn',
+          usage: { inputTokens: 4, outputTokens: 2 },
+        }),
+      },
+    })
+
+    expect(messages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'I will inspect the project.' },
+        { type: 'tool_use', id: 'tool-1', name: 'test_tool', input: { model: 'posts' } },
+      ],
+    })
+    expect(messages[2]).toMatchObject({
+      role: 'user',
+      content: [{ type: 'tool_result', toolUseId: 'tool-1' }],
+    })
+    expect(events[events.length - 1]).toMatchObject({
+      type: 'done',
+      lastContent: [{ type: 'text', text: 'Done.' }],
+    })
+  })
+
+  it('preserves streamed interleaved text and tool_use block order', async () => {
+    const { events, messages } = await collectConversationEvents({
+      maxToolIterations: 1,
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'text', content: 'First step.' }
+          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { first: true } }
+          yield { type: 'text', content: 'Second step.' }
+          yield { type: 'tool_use_start', toolId: 'tool-2', toolName: 'second_tool' }
+          yield { type: 'tool_use_end', toolId: 'tool-2', toolName: 'second_tool', toolInput: { second: true } }
+          yield {
+            type: 'message_end',
+            stopReason: 'tool_use',
+            usage: { inputTokens: 12, outputTokens: 6 },
+          }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    const expectedBlocks = [
+      { type: 'text', text: 'First step.' },
+      { type: 'tool_use', id: 'tool-1', name: 'test_tool', input: { first: true } },
+      { type: 'text', text: 'Second step.' },
+      { type: 'tool_use', id: 'tool-2', name: 'second_tool', input: { second: true } },
+    ]
+    expect(messages[1]).toEqual({ role: 'assistant', content: expectedBlocks })
+    expect(events[events.length - 1]).toMatchObject({
+      type: 'done',
+      lastContent: expectedBlocks,
+    })
+  })
+
+  it('preserves non-streaming assistant text before tool use in later iterations', async () => {
+    const { messages } = await collectConversationEvents({
+      maxToolIterations: 2,
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { first: true } }
+          yield {
+            type: 'message_end',
+            stopReason: 'tool_use',
+            usage: { inputTokens: 5, outputTokens: 2 },
+          }
+        },
+        createCompletion: vi.fn().mockResolvedValue({
+          content: [
+            { type: 'text', text: 'I need one more check.' },
+            { type: 'tool_use', id: 'tool-2', name: 'test_tool', input: { second: true } },
+          ],
+          stopReason: 'tool_use',
+          usage: { inputTokens: 6, outputTokens: 3 },
+        }),
+      },
+    })
+
+    expect(messages[3]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'I need one more check.' },
+        { type: 'tool_use', id: 'tool-2', name: 'test_tool', input: { second: true } },
+      ],
+    })
   })
 
   it('emits webhook events for content-mutating tools', async () => {
