@@ -375,4 +375,222 @@ describe('chat route integration', () => {
       expect(saveChatResult).not.toHaveBeenCalled()
     })
   })
+
+  it('refunds the reserved slot when the provider errors before yielding any event', async () => {
+    const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 })
+    const decrementAgentUsage = vi.fn().mockResolvedValue(undefined)
+    const recordAIUsage = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1', email: 'user@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      incrementAgentUsageIfAllowed,
+      decrementAgentUsage,
+      getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
+      createConversation: vi.fn().mockResolvedValue('conversation-existing'),
+      loadConversationMessages: vi.fn().mockResolvedValue([]),
+    }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      project: { id: 'project-1', status: 'active' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
+      git: createGitStub(),
+      contentRoot: '',
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
+    // Finite limit triggers the actual reservation path.
+    vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(100))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      availableTools: ['get_content'],
+      specificModels: false,
+      allowedModels: [],
+    }))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('saveChatResult', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: null,
+      models: new Map(),
+      vocabulary: null,
+      contentContext: null,
+    }))
+    vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
+    vi.stubGlobal('STUDIO_TOOLS', [])
+    vi.stubGlobal('recordAIUsage', recordAIUsage)
+    vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
+      streamCompletion: () => ({
+        [Symbol.asyncIterator]() {
+          return {
+            next: async () => { throw new Error('anthropic auth failed') },
+          }
+        },
+      }),
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/chat', handler: await loadChatHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'hello', conversationId: 'conversation-existing' }),
+      })
+      await response.text() // drain SSE
+
+      expect(incrementAgentUsageIfAllowed).toHaveBeenCalledTimes(1)
+      expect(decrementAgentUsage).toHaveBeenCalledTimes(1)
+      expect(decrementAgentUsage).toHaveBeenCalledWith({
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        month: expect.any(String),
+        source: 'studio',
+      })
+      // Meter event only fires after first billable provider event.
+      expect(recordAIUsage).not.toHaveBeenCalled()
+    })
+  })
+
+  it('keeps the reservation when the provider yields at least one event before erroring', async () => {
+    const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 })
+    const decrementAgentUsage = vi.fn().mockResolvedValue(undefined)
+    const recordAIUsage = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1', email: 'user@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      incrementAgentUsageIfAllowed,
+      decrementAgentUsage,
+      getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
+      createConversation: vi.fn().mockResolvedValue('conversation-existing'),
+      loadConversationMessages: vi.fn().mockResolvedValue([]),
+    }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      project: { id: 'project-1', status: 'active' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
+      git: createGitStub(),
+      contentRoot: '',
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
+    vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(100))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      availableTools: ['get_content'],
+      specificModels: false,
+      allowedModels: [],
+    }))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('saveChatResult', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('buildSystemPrompt', vi.fn().mockReturnValue('system'))
+    vi.stubGlobal('buildContentIndex', vi.fn().mockReturnValue(''))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: null,
+      models: new Map(),
+      vocabulary: null,
+      contentContext: null,
+    }))
+    vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
+    vi.stubGlobal('STUDIO_TOOLS', [])
+    vi.stubGlobal('recordAIUsage', recordAIUsage)
+    vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
+      streamCompletion: async function* () {
+        // First real event → request becomes billable.
+        yield { type: 'text', content: 'partial answer...' }
+        // Now the provider explodes mid-stream — we already paid for these tokens.
+        throw new Error('connection reset')
+      },
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/chat', handler: await loadChatHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'hello', conversationId: 'conversation-existing' }),
+      })
+      await response.text()
+
+      expect(incrementAgentUsageIfAllowed).toHaveBeenCalledTimes(1)
+      // Slot stays consumed: first real provider event flipped `committed`.
+      expect(decrementAgentUsage).not.toHaveBeenCalled()
+      expect(recordAIUsage).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('refunds the reserved slot when a pre-AI step fails after reservation', async () => {
+    const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 })
+    const decrementAgentUsage = vi.fn().mockResolvedValue(undefined)
+    const recordAIUsage = vi.fn().mockResolvedValue(undefined)
+    const loadConversationMessages = vi.fn().mockRejectedValue(new Error('history table offline'))
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1', email: 'user@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      incrementAgentUsageIfAllowed,
+      decrementAgentUsage,
+      getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
+      createConversation: vi.fn().mockResolvedValue('conversation-existing'),
+      loadConversationMessages,
+    }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      project: { id: 'project-1', status: 'active' },
+      workspace: { id: 'workspace-1', plan: 'starter' },
+      git: createGitStub(),
+      contentRoot: '',
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
+    vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(100))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      availableTools: ['get_content'],
+      specificModels: false,
+      allowedModels: [],
+    }))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('recordAIUsage', recordAIUsage)
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/chat', handler: await loadChatHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'hello', conversationId: 'conversation-existing' }),
+      })
+      // Handler throws before streaming starts; h3 turns it into a 500.
+      expect(response.status).toBeGreaterThanOrEqual(500)
+
+      expect(incrementAgentUsageIfAllowed).toHaveBeenCalledTimes(1)
+      expect(loadConversationMessages).toHaveBeenCalledTimes(1)
+      expect(decrementAgentUsage).toHaveBeenCalledTimes(1)
+      expect(recordAIUsage).not.toHaveBeenCalled()
+    })
+  })
 })

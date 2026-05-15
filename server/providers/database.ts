@@ -328,6 +328,19 @@ export interface DatabaseProvider {
     outputTokens: number
   }) => Promise<void>
 
+  /**
+   * Revert a previously-reserved message slot. Called from chat error
+   * paths when the AI call never produced a billable event (text or
+   * tool_use). Clamped at zero by the underlying RPC so concurrent
+   * reverts can't push `message_count` negative.
+   */
+  decrementAgentUsage: (input: {
+    workspaceId: string
+    userId: string
+    month: string
+    source: string
+  }) => Promise<void>
+
   // ═══════════════════════════════════════════════════
   // API MESSAGE USAGE (Conversation API)
   // ═══════════════════════════════════════════════════
@@ -360,6 +373,16 @@ export interface DatabaseProvider {
     month: string
     inputTokens: number
     outputTokens: number
+  }) => Promise<void>
+
+  /**
+   * Revert a previously-reserved API message slot. Symmetric with
+   * `decrementAgentUsage` for the Conversation API path.
+   */
+  decrementAPIUsage: (input: {
+    workspaceId: string
+    apiKeyId: string
+    month: string
   }) => Promise<void>
 
   // ═══════════════════════════════════════════════════

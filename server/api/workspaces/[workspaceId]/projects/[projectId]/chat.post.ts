@@ -88,191 +88,236 @@ export default defineEventHandler(async (event) => {
   const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
   const monthlyLimit = getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
   const usageMonth = new Date().toISOString().substring(0, 7)
-  if (monthlyLimit !== Infinity) {
-    const { allowed } = await db.incrementAgentUsageIfAllowed({
-      workspaceId,
-      userId: session.user.id,
-      month: usageMonth,
-      source: usageSource,
-      limit: monthlyLimit,
-    })
-    if (!allowed)
-      throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit }) })
-  }
 
-  // Best-effort meter write for overage billing. Fire-and-forget.
-  recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
-
-  // === CONVERSATION ===
-  let conversationId: string | undefined = body.conversationId
-
-  // Verify ownership if continuing existing conversation
-  if (conversationId) {
-    const conv = await db.getConversation(conversationId, projectId, { userId: session.user.id })
-    if (!conv) {
-      conversationId = undefined
-    }
-  }
-
-  if (!conversationId) {
-    conversationId = (await db.createConversation(projectId, session.user.id, body.message)) ?? undefined
-  }
-  if (!conversationId)
-    throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
-
-  // === HISTORY ===
-  const historyRows = await db.loadConversationMessages(conversationId, 50)
-
-  // Build message history: chronological order, newest messages prioritized within budget
-  const allHistory = historyRows ?? []
-  const messages: AIMessage[] = []
-
-  // Walk backwards to find budget cutoff, then take from that point forward
-  const budgetStart = (() => {
-    let tokens = 0
-    for (let i = allHistory.length - 1; i >= 0; i--) {
-      const row = allHistory[i]!
-      const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
-      const estimate = typeof content === 'string' ? Math.ceil(content.length / 4) : Math.ceil(JSON.stringify(content).length / 4)
-      tokens += estimate
-      if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
-    }
-    return 0
-  })()
-
-  for (let i = budgetStart; i < allHistory.length; i++) {
-    const row = allHistory[i]!
-    const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
-    messages.push({ role: row.role as 'user' | 'assistant', content })
-  }
-  messages.push({ role: 'user', content: body.message })
-
-  // === LOAD SCHEMA (from brain cache) ===
-  const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
-  const projectConfig = brain.config
-  const models = [...brain.models.values()]
-  const vocabulary = brain.vocabulary
-  const contentContext = brain.contentContext
-
-  // === STATE MACHINE ===
-  let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
-  try {
-    const raw = await git.listBranches('cr/')
-    pendingBranches = raw.map(b => ({ name: b.name, sha: b.sha, protected: b.protected ?? false }))
-  }
-  catch { /* no branches */ }
-
-  const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
-
-  // === INTENT CLASSIFICATION ===
-  const intent = classifyIntent(body.message, uiContext, phase)
-
-  // === BUILD SYSTEM PROMPT (bounded, context-aware) ===
-  const projectState = {
-    initialized: !!projectConfig,
-    pendingBranches,
-    projectStatus: project.status ?? 'active',
-    phase,
-    contentContext,
-  }
-
-  let systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary, plan)
-
-  // Append content index from brain cache (compact summary of all content)
-  const contentIndex = buildContentIndex(brain)
-  if (contentIndex) {
-    systemPrompt += `\n\n${contentIndex}`
-  }
-
-  // === FILTER TOOLS by permissions + phase ===
-  const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
-  const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
-  const aiTools = toAITools(phaseFiltered)
-
-  // Model: plan-gated selection
-  const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
-  const STARTER_MODELS = ['claude-haiku-4-5-20251001']
-  const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
-  const requestedModel = body.model as string | undefined
-  const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
-
-  // Workflow: plans without review feature always auto-merge regardless of config
-  const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
-  const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
-
-  // === SSE STREAM ===
-  const eventStream = createEventStream(event)
-  const contentEngine = createContentEngine({ git, contentRoot, projectId })
-  const abortController = new AbortController()
-
-  const processChat = async () => {
-    await eventStream.push(JSON.stringify({ type: 'conversation', id: conversationId }))
-
-    let totalInputTokens = 0
-    let totalOutputTokens = 0
-    let lastAssistantContent: AIContentBlock[] = []
-
+  // Billing semantic: a message is billable only once Anthropic streams
+  // its first real provider event (text or tool_use). Pre-AI failures
+  // (DB error, brain cache failure, abort before first token) refund
+  // the reserved slot via `tryRevert`. Post-first-event failures stay
+  // billable — we paid Anthropic for whatever tokens we received.
+  let reserved = false
+  let committed = false
+  const tryRevert = async (reason: string) => {
+    if (!reserved || committed || monthlyLimit === Infinity) return
     try {
-      for await (const evt of runConversationLoop(
-        { model, apiKey, systemPrompt, messages, tools: aiTools, abortSignal: abortController.signal },
-        { engine: contentEngine, git, userEmail: session.user.email ?? '', userId: session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext, phase },
-      )) {
-        // Stop processing if client disconnected
-        if (abortController.signal.aborted) break
+      await db.decrementAgentUsage({
+        workspaceId,
+        userId: session.user.id,
+        month: usageMonth,
+        source: usageSource,
+      })
+    }
+    catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[chat] usage revert failed (${reason}):`, err)
+    }
+  }
 
-        // Forward all events to SSE stream
-        if (evt.type === 'done') {
-          // Extract final state from done event before forwarding
-          totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
-          totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
-          lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
+  try {
+    if (monthlyLimit !== Infinity) {
+      const { allowed } = await db.incrementAgentUsageIfAllowed({
+        workspaceId,
+        userId: session.user.id,
+        month: usageMonth,
+        source: usageSource,
+        limit: monthlyLimit,
+      })
+      if (!allowed)
+        throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit }) })
+      reserved = true
+    }
 
-          // Forward the done event without lastContent (not needed by client)
-          await eventStream.push(JSON.stringify({
-            type: 'done',
-            usage: evt.usage,
-            affected: evt.affected,
-          }))
-        }
-        else {
-          await eventStream.push(JSON.stringify(evt))
-        }
+    // === CONVERSATION ===
+    let conversationId: string | undefined = body.conversationId
+
+    // Verify ownership if continuing existing conversation
+    if (conversationId) {
+      const conv = await db.getConversation(conversationId, projectId, { userId: session.user.id })
+      if (!conv) {
+        conversationId = undefined
       }
+    }
 
-      // === SAVE TO DB ===
-      const assistantText = lastAssistantContent
-        .filter(b => b.type === 'text')
-        .map(b => (b as { text: string }).text)
-        .join('')
+    if (!conversationId) {
+      conversationId = (await db.createConversation(projectId, session.user.id, body.message)) ?? undefined
+    }
+    if (!conversationId)
+      throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
-      await saveChatResult(
-        conversationId, body.message, assistantText,
-        lastAssistantContent, model, totalInputTokens, totalOutputTokens,
-        workspaceId, session.user.id, usageSource, usageMonth,
-      )
+    // === HISTORY ===
+    const historyRows = await db.loadConversationMessages(conversationId, 50)
+
+    // Build message history: chronological order, newest messages prioritized within budget
+    const allHistory = historyRows ?? []
+    const messages: AIMessage[] = []
+
+    // Walk backwards to find budget cutoff, then take from that point forward
+    const budgetStart = (() => {
+      let tokens = 0
+      for (let i = allHistory.length - 1; i >= 0; i--) {
+        const row = allHistory[i]!
+        const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : row.content
+        const estimate = typeof content === 'string' ? Math.ceil(content.length / 4) : Math.ceil(JSON.stringify(content).length / 4)
+        tokens += estimate
+        if (tokens > HISTORY_TOKEN_BUDGET) return i + 1
+      }
+      return 0
+    })()
+
+    for (let i = budgetStart; i < allHistory.length; i++) {
+      const row = allHistory[i]!
+      const content = row.tool_calls ? (row.tool_calls as AIContentBlock[]) : (row.content as string | AIContentBlock[])
+      messages.push({ role: row.role as 'user' | 'assistant', content })
+    }
+    messages.push({ role: 'user', content: body.message })
+
+    // === LOAD SCHEMA (from brain cache) ===
+    const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+    const projectConfig = brain.config
+    const models = [...brain.models.values()]
+    const vocabulary = brain.vocabulary
+    const contentContext = brain.contentContext
+
+    // === STATE MACHINE ===
+    let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
+    try {
+      const raw = await git.listBranches('cr/')
+      pendingBranches = raw.map(b => ({ name: b.name, sha: b.sha, protected: b.protected ?? false }))
+    }
+    catch { /* no branches */ }
+
+    const phase = deriveProjectPhase(projectConfig, pendingBranches, project.status ?? 'active')
+
+    // === INTENT CLASSIFICATION ===
+    const intent = classifyIntent(body.message, uiContext, phase)
+
+    // === BUILD SYSTEM PROMPT (bounded, context-aware) ===
+    const projectState = {
+      initialized: !!projectConfig,
+      pendingBranches,
+      projectStatus: project.status ?? 'active',
+      phase,
+      contentContext,
+    }
+
+    let systemPrompt = buildSystemPrompt(projectConfig, models, permissions, projectState, uiContext, intent, vocabulary, plan)
+
+    // Append content index from brain cache (compact summary of all content)
+    const contentIndex = buildContentIndex(brain)
+    if (contentIndex) {
+      systemPrompt += `\n\n${contentIndex}`
+    }
+
+    // === FILTER TOOLS by permissions + phase ===
+    const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
+    const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
+    const aiTools = toAITools(phaseFiltered)
+
+    // Model: plan-gated selection
+    const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
+    const STARTER_MODELS = ['claude-haiku-4-5-20251001']
+    const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
+    const requestedModel = body.model as string | undefined
+    const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
+
+    // Workflow: plans without review feature always auto-merge regardless of config
+    const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
+    const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
+
+    // === SSE STREAM ===
+    const eventStream = createEventStream(event)
+    const contentEngine = createContentEngine({ git, contentRoot, projectId })
+    const abortController = new AbortController()
+
+    const processChat = async () => {
+      await eventStream.push(JSON.stringify({ type: 'conversation', id: conversationId }))
+
+      let totalInputTokens = 0
+      let totalOutputTokens = 0
+      let lastAssistantContent: AIContentBlock[] = []
+
+      try {
+        for await (const evt of runConversationLoop(
+          { model, apiKey, systemPrompt, messages, tools: aiTools, abortSignal: abortController.signal },
+          { engine: contentEngine, git, userEmail: session.user.email ?? '', userId: session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext, phase },
+        )) {
+        // Stop processing if client disconnected
+          if (abortController.signal.aborted) break
+
+          // Commit on the first billable provider event. `text` and
+          // `tool_use` are real Anthropic stream events; `tool_result`
+          // is internal (engine-emitted post tool exec), `done` is
+          // synthetic, and `error` may fire before any tokens — none
+          // of those count as "we paid for an LLM call."
+          if (!committed && (evt.type === 'text' || evt.type === 'tool_use')) {
+            committed = true
+            recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
+          }
+
+          // Forward all events to SSE stream
+          if (evt.type === 'done') {
+          // Extract final state from done event before forwarding
+            totalInputTokens = (evt.usage as { inputTokens: number })?.inputTokens ?? 0
+            totalOutputTokens = (evt.usage as { outputTokens: number })?.outputTokens ?? 0
+            lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
+
+            // Forward the done event without lastContent (not needed by client)
+            await eventStream.push(JSON.stringify({
+              type: 'done',
+              usage: evt.usage,
+              affected: evt.affected,
+            }))
+          }
+          else {
+            await eventStream.push(JSON.stringify(evt))
+          }
+        }
+
+        // === SAVE TO DB ===
+        const assistantText = lastAssistantContent
+          .filter(b => b.type === 'text')
+          .map(b => (b as { text: string }).text)
+          .join('')
+
+        await saveChatResult(
+          conversationId, body.message, assistantText,
+          lastAssistantContent, model, totalInputTokens, totalOutputTokens,
+          workspaceId, session.user.id, usageSource, usageMonth,
+        )
 
       // Webhook events are now emitted from conversation-engine.ts per tool execution
-    }
-    catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Chat error'
-      // eslint-disable-next-line no-console
-      console.error('[chat] Error:', msg)
-      try {
-        await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
       }
-      catch { /* stream closed */ }
-    }
-    finally {
-      try {
-        await eventStream.close()
+      catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Chat error'
+        // eslint-disable-next-line no-console
+        console.error('[chat] Error:', msg)
+        try {
+          await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
+        }
+        catch { /* stream closed */ }
       }
-      catch { /* already closed */ }
+      finally {
+      // Revert the reserved slot if no provider event ever flipped
+      // `committed` (provider auth failure, abort before first token,
+      // brain/tool init failure that surfaced here, etc.).
+        await tryRevert('post-reserve')
+        try {
+          await eventStream.close()
+        }
+        catch { /* already closed */ }
+      }
     }
-  }
 
-  processChat()
-  eventStream.onClosed(() => {
-    abortController.abort()
-  })
-  return eventStream.send()
+    processChat()
+    eventStream.onClosed(() => {
+      abortController.abort()
+    })
+    return eventStream.send()
+  }
+  catch (err) {
+    // Pre-AI failure paths (DB reserve fail → 429 throw; createConversation,
+    // loadMessages, brain cache, etc.). processChat hasn't started yet so
+    // `committed` is still false; tryRevert refunds the slot if reserved.
+    await tryRevert('pre-AI')
+    throw err
+  }
 })
