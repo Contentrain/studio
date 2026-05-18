@@ -195,13 +195,22 @@ describe('chat route integration', () => {
       expect(mockCreateConversation).toHaveBeenCalledWith('project-1', 'user-1', 'hello')
       // rowLimit is derived from selectHistoryBudget(plan, model, source);
       // budget math is covered by conversation-history.test.ts. Here we only
-      // check that the handler asked for some bounded history slice.
-      expect(mockLoadMessages).toHaveBeenCalledWith('conversation-new', expect.any(Number))
+      // check that the handler asked for some bounded history slice AND
+      // that resume opts include the internal trace (intermediate
+      // assistant + tool_result rows that RLS hides from end users).
+      expect(mockLoadMessages).toHaveBeenCalledWith(
+        'conversation-new',
+        expect.any(Number),
+        undefined,
+        { includeInternal: true },
+      )
       expect(saveChatResult).toHaveBeenCalledWith(expect.objectContaining({
         conversationId: 'conversation-new',
         userMessage: 'hello',
-        assistantText: 'Hello from the agent.',
-        assistantContent: [{ type: 'text', text: 'Hello from the agent.' }],
+        // Iteration trace replaced the flat assistantText/assistantContent
+        // pair; the seed user row + assistant row land inside saveChatResult.
+        lastAssistantContent: [{ type: 'text', text: 'Hello from the agent.' }],
+        iterations: expect.any(Array),
         model: expect.any(String),
         inputTokens: 12,
         outputTokens: 24,

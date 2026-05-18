@@ -297,10 +297,14 @@ async function runConversationMessage(
 
     const model = keyData.aiModel
     const budget = selectHistoryBudget({ plan, model, source: 'api' })
+    // Same resume contract as the Studio path — load the full
+    // trace (intermediate assistant + tool_result rows) so the
+    // prompt builder can reconstruct Anthropic protocol shape.
     const historyRows = await db.loadConversationMessages(
       conversationId,
       budget.rowLimit,
-      'role, content, tool_calls',
+      undefined,
+      { includeInternal: true },
     )
     const messages = buildPromptMessages({
       history: historyRows ?? [],
@@ -319,6 +323,7 @@ async function runConversationMessage(
     let totalCacheCreationInputTokens = 0
     let totalCacheReadInputTokens = 0
     let lastAssistantContent: AIContentBlock[] = []
+    let iterations: Array<{ iteration: number, assistantBlocks: AIContentBlock[], toolResultBlocks: AIContentBlock[] }> = []
 
     for await (const evt of runConversationLoop(
       { model, apiKey, systemPrompt, messages, tools: aiTools },
@@ -359,6 +364,7 @@ async function runConversationMessage(
           totalCacheCreationInputTokens = u?.cacheCreationInputTokens ?? 0
           totalCacheReadInputTokens = u?.cacheReadInputTokens ?? 0
           lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
+          iterations = (evt.iterations as typeof iterations) ?? []
           break
         }
       }
@@ -367,8 +373,8 @@ async function runConversationMessage(
     await saveApiChatResult({
       conversationId,
       userMessage: body.message,
-      assistantText: responseText,
-      assistantContent: lastAssistantContent,
+      iterations,
+      lastAssistantContent,
       model,
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
