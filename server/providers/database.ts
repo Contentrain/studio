@@ -48,6 +48,42 @@ export interface PaginationOptions {
   limit?: number
 }
 
+/**
+ * Shape of one row in the `messages` table for write operations.
+ *
+ * `content_blocks` is the structured Anthropic-protocol payload
+ * (text + tool_use + tool_result discriminated array) and takes
+ * precedence over the legacy `content` + `toolCalls` pair on read.
+ *
+ * `turnId` groups all rows produced by a single chat POST — seed
+ * user row, every assistant iteration, every tool_result iteration.
+ * `turnSequence` orders rows within the turn deterministically;
+ * `iteration` is the engine's per-turn iteration counter (NULL for
+ * the seed user row).
+ *
+ * `internal=true` rows are part of the protocol-replay trace but
+ * MUST NOT appear in the user-facing transcript — RLS enforces this
+ * for client-side queries; the resume path uses the service role to
+ * read across the boundary.
+ */
+export interface MessageInsertInput {
+  conversationId: string
+  role: 'user' | 'assistant'
+  content: string
+  contentBlocks?: unknown[] | null
+  /** Legacy column kept for backward compat with old single-row writes. */
+  toolCalls?: unknown[] | null
+  turnId: string
+  turnSequence: number
+  iteration?: number | null
+  internal: boolean
+  tokenCountInput?: number
+  tokenCountOutput?: number
+  cacheCreationInputTokens?: number
+  cacheReadInputTokens?: number
+  model?: string
+}
+
 export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
   // PROFILES
@@ -277,18 +313,40 @@ export interface DatabaseProvider {
   // MESSAGES
   // ═══════════════════════════════════════════════════
 
-  loadConversationMessages: (conversationId: string, limit?: number, fields?: string) => Promise<DatabaseRow[]>
-  insertMessage: (input: {
-    conversationId: string
-    role: 'user' | 'assistant'
-    content: string
-    toolCalls?: unknown[] | null
-    tokenCountInput?: number
-    tokenCountOutput?: number
-    cacheCreationInputTokens?: number
-    cacheReadInputTokens?: number
-    model?: string
-  }) => Promise<void>
+  /**
+   * Load conversation messages for the engine's resume path or the
+   * public transcript route.
+   *
+   * `options.includeInternal` defaults to `false` — the public route
+   * MUST NOT pass `true`. Only the chat / Conversation API resume
+   * paths set it to load the full Anthropic-protocol shape
+   * (intermediate assistant turns + tool_result blocks) needed to
+   * reconstruct prior multi-iteration loops.
+   */
+  loadConversationMessages: (
+    conversationId: string,
+    limit?: number,
+    fields?: string,
+    options?: { includeInternal?: boolean },
+  ) => Promise<DatabaseRow[]>
+
+  /**
+   * Insert a single message row. Convenience wrapper around the batch
+   * path used in places that only persist one row (e.g. an event
+   * stream side-effect). For the chat persistence path use
+   * `insertMessages` so the entire turn lands atomically in one
+   * round-trip.
+   */
+  insertMessage: (input: MessageInsertInput) => Promise<void>
+
+  /**
+   * Atomic batch insert for the full assistant/tool_result trace a
+   * single chat POST produces. All rows in one batch share the same
+   * `turnId` so resume reads can group them deterministically; the
+   * caller assigns `turnSequence` in protocol order so two rows that
+   * land at the same `created_at` still resolve consistently.
+   */
+  insertMessages: (rows: MessageInsertInput[]) => Promise<void>
 
   // ═══════════════════════════════════════════════════
   // AGENT USAGE

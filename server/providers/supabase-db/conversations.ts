@@ -2,8 +2,30 @@
  * Conversation, message, and agent usage methods
  * for the Supabase DatabaseProvider.
  */
-import type { DatabaseProvider, DatabaseRow } from '../database'
+import type { DatabaseProvider, DatabaseRow, MessageInsertInput } from '../database'
 import { getAdmin, getUser } from './helpers'
+
+function toMessageRow(input: MessageInsertInput): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    conversation_id: input.conversationId,
+    role: input.role,
+    content: input.content,
+    turn_id: input.turnId,
+    turn_sequence: input.turnSequence,
+    internal: input.internal,
+  }
+
+  if (input.contentBlocks && input.contentBlocks.length > 0) row.content_blocks = input.contentBlocks
+  if (input.toolCalls) row.tool_calls = input.toolCalls
+  if (input.iteration != null) row.iteration = input.iteration
+  if (input.tokenCountInput) row.token_count_input = input.tokenCountInput
+  if (input.tokenCountOutput) row.token_count_output = input.tokenCountOutput
+  if (input.cacheCreationInputTokens) row.cache_creation_input_tokens = input.cacheCreationInputTokens
+  if (input.cacheReadInputTokens) row.cache_read_input_tokens = input.cacheReadInputTokens
+  if (input.model) row.model = input.model
+
+  return row
+}
 
 type ConversationMethods = Pick<
   DatabaseProvider,
@@ -15,6 +37,7 @@ type ConversationMethods = Pick<
   | 'updateConversationTimestamp'
   | 'loadConversationMessages'
   | 'insertMessage'
+  | 'insertMessages'
   | 'getAgentUsage'
   | 'upsertAgentUsage'
   | 'getMonthlyUsageSummary'
@@ -111,34 +134,35 @@ export function conversationMethods(): ConversationMethods {
         .eq('id', conversationId)
     },
 
-    async loadConversationMessages(conversationId, limit = 20, fields = 'role, content, tool_calls') {
+    async loadConversationMessages(conversationId, limit = 20, fields = 'role, content, tool_calls, content_blocks, turn_id, turn_sequence, iteration, internal', options) {
       const admin = getAdmin()
-      const { data } = await admin
+      let query = admin
         .from('messages')
         .select(fields)
         .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-        .limit(limit)
+      // Ordering by `(created_at, turn_sequence)` keeps batch-inserted
+      // rows with identical timestamps in protocol order.
+      query = query.order('created_at', { ascending: true })
+      query = query.order('turn_sequence', { ascending: true })
+
+      if (!options?.includeInternal) {
+        query = query.eq('internal', false)
+      }
+
+      const { data } = await query.limit(limit)
 
       return (data ?? []) as unknown as DatabaseRow[]
     },
 
     async insertMessage(input) {
       const admin = getAdmin()
-      const row: Record<string, unknown> = {
-        conversation_id: input.conversationId,
-        role: input.role,
-        content: input.content,
-      }
+      await admin.from('messages').insert(toMessageRow(input))
+    },
 
-      if (input.toolCalls) row.tool_calls = input.toolCalls
-      if (input.tokenCountInput) row.token_count_input = input.tokenCountInput
-      if (input.tokenCountOutput) row.token_count_output = input.tokenCountOutput
-      if (input.cacheCreationInputTokens) row.cache_creation_input_tokens = input.cacheCreationInputTokens
-      if (input.cacheReadInputTokens) row.cache_read_input_tokens = input.cacheReadInputTokens
-      if (input.model) row.model = input.model
-
-      await admin.from('messages').insert(row)
+    async insertMessages(rows) {
+      if (rows.length === 0) return
+      const admin = getAdmin()
+      await admin.from('messages').insert(rows.map(toMessageRow))
     },
 
     // ─── Agent Usage ───

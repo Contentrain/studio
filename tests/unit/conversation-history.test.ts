@@ -176,4 +176,107 @@ describe('buildPromptMessages', () => {
     expect(joined).toContain('NEWEST')
     expect(joined).not.toContain('OLDEST')
   })
+
+  it('reads structured content_blocks first when present', () => {
+    const blocks = [{ type: 'tool_use', id: 't1', name: 'get_content', input: {} }]
+    const messages = buildPromptMessages({
+      history: [
+        {
+          role: 'assistant',
+          content: '[tool calls]',
+          content_blocks: blocks,
+          tool_calls: null,
+          turn_id: 'turn-A',
+          turn_sequence: 0,
+        },
+      ],
+      newUserMessage: 'next',
+      budget,
+    })
+    expect(messages[0]).toEqual({ role: 'assistant', content: blocks })
+  })
+})
+
+describe('buildPromptMessages — turn-safe Anthropic protocol invariant', () => {
+  const budget = { maxTokens: 10_000, rowLimit: 100 }
+
+  it('keeps whole multi-row turns together (assistant tool_use + matching tool_result)', () => {
+    // One conversation with two turns: T1 = (user prompt, assistant
+    // text+tool_use, user tool_result), T2 = (user prompt, assistant
+    // text). The budget walker must never drop the tool_result while
+    // keeping the tool_use — Anthropic rejects orphaned tool_use blocks.
+    const t1Assistant = [
+      { type: 'text', text: 'I will check.' },
+      { type: 'tool_use', id: 't1', name: 'get_content', input: {} },
+    ]
+    const t1ToolResult = [{ type: 'tool_result', toolUseId: 't1', content: '{}' }]
+    const messages = buildPromptMessages({
+      history: [
+        { role: 'user', content: 'prompt 1', turn_id: 'T1', turn_sequence: 0 },
+        { role: 'assistant', content: '[tool calls]', content_blocks: t1Assistant, turn_id: 'T1', turn_sequence: 1 },
+        { role: 'user', content: '[tool results]', content_blocks: t1ToolResult, turn_id: 'T1', turn_sequence: 2 },
+        { role: 'user', content: 'prompt 2', turn_id: 'T2', turn_sequence: 0 },
+        { role: 'assistant', content: 'Done.', turn_id: 'T2', turn_sequence: 1 },
+      ],
+      newUserMessage: 'prompt 3',
+      budget,
+    })
+    // All 5 history rows + the new user message.
+    expect(messages).toHaveLength(6)
+    expect((messages[1]!.content as Array<{ type: string }>)[1]!.type).toBe('tool_use')
+    expect((messages[2]!.content as Array<{ type: string }>)[0]!.type).toBe('tool_result')
+  })
+
+  it('drops whole older turns when budget overflows; never splits a turn', () => {
+    // OLD turn is heavy (3 rows × ~500 tokens each ≈ 1500 tokens);
+    // NEW turn is small enough to fit in a 600-token budget. The
+    // walker must keep all of NEW and discard all of OLD — never
+    // half-OLD, which would leak an orphan tool_use/tool_result pair.
+    const longText = 'x'.repeat(2000) // ~500 tokens
+    const heavyAssistant = [
+      { type: 'text', text: longText },
+      { type: 'tool_use', id: 't', name: 'get_content', input: {} },
+    ]
+    const heavyToolResult = [{ type: 'tool_result', toolUseId: 't', content: longText }]
+    const messages = buildPromptMessages({
+      history: [
+        { role: 'user', content: `OLD-USER ${longText}`, turn_id: 'OLD', turn_sequence: 0 },
+        { role: 'assistant', content: '[tool calls]', content_blocks: heavyAssistant, turn_id: 'OLD', turn_sequence: 1 },
+        { role: 'user', content: '[tool results]', content_blocks: heavyToolResult, turn_id: 'OLD', turn_sequence: 2 },
+        { role: 'user', content: 'NEW-USER short', turn_id: 'NEW', turn_sequence: 0 },
+        { role: 'assistant', content: 'NEW-REPLY short', turn_id: 'NEW', turn_sequence: 1 },
+      ],
+      newUserMessage: 'next',
+      budget: { maxTokens: 600, rowLimit: 100 },
+    })
+    expect(messages).toHaveLength(3)
+    expect(messages[0]!.content).toBe('NEW-USER short')
+    expect(messages[1]!.content).toBe('NEW-REPLY short')
+    // OLD turn fully dropped — no orphaned tool_use, no orphaned tool_result.
+    const joined = messages.map(m => JSON.stringify(m.content)).join('|')
+    expect(joined).not.toContain('OLD-USER')
+    expect(joined).not.toMatch(/tool_use|tool_result/)
+  })
+
+  it('drops the entire oldest turn rather than half of it when budget is tight', () => {
+    const longText = 'y'.repeat(2000)
+    const messages = buildPromptMessages({
+      history: [
+        // Old turn has 3 rows — none should survive partial inclusion.
+        { role: 'user', content: `OLD-1 ${longText}`, turn_id: 'OLD', turn_sequence: 0 },
+        { role: 'assistant', content: `OLD-2 ${longText}`, turn_id: 'OLD', turn_sequence: 1 },
+        { role: 'user', content: `OLD-3 ${longText}`, turn_id: 'OLD', turn_sequence: 2 },
+        // Newer turn is small and fits.
+        { role: 'user', content: 'NEW', turn_id: 'NEW', turn_sequence: 0 },
+        { role: 'assistant', content: 'OK', turn_id: 'NEW', turn_sequence: 1 },
+      ],
+      // Budget large enough for the small NEW turn but not for any
+      // single row of the OLD turn — proves "all or none" per turn.
+      budget: { maxTokens: 200, rowLimit: 100 },
+      newUserMessage: 'next',
+    })
+    expect(messages).toHaveLength(3)
+    expect(messages[0]!.content).toBe('NEW')
+    expect(messages[1]!.content).toBe('OK')
+  })
 })

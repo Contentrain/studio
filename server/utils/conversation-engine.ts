@@ -24,6 +24,21 @@ export interface ConversationEvent {
   [key: string]: unknown
 }
 
+/**
+ * One slice of the tool-use loop. `assistantBlocks` is whatever the
+ * provider produced this iteration (text + tool_use blocks in order).
+ * `toolResultBlocks` is the synthesized tool_result content fed back
+ * to Anthropic as the next "user" message — empty for the final
+ * iteration when the model stops with `end_turn`. The persister
+ * writes each entry as `assistant` + (optional) `user` row pair
+ * sharing one `turn_id`.
+ */
+export interface IterationTrace {
+  iteration: number
+  assistantBlocks: AIContentBlock[]
+  toolResultBlocks: AIContentBlock[]
+}
+
 // ─── Configuration ───
 
 export interface ConversationConfig {
@@ -94,6 +109,12 @@ export async function* runConversationLoop(
   let totalCacheReadInputTokens = 0
   let lastAssistantContent: AIContentBlock[] = []
   let accumulatedAffected: AffectedResources = emptyAffected()
+  // Full iteration-by-iteration trace surfaced on `done` so the
+  // caller can persist the actual Anthropic-protocol shape Claude
+  // saw — intermediate assistant turns AND tool_result blocks —
+  // and reconstruct it on resume. Empty for the seed user message;
+  // populated for every loop iteration regardless of stop reason.
+  const trace: IterationTrace[] = []
 
   let iteration = 0
 
@@ -189,7 +210,13 @@ export async function* runConversationLoop(
 
     lastAssistantContent = assistantBlocks
 
-    if (stopReason !== 'tool_use' || currentToolCalls.length === 0) break
+    if (stopReason !== 'tool_use' || currentToolCalls.length === 0) {
+      // Final iteration — no tool execution this turn. Persist the
+      // assistant blocks alone (no tool_result row will exist for
+      // this iteration).
+      trace.push({ iteration, assistantBlocks, toolResultBlocks: [] })
+      break
+    }
 
     // === TOOL EXECUTION with state guard + workflow-aware auto-merge ===
     const toolResultBlocks: AIContentBlock[] = []
@@ -231,6 +258,7 @@ export async function* runConversationLoop(
     config.messages.push({ role: 'assistant', content: assistantBlocks })
     config.messages.push({ role: 'user', content: toolResultBlocks })
     lastAssistantContent = assistantBlocks
+    trace.push({ iteration, assistantBlocks, toolResultBlocks })
   }
 
   // === DONE with affected resources ===
@@ -244,6 +272,7 @@ export async function* runConversationLoop(
     },
     affected: accumulatedAffected,
     lastContent: lastAssistantContent,
+    iterations: trace,
   }
 }
 

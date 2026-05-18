@@ -45,6 +45,7 @@ describe('db helpers', () => {
       createConversation: vi.fn().mockResolvedValue('conv-1'),
       loadConversationMessages: vi.fn().mockResolvedValue([{ role: 'user', content: 'Hello', tool_calls: null }]),
       insertMessage: vi.fn().mockResolvedValue(undefined),
+      insertMessages: vi.fn().mockResolvedValue(undefined),
       upsertAgentUsage: vi.fn().mockResolvedValue(undefined),
       updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
       decrementAgentUsage: vi.fn().mockResolvedValue(undefined),
@@ -104,13 +105,15 @@ describe('db helpers', () => {
     })
   })
 
-  it('saves chat results via provider methods', async () => {
+  it('saves chat results as a single batched trace insert', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult({
       conversationId: 'conv-1',
       userMessage: 'Hello',
-      assistantText: 'World',
-      assistantContent: [{ type: 'text', text: 'World' }],
+      iterations: [
+        { iteration: 1, assistantBlocks: [{ type: 'text', text: 'World' }], toolResultBlocks: [] },
+      ],
+      lastAssistantContent: [{ type: 'text', text: 'World' }],
       model: 'claude-sonnet-4-20250514',
       inputTokens: 7,
       outputTokens: 3,
@@ -122,9 +125,16 @@ describe('db helpers', () => {
       usageMonth: '2026-04',
     })
 
-    expect(mockDb.insertMessage).toHaveBeenCalledTimes(2)
-    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'user', content: 'Hello' }))
-    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'assistant', content: 'World' }))
+    // Single round-trip for the whole turn.
+    expect(mockDb.insertMessages).toHaveBeenCalledTimes(1)
+    const rows = mockDb.insertMessages.mock.calls[0]![0] as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ role: 'user', content: 'Hello', internal: false, turnSequence: 0, iteration: null })
+    expect(rows[1]).toMatchObject({ role: 'assistant', content: 'World', internal: false, turnSequence: 1 })
+    // All rows in one batch share the same turn_id.
+    expect(rows[0]!.turnId).toBe(rows[1]!.turnId)
+    expect(typeof rows[0]!.turnId).toBe('string')
+
     expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',
@@ -138,42 +148,64 @@ describe('db helpers', () => {
     expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-1')
   })
 
-  it('updates token counts on the usage row reserved by the atomic limit check', async () => {
+  it('writes intermediate iterations as internal rows and the final as visible', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult({
       conversationId: 'conv-1',
-      userMessage: 'Hello',
-      assistantText: '',
-      assistantContent: [],
-      model: 'claude-haiku-4-5-20251001',
-      inputTokens: 4,
-      outputTokens: 2,
+      userMessage: 'do X then Y',
+      iterations: [
+        {
+          iteration: 1,
+          assistantBlocks: [
+            { type: 'text', text: 'I will check first.' },
+            { type: 'tool_use', id: 't1', name: 'get_content', input: {} },
+          ],
+          toolResultBlocks: [{ type: 'tool_result', toolUseId: 't1', content: '{"ok":true}' }],
+        },
+        { iteration: 2, assistantBlocks: [{ type: 'text', text: 'Done.' }], toolResultBlocks: [] },
+      ],
+      lastAssistantContent: [{ type: 'text', text: 'Done.' }],
+      model: 'claude-sonnet-4-5',
+      inputTokens: 50,
+      outputTokens: 10,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 0,
       workspaceId: 'workspace-1',
       userId: 'user-1',
-      usageSource: 'byoa',
+      usageSource: 'studio',
       usageMonth: '2026-04',
     })
 
-    expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
-      source: 'byoa',
-      month: '2026-04',
-      inputTokens: 4,
-      outputTokens: 2,
-    }))
+    const rows = mockDb.insertMessages.mock.calls[0]![0] as Array<Record<string, unknown>>
+    // 1 seed user + 2 assistant + 1 tool_result = 4 rows
+    expect(rows).toHaveLength(4)
+    expect(rows[0]).toMatchObject({ role: 'user', internal: false, iteration: null })
+    expect(rows[1]).toMatchObject({ role: 'assistant', internal: true, iteration: 1 })
+    expect(rows[2]).toMatchObject({ role: 'user', internal: true, iteration: 1 })
+    expect(rows[3]).toMatchObject({ role: 'assistant', internal: false, iteration: 2 })
+    // turnSequence is monotonically increasing within the turn so a
+    // batch insert with identical created_at still resolves deterministically.
+    expect(rows.map(r => r.turnSequence)).toEqual([0, 1, 2, 3])
+    // All four rows share the single turn_id.
+    expect(new Set(rows.map(r => r.turnId)).size).toBe(1)
+    // Token counts land only on the final visible assistant row.
+    expect(rows[1]).not.toHaveProperty('tokenCountInput')
+    expect(rows[3]).toMatchObject({
+      tokenCountInput: 50,
+      tokenCountOutput: 10,
+      model: 'claude-sonnet-4-5',
+    })
   })
 
-  it('propagates cache token buckets through saveChatResult', async () => {
-    // Second turn of a cached conversation — most input is cache_read
-    // (cheap), a small slice is cache_creation, base input/output are
-    // small. All four buckets must land on agent_usage row + message row.
+  it('propagates cache token buckets onto the final assistant row', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult({
       conversationId: 'conv-1',
       userMessage: 'follow up',
-      assistantText: 'short',
-      assistantContent: [{ type: 'text', text: 'short' }],
+      iterations: [
+        { iteration: 1, assistantBlocks: [{ type: 'text', text: 'short' }], toolResultBlocks: [] },
+      ],
+      lastAssistantContent: [{ type: 'text', text: 'short' }],
       model: 'claude-sonnet-4-5',
       inputTokens: 80,
       outputTokens: 12,
@@ -195,20 +227,23 @@ describe('db helpers', () => {
       cacheCreationInputTokens: 150,
       cacheReadInputTokens: 9000,
     })
-    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+    const rows = mockDb.insertMessages.mock.calls[0]![0] as Array<Record<string, unknown>>
+    expect(rows.at(-1)).toMatchObject({
       role: 'assistant',
       cacheCreationInputTokens: 150,
       cacheReadInputTokens: 9000,
-    }))
+    })
   })
 
-  it('saveApiChatResult writes to api_message_usage, not agent_usage', async () => {
+  it('saveApiChatResult writes the trace and points tokens at api_message_usage', async () => {
     const { saveApiChatResult } = await loadDbModule()
     await saveApiChatResult({
       conversationId: 'conv-2',
       userMessage: 'Hello',
-      assistantText: 'World',
-      assistantContent: [{ type: 'text', text: 'World' }],
+      iterations: [
+        { iteration: 1, assistantBlocks: [{ type: 'text', text: 'World' }], toolResultBlocks: [] },
+      ],
+      lastAssistantContent: [{ type: 'text', text: 'World' }],
       model: 'claude-sonnet-4-5',
       inputTokens: 11,
       outputTokens: 5,
@@ -219,12 +254,9 @@ describe('db helpers', () => {
       usageMonth: '2026-04',
     })
 
-    // Messages persist into the shared messages table the same way as
-    // the Studio path; the difference is only in which usage table the
-    // token counters land on.
-    expect(mockDb.insertMessage).toHaveBeenCalledTimes(2)
-    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'user', content: 'Hello' }))
-    expect(mockDb.insertMessage).toHaveBeenCalledWith(expect.objectContaining({ role: 'assistant', content: 'World' }))
+    expect(mockDb.insertMessages).toHaveBeenCalledTimes(1)
+    const rows = mockDb.insertMessages.mock.calls[0]![0] as Array<Record<string, unknown>>
+    expect(rows.map(r => r.role)).toEqual(['user', 'assistant'])
 
     expect(mockDb.updateAPIUsageTokens).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',

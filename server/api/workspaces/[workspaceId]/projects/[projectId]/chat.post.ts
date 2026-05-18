@@ -153,7 +153,15 @@ export default defineEventHandler(async (event) => {
 
     // === HISTORY ===
     const budget = selectHistoryBudget({ plan, model, source: usageSource })
-    const historyRows = await db.loadConversationMessages(conversationId, budget.rowLimit)
+    // Resume reads need the full Anthropic-protocol trace, including
+    // intermediate assistant turns and tool_result blocks — those rows
+    // are RLS-hidden from end users but allowed for service-role reads.
+    const historyRows = await db.loadConversationMessages(
+      conversationId,
+      budget.rowLimit,
+      undefined,
+      { includeInternal: true },
+    )
     const messages = buildPromptMessages({
       history: historyRows ?? [],
       newUserMessage: body.message,
@@ -232,6 +240,7 @@ export default defineEventHandler(async (event) => {
       let totalCacheCreationInputTokens = 0
       let totalCacheReadInputTokens = 0
       let lastAssistantContent: AIContentBlock[] = []
+      let iterations: Array<{ iteration: number, assistantBlocks: AIContentBlock[], toolResultBlocks: AIContentBlock[] }> = []
 
       try {
         for await (const evt of runConversationLoop(
@@ -263,6 +272,7 @@ export default defineEventHandler(async (event) => {
             totalCacheCreationInputTokens = u?.cacheCreationInputTokens ?? 0
             totalCacheReadInputTokens = u?.cacheReadInputTokens ?? 0
             lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
+            iterations = (evt.iterations as typeof iterations) ?? []
 
             // Forward the done event without lastContent (not needed by client)
             await eventStream.push(JSON.stringify({
@@ -277,16 +287,17 @@ export default defineEventHandler(async (event) => {
         }
 
         // === SAVE TO DB ===
-        const assistantText = lastAssistantContent
-          .filter(b => b.type === 'text')
-          .map(b => (b as { text: string }).text)
-          .join('')
-
+        // `saveChatResult` writes the full iteration trace as a
+        // single batched INSERT — seed user row, every assistant
+        // iteration, every tool_result iteration — under one
+        // `turn_id`. Intermediate rows land with `internal=true`
+        // (RLS-hidden from the user transcript); only the final
+        // assistant row stays visible.
         await saveChatResult({
           conversationId,
           userMessage: body.message,
-          assistantText,
-          assistantContent: lastAssistantContent,
+          iterations,
+          lastAssistantContent,
           model,
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
