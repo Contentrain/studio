@@ -1,8 +1,6 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, Vocabulary } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
-import { buildContextChange } from '@contentrain/mcp/core/context'
 import { planContentSave } from '@contentrain/mcp/core/ops'
-import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
 import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch } from './helpers'
@@ -12,9 +10,8 @@ import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch }
  *
  * Delegates markdown serialization + path resolution to
  * `planContentSave` (document kind); Studio overrides meta with its
- * own status + user-email logic and wires `OverlayReader` around the
- * pending changes so the committed `context.json` reflects post-commit
- * stats.
+ * own status + user-email logic. `context.json` is not touched here —
+ * it is regenerated on `contentrain` post-merge (MCP 1.5.0 model).
  */
 export async function saveDocument(
   ctx: EngineInternalContext,
@@ -104,14 +101,9 @@ export async function saveDocument(
     userEmail,
   })
 
-  const overlay = new OverlayReader(reader, patchedChanges)
-  const contextChange = await buildContextChange(
-    overlay,
-    { tool: 'save_content', model: modelId, locale, entries: [safeSlug] },
-    'mcp-studio',
-  )
-
-  const allChanges: FileChange[] = [...patchedChanges, contextChange]
+  // context.json is regenerated on `contentrain` post-merge, not committed
+  // here (MCP 1.5.0 model — see `branch-ops.ts`).
+  const allChanges: FileChange[] = [...patchedChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)

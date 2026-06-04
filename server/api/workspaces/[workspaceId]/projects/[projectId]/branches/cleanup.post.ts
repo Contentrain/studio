@@ -14,8 +14,8 @@ export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
   await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
-  const { git } = await resolveProjectContext(workspaceId, projectId)
-  const report = await cleanupMergedBranches(git, projectId)
+  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+  const report = await cleanupMergedBranches(git, projectId, undefined, contentRoot)
 
   return report
 })

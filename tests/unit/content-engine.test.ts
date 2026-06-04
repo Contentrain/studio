@@ -102,6 +102,31 @@ describe('content engine', () => {
     })
   })
 
+  it('regenerates context.json on contentrain after a successful merge', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      mergeBranch: vi.fn().mockResolvedValue({ merged: true, sha: 'merge-sha', pullRequestUrl: null }),
+      deleteBranch: vi.fn().mockResolvedValue(undefined),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    await engine.mergeBranch('cr/content/faq/en/1234567890-abcd')
+
+    // Feature branches no longer carry context.json (MCP 1.5.0 model); it
+    // is rebuilt on contentrain post-merge via a dedicated commit.
+    expect(applyPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: 'contentrain',
+        base: 'contentrain',
+        changes: expect.arrayContaining([
+          expect.objectContaining({ path: '.contentrain/context.json' }),
+        ]),
+      }),
+    )
+  })
+
   it('falls back to PR creation when branch protection blocks step 2 merge', async () => {
     const git = createGitProvider({
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
@@ -264,7 +289,7 @@ describe('content engine', () => {
     expect(result.validation.errors[0]?.message).toBe('Model does not support i18n')
   })
 
-  it('saves model definitions and emits context change', async () => {
+  it('saves model definitions without committing context.json on the feature branch', async () => {
     const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({
       readFile: vi.fn(async (path: string) => {
@@ -299,10 +324,14 @@ describe('content engine', () => {
         base: 'contentrain',
         changes: expect.arrayContaining([
           expect.objectContaining({ path: '.contentrain/models/authors.json' }),
-          expect.objectContaining({ path: '.contentrain/context.json' }),
         ]),
       }),
     )
+
+    // context.json is regenerated on contentrain post-merge (MCP 1.5.0
+    // model), never committed on the feature branch.
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string }> }
+    expect(call.changes.some(c => c.path.endsWith('context.json'))).toBe(false)
   })
 
   it('initializes a project with config, models, content, and meta files', async () => {

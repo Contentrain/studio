@@ -237,13 +237,23 @@ itself. Every save / delete op composes:
    (`status: 'draft'`, `updated_by: 'contentrain-mcp'`) with
    Studio's `autoPublish` + existing-status preservation +
    per-user `updated_by` semantics.
-4. `OverlayReader` + `buildContextChange` — wraps the plan changes
-   so `context.json` stats (entries per model, last-sync) reflect
-   the post-commit state, not the pre-change base branch.
-5. `provider.applyPlan({ branch, changes, message, author, base: 'contentrain' })`
+4. `provider.applyPlan({ branch, changes, message, author, base: 'contentrain' })`
    — atomic branch+commit via the GitHub Data API. `createBranch`
    is no longer called separately; `applyPlan` forks `base` when the
-   branch is missing.
+   branch is missing. **`context.json` is NOT part of `changes`** —
+   see the context.json invariant below.
+
+**`context.json` lifecycle (MCP 1.5.0 model)** — feature branches
+**never** carry `context.json`. Committing it per-save caused merge
+conflicts when parallel `cr/*` branches landed (each mutated the same
+file from the same base). Instead it is regenerated deterministically
+on the `contentrain` branch **after a merge**, in
+`branch-ops.ts:mergeBranch` → `regenerateContextOnContentrain`
+(`buildContextChange` over the merged tree + a dedicated
+`applyPlan` commit onto `contentrain`, best-effort). The seed
+`context.json` is still written once at `initProject` time. Brain cache
+and external readers only ever read it from `contentrain`, so post-merge
+regeneration is the single point it needs to be accurate.
 
 **Invariants to preserve** when touching this path:
 
@@ -251,9 +261,9 @@ itself. Every save / delete op composes:
   fork from it via `applyPlan`'s default `base`. `config.repository
   .default_branch` (`main` / `master`) is informational — never the
   fork point.
-- Post-change reads (for validation or context) go through
-  `OverlayReader(reader, pendingChanges)` — raw reader shows the
-  pre-change tree and will emit stale stats.
+- Never add `context.json` to a feature-branch `applyPlan`. Only
+  `initProject` (seed) and `regenerateContextOnContentrain` (post-merge,
+  on `contentrain`) may write it.
 - Studio's `pinReaderToContentrain` wrapper defaults ref to
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
@@ -262,7 +272,7 @@ itself. Every save / delete op composes:
 
 Medium:
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
-- Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
+- Branch health: warn/block thresholds (default 50/80, config-driven via `branchWarnLimit`/`branchBlockLimit` since MCP 1.5.0) + merged `cr/*` auto-delete are implemented (`branch-health.ts`, `branch-cleanup.ts`). Remaining: surface health status in the UI
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
 - MCP Cloud endpoint: `server/api/mcp/v1/[projectId]/[...].ts` awaits `@contentrain/mcp` `resolveProvider` callback (per-request provider resolution). Foundations (license entries, `mcp_cloud_keys` table, usage RPC) shipped in Faz S6 — route implementation pending.
 

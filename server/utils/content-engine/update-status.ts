@@ -1,7 +1,5 @@
 import type { EntryMeta, FileChange, ModelDefinition } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
-import { buildContextChange } from '@contentrain/mcp/core/context'
-import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch } from './helpers'
@@ -35,7 +33,7 @@ export async function updateEntryStatus(
 
   for (const entryId of entryIds) {
     existingMeta[entryId] = {
-      ...(existingMeta[entryId] ?? {}),
+      ...existingMeta[entryId],
       status,
       updated_by: userEmail,
     } as EntryMeta
@@ -43,15 +41,9 @@ export async function updateEntryStatus(
 
   const metaChange: FileChange = { path: metaPath, content: canonicalStringify(existingMeta) }
 
-  const overlay = new OverlayReader(reader, [metaChange])
-  const contextChange = await buildContextChange(
-    overlay,
-    { tool: 'update_status', model: modelId, locale, entries: entryIds },
-    'mcp-studio',
-  )
-
-  const allChanges: FileChange[] = [metaChange, contextChange]
-    .toSorted((a, b) => a.path.localeCompare(b.path))
+  // context.json is regenerated on `contentrain` post-merge (MCP 1.5.0
+  // model), not committed on the feature branch.
+  const allChanges: FileChange[] = [metaChange]
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
@@ -135,14 +127,9 @@ export async function copyLocale(
     { path: targetMetaPath, content: metaContent },
   ]
 
-  const overlay = new OverlayReader(reader, copyChanges)
-  const contextChange = await buildContextChange(
-    overlay,
-    { tool: 'copy_locale', model: modelId, locale: toLocale },
-    'mcp-studio',
-  )
-
-  const allChanges: FileChange[] = [...copyChanges, contextChange]
+  // context.json is regenerated on `contentrain` post-merge (MCP 1.5.0
+  // model), not committed on the feature branch.
+  const allChanges: FileChange[] = [...copyChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId)

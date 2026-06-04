@@ -15,6 +15,6 @@ export default defineEventHandler(async (event) => {
   const cached = await getHealthStatus(projectId)
   if (cached) return cached
 
-  const { git } = await resolveProjectContext(workspaceId, projectId)
-  return checkBranchHealth(git, projectId)
+  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+  return checkBranchHealth(git, projectId, contentRoot)
 })
