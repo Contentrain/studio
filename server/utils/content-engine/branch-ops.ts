@@ -1,5 +1,7 @@
+import { buildContextChange } from '@contentrain/mcp/core/context'
 import type { Branch, EngineInternalContext, MergeResult } from './types'
-import { BRANCH_PREFIX, CONTENT_BRANCH } from './types'
+import { BOT_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
+import { pinReaderToContentrain } from './helpers'
 
 /**
  * Ensure the dedicated `contentrain` branch exists and is synced with main.
@@ -89,6 +91,11 @@ export async function mergeBranch(ctx: EngineInternalContext, branch: string): P
     // Branch may have been auto-deleted
   }
 
+  // Regenerate context.json on contentrain now that the content has
+  // landed — feature branches no longer carry it (MCP 1.5.0 model), so
+  // it is rebuilt here from the merged tree before main is advanced.
+  await regenerateContextOnContentrain(ctx, branch)
+
   // Step 2: advance contentrain -> main
   const defaultBranch = await ctx.git.getDefaultBranch()
   try {
@@ -115,4 +122,60 @@ export async function mergeBranch(ctx: EngineInternalContext, branch: string): P
  */
 export async function rejectBranch(ctx: EngineInternalContext, branch: string): Promise<void> {
   await ctx.git.deleteBranch(branch)
+}
+
+/**
+ * Regenerate `context.json` deterministically on the `contentrain` branch
+ * after a feature branch lands (MCP 1.5.0 model).
+ *
+ * Feature branches no longer carry `context.json`, which removes the
+ * merge-conflict surface when parallel `cr/*` saves land. Instead the file
+ * is rebuilt here from the merged `contentrain` tree so its stats
+ * (model / entry counts) reflect post-merge reality. The brain cache and
+ * external readers only ever read `context.json` from `contentrain`, so
+ * this is the single point where it needs to be accurate.
+ *
+ * Best-effort: a failure (transient git error, or a concurrent
+ * regeneration losing the non-fast-forward ref update) is swallowed — the
+ * next merge regenerates it correctly.
+ */
+async function regenerateContextOnContentrain(
+  ctx: EngineInternalContext,
+  mergedBranch: string,
+): Promise<void> {
+  try {
+    const reader = pinReaderToContentrain(ctx.git)
+    const contextChange = await buildContextChange(reader, parseMergeOperation(mergedBranch), 'mcp-studio')
+
+    // Skip an empty commit when the merged tree already carries an
+    // identical context.json.
+    try {
+      const current = await reader.readFile(contextChange.path)
+      if (current === contextChange.content) return
+    }
+    catch { /* no existing context.json — fall through and write it */ }
+
+    await ctx.git.applyPlan({
+      branch: CONTENT_BRANCH,
+      changes: [contextChange],
+      message: 'contentrain: regenerate context.json',
+      author: BOT_AUTHOR,
+      base: CONTENT_BRANCH,
+    })
+  }
+  catch {
+    // Best-effort: context.json self-heals on the next merge.
+  }
+}
+
+/**
+ * Derive the `context.json` lastOperation from a merged `cr/*` branch name.
+ * Format: `cr/{scope}/{target}[/{locale}]/{timestamp}-{suffix}`.
+ */
+function parseMergeOperation(branch: string): { tool: string, model: string, locale?: string } {
+  const parts = branch.split('/')
+  // cr / scope / target / [locale] / timestamp-suffix
+  const model = parts[2] ?? ''
+  const locale = parts.length >= 5 ? parts[3] : undefined
+  return { tool: 'merge', model, locale }
 }

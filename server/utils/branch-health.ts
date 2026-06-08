@@ -1,16 +1,24 @@
 /**
  * Branch health — monitors cr/* branch count and cleans up merged branches.
  *
- * Per git-architecture.md §8.2:
+ * Per git-architecture.md §8.2 (default thresholds):
  * - 0–49 unmerged cr/*: OK — operations proceed
  * - 50–79 unmerged cr/*: WARNING — operations proceed, user alerted
  * - 80+  unmerged cr/*: BLOCKED — new write operations rejected
+ *
+ * As of @contentrain/mcp 1.5.0 the warn/block thresholds are configurable
+ * via `config.json` (`branchWarnLimit` / `branchBlockLimit`). Studio honors
+ * those when present and falls back to 50/80 otherwise — see
+ * {@link resolveBranchLimits}.
  *
  * Merged branches are auto-deleted after branchRetention days (default 30).
  *
  * Cache: Redis when available (multi-instance safe), in-memory Map fallback.
  */
+import type { ContentrainConfig } from '@contentrain/types'
+import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { GitProvider } from '../providers/git'
+import { resolveConfigPath } from './content-paths'
 import { getRedis } from './redis'
 
 // ── Types ────────────────────────────────────────────
@@ -27,6 +35,12 @@ export interface CleanupReport {
   deleted: string[]
   remaining: number
   status: BranchHealthStatus
+}
+
+/** Resolved warn/block thresholds for the unmerged cr/* branch count. */
+export interface BranchLimits {
+  warn: number
+  block: number
 }
 
 // ── Constants ────────────────────────────────────────
@@ -105,11 +119,45 @@ export async function clearHealthCache(): Promise<void> {
   }
 }
 
+// ── Threshold resolution (config-driven, MCP 1.5.0) ──
+
+const DEFAULT_LIMITS: BranchLimits = { warn: WARNING_THRESHOLD, block: BLOCKED_THRESHOLD }
+
+/**
+ * Resolve branch-health thresholds. MCP 1.5.0 exposes `branchWarnLimit`
+ * (default 50) and `branchBlockLimit` (default 80) on `config.json`; Studio
+ * honors them so operators can tune limits without a code change. Reads
+ * config from the `contentrain` content branch.
+ *
+ * Falls back to the 50/80 defaults when `contentRoot` is omitted, the config
+ * is unreadable, or the fields are absent/non-numeric.
+ */
+export async function resolveBranchLimits(
+  git: GitProvider,
+  contentRoot?: string,
+): Promise<BranchLimits> {
+  if (contentRoot === undefined) return DEFAULT_LIMITS
+  try {
+    const raw = await git.readFile(resolveConfigPath({ contentRoot }), CONTENTRAIN_BRANCH)
+    const config = JSON.parse(raw) as ContentrainConfig
+    return {
+      warn: typeof config.branchWarnLimit === 'number' ? config.branchWarnLimit : WARNING_THRESHOLD,
+      block: typeof config.branchBlockLimit === 'number' ? config.branchBlockLimit : BLOCKED_THRESHOLD,
+    }
+  }
+  catch {
+    return DEFAULT_LIMITS
+  }
+}
+
 // ── Status calculation ───────────────────────────────
 
-export function calculateStatus(unmergedCount: number): BranchHealthStatus {
-  if (unmergedCount >= BLOCKED_THRESHOLD) return 'blocked'
-  if (unmergedCount >= WARNING_THRESHOLD) return 'warning'
+export function calculateStatus(
+  unmergedCount: number,
+  limits: BranchLimits = DEFAULT_LIMITS,
+): BranchHealthStatus {
+  if (unmergedCount >= limits.block) return 'blocked'
+  if (unmergedCount >= limits.warn) return 'warning'
   return 'ok'
 }
 
@@ -118,6 +166,7 @@ export function calculateStatus(unmergedCount: number): BranchHealthStatus {
 export async function checkBranchHealth(
   git: GitProvider,
   projectId: string,
+  contentRoot?: string,
 ): Promise<BranchHealthReport> {
   const branches = await git.listBranches('cr/')
   let unmergedCount = 0
@@ -127,8 +176,9 @@ export async function checkBranchHealth(
     if (!merged) unmergedCount++
   }
 
+  const limits = await resolveBranchLimits(git, contentRoot)
   const report: BranchHealthReport = {
-    status: calculateStatus(unmergedCount),
+    status: calculateStatus(unmergedCount, limits),
     unmergedCount,
     lastChecked: new Date().toISOString(),
   }
@@ -142,6 +192,7 @@ export async function cleanupMergedBranches(
   git: GitProvider,
   projectId: string,
   retentionDays: number = DEFAULT_RETENTION_DAYS,
+  contentRoot?: string,
 ): Promise<CleanupReport> {
   const branches = await git.listBranches('cr/')
   const deleted: string[] = []
@@ -165,10 +216,11 @@ export async function cleanupMergedBranches(
   }
 
   const remaining = branches.length - deleted.length
+  const limits = await resolveBranchLimits(git, contentRoot)
   const report: CleanupReport = {
     deleted,
     remaining,
-    status: calculateStatus(remaining),
+    status: calculateStatus(remaining, limits),
   }
 
   // Update cache after cleanup

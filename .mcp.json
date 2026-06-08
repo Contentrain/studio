@@ -3,7 +3,8 @@
     "contentrain": {
       "command": "npx",
       "args": [
-        "@contentrain/mcp"
+        "-y",
+        "@contentrain/mcp@1.5.0"
       ]
     },
     "nuxt": {

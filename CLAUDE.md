@@ -237,13 +237,23 @@ itself. Every save / delete op composes:
    (`status: 'draft'`, `updated_by: 'contentrain-mcp'`) with
    Studio's `autoPublish` + existing-status preservation +
    per-user `updated_by` semantics.
-4. `OverlayReader` + `buildContextChange` — wraps the plan changes
-   so `context.json` stats (entries per model, last-sync) reflect
-   the post-commit state, not the pre-change base branch.
-5. `provider.applyPlan({ branch, changes, message, author, base: 'contentrain' })`
+4. `provider.applyPlan({ branch, changes, message, author, base: 'contentrain' })`
    — atomic branch+commit via the GitHub Data API. `createBranch`
    is no longer called separately; `applyPlan` forks `base` when the
-   branch is missing.
+   branch is missing. **`context.json` is NOT part of `changes`** —
+   see the context.json invariant below.
+
+**`context.json` lifecycle (MCP 1.5.0 model)** — feature branches
+**never** carry `context.json`. Committing it per-save caused merge
+conflicts when parallel `cr/*` branches landed (each mutated the same
+file from the same base). Instead it is regenerated deterministically
+on the `contentrain` branch **after a merge**, in
+`branch-ops.ts:mergeBranch` → `regenerateContextOnContentrain`
+(`buildContextChange` over the merged tree + a dedicated
+`applyPlan` commit onto `contentrain`, best-effort). The seed
+`context.json` is still written once at `initProject` time. Brain cache
+and external readers only ever read it from `contentrain`, so post-merge
+regeneration is the single point it needs to be accurate.
 
 **Invariants to preserve** when touching this path:
 
@@ -251,20 +261,54 @@ itself. Every save / delete op composes:
   fork from it via `applyPlan`'s default `base`. `config.repository
   .default_branch` (`main` / `master`) is informational — never the
   fork point.
-- Post-change reads (for validation or context) go through
-  `OverlayReader(reader, pendingChanges)` — raw reader shows the
-  pre-change tree and will emit stale stats.
+- Never add `context.json` to a feature-branch `applyPlan`. Only
+  `initProject` (seed) and `regenerateContextOnContentrain` (post-merge,
+  on `contentrain`) may write it.
 - Studio's `pinReaderToContentrain` wrapper defaults ref to
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
+
+## MCP Cloud — HTTP MCP server for external agents
+
+Studio boots a real MCP server (`@contentrain/mcp/server/http`
+`startHttpMcpServerWith`) on a loopback port at Nitro startup
+(`server/plugins/mcp-cloud-server.ts`). The authenticated public entry is
+`server/api/mcp/v1/[projectId]/[...slug].ts` — Bearer key validation +
+project match + `api.mcp_cloud` plan gate + per-key rate limit + atomic
+monthly quota (`increment_mcp_cloud_usage_if_allowed`) + usage metering +
+header strip + proxy to the loopback server + brain-cache invalidation on
+write tools. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
+`WorkspaceMcpCloudPanel.vue`. The whole path is implemented — **not** a stub.
+
+**Two deliberate boundaries — keep them in mind when changing this path:**
+
+- **Reduced tool surface.** The loopback server runs against Studio's
+  `GitHubProvider` (`localWorktree: false`). So MCP's local-git tools —
+  `contentrain_merge`, `contentrain_branch_list`, `contentrain_branch_delete`,
+  `contentrain_submit` — return a capability error over MCP Cloud. External
+  agents can author (content / model save+delete, list, describe, validate,
+  status, init, bulk, scaffold) but the merge/review lifecycle is
+  Studio-owned. Do **not** add these to `WRITE_TOOL_NAMES` — they neither
+  reach the provider nor mutate the content branch.
+
+- **pending-review by contract, reconciled by workflow.** MCP's remote write
+  path hardcodes `workflowAction: "pending-review"` and leaves the merge to
+  Studio. So MCP Cloud writes land as `cr/*` branches. To stay consistent
+  with the native write paths, `reconcileMcpCloudAutoMerge`
+  (`server/utils/mcp-cloud-automerge.ts`) lands those branches **only** when
+  the project's effective workflow is auto-merge — resolved with the same
+  rule everywhere: `review` requires both the `workflow.review` plan feature
+  **and** `config.workflow === 'review'`; otherwise auto-merge. It runs
+  fire-and-forget after a write so it can never affect the external caller's
+  response, and is a no-op on review-gated projects.
 
 ## Deferred TODOs
 
 Medium:
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
-- Branch health: no 80+ branch threshold, no auto-delete merged cr/* branches
+- Branch health: warn/block thresholds (default 50/80, config-driven via `branchWarnLimit`/`branchBlockLimit` since MCP 1.5.0) + merged `cr/*` auto-delete are implemented (`branch-health.ts`, `branch-cleanup.ts`). Remaining: surface health status in the UI
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
-- MCP Cloud endpoint: `server/api/mcp/v1/[projectId]/[...].ts` awaits `@contentrain/mcp` `resolveProvider` callback (per-request provider resolution). Foundations (license entries, `mcp_cloud_keys` table, usage RPC) shipped in Faz S6 — route implementation pending.
+- MCP Cloud: integration-test coverage for the proxy route (`/api/mcp/v1/...`) and key endpoints is still thin (logic is covered, full HTTP path is not)
 
 ## Branch Model & Deploy Flow — CRITICAL
 

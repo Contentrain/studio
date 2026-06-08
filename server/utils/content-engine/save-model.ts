@@ -1,8 +1,6 @@
 import type { ContentrainConfig, FileChange, ModelDefinition } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
-import { buildContextChange } from '@contentrain/mcp/core/context'
 import { planModelSave } from '@contentrain/mcp/core/ops'
-import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch } from './helpers'
@@ -13,8 +11,8 @@ import { pinReaderToContentrain, createFeatureBranch } from './helpers'
  * Schema validation (Studio-owned today, pending S3 unification with MCP)
  * runs first; if it passes, file assembly is delegated to
  * `planModelSave` — it writes `.contentrain/models/{id}.json` in
- * canonical form. Studio adds the `context.json` change on top via
- * `buildContextChange` wrapped in an `OverlayReader`.
+ * canonical form. `context.json` is regenerated on `contentrain`
+ * post-merge (MCP 1.5.0 model), not committed on the feature branch.
  */
 export async function saveModel(
   ctx: EngineInternalContext,
@@ -82,14 +80,7 @@ export async function saveModel(
     }
   }
 
-  const overlay = new OverlayReader(reader, plan.changes)
-  const contextChange = await buildContextChange(
-    overlay,
-    { tool: 'save_model', model: definition.id, locale: '' },
-    'mcp-studio',
-  )
-
-  const allChanges: FileChange[] = [...plan.changes, contextChange]
+  const allChanges: FileChange[] = [...plan.changes]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'model', definition.id)

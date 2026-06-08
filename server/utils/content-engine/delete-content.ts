@@ -1,6 +1,5 @@
 import type { FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
-import { buildContextChange } from '@contentrain/mcp/core/context'
 import { planContentDelete } from '@contentrain/mcp/core/ops'
 import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
@@ -43,14 +42,9 @@ export async function deleteContent(
 
   const aggregatedChanges = [...changesByPath.values()]
 
-  const overlay = new OverlayReader(reader, aggregatedChanges)
-  const contextChange = await buildContextChange(
-    overlay,
-    { tool: 'delete_content', model: modelId, locale, entries: entryIds },
-    'mcp-studio',
-  )
-
-  const allChanges: FileChange[] = [...aggregatedChanges, contextChange]
+  // context.json is regenerated on `contentrain` post-merge (MCP 1.5.0
+  // model), not committed on the feature branch.
+  const allChanges: FileChange[] = [...aggregatedChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)

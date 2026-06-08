@@ -27,7 +27,7 @@ export default defineNitroPlugin((nitroApp) => {
 
 async function runBranchCleanup() {
   const db = useDatabaseProvider()
-  const projects = await db.listAllActiveProjects('id, repo_full_name, workspace_id')
+  const projects = await db.listAllActiveProjects('id, repo_full_name, workspace_id, content_root')
 
   for (const project of projects) {
     try {
@@ -44,7 +44,8 @@ async function runBranchCleanup() {
         repo,
       })
 
-      const report = await cleanupMergedBranches(git, project.id as string)
+      const contentRoot = normalizeContentRoot(project.content_root as string)
+      const report = await cleanupMergedBranches(git, project.id as string, undefined, contentRoot)
       if (report.deleted.length > 0) {
         // eslint-disable-next-line no-console
         console.info(`[branch-cleanup] ${owner}/${repo}: deleted ${report.deleted.length} merged branches, ${report.remaining} remaining`)

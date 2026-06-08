@@ -1,8 +1,6 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, ValidationResult, Vocabulary } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
-import { buildContextChange } from '@contentrain/mcp/core/context'
 import { planContentSave } from '@contentrain/mcp/core/ops'
-import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { ValidationContext } from '../content-validation'
 import type { EngineInternalContext, WriteResult } from './types'
 import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
@@ -26,9 +24,8 @@ import {
  * - feature-branch lifecycle (`cr/*` name generation, health check)
  * - commit + diff bookkeeping for the `WriteResult` return shape
  *
- * `OverlayReader` is wrapped around the pinned reader so the committed
- * `context.json` reflects post-commit stats (see `.internal/refactor/
- * 02-studio-handoff.md` Faz S2.1 — Phase 10 tuzakları).
+ * `context.json` is not committed here — it is regenerated on
+ * `contentrain` post-merge (MCP 1.5.0 model; see `branch-ops.ts`).
  */
 export async function saveContent(
   ctx: EngineInternalContext,
@@ -164,19 +161,11 @@ export async function saveContent(
     userEmail,
   })
 
-  const overlay = new OverlayReader(reader, patchedChanges)
-  const contextChange = await buildContextChange(
-    overlay,
-    {
-      tool: 'save_content',
-      model: modelId,
-      locale,
-      entries: modelDef.kind === 'collection' ? touchedIds : undefined,
-    },
-    'mcp-studio',
-  )
-
-  const allChanges: FileChange[] = [...patchedChanges, contextChange]
+  // context.json is NOT committed on feature branches (MCP 1.5.0 model):
+  // it is regenerated deterministically on `contentrain` post-merge so
+  // parallel saves cannot conflict on it. See `regenerateContextOnContentrain`
+  // in `branch-ops.ts`.
+  const allChanges: FileChange[] = [...patchedChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
