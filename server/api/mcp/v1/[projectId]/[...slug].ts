@@ -29,6 +29,7 @@ import { useDatabaseProvider } from '~~/server/utils/providers'
 import { checkRateLimit } from '~~/server/utils/rate-limit'
 import { getPlanLimit, getWorkspacePlan, hasFeature } from '~~/server/utils/license'
 import { getEffectiveLimit } from '~~/server/utils/overage'
+import { reconcileMcpCloudAutoMerge } from '~~/server/utils/mcp-cloud-automerge'
 
 const WRITE_TOOL_NAMES = new Set([
   'contentrain_content_save',
@@ -202,6 +203,20 @@ export default defineEventHandler(async (event) => {
 
   if (shouldInvalidateBrain) {
     invalidateBrainCache(keyData.projectId)
+
+    // MCP's remote write path always reports `pending-review` and delegates
+    // the merge to Studio. Land those branches when the project's effective
+    // workflow is auto-merge (plan + config aware), matching the native
+    // write paths. Fire-and-forget — it can never affect the response the
+    // external agent already received.
+    void reconcileMcpCloudAutoMerge({
+      workspaceId: keyData.workspaceId,
+      projectId: keyData.projectId,
+      installationId: workspace.github_installation_id as number,
+      repoFullName: project.repo_full_name as string,
+      contentRoot: (project.content_root as string | null) ?? '',
+      plan,
+    }).catch(() => {})
   }
 
   return response

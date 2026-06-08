@@ -268,13 +268,47 @@ regeneration is the single point it needs to be accurate.
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
 
+## MCP Cloud — HTTP MCP server for external agents
+
+Studio boots a real MCP server (`@contentrain/mcp/server/http`
+`startHttpMcpServerWith`) on a loopback port at Nitro startup
+(`server/plugins/mcp-cloud-server.ts`). The authenticated public entry is
+`server/api/mcp/v1/[projectId]/[...slug].ts` — Bearer key validation +
+project match + `api.mcp_cloud` plan gate + per-key rate limit + atomic
+monthly quota (`increment_mcp_cloud_usage_if_allowed`) + usage metering +
+header strip + proxy to the loopback server + brain-cache invalidation on
+write tools. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
+`WorkspaceMcpCloudPanel.vue`. The whole path is implemented — **not** a stub.
+
+**Two deliberate boundaries — keep them in mind when changing this path:**
+
+- **Reduced tool surface.** The loopback server runs against Studio's
+  `GitHubProvider` (`localWorktree: false`). So MCP's local-git tools —
+  `contentrain_merge`, `contentrain_branch_list`, `contentrain_branch_delete`,
+  `contentrain_submit` — return a capability error over MCP Cloud. External
+  agents can author (content / model save+delete, list, describe, validate,
+  status, init, bulk, scaffold) but the merge/review lifecycle is
+  Studio-owned. Do **not** add these to `WRITE_TOOL_NAMES` — they neither
+  reach the provider nor mutate the content branch.
+
+- **pending-review by contract, reconciled by workflow.** MCP's remote write
+  path hardcodes `workflowAction: "pending-review"` and leaves the merge to
+  Studio. So MCP Cloud writes land as `cr/*` branches. To stay consistent
+  with the native write paths, `reconcileMcpCloudAutoMerge`
+  (`server/utils/mcp-cloud-automerge.ts`) lands those branches **only** when
+  the project's effective workflow is auto-merge — resolved with the same
+  rule everywhere: `review` requires both the `workflow.review` plan feature
+  **and** `config.workflow === 'review'`; otherwise auto-merge. It runs
+  fire-and-forget after a write so it can never affect the external caller's
+  response, and is a no-op on review-gated projects.
+
 ## Deferred TODOs
 
 Medium:
 - Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
 - Branch health: warn/block thresholds (default 50/80, config-driven via `branchWarnLimit`/`branchBlockLimit` since MCP 1.5.0) + merged `cr/*` auto-delete are implemented (`branch-health.ts`, `branch-cleanup.ts`). Remaining: surface health status in the UI
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
-- MCP Cloud endpoint: `server/api/mcp/v1/[projectId]/[...].ts` awaits `@contentrain/mcp` `resolveProvider` callback (per-request provider resolution). Foundations (license entries, `mcp_cloud_keys` table, usage RPC) shipped in Faz S6 — route implementation pending.
+- MCP Cloud: integration-test coverage for the proxy route (`/api/mcp/v1/...`) and key endpoints is still thin (logic is covered, full HTTP path is not)
 
 ## Branch Model & Deploy Flow — CRITICAL
 
