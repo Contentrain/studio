@@ -108,47 +108,109 @@ export function selectHistoryBudget(input: {
   return { maxTokens, rowLimit }
 }
 
+/**
+ * Build the AI message list from persisted trace rows.
+ *
+ * Critical Anthropic protocol invariant: a `tool_use` block in an
+ * assistant turn MUST be followed by a matching `tool_result` block
+ * in the next user turn (or vice versa). If the row-level budget
+ * walker drops a tool_use but keeps its tool_result — or worse, the
+ * other way around — Anthropic rejects the request (or silently
+ * mis-routes the conversation). So the budget cutoff operates at the
+ * **turn** boundary, not the row boundary:
+ *
+ *   1. Group rows by `turn_id` (preserving DB order).
+ *   2. Walk groups newest → oldest, summing per-group token estimates.
+ *   3. Drop entire turns when the budget is exceeded — never half a turn.
+ *   4. If the DB row_limit truncated mid-turn (rare), drop the
+ *      partial leading turn so we never feed Anthropic a turn that
+ *      starts with a tool_result without its matching tool_use.
+ *   5. Materialize the kept groups in chronological order and append
+ *      the current user message.
+ *
+ * Legacy rows (pre-009 migration) get distinct turn_ids via the
+ * column's `gen_random_uuid()` default — each becomes a one-row
+ * "turn" of its own. That's protocol-safe by definition (no tool
+ * blocks were persisted on the legacy path).
+ */
 export function buildPromptMessages(input: {
   history: DatabaseRow[]
   newUserMessage: string
   budget: HistoryBudget
 }): AIMessage[] {
+  const groups = groupRowsByTurn(input.history)
+  const kept = selectTurnsWithinBudget(groups, input.budget.maxTokens)
+
   const messages: AIMessage[] = []
-  const cutoff = findBudgetCutoff(input.history, input.budget.maxTokens)
-  for (let i = cutoff; i < input.history.length; i++) {
-    const row = input.history[i]!
-    messages.push({
-      role: row.role as 'user' | 'assistant',
-      content: extractContent(row),
-    })
+  for (const group of kept) {
+    for (const row of group) {
+      messages.push({
+        role: row.role as 'user' | 'assistant',
+        content: extractContent(row),
+      })
+    }
   }
   messages.push({ role: 'user', content: input.newUserMessage })
   return messages
 }
 
 /**
- * Tolerates both `tool_calls` (Studio path — `db.loadConversationMessages`
- * returns snake_case rows) and `toolCalls` (EE handler's pre-refactor
- * wrapper renamed it). Once that wrapper is gone the second branch is
- * dead — leave it as a safety net for any external caller.
+ * Content extraction priority: structured `content_blocks` jsonb
+ * first (post-009 trace rows), then the legacy `tool_calls` /
+ * `toolCalls` wrapper (only the final assistant turn ever wrote it),
+ * finally plain text `content`.
  */
 function extractContent(row: DatabaseRow): string | AIContentBlock[] {
-  const blocks = (row.tool_calls ?? row.toolCalls) as AIContentBlock[] | null | undefined
+  const blocks
+    = (row.content_blocks ?? row.contentBlocks ?? row.tool_calls ?? row.toolCalls) as AIContentBlock[] | null | undefined
   if (blocks && Array.isArray(blocks) && blocks.length > 0) return blocks
   return row.content as string | AIContentBlock[]
 }
 
-function findBudgetCutoff(history: DatabaseRow[], maxTokens: number): number {
-  if (maxTokens <= 0) return history.length
+function groupRowsByTurn(rows: DatabaseRow[]): DatabaseRow[][] {
+  const groups: DatabaseRow[][] = []
+  let current: DatabaseRow[] = []
+  let currentTurn: string | null = null
+  for (const row of rows) {
+    const turn = (row.turn_id ?? row.turnId) as string | null | undefined
+    // Treat null/undefined as the row's own group so legacy rows
+    // (without turn_id) and rows with distinct ids both behave
+    // protocol-safely.
+    const key = (turn ?? `__row_${groups.length}_${current.length}`) as string
+    if (key !== currentTurn) {
+      if (current.length > 0) groups.push(current)
+      current = []
+      currentTurn = key
+    }
+    current.push(row)
+  }
+  if (current.length > 0) groups.push(current)
+  return groups
+}
+
+function selectTurnsWithinBudget(groups: DatabaseRow[][], maxTokens: number): DatabaseRow[][] {
+  if (maxTokens <= 0) return []
+  if (groups.length === 0) return groups
   let tokens = 0
-  for (let i = history.length - 1; i >= 0; i--) {
-    const row = history[i]!
+  let cutoff = 0
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const groupTokens = estimateGroupTokens(groups[i]!)
+    if (tokens + groupTokens > maxTokens) {
+      cutoff = i + 1
+      break
+    }
+    tokens += groupTokens
+  }
+  return groups.slice(cutoff)
+}
+
+function estimateGroupTokens(group: DatabaseRow[]): number {
+  let total = 0
+  for (const row of group) {
     const content = extractContent(row)
-    const estimate = typeof content === 'string'
+    total += typeof content === 'string'
       ? Math.ceil(content.length / 4)
       : Math.ceil(JSON.stringify(content).length / 4)
-    tokens += estimate
-    if (tokens > maxTokens) return i + 1
   }
-  return 0
+  return total
 }

@@ -1,6 +1,13 @@
 import type { GitProvider } from '../providers/git'
 import { normalizeContentRoot } from './content-paths'
 
+// ─── Cross-domain: Chat Persistence ───
+
+import { randomUUID } from 'node:crypto'
+import type { MessageInsertInput } from '../providers/database'
+import type { AIContentBlock } from '../providers/ai'
+import type { IterationTrace } from './conversation-engine'
+
 /**
  * Cross-provider database utilities.
  *
@@ -217,39 +224,110 @@ export async function inviteOrLookupUser(
   }
 }
 
-// ─── Cross-domain: Chat Persistence ───
-
-async function persistChatMessages(input: {
+/**
+ * Compose the row trace for a single chat POST and write it as one
+ * batched INSERT.
+ *
+ * Shape per POST:
+ *   - 1 seed user row (the prompt). `internal=false`, `iteration=NULL`.
+ *   - For each engine iteration:
+ *       - 1 assistant row carrying `content_blocks` (text + tool_use).
+ *       - 0 or 1 tool_result row (role='user', content_blocks=[tool_result...])
+ *         when the iteration triggered tool execution.
+ *   - All rows share a single freshly-minted `turn_id`. `turn_sequence`
+ *     starts at 0 (seed user) and increments by 1 per row so two rows
+ *     landing at the same `created_at` tick still resolve in order.
+ *
+ * Visibility (`internal=true`):
+ *   - Intermediate assistant rows AND every tool_result row are
+ *     internal; they live in the protocol replay but should not
+ *     appear in the user-facing transcript.
+ *   - The LAST assistant row in the trace is visible — usually the
+ *     final `end_turn` text reply; on max-iteration cutoff it's the
+ *     last tool-use turn (UI sees the `[tool calls]` placeholder
+ *     content text, same fallback the pre-trace path used).
+ *
+ * Token columns land only on the final visible assistant row —
+ * Anthropic's `usage` is per-call total, not per-iteration.
+ */
+function buildTraceRows(input: {
   conversationId: string
   userMessage: string
-  assistantText: string
-  assistantContent: unknown[]
+  trace: IterationTrace[]
+  lastAssistantContent: AIContentBlock[]
   model: string
   inputTokens: number
   outputTokens: number
   cacheCreationInputTokens: number
   cacheReadInputTokens: number
-}) {
-  const db = useDatabaseProvider()
-  await db.insertMessage({ conversationId: input.conversationId, role: 'user', content: input.userMessage })
-  try {
-    await db.insertMessage({
+}): MessageInsertInput[] {
+  const turnId = randomUUID()
+  const rows: MessageInsertInput[] = []
+  let seq = 0
+
+  rows.push({
+    conversationId: input.conversationId,
+    role: 'user',
+    content: input.userMessage,
+    turnId,
+    turnSequence: seq++,
+    iteration: null,
+    internal: false,
+  })
+
+  const trace = input.trace.length > 0
+    ? input.trace
+    // Defensive fallback: the engine should always emit at least one
+    // iteration before yielding `done`, but if the loop bailed before
+    // pushing a trace entry (e.g. abort between provider start and
+    // first event) we still write the last known assistant content
+    // so the transcript isn't blank.
+    : [{ iteration: 1, assistantBlocks: input.lastAssistantContent, toolResultBlocks: [] }]
+
+  const lastIndex = trace.length - 1
+  for (let i = 0; i < trace.length; i++) {
+    const iter = trace[i]!
+    const isFinal = i === lastIndex
+    const assistantText = iter.assistantBlocks
+      .filter(b => b.type === 'text')
+      .map(b => (b as { text: string }).text)
+      .join('')
+
+    rows.push({
       conversationId: input.conversationId,
       role: 'assistant',
-      content: input.assistantText || '[tool calls]',
-      toolCalls: input.assistantContent.length > 0 ? input.assistantContent : null,
-      tokenCountInput: input.inputTokens,
-      tokenCountOutput: input.outputTokens,
-      cacheCreationInputTokens: input.cacheCreationInputTokens,
-      cacheReadInputTokens: input.cacheReadInputTokens,
-      model: input.model,
+      content: assistantText || '[tool calls]',
+      contentBlocks: iter.assistantBlocks,
+      turnId,
+      turnSequence: seq++,
+      iteration: iter.iteration,
+      internal: !isFinal,
+      ...(isFinal
+        ? {
+            tokenCountInput: input.inputTokens,
+            tokenCountOutput: input.outputTokens,
+            cacheCreationInputTokens: input.cacheCreationInputTokens,
+            cacheReadInputTokens: input.cacheReadInputTokens,
+            model: input.model,
+          }
+        : {}),
     })
+
+    if (iter.toolResultBlocks.length > 0) {
+      rows.push({
+        conversationId: input.conversationId,
+        role: 'user',
+        content: '[tool results]',
+        contentBlocks: iter.toolResultBlocks,
+        turnId,
+        turnSequence: seq++,
+        iteration: iter.iteration,
+        internal: true,
+      })
+    }
   }
-  catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[chat-persist] Failed to insert assistant message:', err)
-    throw err
-  }
+
+  return rows
 }
 
 /**
@@ -259,14 +337,22 @@ async function persistChatMessages(input: {
  * persists messages and bumps the token metadata on the row that the
  * reservation created.
  *
- * Conversation API has its own actor model (key-keyed, not user-keyed)
- * and a dedicated `api_message_usage` table — use `saveApiChatResult`.
+ * Persistence is per-turn batched: every iteration of the tool loop
+ * becomes its own row pair (assistant + tool_result) sharing the
+ * single `turn_id` allocated below, so resume reads can reconstruct
+ * the Anthropic protocol shape Claude saw on prior turns. Quota is
+ * unaffected — `agent_usage.message_count` increments exactly once
+ * per POST via the reservation step.
+ *
+ * Conversation API has its own actor model (key-keyed, not
+ * user-keyed) and a dedicated `api_message_usage` table — use
+ * `saveApiChatResult`.
  */
 export async function saveChatResult(input: {
   conversationId: string
   userMessage: string
-  assistantText: string
-  assistantContent: unknown[]
+  iterations: IterationTrace[]
+  lastAssistantContent: AIContentBlock[]
   model: string
   inputTokens: number
   outputTokens: number
@@ -279,17 +365,26 @@ export async function saveChatResult(input: {
 }) {
   const db = useDatabaseProvider()
 
-  await persistChatMessages({
+  const rows = buildTraceRows({
     conversationId: input.conversationId,
     userMessage: input.userMessage,
-    assistantText: input.assistantText,
-    assistantContent: input.assistantContent,
+    trace: input.iterations,
+    lastAssistantContent: input.lastAssistantContent,
     model: input.model,
     inputTokens: input.inputTokens,
     outputTokens: input.outputTokens,
     cacheCreationInputTokens: input.cacheCreationInputTokens,
     cacheReadInputTokens: input.cacheReadInputTokens,
   })
+
+  try {
+    await db.insertMessages(rows)
+  }
+  catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[chat-persist] Failed to insert chat trace:', err)
+    throw err
+  }
 
   await db.updateAgentUsageTokens({
     workspaceId: input.workspaceId,
@@ -313,8 +408,8 @@ export async function saveChatResult(input: {
 export async function saveApiChatResult(input: {
   conversationId: string
   userMessage: string
-  assistantText: string
-  assistantContent: unknown[]
+  iterations: IterationTrace[]
+  lastAssistantContent: AIContentBlock[]
   model: string
   inputTokens: number
   outputTokens: number
@@ -326,17 +421,26 @@ export async function saveApiChatResult(input: {
 }) {
   const db = useDatabaseProvider()
 
-  await persistChatMessages({
+  const rows = buildTraceRows({
     conversationId: input.conversationId,
     userMessage: input.userMessage,
-    assistantText: input.assistantText,
-    assistantContent: input.assistantContent,
+    trace: input.iterations,
+    lastAssistantContent: input.lastAssistantContent,
     model: input.model,
     inputTokens: input.inputTokens,
     outputTokens: input.outputTokens,
     cacheCreationInputTokens: input.cacheCreationInputTokens,
     cacheReadInputTokens: input.cacheReadInputTokens,
   })
+
+  try {
+    await db.insertMessages(rows)
+  }
+  catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[chat-persist] Failed to insert API chat trace:', err)
+    throw err
+  }
 
   await db.updateAPIUsageTokens({
     workspaceId: input.workspaceId,
