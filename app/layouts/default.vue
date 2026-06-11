@@ -2,8 +2,25 @@
 const { t } = useContent()
 const { open: commandPaletteOpen } = useCommandPalette()
 const { toggle: toggleMobileSidebar } = useMobileSidebar()
-const { open: planModalOpen } = usePlanModal()
+const { open: planModalOpen, show: showPlanModal } = usePlanModal()
+const { isLocked, openPortal } = useBilling()
 const deployment = useDeployment()
+const route = useRoute()
+
+// Billing surfaces only matter inside a workspace context.
+const isWorkspaceRoute = computed(() => route.path.startsWith('/w/'))
+
+/**
+ * Replace workspace content with the paywall when the active workspace
+ * is locked — except on the settings route, which stays reachable so
+ * the owner can still manage billing, members, or delete the workspace.
+ */
+const showPaywall = computed(() =>
+  isLocked.value
+  && deployment.hasManagedBilling.value
+  && isWorkspaceRoute.value
+  && !route.path.includes('/settings'),
+)
 </script>
 
 <template>
@@ -27,7 +44,15 @@ const deployment = useDeployment()
 
     <!-- Main content (with top padding on mobile for fixed header) -->
     <main class="flex-1 overflow-y-auto pt-14 md:pt-0">
-      <slot />
+      <!-- Trial / billing-state banner (workspace routes only; hidden when
+           the paywall takes over). -->
+      <MoleculesTrialBanner
+        v-if="isWorkspaceRoute && !showPaywall"
+        @choose-plan="showPlanModal()"
+        @manage-billing="openPortal()"
+      />
+      <OrganismsPaywallOverlay v-if="showPaywall" />
+      <slot v-else />
     </main>
 
     <!-- Mobile sidebar drawer -->

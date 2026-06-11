@@ -38,7 +38,7 @@ async function loadGitHubInstallation() {
   catch (err: unknown) {
     ghInstallation.value = null
     const status = (err as { statusCode?: number })?.statusCode
-    ghFetchError.value = status === 403 ? t('auth.forbidden') : t('generic.server_error')
+    ghFetchError.value = status === 403 ? t('auth.forbidden') : t('common.server_error')
   }
   finally {
     ghLoading.value = false
