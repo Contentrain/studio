@@ -1,6 +1,6 @@
 {
-  "api.byoa_upgrade": "Bring Your Own API (BYOA) keys are available on all plans. Add your API key in workspace settings.",
-  "api.conversation_upgrade": "Conversation API is available on all plans. {plan} includes {conversationKeys} key and {apiMessages} messages/month. Upgrade to {toPlan} for {toConversationKeys} keys and {toApiMessages} messages/month.",
+  "api.byoa_upgrade": "Bring Your Own API (BYOA) keys are available on Pro and Enterprise. Upgrade to {toPlan} to add your own provider key.",
+  "api.conversation_upgrade": "The Conversation API is available on Pro and Enterprise. Upgrade to {toPlan} for {toConversationKeys} conversation keys and {toApiMessages} API messages/month.",
   "api.key_id_required": "Workspace ID and key ID are required.",
   "api.provider_key_required": "AI provider and API key are required.",
   "api.unsupported_provider": "This AI provider is not supported. Please use a supported provider.",

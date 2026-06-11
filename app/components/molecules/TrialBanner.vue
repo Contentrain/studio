@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { PLAN_PRICING } from '~~/shared/utils/license'
+
 const { t } = useContent()
 const { billingState, trialDaysLeft, effectivePlan } = useBilling()
+
+const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? effectivePlan.value)
 
 const emit = defineEmits<{
   choosePlan: []
@@ -65,7 +69,7 @@ function handleCta() {
       />
       <span>{{ bannerText }}</span>
       <AtomsBadge v-if="isTrialing" variant="primary" size="sm">
-        {{ effectivePlan }}
+        {{ planName }}
       </AtomsBadge>
     </div>
 

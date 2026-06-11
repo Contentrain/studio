@@ -7,12 +7,6 @@ import { ENTERPRISE_CONTACT_EMAIL } from '~~/shared/utils/license'
 const { t } = useContent()
 const { billingState, effectivePlan, startCheckout, openPortal } = useBilling()
 
-const enterpriseMailto = computed(() => {
-  const subject = encodeURIComponent('Contentrain Studio — Enterprise inquiry')
-  return `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${subject}`
-})
-const toast = useToast()
-
 const props = defineProps<{
   open: boolean
 }>()
@@ -21,9 +15,15 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 
+const toast = useToast()
 const loading = ref<string | null>(null)
 
-// Load plans from Contentrain — sorted by sort_order, exclude free (shown implicitly)
+const enterpriseMailto = computed(() => {
+  const subject = encodeURIComponent('Contentrain Studio — Enterprise inquiry')
+  return `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${subject}`
+})
+
+// Purchasable plans — exclude the free shell and enterprise (contact-sales).
 const plans = computed(() =>
   query('plans')
     .locale('en')
@@ -32,65 +32,6 @@ const plans = computed(() =>
     .filter(p => p.slug !== 'free' && p.slug !== 'enterprise'),
 )
 
-// Load features grouped by plan for display
-const allFeatures = computed(() =>
-  query('plan-features')
-    .sort('sort_order', 'asc')
-    .all(),
-)
-
-// Plan tier ordering — used to compute "everything in previous tier, plus..."
-const PLAN_TIER_ORDER = ['free', 'starter', 'pro', 'enterprise'] as const
-
-function isTruthy(val: string | undefined): boolean {
-  return Boolean(val) && val !== 'false' && val !== '0'
-}
-
-function formatFeature(f: PlanFeatures, val: string): string {
-  if (f.type === 'limit') {
-    return val === 'unlimited' ? `${f.name}: ${t('common.unlimited')}` : `${val} ${f.name}`
-  }
-  return f.name
-}
-
-interface PlanFeatureEntry {
-  label: string
-  roadmap: boolean
-}
-
-/**
- * Returns the features that differentiate `planSlug` from the tier below it.
- * For the lowest shown tier (starter), returns all its features.
- * For higher tiers, returns only the delta (new features or upgraded limits).
- *
- * Each entry carries a `roadmap` flag so the UI can render "Coming
- * Soon" for advertised-but-unimplemented features. The flag comes from
- * the `roadmap` column on `plan-features` content rows.
- */
-function planFeaturesList(planSlug: string): PlanFeatureEntry[] {
-  const valueKey = `${planSlug}_value` as keyof PlanFeatures
-  const tierIndex = PLAN_TIER_ORDER.indexOf(planSlug as (typeof PLAN_TIER_ORDER)[number])
-  const previousTier = tierIndex > 1 ? PLAN_TIER_ORDER[tierIndex - 1] : null
-  const prevValueKey = previousTier ? `${previousTier}_value` as keyof PlanFeatures : null
-
-  return allFeatures.value
-    .filter((f) => {
-      const val = f[valueKey] as string | undefined
-      if (!isTruthy(val)) return false
-      // For higher tiers, exclude features already in the previous tier at the same value.
-      if (prevValueKey) {
-        const prevVal = f[prevValueKey] as string | undefined
-        if (isTruthy(prevVal) && prevVal === val) return false
-      }
-      return true
-    })
-    .map(f => ({
-      label: formatFeature(f, f[valueKey] as string),
-      roadmap: isTruthy(f.roadmap),
-    }))
-}
-
-// Enterprise plan from Contentrain
 const enterprisePlan = computed(() =>
   query('plans')
     .locale('en')
@@ -98,39 +39,150 @@ const enterprisePlan = computed(() =>
     .all()[0],
 )
 
+// All plan-feature rows (features + limits), single source of truth.
+const allFeatures = computed(() =>
+  query('plan-features').all(),
+)
+
 const hasActiveSubscription = computed(() =>
   ['subscribed', 'trial_active', 'past_due', 'canceled'].includes(billingState.value),
 )
 
-const ctaLabel = computed(() => {
-  if (hasActiveSubscription.value) return t('billing.manage_subscription')
-  return t('billing.start_trial')
-})
+/**
+ * Headline usage dimensions shown in the "Usage limits" block — the six
+ * metered limits that carry overage pricing. These are exactly the
+ * "pick your usage level" axes that differentiate the tiers; pure caps
+ * (key counts, endpoint counts) are enforced server-side but kept off
+ * the card to avoid drowning the comparison.
+ */
+const HEADLINE_LIMITS = [
+  'ai.messages_per_month',
+  'api.messages_per_month',
+  'api.mcp_calls_per_month',
+  'forms.submissions_per_month',
+  'media.storage_gb',
+  'cdn.bandwidth_gb',
+] as const
+
+function isTruthy(val: string | undefined | null): boolean {
+  return Boolean(val) && val !== 'false' && val !== '0'
+}
+
+/** Group integers with thousands separators, locale-independent. */
+function groupNumber(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+/** Strip a trailing "(GB)" / "(MB)" unit hint baked into the row name. */
+function cleanLimitName(name: string): string {
+  return name.replace(/\s*\((?:GB|MB)\)\s*$/i, '')
+}
+
+/** Format a raw limit value for display: unlimited / GB suffix / grouped. */
+function formatLimitValue(raw: string, key: string): string {
+  if (raw === 'unlimited' || raw === '') return t('common.unlimited')
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return raw
+  if (key.endsWith('_gb')) return `${groupNumber(n)} GB`
+  return groupNumber(n)
+}
+
+function valueKeyFor(slug: string): keyof PlanFeatures {
+  return `${slug}_value` as keyof PlanFeatures
+}
+
+interface LimitRow {
+  key: string
+  label: string
+  value: string
+}
+
+/** Headline metered limits with the plan's value, in display order. */
+function limitRows(slug: string): LimitRow[] {
+  const vKey = valueKeyFor(slug)
+  return HEADLINE_LIMITS
+    .map(key => allFeatures.value.find(f => f.key === key))
+    .filter((f): f is PlanFeatures => Boolean(f))
+    .map((f) => {
+      const raw = String((f[vKey] as string | undefined) ?? '')
+      return { key: f.key, label: cleanLimitName(f.name), raw, value: formatLimitValue(raw, f.key) }
+    })
+    .filter(r => r.raw !== '0' && r.raw !== '')
+    .map(({ key, label, value }) => ({ key, label, value }))
+}
+
+function byCategoryThenOrder(a: PlanFeatures, b: PlanFeatures): number {
+  const catA = a.category ?? ''
+  const catB = b.category ?? ''
+  if (catA !== catB) return catA < catB ? -1 : 1
+  return (a.sort_order ?? 0) - (b.sort_order ?? 0)
+}
+
+/**
+ * Feature-type rows granted by a plan. For Pro, only the delta over
+ * Starter (so the card reads "Everything in Starter, plus …"). Roadmap
+ * rows are excluded here and surfaced separately as "Coming soon".
+ */
+function includedRows(slug: string): string[] {
+  const vKey = valueKeyFor(slug)
+  const prevKey = slug === 'pro' ? valueKeyFor('starter') : null
+  return allFeatures.value
+    .filter(f => f.type === 'feature')
+    .filter(f => isTruthy(f[vKey] as string | undefined) && !isTruthy(f.roadmap))
+    .filter(f => !prevKey || !isTruthy(f[prevKey] as string | undefined))
+    .sort(byCategoryThenOrder)
+    .map(f => f.name)
+}
+
+/** Advertised-but-unimplemented features granted by a plan (delta for Pro). */
+function comingSoonRows(slug: string): string[] {
+  const vKey = valueKeyFor(slug)
+  const prevKey = slug === 'pro' ? valueKeyFor('starter') : null
+  return allFeatures.value
+    .filter(f => f.type === 'feature')
+    .filter(f => isTruthy(f[vKey] as string | undefined) && isTruthy(f.roadmap))
+    .filter(f => !prevKey || !isTruthy(f[prevKey] as string | undefined))
+    .sort(byCategoryThenOrder)
+    .map(f => f.name)
+}
+
+function aiModelLabel(tier: string | undefined): string {
+  switch (tier) {
+    case 'haiku': return t('plans.ai_model_haiku')
+    case 'sonnet': return t('plans.ai_model_sonnet')
+    case 'custom': return t('plans.ai_model_custom')
+    default: return t('plans.ai_model_none')
+  }
+}
+
+interface PlanCta {
+  label: string
+  disabled: boolean
+}
+
+function ctaFor(slug: string): PlanCta {
+  if (effectivePlan.value === slug && hasActiveSubscription.value)
+    return { label: t('plans.current_plan'), disabled: true }
+  if (hasActiveSubscription.value)
+    return { label: t('billing.manage_subscription'), disabled: false }
+  return { label: t('plans.start_trial'), disabled: false }
+}
 
 async function handlePlanAction(slug: string) {
   if (slug !== 'starter' && slug !== 'pro') return
-
-  if (hasActiveSubscription.value) {
-    loading.value = slug
-    try {
-      await openPortal()
-    }
-    catch (err: unknown) {
-      toast.error(resolveApiError(err, t('common.server_error')))
-    }
-    finally {
-      loading.value = null
-    }
-    return
-  }
+  if (ctaFor(slug).disabled) return
 
   loading.value = slug
   try {
-    await startCheckout(slug)
+    if (hasActiveSubscription.value) {
+      await openPortal()
+    }
+    else {
+      await startCheckout(slug)
+    }
   }
   catch (err: unknown) {
-    const message = (err as { data?: { message?: string } })?.data?.message ?? t('generic.server_error')
-    toast.error(message)
+    toast.error(resolveApiError(err, t('common.server_error')))
   }
   finally {
     loading.value = null
@@ -155,7 +207,7 @@ async function handlePlanAction(slug: string) {
               {{ t('plans.select_title') }}
             </DialogTitle>
             <DialogDescription class="mt-1 text-sm text-muted">
-              {{ hasActiveSubscription ? t('plans.manage_description') : t('plans.trial_description') }}
+              {{ hasActiveSubscription ? t('plans.manage_description') : t('plans.select_description') }}
             </DialogDescription>
           </div>
           <DialogClose
@@ -166,7 +218,7 @@ async function handlePlanAction(slug: string) {
         </div>
 
         <!-- Plan cards -->
-        <div class="grid grid-cols-2 gap-4 overflow-y-auto p-6">
+        <div class="grid grid-cols-1 gap-4 overflow-y-auto p-6 sm:grid-cols-2">
           <div
             v-for="plan in plans"
             :key="plan.slug"
@@ -188,8 +240,8 @@ async function handlePlanAction(slug: string) {
               {{ t('plans.current_plan') }}
             </AtomsBadge>
 
-            <!-- Plan name & price -->
-            <div class="mb-4">
+            <!-- Name & price -->
+            <div class="mb-3">
               <h3 class="text-lg font-semibold text-heading dark:text-secondary-100">
                 {{ plan.name }}
               </h3>
@@ -200,6 +252,10 @@ async function handlePlanAction(slug: string) {
               <p class="mt-1 text-xs text-muted">
                 {{ t('plans.seats_included', { count: plan.seats_included }) }}
               </p>
+              <p class="mt-1 flex items-center gap-1.5 text-xs text-muted">
+                <span class="icon-[annon--star] size-3.5 shrink-0 text-primary-500" aria-hidden="true" />
+                {{ t('plans.ai_model_label') }}: <span class="font-medium text-body dark:text-secondary-300">{{ aiModelLabel(plan.ai_model_tier) }}</span>
+              </p>
             </div>
 
             <!-- Trial info -->
@@ -207,37 +263,67 @@ async function handlePlanAction(slug: string) {
               {{ t('billing.trial_14_days') }}
             </p>
 
-            <!-- "Everything in previous tier, plus..." header for non-base tiers -->
-            <p
-              v-if="plan.slug === 'pro'"
-              class="mb-2 text-xs font-medium text-heading dark:text-secondary-200"
-            >
-              {{ t('plans.everything_in_starter_plus') }}
-            </p>
+            <!-- Usage limits -->
+            <div class="mb-4">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                {{ t('plans.limits_title') }}
+              </p>
+              <ul class="space-y-1.5">
+                <li
+                  v-for="lim in limitRows(plan.slug)"
+                  :key="lim.key"
+                  class="flex items-baseline justify-between gap-3 text-sm"
+                >
+                  <span class="text-body dark:text-secondary-300">{{ lim.label }}</span>
+                  <span class="shrink-0 font-semibold tabular-nums text-heading dark:text-secondary-100">{{ lim.value }}</span>
+                </li>
+              </ul>
+            </div>
 
-            <!-- Features from Contentrain plan-features -->
-            <ul class="mb-5 flex-1 space-y-2">
-              <li v-for="feature in planFeaturesList(plan.slug)" :key="feature.label" class="flex items-start gap-2 text-sm text-body dark:text-secondary-300">
-                <span class="icon-[annon--check] mt-0.5 size-4 shrink-0 text-success-500" aria-hidden="true" />
-                <span class="flex-1">
-                  {{ feature.label }}
-                  <AtomsBadge v-if="feature.roadmap" variant="secondary" size="sm" class="ml-1.5 align-middle">
-                    {{ t('billing.roadmap_badge') }}
-                  </AtomsBadge>
-                </span>
-              </li>
-            </ul>
+            <!-- Included features -->
+            <div class="mb-5 flex-1">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                {{ plan.slug === 'pro' ? t('plans.everything_in_starter_plus') : t('plans.included_title') }}
+              </p>
+              <ul class="space-y-2">
+                <li
+                  v-for="feature in includedRows(plan.slug)"
+                  :key="feature"
+                  class="flex items-start gap-2 text-sm text-body dark:text-secondary-300"
+                >
+                  <span class="icon-[annon--check] mt-0.5 size-4 shrink-0 text-success-500" aria-hidden="true" />
+                  <span class="flex-1">{{ feature }}</span>
+                </li>
+              </ul>
+
+              <!-- Coming soon (advertised, not yet shipped) -->
+              <template v-if="comingSoonRows(plan.slug).length">
+                <p class="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
+                  {{ t('plans.coming_soon_title') }}
+                </p>
+                <ul class="space-y-2">
+                  <li
+                    v-for="feature in comingSoonRows(plan.slug)"
+                    :key="feature"
+                    class="flex items-start gap-2 text-sm text-muted"
+                  >
+                    <span class="icon-[annon--clock] mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    <span class="flex-1">{{ feature }}</span>
+                  </li>
+                </ul>
+              </template>
+            </div>
 
             <!-- CTA -->
             <AtomsBaseButton
               :variant="plan.is_highlighted ? 'primary' : 'secondary'"
               size="md"
-              :disabled="loading !== null"
+              :disabled="loading !== null || ctaFor(plan.slug).disabled"
               :loading="loading === plan.slug"
               class="w-full"
               @click="handlePlanAction(plan.slug)"
             >
-              {{ effectivePlan === plan.slug && hasActiveSubscription ? t('plans.current_plan') : plan.has_trial && !hasActiveSubscription ? plan.cta_text : ctaLabel }}
+              {{ ctaFor(plan.slug).label }}
             </AtomsBaseButton>
           </div>
         </div>
