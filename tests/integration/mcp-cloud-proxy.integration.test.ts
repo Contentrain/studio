@@ -201,7 +201,7 @@ describe('MCP Cloud proxy gating', () => {
     const event = makeEvent({ __body: toolCallBody('contentrain_content_list') })
 
     await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 429 })
-    expect(state.setResponseHeader).toHaveBeenCalledWith(expect.anything(), 'Retry-After', '13')
+    expect(state.setResponseHeader).toHaveBeenCalledWith(expect.anything(), 'Retry-After', 13)
   })
 
   it('returns 429 when the monthly quota is exhausted', async () => {

@@ -158,7 +158,7 @@ export default defineEventHandler(async (event) => {
   )
   if (!rateCheck.allowed) {
     const retryAfterSeconds = Math.max(1, Math.ceil(rateCheck.retryAfterMs / 1000))
-    setResponseHeader(event, 'Retry-After', String(retryAfterSeconds))
+    setResponseHeader(event, 'Retry-After', retryAfterSeconds)
     throw createError({
       statusCode: 429,
       message: errorMessage('chat.rate_limited', { seconds: retryAfterSeconds }),
