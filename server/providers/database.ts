@@ -635,6 +635,8 @@ export interface DatabaseProvider {
   }) => Promise<{ allowed: boolean, used: number }>
   /** Sum MCP Cloud call count across all keys in workspace for a month. */
   getWorkspaceMonthlyMcpCloudUsage: (workspaceId: string, month: string) => Promise<number>
+  /** Per-key MCP Cloud call counts for a month. Rows: `{ mcp_key_id, call_count }`. */
+  getMcpCloudKeyUsage: (keyIds: string[], month: string) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
   // TRIAL REMINDERS

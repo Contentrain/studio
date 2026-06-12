@@ -7,7 +7,6 @@ const props = defineProps<{
 
 const { t } = useContent()
 const toast = useToast()
-const { activeWorkspace } = useWorkspaces()
 
 interface McpCloudKey {
   id: string
@@ -19,6 +18,7 @@ interface McpCloudKey {
   monthly_call_limit: number | null
   last_used_at: string | null
   created_at: string
+  calls_this_month: number
 }
 
 interface ProjectLite {
@@ -36,14 +36,38 @@ const newKeyProjectId = ref<string>('')
 const creating = ref(false)
 
 const revealedKey = ref<string | null>(null)
+const revealedProjectId = ref<string | null>(null)
 const revealDialogOpen = ref(false)
 
-const plan = computed(() => (activeWorkspace.value?.plan ?? 'free') as string)
-const hasMcpCloud = computed(() => ['starter', 'pro', 'enterprise'].includes(plan.value))
+const hasMcpCloud = useFeature('api.mcp_cloud')
 
-const endpointUrl = computed(() => {
+function mcpEndpointUrl(projectId: string): string {
   if (typeof window === 'undefined') return ''
-  return `${window.location.origin}/api/mcp/v1/{projectId}`
+  return `${window.location.origin}/api/mcp/v1/${projectId}/mcp`
+}
+
+const endpointTemplate = computed(() => mcpEndpointUrl('{projectId}'))
+
+const revealedEndpoint = computed(() =>
+  revealedProjectId.value ? mcpEndpointUrl(revealedProjectId.value) : '',
+)
+
+const claudeCommand = computed(() => {
+  if (!revealedKey.value || !revealedEndpoint.value) return ''
+  return `claude mcp add --transport http contentrain ${revealedEndpoint.value} --header "Authorization: Bearer ${revealedKey.value}"`
+})
+
+const jsonConfig = computed(() => {
+  if (!revealedKey.value || !revealedEndpoint.value) return ''
+  return JSON.stringify({
+    mcpServers: {
+      contentrain: {
+        type: 'http',
+        url: revealedEndpoint.value,
+        headers: { Authorization: `Bearer ${revealedKey.value}` },
+      },
+    },
+  }, null, 2)
 })
 
 const projectOptions = computed(() =>
@@ -98,6 +122,7 @@ async function handleCreate() {
       },
     )
     revealedKey.value = created.key
+    revealedProjectId.value = created.project_id ?? newKeyProjectId.value
     revealDialogOpen.value = true
     newKeyName.value = ''
     toast.success(t('mcp_cloud.create_success'))
@@ -152,13 +177,13 @@ function formatRelative(iso: string | null): string {
         <AtomsFormLabel :text="t('mcp_cloud.endpoint_label')" size="sm" />
         <div class="mt-1.5 flex items-center gap-2">
           <code class="block flex-1 truncate rounded bg-secondary-50 px-3 py-2 font-mono text-xs text-heading dark:bg-secondary-900 dark:text-secondary-100">
-            {{ endpointUrl }}
+            {{ endpointTemplate }}
           </code>
           <AtomsIconButton
             icon="icon-[annon--copy]"
             :label="t('mcp_cloud.copy_endpoint')"
             size="sm"
-            @click="copyToClipboard(endpointUrl)"
+            @click="copyToClipboard(endpointTemplate)"
           />
         </div>
         <p class="mt-2 text-xs text-muted">
@@ -180,8 +205,15 @@ function formatRelative(iso: string | null): string {
               <span class="font-mono">{{ key.key_prefix }}…</span>
               · {{ projectLabel(key.project_id) }}
               · {{ formatRelative(key.last_used_at) }}
+              · {{ t('mcp_cloud.usage_this_month', { count: key.calls_this_month ?? 0 }) }}
             </div>
           </div>
+          <AtomsIconButton
+            icon="icon-[annon--copy]"
+            :label="t('mcp_cloud.copy_endpoint')"
+            size="sm"
+            @click="copyToClipboard(mcpEndpointUrl(key.project_id))"
+          />
           <AtomsIconButton
             icon="icon-[annon--trash]"
             :label="t('mcp_cloud.revoke')"
@@ -227,7 +259,7 @@ function formatRelative(iso: string | null): string {
     <DialogRoot v-model:open="revealDialogOpen">
       <DialogPortal>
         <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-        <DialogContent class="fixed left-1/2 top-1/2 z-50 w-[min(480px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl dark:bg-secondary-900">
+        <DialogContent class="fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[min(560px,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-6 shadow-xl dark:bg-secondary-900">
           <DialogTitle class="text-lg font-semibold text-heading dark:text-secondary-100">
             {{ t('mcp_cloud.key_created_title') }}
           </DialogTitle>
@@ -245,6 +277,37 @@ function formatRelative(iso: string | null): string {
               @click="copyToClipboard(revealedKey ?? '')"
             />
           </div>
+
+          <div class="mt-5 space-y-4">
+            <p class="text-sm font-medium text-heading dark:text-secondary-100">
+              {{ t('mcp_cloud.connect_title') }}
+            </p>
+            <div>
+              <AtomsFormLabel :text="t('mcp_cloud.connect_claude_label')" size="sm" />
+              <div class="mt-1.5 flex items-start gap-2">
+                <code class="block max-h-24 flex-1 overflow-auto whitespace-pre-wrap break-all rounded bg-secondary-50 px-3 py-2 font-mono text-xs text-heading dark:bg-secondary-900 dark:text-secondary-100">{{ claudeCommand }}</code>
+                <AtomsIconButton
+                  icon="icon-[annon--copy]"
+                  :label="t('mcp_cloud.copy_command')"
+                  size="sm"
+                  @click="copyToClipboard(claudeCommand)"
+                />
+              </div>
+            </div>
+            <div>
+              <AtomsFormLabel :text="t('mcp_cloud.connect_json_label')" size="sm" />
+              <div class="mt-1.5 flex items-start gap-2">
+                <code class="block max-h-40 flex-1 overflow-auto whitespace-pre rounded bg-secondary-50 px-3 py-2 font-mono text-xs text-heading dark:bg-secondary-900 dark:text-secondary-100">{{ jsonConfig }}</code>
+                <AtomsIconButton
+                  icon="icon-[annon--copy]"
+                  :label="t('mcp_cloud.copy_config')"
+                  size="sm"
+                  @click="copyToClipboard(jsonConfig)"
+                />
+              </div>
+            </div>
+          </div>
+
           <div class="mt-6 flex justify-end">
             <DialogClose as-child>
               <AtomsBaseButton variant="primary" size="md">
