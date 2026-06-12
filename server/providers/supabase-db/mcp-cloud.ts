@@ -16,6 +16,7 @@ type McpCloudMethods = Pick<
   | 'countActiveMcpCloudKeys'
   | 'incrementMcpCloudUsageIfAllowed'
   | 'getWorkspaceMonthlyMcpCloudUsage'
+  | 'getMcpCloudKeyUsage'
 >
 
 export function mcpCloudMethods(): McpCloudMethods {
@@ -116,6 +117,19 @@ export function mcpCloudMethods(): McpCloudMethods {
       if (error) throw createError({ statusCode: 500, message: error.message })
       const row = data as { allowed: boolean, used: number }
       return { allowed: !!row.allowed, used: Number(row.used ?? 0) }
+    },
+
+    async getMcpCloudKeyUsage(keyIds, month) {
+      if (keyIds.length === 0) return []
+      const admin = getAdmin()
+      const { data, error } = await admin
+        .from('mcp_cloud_usage')
+        .select('mcp_key_id, call_count')
+        .in('mcp_key_id', keyIds)
+        .eq('month', month)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data ?? []) as unknown as DatabaseRow[]
     },
 
     async getWorkspaceMonthlyMcpCloudUsage(workspaceId, month) {

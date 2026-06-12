@@ -272,24 +272,40 @@ regeneration is the single point it needs to be accurate.
 
 Studio boots a real MCP server (`@contentrain/mcp/server/http`
 `startHttpMcpServerWith`) on a loopback port at Nitro startup
-(`server/plugins/mcp-cloud-server.ts`). The authenticated public entry is
+(`server/plugins/mcp-cloud-server.ts`). The loopback server mounts at
+`/mcp`, so the public client URL is `/api/mcp/v1/{projectId}/mcp`. The
+authenticated public entry is
 `server/api/mcp/v1/[projectId]/[...slug].ts` — Bearer key validation +
-project match + `api.mcp_cloud` plan gate + per-key rate limit + atomic
-monthly quota (`increment_mcp_cloud_usage_if_allowed`) + usage metering +
-header strip + proxy to the loopback server + brain-cache invalidation on
-write tools. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
+project match + `api.mcp_cloud` plan gate + per-key rate limit (with
+`Retry-After` on 429) + per-key tool allowlist (`allowed_tools`; empty =
+unrestricted) + atomic monthly quota (`increment_mcp_cloud_usage_if_allowed`)
++ usage metering + header strip + proxy to the loopback server +
+brain-cache invalidation on write tools. **Quota semantics:** only
+`tools/call` requests consume the monthly quota and produce meter events;
+protocol traffic (initialize, tools/list, SSE GET, session DELETE) is
+rate-limited but free. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
 `WorkspaceMcpCloudPanel.vue`. The whole path is implemented — **not** a stub.
+
+**Scaling note:** loopback MCP sessions are in-memory per Nitro instance
+(15 min TTL). Multiple instances need sticky sessions for `mcp-session-id`
+affinity; rate limit (Redis) and quota (DB) are already instance-safe.
 
 **Two deliberate boundaries — keep them in mind when changing this path:**
 
 - **Reduced tool surface.** The loopback server runs against Studio's
-  `GitHubProvider` (`localWorktree: false`). So MCP's local-git tools —
-  `contentrain_merge`, `contentrain_branch_list`, `contentrain_branch_delete`,
-  `contentrain_submit` — return a capability error over MCP Cloud. External
-  agents can author (content / model save+delete, list, describe, validate,
-  status, init, bulk, scaffold) but the merge/review lifecycle is
-  Studio-owned. Do **not** add these to `WRITE_TOOL_NAMES` — they neither
-  reach the provider nor mutate the content branch.
+  `GitHubProvider` (`localWorktree: false`, no `projectRoot`). So every
+  localWorktree-gated tool — `contentrain_merge`, `contentrain_branch_list`,
+  `contentrain_branch_delete`, `contentrain_submit`, and also
+  `contentrain_init`, `contentrain_scaffold`, `contentrain_bulk`,
+  `contentrain_doctor`, `contentrain_scan`, `contentrain_apply`,
+  `contentrain_validate` with `fix: true` — returns a capability error over
+  MCP Cloud. The actual remote surface is: status, describe,
+  describe_format, content_list, validate (no fix), content/model
+  save+delete. The merge/review lifecycle is Studio-owned. The proxy's
+  `WRITE_TOOL_NAMES` is derived from MCP's `TOOL_ANNOTATIONS`
+  (`readOnlyHint: false`) minus the Studio-owned lifecycle tools, so a
+  future MCP release that opens e.g. `bulk` to remote providers is covered
+  automatically — keep the lifecycle exclusion list intact.
 
 - **pending-review by contract, reconciled by workflow.** MCP's remote write
   path hardcodes `workflowAction: "pending-review"` and leaves the merge to

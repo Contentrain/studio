@@ -8,19 +8,25 @@
  *   1. Bearer auth — validate an active `mcp_cloud_keys` row.
  *   2. ProjectId match — key must be scoped to the route's project.
  *   3. Plan gate — `api.mcp_cloud` feature flag.
- *   4. Rate limit — per-key per-minute sliding window.
- *   5. Atomic quota increment — `increment_mcp_cloud_usage_if_allowed` RPC.
+ *   4. Rate limit — per-key per-minute sliding window, every request.
+ *   5. Per-key tool allowlist — a non-empty `allowed_tools` restricts
+ *      which tools the key may call (read-only keys, CI keys).
+ *   6. Atomic quota increment — `increment_mcp_cloud_usage_if_allowed` RPC,
+ *      `tools/call` requests only. Protocol traffic (initialize, tools/list,
+ *      SSE streams, session teardown) never consumes the monthly quota or
+ *      writes meter events — users buy tool calls, not handshakes.
  *      Key-level monthly limit only tightens the plan's — it can never
  *      bypass the plan cap (security).
- *   6. Strip client-supplied `x-cr-*` headers so a caller cannot forge a
+ *   7. Strip client-supplied `x-cr-*` headers so a caller cannot forge a
  *      project identity override, then attach Studio-signed ones.
- *   7. Forward the raw body explicitly (consumed it already for tool
+ *   8. Forward the raw body explicitly (consumed it already for tool
  *      detection; h3's default body forwarding doesn't survive that).
- *   8. Proxy to the loopback MCP server with project identity headers.
- *   9. Brain-cache invalidation when the JSON-RPC request is a write tool.
+ *   9. Proxy to the loopback MCP server with project identity headers.
+ *  10. Brain-cache invalidation when the JSON-RPC request is a write tool.
  */
 
-import { getHeader, getRouterParam, proxyRequest, readRawBody } from 'h3'
+import { TOOL_ANNOTATIONS } from '@contentrain/mcp/tools/annotations'
+import { getHeader, getRouterParam, proxyRequest, readRawBody, setResponseHeader } from 'h3'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
 import { validateMcpCloudKey } from '~~/server/utils/mcp-cloud-keys'
@@ -31,12 +37,31 @@ import { getPlanLimit, getWorkspacePlan, hasFeature } from '~~/server/utils/lice
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { reconcileMcpCloudAutoMerge } from '~~/server/utils/mcp-cloud-automerge'
 
-const WRITE_TOOL_NAMES = new Set([
-  'contentrain_content_save',
-  'contentrain_content_delete',
-  'contentrain_model_save',
-  'contentrain_model_delete',
+/**
+ * Merge/review lifecycle is Studio-owned: these tools are capability-gated
+ * on the loopback server (no `localWorktree`) and must never trigger
+ * brain invalidation or auto-merge reconciliation, even though MCP's
+ * annotations mark some of them as writes.
+ */
+const STUDIO_OWNED_LIFECYCLE_TOOLS = new Set([
+  'contentrain_merge',
+  'contentrain_branch_list',
+  'contentrain_branch_delete',
+  'contentrain_submit',
 ])
+
+/**
+ * Tools whose effects can land on the content branch — derived from MCP's
+ * own annotations (`readOnlyHint: false`) so a future MCP release that
+ * opens e.g. `contentrain_bulk` to remote providers is covered without a
+ * Studio change. Tools that are still localWorktree-gated merely cost a
+ * harmless no-op reconcile if invoked.
+ */
+const WRITE_TOOL_NAMES = new Set(
+  Object.entries(TOOL_ANNOTATIONS)
+    .filter(([name, annotation]) => annotation.readOnlyHint !== true && !STUDIO_OWNED_LIFECYCLE_TOOLS.has(name))
+    .map(([name]) => name),
+)
 
 /** Headers the proxy itself injects — any incoming value is discarded. */
 const STUDIO_HEADERS = [
@@ -46,20 +71,28 @@ const STUDIO_HEADERS = [
   'x-cr-content-root',
 ] as const
 
-/** Best-effort detection of write tool calls in a JSON-RPC request body. */
-function isWriteToolCall(rawBody: string | undefined): boolean {
-  if (!rawBody) return false
+/**
+ * Best-effort extraction of `tools/call` tool names from a JSON-RPC
+ * request body. Handles legacy batch arrays defensively even though the
+ * current MCP spec sends one message per POST.
+ */
+function extractToolCalls(rawBody: string | undefined): string[] {
+  if (!rawBody) return []
   try {
-    const parsed = JSON.parse(rawBody) as {
-      method?: string
-      params?: { name?: string }
+    const parsed = JSON.parse(rawBody) as unknown
+    const messages = Array.isArray(parsed) ? parsed : [parsed]
+    const names: string[] = []
+    for (const message of messages) {
+      if (!message || typeof message !== 'object') continue
+      const { method, params } = message as { method?: string, params?: { name?: string } }
+      if (method === 'tools/call' && typeof params?.name === 'string') {
+        names.push(params.name)
+      }
     }
-    if (parsed.method !== 'tools/call') return false
-    const name = parsed.params?.name
-    return typeof name === 'string' && WRITE_TOOL_NAMES.has(name)
+    return names
   }
   catch {
-    return false
+    return []
   }
 }
 
@@ -124,52 +157,71 @@ export default defineEventHandler(async (event) => {
     60_000,
   )
   if (!rateCheck.allowed) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(rateCheck.retryAfterMs / 1000))
+    setResponseHeader(event, 'Retry-After', retryAfterSeconds)
     throw createError({
       statusCode: 429,
-      message: errorMessage('chat.rate_limited', {
-        seconds: Math.ceil(rateCheck.retryAfterMs / 1000),
-      }),
+      message: errorMessage('chat.rate_limited', { seconds: retryAfterSeconds }),
     })
   }
 
-  const planLimit = getPlanLimit(plan, 'api.mcp_calls_per_month')
-  const softenedPlanLimit = getEffectiveLimit(planLimit, 'api.mcp_calls_per_month', overageSettings)
-  const effectiveLimit = resolveEffectiveMonthlyLimit(
-    softenedPlanLimit,
-    keyData.monthlyCallLimit,
-  )
-
-  const month = new Date().toISOString().slice(0, 7)
-  const quota = await db.incrementMcpCloudUsageIfAllowed({
-    workspaceId: keyData.workspaceId,
-    keyId: keyData.keyId,
-    month,
-    limit: effectiveLimit,
-  })
-  if (!quota.allowed) {
-    throw createError({
-      statusCode: 429,
-      message: errorMessage('mcp_cloud.monthly_limit', {
-        limit: effectiveLimit ?? 'unlimited',
-      }),
-    })
-  }
-
-  // Best-effort meter write for overage billing. Fire-and-forget.
-  recordMCPCallUsage({
-    workspaceId: keyData.workspaceId,
-    count: 1,
-    keyId: keyData.keyId,
-    month,
-  }).catch(() => {})
-
-  // Read the body once — we need it both for write-tool detection and to
-  // forward explicitly to the loopback server (h3's default forward drops
-  // the stream after the first consumption).
+  // Read the body once — we need it for tool detection (allowlist, quota,
+  // write detection) and to forward explicitly to the loopback server
+  // (h3's default forward drops the stream after the first consumption).
   const rawBody = event.method === 'POST' || event.method === 'PUT'
     ? await readRawBody(event, 'utf-8')
     : undefined
-  const shouldInvalidateBrain = isWriteToolCall(rawBody)
+  const toolCalls = extractToolCalls(rawBody)
+
+  // Per-key tool allowlist: empty = unrestricted, non-empty = whitelist.
+  // Checked before the quota so denied calls never consume it.
+  if (keyData.allowedTools.length > 0) {
+    const denied = toolCalls.find(name => !keyData.allowedTools.includes(name))
+    if (denied) {
+      throw createError({
+        statusCode: 403,
+        message: errorMessage('mcp_cloud.tool_not_allowed', { tool: denied }),
+      })
+    }
+  }
+
+  // Only tool calls consume the monthly quota and produce meter events.
+  // Protocol traffic (initialize, tools/list, SSE streams, DELETE) stays
+  // free — it is still rate-limited above.
+  if (toolCalls.length > 0) {
+    const planLimit = getPlanLimit(plan, 'api.mcp_calls_per_month')
+    const softenedPlanLimit = getEffectiveLimit(planLimit, 'api.mcp_calls_per_month', overageSettings)
+    const effectiveLimit = resolveEffectiveMonthlyLimit(
+      softenedPlanLimit,
+      keyData.monthlyCallLimit,
+    )
+
+    const month = new Date().toISOString().slice(0, 7)
+    const quota = await db.incrementMcpCloudUsageIfAllowed({
+      workspaceId: keyData.workspaceId,
+      keyId: keyData.keyId,
+      month,
+      limit: effectiveLimit,
+    })
+    if (!quota.allowed) {
+      throw createError({
+        statusCode: 429,
+        message: errorMessage('mcp_cloud.monthly_limit', {
+          limit: effectiveLimit ?? 'unlimited',
+        }),
+      })
+    }
+
+    // Best-effort meter write for overage billing. Fire-and-forget.
+    recordMCPCallUsage({
+      workspaceId: keyData.workspaceId,
+      count: 1,
+      keyId: keyData.keyId,
+      month,
+    }).catch(() => {})
+  }
+
+  const shouldInvalidateBrain = toolCalls.some(name => WRITE_TOOL_NAMES.has(name))
 
   const [owner, repoName] = (project.repo_full_name as string).split('/')
   if (!owner || !repoName) {

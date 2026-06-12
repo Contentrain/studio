@@ -8,6 +8,7 @@
  * the SHA-256 hash.
  */
 
+import { TOOL_NAMES } from '@contentrain/mcp/tools/annotations'
 import { getRouterParam, readBody } from 'h3'
 import { requireAuth } from '~~/server/utils/auth'
 import { errorMessage } from '~~/server/utils/content-strings'
@@ -22,6 +23,10 @@ interface CreateKeyInput {
   rateLimitPerMinute?: number
   monthlyCallLimit?: number | null
 }
+
+const KNOWN_TOOL_NAMES = new Set<string>(TOOL_NAMES)
+const RATE_LIMIT_MIN = 1
+const RATE_LIMIT_MAX = 600
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -51,6 +56,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
   }
 
+  const allowedTools = Array.isArray(body.allowedTools) ? body.allowedTools : []
+  if (allowedTools.some(tool => typeof tool !== 'string' || !KNOWN_TOOL_NAMES.has(tool))) {
+    throw createError({ statusCode: 400, message: errorMessage('mcp_cloud.invalid_allowed_tools') })
+  }
+
+  if (body.rateLimitPerMinute !== undefined
+    && (!Number.isInteger(body.rateLimitPerMinute)
+      || body.rateLimitPerMinute < RATE_LIMIT_MIN
+      || body.rateLimitPerMinute > RATE_LIMIT_MAX)) {
+    throw createError({ statusCode: 400, message: errorMessage('mcp_cloud.invalid_rate_limit') })
+  }
+
+  if (body.monthlyCallLimit !== undefined && body.monthlyCallLimit !== null
+    && (!Number.isInteger(body.monthlyCallLimit) || body.monthlyCallLimit < 1)) {
+    throw createError({ statusCode: 400, message: errorMessage('mcp_cloud.invalid_monthly_limit') })
+  }
+
   const project = await db.getProjectById(body.projectId, 'id, workspace_id')
   if (!project || project.workspace_id !== workspaceId) {
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
@@ -70,7 +92,7 @@ export default defineEventHandler(async (event) => {
     name: body.name.trim(),
     keyHash,
     keyPrefix,
-    allowedTools: Array.isArray(body.allowedTools) ? body.allowedTools : [],
+    allowedTools,
     rateLimitPerMinute: body.rateLimitPerMinute,
     monthlyCallLimit: body.monthlyCallLimit ?? null,
     createdBy: session.user.id,
