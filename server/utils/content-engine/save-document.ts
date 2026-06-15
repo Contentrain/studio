@@ -42,7 +42,15 @@ export async function saveDocument(
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
 
   const fields = modelDef.fields ?? {}
-  const validation = validateContent(frontmatter, fields, modelId, locale, safeSlug)
+  // Documents receive `slug` as a dedicated argument, not inside
+  // `frontmatter` — but a schema may declare `slug` as a (required,
+  // unique) field. Fold it into the validated object (the same shape
+  // persisted below) when the model knows about it, so a caller that
+  // passes slug separately — as the tool contract intends — doesn't trip
+  // a false "required field is missing" error. Schemas that don't model
+  // slug are validated untouched.
+  const dataToValidate = 'slug' in fields ? { ...frontmatter, slug: safeSlug } : frontmatter
+  const validation = validateContent(dataToValidate, fields, modelId, locale, safeSlug)
   if (!validation.valid) {
     return {
       branch: '',

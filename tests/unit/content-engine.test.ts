@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createContentEngine } from '../../server/utils/content-engine'
+import { validateContent } from '../../server/utils/content-validation'
 import type { GitProvider } from '../../server/providers/git'
 import {
   resolveConfigPath,
@@ -60,6 +61,9 @@ describe('content engine', () => {
     vi.stubGlobal('resolveConfigPath', resolveConfigPath)
     vi.stubGlobal('resolveVocabularyPath', resolveVocabularyPath)
     vi.stubGlobal('resolveModelsDir', resolveModelsDir)
+    // `validateContent` is a Nuxt server auto-import in production; wire the
+    // real implementation so the engine validates against actual schema rules.
+    vi.stubGlobal('validateContent', validateContent)
   })
 
   afterEach(() => {
@@ -76,6 +80,157 @@ describe('content engine', () => {
     expect(result.validation.errors[0]?.field).toBe('slug')
     expect(git.readFile).not.toHaveBeenCalled()
     expect(git.applyPlan).not.toHaveBeenCalled()
+  })
+
+  it('validates a document when slug arrives as a separate argument, not inside frontmatter', async () => {
+    const model = {
+      id: 'blog-post',
+      kind: 'document',
+      i18n: true,
+      domain: 'editorial',
+      fields: {
+        title: { type: 'string', required: true },
+        slug: { type: 'slug', required: true, unique: true },
+        author: { type: 'relation', model: 'author', required: true },
+        published_at: { type: 'date', required: true },
+      },
+    }
+    const config = { domains: ['editorial'], locales: { default: 'en', supported: ['en'] }, stack: 'astro', version: 1, workflow: 'auto-merge' }
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/blog-post')) return JSON.stringify(model)
+        if (path.endsWith('config.json')) return JSON.stringify(config)
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    // Frontmatter intentionally OMITS slug — it arrives as the dedicated
+    // `slug` argument, exactly how the chat agent's save_content tool calls
+    // it for documents. Previously this tripped a false "Required field is
+    // missing or empty" on `slug` and aborted before any git write.
+    const result = await engine.saveDocument(
+      'blog-post',
+      'en',
+      'redbull-dogusu-ve-pazarlama-stratejisi',
+      { title: 'Red Bull', author: 'esra-yilmaz', published_at: '2024-12-21' },
+      'Body content.',
+      'user@example.com',
+      { autoPublish: true },
+    )
+
+    expect(result.validation.errors.find(e => e.field === 'slug')).toBeUndefined()
+    expect(result.validation.valid).toBe(true)
+    expect(applyPlan).toHaveBeenCalled()
+  })
+
+  it('validates a new collection entry against a dynamic schema and proceeds to write', async () => {
+    const model = {
+      id: 'product',
+      kind: 'collection',
+      i18n: true,
+      domain: 'catalog',
+      fields: {
+        title: { type: 'string', required: true },
+        slug: { type: 'slug', required: true, unique: true },
+        price: { type: 'integer', required: true },
+      },
+    }
+    const config = { domains: ['catalog'], locales: { default: 'en', supported: ['en'] }, stack: 'astro', version: 1, workflow: 'auto-merge' }
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/product')) return JSON.stringify(model)
+        if (path.endsWith('config.json')) return JSON.stringify(config)
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.saveContent(
+      'product',
+      'en',
+      { 'product-1': { title: 'Widget', slug: 'widget', price: 1200 } },
+      'user@example.com',
+      { autoPublish: true },
+    )
+
+    expect(result.validation.valid).toBe(true)
+    expect(applyPlan).toHaveBeenCalled()
+  })
+
+  it('rejects a collection entry missing a schema-required field before any write', async () => {
+    const model = {
+      id: 'product',
+      kind: 'collection',
+      i18n: true,
+      domain: 'catalog',
+      fields: {
+        title: { type: 'string', required: true },
+        slug: { type: 'slug', required: true, unique: true },
+        price: { type: 'integer', required: true },
+      },
+    }
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/product')) return JSON.stringify(model)
+        throw new Error(`not found: ${path}`)
+      }),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    // `price` omitted — schema requires it, so validation must fail and no
+    // branch/write should happen.
+    const result = await engine.saveContent(
+      'product',
+      'en',
+      { 'product-1': { title: 'Widget', slug: 'widget' } },
+      'user@example.com',
+      { autoPublish: true },
+    )
+
+    expect(result.validation.valid).toBe(false)
+    expect(result.validation.errors.some(e => e.field === 'price')).toBe(true)
+    expect(result.branch).toBe('')
+    expect(git.applyPlan).not.toHaveBeenCalled()
+  })
+
+  it('validates a singleton against its schema and proceeds to write', async () => {
+    const model = {
+      id: 'site-settings',
+      kind: 'singleton',
+      i18n: true,
+      domain: 'system',
+      fields: {
+        site_name: { type: 'string', required: true },
+        tagline: { type: 'string' },
+      },
+    }
+    const config = { domains: ['system'], locales: { default: 'en', supported: ['en'] }, stack: 'astro', version: 1, workflow: 'auto-merge' }
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/site-settings')) return JSON.stringify(model)
+        if (path.endsWith('config.json')) return JSON.stringify(config)
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.saveContent(
+      'site-settings',
+      'en',
+      { site_name: 'Acme', tagline: 'We build things' },
+      'user@example.com',
+      { autoPublish: true },
+    )
+
+    expect(result.validation.valid).toBe(true)
+    expect(applyPlan).toHaveBeenCalled()
   })
 
   it('deletes merged content branches after a successful two-step merge', async () => {
