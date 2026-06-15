@@ -6,25 +6,33 @@ import type { DatabaseProvider, DatabaseRow, MessageInsertInput } from '../datab
 import { getAdmin, getUser } from './helpers'
 
 function toMessageRow(input: MessageInsertInput): Record<string, unknown> {
-  const row: Record<string, unknown> = {
+  // Every row in a bulk insert MUST carry an identical key set:
+  // PostgREST rejects heterogeneous-key arrays with
+  // `PGRST102: "All object keys must match"`. Conditionally omitting
+  // keys (the old shape) made a trace's seed/assistant/tool_result
+  // rows differ, so the whole `insertMessages` batch was rejected —
+  // and, because the error went unchecked, silently dropped.
+  //
+  // So emit the full column set on every row. Nullable columns
+  // (content_blocks, tool_calls, iteration, model) default to null;
+  // the NOT NULL token counters default to 0, matching their DB
+  // column defaults (migrations 008/009).
+  return {
     conversation_id: input.conversationId,
     role: input.role,
     content: input.content,
     turn_id: input.turnId,
     turn_sequence: input.turnSequence,
     internal: input.internal,
+    content_blocks: input.contentBlocks && input.contentBlocks.length > 0 ? input.contentBlocks : null,
+    tool_calls: input.toolCalls ?? null,
+    iteration: input.iteration ?? null,
+    token_count_input: input.tokenCountInput ?? 0,
+    token_count_output: input.tokenCountOutput ?? 0,
+    cache_creation_input_tokens: input.cacheCreationInputTokens ?? 0,
+    cache_read_input_tokens: input.cacheReadInputTokens ?? 0,
+    model: input.model ?? null,
   }
-
-  if (input.contentBlocks && input.contentBlocks.length > 0) row.content_blocks = input.contentBlocks
-  if (input.toolCalls) row.tool_calls = input.toolCalls
-  if (input.iteration != null) row.iteration = input.iteration
-  if (input.tokenCountInput) row.token_count_input = input.tokenCountInput
-  if (input.tokenCountOutput) row.token_count_output = input.tokenCountOutput
-  if (input.cacheCreationInputTokens) row.cache_creation_input_tokens = input.cacheCreationInputTokens
-  if (input.cacheReadInputTokens) row.cache_read_input_tokens = input.cacheReadInputTokens
-  if (input.model) row.model = input.model
-
-  return row
 }
 
 type ConversationMethods = Pick<
@@ -156,13 +164,19 @@ export function conversationMethods(): ConversationMethods {
 
     async insertMessage(input) {
       const admin = getAdmin()
-      await admin.from('messages').insert(toMessageRow(input))
+      const { error } = await admin.from('messages').insert(toMessageRow(input))
+      if (error) throw createError({ statusCode: 500, message: `Failed to insert message: ${error.message}` })
     },
 
     async insertMessages(rows) {
       if (rows.length === 0) return
       const admin = getAdmin()
-      await admin.from('messages').insert(rows.map(toMessageRow))
+      // `.insert()` resolves with `{ error }` rather than throwing —
+      // surface failures so the caller's `[chat-persist]` handler logs
+      // and the turn reports the error instead of silently losing the
+      // entire conversation trace.
+      const { error } = await admin.from('messages').insert(rows.map(toMessageRow))
+      if (error) throw createError({ statusCode: 500, message: `Failed to insert messages: ${error.message}` })
     },
 
     // ─── Agent Usage ───
