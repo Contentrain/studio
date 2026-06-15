@@ -16,6 +16,11 @@ const PUBLIC_PATHS = [
   '/api/webhooks/',
   '/api/cdn/',
   '/api/billing/webhook',
+  // MCP Cloud public endpoint — external agents authenticate with a
+  // Bearer `mcp_cloud_keys` token validated inside the route itself, not
+  // with a session cookie. Without this exemption the session check below
+  // 401s every request before the Bearer-key auth can run.
+  '/api/mcp/',
 ]
 
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures
