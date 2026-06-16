@@ -16,11 +16,16 @@ const PUBLIC_PATHS = [
   '/api/webhooks/',
   '/api/cdn/',
   '/api/billing/webhook',
-  // MCP Cloud public endpoint — external agents authenticate with a
-  // Bearer `mcp_cloud_keys` token validated inside the route itself, not
-  // with a session cookie. Without this exemption the session check below
-  // 401s every request before the Bearer-key auth can run.
-  '/api/mcp/',
+  // External API surfaces that authenticate themselves inside the route —
+  // with a Bearer API key, a webhook signature, or a captcha + rate limit —
+  // never with a session cookie. They MUST be exempt here: otherwise the
+  // session check below 401s every external request (including CORS
+  // preflight) before the route's own auth can run. The session-protected
+  // management UIs for these features live under `/api/workspaces/...` and
+  // are intentionally not listed.
+  '/api/mcp/', // MCP Cloud — Bearer `mcp_cloud_keys`
+  '/api/forms/', // public form submit/config — Turnstile captcha + rate limit + CORS
+  '/api/conversation/', // Conversation API — Bearer conversation keys (ee)
 ]
 
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures

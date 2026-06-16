@@ -36,9 +36,19 @@ describe('auth middleware public paths', () => {
     return handler({ context: {} })
   }
 
-  it('lets MCP Cloud requests through without consulting the session', async () => {
-    await expect(run('/api/mcp/v1/project-123/mcp')).resolves.toBeUndefined()
-    // A public path must short-circuit before any session lookup.
+  // Every external surface that authenticates itself inside the route
+  // (Bearer key / webhook signature / captcha) must short-circuit before
+  // any session lookup, or the middleware 401s the request first.
+  it.each([
+    '/api/mcp/v1/project-123/mcp', // MCP Cloud — Bearer key
+    '/api/forms/v1/project-123/contact/submit', // public form submit — captcha
+    '/api/forms/v1/project-123/contact/config', // public form config
+    '/api/conversation/v1/project-123/message', // Conversation API — Bearer key
+    '/api/cdn/v1/project-123/img/logo.png', // CDN — Bearer key
+    '/api/webhooks/github', // GitHub webhook — HMAC signature
+    '/api/billing/webhook/polar', // billing webhook — provider signature
+  ])('lets self-authenticating external endpoint %s through without a session lookup', async (path) => {
+    await expect(run(path)).resolves.toBeUndefined()
     expect(getServerSession).not.toHaveBeenCalled()
   })
 
