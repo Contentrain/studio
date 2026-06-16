@@ -1,6 +1,108 @@
 # Changelog
 
 
+## v0.1.0-beta.8
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.7...v0.1.0-beta.8)
+
+### 🚀 Enhancements
+
+- **mcp-cloud:** Add license entries + Supabase migration (Faz S6 ön-hazırlık) ([22fe286](https://github.com/Contentrain/studio/commit/22fe286))
+- **mcp-cloud:** Wire hosted HTTP endpoint + key management (Faz S6) ([325d39e](https://github.com/Contentrain/studio/commit/325d39e))
+- **mcp-cloud:** Workspace settings tab for API key management (Faz S6) ([218c0dc](https://github.com/Contentrain/studio/commit/218c0dc))
+- **pricing:** Simplify free, boost starter, upgrade pro, wire enterprise CTA (P1-P3, P7) ([7e668b5](https://github.com/Contentrain/studio/commit/7e668b5))
+- **mcp-cloud:** Wire Stripe overage billing (P5) ([00482ca](https://github.com/Contentrain/studio/commit/00482ca))
+- **billing:** Trial ending reminder emails (P8) ([5f4ca43](https://github.com/Contentrain/studio/commit/5f4ca43))
+- **billing:** Normalise payment state into payment_accounts + outbox ([6566864](https://github.com/Contentrain/studio/commit/6566864))
+- **billing:** Add polar payment plugin and usage outbox drainer ([2465117](https://github.com/Contentrain/studio/commit/2465117))
+- **billing:** Activate polar, wire usage meters, add setup tooling ([44621b9](https://github.com/Contentrain/studio/commit/44621b9))
+- **scripts:** Content-driven polar-sync (products + prices + meters) ([4bd9008](https://github.com/Contentrain/studio/commit/4bd9008))
+- **email:** Shared branded layout and Polar webhook notifications ([f732f4b](https://github.com/Contentrain/studio/commit/f732f4b))
+- **polar:** Add env-file support for polar sync script ([a98cfd8](https://github.com/Contentrain/studio/commit/a98cfd8))
+- **legal:** Editions, deployment profiles, and licensing surface ([f73b192](https://github.com/Contentrain/studio/commit/f73b192))
+- **runtime:** Deployment profiles + edition-aware license system ([85dbeb8](https://github.com/Contentrain/studio/commit/85dbeb8))
+- **ui:** Edition-aware UI surfaces for all deployment profiles ([625c38a](https://github.com/Contentrain/studio/commit/625c38a))
+- **enforcement:** Orphan feature cleanup — enforce or flag roadmap ([7ee0c42](https://github.com/Contentrain/studio/commit/7ee0c42))
+- **github-app:** Connect-existing flow, revoke on delete, ownership verification ([253be4a](https://github.com/Contentrain/studio/commit/253be4a))
+- **github-app:** Repo-level access lifecycle (revoke/delete/rename handling) ([dc05977](https://github.com/Contentrain/studio/commit/dc05977))
+- **billing:** Revert reserved message slot on failed/aborted chats ([28a2e95](https://github.com/Contentrain/studio/commit/28a2e95))
+- **chat:** Durable internal tool trace persistence ([29c821c](https://github.com/Contentrain/studio/commit/29c821c))
+- **content-engine:** Align with @contentrain/mcp 1.5.0 / query 6 / types 0.5.1 ([75a76ae](https://github.com/Contentrain/studio/commit/75a76ae))
+- **mcp-cloud:** Honor project workflow + plan for external writes; document server layer ([47d5ca5](https://github.com/Contentrain/studio/commit/47d5ca5))
+- **billing:** Align plan modal, paywall, and trial UX end-to-end ([de5370f](https://github.com/Contentrain/studio/commit/de5370f))
+- **mcp-cloud:** Enforce tool allowlist, fix quota semantics, improve onboarding ([cc5c5e1](https://github.com/Contentrain/studio/commit/cc5c5e1))
+
+### 🔥 Performance
+
+- **ai:** Anthropic prompt cache + cache token accounting ([0bd4faf](https://github.com/Contentrain/studio/commit/0bd4faf))
+
+### 🩹 Fixes
+
+- **ci:** Use CHANGELOG.md for release notes instead of GitHub auto-generated ([056bab2](https://github.com/Contentrain/studio/commit/056bab2))
+- **config:** Set root directory for Vitest configuration ([5f16a3a](https://github.com/Contentrain/studio/commit/5f16a3a))
+- **mcp-cloud:** Close 4 launch blockers from deep review (C1-C4) ([1ce0bac](https://github.com/Contentrain/studio/commit/1ce0bac))
+- **ui:** Use valid annon--comment-dots icon for ai_messages ([d9c2ce0](https://github.com/Contentrain/studio/commit/d9c2ce0))
+- **build:** Generate contentrain client before nuxt build ([6d8610c](https://github.com/Contentrain/studio/commit/6d8610c))
+- **ci:** Pin pnpm to 10.26.2 in action-setup v6 ([#26](https://github.com/Contentrain/studio/pull/26))
+- **deploy:** Disable healthcheck for Railway routing debug ([#27](https://github.com/Contentrain/studio/pull/27))
+- **db:** Restore Supabase role grants missing from baseline ([#28](https://github.com/Contentrain/studio/pull/28))
+- **settings:** Plan display, self-host UX, trunk-based branch model ([#34](https://github.com/Contentrain/studio/pull/34))
+- **content:** Align .contentrain billing data with canonical license values ([b9e65cc](https://github.com/Contentrain/studio/commit/b9e65cc))
+- **billing:** Resolve self-host detection across UI and server ([87c86ff](https://github.com/Contentrain/studio/commit/87c86ff))
+- **ci:** Integration-test compatibility for enterprise + media enforcement ([8152271](https://github.com/Contentrain/studio/commit/8152271))
+- **ci:** Production-safe deployment snapshot mutation ([0988b0b](https://github.com/Contentrain/studio/commit/0988b0b))
+- **ee:** Surface bridge load failures instead of silent fallback ([eb97b41](https://github.com/Contentrain/studio/commit/eb97b41))
+- **github:** Pass workspace id as state to App install url ([9b1cc03](https://github.com/Contentrain/studio/commit/9b1cc03))
+- **ee:** Eliminate boot-time race that latched deployment as community ([d23a32e](https://github.com/Contentrain/studio/commit/d23a32e))
+- **billing:** Redirect free workspace to checkout instead of alerting ([67b029e](https://github.com/Contentrain/studio/commit/67b029e))
+- **github-app:** Reconnect uses POST /api/auth/login, not bare URL ([3fe3f82](https://github.com/Contentrain/studio/commit/3fe3f82))
+- **chat:** Remove non-existent status/workspace_id from conversations SELECT ([237a112](https://github.com/Contentrain/studio/commit/237a112))
+- **ci:** Wait for e2e port to free between suite spawns ([8f0c096](https://github.com/Contentrain/studio/commit/8f0c096))
+- **billing:** Correct Conversation API actor model + usage table ([23631b2](https://github.com/Contentrain/studio/commit/23631b2))
+- **chat:** Preserve assistant text blocks across tool iterations ([7d0c35b](https://github.com/Contentrain/studio/commit/7d0c35b))
+- **mcp-cloud:** Pass Retry-After as number for h3 typed headers ([cf7b918](https://github.com/Contentrain/studio/commit/cf7b918))
+- **chat:** Persist conversation trace rows reliably ([b890b82](https://github.com/Contentrain/studio/commit/b890b82))
+- **content:** Validate document slug passed as a separate argument ([011a077](https://github.com/Contentrain/studio/commit/011a077))
+- **mcp-cloud:** Exempt /api/mcp from the session auth middleware ([c1ca245](https://github.com/Contentrain/studio/commit/c1ca245))
+- **auth:** Exempt forms + conversation API from session middleware ([6199538](https://github.com/Contentrain/studio/commit/6199538))
+- **mcp-cloud:** Forward the client Accept header to the loopback MCP server ([4a8750f](https://github.com/Contentrain/studio/commit/4a8750f))
+
+### 💅 Refactors
+
+- **providers:** Adopt @contentrain/mcp RepoProvider surface (Faz S1) ([2059f13](https://github.com/Contentrain/studio/commit/2059f13))
+- **content-engine:** Delegate content ops to @contentrain/mcp (Faz S2) ([a91eb78](https://github.com/Contentrain/studio/commit/a91eb78))
+- **validation:** Delegate validateContent to @contentrain/mcp (Faz S3) ([9da5de9](https://github.com/Contentrain/studio/commit/9da5de9))
+- **serialization:** Drop content-serialization wrapper (Faz S4) ([22f23d0](https://github.com/Contentrain/studio/commit/22f23d0))
+- **billing:** Introduce payment provider plugin registry ([7b5dae1](https://github.com/Contentrain/studio/commit/7b5dae1))
+- **license:** Derive PLAN_* constants from .contentrain content ([136bbac](https://github.com/Contentrain/studio/commit/136bbac))
+- **chat:** Shared history builder with model/plan/source-aware budgets ([2f4e394](https://github.com/Contentrain/studio/commit/2f4e394))
+
+### 📖 Documentation
+
+- Reflect MCP integration + S6 prep in ROADMAP + CLAUDE.md (Faz S8) ([4a69b5e](https://github.com/Contentrain/studio/commit/4a69b5e))
+- Mark S6 MCP Cloud shipped (Faz S8 cleanup) ([e72a8cd](https://github.com/Contentrain/studio/commit/e72a8cd))
+- **deploy:** Align deployment docs with trunk-based flow ([577012f](https://github.com/Contentrain/studio/commit/577012f))
+- **claude:** Clarify account deletion has no outbound email ([a5a2ba9](https://github.com/Contentrain/studio/commit/a5a2ba9))
+- **editions:** Align long-form docs with the edition + profile model ([28534b6](https://github.com/Contentrain/studio/commit/28534b6))
+- **ee:** Finalize License v1.0 from market-comparative review ([b9baa56](https://github.com/Contentrain/studio/commit/b9baa56))
+
+### 🏡 Chore
+
+- **deps-dev:** Bump @types/node from 25.5.2 to 25.6.0 ([#22](https://github.com/Contentrain/studio/pull/22))
+- **deps-dev:** Bump @tailwindcss/vite from 4.2.1 to 4.2.2 ([#21](https://github.com/Contentrain/studio/pull/21))
+- **deps-dev:** Bump the testing group with 4 updates ([#19](https://github.com/Contentrain/studio/pull/19))
+- **db:** Harden baseline for portability ([#25](https://github.com/Contentrain/studio/pull/25))
+- Merge main into feat/github-app-lifecycle-overhaul ([4f9cdd2](https://github.com/Contentrain/studio/commit/4f9cdd2))
+
+### ✅ Tests
+
+- **chat:** Update integration assertion to expect populated assistantText ([4659c05](https://github.com/Contentrain/studio/commit/4659c05))
+
+### ❤️ Contributors
+
+- Contentrain <mcp@contentrain.io>
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.1.0-beta.7
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.6...v0.1.0-beta.7)
