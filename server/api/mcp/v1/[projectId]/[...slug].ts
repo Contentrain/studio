@@ -246,6 +246,12 @@ export default defineEventHandler(async (event) => {
       'x-cr-repo-owner': owner,
       'x-cr-repo-name': repoName,
       'x-cr-content-root': (project.content_root as string | null) ?? '',
+      // h3's proxyRequest strips the client's `accept` header (it's in h3's
+      // ignoredHeaders set). The MCP streamable-HTTP transport rejects any
+      // request whose Accept doesn't include BOTH `application/json` and
+      // `text/event-stream` with a 406, so re-inject it here — otherwise
+      // every external MCP client fails at `initialize`.
+      'accept': getHeader(event, 'accept') || 'application/json, text/event-stream',
     },
     fetchOptions: {
       method: event.method,

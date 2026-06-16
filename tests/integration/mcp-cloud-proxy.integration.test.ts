@@ -146,6 +146,42 @@ describe('MCP Cloud proxy gating', () => {
     expect(state.recordMCPCallUsage).not.toHaveBeenCalled()
   })
 
+  it('forwards the client Accept to the loopback (h3 strips it; the MCP transport requires it)', async () => {
+    const handler = await loadHandler()
+    const event = makeEvent({
+      __headers: { authorization: 'Bearer crn_mcp_test', accept: 'application/json, text/event-stream' },
+      __body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} }),
+    })
+
+    await handler(event as never)
+
+    expect(state.proxyRequest).toHaveBeenCalledWith(
+      event,
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ accept: 'application/json, text/event-stream' }),
+      }),
+    )
+  })
+
+  it('injects a streamable-HTTP-compatible Accept when the client sends none', async () => {
+    const handler = await loadHandler()
+    const event = makeEvent({
+      __headers: { authorization: 'Bearer crn_mcp_test' },
+      __body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} }),
+    })
+
+    await handler(event as never)
+
+    expect(state.proxyRequest).toHaveBeenCalledWith(
+      event,
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ accept: 'application/json, text/event-stream' }),
+      }),
+    )
+  })
+
   it('does not consume quota for GET (SSE stream open)', async () => {
     const handler = await loadHandler()
     const event = makeEvent({ method: 'GET', __body: undefined })
