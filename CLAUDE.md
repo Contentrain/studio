@@ -321,7 +321,6 @@ affinity; rate limit (Redis) and quota (DB) are already instance-safe.
 ## Deferred TODOs
 
 Medium:
-- Mobile shell: hamburger + slide-over (button exists, handler + drawer missing)
 - Branch health: warn/block thresholds (default 50/80, config-driven via `branchWarnLimit`/`branchBlockLimit` since MCP 1.5.0) + merged `cr/*` auto-delete are implemented (`branch-health.ts`, `branch-cleanup.ts`). Remaining: surface health status in the UI
 - Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
 - MCP Cloud: integration-test coverage for the proxy route (`/api/mcp/v1/...`) and key endpoints is still thin (logic is covered, full HTTP path is not)
