@@ -75,6 +75,8 @@ describe('cdn keys', () => {
       keyId: 'key-1',
       rateLimitPerHour: 500,
       allowedOrigins: ['https://app.example.com'],
+      // No `scopes` on the mock row → defaults to delivery (legacy key).
+      scopes: ['delivery'],
     })
     expect(updateCDNKeyLastUsed).toHaveBeenCalledWith('key-1')
   })

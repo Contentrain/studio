@@ -12,6 +12,19 @@ const KEY_PREFIX = 'crn_live_'
 const RANDOM_BYTES = 32
 const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 
+/**
+ * Scopes a CDN/media key may hold (migration 010). One key can carry any
+ * subset; `delivery` is the legacy default so existing keys keep serving.
+ */
+export type CDNKeyScope = 'delivery' | 'media:read' | 'media:write'
+export const CDN_KEY_SCOPES: readonly CDNKeyScope[] = ['delivery', 'media:read', 'media:write']
+
+/** Throw 403 unless the key's scopes include `needed`. */
+export function requireScope(scopes: string[], needed: CDNKeyScope): void {
+  if (!scopes.includes(needed))
+    throw createError({ statusCode: 403, message: errorMessage('cdn.scope_insufficient', { scope: needed }) })
+}
+
 function toBase62(buffer: Buffer): string {
   let result = ''
   for (const byte of buffer) {
@@ -38,7 +51,7 @@ export function hashCDNKey(key: string): string {
 /** Validate a CDN API key against the database. Returns project info or throws. */
 export async function validateCDNKey(
   authHeader: string | undefined,
-): Promise<{ projectId: string, keyId: string, rateLimitPerHour: number, allowedOrigins: string[] }> {
+): Promise<{ projectId: string, keyId: string, rateLimitPerHour: number, allowedOrigins: string[], scopes: string[] }> {
   if (!authHeader?.startsWith('Bearer crn_'))
     throw createError({ statusCode: 401, message: errorMessage('cdn.key_invalid') })
 
@@ -61,5 +74,6 @@ export async function validateCDNKey(
     keyId: apiKey.id as string,
     rateLimitPerHour: (apiKey.rate_limit_per_hour as number) ?? 1000,
     allowedOrigins: (apiKey.allowed_origins as string[]) ?? [],
+    scopes: (apiKey.scopes as string[]) ?? ['delivery'],
   }
 }
