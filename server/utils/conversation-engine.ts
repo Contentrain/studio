@@ -668,6 +668,13 @@ export async function executeToolWithAutoMerge(
           result = { error: agentMessage('media.url_required') }
           break
         }
+        // SSRF guard — block internal/private/loopback targets, matching
+        // the session URL-import route. Without this an agent prompt could
+        // make the server fetch internal-only addresses.
+        if (!isAllowedWebhookUrl(url)) {
+          result = { error: agentMessage('media.url_blocked') }
+          break
+        }
         let fetchResponse: Response
         try {
           fetchResponse = await fetch(url, {

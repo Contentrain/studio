@@ -26,6 +26,7 @@ const PUBLIC_PATHS = [
   '/api/mcp/', // MCP Cloud — Bearer `mcp_cloud_keys`
   '/api/forms/', // public form submit/config — Turnstile captcha + rate limit + CORS
   '/api/conversation/', // Conversation API — Bearer conversation keys (ee)
+  '/api/media/', // Media management API — Bearer CDN key (media:* scope)
 ]
 
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures

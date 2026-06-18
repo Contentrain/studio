@@ -29,7 +29,7 @@ export function cdnMethods(): CDNMethods {
       const admin = getAdmin()
       const { data, error } = await admin
         .from('cdn_api_keys')
-        .select('id, project_id, rate_limit_per_hour, allowed_origins, revoked_at, expires_at')
+        .select('id, project_id, rate_limit_per_hour, allowed_origins, scopes, revoked_at, expires_at')
         .eq('key_hash', keyHash)
         .is('revoked_at', null)
         .single()
@@ -65,8 +65,9 @@ export function cdnMethods(): CDNMethods {
           key_hash: input.keyHash,
           key_prefix: input.keyPrefix,
           name: input.name,
+          scopes: input.scopes ?? ['delivery'],
         })
-        .select('id, name, key_prefix, environment, created_at')
+        .select('id, name, key_prefix, environment, scopes, created_at')
         .single()
 
       if (error) throw createError({ statusCode: 500, message: error.message })
@@ -82,6 +83,7 @@ export function cdnMethods(): CDNMethods {
         p_key_prefix: input.keyPrefix,
         p_name: input.name,
         p_limit: input.limit,
+        p_scopes: input.scopes ?? ['delivery'],
       })
 
       if (error) {

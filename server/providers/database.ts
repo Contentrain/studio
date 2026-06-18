@@ -560,6 +560,7 @@ export interface DatabaseProvider {
     keyHash: string
     keyPrefix: string
     name: string
+    scopes?: string[]
   }) => Promise<DatabaseRow>
   createCDNKeyIfAllowed: (input: {
     projectId: string
@@ -568,6 +569,7 @@ export interface DatabaseProvider {
     keyPrefix: string
     name: string
     limit: number
+    scopes?: string[]
   }) => Promise<{ allowed: boolean, currentCount: number, key?: DatabaseRow }>
   getCDNKey: (keyId: string) => Promise<DatabaseRow | null>
   listCDNKeys: (accessToken: string, projectId: string, workspaceId: string) => Promise<DatabaseRow[]>

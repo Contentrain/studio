@@ -1,5 +1,6 @@
-// Explicit relative import — see media/index.post.ts for rationale.
+// Explicit relative imports — see media/index.post.ts for rationale.
 import { resolveVariantConfigWithPlan } from '../../../../../../utils/media-variants'
+import { fetchRemoteMedia } from '../../../../../../utils/media-ingest'
 
 /**
  * Import a media asset from an external URL.
@@ -41,42 +42,13 @@ export default defineEventHandler(async (event) => {
     variants?: string | Record<string, unknown>
   }>(event)
 
-  if (!body.url?.trim())
-    throw createError({ statusCode: 400, message: errorMessage('media.url_required') })
-
-  // SSRF protection — block internal/private networks
-  if (!isAllowedWebhookUrl(body.url.trim()))
-    throw createError({ statusCode: 400, message: errorMessage('media.url_blocked') })
-
-  // Fetch the URL server-side
-  let response: Response
-  try {
-    response = await fetch(body.url, {
-      headers: { 'User-Agent': 'Contentrain-Studio/1.0' },
-      signal: AbortSignal.timeout(30_000),
-    })
-  }
-  catch {
-    throw createError({ statusCode: 400, message: errorMessage('media.url_fetch_failed') })
-  }
-
-  if (!response.ok)
-    throw createError({ statusCode: 400, message: errorMessage('media.url_bad_response', { status: response.status }) })
-
-  const contentType = response.headers.get('content-type') ?? 'application/octet-stream'
-  if (!isAllowedMimeType(contentType.split(';')[0]!.trim()))
-    throw createError({ statusCode: 400, message: errorMessage('media.file_type_not_allowed', { type: contentType }) })
-
-  const buffer = Buffer.from(await response.arrayBuffer())
-
-  // Size limit
+  // Fetch + validate the remote file in one place: SSRF-guarded, MIME
+  // whitelist + plan size cap enforced, filename normalised.
   const maxSizeMb = getPlanLimit(plan, 'media.max_file_size_mb')
-  if (buffer.length > maxSizeMb * 1024 * 1024)
-    throw createError({ statusCode: 400, message: errorMessage('media.file_too_large', { limit: maxSizeMb }) })
-
-  // Extract filename from URL
-  const urlPath = new URL(body.url).pathname
-  const filename = urlPath.split('/').pop() ?? 'imported-file'
+  const { buffer, filename, contentType } = await fetchRemoteMedia({
+    url: body.url ?? '',
+    maxBytes: maxSizeMb * 1024 * 1024,
+  })
 
   // Resolve variants with plan enforcement — see media/index.post.ts
   // for the rationale on `hasCustomVariants` + `variantsPerFieldLimit`.
@@ -93,7 +65,7 @@ export default defineEventHandler(async (event) => {
     workspaceId,
     file: buffer,
     filename,
-    contentType: contentType.split(';')[0]!.trim(),
+    contentType,
     alt: body.alt,
     tags: body.tags,
     variants,

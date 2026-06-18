@@ -1,3 +1,7 @@
+// Explicit relative import — integration-test harness bypasses Nuxt
+// auto-imports (see media/index.post.ts for rationale).
+import { CDN_KEY_SCOPES } from '../../../../../../../utils/cdn-keys'
+
 /**
  * Create a new CDN API key. Returns the full key ONCE — never shown again.
  */
@@ -6,13 +10,21 @@ export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
-  const body = await readBody<{ name: string }>(event)
+  const body = await readBody<{ name: string, scopes?: string[] }>(event)
 
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   if (!body.name?.trim())
     throw createError({ statusCode: 400, message: errorMessage('cdn.key_name_required') })
+
+  // Resolve + validate scopes. Default to delivery-only so existing
+  // create calls (no scopes) keep the legacy behaviour; reject unknown
+  // scope strings so a typo can't silently grant nothing.
+  const scopes = Array.isArray(body.scopes) && body.scopes.length > 0 ? body.scopes : ['delivery']
+  const invalidScopes = scopes.filter(s => !(CDN_KEY_SCOPES as readonly string[]).includes(s))
+  if (invalidScopes.length > 0)
+    throw createError({ statusCode: 400, message: errorMessage('cdn.scope_invalid', { scope: invalidScopes.join(', ') }) })
 
   // Role + plan check
   await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
@@ -40,6 +52,7 @@ export default defineEventHandler(async (event) => {
     keyPrefix,
     name: body.name.trim(),
     limit: keyLimit,
+    scopes,
   })
 
   if (!result.allowed)
