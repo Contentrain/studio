@@ -29,7 +29,7 @@ export async function resolveMediaApiContext(
 
   const routeProjectId = getRouterParam(event, 'projectId')
   if (!routeProjectId || routeProjectId !== keyData.projectId)
-    throw createError({ statusCode: 403, message: errorMessage('cdn.key_project_mismatch') })
+    throw createError({ statusCode: 403, message: errorMessage('cdn.key_mismatch') })
 
   requireScope(keyData.scopes, opts.scope)
 
@@ -37,7 +37,7 @@ export async function resolveMediaApiContext(
   if (!rate.allowed) {
     const retryAfter = Math.max(1, Math.ceil(rate.retryAfterMs / 1000))
     setResponseHeader(event, 'Retry-After', retryAfter)
-    throw createError({ statusCode: 429, message: errorMessage('cdn.rate_limited', { seconds: retryAfter }) })
+    throw createError({ statusCode: 429, message: errorMessage('chat.rate_limited', { seconds: retryAfter }) })
   }
 
   const db = useDatabaseProvider()
