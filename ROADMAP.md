@@ -51,7 +51,7 @@ Focus: production readiness, monitoring, critical fixes, alignment with
 Focus: UX polish, operational resilience, mobile support.
 
 - [x] **Usage-based overage billing** — Stripe metered billing for AI messages, CDN bandwidth, storage, form submissions with overage settings and usage dashboard (shipped v0.1.0-beta.6)
-- [ ] **Mobile responsive shell** — Hamburger menu + slide-over drawer for mobile viewports
+- [x] **Mobile responsive shell** — Hamburger menu + slide-over drawer for mobile viewports (shipped v0.1.0-beta.1)
 - [ ] **Branch health warnings** — 80+ branch threshold alert, auto-cleanup of merged cr/* branches
 - [ ] **Brain cache webhook invalidation** — GitHub push webhook triggers cache invalidation (currently TTL-only)
 - [ ] **Multi-locale tools** — Bulk translation helpers, locale coverage dashboard
