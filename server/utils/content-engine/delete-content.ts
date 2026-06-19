@@ -3,7 +3,7 @@ import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types
 import { planContentDelete } from '@contentrain/mcp/core/ops'
 import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
-import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
+import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
@@ -53,7 +53,7 @@ export async function deleteContent(
     branch: branchName,
     changes: allChanges,
     message: `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
-    author: BOT_AUTHOR,
+    author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 

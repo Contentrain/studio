@@ -100,7 +100,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 - AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
 
 ## v0.1.0-beta.7
@@ -125,7 +125,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 
 ## v0.1.0-beta.6
 
@@ -137,7 +137,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 
 ## v0.1.0-beta.5
 
@@ -164,7 +164,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 
 ## v0.1.0-beta.4
 
@@ -182,7 +182,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 
 ## v0.1.0-beta.3
 
@@ -198,7 +198,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 
 ## v0.1.0-beta.2
 
@@ -210,7 +210,7 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 
 ## 2ef41eebc54d947b051ffaf395c130b7e190ece0...HEAD
 
@@ -600,6 +600,6 @@
 
 ### ❤️ Contributors
 
-- Contentrain <mcp@contentrain.io>
+- Contentrain <ai@contentrain.io>
 - ABB65 <bayhanbayramoglu@gmail.com>
 

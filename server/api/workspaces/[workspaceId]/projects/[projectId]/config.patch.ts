@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
     branchName,
     [{ path: configPath, content: `${JSON.stringify(config, null, 2)}\n` }],
     `contentrain: update project config\n\nChanged: ${Object.keys(body).join(', ')}`,
-    { name: 'Contentrain Studio[bot]', email: 'bot@contentrain.io' },
+    { name: 'Contentrain Studio', email: 'ai@contentrain.io' },
   )
 
   const mergeResult = await engine.mergeBranch(branchName)

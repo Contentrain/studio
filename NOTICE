@@ -26,6 +26,6 @@ Third-party components and their respective licenses are declared in
 the package manifests (package.json, pnpm-lock.yaml). A consolidated
 THIRD_PARTY_NOTICES file may be added in a future release.
 
-For licensing inquiries:     licensing@contentrain.io
-For legal notices:           legal@contentrain.io
+For licensing inquiries:     info@contentrain.io
+For legal notices:           info@contentrain.io
 For security disclosures:    see SECURITY.md

@@ -220,7 +220,7 @@ export const OVERAGE_PRICING: Record<string, { price: number, unit: string, sett
 export const OVERAGE_SETTINGS_KEYS = Object.values(OVERAGE_PRICING).map(p => p.settingsKey)
 
 /** `mailto:` address the enterprise CTA button links to. */
-export const ENTERPRISE_CONTACT_EMAIL = 'sales@contentrain.io'
+export const ENTERPRISE_CONTACT_EMAIL = 'info@contentrain.io'
 
 // ─── Normalisation + lookups (unchanged public API) ───
 
