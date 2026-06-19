@@ -36,7 +36,7 @@ describe('resolveMediaApiContext', () => {
     })
     vi.stubGlobal('checkRateLimit', vi.fn().mockResolvedValue({ allowed: true, retryAfterMs: 0 }))
     vi.stubGlobal('useDatabaseProvider', () => ({
-      getProjectById: vi.fn().mockResolvedValue({ id: 'proj-1', workspace_id: 'ws-1' }),
+      getProjectById: vi.fn().mockResolvedValue({ id: 'proj-1', workspace_id: 'ws-1', cdn_enabled: true }),
       getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, owner_id: 'owner-1' }),
     }))
     vi.stubGlobal('getWorkspacePlan', () => 'pro')
@@ -52,6 +52,15 @@ describe('resolveMediaApiContext', () => {
     const ctx = await resolveMediaApiContext({} as never, opts)
     expect(ctx).toMatchObject({ projectId: 'proj-1', workspaceId: 'ws-1', plan: 'pro', keyId: 'key-1', ownerId: 'owner-1' })
     expect(ctx.media).toBeTruthy()
+  })
+
+  it('403s when CDN is not activated for the project', async () => {
+    vi.stubGlobal('useDatabaseProvider', () => ({
+      getProjectById: vi.fn().mockResolvedValue({ id: 'proj-1', workspace_id: 'ws-1', cdn_enabled: false }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, owner_id: 'owner-1' }),
+    }))
+    const { resolveMediaApiContext } = await import('../../server/utils/media-api')
+    await expect(resolveMediaApiContext({} as never, opts)).rejects.toMatchObject({ statusCode: 403 })
   })
 
   it('403s when the route project does not match the key', async () => {
