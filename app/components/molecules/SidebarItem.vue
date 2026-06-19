@@ -6,12 +6,15 @@ withDefaults(defineProps<{
   count?: number | string | null
   compact?: boolean
   disabled?: boolean
+  /** Render a lock affordance (e.g. plan-gated item that opens an upsell). Stays clickable. */
+  locked?: boolean
 }>(), {
   icon: undefined,
   active: false,
   count: null,
   compact: false,
   disabled: false,
+  locked: false,
 })
 
 defineEmits<{
@@ -38,6 +41,7 @@ defineEmits<{
     />
     <span class="min-w-0 flex-1 truncate">{{ label }}</span>
     <slot name="trailing" />
+    <span v-if="locked" class="icon-[annon--lock] size-3 shrink-0 text-muted" aria-hidden="true" />
     <span v-if="count !== null" class="shrink-0 text-[10px] tabular-nums text-disabled">
       {{ count }}
     </span>

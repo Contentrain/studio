@@ -40,8 +40,31 @@ function togglePin(asset: { id: string, filename: string, originalPath: string, 
   })
 }
 
+// Assets are delivered over the CDN, so surface whether the project has
+// activated it — otherwise uploads succeed but can't be served or reached
+// via the media API. Mirrors the gate the routes enforce.
+const router = useRouter()
+const cdnEnabled = ref<boolean | null>(null)
+
+async function loadCdnState() {
+  try {
+    const res = await $fetch<{ cdn_enabled: boolean }>(
+      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/settings`,
+    )
+    cdnEnabled.value = res.cdn_enabled ?? false
+  }
+  catch {
+    cdnEnabled.value = null
+  }
+}
+
+function goToCdn() {
+  router.replace({ query: { cdn: 'true' } })
+}
+
 onMounted(() => {
   fetchAssets(props.workspaceId, props.projectId)
+  loadCdnState()
 })
 
 let searchTimeout: ReturnType<typeof setTimeout>
@@ -105,6 +128,26 @@ onUnmounted(() => {
 
     <!-- Body -->
     <div class="flex-1 overflow-y-auto">
+      <!-- CDN-not-activated notice — assets need CDN on to be served + API-reachable -->
+      <div
+        v-if="cdnEnabled === false"
+        class="m-4 mb-0 rounded-lg border border-border bg-secondary-50 p-3 dark:border-secondary-800 dark:bg-secondary-900"
+      >
+        <p class="text-xs font-medium text-heading dark:text-secondary-100">
+          {{ t('media.cdn_inactive_title') }}
+        </p>
+        <p class="mt-1 text-xs text-body dark:text-secondary-300">
+          {{ t('media.cdn_inactive_hint') }}
+        </p>
+        <button
+          type="button"
+          class="mt-2 rounded text-xs font-medium text-primary-600 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-400"
+          @click="goToCdn"
+        >
+          {{ t('media.cdn_activate_cta') }}
+        </button>
+      </div>
+
       <!-- Upload zone -->
       <div v-if="editable" class="p-4 pb-2">
         <MoleculesAssetUploader
