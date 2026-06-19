@@ -10,13 +10,22 @@ const props = defineProps<{
 
 const canManageCDN = computed(() => isOwnerOrAdmin.value)
 
-interface CDNKey { id: string, name: string, key_prefix: string, environment: string, created_at: string, revoked_at: string | null, key?: string }
+interface CDNKey { id: string, name: string, key_prefix: string, environment: string, scopes: string[], created_at: string, revoked_at: string | null, key?: string }
+
+// Scopes a key can carry — multi-select at creation. `delivery` is the
+// default (CDN serving); `media:*` gate the media management API.
+const SCOPE_OPTIONS = [
+  { value: 'delivery', label: 'cdn.scope_delivery' },
+  { value: 'media:read', label: 'cdn.scope_media_read' },
+  { value: 'media:write', label: 'cdn.scope_media_write' },
+] as const
 interface CDNBuild { id: string, status: string, trigger_type: string, commit_sha: string, file_count: number | null, build_duration_ms: number | null, error_message: string | null, started_at: string }
 
 const cdnActive = ref(false)
 const keys = ref<CDNKey[]>([])
 const builds = ref<CDNBuild[]>([])
 const keyName = ref('')
+const keyScopes = ref<string[]>(['delivery'])
 const creatingKey = ref(false)
 const rebuilding = ref(false)
 const newKey = ref<string | null>(null)
@@ -100,16 +109,17 @@ async function toggleCDN() {
 }
 
 async function createKey() {
-  if (!keyName.value.trim()) return
+  if (!keyName.value.trim() || keyScopes.value.length === 0) return
   creatingKey.value = true
   try {
     const result = await $fetch<CDNKey>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys`, {
       method: 'POST',
-      body: { name: keyName.value.trim() },
+      body: { name: keyName.value.trim(), scopes: keyScopes.value },
     })
     keys.value.unshift(result)
     newKey.value = result.key ?? null
     keyName.value = ''
+    keyScopes.value = ['delivery']
     toast.success(t('cdn.key_created'))
   }
   catch {
@@ -271,6 +281,12 @@ function copyKey() {
                 <div class="font-mono text-[10px] text-muted">
                   {{ key.key_prefix }}...
                 </div>
+                <div v-if="key.scopes?.length" class="mt-1 flex flex-wrap gap-1">
+                  <span
+                    v-for="s in key.scopes" :key="s"
+                    class="rounded bg-secondary-100 px-1 py-px font-mono text-[9px] text-muted dark:bg-secondary-800"
+                  >{{ s }}</span>
+                </div>
               </div>
               <button
                 v-if="canManageCDN"
@@ -287,13 +303,22 @@ function copyKey() {
             <span class="text-xs text-muted">{{ t('cdn.no_keys') }}</span>
           </div>
 
-          <form v-if="canManageCDN" class="mt-3 flex items-center gap-2" @submit.prevent="createKey">
-            <AtomsFormInput
-              v-model="keyName" type="text" :placeholder="t('cdn.key_name_placeholder')" class="flex-1"
-            />
-            <AtomsBaseButton type="submit" variant="primary" size="sm" :disabled="!keyName.trim() || creatingKey">
-              {{ t('cdn.create_key') }}
-            </AtomsBaseButton>
+          <form v-if="canManageCDN" class="mt-3 space-y-2" @submit.prevent="createKey">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="text-[10px] font-medium uppercase tracking-wide text-muted">{{ t('cdn.scopes_label') }}</span>
+              <AtomsFormCheckbox
+                v-for="opt in SCOPE_OPTIONS" :key="opt.value"
+                v-model="keyScopes" :value="opt.value" :label="t(opt.label)"
+              />
+            </div>
+            <div class="flex items-center gap-2">
+              <AtomsFormInput
+                v-model="keyName" type="text" :placeholder="t('cdn.key_name_placeholder')" class="flex-1"
+              />
+              <AtomsBaseButton type="submit" variant="primary" size="sm" :disabled="!keyName.trim() || keyScopes.length === 0 || creatingKey">
+                {{ t('cdn.create_key') }}
+              </AtomsBaseButton>
+            </div>
           </form>
         </div>
 

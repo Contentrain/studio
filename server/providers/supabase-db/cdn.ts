@@ -121,7 +121,7 @@ export function cdnMethods(): CDNMethods {
       const client = getUser(accessToken)
       const { data, error } = await client
         .from('cdn_api_keys')
-        .select('id, name, key_prefix, environment, rate_limit_per_hour, last_used_at, expires_at, created_at, revoked_at')
+        .select('id, name, key_prefix, environment, scopes, rate_limit_per_hour, last_used_at, expires_at, created_at, revoked_at')
         .eq('project_id', projectId)
 
       if (error) throw createError({ statusCode: 500, message: error.message })
