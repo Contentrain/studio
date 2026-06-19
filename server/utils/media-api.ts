@@ -7,6 +7,8 @@ export interface MediaApiContext {
   workspaceId: string
   plan: string
   keyId: string
+  /** Workspace owner profile id — used as `uploaded_by` for API uploads. */
+  ownerId: string
   overageSettings: Record<string, boolean>
   media: MediaProvider
 }
@@ -45,7 +47,7 @@ export async function resolveMediaApiContext(
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, overage_settings')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, overage_settings, owner_id')
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
@@ -62,6 +64,10 @@ export async function resolveMediaApiContext(
     workspaceId: project.workspace_id as string,
     plan,
     keyId: keyData.keyId,
+    // `media_assets.uploaded_by` is a NOT NULL uuid → profiles(id). API-key
+    // uploads have no acting user, so attribute them to the workspace owner
+    // (who authorized the key).
+    ownerId: workspace.owner_id as string,
     overageSettings: (workspace.overage_settings as Record<string, boolean>) ?? {},
     media,
   }

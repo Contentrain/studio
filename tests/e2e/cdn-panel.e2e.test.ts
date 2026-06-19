@@ -166,7 +166,9 @@ describe('cdn panel e2e', () => {
     await toggle.waitFor()
     await toggle.click()
 
-    const keyInput = page.locator('form input').first()
+    // The create form now also holds scope checkboxes, so target the
+    // text input specifically rather than the first input in the form.
+    const keyInput = page.locator('form input[type="text"]')
     await keyInput.waitFor()
     await keyInput.fill('Primary key')
     await page.locator('form button[type="submit"]').click()

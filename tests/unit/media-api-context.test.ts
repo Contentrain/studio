@@ -37,7 +37,7 @@ describe('resolveMediaApiContext', () => {
     vi.stubGlobal('checkRateLimit', vi.fn().mockResolvedValue({ allowed: true, retryAfterMs: 0 }))
     vi.stubGlobal('useDatabaseProvider', () => ({
       getProjectById: vi.fn().mockResolvedValue({ id: 'proj-1', workspace_id: 'ws-1' }),
-      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {} }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, owner_id: 'owner-1' }),
     }))
     vi.stubGlobal('getWorkspacePlan', () => 'pro')
     vi.stubGlobal('hasFeature', () => true)
@@ -50,7 +50,7 @@ describe('resolveMediaApiContext', () => {
   it('resolves the context on the happy path', async () => {
     const { resolveMediaApiContext } = await import('../../server/utils/media-api')
     const ctx = await resolveMediaApiContext({} as never, opts)
-    expect(ctx).toMatchObject({ projectId: 'proj-1', workspaceId: 'ws-1', plan: 'pro', keyId: 'key-1' })
+    expect(ctx).toMatchObject({ projectId: 'proj-1', workspaceId: 'ws-1', plan: 'pro', keyId: 'key-1', ownerId: 'owner-1' })
     expect(ctx.media).toBeTruthy()
   })
 
