@@ -43,9 +43,16 @@ export async function resolveMediaApiContext(
   }
 
   const db = useDatabaseProvider()
-  const project = await db.getProjectById(keyData.projectId, 'id, workspace_id')
+  const project = await db.getProjectById(keyData.projectId, 'id, workspace_id, cdn_enabled')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
+
+  // Media is delivered over the CDN, so it requires the project to have
+  // activated CDN (same gate as the delivery route). Without this, an
+  // upload to an un-activated project hits R2 and leaks a raw 500 instead
+  // of a clean "CDN not enabled" 403.
+  if (!project.cdn_enabled)
+    throw createError({ statusCode: 403, message: errorMessage('cdn.not_enabled') })
 
   const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, overage_settings, owner_id')
   if (!workspace)
