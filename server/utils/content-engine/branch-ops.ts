@@ -1,6 +1,6 @@
 import { buildContextChange } from '@contentrain/mcp/core/context'
 import type { Branch, EngineInternalContext, MergeResult } from './types'
-import { BOT_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
+import { STUDIO_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain } from './helpers'
 
 /**
@@ -159,7 +159,7 @@ async function regenerateContextOnContentrain(
       branch: CONTENT_BRANCH,
       changes: [contextChange],
       message: 'contentrain: regenerate context.json',
-      author: BOT_AUTHOR,
+      author: STUDIO_AUTHOR,
       base: CONTENT_BRANCH,
     })
   }

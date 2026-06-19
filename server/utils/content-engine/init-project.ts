@@ -1,7 +1,7 @@
 import type { ContentrainConfig, FileChange, ModelDefinition } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
-import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
+import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { createFeatureBranch } from './helpers'
 
 /**
@@ -92,7 +92,7 @@ export async function initProject(
     branch: branchName,
     changes: files,
     message,
-    author: BOT_AUTHOR,
+    author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 

@@ -27,9 +27,9 @@ export interface EngineInternalContext {
 
 // ── Constants ────────────────────────────────────────────────────────
 
-export const BOT_AUTHOR: CommitAuthor = {
-  name: 'Contentrain Studio[bot]',
-  email: 'bot@contentrain.io',
+export const STUDIO_AUTHOR: CommitAuthor = {
+  name: 'Contentrain Studio',
+  email: 'ai@contentrain.io',
 }
 
 /** Content branch name — dedicated SSOT branch per git-architecture.md */

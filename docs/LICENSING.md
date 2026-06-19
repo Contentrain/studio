@@ -2,7 +2,7 @@
 
 Contentrain Studio is distributed under an **open-core** model. This document explains what is licensed under what, how the two licenses relate, and which license applies to each supported deployment scenario.
 
-> This document is a practical guide, not a legal contract. For the controlling text, see [`LICENSE`](../LICENSE), [`LICENSE-EXCEPTIONS`](../LICENSE-EXCEPTIONS), and [`ee/LICENSE`](../ee/LICENSE). For legal inquiries, contact `legal@contentrain.io`.
+> This document is a practical guide, not a legal contract. For the controlling text, see [`LICENSE`](../LICENSE), [`LICENSE-EXCEPTIONS`](../LICENSE-EXCEPTIONS), and [`ee/LICENSE`](../ee/LICENSE). For legal inquiries, contact `info@contentrain.io`.
 
 ## Licenses in this repository
 
@@ -84,10 +84,10 @@ The deployment profile is set by the `NUXT_DEPLOYMENT_PROFILE` environment varia
 
 | Topic | Contact |
 |---|---|
-| General licensing questions | `licensing@contentrain.io` |
-| Legal notices | `legal@contentrain.io` |
-| OEM / white-label / reseller agreements | `licensing@contentrain.io` |
-| Commercial support / SLA | `commercial@contentrain.io` |
+| General licensing questions | `info@contentrain.io` |
+| Legal notices | `info@contentrain.io` |
+| OEM / white-label / reseller agreements | `info@contentrain.io` |
+| Commercial support / SLA | `info@contentrain.io` |
 | Security disclosures | see [`SECURITY.md`](../SECURITY.md) |
 
 ## Related documents

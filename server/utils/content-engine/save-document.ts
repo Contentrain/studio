@@ -2,7 +2,7 @@ import type { ContentrainConfig, FileChange, ModelDefinition, Vocabulary } from 
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
-import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
+import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
@@ -28,7 +28,7 @@ export async function saveDocument(
   if (slugError) {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation: { valid: false, errors: [{ field: 'slug', message: slugError, severity: 'error' as const }] },
     }
@@ -54,7 +54,7 @@ export async function saveDocument(
   if (!validation.valid) {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation,
     }
@@ -85,7 +85,7 @@ export async function saveDocument(
   catch (err) {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation: {
         valid: false,
@@ -120,7 +120,7 @@ export async function saveDocument(
     branch: branchName,
     changes: allChanges,
     message: `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
-    author: BOT_AUTHOR,
+    author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 

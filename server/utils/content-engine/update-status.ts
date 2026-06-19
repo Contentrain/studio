@@ -1,7 +1,7 @@
 import type { EntryMeta, FileChange, ModelDefinition } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
-import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
+import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
@@ -51,7 +51,7 @@ export async function updateEntryStatus(
     branch: branchName,
     changes: allChanges,
     message: `contentrain: ${status} ${entryIds.length} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
-    author: BOT_AUTHOR,
+    author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 
@@ -80,7 +80,7 @@ export async function copyLocale(
   if (!modelDef.i18n) {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation: { valid: false, errors: [{ field: '', message: 'Model does not support i18n', severity: 'error' as const }] },
     }
@@ -94,7 +94,7 @@ export async function copyLocale(
   catch {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation: { valid: false, errors: [{ field: '', message: `Source locale "${fromLocale}" not found`, severity: 'error' as const }] },
     }
@@ -106,7 +106,7 @@ export async function copyLocale(
     if (existing && existing.trim().length > 2) {
       return {
         branch: '',
-        commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+        commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
         diff: [],
         validation: { valid: false, errors: [{ field: '', message: `Target locale "${toLocale}" already has content. Delete it first to overwrite.`, severity: 'error' as const }] },
       }
@@ -138,7 +138,7 @@ export async function copyLocale(
     branch: branchName,
     changes: allChanges,
     message: `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`,
-    author: BOT_AUTHOR,
+    author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 

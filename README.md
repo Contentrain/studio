@@ -160,7 +160,7 @@ Plan-differentiated capability examples:
 
 The source of truth lives in [`shared/utils/license.ts`](shared/utils/license.ts) and [`.contentrain/content/system/plan-features/`](.contentrain/content/system/plan-features/). Feature gating runs through `hasFeature(plan, key)` with the current edition applied.
 
-For license inquiries, see [docs/LICENSING.md](docs/LICENSING.md) and contact `licensing@contentrain.io`.
+For license inquiries, see [docs/LICENSING.md](docs/LICENSING.md) and contact `info@contentrain.io`.
 
 ## Repository Structure
 

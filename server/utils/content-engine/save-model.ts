@@ -2,7 +2,7 @@ import type { ContentrainConfig, FileChange, ModelDefinition } from '@contentrai
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { planModelSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
-import { BOT_AUTHOR, CONTENT_BRANCH } from './types'
+import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch } from './helpers'
 
 /**
@@ -47,7 +47,7 @@ export async function saveModel(
   if (criticalErrors.length > 0) {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation: {
         valid: false,
@@ -67,7 +67,7 @@ export async function saveModel(
   catch (err) {
     return {
       branch: '',
-      commit: { sha: '', message: '', author: BOT_AUTHOR, timestamp: '' },
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
       diff: [],
       validation: {
         valid: false,
@@ -89,7 +89,7 @@ export async function saveModel(
     branch: branchName,
     changes: allChanges,
     message: `contentrain: save model ${definition.id}\n\nCo-Authored-By: ${userEmail}`,
-    author: BOT_AUTHOR,
+    author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 

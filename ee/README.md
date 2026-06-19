@@ -59,6 +59,6 @@ See [`docs/LICENSING.md`](../docs/LICENSING.md) for the full SKU × license type
 
 ## Upstream contact
 
-- Licensing: `licensing@contentrain.io`
-- Legal: `legal@contentrain.io`
-- Commercial / on-prem support: `commercial@contentrain.io`
+- Licensing: `info@contentrain.io`
+- Legal: `info@contentrain.io`
+- Commercial / on-prem support: `info@contentrain.io`
