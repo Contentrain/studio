@@ -10,6 +10,13 @@ const { isDark, toggle: toggleTheme } = useTheme()
 const { toggle: openCommandPalette, pendingAction, consumeAction } = useCommandPalette()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
+// CDN delivery + the asset library are ee/plan features (`requires_ee`
+// in Community, plan-gated above that). `useFeature` resolves both the
+// edition and the plan, so the nav items only appear when the workspace
+// can actually use them.
+const cdnAvailable = useFeature('cdn.delivery')
+const mediaAvailable = useFeature('media.library')
+
 const router = useRouter()
 const connectDialogOpen = ref(false)
 const settingsModalOpen = ref(false)
@@ -223,14 +230,16 @@ function onProjectDeleted() {
             :active="isVocabularyActive" :count="vocabularyCount" compact @click="selectVocabulary"
           />
 
-          <!-- CDN -->
+          <!-- CDN (ee + plan-gated) -->
           <MoleculesSidebarItem
+            v-if="cdnAvailable"
             icon="icon-[annon--globe]" :label="t('cdn.title')" :active="isCDNActive" compact
             @click="selectCDN"
           />
 
-          <!-- Assets -->
+          <!-- Assets (ee + plan-gated) -->
           <MoleculesSidebarItem
+            v-if="mediaAvailable"
             icon="icon-[annon--image]" :label="t('media.title')" :active="isAssetsActive" compact
             @click="selectAssets"
           />
