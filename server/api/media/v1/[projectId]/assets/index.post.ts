@@ -102,7 +102,7 @@ export default defineEventHandler(async (event) => {
       alt,
       tags,
       variants,
-      uploadedBy: `cdn-key:${ctx.keyId}`,
+      uploadedBy: ctx.ownerId,
       source,
       skipStorageIncrement: storageReserved,
     })
