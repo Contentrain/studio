@@ -17,6 +17,15 @@ const { isOwnerOrAdmin } = useWorkspaceRole()
 const cdnAvailable = useFeature('cdn.delivery')
 const mediaAvailable = useFeature('media.library')
 
+// When the plan lacks the feature but the workspace can self-serve upgrade
+// (managed billing), still surface the nav item — locked, opening the plan
+// modal — so the feature is discoverable. Community + operator-set plans
+// (no self-serve billing) hide it instead, since there's nothing to upsell.
+const deployment = useDeployment()
+const { show: showPlanModal } = usePlanModal()
+const showCdnNav = computed(() => cdnAvailable.value || deployment.hasManagedBilling.value)
+const showAssetsNav = computed(() => mediaAvailable.value || deployment.hasManagedBilling.value)
+
 const router = useRouter()
 const connectDialogOpen = ref(false)
 const settingsModalOpen = ref(false)
@@ -114,10 +123,18 @@ function selectVocabulary() {
 }
 
 function selectCDN() {
+  if (!cdnAvailable.value) {
+    showPlanModal()
+    return
+  }
   router.replace({ query: { cdn: 'true' } })
 }
 
 function selectAssets() {
+  if (!mediaAvailable.value) {
+    showPlanModal()
+    return
+  }
   router.replace({ query: { assets: 'true' } })
 }
 
@@ -230,17 +247,19 @@ function onProjectDeleted() {
             :active="isVocabularyActive" :count="vocabularyCount" compact @click="selectVocabulary"
           />
 
-          <!-- CDN (ee + plan-gated) -->
+          <!-- CDN (ee + plan-gated; locked → upsell when plan lacks it) -->
           <MoleculesSidebarItem
-            v-if="cdnAvailable"
-            icon="icon-[annon--globe]" :label="t('cdn.title')" :active="isCDNActive" compact
+            v-if="showCdnNav"
+            icon="icon-[annon--globe]" :label="t('cdn.title')" :active="isCDNActive"
+            :locked="!cdnAvailable" compact
             @click="selectCDN"
           />
 
-          <!-- Assets (ee + plan-gated) -->
+          <!-- Assets (ee + plan-gated; locked → upsell when plan lacks it) -->
           <MoleculesSidebarItem
-            v-if="mediaAvailable"
-            icon="icon-[annon--image]" :label="t('media.title')" :active="isAssetsActive" compact
+            v-if="showAssetsNav"
+            icon="icon-[annon--image]" :label="t('media.title')" :active="isAssetsActive"
+            :locked="!mediaAvailable" compact
             @click="selectAssets"
           />
         </div>
