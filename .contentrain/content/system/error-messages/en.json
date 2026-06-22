@@ -21,6 +21,7 @@
   "auth.unauthorized": "You are not signed in. Please sign in to continue.",
   "billing.no_subscription": "No active subscription found. Please subscribe first.",
   "billing.overage_requires_subscription": "Overage billing requires an active subscription with a payment method on file.",
+  "billing.provider_unavailable": "The payment service is temporarily unavailable. Please try again in a few minutes.",
   "billing.subscription_exists": "This workspace already has an active subscription. Manage it from the billing portal.",
   "branches.contentrain_only": "Only contentrain/ branches can be managed through Studio.",
   "branches.merge_forbidden": "You do not have permission to merge branches in this project.",

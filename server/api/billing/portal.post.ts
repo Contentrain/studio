@@ -42,11 +42,21 @@ export default defineEventHandler(async (event) => {
   const siteUrl = config.public.siteUrl as string
   const wsSlug = (workspace as { slug: string }).slug
 
-  const result = await payment.createPortalSession({
-    workspaceId: body.workspaceId,
-    customerId,
-    returnUrl: `${siteUrl}/w/${wsSlug}/settings`,
-  })
+  let result
+  try {
+    result = await payment.createPortalSession({
+      workspaceId: body.workspaceId,
+      customerId,
+      returnUrl: `${siteUrl}/w/${wsSlug}/settings`,
+    })
+  }
+  catch (err) {
+    // Same guard as checkout — a provider SDK failure (expired/invalid
+    // token, outage) should be a clean message, not an unhandled 500.
+    // eslint-disable-next-line no-console -- ops visibility for provider failures
+    console.error('[billing-portal] createPortalSession failed:', err)
+    throw createError({ statusCode: 502, message: errorMessage('billing.provider_unavailable') })
+  }
 
   return { url: result.url }
 })

@@ -63,15 +63,26 @@ export default defineEventHandler(async (event) => {
   // no new trial — closes the cancel→re-trial loop.
   const withTrial = !(workspace as { trial_consumed_at?: string | null }).trial_consumed_at
 
-  const result = await payment.createCheckoutSession({
-    workspaceId: body.workspaceId,
-    workspaceName: (workspace as { name: string }).name,
-    plan: body.plan,
-    customerEmail: session.user.email ?? '',
-    successUrl: `${siteUrl}/w/${wsSlug}/settings?billing=success`,
-    cancelUrl: `${siteUrl}/w/${wsSlug}/settings?billing=cancelled`,
-    withTrial,
-  })
+  let result
+  try {
+    result = await payment.createCheckoutSession({
+      workspaceId: body.workspaceId,
+      workspaceName: (workspace as { name: string }).name,
+      plan: body.plan,
+      customerEmail: session.user.email ?? '',
+      successUrl: `${siteUrl}/w/${wsSlug}/settings?billing=success`,
+      cancelUrl: `${siteUrl}/w/${wsSlug}/settings?billing=cancelled`,
+      withTrial,
+    })
+  }
+  catch (err) {
+    // Provider SDK failure (expired/invalid token, provider outage, bad
+    // product id). Log the detail server-side and surface a clean message
+    // instead of an unhandled 500 that leaks the SDK stack to the client.
+    // eslint-disable-next-line no-console -- ops visibility for provider failures
+    console.error('[billing-checkout] createCheckoutSession failed:', err)
+    throw createError({ statusCode: 502, message: errorMessage('billing.provider_unavailable') })
+  }
 
   return { url: result.url }
 })
