@@ -304,12 +304,14 @@ function copyKey() {
           </div>
 
           <form v-if="canManageCDN" class="mt-3 space-y-2" @submit.prevent="createKey">
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span class="text-[10px] font-medium uppercase tracking-wide text-muted">{{ t('cdn.scopes_label') }}</span>
-              <AtomsFormCheckbox
-                v-for="opt in SCOPE_OPTIONS" :key="opt.value"
-                v-model="keyScopes" :value="opt.value" :label="t(opt.label)"
-              />
+            <div class="space-y-1.5">
+              <span class="block text-[10px] font-medium uppercase tracking-wide text-muted">{{ t('cdn.scopes_label') }}</span>
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                <AtomsFormCheckbox
+                  v-for="opt in SCOPE_OPTIONS" :key="opt.value"
+                  v-model="keyScopes" :value="opt.value" :label="t(opt.label)"
+                />
+              </div>
             </div>
             <div class="flex items-center gap-2">
               <AtomsFormInput
