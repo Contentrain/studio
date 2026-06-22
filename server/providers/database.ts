@@ -150,6 +150,12 @@ export interface DatabaseProvider {
   getWorkspaceDetailForUser: (accessToken: string, userId: string, workspaceId: string) => Promise<DatabaseRow | null>
   getWorkspaceById: (workspaceId: string, fields?: string) => Promise<DatabaseRow | null>
   updateWorkspace: (accessToken: string, workspaceId: string, updates: Record<string, unknown>, fields?: string) => Promise<DatabaseRow>
+  /**
+   * Mark a workspace's free trial as consumed (idempotent — only sets the
+   * timestamp the first time). Gates re-trial at checkout so a workspace
+   * gets at most one trial across its lifetime.
+   */
+  markWorkspaceTrialConsumed: (workspaceId: string) => Promise<void>
   updateWorkspaceForUser: (
     accessToken: string,
     userId: string,

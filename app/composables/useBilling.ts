@@ -118,6 +118,15 @@ export function useBilling() {
 
   const isTrialing = computed(() => billingState.value === 'trial_active')
 
+  /**
+   * Whether this workspace has ever consumed its one-time free trial.
+   * After cancel the payment account is archived and billing state falls
+   * back to 'free', so this persistent workspace flag is the only reliable
+   * "already trialed" signal — drives the "Subscribe" (vs "Start trial")
+   * CTA and mirrors the server-side re-trial gate at checkout.
+   */
+  const trialConsumed = computed(() => Boolean(activeWorkspace.value?.trial_consumed_at))
+
   const trialDaysLeft = computed(() => {
     const account = activeAccount.value
     if (billingState.value !== 'trial_active' || !account?.trial_ends_at) return 0
@@ -175,6 +184,7 @@ export function useBilling() {
     requiresPayment,
     isFree,
     isTrialing,
+    trialConsumed,
     trialDaysLeft,
     activeAccount,
     startCheckout,

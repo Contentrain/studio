@@ -5,7 +5,7 @@ import type { PlanFeatures } from '#contentrain'
 import { ENTERPRISE_CONTACT_EMAIL } from '~~/shared/utils/license'
 
 const { t } = useContent()
-const { billingState, effectivePlan, startCheckout, openPortal } = useBilling()
+const { billingState, effectivePlan, trialConsumed, startCheckout, openPortal } = useBilling()
 
 const props = defineProps<{
   open: boolean
@@ -23,13 +23,18 @@ const enterpriseMailto = computed(() => {
   return `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${subject}`
 })
 
-// Purchasable plans — exclude the free shell and enterprise (contact-sales).
+// Purchasable plans only. Exclude:
+//   - `free`      — the no-subscription shell (not selectable)
+//   - `community` — the self-hosted edition tier; its limits are
+//     "unlimited" because Community Edition doesn't enforce them, which is
+//     meaningless + misleading in this managed checkout surface
+//   - `enterprise` — contact-sales, rendered separately
 const plans = computed(() =>
   query('plans')
     .locale('en')
     .sort('sort_order', 'asc')
     .all()
-    .filter(p => p.slug !== 'free' && p.slug !== 'enterprise'),
+    .filter(p => p.slug !== 'free' && p.slug !== 'community' && p.slug !== 'enterprise'),
 )
 
 const enterprisePlan = computed(() =>
@@ -165,6 +170,9 @@ function ctaFor(slug: string): PlanCta {
     return { label: t('plans.current_plan'), disabled: true }
   if (hasActiveSubscription.value)
     return { label: t('billing.manage_subscription'), disabled: false }
+  // Trial already used → no second trial; offer a direct paid subscription.
+  if (trialConsumed.value)
+    return { label: t('plans.subscribe'), disabled: false }
   return { label: t('plans.start_trial'), disabled: false }
 }
 
@@ -207,7 +215,11 @@ async function handlePlanAction(slug: string) {
               {{ t('plans.select_title') }}
             </DialogTitle>
             <DialogDescription class="mt-1 text-sm text-muted">
-              {{ hasActiveSubscription ? t('plans.manage_description') : t('plans.select_description') }}
+              {{ hasActiveSubscription
+                ? t('plans.manage_description')
+                : trialConsumed
+                  ? t('plans.trial_ended_description')
+                  : t('plans.select_description') }}
             </DialogDescription>
           </div>
           <DialogClose
@@ -225,7 +237,7 @@ async function handlePlanAction(slug: string) {
             class="relative flex flex-col rounded-lg border p-5 transition-colors"
             :class="[
               plan.is_highlighted
-                ? 'border-primary-500 bg-primary-50/50 dark:border-primary-400 dark:bg-primary-950/30'
+                ? 'border-primary-500 bg-primary-50/50 ring-1 ring-primary-500/20 dark:border-primary-500 dark:bg-primary-500/5 dark:ring-primary-500/25'
                 : 'border-secondary-200 dark:border-secondary-800',
               effectivePlan === plan.slug && 'ring-2 ring-primary-500/50',
             ]"

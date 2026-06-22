@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     body.workspaceId,
     ['owner', 'admin'],
-    'id, slug, name',
+    'id, slug, name, trial_consumed_at',
   )
 
   if (!workspace) {
@@ -58,6 +58,11 @@ export default defineEventHandler(async (event) => {
   const siteUrl = config.public.siteUrl as string
   const wsSlug = (workspace as { slug: string }).slug
 
+  // Grant the free trial only if this workspace has never used one. A
+  // returning customer (trial canceled/expired) gets a paid checkout with
+  // no new trial — closes the cancel→re-trial loop.
+  const withTrial = !(workspace as { trial_consumed_at?: string | null }).trial_consumed_at
+
   const result = await payment.createCheckoutSession({
     workspaceId: body.workspaceId,
     workspaceName: (workspace as { name: string }).name,
@@ -65,6 +70,7 @@ export default defineEventHandler(async (event) => {
     customerEmail: session.user.email ?? '',
     successUrl: `${siteUrl}/w/${wsSlug}/settings?billing=success`,
     cancelUrl: `${siteUrl}/w/${wsSlug}/settings?billing=cancelled`,
+    withTrial,
   })
 
   return { url: result.url }

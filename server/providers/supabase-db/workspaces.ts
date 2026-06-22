@@ -12,6 +12,7 @@ type WorkspaceMethods = Pick<
   | 'getWorkspaceDetailForUser'
   | 'getWorkspaceById'
   | 'updateWorkspace'
+  | 'markWorkspaceTrialConsumed'
   | 'updateWorkspaceForUser'
   | 'getPrimaryWorkspace'
   | 'requireWorkspaceRole'
@@ -119,6 +120,19 @@ export function workspaceMethods(): WorkspaceMethods {
         throw createError({ statusCode: 500, message: error.message })
       }
       return toDatabaseRow(data)
+    },
+
+    async markWorkspaceTrialConsumed(workspaceId) {
+      // System operation (billing webhook) — service role. Guard on
+      // `is null` so the first trial date is preserved across repeated
+      // 'trialing' webhook deliveries (set once, never moved).
+      const { error } = await getAdmin()
+        .from('workspaces')
+        .update({ trial_consumed_at: new Date().toISOString() })
+        .eq('id', workspaceId)
+        .is('trial_consumed_at', null)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
     },
 
     async updateWorkspaceForUser(accessToken, userId, workspaceId, updates, fields = '*') {

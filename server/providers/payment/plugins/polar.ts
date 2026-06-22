@@ -126,6 +126,9 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
         customerEmail: input.customerEmail,
         externalCustomerId: input.workspaceId,
         successUrl: input.successUrl,
+        // The product's trial config applies by default; `allowTrial: false`
+        // suppresses it for a workspace that has already used its trial.
+        ...(input.withTrial === false ? { allowTrial: false } : {}),
         metadata: {
           workspace_id: input.workspaceId,
           plan: input.plan,
