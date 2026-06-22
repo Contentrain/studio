@@ -270,8 +270,8 @@ async function handlePlanAction(slug: string) {
               </p>
             </div>
 
-            <!-- Trial info -->
-            <p v-if="plan.has_trial && !hasActiveSubscription" class="mb-3 text-xs font-medium text-success-600 dark:text-success-400">
+            <!-- Trial info — hidden once the trial is consumed (no second trial) -->
+            <p v-if="plan.has_trial && !hasActiveSubscription && !trialConsumed" class="mb-3 text-xs font-medium text-success-600 dark:text-success-400">
               {{ t('billing.trial_14_days') }}
             </p>
 
