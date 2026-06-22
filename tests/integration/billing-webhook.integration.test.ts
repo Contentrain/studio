@@ -14,6 +14,7 @@ describe('billing webhook integration', () => {
   const archiveActivePaymentAccount = vi.fn().mockResolvedValue(undefined)
   const updateWorkspace = vi.fn().mockResolvedValue({})
   const getActivePaymentAccount = vi.fn().mockResolvedValue(null)
+  const markWorkspaceTrialConsumed = vi.fn().mockResolvedValue(undefined)
 
   let handleWebhookMock: ReturnType<typeof vi.fn>
 
@@ -31,6 +32,7 @@ describe('billing webhook integration', () => {
       archiveActivePaymentAccount,
       updateWorkspace,
       getActivePaymentAccount,
+      markWorkspaceTrialConsumed,
     }))
   })
 
@@ -40,6 +42,7 @@ describe('billing webhook integration', () => {
     archiveActivePaymentAccount.mockReset().mockResolvedValue(undefined)
     updateWorkspace.mockReset().mockResolvedValue({})
     getActivePaymentAccount.mockReset().mockResolvedValue(null)
+    markWorkspaceTrialConsumed.mockReset().mockResolvedValue(undefined)
   })
 
   async function mockPluginAndLoadHandler(options: { configured?: boolean } = {}) {
@@ -92,6 +95,8 @@ describe('billing webhook integration', () => {
       isActive: true,
     }))
     expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { plan: 'pro' })
+    // Trialing subscription consumes the workspace's one-time trial.
+    expect(markWorkspaceTrialConsumed).toHaveBeenCalledWith('ws-1')
   })
 
   it('updates plan on subscription.updated (portal plan change)', async () => {
@@ -120,6 +125,8 @@ describe('billing webhook integration', () => {
       plan: 'starter',
       trial_reminder_stage: 0,
     }))
+    // Active (non-trialing) subscription must NOT consume a trial.
+    expect(markWorkspaceTrialConsumed).not.toHaveBeenCalled()
   })
 
   it('downgrades to free on subscription.canceled', async () => {

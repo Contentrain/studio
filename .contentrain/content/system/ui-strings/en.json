@@ -581,6 +581,7 @@
   "plans.subscribe": "Subscribe",
   "plans.trial_active": "Trial active",
   "plans.trial_description": "Start a 14-day free trial. Your card will be charged after the trial ends.",
+  "plans.trial_ended_description": "Your free trial has ended. Subscribe to keep working on your projects — your card is charged immediately.",
   "project_settings.default_locale": "Default locale",
   "project_settings.default_locale_info": "The primary language for content. New entries are created in this locale first.",
   "project_settings.domains": "Domains",

@@ -3,7 +3,9 @@
  *
  * Implements the `PaymentProvider` interface against the Stripe SDK.
  * Active when `NUXT_STRIPE_SECRET_KEY` is set. Trial is collected at
- * checkout (`trial_period_days=14`); a credit card is always required.
+ * checkout (`trial_period_days=14`) unless `input.withTrial === false`
+ * (a workspace that already used its one-time trial); a credit card is
+ * always required.
  *
  * Note — Stripe does not support real-time meter ingestion the way Polar
  * does. `ingestUsageEvent` is a no-op here and logs a warning; new
@@ -118,7 +120,9 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
           plan: input.plan,
         },
         subscription_data: {
-          trial_period_days: TRIAL_PERIOD_DAYS,
+          // Omit the trial for a workspace that already consumed it — the
+          // returning customer gets a paid subscription, no new trial.
+          ...(input.withTrial === false ? {} : { trial_period_days: TRIAL_PERIOD_DAYS }),
           metadata: {
             workspace_id: input.workspaceId,
             plan: input.plan,

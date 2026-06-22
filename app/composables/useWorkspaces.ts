@@ -26,6 +26,8 @@ export interface Workspace {
   github_installation_id: number | null
   plan: string
   created_at: string
+  /** When the workspace first started a free trial, or null if never. Gates re-trial. */
+  trial_consumed_at?: string | null
   workspace_members?: Array<{ role: string }>
   /** Overage billing preferences (per category toggles). */
   overage_settings?: Record<string, boolean> | null

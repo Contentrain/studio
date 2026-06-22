@@ -142,6 +142,12 @@ export default defineEventHandler(async (event) => {
         plan: result.plan ?? null,
         isActive: true,
       })
+      // First 'trialing' observation consumes the workspace's one-time
+      // trial, so a later re-checkout (after cancel/expiry) gets a paid
+      // checkout with no new trial. Idempotent (set once, never moved).
+      if ((result.subscriptionStatus ?? 'trialing') === 'trialing') {
+        await db.markWorkspaceTrialConsumed(result.workspaceId)
+      }
       if (result.plan) {
         await db.updateWorkspace('', result.workspaceId, { plan: result.plan })
       }
@@ -160,6 +166,11 @@ export default defineEventHandler(async (event) => {
       const existingAccount = await db.getActivePaymentAccount(result.workspaceId)
       const wasTrialing = (existingAccount?.subscription_status as string | undefined) === 'trialing'
       const becameActive = result.subscriptionStatus === 'active'
+      // Catch the trial here too, in case the first observation arrives as
+      // an update rather than a create. Idempotent.
+      if (result.subscriptionStatus === 'trialing') {
+        await db.markWorkspaceTrialConsumed(result.workspaceId)
+      }
       await db.upsertPaymentAccount({
         workspaceId: result.workspaceId,
         provider: plugin.key,

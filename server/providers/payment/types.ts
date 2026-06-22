@@ -17,6 +17,13 @@ export interface CheckoutInput {
   customerEmail: string
   successUrl: string
   cancelUrl: string
+  /**
+   * Whether to include the free trial. Defaults to `true` (omitted ⇒
+   * trial on). The checkout route sets it to `false` for workspaces that
+   * have already consumed their one-time trial so re-checkout is a paid
+   * subscription with no new trial.
+   */
+  withTrial?: boolean
 }
 
 export interface CheckoutResult {
