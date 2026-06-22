@@ -88,4 +88,32 @@ describe('billing checkout route', () => {
     })
     expect(createCheckoutSession).toHaveBeenCalledTimes(1)
   })
+
+  it('returns a clean 502 when the payment provider call fails (e.g. expired token)', async () => {
+    const createCheckoutSession = vi.fn().mockRejectedValue(
+      Object.assign(new Error('API error occurred: Status 401'), { statusCode: 401 }),
+    )
+
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getWorkspaceForUser: vi.fn().mockResolvedValue({
+        id: 'workspace-1',
+        slug: 'team',
+        name: 'Team',
+        trial_consumed_at: null,
+      }),
+      getActivePaymentAccount: vi.fn().mockResolvedValue(null),
+    }))
+    vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({ allowed: true, remaining: 1, retryAfterMs: 0 }))
+    vi.stubGlobal('usePaymentProvider', vi.fn().mockReturnValue({ createCheckoutSession }))
+    // Swallow the expected ops log so the failing-provider path stays quiet.
+    vi.stubGlobal('console', { ...console, error: vi.fn() })
+
+    const handler = (await import('../../server/api/billing/checkout.post')).default
+
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 502,
+      message: 'billing.provider_unavailable',
+    })
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1)
+  })
 })
