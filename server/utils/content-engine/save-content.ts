@@ -12,6 +12,7 @@ import {
   toObjectMap,
 } from './helpers'
 import { normalizeModelContentMedia } from '../media-rewrite'
+import { saveDocument } from './save-document'
 
 /**
  * Save content for a model (create or update entries).
@@ -42,6 +43,30 @@ export async function saveContent(
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
+
+  // Documents reach this route addressed as `{ [slug]: { ...fields, body? } }`
+  // (entryId = slug), mirroring the collection entry shape. They were never
+  // handled here — `shapeEntriesForSave` produced a slug-less entry and
+  // `planContentSave` threw "Document entries require a slug". Split the wrapper
+  // back into the (slug, frontmatter, body) tuple `saveDocument` expects, which
+  // reads + merges with the existing entry so a partial field edit doesn't drop
+  // untouched fields or the body. (The agent path calls `saveDocument` directly;
+  // only the manual content route reaches documents through here.)
+  if (modelDef.kind === 'document') {
+    const [first] = Object.entries(data)
+    if (!first) {
+      return {
+        branch: '',
+        commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+        diff: [],
+        validation: { valid: false, errors: [{ field: '', message: 'Document save requires an entry keyed by its slug', severity: 'error' as const }] },
+      }
+    }
+    const [slug, rawFields] = first
+    const docFields = (rawFields && typeof rawFields === 'object' && !Array.isArray(rawFields) ? rawFields : {}) as Record<string, unknown>
+    const { body, ...frontmatter } = docFields
+    return saveDocument(ctx, modelId, locale, slug, frontmatter, typeof body === 'string' ? body : '', userEmail, options)
+  }
 
   // Normalize media-storage paths (`media/...`) in image/video/file fields to
   // absolute delivery URLs before anything else, so the git-committed value is

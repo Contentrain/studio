@@ -126,6 +126,82 @@ describe('content engine', () => {
     expect(applyPlan).toHaveBeenCalled()
   })
 
+  const docModel = {
+    id: 'blog-post',
+    kind: 'document',
+    i18n: true,
+    domain: 'editorial',
+    fields: {
+      title: { type: 'string', required: true },
+      slug: { type: 'slug', required: true, unique: true },
+      author: { type: 'relation', model: 'author', required: true },
+      cover_image: { type: 'image' },
+    },
+  }
+  const docConfig = { domains: ['editorial'], locales: { default: 'en', supported: ['en'] }, stack: 'astro', version: 1, workflow: 'auto-merge' }
+  const existingDoc = `---\ntitle: Original Title\nauthor: esra-yilmaz\n---\nOriginal body paragraph.\n`
+
+  it('merges a partial document update with the existing entry (preserves body + untouched fields)', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/blog-post')) return JSON.stringify(docModel)
+        if (path.endsWith('config.json')) return JSON.stringify(docConfig)
+        if (path.includes('calm-interfaces') && path.endsWith('.md')) return existingDoc
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    // Agent edits ONLY the cover image — no title/author, empty body. Without
+    // the read-merge this failed "author is required" and wiped the body.
+    const result = await engine.saveDocument(
+      'blog-post', 'en', 'calm-interfaces',
+      { cover_image: 'https://cdn.example.com/x.webp' }, '', 'user@example.com',
+    )
+
+    expect(result.validation.valid).toBe(true)
+    expect(applyPlan).toHaveBeenCalled()
+    const changes = applyPlan.mock.calls[0]![0].changes as Array<{ path: string, content: string | null }>
+    const md = changes.find(c => c.path.endsWith('.md'))?.content ?? ''
+    expect(md).toContain('Original body paragraph.') // body preserved
+    expect(md).toContain('Original Title') // untouched field preserved
+    expect(md).toContain('x.webp') // new field applied
+  })
+
+  it('routes a manual document save ({ [slug]: fields }) to saveDocument and merges', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/blog-post')) return JSON.stringify(docModel)
+        if (path.endsWith('config.json')) return JSON.stringify(docConfig)
+        if (path.includes('calm-interfaces') && path.endsWith('.md')) return existingDoc
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    // The content route addresses a document as { [slug]: dirtyFields }. This
+    // used to fall through saveContent with no slug → "Document entries require
+    // a slug". Now it routes to saveDocument + merges.
+    const result = await engine.saveContent(
+      'blog-post', 'en',
+      { 'calm-interfaces': { title: 'Updated Title' } },
+      'user@example.com',
+    )
+
+    expect(result.validation.errors.find(e => e.message.toLowerCase().includes('slug'))).toBeUndefined()
+    expect(result.validation.valid).toBe(true)
+    expect(applyPlan).toHaveBeenCalled()
+    const changes = applyPlan.mock.calls[0]![0].changes as Array<{ path: string, content: string | null }>
+    const md = changes.find(c => c.path.endsWith('.md'))?.content ?? ''
+    expect(md).toContain('Updated Title') // applied
+    expect(md).toContain('esra-yilmaz') // author preserved via merge
+    expect(md).toContain('Original body paragraph.') // body preserved
+  })
+
   it('validates a new collection entry against a dynamic schema and proceeds to write', async () => {
     const model = {
       id: 'product',

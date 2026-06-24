@@ -1,5 +1,5 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, Vocabulary } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
+import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter, validateSlug } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
@@ -51,6 +51,30 @@ export async function saveDocument(
     frontmatter = rewriteEntryMedia(frontmatter, fields, ctx.projectId)
     body = rewriteMarkdownMedia(body, ctx.projectId)
   }
+
+  // Merge with the existing entry on disk so a partial update — a single
+  // changed frontmatter field, or an edit that doesn't touch the body —
+  // never drops untouched fields or wipes the body. This mirrors the
+  // read-then-merge behaviour `saveContent` already applies to collections
+  // and singletons; documents were the only kind missing it, which is why a
+  // cover-image-only agent edit lost the body and tripped "author is
+  // required", and a manual field edit hit "Required field is missing".
+  let existingFrontmatter: Record<string, unknown> = {}
+  let existingBody = ''
+  try {
+    const raw = await reader.readFile(resolveContentPath(ctx.pathCtx, modelDef, locale, safeSlug))
+    const parsed = parseMarkdownFrontmatter(raw)
+    existingFrontmatter = (parsed.frontmatter ?? {}) as Record<string, unknown>
+    existingBody = parsed.body ?? ''
+  }
+  catch { /* new document — nothing to merge */ }
+
+  const mergedFrontmatter = { ...existingFrontmatter, ...frontmatter }
+  // Preserve the existing body when the caller sends an empty one (the common
+  // case for a frontmatter-only edit). An intentional clear is rare and not
+  // worth the risk of silent content loss.
+  const mergedBody = body.trim() ? body : existingBody
+
   // Documents receive `slug` as a dedicated argument, not inside
   // `frontmatter` — but a schema may declare `slug` as a (required,
   // unique) field. Fold it into the validated object (the same shape
@@ -58,7 +82,7 @@ export async function saveDocument(
   // passes slug separately — as the tool contract intends — doesn't trip
   // a false "required field is missing" error. Schemas that don't model
   // slug are validated untouched.
-  const dataToValidate = 'slug' in fields ? { ...frontmatter, slug: safeSlug } : frontmatter
+  const dataToValidate = 'slug' in fields ? { ...mergedFrontmatter, slug: safeSlug } : mergedFrontmatter
   const validation = validateContent(dataToValidate, fields, modelId, locale, safeSlug)
   if (!validation.valid) {
     return {
@@ -80,7 +104,7 @@ export async function saveDocument(
   // into `entry.data` under a `body` key. It strips `body` out before
   // serializing frontmatter, so the final markdown contains frontmatter
   // fields (minus `body`) + the body content.
-  const entryData = { ...frontmatter, slug: safeSlug, body }
+  const entryData = { ...mergedFrontmatter, slug: safeSlug, body: mergedBody }
 
   let plan
   try {
