@@ -15,14 +15,14 @@ importers:
         specifier: ^3.1014.0
         version: 3.1014.0
       '@contentrain/mcp':
-        specifier: 1.5.1
-        version: 1.5.1(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
+        specifier: 1.6.0
+        version: 1.6.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
       '@contentrain/query':
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^6.1.0
+        version: 6.1.0
       '@contentrain/types':
-        specifier: 0.5.1
-        version: 0.5.1
+        specifier: 0.6.0
+        version: 0.6.0
       '@gitbeaker/rest':
         specifier: ^43.8.0
         version: 43.8.0
@@ -579,8 +579,8 @@ packages:
     resolution: {integrity: sha512-ZJoS8oSq2CAZEpc/YI9SulLrdiIyXeHb/OGqGrkUP6Q7YV+0ouNAa7GjqRdXeQPncHQIDz/jbCTlHScvYvO/gA==}
     engines: {node: '>=v18'}
 
-  '@contentrain/mcp@1.5.1':
-    resolution: {integrity: sha512-5OFqLZojU1FDvz6SNAHtttQebKddpeEjR3q2WDGPleIiSHSDIcUjbQrZ9k4k4KhO7ixkCAMIsoDK162wd2rZSw==}
+  '@contentrain/mcp@1.6.0':
+    resolution: {integrity: sha512-xj48ag8jbsL0RI6OmU18BBR9ioBoc4BVH++XTKiMKNtZlT9iwwzrLj8J6qltdueXo8V+enEhdg3J9FNIYCPE7g==}
     hasBin: true
     peerDependencies:
       '@gitbeaker/rest': '>=43.0.0'
@@ -591,12 +591,12 @@ packages:
       '@octokit/rest':
         optional: true
 
-  '@contentrain/query@6.0.0':
-    resolution: {integrity: sha512-qiTB/K4VPRO18TA1TlcEK1oPD7jEkPm6qYESyqnZLnE/heuBai2AS8xO3M32dflS89Zi3JXNaoIMI3c6hSHoQg==}
+  '@contentrain/query@6.1.0':
+    resolution: {integrity: sha512-+ARNRM0/LwUcAxOLWDBypXpA0kfPqdnHToeNidfj1tg3CoK3Qtoxfm6dIpUEPGG4lCGRQ61L+8VUOn0AIsj8+Q==}
     hasBin: true
 
-  '@contentrain/types@0.5.1':
-    resolution: {integrity: sha512-G8rlZFjtdSTVNVJVSsbO93pkmtVmxwXsRYSGmHK9q0Op672FEqSMHXNVCo+sF0+N/JYs+6kiW0GnsQOIV1v4Pg==}
+  '@contentrain/types@0.6.0':
+    resolution: {integrity: sha512-qXLMQoXsEKdBLWHQniXPEqZChraRLVVXCJMy/8Eyw4RvrfN9zy2jvGHoEBanc2nfQ60dgf7vL+wptgHhnshkzg==}
 
   '@conventional-changelog/git-client@2.6.0':
     resolution: {integrity: sha512-T+uPDciKf0/ioNNDpMGc8FDsehJClZP0yR3Q5MN6wE/Y/1QZ7F+80OgznnTCOlMEG4AV0LvH2UJi3C/nBnaBUg==}
@@ -7303,9 +7303,9 @@ snapshots:
       conventional-commits-parser: 6.3.0
       picocolors: 1.1.1
 
-  '@contentrain/mcp@1.5.1(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
+  '@contentrain/mcp@1.6.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
     dependencies:
-      '@contentrain/types': 0.5.1
+      '@contentrain/types': 0.6.0
       '@modelcontextprotocol/sdk': 1.27.1(zod@3.25.76)
       simple-git: 3.33.0
       typescript: 5.9.3
@@ -7320,11 +7320,11 @@ snapshots:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@contentrain/query@6.0.0':
+  '@contentrain/query@6.1.0':
     dependencies:
-      '@contentrain/types': 0.5.1
+      '@contentrain/types': 0.6.0
 
-  '@contentrain/types@0.5.1': {}
+  '@contentrain/types@0.6.0': {}
 
   '@conventional-changelog/git-client@2.6.0(conventional-commits-parser@6.3.0)':
     dependencies:
