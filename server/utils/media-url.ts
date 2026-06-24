@@ -1,6 +1,18 @@
 import type { MediaAsset } from '../providers/media'
 
 /**
+ * The per-project public media delivery base (no trailing slash):
+ * `{siteUrl}/api/cdn/v1/{projectId}`. The single seam for where media resolves
+ * — a CDN custom domain (ee/roadmap) would swap the host here. Also handed to
+ * the MCP Cloud loopback server (via the proxy) so external-agent writes
+ * normalize media to the same URLs Studio's own write path produces.
+ */
+export function publicMediaBase(projectId: string): string {
+  const base = String(useRuntimeConfig().public.siteUrl ?? '').replace(/\/+$/, '')
+  return `${base}/api/cdn/v1/${projectId}`
+}
+
+/**
  * Build the delivery URL for a stored media path.
  *
  * Resolves to the CDN delivery endpoint (`/api/cdn/v1/{projectId}/{path}`).
@@ -10,8 +22,7 @@ import type { MediaAsset } from '../providers/media'
  * Callers store the relative path as the SSOT; this turns it into a URL.
  */
 export function toDeliveryUrl(projectId: string, path: string): string {
-  const base = String(useRuntimeConfig().public.siteUrl ?? '').replace(/\/+$/, '')
-  return `${base}/api/cdn/v1/${projectId}/${path}`
+  return `${publicMediaBase(projectId)}/${path}`
 }
 
 /**
