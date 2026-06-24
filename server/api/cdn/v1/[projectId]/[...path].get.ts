@@ -1,4 +1,4 @@
-import { trackEnterpriseCdnUsage } from '../../../../utils/enterprise'
+import { trackEnterpriseCdnUsage, trackEnterprisePublicCdnUsage } from '../../../../utils/enterprise'
 
 /**
  * CDN delivery endpoint — serves content + media from CDN storage.
@@ -123,11 +123,15 @@ export default defineEventHandler(async (event) => {
   if (keyId)
     setResponseHeader(event, 'X-Contentrain-Key', keyId.substring(0, 8))
 
-  // Track CDN usage (fire-and-forget, Business+ feature). Per-key only —
-  // keyless public-media requests have no key to attribute and are heavily
-  // edge-cached; project-level public-bandwidth metering is a follow-up.
-  if (keyId && hasFeature(plan, 'cdn.metering'))
-    void trackEnterpriseCdnUsage(projectId, keyId, result.data.length)
+  // Track CDN usage (fire-and-forget, Business+ feature). Keyed requests are
+  // attributed to the key; keyless public-media requests land in the project's
+  // NULL-key bucket so public bandwidth still counts toward project totals.
+  if (hasFeature(plan, 'cdn.metering')) {
+    if (keyId)
+      void trackEnterpriseCdnUsage(projectId, keyId, result.data.length)
+    else
+      void trackEnterprisePublicCdnUsage(projectId, result.data.length)
+  }
 
   // Return binary data as-is, JSON/text as string
   if (result.contentType === 'application/json' || result.contentType.startsWith('text/'))

@@ -17,6 +17,18 @@ export async function trackCDNUsage(
 }
 
 /**
+ * Track keyless public-media delivery. No API key to attribute, so usage lands
+ * in the project-level NULL-key bucket (still counted in project totals).
+ */
+export async function trackPublicCDNUsage(
+  projectId: string,
+  responseSizeBytes: number,
+): Promise<void> {
+  const today = new Date().toISOString().substring(0, 10)
+  await useDatabaseProvider().incrementPublicCDNUsage(projectId, today, 1, responseSizeBytes)
+}
+
+/**
  * Get monthly usage for a project.
  */
 export async function getMonthlyUsage(
