@@ -204,6 +204,76 @@ describe('CDN route integration', () => {
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'ETag', 'etag-binary')
   })
 
+  it('serves a media binary without a key when cdn_public_media is enabled', async () => {
+    const event = {} as never
+    const binary = Buffer.from([1, 2, 3, 4])
+    const setResponseHeader = vi.fn()
+    const validateCDNKey = vi.fn()
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'projectId') return 'project-1'
+      if (key === 'path') return 'media/original/hero.webp'
+      return undefined
+    }))
+    vi.stubGlobal('getHeader', vi.fn(() => undefined)) // no Authorization → keyless
+    vi.stubGlobal('setResponseHeader', setResponseHeader)
+    vi.stubGlobal('validateCDNKey', validateCDNKey)
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({
+      getObject: vi.fn().mockResolvedValue({
+        etag: 'etag-pub',
+        contentType: 'image/webp',
+        data: binary,
+      }),
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: true }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
+    }))
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler(event)).resolves.toEqual(binary)
+    // No key → no key-scoped response header was emitted.
+    expect(validateCDNKey).not.toHaveBeenCalled()
+    expect(setResponseHeader).not.toHaveBeenCalledWith(event, 'X-Contentrain-Key', expect.anything())
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Content-Type', 'image/webp')
+  })
+
+  it('requires a key for a keyless content (non-media) request', async () => {
+    const event = {} as never
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'projectId') return 'project-1'
+      if (key === 'path') return 'content/posts/en.json'
+      return undefined
+    }))
+    vi.stubGlobal('getHeader', vi.fn(() => undefined))
+    vi.stubGlobal('validateCDNKey', vi.fn().mockRejectedValue({ statusCode: 401 }))
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler(event)).rejects.toMatchObject({ statusCode: 401 })
+  })
+
+  it('requires a key for media when cdn_public_media is disabled', async () => {
+    const event = {} as never
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'projectId') return 'project-1'
+      if (key === 'path') return 'media/original/hero.webp'
+      return undefined
+    }))
+    vi.stubGlobal('getHeader', vi.fn(() => undefined))
+    vi.stubGlobal('validateCDNKey', vi.fn().mockRejectedValue({ statusCode: 401 }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: false }),
+    }))
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler(event)).rejects.toMatchObject({ statusCode: 401 })
+  })
+
   it('rejects enabling CDN on plans without the delivery feature', async () => {
     const event = { context: {} } as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {

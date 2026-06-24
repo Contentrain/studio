@@ -643,6 +643,7 @@ export async function executeToolWithAutoMerge(
           id: a.id,
           filename: a.filename,
           path: a.originalPath,
+          url: toDeliveryUrl(projectId, a.originalPath),
           alt: a.alt,
           tags: a.tags,
           dimensions: `${a.width}x${a.height}`,
@@ -714,6 +715,7 @@ export async function executeToolWithAutoMerge(
         result = {
           id: asset.id,
           path: asset.originalPath,
+          url: toDeliveryUrl(projectId, asset.originalPath),
           filename: asset.filename,
           dimensions: `${asset.width}x${asset.height}`,
           variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
@@ -736,7 +738,7 @@ export async function executeToolWithAutoMerge(
           result = { error: agentMessage('media.asset_not_found') }
           break
         }
-        result = asset
+        result = withMediaUrls(projectId, asset)
         break
       }
 

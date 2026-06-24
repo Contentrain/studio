@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { t } = useContent()
+const route = useRoute()
 
 const props = defineProps<{
   modelValue: string | null
@@ -15,6 +16,18 @@ const isImage = computed(() => {
   return /\.(jpg|jpeg|png|gif|webp|avif|svg)$/i.test(path)
 })
 
+// A stored media value is a relative storage path (`media/...`). Resolve it to
+// the public CDN delivery URL (same origin) so the preview renders; external
+// URLs and absolute paths are shown as-is.
+const previewSrc = computed(() => {
+  const value = props.modelValue ?? ''
+  if (value.startsWith('media/')) {
+    const projectId = route.params.projectId
+    return projectId ? `/api/cdn/v1/${projectId}/${value}` : value
+  }
+  return value
+})
+
 function clearValue() {
   emit('update:modelValue', null)
 }
@@ -26,33 +39,20 @@ function clearValue() {
     <div v-if="modelValue" class="group relative">
       <div class="flex items-center gap-3 rounded-lg border border-secondary-200 p-2 dark:border-secondary-700">
         <div class="flex size-12 shrink-0 items-center justify-center rounded bg-secondary-50 dark:bg-secondary-900">
-          <NuxtImg
-            v-if="isImage"
-            :src="modelValue"
-            :alt="modelValue"
-            class="size-full rounded object-cover"
-          />
+          <NuxtImg v-if="isImage" :src="previewSrc" :alt="modelValue" class="size-full rounded object-cover" />
           <span v-else class="icon-[annon--file] size-5 text-secondary-300" aria-hidden="true" />
         </div>
         <div class="min-w-0 flex-1">
           <code class="block truncate text-xs text-heading dark:text-secondary-100">{{ modelValue }}</code>
         </div>
-        <AtomsIconButton
-          icon="icon-[annon--cross]"
-          :label="t('common.clear')"
-          size="sm"
-          @click="clearValue"
-        />
+        <AtomsIconButton icon="icon-[annon--cross]" :label="t('common.clear')" size="sm" @click="clearValue" />
       </div>
     </div>
 
     <!-- Input (manual path or URL) -->
     <AtomsFormInput
-      :model-value="String(modelValue ?? '')"
-      type="url"
-      :placeholder="t('media.path_placeholder')"
-      :description="t('media.path_description')"
-      @update:model-value="emit('update:modelValue', $event || null)"
+      :model-value="String(modelValue ?? '')" type="url" :placeholder="t('media.path_placeholder')"
+      :description="t('media.path_description')" @update:model-value="emit('update:modelValue', $event || null)"
     />
   </div>
 </template>
