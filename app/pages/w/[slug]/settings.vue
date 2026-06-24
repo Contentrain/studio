@@ -12,6 +12,14 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = use
 const { isOwnerOrAdmin } = useWorkspaceRole()
 const { t } = useContent()
 
+// Workspace settings — prefix the workspace name when available so the tab is
+// distinguishable from the account-level /settings page.
+useHead({
+  title: () => activeWorkspace.value?.name
+    ? `${activeWorkspace.value.name} · ${t('common.settings')}`
+    : t('common.settings'),
+})
+
 // AI Keys tab hosts BYOA key management — backed by runEnterpriseRoute
 // on the server and gated by `ai.byoa` (requires_ee). Hide in Community
 // so users don't see a tab that 403s. MCP Cloud stays visible even in

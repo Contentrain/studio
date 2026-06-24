@@ -6,6 +6,8 @@ definePageMeta({
 const { signInWithOAuth, signInWithMagicLink } = useAuth()
 const { t } = useContent()
 
+useHead({ title: () => t('auth.sign_in_title') })
+
 const showEmailForm = ref(false)
 const magicLinkSent = ref(false)
 const sentEmail = ref('')

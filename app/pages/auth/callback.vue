@@ -8,6 +8,8 @@ const router = useRouter()
 const route = useRoute()
 const error = ref('')
 
+useHead({ title: () => t('auth.signing_in') })
+
 onMounted(async () => {
   try {
     const code = route.query.code as string | undefined
