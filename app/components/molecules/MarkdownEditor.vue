@@ -106,10 +106,15 @@ const VIEWS: Array<{ id: View, label: string }> = [
 ]
 
 const TOOL_CLASS = 'flex h-7 min-w-7 items-center justify-center rounded text-muted transition-colors hover:bg-secondary-200 hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-700 dark:hover:text-secondary-100'
+
+const fullscreen = ref(false)
 </script>
 
 <template>
-  <div class="flex flex-col overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-800">
+  <div
+    class="flex flex-col overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-800"
+    :class="fullscreen ? 'fixed inset-0 z-50 rounded-none border-0 bg-white dark:bg-secondary-950' : ''"
+  >
     <!-- Toolbar -->
     <div
       class="flex flex-wrap items-center gap-0.5 border-b border-secondary-200 bg-secondary-50 px-1.5 py-1 dark:border-secondary-800 dark:bg-secondary-900"
@@ -120,6 +125,9 @@ const TOOL_CLASS = 'flex h-7 min-w-7 items-center justify-center rounded text-mu
         </button>
         <button type="button" :title="t('editor.italic')" :class="TOOL_CLASS" @click="wrap('*')">
           <span class="icon-[annon--text-italic] size-4" aria-hidden="true" />
+        </button>
+        <button type="button" :title="t('editor.strikethrough')" :class="TOOL_CLASS" @click="wrap('~~')">
+          <span class="icon-[annon--text-strikethrough] size-4" aria-hidden="true" />
         </button>
         <button type="button" :title="t('editor.inline_code')" :class="TOOL_CLASS" @click="wrap('`')">
           <span class="icon-[annon--code] size-4" aria-hidden="true" />
@@ -191,24 +199,32 @@ const TOOL_CLASS = 'flex h-7 min-w-7 items-center justify-center rounded text-mu
           {{ t(v.label) }}
         </button>
       </div>
+
+      <button
+        type="button" :title="fullscreen ? t('editor.exit_fullscreen') : t('editor.fullscreen')"
+        :class="[TOOL_CLASS, 'ml-1']" @click="fullscreen = !fullscreen"
+      >
+        <span :class="fullscreen ? 'icon-[annon--minimize]' : 'icon-[annon--maximize]'" class="size-4" aria-hidden="true" />
+      </button>
     </div>
 
     <!-- Body -->
     <div
       class="flex min-h-0"
-      :class="view === 'split' ? 'divide-x divide-secondary-200 dark:divide-secondary-800' : ''"
+      :class="[fullscreen ? 'flex-1' : '', view === 'split' ? 'divide-x divide-secondary-200 dark:divide-secondary-800' : '']"
     >
       <textarea
         v-if="view !== 'preview'" ref="textareaRef" :value="modelValue" :placeholder="placeholder"
         :disabled="disabled" :rows="minRows"
         class="w-full resize-y bg-white px-3 py-2 font-mono text-[13px] leading-relaxed text-secondary-900 placeholder:text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary-950 dark:text-secondary-100"
-        :class="view === 'split' ? 'w-1/2' : ''"
+        :class="[view === 'split' ? 'w-1/2' : '', fullscreen ? 'h-full resize-none' : '']"
         @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
+        @keydown.escape="fullscreen && (fullscreen = false)"
       />
       <div
         v-if="view !== 'edit'"
         class="prose prose-sm prose-secondary max-w-none overflow-y-auto bg-white px-3 py-2 dark:prose-invert dark:bg-secondary-950"
-        :class="view === 'split' ? 'w-1/2' : 'w-full'"
+        :class="[view === 'split' ? 'w-1/2' : 'w-full', fullscreen ? 'h-full' : '']"
       >
         <div v-if="rendered" v-html="rendered" />
         <p v-else class="text-sm text-muted">
