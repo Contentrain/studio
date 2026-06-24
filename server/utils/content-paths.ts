@@ -62,6 +62,19 @@ export function resolveContentPath(
     return prefixed(ctx.contentRoot, resolved)
   }
 
+  // Standard documents live UNDER the model id —
+  // `.contentrain/content/{domain}/{modelId}/{slug}/{locale}.md` (i18n) or
+  // `.../{slug}.md` — matching how `@contentrain/mcp` planContentSave writes
+  // them. `PATH_PATTERNS.content.document` omits `{modelId}`, so resolving via
+  // the generic pattern below produced a path that doesn't exist on disk (a
+  // 404 on read). Build the model-id path directly.
+  if (model.kind === 'document') {
+    const base = `${CONTENTRAIN_DIR}/content/${model.domain}/${model.id}`
+    if (model.i18n && slug) return prefixed(ctx.contentRoot, `${base}/${slug}/${locale}.md`)
+    if (slug) return prefixed(ctx.contentRoot, `${base}/${slug}.md`)
+    return prefixed(ctx.contentRoot, base)
+  }
+
   // Standard path from PATH_PATTERNS
   const pattern = PATH_PATTERNS.content[model.kind as keyof typeof PATH_PATTERNS.content]
     ?? PATH_PATTERNS.content.collection

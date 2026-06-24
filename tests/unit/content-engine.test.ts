@@ -147,7 +147,10 @@ describe('content engine', () => {
       readFile: vi.fn(async (path: string) => {
         if (path.includes('/models/blog-post')) return JSON.stringify(docModel)
         if (path.endsWith('config.json')) return JSON.stringify(docConfig)
-        if (path.includes('calm-interfaces') && path.endsWith('.md')) return existingDoc
+        // Require the {modelId} segment — documents live at
+        // .contentrain/content/{domain}/{modelId}/{slug}/{locale}.md, so a
+        // path missing /blog-post/ (the old PATH_PATTERNS bug) must 404.
+        if (path.includes('/blog-post/') && path.includes('calm-interfaces') && path.endsWith('.md')) return existingDoc
         throw new Error(`not found: ${path}`)
       }),
       applyPlan,
@@ -176,7 +179,10 @@ describe('content engine', () => {
       readFile: vi.fn(async (path: string) => {
         if (path.includes('/models/blog-post')) return JSON.stringify(docModel)
         if (path.endsWith('config.json')) return JSON.stringify(docConfig)
-        if (path.includes('calm-interfaces') && path.endsWith('.md')) return existingDoc
+        // Require the {modelId} segment — documents live at
+        // .contentrain/content/{domain}/{modelId}/{slug}/{locale}.md, so a
+        // path missing /blog-post/ (the old PATH_PATTERNS bug) must 404.
+        if (path.includes('/blog-post/') && path.includes('calm-interfaces') && path.endsWith('.md')) return existingDoc
         throw new Error(`not found: ${path}`)
       }),
       applyPlan,

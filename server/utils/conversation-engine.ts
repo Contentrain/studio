@@ -709,7 +709,10 @@ export async function executeToolWithAutoMerge(
           alt: params.alt as string | undefined,
           tags: params.tags as string[] | undefined,
           variants,
-          uploadedBy: userEmail,
+          // uploaded_by is a uuid FK to profiles(id) — pass the user id, not the
+          // email (the UI upload routes pass session.user.id). Passing the email
+          // tripped "invalid input syntax for type uuid".
+          uploadedBy: userId,
           source: 'agent',
         })
         result = {
