@@ -5,7 +5,7 @@ const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'tes
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/image', ...(isTestEnv ? [] : ['nuxt-mcp-dev'])],
+  modules: ['@nuxt/eslint', '@nuxt/image', ...(isTestEnv ? [] : ['@sentry/nuxt/module', 'nuxt-mcp-dev'])],
   ssr: false,
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],
@@ -65,6 +65,16 @@ export default defineNuxtConfig({
         edition: '', // NUXT_PUBLIC_DEPLOYMENT_EDITION — ee | agpl
         billingMode: '', // NUXT_PUBLIC_DEPLOYMENT_BILLING_MODE — polar | stripe | flat | off
       },
+      sentry: {
+        // Client + server SDK config is driven entirely from here so Sentry
+        // stays env-configurable per deployment. An empty DSN disables Sentry
+        // completely (the SDK no-ops) — this is the Community/self-host default,
+        // so a self-hoster's errors never leave their own infrastructure.
+        dsn: '', // NUXT_PUBLIC_SENTRY_DSN
+        environment: '', // NUXT_PUBLIC_SENTRY_ENVIRONMENT — development | staging | production
+        release: '', // NUXT_PUBLIC_SENTRY_RELEASE — optional build/release identifier
+        tracesSampleRate: 0.1, // NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE — perf-tracing sample (errors are always captured at 100%)
+      },
     },
     deploymentProfile: '', // NUXT_DEPLOYMENT_PROFILE — 'managed' | 'dedicated' | 'on-premise' | 'community' (unset = auto-detect)
     emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
@@ -73,6 +83,11 @@ export default defineNuxtConfig({
 
   alias: {
     '#contentrain': resolve(__dirname, '.contentrain/client/index.mjs'),
+  },
+  sourcemap: {
+    // Emit client source maps for Sentry upload without referencing them from
+    // the shipped bundle.
+    client: 'hidden',
   },
   experimental: {
     viewTransition: true,
@@ -89,6 +104,26 @@ export default defineNuxtConfig({
   eslint: {
     config: {
       stylistic: true,
+    },
+  },
+
+  // Sentry build-time options (module). Runtime behaviour (DSN, environment,
+  // sample rate) lives in runtimeConfig.public.sentry and is read by the
+  // sentry.client.config.ts / sentry.server.config.ts entry files.
+  sentry: {
+    // Inject the server SDK at the top of the Nitro server entry so error +
+    // performance instrumentation works with the plain
+    // `node .output/server/index.mjs` start command (Railway) — no --import
+    // flag or start-command change required.
+    autoInjectServerSentry: 'top-level-import',
+    // Source-map upload is build-time only and strictly opt-in: it runs solely
+    // when SENTRY_AUTH_TOKEN (+ org/project) are present, so local builds and
+    // forked CI (which never receive the secret) don't fail.
+    sourceMapsUploadOptions: {
+      enabled: Boolean(process.env.SENTRY_AUTH_TOKEN),
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
     },
   },
 })
