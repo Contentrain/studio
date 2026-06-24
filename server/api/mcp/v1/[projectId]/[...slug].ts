@@ -31,6 +31,7 @@ import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
 import { validateMcpCloudKey } from '~~/server/utils/mcp-cloud-keys'
 import { getInternalMcpUrl } from '~~/server/utils/mcp-cloud-runtime'
+import { publicMediaBase } from '../../../../utils/media-url'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 import { checkRateLimit } from '~~/server/utils/rate-limit'
 import { getPlanLimit, getWorkspacePlan, hasFeature } from '~~/server/utils/license'
@@ -69,6 +70,7 @@ const STUDIO_HEADERS = [
   'x-cr-repo-owner',
   'x-cr-repo-name',
   'x-cr-content-root',
+  'x-cr-media-base',
 ] as const
 
 /**
@@ -246,6 +248,9 @@ export default defineEventHandler(async (event) => {
       'x-cr-repo-owner': owner,
       'x-cr-repo-name': repoName,
       'x-cr-content-root': (project.content_root as string | null) ?? '',
+      // Public media delivery base — lets MCP's content-write path normalize
+      // `media/...` references to absolute URLs (provider.mediaBaseUrl).
+      'x-cr-media-base': publicMediaBase(keyData.projectId),
       // h3's proxyRequest strips the client's `accept` header (it's in h3's
       // ignoredHeaders set). The MCP streamable-HTTP transport rejects any
       // request whose Accept doesn't include BOTH `application/json` and

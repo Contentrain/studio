@@ -1,6 +1,6 @@
 import type { EnterpriseBridge } from '../../server/utils/enterprise'
 import { createCloudflareR2Provider } from '../cdn/cloudflare-cdn'
-import { trackCDNUsage } from '../cdn/cdn-usage'
+import { trackCDNUsage, trackPublicCDNUsage } from '../cdn/cdn-usage'
 import { createSharpMediaProvider } from '../media/sharp-processor'
 import { normalizeProjectMemberAccess } from './access'
 import { createAiKeysBridge, resolveEnterpriseChatApiKey } from './ai-keys'
@@ -14,6 +14,7 @@ export function createEnterpriseBridge(): EnterpriseBridge {
     createCDNProvider: createCloudflareR2Provider,
     createMediaProvider: createSharpMediaProvider,
     trackCDNUsage,
+    trackPublicCDNUsage,
     emitWebhookEvent,
     processWebhookRetries,
     normalizeProjectMemberAccess,

@@ -27,6 +27,7 @@ import {
 import { clearServerSession, getServerSession, setAuthState, setServerSession, validateAuthState } from '../../server/utils/session'
 import { requireAuth } from '../../server/utils/auth'
 import { getClientIp } from '../../server/utils/form-types'
+import { extractMediaStoragePath } from '../../server/utils/media-rewrite'
 
 const runtimeConfig = {
   sessionSecret: 'test-session-secret-32-characters-min',
@@ -84,6 +85,7 @@ beforeEach(() => {
   vi.stubGlobal('useMediaProvider', useMediaProvider)
 
   vi.stubGlobal('getClientIp', getClientIp)
+  vi.stubGlobal('extractMediaStoragePath', extractMediaStoragePath)
   vi.stubGlobal('validateConfig', vi.fn().mockReturnValue([]))
 
   vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({

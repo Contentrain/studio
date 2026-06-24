@@ -169,6 +169,15 @@ export interface GitAppService {
 // ─── GitProvider: RepoProvider + Studio extensions ───
 
 export interface GitProvider extends RepoProvider {
+  /**
+   * Per-project public media delivery base (`{siteUrl}/api/cdn/v1/{projectId}`),
+   * set only for MCP Cloud loopback providers. The MCP content-write path reads
+   * it to normalize `media/...` references to the same absolute delivery URLs
+   * Studio's own write path produces, so external-agent writes render anywhere.
+   * Undefined for local/CLI providers (no CDN), where media stays a path.
+   */
+  mediaBaseUrl?: string
+
   /** Full repo tree in one call. Used by brain-cache for SHA-level change detection. */
   getTree: (ref?: string) => Promise<TreeEntry[]>
 
@@ -197,6 +206,8 @@ export interface StudioGitHubInput {
   owner: string
   repo: string
   contentRoot?: string
+  /** Public media delivery base for MCP Cloud writes (see GitProvider.mediaBaseUrl). */
+  mediaBaseUrl?: string
 }
 
 /**
@@ -227,6 +238,7 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
   const extensions = createGitHubExtensions(octokit, opts.owner, opts.repo)
 
   return {
+    mediaBaseUrl: opts.mediaBaseUrl,
     get capabilities() { return core.capabilities },
     readFile: (path: string, ref?: string) => core.readFile(path, ref),
     listDirectory: (path: string, ref?: string) => core.listDirectory(path, ref),

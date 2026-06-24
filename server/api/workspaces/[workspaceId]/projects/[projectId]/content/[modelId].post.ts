@@ -69,9 +69,12 @@ export default defineEventHandler(async (event) => {
       for (const [entryId, entry] of Object.entries(body.data)) {
         if (typeof entry !== 'object' || !entry) continue
         for (const [fieldId, value] of Object.entries(entry as Record<string, unknown>)) {
-          if (typeof value === 'string' && value.startsWith('media/')) {
-            // Find asset by path
-            const { assets } = await mediaProvider.listAssets(projectId, { search: value.split('/').pop(), limit: 1 })
+          // Match both a bare `media/...` path and an absolute delivery URL, so
+          // tracking still resolves the asset after media is normalized to URLs.
+          const mediaPath = extractMediaStoragePath(value)
+          if (mediaPath) {
+            // Find asset by filename
+            const { assets } = await mediaProvider.listAssets(projectId, { search: mediaPath.split('/').pop(), limit: 1 })
             if (assets.length > 0) {
               await db.trackMediaUsage({
                 asset_id: assets[0]!.id,

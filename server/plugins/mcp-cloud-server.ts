@@ -33,6 +33,7 @@ const HEADER_INSTALLATION_ID = 'x-cr-installation-id'
 const HEADER_REPO_OWNER = 'x-cr-repo-owner'
 const HEADER_REPO_NAME = 'x-cr-repo-name'
 const HEADER_CONTENT_ROOT = 'x-cr-content-root'
+const HEADER_MEDIA_BASE = 'x-cr-media-base'
 
 export default defineNitroPlugin((nitroApp) => {
   // Fire-and-forget: we do not want to block Nitro's startup on an
@@ -73,12 +74,20 @@ async function bootInternalMcpServer(): Promise<void> {
         throw new Error('MCP Cloud: invalid installation id')
       }
 
+      // Public media delivery base (proxy-injected). The MCP content-write path
+      // reads `provider.mediaBaseUrl` to normalize `media/...` references to the
+      // same absolute URLs Studio's own write path produces.
+      const mediaBase = headers[HEADER_MEDIA_BASE]
+
       return createStudioGitProvider({
         installationId,
         owner,
         repo,
         contentRoot: typeof contentRoot === 'string' && contentRoot.length > 0
           ? contentRoot
+          : undefined,
+        mediaBaseUrl: typeof mediaBase === 'string' && mediaBase.length > 0
+          ? mediaBase
           : undefined,
       })
     },

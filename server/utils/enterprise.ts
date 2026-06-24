@@ -56,6 +56,7 @@ export interface EnterpriseBridge {
   }) => CDNProvider
   createMediaProvider?: (config: { cdn: CDNProvider, db: DatabaseProvider }) => MediaProvider
   trackCDNUsage?: (projectId: string, apiKeyId: string, responseSizeBytes: number) => Promise<void>
+  trackPublicCDNUsage?: (projectId: string, responseSizeBytes: number) => Promise<void>
   emitWebhookEvent?: (projectId: string, workspaceId: string, event: string, data: Record<string, unknown>) => Promise<void>
   processWebhookRetries?: () => Promise<number>
   normalizeProjectMemberAccess?: (input: {
@@ -166,6 +167,14 @@ export async function trackEnterpriseCdnUsage(
 ): Promise<void> {
   const bridge = await loadEnterpriseBridge()
   await bridge?.trackCDNUsage?.(projectId, apiKeyId, responseSizeBytes)
+}
+
+export async function trackEnterprisePublicCdnUsage(
+  projectId: string,
+  responseSizeBytes: number,
+): Promise<void> {
+  const bridge = await loadEnterpriseBridge()
+  await bridge?.trackPublicCDNUsage?.(projectId, responseSizeBytes)
 }
 
 export async function emitEnterpriseWebhookEvent(

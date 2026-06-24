@@ -4,6 +4,7 @@ import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch } from './helpers'
+import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 
 /**
  * Save a document entry (markdown with frontmatter).
@@ -42,6 +43,14 @@ export async function saveDocument(
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
 
   const fields = modelDef.fields ?? {}
+
+  // Normalize media-storage paths to absolute delivery URLs in both the
+  // frontmatter (schema-driven) and the markdown body (image/link targets), so
+  // the committed document carries ready-to-use URLs for any consumer.
+  if (ctx.projectId) {
+    frontmatter = rewriteEntryMedia(frontmatter, fields, ctx.projectId)
+    body = rewriteMarkdownMedia(body, ctx.projectId)
+  }
   // Documents receive `slug` as a dedicated argument, not inside
   // `frontmatter` — but a schema may declare `slug` as a (required,
   // unique) field. Fold it into the validated object (the same shape

@@ -14,6 +14,7 @@ import { parseMarkdownFrontmatter } from '@contentrain/types'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import { Marked } from 'marked'
+import { normalizeModelContentMedia, rewriteEntryMedia, rewriteMarkdownMedia } from './media-rewrite'
 
 // Configure marked for safe HTML output — escape user HTML input
 const safeMarked = new Marked({
@@ -294,6 +295,10 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
               content = filtered
             }
 
+            // Safety net: rewrite any relative media paths that reached the
+            // published artifact (Studio writes already normalize at save).
+            content = normalizeModelContentMedia(model, content, projectId)
+
             const outputPath = `content/${model.id}/${effectiveLocale === 'data' ? 'data' : locale}.json`
             const data = JSON.stringify(content, null, 2)
             await cdn.putObject(projectId, outputPath, data, 'application/json')
@@ -489,21 +494,27 @@ async function buildDocumentModel(
       }
       catch { /* no meta = include */ }
 
-      // Render HTML
-      const html = safeMarked.parse(body, { async: false }) as string
+      // Rewrite media paths → delivery URLs in the published artifact (git
+      // keeps the relative paths). Frontmatter via the model schema; body via
+      // markdown src/link targets. HTML is rendered from the rewritten body so
+      // its <img src> inherits the absolute URLs.
+      const rewrittenFrontmatter = model.fields
+        ? rewriteEntryMedia({ ...frontmatter, slug }, model.fields, projectId)
+        : { ...frontmatter, slug }
+      const rewrittenBody = rewriteMarkdownMedia(body, projectId)
+      const html = safeMarked.parse(rewrittenBody, { async: false }) as string
 
       // Upload individual document
       const cdnLocale = model.i18n ? locale : 'data'
       const docPath = `documents/${model.id}/${slug}/${cdnLocale}.json`
-      const docData = JSON.stringify({ frontmatter: { ...frontmatter, slug }, body, html }, null, 2)
+      const docData = JSON.stringify({ frontmatter: rewrittenFrontmatter, body: rewrittenBody, html }, null, 2)
       await cdn.putObject(projectId, docPath, docData, 'application/json')
       uploadedPaths.add(docPath)
 
       // Add to index
       indexEntries.push({
-        slug,
-        ...frontmatter,
-        excerpt: body.substring(0, 200).replace(/\n/g, ' ').trim(),
+        ...rewrittenFrontmatter,
+        excerpt: rewrittenBody.substring(0, 200).replace(/\n/g, ' ').trim(),
       })
     }
     catch { /* skip invalid document */ }

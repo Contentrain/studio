@@ -599,6 +599,8 @@ export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
 
   incrementCDNUsage: (projectId: string, apiKeyId: string, periodStart: string, requestCount: number, bandwidthBytes: number) => Promise<void>
+  /** Accumulate keyless (public-media) CDN usage into the project-level NULL-key bucket. */
+  incrementPublicCDNUsage: (projectId: string, periodStart: string, requestCount: number, bandwidthBytes: number) => Promise<void>
   getMonthlyProjectCDNUsage: (projectId: string, startDate: string, endDate: string) => Promise<{ requestCount: number, bandwidthBytes: number }>
 
   // ═══════════════════════════════════════════════════

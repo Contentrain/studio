@@ -34,6 +34,19 @@ const isObject = computed(() => typeof props.value === 'object' && props.value !
 const isRichText = computed(() => ['markdown', 'richtext', 'text', 'code'].includes(props.type))
 const isImage = computed(() => props.type === 'image')
 
+const route = useRoute()
+// A media field value is either a relative storage path (`media/...`, resolved
+// to the public CDN delivery URL on the same origin) or an already-absolute URL
+// (used as-is). Either way it renders without extra integration.
+const mediaSrc = computed(() => {
+  const v = String(displayValue.value ?? '')
+  if (/^media\//.test(v)) {
+    const projectId = route.params.projectId
+    return projectId ? `/api/cdn/v1/${projectId}/${v}` : v
+  }
+  return v
+})
+
 const formattedDate = computed(() => {
   if (!isDate.value || !displayValue.value) return ''
   const d = new Date(String(displayValue.value))
@@ -97,8 +110,8 @@ const ratingStars = computed(() => {
     <div v-else-if="isImage && displayValue" class="flex items-center gap-2">
       <div class="size-8 shrink-0 overflow-hidden rounded border border-secondary-200 bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-800">
         <NuxtImg
-          v-if="String(displayValue).startsWith('media/')"
-          :src="String(displayValue)"
+          v-if="mediaSrc"
+          :src="mediaSrc"
           :alt="String(displayValue).split('/').pop() ?? ''"
           class="size-full object-cover"
           loading="lazy"

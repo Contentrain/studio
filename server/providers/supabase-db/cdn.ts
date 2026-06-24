@@ -18,6 +18,7 @@ type CDNMethods = Pick<
   | 'updateCDNBuild'
   | 'listCDNBuilds'
   | 'incrementCDNUsage'
+  | 'incrementPublicCDNUsage'
   | 'getMonthlyProjectCDNUsage'
   | 'validateConversationKeyHash'
   | 'updateConversationKeyLastUsed'
@@ -191,6 +192,19 @@ export function cdnMethods(): CDNMethods {
       })
       if (error) {
         throw createError({ statusCode: 500, message: `CDN usage increment failed: ${error.message}` })
+      }
+    },
+
+    async incrementPublicCDNUsage(projectId, periodStart, requestCount, bandwidthBytes) {
+      const admin = getAdmin()
+      const { error } = await admin.rpc('increment_cdn_usage_public', {
+        p_project_id: projectId,
+        p_period_start: periodStart,
+        p_request_count: requestCount,
+        p_bandwidth_bytes: bandwidthBytes,
+      })
+      if (error) {
+        throw createError({ statusCode: 500, message: `Public CDN usage increment failed: ${error.message}` })
       }
     },
 
