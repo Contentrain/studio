@@ -277,6 +277,7 @@ function buildArchitectureSection(): string {
     agentPrompt('architecture.localization'),
     agentPrompt('architecture.system_fields'),
     agentPrompt('architecture.storage_format'),
+    agentPrompt('architecture.markdown_authoring'),
   ].join('\n\n')
 }
 
