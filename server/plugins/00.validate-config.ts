@@ -4,6 +4,20 @@
  * Runs once when Nitro starts — before any route is served.
  * Fails fast with a clear error if required secrets are missing or invalid.
  */
+
+/** Decode the `role` claim from a Supabase JWT (anon / service_role). Returns null if not a decodable JWT. */
+function decodeJwtRole(token: string): string | null {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+    const role = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')).role
+    return typeof role === 'string' ? role : null
+  }
+  catch {
+    return null
+  }
+}
+
 export default defineNitroPlugin(() => {
   const config = useRuntimeConfig()
   const errors: string[] = []
@@ -20,6 +34,21 @@ export default defineNitroPlugin(() => {
     errors.push('NUXT_SUPABASE_SERVICE_ROLE_KEY is required')
   if (!config.supabase.anonKey)
     errors.push('NUXT_SUPABASE_ANON_KEY is required')
+
+  // The service-role key must actually carry the `service_role` claim. A
+  // present-but-wrong key — most commonly the anon key pasted into this slot
+  // — passes the "is set" checks above but silently degrades EVERY admin
+  // operation to anon-level access: RLS-blocked reads return empty (e.g. the
+  // billing panel shows Free despite an active subscription) and writes fail
+  // with `42501`. Catch it at boot instead of shipping a container that
+  // serves wrong data.
+  if (config.supabase.serviceRoleKey) {
+    const role = decodeJwtRole(config.supabase.serviceRoleKey)
+    if (role && role !== 'service_role')
+      errors.push(`NUXT_SUPABASE_SERVICE_ROLE_KEY has role "${role}" — expected "service_role" (admin ops would silently degrade to anon / RLS-blocked)`)
+    if (config.supabase.anonKey && config.supabase.serviceRoleKey === config.supabase.anonKey)
+      errors.push('NUXT_SUPABASE_SERVICE_ROLE_KEY must not equal NUXT_SUPABASE_ANON_KEY')
+  }
 
   // GitHub App — required for repo operations
   if (config.github.appId) {
