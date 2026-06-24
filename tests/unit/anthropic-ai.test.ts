@@ -67,7 +67,7 @@ describe('anthropic provider', () => {
 
     const events = []
     for await (const event of provider.streamCompletion({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       system: 'system',
       messages: [{ role: 'user', content: 'hello' }],
       tools: [{ name: 'save_content', description: 'save', inputSchema: {} }],
@@ -128,7 +128,7 @@ describe('anthropic provider', () => {
     const provider = createAnthropicProvider()
     const events: { type: string, usage?: unknown }[] = []
     for await (const event of provider.streamCompletion({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       system: [{ type: 'text', text: 'cached block', cacheControl: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
@@ -165,7 +165,7 @@ describe('anthropic provider', () => {
     const provider = createAnthropicProvider()
 
     await expect(provider.createCompletion({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       system: 'system',
       messages: [{ role: 'user', content: 'hello' }],
       tools: [{ name: 'brain_query', description: 'query', inputSchema: {} }],
@@ -197,7 +197,7 @@ describe('anthropic provider', () => {
     const { createAnthropicProvider } = await import('../../server/providers/anthropic-ai')
     const provider = createAnthropicProvider()
     await provider.createCompletion({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       system: [
         { type: 'text', text: 'static body', cacheControl: { type: 'ephemeral' } },
         { type: 'text', text: 'brain index', cacheControl: { type: 'ephemeral' } },

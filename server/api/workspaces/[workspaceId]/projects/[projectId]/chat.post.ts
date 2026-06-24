@@ -145,7 +145,7 @@ export default defineEventHandler(async (event) => {
     // Model: plan-gated selection. Picked here (before history) because
     // `selectHistoryBudget` is model-aware — Haiku gets a smaller window
     // than Sonnet/Opus.
-    const ALL_MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001']
+    const ALL_MODELS = ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5-20251001']
     const STARTER_MODELS = ['claude-haiku-4-5-20251001']
     const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
     const requestedModel = body.model as string | undefined

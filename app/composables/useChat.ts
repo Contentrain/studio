@@ -62,8 +62,8 @@ export interface ConversationSummary {
 /** Available AI models */
 export const AI_MODELS = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', description: 'Fast & economic' },
-  { id: 'claude-sonnet-4-20250514', label: 'Sonnet 4', description: 'Balanced' },
-  { id: 'claude-opus-4-20250514', label: 'Opus 4', description: 'Most capable' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Balanced' },
+  { id: 'claude-opus-4-8', label: 'Opus 4.8', description: 'Most capable' },
 ] as const
 
 export function useChat(options?: {
@@ -74,7 +74,7 @@ export function useChat(options?: {
   const conversations = useState<ConversationSummary[]>('chat-conversations', () => [])
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
-  const selectedModel = useState('chat-model', () => 'claude-sonnet-4-20250514')
+  const selectedModel = useState('chat-model', () => 'claude-sonnet-4-6')
 
   async function fetchConversations(workspaceId: string, projectId: string) {
     try {
