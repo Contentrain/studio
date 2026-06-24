@@ -8,6 +8,27 @@ export default defineNuxtConfig({
   modules: ['@nuxt/eslint', '@nuxt/image', ...(isTestEnv ? [] : ['@sentry/nuxt/module', 'nuxt-mcp-dev'])],
   ssr: false,
   devtools: { enabled: true },
+
+  // Static <head> baseline for the pre-hydration SPA shell. Brand-level,
+  // dictionary-independent infrastructure only — the dynamic, translatable
+  // title template + Open Graph / Twitter tags are applied in app.vue via
+  // useHead/useSeoMeta (driven by the Contentrain dictionary). The product
+  // surface is an authenticated app, so it is excluded from search indexing.
+  app: {
+    head: {
+      htmlAttrs: { lang: 'en' },
+      title: 'Contentrain Studio',
+      meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'theme-color', content: '#3b82f6' },
+        { name: 'robots', content: 'noindex, nofollow' },
+        { name: 'format-detection', content: 'telephone=no' },
+      ],
+      link: [
+        { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
+      ],
+    },
+  },
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
     sessionSecret: '', // NUXT_SESSION_SECRET — min 32 chars, AES-256 cookie encryption

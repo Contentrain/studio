@@ -27,6 +27,8 @@ const description = computed(() => {
   return t('error.generic_description')
 })
 
+useHead({ title: () => title.value })
+
 const planModalOpen = ref(false)
 
 function handleClear() {

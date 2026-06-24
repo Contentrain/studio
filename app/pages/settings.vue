@@ -8,6 +8,8 @@ definePageMeta({
 const route = useRoute()
 const { t } = useContent()
 
+useHead({ title: () => t('account_settings.title') })
+
 const validTabs = ['profile', 'account'] as const
 const tabFromQuery = computed(() => {
   const tab = route.query.tab as string | undefined

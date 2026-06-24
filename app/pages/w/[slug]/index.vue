@@ -10,6 +10,10 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, loading, fetchProjects } = useProjects()
 const { t } = useContent()
 
+// Workspace dashboard — tab title is the workspace name once loaded, falling
+// back to the generic "Projects" label during the initial fetch/redirect.
+useHead({ title: () => activeWorkspace.value?.name || t('projects.title') })
+
 const connectDialogOpen = ref(false)
 const starterDialogOpen = ref(false)
 

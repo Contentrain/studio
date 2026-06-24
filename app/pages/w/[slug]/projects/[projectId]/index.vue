@@ -19,6 +19,16 @@ const project = computed(() =>
   projects.value.find(p => p.id === projectId.value) ?? null,
 )
 
+// Project workspace — tab title is the connected repo's short name (the
+// segment after `owner/`), falling back to the generic "Content" label while
+// the project list is still loading.
+useHead({
+  title: () => {
+    const full = project.value?.repo_full_name
+    return full ? full.split('/').pop() || full : t('content.title')
+  },
+})
+
 // Derive real project status: if snapshot shows .contentrain/ exists, project is active regardless of DB status
 // Returns undefined while loading (before project data is available)
 const effectiveProjectStatus = computed(() => {
