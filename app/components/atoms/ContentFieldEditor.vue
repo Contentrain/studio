@@ -167,9 +167,16 @@ function getRelationLabel(id: string): string {
       />
     </div>
 
-    <!-- ═══ Text / Markdown / Richtext / Code ═══ -->
+    <!-- ═══ Markdown / Richtext → source editor (toolbar + preview) ═══ -->
+    <MoleculesMarkdownEditor
+      v-else-if="['markdown', 'richtext'].includes(type)"
+      :model-value="String(localValue ?? '')"
+      @update:model-value="localValue = $event"
+    />
+
+    <!-- ═══ Text / Code ═══ -->
     <AtomsFormTextarea
-      v-else-if="['text', 'markdown', 'richtext', 'code'].includes(type)"
+      v-else-if="['text', 'code'].includes(type)"
       :model-value="String(localValue ?? '')"
       :rows="type === 'code' ? 6 : 4"
       :class="type === 'code' ? 'font-mono text-xs' : ''"
