@@ -30,7 +30,7 @@ describe('useChat', () => {
     useState('chat-conversations').value = []
     useState('chat-streaming').value = false
     useState('chat-error').value = null
-    useState('chat-model').value = 'claude-sonnet-4-20250514'
+    useState('chat-model').value = 'claude-sonnet-4-6'
   })
 
   it('loads existing conversations and maps tool calls into chat messages', async () => {

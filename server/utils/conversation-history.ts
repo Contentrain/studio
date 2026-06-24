@@ -51,13 +51,12 @@ export interface HistoryBudget {
 const MODEL_HISTORY_BUDGETS: Record<string, number> = {
   'claude-haiku-4-5-20251001': 12_000,
 
-  'claude-sonnet-4-20250514': 32_000,
   'claude-sonnet-4-5': 40_000,
   'claude-sonnet-4-6': 48_000,
 
-  'claude-opus-4-20250514': 32_000,
   'claude-opus-4-1-20250805': 32_000,
   'claude-opus-4-7': 48_000,
+  'claude-opus-4-8': 48_000,
 }
 
 /** Unknown model IDs (future / preview) get the same starting point as Haiku. */

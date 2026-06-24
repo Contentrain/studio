@@ -5,7 +5,7 @@ describe('selectHistoryBudget', () => {
   it('returns the per-model budget when the model is known', () => {
     expect(selectHistoryBudget({ plan: 'pro', model: 'claude-haiku-4-5-20251001', source: 'studio' }))
       .toMatchObject({ maxTokens: 12_000 })
-    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-4-20250514', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-4-1-20250805', source: 'studio' }))
       .toMatchObject({ maxTokens: 32_000 })
     expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-4-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 40_000 })
@@ -19,12 +19,12 @@ describe('selectHistoryBudget', () => {
   })
 
   it('scales the budget by plan multiplier', () => {
-    // Sonnet 4 base = 32_000
-    expect(selectHistoryBudget({ plan: 'starter', model: 'claude-sonnet-4-20250514', source: 'studio' }))
+    // Opus 4.1 base = 32_000
+    expect(selectHistoryBudget({ plan: 'starter', model: 'claude-opus-4-1-20250805', source: 'studio' }))
       .toMatchObject({ maxTokens: 24_000 }) // 32k * 0.75
-    expect(selectHistoryBudget({ plan: 'enterprise', model: 'claude-sonnet-4-20250514', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'enterprise', model: 'claude-opus-4-1-20250805', source: 'studio' }))
       .toMatchObject({ maxTokens: 40_000 }) // 32k * 1.25
-    expect(selectHistoryBudget({ plan: 'community', model: 'claude-sonnet-4-20250514', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'community', model: 'claude-opus-4-1-20250805', source: 'studio' }))
       .toMatchObject({ maxTokens: 32_000 }) // 32k * 1
   })
 
@@ -35,13 +35,13 @@ describe('selectHistoryBudget', () => {
 
   it('uses neutral multiplier for unknown plans', () => {
     // Base 32k * fallback (1) * studio (1) = 32k
-    expect(selectHistoryBudget({ plan: 'mystery-plan', model: 'claude-sonnet-4-20250514', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'mystery-plan', model: 'claude-opus-4-1-20250805', source: 'studio' }))
       .toMatchObject({ maxTokens: 32_000 })
   })
 
   it('boosts the budget by 1.5x for BYOA where the user pays Anthropic directly', () => {
-    // Sonnet 4 base 32_000 * pro (1) * byoa (1.5) = 48_000
-    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-4-20250514', source: 'byoa' }))
+    // Opus 4.1 base 32_000 * pro (1) * byoa (1.5) = 48_000
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-4-1-20250805', source: 'byoa' }))
       .toMatchObject({ maxTokens: 48_000 })
   })
 

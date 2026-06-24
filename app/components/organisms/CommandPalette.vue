@@ -176,10 +176,10 @@ function handleAction(actionKey: string, payload?: Record<string, unknown>) {
       selectedModel.value = 'claude-haiku-4-5-20251001'
       break
     case 'set-model-sonnet':
-      selectedModel.value = 'claude-sonnet-4-20250514'
+      selectedModel.value = 'claude-sonnet-4-6'
       break
     case 'set-model-opus':
-      selectedModel.value = 'claude-opus-4-20250514'
+      selectedModel.value = 'claude-opus-4-8'
       break
 
     // Agent prompts

@@ -109,7 +109,7 @@ describe('chat stream e2e', () => {
       {
         message: 'Review the homepage copy',
         conversationId: null,
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         context: {
           activeModelId: null,
           activeLocale: 'en',
