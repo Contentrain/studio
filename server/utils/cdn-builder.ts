@@ -9,11 +9,12 @@
  * Never hardcode content paths — always resolve through content-paths.ts.
  */
 
-import type { ModelDefinition, ContentrainConfig, FieldDef, FieldType } from '@contentrain/types'
+import type { ModelDefinition, ContentrainConfig } from '@contentrain/types'
 import { parseMarkdownFrontmatter } from '@contentrain/types'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import { Marked } from 'marked'
+import { normalizeModelContentMedia, rewriteEntryMedia, rewriteMarkdownMedia } from './media-rewrite'
 
 // Configure marked for safe HTML output — escape user HTML input
 const safeMarked = new Marked({
@@ -28,70 +29,6 @@ const safeMarked = new Marked({
     },
   },
 })
-
-// ─── Media path → delivery URL rewriting ───
-//
-// The git SSOT stores media fields as relative paths (`media/original/x.webp`)
-// so content stays portable across environments. The published CDN artifact,
-// however, must carry browser-renderable URLs so a consumer can use an asset
-// in a plain `<img src>` (markdown, no-SDK build, etc.). We rewrite at build
-// time only — git is never touched. Only image/video/file fields (resolved via
-// the model schema) and src/href targets in markdown/HTML are rewritten;
-// external URLs (`http(s)://`, `//`, `data:`) pass through untouched.
-
-const MEDIA_FIELD_TYPES = new Set<FieldType>(['image', 'video', 'file'])
-
-/**
- * Rewrite media paths within a single field value, guided by its FieldDef so
- * only media fields — including those nested inside object/array fields — are
- * touched. Non-media values pass through.
- */
-function rewriteFieldMedia(value: unknown, field: FieldDef, projectId: string): unknown {
-  if (value == null) return value
-
-  if (MEDIA_FIELD_TYPES.has(field.type))
-    return rewriteMediaUrl(projectId, value)
-
-  if (field.type === 'object' && field.fields && typeof value === 'object' && !Array.isArray(value))
-    return rewriteEntryMedia(value as Record<string, unknown>, field.fields, projectId)
-
-  if (field.type === 'array' && Array.isArray(value)) {
-    const itemDef: FieldDef | null = typeof field.items === 'string'
-      ? { type: field.items as FieldType }
-      : field.items ?? null
-    if (!itemDef) return value
-    return value.map(v => rewriteFieldMedia(v, itemDef, projectId))
-  }
-
-  return value
-}
-
-/**
- * Rewrite media paths across one entry/frontmatter object using a field map.
- * Returns a shallow copy; a no-op when the object has no media fields.
- */
-function rewriteEntryMedia(
-  entry: Record<string, unknown>,
-  fields: Record<string, FieldDef>,
-  projectId: string,
-): Record<string, unknown> {
-  const out = { ...entry }
-  for (const [fieldId, field] of Object.entries(fields)) {
-    if (fieldId in out)
-      out[fieldId] = rewriteFieldMedia(out[fieldId], field, projectId)
-  }
-  return out
-}
-
-/** Rewrite `media/...` markdown image/link targets and inline src/href attrs. */
-function rewriteMarkdownMedia(body: string, projectId: string): string {
-  return body
-    // markdown image/link target: ](media/...) — stops at whitespace, ) or "
-    .replace(/(\]\()(media\/[^)\s"]+)/g, (_m, open, p) => `${open}${toDeliveryUrl(projectId, p)}`)
-    // inline HTML src=/href="media/..."
-    .replace(/(\s(?:src|href)=)(["'])(media\/[^"']+)\2/gi,
-      (_m, attr, quote, p) => `${attr}${quote}${toDeliveryUrl(projectId, p)}${quote}`)
-}
 
 export interface BuildResult {
   projectId: string
@@ -358,23 +295,9 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
               content = filtered
             }
 
-            // Rewrite media paths → delivery URLs in the published artifact.
-            // Collections are keyed by entry id; singletons are a single
-            // object. Dictionaries hold only translation strings (no media).
-            if (model.fields) {
-              if (model.kind === 'collection') {
-                const rewritten: Record<string, unknown> = {}
-                for (const [id, entry] of Object.entries(content as Record<string, unknown>)) {
-                  rewritten[id] = entry && typeof entry === 'object' && !Array.isArray(entry)
-                    ? rewriteEntryMedia(entry as Record<string, unknown>, model.fields, projectId)
-                    : entry
-                }
-                content = rewritten
-              }
-              else if (model.kind === 'singleton' && content && typeof content === 'object' && !Array.isArray(content)) {
-                content = rewriteEntryMedia(content as Record<string, unknown>, model.fields, projectId)
-              }
-            }
+            // Safety net: rewrite any relative media paths that reached the
+            // published artifact (Studio writes already normalize at save).
+            content = normalizeModelContentMedia(model, content, projectId)
 
             const outputPath = `content/${model.id}/${effectiveLocale === 'data' ? 'data' : locale}.json`
             const data = JSON.stringify(content, null, 2)

@@ -11,6 +11,7 @@ import {
   shapeEntriesForSave,
   toObjectMap,
 } from './helpers'
+import { normalizeModelContentMedia } from '../media-rewrite'
 
 /**
  * Save content for a model (create or update entries).
@@ -41,6 +42,14 @@ export async function saveContent(
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
+
+  // Normalize media-storage paths (`media/...`) in image/video/file fields to
+  // absolute delivery URLs before anything else, so the git-committed value is
+  // a ready-to-use URL for every consumer (CDN, local-mode bundle, raw markdown,
+  // mobile app) with no SDK or integration code. Returns a fresh object — the
+  // caller's `data` (used elsewhere, e.g. route-level usage tracking) is intact.
+  if (ctx.projectId)
+    data = normalizeModelContentMedia(modelDef, data, ctx.projectId) as Record<string, unknown>
 
   const fields = modelDef.fields ?? {}
   let validation: ValidationResult = { valid: true, errors: [] }
