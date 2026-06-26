@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~/utils/content-relations'
+
 interface FieldDef {
   type: string
   required?: boolean
@@ -69,16 +71,46 @@ function removeTag(index: number) {
   localValue.value = arr
 }
 
-// --- Relations multi-select ---
-function addRelation(id: string) {
-  if (!id) return
-  const arr = Array.isArray(localValue.value) ? [...localValue.value as string[]] : []
-  if (!arr.includes(id)) arr.push(id)
+// --- Relations (single + multi, with polymorphic { model, ref } support) ---
+// Per MCP validator: a relation/relations field whose `model` lists more than
+// one target stores compound `{ model, ref }` values instead of bare strings.
+// Encoding/normalization lives in ~/utils/content-relations (unit-tested).
+const isPolymorphic = computed(() => isPolymorphicRelation(fieldDef?.model))
+const relItemKey = relationItemKey
+
+function relKeyToItem(key: string): unknown {
+  return relationKeyToItem(key, isPolymorphic.value)
+}
+
+const newRelationValue = ref('')
+
+// Multi-select add dropdown — hide entries already selected.
+const availableRelationOptions = computed(() => {
+  if (!relatedEntries) return []
+  const selected = new Set(
+    Array.isArray(localValue.value) ? (localValue.value as unknown[]).map(relItemKey) : [],
+  )
+  return relatedEntries.filter(e => !selected.has(e.value))
+})
+
+function addRelation(key: string) {
+  if (!key) return
+  const item = relKeyToItem(key)
+  const arr = Array.isArray(localValue.value) ? [...localValue.value as unknown[]] : []
+  if (!arr.some(x => relItemKey(x) === relItemKey(item))) arr.push(item)
   localValue.value = arr
 }
 
+// Manual entry fallback when the target model's entries aren't available.
+function addManualRelation() {
+  const trimmed = newRelationValue.value.trim()
+  if (!trimmed) return
+  addRelation(trimmed)
+  newRelationValue.value = ''
+}
+
 function removeRelation(index: number) {
-  const arr = Array.isArray(localValue.value) ? [...localValue.value as string[]] : []
+  const arr = Array.isArray(localValue.value) ? [...localValue.value as unknown[]] : []
   arr.splice(index, 1)
   localValue.value = arr
 }
@@ -124,9 +156,9 @@ function updateObjectField(key: string, value: unknown) {
   localValue.value = obj
 }
 
-// Relation entries label lookup
-function getRelationLabel(id: string): string {
-  return relatedEntries?.find(e => e.value === id)?.label ?? id.substring(0, 8)
+// Relation entries label lookup (key is the option-value form).
+function getRelationLabel(key: string): string {
+  return relatedEntries?.find(e => e.value === key)?.label ?? key.substring(0, 8)
 }
 </script>
 
@@ -257,15 +289,15 @@ function getRelationLabel(id: string): string {
     <!-- ═══ Relation (single select) ═══ -->
     <AtomsFormSelect
       v-else-if="type === 'relation' && relatedEntries && relatedEntries.length > 0"
-      :model-value="String(localValue ?? '')"
+      :model-value="relItemKey(localValue)"
       :options="relatedEntries"
       :placeholder="t('content.select_entry')"
       size="md"
-      @update:model-value="localValue = $event"
+      @update:model-value="localValue = relKeyToItem($event)"
     />
     <AtomsFormInput
       v-else-if="type === 'relation'"
-      :model-value="String(localValue ?? '')"
+      :model-value="isPolymorphic ? '' : String(localValue ?? '')"
       :placeholder="t('content.select_entry')"
       @update:model-value="localValue = $event"
       @keydown="handleKeydown"
@@ -273,13 +305,13 @@ function getRelationLabel(id: string): string {
 
     <!-- ═══ Relations (multi-select) ═══ -->
     <div v-else-if="type === 'relations'">
-      <div v-if="Array.isArray(localValue) && (localValue as string[]).length > 0" class="mb-2 flex flex-wrap gap-1">
+      <div v-if="Array.isArray(localValue) && (localValue as unknown[]).length > 0" class="mb-2 flex flex-wrap gap-1">
         <span
-          v-for="(id, idx) in (localValue as string[])"
-          :key="id"
+          v-for="(item, idx) in (localValue as unknown[])"
+          :key="relItemKey(item)"
           class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-xs font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
         >
-          {{ getRelationLabel(id) }}
+          {{ getRelationLabel(relItemKey(item)) }}
           <button
             type="button"
             class="ml-0.5 rounded-full p-0.5 text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
@@ -290,19 +322,26 @@ function getRelationLabel(id: string): string {
         </span>
       </div>
       <AtomsFormSelect
-        v-if="relatedEntries && relatedEntries.length > 0"
+        v-if="availableRelationOptions.length > 0"
         model-value=""
-        :options="relatedEntries"
+        :options="availableRelationOptions"
         :placeholder="t('content.select_entry')"
         size="md"
         @update:model-value="addRelation($event)"
       />
-      <AtomsFormInput
-        v-else
-        model-value=""
-        :placeholder="t('content.select_entry')"
-        @keydown="handleKeydown"
-      />
+      <div
+        v-else-if="!relatedEntries || relatedEntries.length === 0"
+        class="flex items-center gap-2"
+      >
+        <AtomsFormInput
+          v-model="newRelationValue"
+          :placeholder="t('content.select_entry')"
+          @keydown.enter.prevent="addManualRelation"
+        />
+        <AtomsBaseButton size="sm" @click="addManualRelation">
+          <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
+        </AtomsBaseButton>
+      </div>
     </div>
 
     <!-- ═══ Select ═══ -->
