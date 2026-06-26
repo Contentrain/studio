@@ -134,7 +134,13 @@ export function selectHistoryBudget(input: {
  */
 export function buildPromptMessages(input: {
   history: DatabaseRow[]
-  newUserMessage: string
+  /**
+   * The current turn's user content. A plain string for text-only
+   * messages, or an `AIContentBlock[]` when attachments are present
+   * (attachment blocks followed by the user text). Sent in full — only
+   * *historical* base64 images are stripped (see `extractContent`).
+   */
+  newUserMessage: string | AIContentBlock[]
   budget: HistoryBudget
 }): AIMessage[] {
   const groups = groupRowsByTurn(input.history)
@@ -162,8 +168,31 @@ export function buildPromptMessages(input: {
 function extractContent(row: DatabaseRow): string | AIContentBlock[] {
   const blocks
     = (row.content_blocks ?? row.contentBlocks ?? row.tool_calls ?? row.toolCalls) as AIContentBlock[] | null | undefined
-  if (blocks && Array.isArray(blocks) && blocks.length > 0) return blocks
+  if (blocks && Array.isArray(blocks) && blocks.length > 0) return stripHistoricalImageBytes(blocks)
   return row.content as string | AIContentBlock[]
+}
+
+/**
+ * Replay-cost guard for attachment images. A base64 image persisted in
+ * the seed user row would otherwise be re-sent — and re-billed — on
+ * every subsequent turn, and (via `estimateGroupTokens`) could evict
+ * real conversation history. So when replaying *historical* rows we
+ * drop the inline bytes and leave a text placeholder. URL images are
+ * kept verbatim: they are cheap (no payload, just a reference) and let
+ * the CDN-backed path keep working across turns. The current turn's
+ * content bypasses `extractContent`, so its images are always sent in
+ * full — only history is stripped.
+ */
+export function stripHistoricalImageBytes(blocks: AIContentBlock[]): AIContentBlock[] {
+  let stripped = false
+  const out = blocks.map((block) => {
+    if (block.type === 'image' && block.source.type === 'base64') {
+      stripped = true
+      return { type: 'text' as const, text: '[image attached earlier]' }
+    }
+    return block
+  })
+  return stripped ? out : blocks
 }
 
 function groupRowsByTurn(rows: DatabaseRow[]): DatabaseRow[][] {

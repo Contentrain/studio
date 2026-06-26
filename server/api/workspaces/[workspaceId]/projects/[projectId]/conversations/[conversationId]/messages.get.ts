@@ -17,5 +17,5 @@ export default defineEventHandler(async (event) => {
   if (!conv)
     throw createError({ statusCode: 404, message: errorMessage('chat.conversation_not_found') })
 
-  return db.loadConversationMessages(conversationId, 100, 'id, role, content, tool_calls, model, created_at')
+  return db.loadConversationMessages(conversationId, 100, 'id, role, content, content_blocks, tool_calls, model, created_at')
 })

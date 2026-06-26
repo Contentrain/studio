@@ -195,9 +195,10 @@ function toAnthropicSystem(system: string | AISystemBlock[]): string | Anthropic
 }
 
 /**
- * Convert Studio messages to Anthropic format.
+ * Convert Studio messages to Anthropic format. Exported for unit
+ * testing of the content-block mapping (image/document/tool blocks).
  */
-function toAnthropicMessages(messages: AICompletionRequest['messages']): Anthropic.MessageParam[] {
+export function toAnthropicMessages(messages: AICompletionRequest['messages']): Anthropic.MessageParam[] {
   return messages.map((msg) => {
     if (typeof msg.content === 'string') {
       return { role: msg.role, content: msg.content }
@@ -212,6 +213,12 @@ function toAnthropicMessages(messages: AICompletionRequest['messages']): Anthrop
           return { type: 'tool_use' as const, id: block.id, name: block.name, input: block.input as Record<string, unknown> }
         case 'tool_result':
           return { type: 'tool_result' as const, tool_use_id: block.toolUseId, content: block.content }
+        case 'image':
+          return block.source.type === 'url'
+            ? { type: 'image' as const, source: { type: 'url' as const, url: block.source.url } }
+            : { type: 'image' as const, source: { type: 'base64' as const, media_type: block.source.mediaType, data: block.source.data } }
+        case 'document':
+          return { type: 'document' as const, source: { type: 'base64' as const, media_type: block.source.mediaType, data: block.source.data } }
         default:
           return { type: 'text' as const, text: '' }
       }

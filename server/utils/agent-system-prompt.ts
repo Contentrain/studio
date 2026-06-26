@@ -118,14 +118,50 @@ function buildStaticBody(
  * rules. Anything that changes per request lives here so the cache
  * marker on the static block stays valid.
  */
+/** Minimal shape of an attachment summary (avoids importing the heavy
+ * attachment-ingest module into the prompt builder). */
+export interface PromptAttachment {
+  kind: 'text' | 'document' | 'image'
+  filename: string
+  url?: string
+}
+
+function buildAttachmentSection(attachments: PromptAttachment[]): string {
+  const lines: string[] = [
+    '## Attached sources (this message)',
+    'The user attached the following sources to THIS message. Treat them as source material for the requested content.',
+  ]
+  for (const a of attachments) {
+    if (a.kind === 'image' && a.url) {
+      lines.push(`- ${a.filename} (image — already uploaded to the media library at ${a.url}. Reuse this URL directly in image/media fields; do NOT call upload_media for it.)`)
+    }
+    else if (a.kind === 'image') {
+      lines.push(`- ${a.filename} (image, included in this message for you to view)`)
+    }
+    else if (a.kind === 'document') {
+      lines.push(`- ${a.filename} (PDF document, included in this message)`)
+    }
+    else {
+      lines.push(`- ${a.filename} (text content extracted and included in this message)`)
+    }
+  }
+  return lines.join('\n')
+}
+
 function buildDynamicBody(
   models: ModelDefinition[],
   state: ProjectState,
   uiContext: ChatUIContext,
   intent: ClassifiedIntent,
   config: ContentrainConfig | null,
+  attachments?: PromptAttachment[],
 ): string {
   const sections: string[] = []
+
+  // ATTACHED SOURCES — files/links the user added to this message
+  if (attachments && attachments.length > 0) {
+    sections.push(buildAttachmentSection(attachments))
+  }
 
   // UI CONTEXT — what the user is looking at RIGHT NOW (includes active model annotation)
   sections.push(buildContextSection(uiContext, models, config))
@@ -214,11 +250,12 @@ export function buildSystemPromptBlocks(
   vocabulary?: Record<string, Record<string, string>> | null,
   plan?: import('./license').Plan,
   customInstructions?: string | null,
+  attachments?: PromptAttachment[],
 ): SystemPromptBlocks {
   return {
     static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions),
     contentIndex: contentIndex && contentIndex.trim() ? contentIndex : null,
-    dynamic: buildDynamicBody(models, state, uiContext, intent, config),
+    dynamic: buildDynamicBody(models, state, uiContext, intent, config, attachments),
   }
 }
 

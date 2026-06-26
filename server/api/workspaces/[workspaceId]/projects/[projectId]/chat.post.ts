@@ -6,6 +6,7 @@ import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
+import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEffectiveLimit } from '../../../../../utils/overage'
 
@@ -27,6 +28,15 @@ export default defineEventHandler(async (event) => {
 
   if (!workspaceId || !projectId || !body.message)
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
+
+  // Validate + flatten client-supplied attachment blocks. They were
+  // authored by `/attachments` but echoed back here, so they are
+  // untrusted: throws 400 on count/size violations, silently drops
+  // forged/invalid blocks. The summary feeds the agent system prompt.
+  const { blocks: attachmentBlocks, summary: attachmentSummary } = validateAttachmentBlocks(body.attachments, { projectId })
+  const userContent: string | AIContentBlock[] = attachmentBlocks.length > 0
+    ? [...attachmentBlocks, { type: 'text', text: body.message }]
+    : body.message
 
   // Default context if not provided (backward compat)
   const uiContext = body.context ?? {
@@ -164,7 +174,7 @@ export default defineEventHandler(async (event) => {
     )
     const messages = buildPromptMessages({
       history: historyRows ?? [],
-      newUserMessage: body.message,
+      newUserMessage: userContent,
       budget,
     })
 
@@ -207,7 +217,8 @@ export default defineEventHandler(async (event) => {
     const promptBlocks = buildSystemPromptBlocks(
       projectConfig, models, permissions, projectState, uiContext, intent,
       contentIndex || null,
-      vocabulary, plan,
+      vocabulary, plan, null,
+      attachmentSummary,
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
 
@@ -296,6 +307,7 @@ export default defineEventHandler(async (event) => {
         await saveChatResult({
           conversationId,
           userMessage: body.message,
+          userContentBlocks: attachmentBlocks.length > 0 ? (userContent as AIContentBlock[]) : undefined,
           iterations,
           lastAssistantContent,
           model,
