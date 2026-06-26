@@ -11,6 +11,33 @@ export interface ToolCall {
   status: 'pending' | 'streaming' | 'complete' | 'error'
 }
 
+/** How an attachment renders in a message bubble. */
+export interface MessageAttachment {
+  kind: 'text' | 'document' | 'image'
+  filename: string
+  /** Image URL or a `data:` URL for base64 images. */
+  previewUrl?: string
+  mime?: string
+}
+
+/**
+ * An attachment in the composer tray. `blocks` are the server-authored
+ * `AIContentBlock[]` sent back in the chat body. `status` drives the
+ * tray UI (spinner / ready / error).
+ */
+export interface UIAttachment {
+  id: string
+  status: 'uploading' | 'ready' | 'error'
+  filename: string
+  kind: 'text' | 'document' | 'image'
+  mime: string
+  blocks?: unknown[]
+  previewUrl?: string
+  preview?: string
+  truncated?: boolean
+  error?: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -23,6 +50,8 @@ export interface ChatMessage {
     label: string
     sublabel?: string
   }>
+  /** Files/links attached to this message (user messages only) */
+  attachments?: MessageAttachment[]
 }
 
 /** UI context sent with each message */
@@ -66,6 +95,36 @@ export const AI_MODELS = [
   { id: 'claude-opus-4-8', label: 'Opus 4.8', description: 'Most capable' },
 ] as const
 
+/**
+ * Reconstruct displayable attachments from a persisted user row's
+ * `content_blocks`. Images → thumbnail (URL or base64 data URL),
+ * documents → PDF chip, provenance-headed text blocks → file chip
+ * (filename parsed from the `[Attached …: name]` header). The final
+ * plain text block is the user's typed message (shown via `content`),
+ * so it's skipped here.
+ */
+function hydrateAttachments(blocks: unknown): MessageAttachment[] | undefined {
+  if (!Array.isArray(blocks)) return undefined
+  const out: MessageAttachment[] = []
+  for (const raw of blocks) {
+    const b = raw as { type?: string, text?: string, source?: { type?: string, url?: string, mediaType?: string, data?: string } }
+    if (b?.type === 'image' && b.source) {
+      const previewUrl = b.source.type === 'url'
+        ? b.source.url
+        : (b.source.type === 'base64' ? `data:${b.source.mediaType};base64,${b.source.data}` : undefined)
+      out.push({ kind: 'image', filename: 'image', previewUrl, mime: b.source.mediaType })
+    }
+    else if (b?.type === 'document') {
+      out.push({ kind: 'document', filename: 'document.pdf', mime: b.source?.mediaType ?? 'application/pdf' })
+    }
+    else if (b?.type === 'text' && typeof b.text === 'string') {
+      const m = b.text.match(/^\[Attached (?:file|spreadsheet|web page): (.+?)\]/)
+      if (m) out.push({ kind: 'text', filename: m[1]! })
+    }
+  }
+  return out.length ? out : undefined
+}
+
 export function useChat(options?: {
   onContentChanged?: (affected: AffectedResources) => void
 }) {
@@ -93,6 +152,7 @@ export function useChat(options?: {
         id: string
         role: string
         content: string
+        content_blocks: unknown
         tool_calls: unknown
         created_at: string
       }>>(`/api/workspaces/${workspaceId}/projects/${projectId}/conversations/${convId}/messages`)
@@ -112,6 +172,7 @@ export function useChat(options?: {
             }))
           : [],
         createdAt: row.created_at,
+        attachments: row.role === 'user' ? hydrateAttachments(row.content_blocks) : undefined,
       }))
 
       conversationId.value = convId
@@ -145,12 +206,16 @@ export function useChat(options?: {
     text: string,
     context?: ChatUIContext,
     attachedChips?: Array<{ type: 'model' | 'entry' | 'field' | 'asset', label: string, sublabel?: string }>,
+    attachments?: UIAttachment[],
   ) {
     if (!text.trim() || isStreaming.value) return
 
     error.value = null
 
-    // Add user message with attached context
+    // Only ready attachments carry blocks; uploading/errored ones are ignored.
+    const readyAttachments = (attachments ?? []).filter(a => a.status === 'ready' && a.blocks?.length)
+
+    // Add user message with attached context + attachment previews
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -158,6 +223,9 @@ export function useChat(options?: {
       toolCalls: [],
       createdAt: new Date().toISOString(),
       contextItems: attachedChips?.length ? attachedChips : undefined,
+      attachments: readyAttachments.length
+        ? readyAttachments.map(a => ({ kind: a.kind, filename: a.filename, previewUrl: a.previewUrl, mime: a.mime }))
+        : undefined,
     }
     messages.value.push(userMsg)
 
@@ -190,6 +258,9 @@ export function useChat(options?: {
               panelState: 'overview',
               activeBranch: null,
             },
+            attachments: readyAttachments.length
+              ? readyAttachments.map(a => ({ blocks: a.blocks, filename: a.filename, kind: a.kind }))
+              : undefined,
           }),
         },
       )

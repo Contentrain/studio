@@ -1,4 +1,4 @@
-import type { AITool } from '../providers/ai'
+import type { AIContentBlock, AITool } from '../providers/ai'
 
 /**
  * Chat engine types — Bounded Task Executor architecture.
@@ -40,12 +40,25 @@ export interface ChatUIContext {
   contextItems?: ContextItem[]
 }
 
+/**
+ * One attachment as sent by the client in the chat body. `blocks` is
+ * authored server-side by `/attachments` and echoed back here, so it is
+ * re-validated (`validateAttachmentBlocks`) before use.
+ */
+export interface ChatAttachment {
+  blocks: AIContentBlock[]
+  filename?: string
+  kind?: 'text' | 'document' | 'image'
+}
+
 /** Full chat request body */
 export interface ChatRequest {
   message: string
   conversationId?: string
   model?: string
   context: ChatUIContext
+  /** External sources attached to this message (files / links). */
+  attachments?: ChatAttachment[]
 }
 
 // ─── Intent Classification ───

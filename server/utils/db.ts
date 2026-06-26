@@ -253,6 +253,14 @@ export async function inviteOrLookupUser(
 function buildTraceRows(input: {
   conversationId: string
   userMessage: string
+  /**
+   * Structured content blocks for the seed user row. When attachments
+   * are present this carries the attachment blocks (image/document/text)
+   * plus the user text so the protocol shape replays across turns and
+   * the UI can re-render attachments from history. `content` stays as
+   * the plain-text fallback for the legacy column / transcript.
+   */
+  userContentBlocks?: AIContentBlock[]
   trace: IterationTrace[]
   lastAssistantContent: AIContentBlock[]
   model: string
@@ -269,6 +277,9 @@ function buildTraceRows(input: {
     conversationId: input.conversationId,
     role: 'user',
     content: input.userMessage,
+    ...(input.userContentBlocks && input.userContentBlocks.length > 0
+      ? { contentBlocks: input.userContentBlocks }
+      : {}),
     turnId,
     turnSequence: seq++,
     iteration: null,
@@ -351,6 +362,7 @@ function buildTraceRows(input: {
 export async function saveChatResult(input: {
   conversationId: string
   userMessage: string
+  userContentBlocks?: AIContentBlock[]
   iterations: IterationTrace[]
   lastAssistantContent: AIContentBlock[]
   model: string
@@ -368,6 +380,7 @@ export async function saveChatResult(input: {
   const rows = buildTraceRows({
     conversationId: input.conversationId,
     userMessage: input.userMessage,
+    userContentBlocks: input.userContentBlocks,
     trace: input.iterations,
     lastAssistantContent: input.lastAssistantContent,
     model: input.model,

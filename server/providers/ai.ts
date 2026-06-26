@@ -30,6 +30,34 @@ export type AIContentBlock
   = | { type: 'text', text: string }
     | { type: 'tool_use', id: string, name: string, input: unknown }
     | { type: 'tool_result', toolUseId: string, content: string }
+    | { type: 'image', source: AIImageSource }
+    | { type: 'document', source: AIDocumentSource }
+
+/**
+ * Image attachment source. Provider-agnostic shape (camelCase
+ * `mediaType`, consistent with `toolUseId`); the Anthropic adapter
+ * maps it to `media_type`. Two source kinds:
+ * - `url`: a publicly fetchable URL (e.g. a CDN delivery URL). Cheap —
+ *   no base64 payload, replayable across turns.
+ * - `base64`: inline bytes. Used as the no-CDN fallback; should be
+ *   size-capped/downscaled before encoding.
+ */
+export type AIImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+export type AIImageSource
+  = | { type: 'base64', mediaType: AIImageMediaType, data: string }
+    | { type: 'url', url: string }
+
+/**
+ * Document attachment source. PDF is the only natively-understood
+ * document type on the Messages API; Word/Excel are converted to text
+ * blocks upstream. Base64-only (the Messages API does not accept a URL
+ * source for documents without the Files API).
+ */
+export interface AIDocumentSource {
+  type: 'base64'
+  mediaType: 'application/pdf'
+  data: string
+}
 
 /**
  * Prompt cache marker. `ephemeral` is Anthropic's 5-minute TTL bucket.

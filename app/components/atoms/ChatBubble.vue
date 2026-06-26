@@ -8,9 +8,17 @@ const props = defineProps<{
   userName?: string | null
   /** Context items attached to this message */
   contextItems?: ReadonlyArray<{ readonly type: string, readonly label: string, readonly sublabel?: string }>
+  /** Files/links attached to this message */
+  attachments?: ReadonlyArray<{ readonly kind: 'text' | 'document' | 'image', readonly filename: string, readonly previewUrl?: string, readonly mime?: string }>
 }>()
 
 const { sanitize } = useSanitize()
+
+function attachmentIcon(kind: string, mime?: string): string {
+  if (kind === 'document') return 'icon-[annon--file-text]'
+  if (mime === 'text/uri-list') return 'icon-[annon--link-1]'
+  return 'icon-[annon--file-text]'
+}
 
 const renderedHtml = computed(() => {
   if (!props.text) return ''
@@ -57,7 +65,29 @@ const contextTypeIcons: Record<string, string> = {
         </span>
       </div>
 
+      <!-- Attachments (files/links/images) -->
+      <div v-if="attachments && attachments.length > 0" class="mb-1 flex flex-wrap gap-1.5" :class="role === 'user' ? 'justify-end' : ''">
+        <template v-for="(att, idx) in attachments" :key="idx">
+          <!-- Image thumbnail -->
+          <NuxtImg
+            v-if="att.kind === 'image' && att.previewUrl"
+            :src="att.previewUrl"
+            :alt="att.filename"
+            class="size-16 rounded-lg border border-secondary-200 object-cover dark:border-secondary-700"
+          />
+          <!-- File / link chip -->
+          <span
+            v-else
+            class="inline-flex max-w-[180px] items-center gap-1 rounded-md bg-secondary-100 px-1.5 py-0.5 text-[10px] font-medium text-muted dark:bg-secondary-800"
+          >
+            <span :class="attachmentIcon(att.kind, att.mime)" class="size-2.5 shrink-0" aria-hidden="true" />
+            <span class="truncate">{{ att.filename }}</span>
+          </span>
+        </template>
+      </div>
+
       <div
+        v-if="text"
         class="rounded-2xl px-4 py-2.5 text-sm" :class="role === 'user'
           ? 'bg-primary-600 text-white dark:bg-primary-500'
           : 'bg-secondary-50 text-heading dark:bg-secondary-900 dark:text-secondary-100'

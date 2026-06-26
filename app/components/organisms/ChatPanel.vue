@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatUIContext, AffectedResources } from '~/composables/useChat'
+import type { ChatUIContext, AffectedResources, UIAttachment } from '~/composables/useChat'
 import { AI_MODELS } from '~/composables/useChat'
 import { PopoverArrow, PopoverClose, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 
@@ -28,7 +28,7 @@ const messagesEndRef = ref<HTMLElement | null>(null)
 const historyOpen = ref(false)
 const confirmDeleteId = ref<string | null>(null)
 
-async function handleSend(text: string) {
+async function handleSend(text: string, attachments?: UIAttachment[]) {
   // Capture chips before clearing
   const contextItems = toContextItems()
   const attachedChips = chips.value.map(c => ({ type: c.type, label: c.label, sublabel: c.sublabel }))
@@ -43,7 +43,7 @@ async function handleSend(text: string) {
     clearContext()
   }
 
-  await sendMessage(props.workspaceId, props.projectId, text, enrichedContext as ChatUIContext, attachedChips)
+  await sendMessage(props.workspaceId, props.projectId, text, enrichedContext as ChatUIContext, attachedChips, attachments)
 }
 
 defineExpose({ handleSend })
@@ -246,12 +246,13 @@ function formatConversationDate(dateStr: string): string {
         <div v-for="msg in messages" :key="msg.id">
           <!-- Chat bubble -->
           <AtomsChatBubble
-            v-if="msg.text"
+            v-if="msg.text || (msg.attachments && msg.attachments.length > 0)"
             :role="msg.role"
             :text="msg.text"
             :user-avatar-url="authState.user?.avatarUrl"
             :user-name="authState.user?.email"
             :context-items="msg.contextItems"
+            :attachments="msg.attachments"
           />
 
           <!-- Tool calls -->
@@ -296,6 +297,11 @@ function formatConversationDate(dateStr: string): string {
     <MoleculesChatContextBar />
 
     <!-- Input -->
-    <MoleculesChatInput :disabled="isStreaming || (!!error && error.includes('limit'))" @send="handleSend" />
+    <MoleculesChatInput
+      :disabled="isStreaming || (!!error && error.includes('limit'))"
+      :workspace-id="workspaceId"
+      :project-id="projectId"
+      @send="handleSend"
+    />
   </div>
 </template>

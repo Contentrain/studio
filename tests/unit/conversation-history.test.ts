@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPromptMessages, selectHistoryBudget } from '../../server/utils/conversation-history'
+import { buildPromptMessages, selectHistoryBudget, stripHistoricalImageBytes } from '../../server/utils/conversation-history'
 
 describe('selectHistoryBudget', () => {
   it('returns the per-model budget when the model is known', () => {
@@ -194,6 +194,60 @@ describe('buildPromptMessages', () => {
       budget,
     })
     expect(messages[0]).toEqual({ role: 'assistant', content: blocks })
+  })
+
+  it('accepts an AIContentBlock[] as the new user message (attachments)', () => {
+    const userBlocks = [
+      { type: 'text', text: '[Attached file: notes.txt]\nfoo' },
+      { type: 'text', text: 'summarize this' },
+    ]
+    const messages = buildPromptMessages({
+      history: [],
+      newUserMessage: userBlocks,
+      budget,
+    })
+    expect(messages).toEqual([{ role: 'user', content: userBlocks }])
+  })
+})
+
+describe('stripHistoricalImageBytes', () => {
+  it('replaces base64 image blocks with a placeholder', () => {
+    const out = stripHistoricalImageBytes([
+      { type: 'text', text: 'hi' },
+      { type: 'image', source: { type: 'base64', mediaType: 'image/webp', data: 'AAAA' } },
+    ])
+    expect(out[0]).toEqual({ type: 'text', text: 'hi' })
+    expect(out[1]).toEqual({ type: 'text', text: '[image attached earlier]' })
+  })
+
+  it('keeps URL image blocks untouched (cheap, replayable)', () => {
+    const blocks = [{ type: 'image', source: { type: 'url', url: 'https://cdn.example/media/x.png' } }]
+    const out = stripHistoricalImageBytes(blocks as never)
+    expect(out).toBe(blocks) // unchanged reference when nothing stripped
+  })
+
+  it('history replay strips base64 images but keeps URL images', () => {
+    const messages = buildPromptMessages({
+      history: [
+        {
+          role: 'user',
+          content: 'with image',
+          content_blocks: [
+            { type: 'image', source: { type: 'base64', mediaType: 'image/webp', data: 'BIG' } },
+            { type: 'image', source: { type: 'url', url: 'https://cdn.example/media/keep.png' } },
+            { type: 'text', text: 'caption' },
+          ],
+          turn_id: 'T1',
+          turn_sequence: 0,
+        },
+      ],
+      newUserMessage: 'next',
+      budget: { maxTokens: 10_000, rowLimit: 100 },
+    })
+    const content = messages[0]!.content as Array<{ type: string, text?: string, source?: { type: string } }>
+    expect(content[0]).toEqual({ type: 'text', text: '[image attached earlier]' })
+    expect(content[1]!.source!.type).toBe('url')
+    expect(content[2]).toEqual({ type: 'text', text: 'caption' })
   })
 })
 
