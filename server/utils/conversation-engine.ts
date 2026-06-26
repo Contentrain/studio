@@ -991,6 +991,33 @@ export async function executeToolWithAutoMerge(
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
+
+        // Inbound-reference safety: deleting a model that other content still
+        // references would orphan those relations across the whole project, so
+        // refuse and report what points at it (the user clears those first).
+        // Mirrors the save-time relation-integrity guard at the model level.
+        // Best-effort — only runs when the brain knows the model.
+        const delBrain = await getOrBuildBrainCache(git, contentRoot, projectId)
+        if (delBrain.models.has(modelId)) {
+          const delViews: ExpandModelView[] = []
+          const delTargetRefs = new Set<string>()
+          for (const [key, data] of delBrain.content) {
+            const m = key.slice(0, key.indexOf(':'))
+            if (m === modelId) {
+              for (const ref of brainRefEntries(data).keys()) delTargetRefs.add(ref)
+              continue
+            }
+            const def = delBrain.models.get(m)
+            if (def?.fields) delViews.push({ modelId: m, fields: def.fields, entries: brainRefEntries(data) })
+          }
+          const inbound = findInboundModelRefs(modelId, delTargetRefs, delViews)
+          if (inbound.length > 0) {
+            const list = inbound.slice(0, 10).map(r => `${r.model}.${r.ref} (${r.field})`).join(', ')
+            result = { error: `${errorMessage('content.model_in_use')}: ${list}${inbound.length > 10 ? ` +${inbound.length - 10} more` : ''}` }
+            break
+          }
+        }
+
         const writeResult = await engine.deleteModel(modelId, userEmail)
         if (!writeResult.validation.valid) {
           result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }

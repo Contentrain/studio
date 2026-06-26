@@ -405,7 +405,7 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
   },
   {
     name: 'delete_model',
-    description: 'PERMANENTLY delete a model AND all of its content and metadata (every locale and every entry). Destructive and cannot be undone — only call after the user explicitly confirms they want the model and all its content removed. Admin only.',
+    description: 'PERMANENTLY delete a model AND all of its content and metadata (every locale and every entry). Destructive and cannot be undone — only call after the user explicitly confirms they want the model and all its content removed. Refused if other content still references this model via relations (clear those references first). Admin only.',
     inputSchema: {
       type: 'object',
       properties: {

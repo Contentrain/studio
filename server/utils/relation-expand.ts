@@ -114,6 +114,43 @@ export function expandForward(
   return out
 }
 
+/**
+ * Find entries (across views) that reference ANY entry of `targetModelId`.
+ * Used to guard model deletion: deleting a model that other content points
+ * at would orphan those relations project-wide. `targetRefs` is the set of
+ * the target model's own refs (across locales), used to resolve bare refs in
+ * fields with more than one candidate target.
+ */
+export function findInboundModelRefs(
+  targetModelId: string,
+  targetRefs: Set<string>,
+  views: ExpandModelView[],
+): Array<{ model: string, ref: string, field: string }> {
+  const out: Array<{ model: string, ref: string, field: string }> = []
+  for (const view of views) {
+    if (view.modelId === targetModelId) continue
+    for (const [fieldId, def] of Object.entries(view.fields)) {
+      if (def.type !== 'relation' && def.type !== 'relations') continue
+      const targets = relationTargets(def)
+      if (!targets.includes(targetModelId)) continue
+      for (const [ref, entry] of view.entries) {
+        const value = entry[fieldId]
+        if (value === undefined || value === null || value === '') continue
+        const items = Array.isArray(value) ? value : [value]
+        const hit = items.some((item) => {
+          const decoded = decode(item, targets)
+          if (!decoded) return false
+          // Polymorphic compound → match by model; bare ref → resolves into
+          // the target model only if the ref is one of its entries.
+          return decoded.model ? decoded.model === targetModelId : targetRefs.has(decoded.ref)
+        })
+        if (hit) out.push({ model: view.modelId, ref, field: fieldId })
+      }
+    }
+  }
+  return out
+}
+
 /** Reverse: entries (across views) whose relation fields reference the target. */
 export function expandReverse(
   targetModelId: string,

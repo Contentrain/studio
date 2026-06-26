@@ -1,6 +1,6 @@
 import type { FieldDef } from '@contentrain/types'
 import { describe, expect, it } from 'vitest'
-import { brainRefEntries, expandForward, expandReverse, pickLabel } from '../../server/utils/relation-expand'
+import { brainRefEntries, expandForward, expandReverse, findInboundModelRefs, pickLabel } from '../../server/utils/relation-expand'
 import type { ExpandModelView } from '../../server/utils/relation-expand'
 
 describe('brainRefEntries', () => {
@@ -75,5 +75,24 @@ describe('expandReverse', () => {
     })
     const refs = expandReverse('page', 'about', [blog])
     expect(refs).toEqual([{ model: 'blog', ref: 'p1', field: 'related', label: null }])
+  })
+})
+
+describe('findInboundModelRefs (delete-model guard)', () => {
+  it('finds content referencing the model being deleted', () => {
+    const blog = view('blog', blogFields, {
+      post1: { author: 'ahmet' }, // → team (single)
+      post2: { related: [{ model: 'page', ref: 'about' }] }, // → page (polymorphic)
+    })
+    const team = view('team', {}, { ahmet: { name: 'Ahmet' } })
+    expect(findInboundModelRefs('team', new Set(['ahmet']), [blog, team]))
+      .toEqual([{ model: 'blog', ref: 'post1', field: 'author' }])
+    expect(findInboundModelRefs('page', new Set(['about']), [blog]))
+      .toEqual([{ model: 'blog', ref: 'post2', field: 'related' }])
+  })
+
+  it('returns [] when nothing references the model', () => {
+    const blog = view('blog', blogFields, { post1: { author: 'ahmet' } })
+    expect(findInboundModelRefs('orphan-model', new Set(), [blog])).toEqual([])
   })
 })
