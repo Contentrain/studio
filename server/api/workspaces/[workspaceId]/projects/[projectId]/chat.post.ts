@@ -8,6 +8,7 @@ import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
+import { getEdition } from '../../../../../utils/license'
 import { getEffectiveLimit } from '../../../../../utils/overage'
 
 /**
