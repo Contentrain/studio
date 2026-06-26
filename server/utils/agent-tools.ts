@@ -141,7 +141,7 @@ DICTIONARY: kind="dictionary" requires NO fields property. All content is free k
   },
   {
     name: 'merge_branch',
-    description: 'Approve and merge a cr/* content branch. Two-step: merges into contentrain SSOT branch, then advances contentrain to main.',
+    description: 'Approve and merge a cr/* content branch into the contentrain SSOT branch. context.json is regenerated on contentrain automatically after the merge. The default branch (main/master) is NOT touched — it is informational only.',
     inputSchema: {
       type: 'object',
       properties: { branch: { type: 'string', description: 'Branch name (e.g., cr/content/blog-post/en/1774800862-27c1)' } },
@@ -347,7 +347,7 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
   },
   {
     name: 'approve_submission',
-    description: 'Approve a form submission. Creates a draft content entry in the collection from the submission data. The submission status changes to approved.',
+    description: 'Approve a form submission: creates a content entry in the collection from the submission data and marks the submission approved. On auto-merge projects the entry publishes immediately; on review projects it lands on a cr/* branch for approval.',
     inputSchema: {
       type: 'object',
       properties: {

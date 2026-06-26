@@ -45,6 +45,7 @@ function buildStaticBody(
   vocabulary?: Record<string, Record<string, string>> | null,
   plan?: import('./license').Plan,
   customInstructions?: string | null,
+  edition?: 'agpl' | 'ee',
 ): string {
   const sections: string[] = []
 
@@ -102,8 +103,12 @@ function buildStaticBody(
     : ''
 }`)
 
+  // ROLE CAPABILITIES — what each role may do, so the agent sets correct
+  // expectations (e.g. a Viewer) before hitting a permission wall.
+  sections.push(agentPrompt('permissions.role_capabilities'))
+
   // BASE RULES — intent-independent
-  sections.push(buildBaseRulesSection(config, permissions, plan))
+  sections.push(buildBaseRulesSection(config, permissions, plan, edition))
 
   // CUSTOM INSTRUCTIONS (per Conversation API key, stable across the key's lifetime)
   if (customInstructions) {
@@ -251,9 +256,10 @@ export function buildSystemPromptBlocks(
   plan?: import('./license').Plan,
   customInstructions?: string | null,
   attachments?: PromptAttachment[],
+  edition?: 'agpl' | 'ee',
 ): SystemPromptBlocks {
   return {
-    static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions),
+    static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions, edition),
     contentIndex: contentIndex && contentIndex.trim() ? contentIndex : null,
     dynamic: buildDynamicBody(models, state, uiContext, intent, config, attachments),
   }
@@ -314,6 +320,8 @@ function buildArchitectureSection(): string {
     agentPrompt('architecture.localization'),
     agentPrompt('architecture.system_fields'),
     agentPrompt('architecture.storage_format'),
+    agentPrompt('architecture.branch_model'),
+    agentPrompt('architecture.branch_health'),
     agentPrompt('architecture.markdown_authoring'),
   ].join('\n\n')
 }
@@ -496,7 +504,7 @@ function buildContextSection(
  * `permissions` (role-stable per request), and `plan` (workspace-
  * stable). No intent dependency, so safe for the cached prefix.
  */
-function buildBaseRulesSection(config: ContentrainConfig | null, permissions: AgentPermissions, plan?: import('./license').Plan): string {
+function buildBaseRulesSection(config: ContentrainConfig | null, permissions: AgentPermissions, plan?: import('./license').Plan, edition?: 'agpl' | 'ee'): string {
   const effectivePlan = plan ?? 'starter'
   const workflow = config?.workflow ?? 'auto-merge'
   const isPrivileged = permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
@@ -532,6 +540,12 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     agentPrompt('rules.i18n_collection'),
     agentPrompt('rules.i18n_dictionary'),
 
+    // Dictionary models hold user-facing UI copy
+    agentPrompt('rules.ui_strings'),
+
+    // Form submissions lifecycle
+    agentPrompt('forms.lifecycle'),
+
     // Serialization
     agentPrompt('rules.serialization_keys'),
     agentPrompt('rules.system_fields'),
@@ -549,30 +563,42 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     rules.push(agentPrompt('rules.no_auto_merge'))
   }
 
-  // Plan-aware rules — inform agent about available features and guide user
-  const planParams = getPlanParams(effectivePlan)
-  if (effectivePlan === 'starter') {
-    const upgradeParams = getUpgradeParams('starter', 'pro')
-    rules.push(agentPrompt('plan.starter', planParams))
-    rules.push(agentPrompt('plan.starter.upgrade_hint', upgradeParams))
+  // Plan / edition narrative. Edition is orthogonal to plan: in
+  // Community Edition (AGPL, no enterprise bridge) the plan-gated EE
+  // features (media library, CDN, conversation keys, webhooks, SSO,
+  // spam filter, model-specific access) do not exist and there is no
+  // purchase path — advertising them or coaching upgrades gives the
+  // user a wrong mental model. So suppress all plan/upgrade narrative
+  // in Community and emit a single neutral self-host note instead.
+  if (edition === 'agpl') {
+    rules.push(agentPrompt('plan.community'))
   }
-  else if (effectivePlan === 'pro') {
-    rules.push(agentPrompt('plan.pro', planParams))
-    rules.push(agentPrompt('plan.pro.upgrade_hint'))
-  }
-  else if (effectivePlan === 'enterprise') {
-    rules.push(agentPrompt('plan.enterprise'))
-  }
+  else {
+    // Plan-aware rules — inform agent about available features and guide user
+    const planParams = getPlanParams(effectivePlan)
+    if (effectivePlan === 'starter') {
+      const upgradeParams = getUpgradeParams('starter', 'pro')
+      rules.push(agentPrompt('plan.starter', planParams))
+      rules.push(agentPrompt('plan.starter.upgrade_hint', upgradeParams))
+    }
+    else if (effectivePlan === 'pro') {
+      rules.push(agentPrompt('plan.pro', planParams))
+      rules.push(agentPrompt('plan.pro.upgrade_hint'))
+    }
+    else if (effectivePlan === 'enterprise') {
+      rules.push(agentPrompt('plan.enterprise'))
+    }
 
-  // Feature upgrade guidance — when a tool returns a plan-gated error, help the user understand
-  rules.push(agentPrompt('upgrade.guidance'))
-  const tierParams = {
-    starterPrice: PLAN_PRICING.starter.priceMonthly ? `$${PLAN_PRICING.starter.priceMonthly}` : 'free',
-    starterSeats: PLAN_PRICING.starter.seatsIncluded,
-    proPrice: `$${PLAN_PRICING.pro.priceMonthly}`,
-    proSeats: PLAN_PRICING.pro.seatsIncluded,
+    // Feature upgrade guidance — when a tool returns a plan-gated error, help the user understand
+    rules.push(agentPrompt('upgrade.guidance'))
+    const tierParams = {
+      starterPrice: PLAN_PRICING.starter.priceMonthly ? `$${PLAN_PRICING.starter.priceMonthly}` : 'free',
+      starterSeats: PLAN_PRICING.starter.seatsIncluded,
+      proPrice: `$${PLAN_PRICING.pro.priceMonthly}`,
+      proSeats: PLAN_PRICING.pro.seatsIncluded,
+    }
+    rules.push(agentPrompt('plan.tiers', tierParams))
   }
-  rules.push(agentPrompt('plan.tiers', tierParams))
 
   return `## Rules\n${rules.map(r => `- ${r}`).join('\n')}`
 }

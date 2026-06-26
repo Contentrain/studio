@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
+import { buildRelationOptions, inferFieldType, isPolymorphicRelation } from '~/utils/content-relations'
 
 interface FieldDef {
   type: string
@@ -14,6 +15,7 @@ interface FieldDef {
 }
 
 const { t } = useContent()
+const brain = useContentBrain()
 
 const {
   modelName,
@@ -66,17 +68,31 @@ const SYSTEM_FIELDS = new Set([
 
 const editableFieldIds = computed(() => {
   const ids = Object.keys(fields).filter(id => !SYSTEM_FIELDS.has(id))
-  // Documents have a markdown body field outside the schema
-  if (modelKind === 'document' && !ids.includes('body')) {
-    ids.push('body')
+  if (modelKind !== 'document') return ids
+  // Documents store their fields as YAML frontmatter, which can carry keys
+  // beyond the model schema (and the schema may be minimal). Surface every
+  // frontmatter key so nothing is silently un-editable — this mirrors how
+  // ContentDocumentView renders extra frontmatter fields in read mode.
+  for (const key of Object.keys(entryData)) {
+    if (key === 'body' || SYSTEM_FIELDS.has(key)) continue
+    if (!ids.includes(key)) ids.push(key)
   }
+  // Markdown body lives outside the schema.
+  if (!ids.includes('body')) ids.push('body')
   return ids
 })
 
-// Merged field definitions — schema fields + synthetic body for documents
+// Merged field definitions — schema fields + synthetic body for documents +
+// inferred defs for any frontmatter key the schema doesn't describe.
 const mergedFields = computed(() => {
   if (modelKind !== 'document') return fields
-  return { ...fields, body: { type: 'markdown', ...fields.body } as FieldDef }
+  const merged: Record<string, FieldDef> = { ...fields }
+  for (const id of editableFieldIds.value) {
+    if (id === 'body' || merged[id]) continue
+    merged[id] = { type: inferFieldType(entryData[id]) }
+  }
+  merged.body = { type: 'markdown', ...fields.body } as FieldDef
+  return merged
 })
 
 // Relation entries for relation fields
@@ -92,7 +108,7 @@ const requiredErrors = computed(() => {
     const def = mergedFields.value[fieldId]
     if (!def?.required) continue
     const val = batchEditData.value[fieldId]
-    if (val === null || val === undefined || val === '') {
+    if (val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) {
       errors.add(fieldId)
     }
   }
@@ -122,42 +138,33 @@ watch(open, (isOpen) => {
 }, { immediate: true })
 
 async function loadRelationEntries() {
+  // Target-model content is already in the Content Brain (synced for the whole
+  // project). The old `GET /content/:modelId` route was removed when the brain
+  // replaced per-model fetches, so read from the brain instead of a dead route.
+  const map: Record<string, Array<{ value: string, label: string }>> = {}
+  const defaultLocale = (brain.config.value as { locales?: { default?: string } } | null)?.locales?.default
+
   for (const [fieldId, def] of Object.entries(mergedFields.value)) {
     if (def.type !== 'relation' && def.type !== 'relations') continue
     if (!def.model) continue
 
     const targetModels = Array.isArray(def.model) ? def.model : [def.model]
-    const entries: Array<{ value: string, label: string }> = []
+    const polymorphic = isPolymorphicRelation(def.model)
+    const options: Array<{ value: string, label: string }> = []
 
     for (const targetModelId of targetModels) {
-      try {
-        const result = await $fetch<{ data: unknown }>(`/api/workspaces/${workspaceId}/projects/${projectId}/content/${targetModelId}`, {
-          params: { locale },
-        })
-        if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
-          for (const [id, entry] of Object.entries(result.data as Record<string, Record<string, unknown>>)) {
-            const label = findEntryLabel(entry) ?? id.substring(0, 8)
-            entries.push({ value: id, label: targetModels.length > 1 ? `${targetModelId}: ${label}` : label })
-          }
-        }
+      let result = await brain.queryContent(targetModelId, locale)
+      // Non-i18n targets are stored under the default locale only.
+      if (!result?.data && defaultLocale && defaultLocale !== locale) {
+        result = await brain.queryContent(targetModelId, defaultLocale)
       }
-      catch {
-        // Target model content not available
-      }
+      options.push(...buildRelationOptions(targetModelId, result?.data, polymorphic))
     }
 
-    relationEntriesMap.value[fieldId] = entries
+    map[fieldId] = options
   }
-}
 
-function findEntryLabel(entry: Record<string, unknown>): string | null {
-  for (const key of ['name', 'title', 'label', 'slug']) {
-    if (typeof entry[key] === 'string' && entry[key]) return entry[key] as string
-  }
-  for (const value of Object.values(entry)) {
-    if (typeof value === 'string' && value.length > 0 && value.length < 80) return value
-  }
-  return null
+  relationEntriesMap.value = map
 }
 
 function getFieldState(fieldId: string): 'default' | 'error' {
