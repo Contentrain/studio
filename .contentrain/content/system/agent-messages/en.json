@@ -17,6 +17,8 @@
   "branch.merged": "Branch merged successfully. Content changes are now live.",
   "branch.rejected": "Branch rejected. Changes have been discarded.",
   "content.deleted": "Content entry deleted and merged.",
+  "content.invalid_status": "Invalid status \"{status}\". Use one of: published, draft, archived.",
+  "content.no_entries": "No entry IDs were provided to update.",
   "content.saved": "Content saved and merged successfully.",
   "content.saved_review": "Content saved to review branch. A team member with reviewer access can approve or reject the changes.",
   "forms.approved": "Submission approved and content entry created.",

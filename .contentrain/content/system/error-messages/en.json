@@ -66,6 +66,7 @@
   "content.model_no_access": "No access to model: {model}",
   "content.not_found": "Content not found for this model and locale.",
   "content.publish_owner_only": "Only workspace owners and admins can publish content.",
+  "content.relation_not_found": "The content references a relation target that does not exist",
   "content.validation_failed": "The content could not be saved because it failed validation",
   "content.write_forbidden": "You do not have permission to write content in this project.",
   "conversation.key_expired": "API key has been revoked.",

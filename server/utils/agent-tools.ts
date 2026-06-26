@@ -302,6 +302,62 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
     workflowBehavior: 'none',
   },
   {
+    name: 'update_status',
+    description: 'Change the publish status of content entries: "published" (live), "draft" (hidden), or "archived". Use this to publish, unpublish, or archive entries — it does not change field values.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Model ID' },
+        locale: { type: 'string', description: 'Locale code (default: en)' },
+        entryIds: { type: 'array', items: { type: 'string' }, description: 'Entry IDs (collection) or slugs (document) to update' },
+        status: { type: 'string', enum: ['published', 'draft', 'archived'], description: 'New status' },
+      },
+      required: ['model', 'entryIds', 'status'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { branchesChanged: true, snapshotChanged: false },
+    workflowBehavior: 'workflow-dependent',
+  },
+  {
+    name: 'update_media',
+    description: 'Update metadata (alt text, tags, focal point) on an existing media asset. Use this to fix missing alt text or tags flagged in content health.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assetId: { type: 'string', description: 'Asset UUID' },
+        alt: { type: 'string', description: 'Alt text for accessibility' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags' },
+        focalPoint: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, description: 'Focal point for cropping (each 0-1)' },
+      },
+      required: ['assetId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'delete_media',
+    description: 'Delete a media asset and all its variants from storage. Permanent. Check the asset usage via get_media first if it may be referenced by content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assetId: { type: 'string', description: 'Asset UUID' },
+      },
+      required: ['assetId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'branch_health',
+    description: 'Check the health of pending cr/* branches: how many are unmerged and whether the project is near the warn/block thresholds. Writes are blocked once the block limit is reached, so advise merging or rejecting open branches when the status is warning or blocked.',
+    inputSchema: { type: 'object', properties: {} },
+    requiredPhase: ['active', 'init_pending', 'error'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
     name: 'brain_analyze',
     description: 'Run content analysis across the entire project. Returns detailed audit results. Types: seo_audit (missing meta, title issues), locale_parity (untranslated entries), stale_content (90+ days old), quality_score (overall health), full (all checks).',
     inputSchema: {

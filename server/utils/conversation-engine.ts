@@ -360,6 +360,39 @@ export async function executeToolWithAutoMerge(
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
         }
+
+        // Relation referential-integrity pre-flight (brain-backed). Structural
+        // validation checks a relation value's SHAPE but not whether the target
+        // EXISTS; this mirrors the UI's constrained relation picker so the agent
+        // cannot commit a dangling reference. Best-effort — skips silently if the
+        // brain lacks the model/fields rather than blocking on an infra gap.
+        const relBrain = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const relFields = relBrain.models.get(modelId)?.fields
+        if (relFields) {
+          const relKind = relBrain.models.get(modelId)?.kind
+          const relDefaultLocale = (relBrain.config as { locales?: { default?: string } } | null)?.locales?.default ?? 'en'
+          const getRefs = (m: string) => brainContentRefs(
+            relBrain.content.get(`${m}:${locale}`) ?? relBrain.content.get(`${m}:${relDefaultLocale}`),
+          )
+          const relEntries: Record<string, unknown>[] = []
+          if (params.slug && typeof params.slug === 'string') {
+            relEntries.push((params.data ?? params.frontmatter ?? {}) as Record<string, unknown>)
+          }
+          else if (relKind === 'collection') {
+            for (const e of Object.values((params.data ?? {}) as Record<string, unknown>)) {
+              if (e && typeof e === 'object') relEntries.push(e as Record<string, unknown>)
+            }
+          }
+          else {
+            relEntries.push((params.data ?? {}) as Record<string, unknown>)
+          }
+          const relErrors = relEntries.flatMap(e => findBrokenRelations(e, relFields, getRefs))
+          if (relErrors.length > 0) {
+            result = { error: `${errorMessage('content.relation_not_found')}: ${relErrors.join('; ')}` }
+            break
+          }
+        }
+
         let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }
 
         // Document kind: expects { slug, frontmatter/data, body }
@@ -766,6 +799,102 @@ export async function executeToolWithAutoMerge(
           break
         }
         result = withMediaUrls(projectId, asset)
+        break
+      }
+
+      case 'update_status': {
+        const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
+          break
+        }
+        const locale = (params.locale as string) ?? 'en'
+        if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
+          result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
+        const status = params.status as string
+        if (status !== 'draft' && status !== 'published' && status !== 'archived') {
+          result = { error: agentMessage('content.invalid_status', { status: String(status) }) }
+          break
+        }
+        const entryIds = Array.isArray(params.entryIds) ? params.entryIds as string[] : []
+        if (entryIds.length === 0) {
+          result = { error: agentMessage('content.no_entries') }
+          break
+        }
+        const writeResult = await engine.updateEntryStatus(modelId, locale, entryIds, status, userEmail)
+        if (!writeResult.validation.valid) {
+          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          break
+        }
+        affected.models.push(modelId)
+        affected.locales.push(locale)
+        affected.branchesChanged = true
+        invalidateBrainCache(projectId)
+        if (shouldAutoMerge(workflow, permissions)) {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+        }
+        break
+      }
+
+      case 'update_media': {
+        const mediaProvider = useMediaProvider()
+        if (!mediaProvider) {
+          result = { error: errorMessage('media.storage_not_configured') }
+          break
+        }
+        if (!hasFeature(plan, 'media.library')) {
+          result = { error: errorMessage('media.library_upgrade', getUpgradeParams(plan)) }
+          break
+        }
+        const asset = await mediaProvider.getAsset(params.assetId as string)
+        if (!asset || asset.projectId !== projectId) {
+          result = { error: agentMessage('media.asset_not_found') }
+          break
+        }
+        const updated = await mediaProvider.updateMetadata(params.assetId as string, {
+          alt: params.alt as string | undefined,
+          tags: params.tags as string[] | undefined,
+          focalPoint: params.focalPoint as { x: number, y: number } | undefined,
+        })
+        result = withMediaUrls(projectId, updated)
+        break
+      }
+
+      case 'delete_media': {
+        const mediaProvider = useMediaProvider()
+        if (!mediaProvider) {
+          result = { error: errorMessage('media.storage_not_configured') }
+          break
+        }
+        if (!hasFeature(plan, 'media.library')) {
+          result = { error: errorMessage('media.library_upgrade', getUpgradeParams(plan)) }
+          break
+        }
+        const asset = await mediaProvider.getAsset(params.assetId as string)
+        if (!asset || asset.projectId !== projectId) {
+          result = { error: agentMessage('media.asset_not_found') }
+          break
+        }
+        await mediaProvider.delete(projectId, params.assetId as string)
+        result = { deleted: true, id: params.assetId }
+        break
+      }
+
+      case 'branch_health': {
+        const report = await checkBranchHealth(git, projectId, contentRoot)
+        const limits = await resolveBranchLimits(git, contentRoot)
+        result = {
+          status: report.status,
+          unmergedBranches: report.unmergedCount,
+          warnLimit: limits.warn,
+          blockLimit: limits.block,
+        }
         break
       }
 
