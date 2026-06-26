@@ -358,6 +358,66 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
     workflowBehavior: 'none',
   },
   {
+    name: 'relation_expand',
+    description: 'Resolve relations for a content entry. direction "forward" (default) lists the entries this one points to (with labels); "reverse" lists entries that reference this one ("what links here"). Saves chaining brain_query calls by hand.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Model ID of the entry' },
+        entryId: { type: 'string', description: 'Entry ID (collection) or slug (document)' },
+        locale: { type: 'string', description: 'Locale code (default: en)' },
+        direction: { type: 'string', enum: ['forward', 'reverse'], description: 'forward (default) or reverse' },
+      },
+      required: ['model', 'entryId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'vocabulary',
+    description: 'Read or update the project glossary (vocabulary.json). action "get" returns all terms; action "set" merges the provided terms. Each term maps locale → string; keep the same locale keys across terms.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['get', 'set'], description: 'get (read all terms) or set (merge terms)' },
+        terms: { type: 'object', description: 'For "set": { "term-key": { "en": "Value", "tr": "Değer" } }' },
+      },
+      required: ['action'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: true },
+    workflowBehavior: 'workflow-dependent',
+  },
+  {
+    name: 'add_locale',
+    description: 'Register a new supported locale in the project config so content can be translated into it. This only adds the locale to config — afterwards use copy_locale or save_content to create the translated content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        locale: { type: 'string', description: 'BCP-47 locale code (e.g., "fr" or "fr-FR")' },
+      },
+      required: ['locale'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: true, branchesChanged: true },
+    workflowBehavior: 'workflow-dependent',
+  },
+  {
+    name: 'delete_model',
+    description: 'PERMANENTLY delete a model AND all of its content and metadata (every locale and every entry). Destructive and cannot be undone — only call after the user explicitly confirms they want the model and all its content removed. Admin only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Model ID to delete' },
+      },
+      required: ['model'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: true, branchesChanged: true },
+    workflowBehavior: 'workflow-dependent',
+  },
+  {
     name: 'brain_analyze',
     description: 'Run content analysis across the entire project. Returns detailed audit results. Types: seo_audit (missing meta, title issues), locale_parity (untranslated entries), stale_content (90+ days old), quality_score (overall health), full (all checks).',
     inputSchema: {

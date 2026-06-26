@@ -18,6 +18,7 @@
   "branch.rejected": "Branch rejected. Changes have been discarded.",
   "content.deleted": "Content entry deleted and merged.",
   "content.invalid_status": "Invalid status \"{status}\". Use one of: published, draft, archived.",
+  "content.locale_required": "A locale code is required.",
   "content.no_entries": "No entry IDs were provided to update.",
   "content.saved": "Content saved and merged successfully.",
   "content.saved_review": "Content saved to review branch. A team member with reviewer access can approve or reject the changes.",
@@ -38,5 +39,6 @@
   "search.no_results": "No matching content found. Try different keywords or check the model name.",
   "upgrade.alternative": "In the meantime, here's what you can do on your current plan:",
   "upgrade.limit_reached": "You've reached the {resource} limit for your {plan} plan ({limit}). Upgrade to increase your limits, or usage will be billed at the overage rate.",
-  "upgrade.starter_to_pro": "Upgrade to {toPlan} ({toPrice}/mo) for higher limits: {toAiMessages} AI messages, {toCdnBandwidth} CDN, {toMediaStorage} media, {toSeats} team members, and advanced features like custom variants and model-specific access."
+  "upgrade.starter_to_pro": "Upgrade to {toPlan} ({toPrice}/mo) for higher limits: {toAiMessages} AI messages, {toCdnBandwidth} CDN, {toMediaStorage} media, {toSeats} team members, and advanced features like custom variants and model-specific access.",
+  "vocabulary.terms_required": "Provide a terms object to set, e.g. { \"term-key\": { \"en\": \"Value\" } }."
 }

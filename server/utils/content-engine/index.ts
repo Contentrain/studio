@@ -5,6 +5,8 @@ import { initProject } from './init-project'
 import { saveContent } from './save-content'
 import { saveDocument } from './save-document'
 import { saveModel } from './save-model'
+import { deleteModel } from './delete-model'
+import { addLocale, saveVocabulary } from './config-ops'
 import { copyLocale, updateEntryStatus } from './update-status'
 
 /**
@@ -43,6 +45,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
       saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options),
     saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string) =>
       saveModel(internal, definition, userEmail),
+    deleteModel: (modelId: string, userEmail: string) =>
+      deleteModel(internal, modelId, userEmail),
+    addLocale: (locale: string, userEmail: string) =>
+      addLocale(internal, locale, userEmail),
+    saveVocabulary: (terms: Parameters<typeof saveVocabulary>[1], userEmail: string, options?: { replace?: boolean }) =>
+      saveVocabulary(internal, terms, userEmail, options),
     updateEntryStatus: (modelId: string, locale: string, entryIds: string[], status: 'draft' | 'published' | 'archived', userEmail: string) =>
       updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail),
     listContentBranches: () => listContentBranches(internal),

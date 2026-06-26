@@ -2,6 +2,7 @@ import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock, AISystemBlock, AITool } from '~~/server/providers/ai'
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
+import type { ExpandModelView } from '~~/server/utils/relation-expand'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -894,6 +895,117 @@ export async function executeToolWithAutoMerge(
           unmergedBranches: report.unmergedCount,
           warnLimit: limits.warn,
           blockLimit: limits.block,
+        }
+        break
+      }
+
+      case 'relation_expand': {
+        const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
+          break
+        }
+        const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        const entryRef = params.entryId as string
+        const direction = (params.direction as string) === 'reverse' ? 'reverse' : 'forward'
+        const expDefaultLocale = (brainData.config as { locales?: { default?: string } } | null)?.locales?.default ?? 'en'
+        const viewFor = (m: string): ExpandModelView | undefined => {
+          const def = brainData.models.get(m)
+          if (!def?.fields) return undefined
+          const data = brainData.content.get(`${m}:${locale}`) ?? brainData.content.get(`${m}:${expDefaultLocale}`)
+          return { modelId: m, fields: def.fields, entries: brainRefEntries(data) }
+        }
+        if (direction === 'forward') {
+          const view = viewFor(modelId)
+          if (!view) {
+            result = { error: errorMessage('content.not_found') }
+            break
+          }
+          result = { direction, model: modelId, entryId: entryRef, relations: expandForward(view, entryRef, viewFor) }
+        }
+        else {
+          const views = [...brainData.models.keys()].map(viewFor).filter((v): v is ExpandModelView => !!v)
+          result = { direction, model: modelId, entryId: entryRef, referencedBy: expandReverse(modelId, entryRef, views) }
+        }
+        break
+      }
+
+      case 'vocabulary': {
+        const action = (params.action as string) ?? 'get'
+        if (action === 'get') {
+          const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
+          result = { vocabulary: brainData.vocabulary ?? {} }
+          break
+        }
+        const terms = params.terms
+        if (!terms || typeof terms !== 'object' || Array.isArray(terms)) {
+          result = { error: agentMessage('vocabulary.terms_required') }
+          break
+        }
+        const writeResult = await engine.saveVocabulary(terms as Record<string, Record<string, string>>, userEmail)
+        if (!writeResult.validation.valid) {
+          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          break
+        }
+        affected.snapshotChanged = true
+        affected.branchesChanged = true
+        invalidateBrainCache(projectId)
+        if (shouldAutoMerge(workflow, permissions)) {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+        }
+        break
+      }
+
+      case 'add_locale': {
+        const newLocale = params.locale as string
+        if (!newLocale) {
+          result = { error: agentMessage('content.locale_required') }
+          break
+        }
+        const writeResult = await engine.addLocale(newLocale, userEmail)
+        if (!writeResult.validation.valid) {
+          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          break
+        }
+        affected.snapshotChanged = true
+        affected.branchesChanged = true
+        invalidateBrainCache(projectId)
+        if (shouldAutoMerge(workflow, permissions)) {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+        }
+        break
+      }
+
+      case 'delete_model': {
+        const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
+          break
+        }
+        const writeResult = await engine.deleteModel(modelId, userEmail)
+        if (!writeResult.validation.valid) {
+          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          break
+        }
+        affected.models.push(modelId)
+        affected.snapshotChanged = true
+        affected.branchesChanged = true
+        invalidateBrainCache(projectId)
+        if (shouldAutoMerge(workflow, permissions)) {
+          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
         }
         break
       }
