@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PLAN_PRICING, getPlanParams, getUpgradeParams } from '../../shared/utils/license'
-import { buildSystemPrompt } from '../../server/utils/agent-system-prompt'
+import { buildSystemPrompt, buildSystemPromptBlocks } from '../../server/utils/agent-system-prompt'
 
 vi.stubGlobal('agentPrompt', (key: string) => `[prompt:${key}]`)
 vi.stubGlobal('getPlanParams', getPlanParams)
@@ -131,5 +131,43 @@ describe('buildSystemPrompt', () => {
 
     expect(prompt).toContain('[prompt:state.needs_init]')
     expect(prompt).toContain('Available tools: init_project')
+  })
+})
+
+describe('buildSystemPromptBlocks — edition gating', () => {
+  const baseArgs = [
+    { stack: 'nuxt', domains: ['system'], workflow: 'auto-merge', locales: { default: 'en', supported: ['en'] } } as never,
+    [] as never,
+    { workspaceRole: 'owner', projectRole: null, specificModels: false, allowedModels: [], availableTools: ['save_content'] },
+    { initialized: true, pendingBranches: [], projectStatus: 'active', phase: 'active', contentContext: null } as never,
+    { activeModelId: null, activeLocale: 'en', activeEntryId: null, panelState: 'overview', activeBranch: null, contextItems: [] } as never,
+    { category: 'update_content', confidence: 'low', inferred: {} } as never,
+    null,
+    null,
+    'starter' as const,
+    null,
+    undefined,
+  ] as const
+
+  it('suppresses paid-plan narrative and emits a neutral note in Community Edition (agpl)', () => {
+    const { static: body } = buildSystemPromptBlocks(...baseArgs, 'agpl')
+    expect(body).toContain('[prompt:plan.community]')
+    expect(body).not.toContain('[prompt:plan.starter]')
+    expect(body).not.toContain('[prompt:plan.tiers]')
+    expect(body).not.toContain('[prompt:upgrade.guidance]')
+  })
+
+  it('keeps plan + upgrade narrative in Enterprise Edition (ee)', () => {
+    const { static: body } = buildSystemPromptBlocks(...baseArgs, 'ee')
+    expect(body).toContain('[prompt:plan.starter]')
+    expect(body).toContain('[prompt:plan.tiers]')
+    expect(body).not.toContain('[prompt:plan.community]')
+  })
+
+  it('always includes the branch-model and role-capabilities sections', () => {
+    const { static: body } = buildSystemPromptBlocks(...baseArgs, 'agpl')
+    expect(body).toContain('[prompt:architecture.branch_model]')
+    expect(body).toContain('[prompt:permissions.role_capabilities]')
+    expect(body).toContain('[prompt:forms.lifecycle]')
   })
 })

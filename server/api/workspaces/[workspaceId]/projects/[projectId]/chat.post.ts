@@ -219,6 +219,7 @@ export default defineEventHandler(async (event) => {
       contentIndex || null,
       vocabulary, plan, null,
       attachmentSummary,
+      getEdition(),
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
 

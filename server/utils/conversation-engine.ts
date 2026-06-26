@@ -301,6 +301,17 @@ export async function executeToolWithAutoMerge(
   // Plans without review workflow support always auto-publish on save.
   const autoPublish = !hasFeature(plan, 'workflow.review')
 
+  // Execution-time authorization backstop. chat.post.ts already filters
+  // the tool list handed to the model, but a hallucinated/forged tool
+  // name — or any future caller that reuses this engine without
+  // pre-filtering (the Conversation API / scheduled ops anticipated in
+  // this module's docstring) — must not bypass the role check. Every
+  // other governance dimension (model access, plan features, phase) is
+  // re-enforced below; the role dimension needs the same hard backstop.
+  if (!permissions.availableTools.includes(name)) {
+    return { result: { error: errorMessage('chat.tool_forbidden', { tool: name }) }, affected }
+  }
+
   try {
     let result: unknown
 
@@ -359,6 +370,19 @@ export async function executeToolWithAutoMerge(
         }
         else {
           writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail, { autoPublish })
+        }
+
+        // Surface validation failure as a HARD error. Previously a failed
+        // save returned an empty branch and `summarizeWriteResult` buried
+        // the errors in an `errors[]` array alongside `merged:false`, which
+        // the model frequently read as a soft/partial success. This makes
+        // malformed field values and relation-shape / polymorphic-target
+        // mismatches (which `validateContent` catches) a clear, actionable
+        // error the agent must fix before retrying. (Mirrors the
+        // copy_locale validation guard below.)
+        if (!writeResult.validation.valid) {
+          result = { error: `${errorMessage('content.validation_failed')}: ${writeResult.validation.errors.map(e => e.message).join('; ')}` }
+          break
         }
 
         affected.models.push(modelId)
