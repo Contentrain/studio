@@ -149,6 +149,50 @@ export function useChat(options?: {
     abortController?.abort()
   }
 
+  // Live content-refresh debounce. Each content-mutating tool result
+  // schedules a refresh; rapid bursts within a single turn coalesce into
+  // one `onContentChanged` call so the context panel updates as the agent
+  // works, instead of only after the whole turn finishes on `done`.
+  const CONTENT_REFRESH_DEBOUNCE_MS = 500
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingAffected: AffectedResources | null = null
+
+  function blankAffected(): AffectedResources {
+    return { models: [], locales: [], snapshotChanged: false, branchesChanged: false }
+  }
+
+  // Merge a tool's affected resources into the pending refresh batch.
+  // Returns false (and skips scheduling) when nothing actually changed —
+  // read-only tools carry an empty affected and must not trigger refetches.
+  function accumulateAffected(src?: AffectedResources): boolean {
+    if (!src) return false
+    const hasChange = !!src.snapshotChanged || !!src.branchesChanged || (src.models?.length ?? 0) > 0
+    if (!hasChange) return false
+    const acc = (pendingAffected ??= blankAffected())
+    for (const m of src.models ?? []) if (!acc.models.includes(m)) acc.models.push(m)
+    for (const l of src.locales ?? []) if (!acc.locales.includes(l)) acc.locales.push(l)
+    acc.snapshotChanged ||= !!src.snapshotChanged
+    acc.branchesChanged ||= !!src.branchesChanged
+    return true
+  }
+
+  function flushContentRefresh() {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    if (pendingAffected && options?.onContentChanged) {
+      options.onContentChanged(pendingAffected)
+    }
+    pendingAffected = null
+  }
+
+  function scheduleContentRefresh(src?: AffectedResources) {
+    if (!accumulateAffected(src)) return
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(flushContentRefresh, CONTENT_REFRESH_DEBOUNCE_MS)
+  }
+
   async function fetchConversations(workspaceId: string, projectId: string) {
     try {
       conversations.value = await $fetch<ConversationSummary[]>(
@@ -344,6 +388,10 @@ export function useChat(options?: {
     finally {
       isStreaming.value = false
       abortController = null
+      // If the stream ended/aborted/errored before a `done`, still reflect
+      // any content the agent already changed mid-turn (no-op if `done`
+      // already flushed).
+      flushContentRefresh()
     }
   }
 
@@ -372,14 +420,17 @@ export function useChat(options?: {
           tc.result = event.result
           tc.status = 'complete'
         }
+        // Live refresh: reflect this operation in the context panel without
+        // waiting for the whole turn to finish (debounced + coalesced).
+        scheduleContentRefresh(event.affected as AffectedResources | undefined)
         break
       }
 
       case 'done': {
-        const affected = event.affected as AffectedResources | undefined
-        if (affected && options?.onContentChanged) {
-          options.onContentChanged(affected)
-        }
+        // Turn finished — supersede any pending debounced preview with one
+        // authoritative refresh covering everything the turn touched.
+        accumulateAffected(event.affected as AffectedResources | undefined)
+        flushContentRefresh()
         break
       }
 
