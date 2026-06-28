@@ -4,6 +4,7 @@ import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~/uti
 interface FieldDef {
   type: string
   required?: boolean
+  default?: unknown
   min?: number
   max?: number
   options?: string[]
@@ -154,6 +155,48 @@ function updateObjectField(key: string, value: unknown) {
   const obj = { ...(localValue.value ?? {}) as Record<string, unknown> }
   obj[key] = value
   localValue.value = obj
+}
+
+// --- Array of objects (repeater) ---
+// Per Contentrain §7.2, `array` items may be `{ type: 'object', fields }`. This
+// is a first-class, MCP-validated pattern (validator recurses into item fields),
+// so the form edits it inline as a repeater of object rows rather than punting
+// to the chat-only placeholder.
+const arrayItemFields = computed<Record<string, FieldDef>>(() => {
+  const items = fieldDef?.items
+  if (type === 'array' && items !== null && typeof items === 'object' && items.type === 'object' && items.fields) {
+    return items.fields
+  }
+  return {}
+})
+const arrayItemFieldIds = computed(() => Object.keys(arrayItemFields.value))
+const isObjectArray = computed(() => arrayItemFieldIds.value.length > 0)
+const arrayItems = computed(() => (Array.isArray(localValue.value) ? localValue.value : []) as Array<Record<string, unknown>>)
+
+function addArrayObject() {
+  const arr = [...arrayItems.value]
+  const item: Record<string, unknown> = {}
+  for (const [key, def] of Object.entries(arrayItemFields.value)) {
+    item[key] = def.default ?? null
+  }
+  arr.push(item)
+  localValue.value = arr
+}
+
+function removeArrayObject(index: number) {
+  const arr = [...arrayItems.value]
+  arr.splice(index, 1)
+  localValue.value = arr
+}
+
+function getArrayObjectField(index: number, key: string): unknown {
+  return arrayItems.value[index]?.[key] ?? null
+}
+
+function updateArrayObjectField(index: number, key: string, value: unknown) {
+  const arr = [...arrayItems.value]
+  arr[index] = { ...arr[index], [key]: value }
+  localValue.value = arr
 }
 
 // Relation entries label lookup (key is the option-value form).
@@ -400,6 +443,48 @@ function getRelationLabel(key: string): string {
           />
         </div>
       </div>
+    </div>
+
+    <!-- ═══ Array of objects (repeater, max depth 2) ═══ -->
+    <div v-else-if="type === 'array' && isObjectArray && depth < 2" class="space-y-2">
+      <div
+        v-for="(item, idx) in arrayItems"
+        :key="idx"
+        class="space-y-3 rounded-lg border border-secondary-200 p-3 dark:border-secondary-800"
+      >
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-muted">#{{ idx + 1 }}</span>
+          <button
+            type="button"
+            class="rounded-md p-1 text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            :aria-label="t('common.remove')"
+            @click="removeArrayObject(idx)"
+          >
+            <span class="icon-[annon--trash] block size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+        <div v-for="key in arrayItemFieldIds" :key="key">
+          <AtomsFormLabel :text="key" size="xs" :required="arrayItemFields[key]?.required" />
+          <div class="mt-1">
+            <AtomsContentFieldEditor
+              :type="arrayItemFields[key]?.type ?? 'string'"
+              :model-value="getArrayObjectField(idx, key)"
+              :field-id="`${fieldId}[${idx}].${key}`"
+              :field-def="arrayItemFields[key]"
+              :options="arrayItemFields[key]?.options"
+              :standalone="false"
+              :depth="depth + 1"
+              @update:model-value="updateArrayObjectField(idx, key, $event)"
+            />
+          </div>
+        </div>
+      </div>
+      <AtomsBaseButton size="sm" @click="addArrayObject">
+        <template #prepend>
+          <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
+        </template>
+        <span>{{ t('content.add_item') }}</span>
+      </AtomsBaseButton>
     </div>
 
     <!-- ═══ Array of objects / complex — placeholder ═══ -->

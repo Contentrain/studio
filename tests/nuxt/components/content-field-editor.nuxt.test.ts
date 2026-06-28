@@ -109,3 +109,55 @@ describe('ContentFieldEditor — relations', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['manual-ref']])
   })
 })
+
+describe('ContentFieldEditor — array of objects (repeater)', () => {
+  const linksDef = {
+    type: 'array',
+    items: { type: 'object', fields: { label: { type: 'string' }, url: { type: 'string' } } },
+  }
+
+  async function mountLinks(modelValue: unknown) {
+    return mountSuspended(ContentFieldEditor, {
+      props: { type: 'array', fieldId: 'links', fieldDef: linksDef, modelValue, standalone: false },
+      global: { stubs },
+    })
+  }
+
+  it('renders an editor row per item instead of the chat-only placeholder', async () => {
+    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }])
+    // Two flat fields (label, url) → two inputs; no placeholder hint.
+    expect(wrapper.findAll('[data-test="input"]')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('Edit complex structures via chat')
+    expect((wrapper.findAll('[data-test="input"]')[0]!.element as HTMLInputElement).value).toBe('Docs')
+  })
+
+  it('edits a nested field and emits the updated array', async () => {
+    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }])
+    await wrapper.findAll('[data-test="input"]')[0]!.setValue('Guides')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([[{ label: 'Guides', url: 'https://docs' }]])
+  })
+
+  it('appends a fresh item (fields defaulted) on add', async () => {
+    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }])
+    const addBtn = wrapper.findAll('button').find(b => b.text().includes('Add'))
+    await addBtn!.trigger('click')
+    const next = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as unknown[]
+    expect(next).toHaveLength(2)
+    expect(next[1]).toEqual({ label: null, url: null })
+  })
+
+  it('removes an item by index', async () => {
+    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }, { label: 'Blog', url: 'https://blog' }])
+    // First remove button belongs to item #1.
+    await wrapper.findAll('[aria-label="Remove"]')[0]!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([[{ label: 'Blog', url: 'https://blog' }]])
+  })
+
+  it('still shows the placeholder for object items nested too deep (depth ≥ 2)', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, {
+      props: { type: 'array', fieldId: 'deep', fieldDef: linksDef, modelValue: [], standalone: false, depth: 2 },
+      global: { stubs },
+    })
+    expect(wrapper.text()).toContain('Edit complex structures via chat')
+  })
+})

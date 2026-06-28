@@ -13,6 +13,8 @@
   "attachment.invalid_url": "Enter a valid http(s) URL.",
   "attachment.link_not_text": "This link isn’t a readable page ({type}). Use file upload for media.",
   "attachment.link_too_large": "This page is too large to attach.",
+  "attachment.media_unavailable": "Media upload isn’t available on your current plan.",
+  "attachment.media_upload_failed": "Couldn’t upload to the media library — please try again.",
   "attachment.no_url": "No URL provided.",
   "attachment.not_text": "This file isn’t readable text.",
   "attachment.payload_too_large": "These attachments are too large for one message. Remove some and try again.",

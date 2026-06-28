@@ -16,11 +16,35 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useContent()
-const { messages, conversationId, conversations, isStreaming, error, selectedModel, sendMessage, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
+const { messages, conversationId, conversations, isStreaming, error, selectedModel, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
   onContentChanged: (affected) => {
     emit('contentChanged', affected)
   },
 })
+
+// Panel-wide file drag-drop → forwarded to the composer (always as context).
+const chatInputRef = ref<{ addFiles: (files: FileList | File[] | null) => void } | null>(null)
+const isDragOver = ref(false)
+
+function onPanelDragOver(e: DragEvent) {
+  if (!e.dataTransfer?.types.includes('Files')) return // ignore context-chip drags
+  e.preventDefault()
+  isDragOver.value = true
+}
+
+function onPanelDragLeave(e: DragEvent) {
+  const related = e.relatedTarget as Node | null
+  if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+    isDragOver.value = false
+  }
+}
+
+function onPanelDrop(e: DragEvent) {
+  isDragOver.value = false
+  if (!e.dataTransfer?.types.includes('Files')) return
+  e.preventDefault()
+  chatInputRef.value?.addFiles(e.dataTransfer.files)
+}
 const { chips, toContextItems, clear: clearContext } = useChatContext()
 const { state: authState } = useAuth()
 const toast = useToast()
@@ -104,7 +128,12 @@ function formatConversationDate(dateStr: string): string {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div
+    class="relative flex h-full flex-col"
+    @dragover="onPanelDragOver"
+    @dragleave="onPanelDragLeave"
+    @drop="onPanelDrop"
+  >
     <!-- Header -->
     <div
       class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-4 dark:border-secondary-800"
@@ -298,10 +327,24 @@ function formatConversationDate(dateStr: string): string {
 
     <!-- Input -->
     <MoleculesChatInput
-      :disabled="isStreaming || (!!error && error.includes('limit'))"
+      ref="chatInputRef"
+      :disabled="!!error && error.includes('limit')"
+      :streaming="isStreaming"
       :workspace-id="workspaceId"
       :project-id="projectId"
       @send="handleSend"
+      @stop="stopStreaming"
     />
+
+    <!-- Panel-wide file drop overlay -->
+    <div
+      v-if="isDragOver"
+      class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-primary-50/80 backdrop-blur-sm dark:bg-primary-950/70"
+    >
+      <div class="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-primary-400 px-8 py-6 text-primary-600 dark:border-primary-500 dark:text-primary-300">
+        <span class="icon-[annon--cloud-upload] size-7" aria-hidden="true" />
+        <span class="text-sm font-medium">{{ t('chat.drop_files') }}</span>
+      </div>
+    </div>
   </div>
 </template>
