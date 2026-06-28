@@ -116,4 +116,47 @@ describe('brain cache', () => {
     mod.invalidateBrainCache('project-2')
     expect(mod.getBrainCache('project-2')).toBeNull()
   })
+
+  it('keeps document date fields as strings instead of gray-matter Date objects', async () => {
+    // Regression: gray-matter (js-yaml DEFAULT_SCHEMA) coerces an unquoted
+    // `published_at: 2026-03-12` into a JS Date, which the field validator
+    // rejects as "expected date, got object" — an error no re-save can
+    // clear. The brain must normalize it back to a YYYY-MM-DD string.
+    const git = {
+      getTree: vi.fn(async () => [
+        { path: '.contentrain/config.json', sha: 'c', type: 'blob' as const },
+        { path: '.contentrain/models/blog.json', sha: 'm', type: 'blob' as const },
+        { path: '.contentrain/content/marketing/blog/designing-calm-interfaces.md', sha: 'd', type: 'blob' as const },
+      ]),
+      readFile: vi.fn(async (path: string) => {
+        if (path === '.contentrain/config.json') {
+          return JSON.stringify({ stack: 'nuxt', domains: ['marketing'], workflow: 'auto-merge', locales: { default: 'en', supported: ['en'] } })
+        }
+        if (path === '.contentrain/models/blog.json') {
+          return JSON.stringify({ id: 'blog', name: 'Blog', kind: 'document', domain: 'marketing', i18n: false, fields: { title: { type: 'string' }, published_at: { type: 'date' } } })
+        }
+        if (path === '.contentrain/content/marketing/blog/designing-calm-interfaces.md') {
+          return '---\ntitle: Designing Calm Interfaces\npublished_at: 2026-03-12\n---\n\nBody text.\n'
+        }
+        throw new Error(`Unexpected read: ${path}`)
+      }),
+      listDirectory: vi.fn(async (path: string) => {
+        if (path === '.contentrain/models') return ['blog.json']
+        if (path === '.contentrain/content/marketing/blog') return ['designing-calm-interfaces.md']
+        return []
+      }),
+    }
+
+    const mod = await import('../../server/utils/brain-cache')
+    const brain = await mod.buildBrainSnapshot(git as never, '', 'project-doc')
+
+    const docs = brain.content.get('blog:en') as Array<{ slug: string, frontmatter: Record<string, unknown> }>
+    expect(Array.isArray(docs)).toBe(true)
+    expect(docs[0]!.frontmatter.published_at).toBe('2026-03-12')
+    expect(typeof docs[0]!.frontmatter.published_at).toBe('string')
+
+    // And schema validation must not flag a date type mismatch.
+    const dateErrors = (brain.schemaValidation?.warnings ?? []).filter(w => w.message.includes('expected date'))
+    expect(dateErrors).toEqual([])
+  })
 })

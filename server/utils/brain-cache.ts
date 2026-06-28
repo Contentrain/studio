@@ -13,7 +13,7 @@
  * Self-hosted product = single Node.js process = no distributed cache needed.
  */
 
-import type { ContentrainConfig, ModelDefinition, ModelKind } from '@contentrain/types'
+import type { ContentrainConfig, FieldDef, ModelDefinition, ModelKind } from '@contentrain/types'
 import type { GitProvider, TreeEntry } from '../providers/git'
 import type { SchemaValidationResult } from './schema-validation'
 import matter from 'gray-matter'
@@ -64,6 +64,46 @@ export function isBrainStale(projectId: string): boolean {
  */
 export function invalidateBrainCache(projectId: string): void {
   brainCache.delete(projectId)
+}
+
+/**
+ * Normalize dates that gray-matter coerced out of document frontmatter.
+ *
+ * gray-matter parses YAML with js-yaml's DEFAULT_SCHEMA, which coerces
+ * unquoted ISO-date scalars (`published_at: 2026-03-12`) into JS `Date`
+ * objects. But Studio's write path (`serializeMarkdownFrontmatter`),
+ * the CDN builder, and the field validators all treat `date`/`datetime`
+ * fields as STRINGS. A coerced `Date` therefore trips the validator's
+ * `Type mismatch: expected date, got object` — an error the user can
+ * never clear, because every re-save round-trips back to a `Date` on the
+ * next brain read. Convert any `Date` the parser produced back to a
+ * string: `YYYY-MM-DD` for `date` fields, full ISO otherwise. Recurses
+ * into nested objects/arrays so coerced dates in sub-fields are caught too.
+ */
+function normalizeFrontmatterDates(
+  data: Record<string, unknown>,
+  fields?: ModelDefinition['fields'],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    out[key] = deCoerceDate(value, fields?.[key])
+  }
+  return out
+}
+
+function deCoerceDate(value: unknown, fieldDef?: FieldDef): unknown {
+  if (value instanceof Date) {
+    return fieldDef?.type === 'date'
+      ? value.toISOString().slice(0, 10)
+      : value.toISOString()
+  }
+  if (Array.isArray(value)) return value.map(item => deCoerceDate(item))
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = deCoerceDate(v)
+    return out
+  }
+  return value
 }
 
 /**
@@ -293,7 +333,7 @@ export async function buildBrainSnapshot(
 
                 entries.push({
                   slug,
-                  frontmatter: parsed.data,
+                  frontmatter: normalizeFrontmatterDates(parsed.data as Record<string, unknown>, model.fields),
                   body: parsed.content,
                   meta: entryMeta,
                 })
