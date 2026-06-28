@@ -25,10 +25,43 @@ function attachmentIcon(kind: string, mime?: string): string {
   return 'icon-[annon--file-text]'
 }
 
+// Markdown parsing + sanitize runs over the FULL accumulated text. While
+// an assistant message streams, `text` grows by a token on every delta,
+// so re-parsing on each change is O(n²) and makes long messages janky.
+// Throttle the source that feeds the parser to ~12fps, with a guaranteed
+// trailing run so the final text always renders in full.
+const PARSE_THROTTLE_MS = 80
+const parseSource = ref(props.text)
+let lastParsedAt = 0
+let trailing: ReturnType<typeof setTimeout> | null = null
+
+watch(() => props.text, (val) => {
+  if (trailing) {
+    clearTimeout(trailing)
+    trailing = null
+  }
+  const elapsed = Date.now() - lastParsedAt
+  if (elapsed >= PARSE_THROTTLE_MS) {
+    lastParsedAt = Date.now()
+    parseSource.value = val
+  }
+  else {
+    trailing = setTimeout(() => {
+      lastParsedAt = Date.now()
+      parseSource.value = props.text
+      trailing = null
+    }, PARSE_THROTTLE_MS - elapsed)
+  }
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (trailing) clearTimeout(trailing)
+})
+
 const renderedHtml = computed(() => {
-  if (!props.text) return ''
-  if (props.role === 'user') return props.text
-  return sanitize(marked.parse(props.text, { async: false }) as string)
+  if (!parseSource.value) return ''
+  if (props.role === 'user') return parseSource.value
+  return sanitize(marked.parse(parseSource.value, { async: false }) as string)
 })
 
 const contextTypeIcons: Record<string, string> = {
