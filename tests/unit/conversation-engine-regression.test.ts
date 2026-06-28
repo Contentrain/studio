@@ -119,24 +119,30 @@ describe('conversation engine regression', () => {
     expect(messages).toHaveLength(1)
   })
 
-  it('preserves streamed assistant text before tool use in the next model message', async () => {
+  it('streams the post-tool continuation instead of buffering it', async () => {
+    // Every iteration now streams — the first turn AND the post-tool
+    // continuation. The follow-up answer must arrive as streamed text
+    // deltas, and the blocking createCompletion path must never be used.
+    let call = 0
+    const createCompletion = vi.fn()
     const { events, messages } = await collectConversationEvents({
       aiProvider: {
-        streamCompletion: async function* () {
-          yield { type: 'text', content: 'I will inspect the project.' }
-          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
-          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { model: 'posts' } }
-          yield {
-            type: 'message_end',
-            stopReason: 'tool_use',
-            usage: { inputTokens: 10, outputTokens: 5 },
-          }
+        streamCompletion() {
+          const idx = call++
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'text', content: 'I will inspect the project.' }
+              yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { model: 'posts' } }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 10, outputTokens: 5 } }
+            }
+            else {
+              yield { type: 'text', content: 'Done.' }
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 4, outputTokens: 2 } }
+            }
+          })()
         },
-        createCompletion: vi.fn().mockResolvedValue({
-          content: [{ type: 'text', text: 'Done.' }],
-          stopReason: 'end_turn',
-          usage: { inputTokens: 4, outputTokens: 2 },
-        }),
+        createCompletion,
       },
     })
 
@@ -151,6 +157,8 @@ describe('conversation engine regression', () => {
       role: 'user',
       content: [{ type: 'tool_result', toolUseId: 'tool-1' }],
     })
+    expect(events).toContainEqual({ type: 'text', content: 'Done.' })
+    expect(createCompletion).not.toHaveBeenCalled()
     expect(events[events.length - 1]).toMatchObject({
       type: 'done',
       lastContent: [{ type: 'text', text: 'Done.' }],
@@ -191,27 +199,33 @@ describe('conversation engine regression', () => {
     })
   })
 
-  it('preserves non-streaming assistant text before tool use in later iterations', async () => {
+  it('streams assistant text before tool use in later iterations', async () => {
+    let call = 0
     const { messages } = await collectConversationEvents({
       maxToolIterations: 2,
       aiProvider: {
-        streamCompletion: async function* () {
-          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
-          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { first: true } }
-          yield {
-            type: 'message_end',
-            stopReason: 'tool_use',
-            usage: { inputTokens: 5, outputTokens: 2 },
-          }
+        streamCompletion() {
+          const idx = call++
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { first: true } }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 5, outputTokens: 2 } }
+            }
+            else if (idx === 1) {
+              yield { type: 'text', content: 'I need one more check.' }
+              yield { type: 'tool_use_start', toolId: 'tool-2', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-2', toolName: 'test_tool', toolInput: { second: true } }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 6, outputTokens: 3 } }
+            }
+            else {
+              // graceful-close summary (iteration ceiling reached)
+              yield { type: 'text', content: 'Wrapped up.' }
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 1 } }
+            }
+          })()
         },
-        createCompletion: vi.fn().mockResolvedValue({
-          content: [
-            { type: 'text', text: 'I need one more check.' },
-            { type: 'tool_use', id: 'tool-2', name: 'test_tool', input: { second: true } },
-          ],
-          stopReason: 'tool_use',
-          usage: { inputTokens: 6, outputTokens: 3 },
-        }),
+        createCompletion: vi.fn(),
       },
     })
 
@@ -222,6 +236,111 @@ describe('conversation engine regression', () => {
         { type: 'tool_use', id: 'tool-2', name: 'test_tool', input: { second: true } },
       ],
     })
+  })
+
+  it('emits a streamed tools-disabled summary when the iteration ceiling is hit mid-tool-use', async () => {
+    // Loop runs out of iterations while the model still wants tools.
+    // Instead of leaving the user with an answer that stops mid-work,
+    // the engine makes one final tools-disabled streaming call so the
+    // model summarizes — and that summary becomes the visible answer.
+    let call = 0
+    const toolsPerCall: number[] = []
+    const { events } = await collectConversationEvents({
+      maxToolIterations: 1,
+      aiProvider: {
+        streamCompletion(request) {
+          const idx = call++
+          toolsPerCall.push(request.tools.length)
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'text', content: 'Working on it.' }
+              yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: {} }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 5, outputTokens: 2 } }
+            }
+            else {
+              yield { type: 'text', content: 'All done — fixed everything.' }
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 3, outputTokens: 4 } }
+            }
+          })()
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    // Two model calls: the ceiling iteration + the graceful-close summary.
+    expect(call).toBe(2)
+    // The summary call runs with tools disabled.
+    expect(toolsPerCall).toEqual([1, 0])
+    // The streamed summary is the final visible assistant content.
+    expect(events).toContainEqual({ type: 'text', content: 'All done — fixed everything.' })
+    expect(events[events.length - 1]).toMatchObject({
+      type: 'done',
+      lastContent: [{ type: 'text', text: 'All done — fixed everything.' }],
+    })
+  })
+
+  it('does not truncate large tool results below the 32k cap', async () => {
+    // Regression: the old 2k cap chopped content reads into invalid JSON
+    // mid-object, so the agent could never see a full entry and looped
+    // re-reading it. A 5k payload must now pass through intact.
+    let call = 0
+    vi.stubGlobal('emptyAffected', vi.fn(emptyAffectedValue))
+    vi.stubGlobal('mergeAffected', vi.fn((a: unknown) => a))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('checkStateTransition', vi.fn().mockReturnValue({ allowed: true }))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      models: new Map([['posts', { id: 'posts', kind: 'collection' }]]),
+      content: new Map([['posts:en', { e1: { title: 'x'.repeat(5000) } }]]),
+      meta: new Map(),
+    }))
+    vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
+      streamCompletion() {
+        const idx = call++
+        return (async function* () {
+          if (idx === 0) {
+            yield { type: 'tool_use_start', toolId: 't1', toolName: 'brain_query' }
+            yield { type: 'tool_use_end', toolId: 't1', toolName: 'brain_query', toolInput: { model: 'posts', locale: 'en' } }
+            yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 1, outputTokens: 1 } }
+          }
+          else {
+            yield { type: 'text', content: 'ok' }
+            yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 1 } }
+          }
+        })()
+      },
+      createCompletion: vi.fn(),
+    }))
+
+    const { runConversationLoop } = await loadConversationEngineModule()
+    const messages: AIMessage[] = [{ role: 'user', content: 'show posts' }]
+    const ctx = createToolContext()
+    ctx.permissions.availableTools = ['brain_query']
+
+    const events = []
+    for await (const evt of runConversationLoop(
+      {
+        model: 'm',
+        apiKey: 'k',
+        systemPrompt: 's',
+        messages,
+        tools: [{ name: 'brain_query', description: '', inputSchema: { type: 'object' } }],
+        maxToolIterations: 1,
+      },
+      ctx,
+    )) { events.push(evt) }
+
+    const blocks = messages[2]!.content as Array<{ type: string, toolUseId?: string, content: string }>
+    expect(blocks[0]!.type).toBe('tool_result')
+    expect(blocks[0]!.content.length).toBeGreaterThan(4000)
+    expect(blocks[0]!.content).not.toContain('truncated')
+
+    // tool_result events carry per-tool `affected` so the client can do a
+    // live, debounced context-panel refresh as each operation lands.
+    const toolResultEvent = events.find(e => e.type === 'tool_result')
+    expect(toolResultEvent).toBeDefined()
+    expect(toolResultEvent!.affected).toMatchObject({ models: expect.any(Array), snapshotChanged: expect.any(Boolean) })
   })
 
   it('emits webhook events for content-mutating tools', async () => {
