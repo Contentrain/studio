@@ -1,5 +1,5 @@
 import type { ModelDefinition } from '@contentrain/types'
-import type { AIMessage, AIContentBlock, AISystemBlock, AITool } from '~~/server/providers/ai'
+import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '~~/server/providers/ai'
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
@@ -40,6 +40,18 @@ export interface IterationTrace {
   toolResultBlocks: AIContentBlock[]
 }
 
+/**
+ * Result of consuming one streaming model turn. The streaming events
+ * are yielded live to the caller; this is the assembled end-state the
+ * loop needs to decide whether to execute tools and continue.
+ */
+interface ModelStreamResult {
+  assistantBlocks: AIContentBlock[]
+  currentToolCalls: Array<{ id: string, name: string, input: unknown }>
+  stopReason: string | undefined
+  usage: AIUsage
+}
+
 // ─── Configuration ───
 
 export interface ConversationConfig {
@@ -78,8 +90,8 @@ export interface ToolExecutionContext {
 
 // ─── Constants ───
 
-const DEFAULT_MAX_TOOL_ITERATIONS = 5
-const DEFAULT_MAX_TOOL_RESULT_LENGTH = 2000
+const DEFAULT_MAX_TOOL_ITERATIONS = 8
+const DEFAULT_MAX_TOOL_RESULT_LENGTH = 32000
 
 // ─── Conversation Loop ───
 
@@ -88,10 +100,13 @@ const DEFAULT_MAX_TOOL_RESULT_LENGTH = 2000
  * Yields ConversationEvent objects that the caller pipes to SSE or collects.
  *
  * The generator handles:
- * - First iteration: streaming via AIProvider.streamCompletion
- * - Subsequent iterations: non-streaming via AIProvider.createCompletion
+ * - Every iteration: streaming via AIProvider.streamCompletion (the
+ *   first turn AND every post-tool continuation) so output streams live
+ *   instead of arriving as one buffered block
  * - State machine checks before tool execution
  * - Tool result truncation for context window management
+ * - Graceful close: a final tools-disabled summary turn if the loop
+ *   hits the iteration ceiling while the model still wants tools
  * - Affected resource accumulation across tool calls
  *
  * The final event is always { type: 'done' } with usage, affected, and lastContent.
@@ -117,112 +132,93 @@ export async function* runConversationLoop(
   // populated for every loop iteration regardless of stop reason.
   const trace: IterationTrace[] = []
 
+  // Consume one streaming model turn. Yields ConversationEvents (text
+  // deltas, tool_use starts, errors) as they arrive so the SSE caller
+  // forwards them live, and returns the assembled iteration result.
+  // Used for EVERY iteration — the first turn AND every post-tool
+  // continuation — so the assistant's follow-up answer streams
+  // token-by-token instead of arriving as one buffered block.
+  // `toolsOverride` lets the graceful-close pass disable tools to force
+  // a final summary.
+  async function* runModelStream(
+    maxTokens: number,
+    toolsOverride?: AITool[],
+  ): AsyncGenerator<ConversationEvent, ModelStreamResult> {
+    const assistantBlocks: AIContentBlock[] = []
+    const currentToolCalls: Array<{ id: string, name: string, input: unknown }> = []
+    const usage: AIUsage = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+    let stopReason: string | undefined
+    let currentText = ''
+    const flushText = () => {
+      if (!currentText) return
+      assistantBlocks.push({ type: 'text', text: currentText })
+      currentText = ''
+    }
+
+    for await (const streamEvent of aiProvider.streamCompletion(
+      { model: config.model, system: config.systemPrompt, messages: config.messages, tools: toolsOverride ?? config.tools, maxTokens, abortSignal: config.abortSignal },
+      config.apiKey,
+    )) {
+      switch (streamEvent.type) {
+        case 'text':
+          currentText += streamEvent.content ?? ''
+          yield { type: 'text', content: streamEvent.content }
+          break
+        case 'tool_use_start':
+          flushText()
+          yield { type: 'tool_use', id: streamEvent.toolId, name: streamEvent.toolName }
+          break
+        case 'tool_use_end': {
+          const input = (typeof streamEvent.toolInput === 'object' && streamEvent.toolInput !== null) ? streamEvent.toolInput : {}
+          currentToolCalls.push({ id: streamEvent.toolId!, name: streamEvent.toolName!, input })
+          assistantBlocks.push({ type: 'tool_use', id: streamEvent.toolId!, name: streamEvent.toolName!, input })
+          break
+        }
+        case 'message_end':
+          flushText()
+          usage.inputTokens += streamEvent.usage?.inputTokens ?? 0
+          usage.outputTokens += streamEvent.usage?.outputTokens ?? 0
+          usage.cacheCreationInputTokens += streamEvent.usage?.cacheCreationInputTokens ?? 0
+          usage.cacheReadInputTokens += streamEvent.usage?.cacheReadInputTokens ?? 0
+          stopReason = streamEvent.stopReason
+          break
+        case 'error':
+          yield { type: 'error', message: streamEvent.error }
+          break
+      }
+    }
+
+    return { assistantBlocks, currentToolCalls, stopReason, usage }
+  }
+
   let iteration = 0
+  let lastStopReason: string | undefined
 
   while (iteration < maxIterations) {
     if (config.abortSignal?.aborted) break
 
     iteration++
-    const isFirstIteration = iteration === 1
-    const currentToolCalls: Array<{ id: string, name: string, input: unknown }> = []
-    const assistantBlocks: AIContentBlock[] = []
-    let stopReason: string | undefined
 
-    if (isFirstIteration) {
-      let currentText = ''
-      const flushText = () => {
-        if (!currentText) return
-        assistantBlocks.push({ type: 'text', text: currentText })
-        currentText = ''
-      }
+    const turn = yield* runModelStream(4096)
+    totalInputTokens += turn.usage.inputTokens
+    totalOutputTokens += turn.usage.outputTokens
+    totalCacheCreationInputTokens += turn.usage.cacheCreationInputTokens
+    totalCacheReadInputTokens += turn.usage.cacheReadInputTokens
+    lastStopReason = turn.stopReason
+    lastAssistantContent = turn.assistantBlocks
 
-      for await (const streamEvent of aiProvider.streamCompletion(
-        { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 4096, abortSignal: config.abortSignal },
-        config.apiKey,
-      )) {
-        switch (streamEvent.type) {
-          case 'text':
-            currentText += streamEvent.content ?? ''
-            yield { type: 'text', content: streamEvent.content }
-            break
-          case 'tool_use_start':
-            flushText()
-            yield { type: 'tool_use', id: streamEvent.toolId, name: streamEvent.toolName }
-            break
-          case 'tool_use_end': {
-            const toolCall = {
-              id: streamEvent.toolId!,
-              name: streamEvent.toolName!,
-              input: (typeof streamEvent.toolInput === 'object' && streamEvent.toolInput !== null) ? streamEvent.toolInput : {},
-            }
-            currentToolCalls.push({
-              id: toolCall.id,
-              name: toolCall.name,
-              input: toolCall.input,
-            })
-            assistantBlocks.push({
-              type: 'tool_use',
-              id: toolCall.id,
-              name: toolCall.name,
-              input: toolCall.input,
-            })
-            break
-          }
-          case 'message_end':
-            flushText()
-            totalInputTokens += streamEvent.usage?.inputTokens ?? 0
-            totalOutputTokens += streamEvent.usage?.outputTokens ?? 0
-            totalCacheCreationInputTokens += streamEvent.usage?.cacheCreationInputTokens ?? 0
-            totalCacheReadInputTokens += streamEvent.usage?.cacheReadInputTokens ?? 0
-            stopReason = streamEvent.stopReason
-            break
-          case 'error':
-            yield { type: 'error', message: streamEvent.error }
-            break
-        }
-      }
-    }
-    else {
-      const response = await aiProvider.createCompletion(
-        { model: config.model, system: config.systemPrompt, messages: config.messages, tools: config.tools, maxTokens: 2048, abortSignal: config.abortSignal },
-        config.apiKey,
-      )
-      totalInputTokens += response.usage.inputTokens
-      totalOutputTokens += response.usage.outputTokens
-      totalCacheCreationInputTokens += response.usage.cacheCreationInputTokens ?? 0
-      totalCacheReadInputTokens += response.usage.cacheReadInputTokens ?? 0
-      stopReason = response.stopReason
-
-      for (const block of response.content) {
-        if (block.type === 'text') {
-          yield { type: 'text', content: block.text }
-        }
-        else if (block.type === 'tool_use') {
-          yield { type: 'tool_use', id: block.id, name: block.name }
-          currentToolCalls.push({
-            id: block.id,
-            name: block.name,
-            input: (typeof block.input === 'object' && block.input !== null) ? block.input : {},
-          })
-        }
-        assistantBlocks.push(block)
-      }
-    }
-
-    lastAssistantContent = assistantBlocks
-
-    if (stopReason !== 'tool_use' || currentToolCalls.length === 0) {
+    if (turn.stopReason !== 'tool_use' || turn.currentToolCalls.length === 0) {
       // Final iteration — no tool execution this turn. Persist the
       // assistant blocks alone (no tool_result row will exist for
       // this iteration).
-      trace.push({ iteration, assistantBlocks, toolResultBlocks: [] })
+      trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
       break
     }
 
     // === TOOL EXECUTION with state guard + workflow-aware auto-merge ===
     const toolResultBlocks: AIContentBlock[] = []
 
-    for (const tc of currentToolCalls) {
+    for (const tc of turn.currentToolCalls) {
       // Stop tool execution if client disconnected
       if (config.abortSignal?.aborted) {
         toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify({ error: 'Request cancelled' }) })
@@ -246,20 +242,45 @@ export async function* runConversationLoop(
       // Accumulate affected resources
       accumulatedAffected = mergeAffected(accumulatedAffected, result.affected)
 
-      // Truncate for context
+      // Truncate for context. The cap is intentionally generous (see
+      // DEFAULT_MAX_TOOL_RESULT_LENGTH) so full content entries survive
+      // intact — an over-tight cap previously chopped reads into invalid
+      // JSON mid-object, which sent the agent in circles re-reading the
+      // same content it could never see in full.
       let resultStr = JSON.stringify(result.result)
       if (resultStr.length > maxResultLength) {
-        resultStr = resultStr.substring(0, maxResultLength) + '...(truncated)'
+        resultStr = resultStr.substring(0, maxResultLength) + '\n...(truncated — result exceeded the size limit; narrow the query, e.g. by entryId or locale, to read the rest)'
       }
 
-      yield { type: 'tool_result', id: tc.id, name: tc.name, result: result.result }
+      // Carry this tool's affected resources on the event so the client
+      // can refresh the context panel live (debounced) as each operation
+      // lands, instead of only once the whole turn finishes on `done`.
+      yield { type: 'tool_result', id: tc.id, name: tc.name, result: result.result, affected: result.affected }
       toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr })
     }
 
-    config.messages.push({ role: 'assistant', content: assistantBlocks })
+    config.messages.push({ role: 'assistant', content: turn.assistantBlocks })
     config.messages.push({ role: 'user', content: toolResultBlocks })
-    lastAssistantContent = assistantBlocks
-    trace.push({ iteration, assistantBlocks, toolResultBlocks })
+    lastAssistantContent = turn.assistantBlocks
+    trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks })
+  }
+
+  // === GRACEFUL CLOSE on iteration exhaustion ===
+  // If the loop hit the iteration ceiling while the model still wanted
+  // to call tools (it never reached a natural end_turn), the user would
+  // otherwise be left with an answer that stops mid-work. Make one final
+  // tools-disabled streaming call so the model summarizes what it did —
+  // streamed live, and recorded as the final visible assistant turn.
+  if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
+    const wrap = yield* runModelStream(4096, [])
+    totalInputTokens += wrap.usage.inputTokens
+    totalOutputTokens += wrap.usage.outputTokens
+    totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
+    totalCacheReadInputTokens += wrap.usage.cacheReadInputTokens
+    if (wrap.assistantBlocks.length > 0) {
+      lastAssistantContent = wrap.assistantBlocks
+      trace.push({ iteration: iteration + 1, assistantBlocks: wrap.assistantBlocks, toolResultBlocks: [] })
+    }
   }
 
   // === DONE with affected resources ===

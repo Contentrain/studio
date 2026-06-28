@@ -93,6 +93,45 @@ describe('useChat', () => {
     })
   })
 
+  it('refreshes content from a tool result even when the stream ends without a done event', async () => {
+    // A content-mutating tool result carries `affected`; the context panel
+    // must refresh from it (debounced, flushed when the stream ends) instead
+    // of only on `done`. Here the stream ends with no `done` — the finally
+    // flush still fires the refresh so mid-turn progress is reflected.
+    const onContentChanged = vi.fn()
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"tool_use","id":"t1","name":"save_content"}\n',
+      'data: {"type":"tool_result","id":"t1","result":{"ok":true},"affected":{"models":["faq"],"locales":["tr"],"snapshotChanged":false,"branchesChanged":true}}\n',
+    ])))
+
+    const chat = useChat({ onContentChanged })
+    await chat.sendMessage('workspace-1', 'project-1', 'FAQ kaydet')
+
+    expect(onContentChanged).toHaveBeenCalledTimes(1)
+    expect(onContentChanged).toHaveBeenCalledWith({
+      models: ['faq'],
+      locales: ['tr'],
+      snapshotChanged: false,
+      branchesChanged: true,
+    })
+  })
+
+  it('ignores read-only tool results that carry no content changes', async () => {
+    const onContentChanged = vi.fn()
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"tool_use","id":"t1","name":"brain_query"}\n',
+      'data: {"type":"tool_result","id":"t1","result":{"data":[]},"affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+      'data: {"type":"done","affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+    ])))
+
+    const chat = useChat({ onContentChanged })
+    await chat.sendMessage('workspace-1', 'project-1', 'list faq')
+
+    expect(onContentChanged).not.toHaveBeenCalled()
+  })
+
   it('removes the empty assistant placeholder when the request fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network failed')))
 
