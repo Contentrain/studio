@@ -18,6 +18,8 @@ export interface MessageAttachment {
   /** Image URL or a `data:` URL for base64 images. */
   previewUrl?: string
   mime?: string
+  /** Where it landed: `media` (stored CDN asset) vs `context` (ephemeral). */
+  destination?: 'context' | 'media'
 }
 
 /**
@@ -31,6 +33,10 @@ export interface UIAttachment {
   filename: string
   kind: 'text' | 'document' | 'image'
   mime: string
+  /** Requested destination; confirmed by the server on success. */
+  destination?: 'context' | 'media'
+  /** Optimized/stored byte size, for the tray chip. */
+  bytes?: number
   blocks?: unknown[]
   previewUrl?: string
   preview?: string
@@ -112,7 +118,9 @@ function hydrateAttachments(blocks: unknown): MessageAttachment[] | undefined {
       const previewUrl = b.source.type === 'url'
         ? b.source.url
         : (b.source.type === 'base64' ? `data:${b.source.mediaType};base64,${b.source.data}` : undefined)
-      out.push({ kind: 'image', filename: 'image', previewUrl, mime: b.source.mediaType })
+      // A URL source is a stored media asset; base64 is ephemeral context.
+      const destination = b.source.type === 'url' ? 'media' as const : 'context' as const
+      out.push({ kind: 'image', filename: 'image', previewUrl, mime: b.source.mediaType, destination })
     }
     else if (b?.type === 'document') {
       out.push({ kind: 'document', filename: 'document.pdf', mime: b.source?.mediaType ?? 'application/pdf' })
@@ -134,6 +142,12 @@ export function useChat(options?: {
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
   const selectedModel = useState('chat-model', () => 'claude-sonnet-4-6')
+  // Module-instance abort handle so the composer can stop a stream mid-flight.
+  let abortController: AbortController | null = null
+
+  function stopStreaming() {
+    abortController?.abort()
+  }
 
   async function fetchConversations(workspaceId: string, projectId: string) {
     try {
@@ -224,7 +238,7 @@ export function useChat(options?: {
       createdAt: new Date().toISOString(),
       contextItems: attachedChips?.length ? attachedChips : undefined,
       attachments: readyAttachments.length
-        ? readyAttachments.map(a => ({ kind: a.kind, filename: a.filename, previewUrl: a.previewUrl, mime: a.mime }))
+        ? readyAttachments.map(a => ({ kind: a.kind, filename: a.filename, previewUrl: a.previewUrl, mime: a.mime, destination: a.destination }))
         : undefined,
     }
     messages.value.push(userMsg)
@@ -240,12 +254,14 @@ export function useChat(options?: {
     messages.value.push(assistantMsg)
 
     isStreaming.value = true
+    abortController = new AbortController()
 
     try {
       const response = await fetch(
         `/api/workspaces/${workspaceId}/projects/${projectId}/chat`,
         {
           method: 'POST',
+          signal: abortController.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: text,
@@ -310,15 +326,24 @@ export function useChat(options?: {
       fetchConversations(workspaceId, projectId)
     }
     catch (e: unknown) {
-      const { t } = useContent()
-      error.value = resolveApiError(e, t('chat.send_error'))
-      // Remove empty assistant message on error
-      if (!assistantMsg.text && assistantMsg.toolCalls.length === 0) {
-        messages.value.pop()
+      // User-initiated stop: keep whatever already streamed, no error toast.
+      if ((e as Error)?.name === 'AbortError') {
+        if (!assistantMsg.text && assistantMsg.toolCalls.length === 0) {
+          messages.value.pop()
+        }
+      }
+      else {
+        const { t } = useContent()
+        error.value = resolveApiError(e, t('chat.send_error'))
+        // Remove empty assistant message on error
+        if (!assistantMsg.text && assistantMsg.toolCalls.length === 0) {
+          messages.value.pop()
+        }
       }
     }
     finally {
       isStreaming.value = false
+      abortController = null
     }
   }
 
@@ -381,6 +406,7 @@ export function useChat(options?: {
     error: readonly(error),
     selectedModel,
     sendMessage,
+    stopStreaming,
     clearChat,
     fetchConversations,
     loadConversation,

@@ -35,6 +35,19 @@ import { resolveVariantConfig } from './media-variants'
 import { useMediaProvider } from './providers'
 import { isAllowedWebhookUrl } from './webhook-engine'
 
+/**
+ * Where the user wants an attachment to go:
+ * - `context`  → ephemeral input for the agent (never persisted). Default.
+ * - `media`    → persisted as a managed media-library/CDN asset.
+ *
+ * Only the image branch acts on this — text/docs/links are inherently
+ * `context`. Previously the image branch chose CDN-vs-ephemeral purely from
+ * the plan, silently persisting images on media-enabled plans; routing it
+ * through an explicit intent keeps the two purposes (and their billing /
+ * persistence side effects) under the user's control.
+ */
+export type AttachmentIntent = 'context' | 'media'
+
 /** What an ingested attachment contributes to the chat request. */
 export interface AttachmentRef {
   /** Client/uuid id for dedupe + removal in the UI. */
@@ -43,6 +56,8 @@ export interface AttachmentRef {
   filename: string
   mime: string
   kind: 'text' | 'document' | 'image'
+  /** Where the attachment actually landed (set for the image branch). */
+  destination?: AttachmentIntent
   /** Server-built content blocks. Empty when `error` is set. */
   blocks: AIContentBlock[]
   /** First chars of text, or the delivery URL for an image. */
@@ -62,6 +77,8 @@ export interface IngestFileInput {
   workspaceId: string
   userId: string
   plan: string
+  /** Desired destination. Defaults to `context` (ephemeral). */
+  intent?: AttachmentIntent
 }
 
 /** Max converted text length (~25K tokens) before truncation. */
@@ -279,16 +296,22 @@ async function xlsxToMarkdown(buffer: Buffer): Promise<string> {
 }
 
 /**
- * Image branch. PRIMARY: when the media provider is available and the
- * plan grants `media.upload`, push to the media library and reference
- * by a public delivery URL (cheap, persistent, vision-capable). The
- * agent can also place this URL directly into content fields.
- * FALLBACK: downscale + size-cap with sharp and inline as base64.
+ * Image branch, routed by the user's explicit intent:
+ *
+ * - `media`   → persist to the media library and reference by a public
+ *   delivery URL (the agent can place this URL into content fields).
+ *   Requires the media provider + `media.upload`; surfaces an error rather
+ *   than silently degrading, because the user asked for a stored asset.
+ * - `context` (default) → downscale + size-cap with sharp and inline as
+ *   base64 (vision-capable, ephemeral, never persisted) — regardless of plan.
  */
 async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Promise<AttachmentRef> {
   const id = makeId()
-  const media = useMediaProvider()
-  if (media && hasFeature(input.plan, 'media.upload')) {
+
+  if (input.intent === 'media') {
+    const media = useMediaProvider()
+    if (!media || !hasFeature(input.plan, 'media.upload'))
+      return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_unavailable') })
     try {
       const asset = await media.upload({
         projectId: input.projectId,
@@ -307,18 +330,18 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
         filename: input.filename,
         mime,
         kind: 'image',
+        destination: 'media',
         blocks: [{ type: 'image', source: { type: 'url', url } }],
         preview: url,
         bytes: asset.size,
       }
     }
     catch {
-      // Fall through to base64 so an attachment never hard-fails just
-      // because the upload pipeline hiccuped.
+      return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_upload_failed') })
     }
   }
 
-  // Fallback: downscale + size-cap, emit base64 webp.
+  // Context (default): downscale + size-cap, emit base64 webp. Ephemeral.
   try {
     let optimized = await sharp(input.buffer)
       .rotate()
@@ -340,6 +363,7 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
       filename: input.filename,
       mime: 'image/webp',
       kind: 'image',
+      destination: 'context',
       blocks: [{ type: 'image', source: { type: 'base64', mediaType: 'image/webp', data: optimized.toString('base64') } }],
       bytes: optimized.length,
     }

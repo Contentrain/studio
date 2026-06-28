@@ -64,6 +64,12 @@ export default defineEventHandler(async (event) => {
   if (files.length > ATTACHMENT_MAX_COUNT)
     throw createError({ statusCode: 400, message: errorMessage('attachment.too_many', { limit: ATTACHMENT_MAX_COUNT }) })
 
+  // Explicit destination: `media` persists images to the media library; any
+  // other value (incl. absent) means ephemeral `context`. Only the image
+  // branch acts on it.
+  const intentPart = (formData ?? []).find(p => p.name === 'intent')
+  const intent = intentPart?.data?.toString() === 'media' ? 'media' as const : 'context' as const
+
   const attachments = await Promise.all(files.map(async (filePart) => {
     if (filePart.data.length > ATTACHMENT_MAX_FILE_BYTES) {
       return {
@@ -84,6 +90,7 @@ export default defineEventHandler(async (event) => {
       workspaceId,
       userId: session.user.id,
       plan,
+      intent,
     })
   }))
 

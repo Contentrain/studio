@@ -119,16 +119,46 @@ describe('ingestFile — image branch', () => {
     expect(uploadMock).not.toHaveBeenCalled()
   })
 
-  it('uploads to the media library and references by URL when CDN is on', async () => {
+  it('uploads to the media library and references by URL for intent=media', async () => {
     mediaProvider = { upload: uploadMock }
     uploadMock.mockResolvedValue({ originalPath: 'media/abc.png', size: 123, width: 4, height: 4, variants: {} })
     vi.stubGlobal('hasFeature', vi.fn(() => true))
 
-    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png' }))
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media' }))
     expect(uploadMock).toHaveBeenCalledOnce()
+    expect(ref.destination).toBe('media')
     const block = ref.blocks[0] as { type: string, source: { type: string, url: string } }
     expect(block.source.type).toBe('url')
     expect(block.source.url).toBe('https://cdn.example/api/cdn/v1/proj/media/abc.png')
+  })
+
+  it('stays ephemeral base64 for intent=context even when CDN is available', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'context' }))
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(ref.destination).toBe('context')
+    expect((ref.blocks[0] as { source: { type: string } }).source.type).toBe('base64')
+  })
+
+  it('defaults to context (no upload) when no intent is given', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png' }))
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(ref.destination).toBe('context')
+  })
+
+  it('errors for intent=media when the media feature is unavailable', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => false))
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media' }))
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(ref.error).toBeDefined()
+    expect(ref.blocks).toHaveLength(0)
   })
 })
 
