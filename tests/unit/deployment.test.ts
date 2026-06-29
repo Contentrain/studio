@@ -143,15 +143,21 @@ describe('resolveDeployment', () => {
       expect(d.planSource).toBe('operator')
     })
 
-    it('explicit managed without ee falls back to community (misconfiguration guard)', () => {
-      // No bridge injected.
-      mockRuntime({})
+    it('explicit managed with a failed/absent ee bridge serves degraded — plan honored, edition agpl', () => {
+      // Bridge settled to null (ee/ failed to load, e.g. a native sharp
+      // binary failing on this deploy). The operator EXPLICITLY declared
+      // `managed`, so plan/billing must keep resolving via subscription —
+      // a transient ee-load failure must NOT silently downgrade every
+      // workspace to the fixed `community` tier until the next redeploy.
+      mockRuntime({ polar: 'polar_oat_test' })
+      __resetBillingConfiguredCache()
       process.env.NUXT_DEPLOYMENT_PROFILE = 'managed'
 
       const d = resolveDeployment()
-      // Guard rail kicks in: ee-required profile with agpl edition → community.
-      expect(d.profile).toBe('community')
-      expect(d.edition).toBe('agpl')
+      expect(d.profile).toBe('managed') // explicit profile honored
+      expect(d.planSource).toBe('subscription') // paid plans still resolve
+      expect(d.edition).toBe('agpl') // ee features still gate off via requires_ee
+      expect(d.fixedPlan).toBeNull() // NOT collapsed to fixed community
     })
 
     it('invalid profile string falls back to auto-detect', () => {
