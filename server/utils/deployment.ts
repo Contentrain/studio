@@ -135,23 +135,30 @@ export function resolveDeployment(): DeploymentState {
   const profile = explicit ?? autoDetectProfile(edition, billingMode)
   const settled = isEnterpriseBridgeSettled()
 
-  // Validate explicit profile against edition — an operator asking for
-  // `managed` without ee/ is a misconfiguration.
+  // Explicit non-community profile while ee/ is not (yet) loaded.
   //
   // Before the bridge promise settles, `edition === 'agpl'` is a
   // transient reading (the dynamic `import('ee/enterprise')` may still
-  // be in flight). Returning a community shape is the right failsafe,
-  // but we must NOT latch `_cached` or emit the warning until the
-  // bridge has settled — otherwise a pre-boot caller would freeze the
-  // state to community for the process lifetime even though ee/ is
-  // about to load successfully.
+  // be in flight). Return a community shape as the failsafe, but do NOT
+  // latch `_cached` — otherwise a pre-boot caller would freeze the state
+  // to community for the process lifetime even though ee/ is about to
+  // load successfully.
+  //
+  // Once settled with the bridge still absent (ee/ genuinely failed to
+  // load — e.g. a native dependency like sharp failing to initialize on
+  // a particular deploy), HONOR the operator's explicit profile for
+  // plan/billing resolution instead of silently downgrading every
+  // workspace to the fixed `community` tier. A transient ee-load failure
+  // must not wipe paid plans until the next redeploy. Edition stays
+  // `agpl`, so `requires_ee` features degrade off via `hasFeature`; only
+  // the ee feature surface is lost, not billing/plan correctness.
   if (explicit && explicit !== 'community' && edition === 'agpl') {
     if (!settled) {
       return profileToState('community', edition, billingMode)
     }
     // eslint-disable-next-line no-console
-    console.warn(`[deployment] NUXT_DEPLOYMENT_PROFILE="${explicit}" requires the Enterprise Edition (ee/) but the enterprise bridge did not load; falling back to 'community'.`)
-    _cached = profileToState('community', edition, billingMode)
+    console.warn(`[deployment] NUXT_DEPLOYMENT_PROFILE="${explicit}" is set but the enterprise bridge did not load; serving in degraded mode — plan/billing honored, ee/ features disabled.`)
+    _cached = profileToState(explicit, edition, billingMode)
     return _cached
   }
 

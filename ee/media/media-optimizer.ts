@@ -7,7 +7,7 @@
  * LICENSE: Proprietary — Contentrain Enterprise Edition
  */
 
-import sharp from 'sharp'
+import { loadSharp } from './lazy-sharp'
 import { MAX_ORIGINAL_DIMENSION } from '../../server/utils/media-variants'
 
 const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
@@ -33,6 +33,8 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
   if (!contentType.startsWith('image/')) {
     return { buffer: input, width: 0, height: 0, format: contentType.split('/').pop() ?? 'bin', size: input.length }
   }
+
+  const sharp = await loadSharp()
 
   // SVG: keep as-is, extract dimensions only
   if (contentType === 'image/svg+xml') {
@@ -92,6 +94,7 @@ export async function extractMetadata(input: Buffer): Promise<{
   format: string
   hasAlpha: boolean
 }> {
+  const sharp = await loadSharp()
   const metadata = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
   return {
     width: metadata.width ?? 0,

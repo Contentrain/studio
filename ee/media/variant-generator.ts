@@ -7,7 +7,8 @@
  * LICENSE: Proprietary — Contentrain Enterprise Edition
  */
 
-import sharp from 'sharp'
+import type { FitEnum, ResizeOptions } from 'sharp'
+import { loadSharp } from './lazy-sharp'
 import type { VariantConfig, MediaVariant } from '../../server/providers/media'
 
 const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
@@ -42,12 +43,13 @@ async function generateSingleVariant(
   name: string,
   config: VariantConfig,
 ): Promise<GeneratedVariant> {
+  const sharp = await loadSharp()
   let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT })
 
   // Resize with fit mode
-  const resizeOptions: sharp.ResizeOptions = {
+  const resizeOptions: ResizeOptions = {
     width: config.width,
-    fit: config.fit as keyof sharp.FitEnum,
+    fit: config.fit as keyof FitEnum,
     withoutEnlargement: true,
   }
   if (config.height) {

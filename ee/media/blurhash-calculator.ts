@@ -7,7 +7,7 @@
  * LICENSE: Proprietary — Contentrain Enterprise Edition
  */
 
-import sharp from 'sharp'
+import { loadSharp } from './lazy-sharp'
 import { encode } from 'blurhash'
 
 const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
@@ -18,6 +18,7 @@ const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bom
  */
 export async function calculateBlurhash(input: Buffer): Promise<string | null> {
   try {
+    const sharp = await loadSharp()
     // Downscale to 32px wide for fast encoding
     const { data, info } = await sharp(input, { limitInputPixels: PIXEL_LIMIT })
       .resize(32, 32, { fit: 'inside' })
