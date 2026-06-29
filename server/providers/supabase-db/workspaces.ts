@@ -34,9 +34,18 @@ export function workspaceMethods(): WorkspaceMethods {
       const client = getUser(accessToken)
       const admin = getAdmin()
 
+      // Filter to the caller's OWN membership rows explicitly. RLS alone is
+      // not enough: the `wm_owner_manage` policy lets a workspace owner SELECT
+      // *every* member row of workspaces they own. Without this filter, an
+      // owned workspace with ≥2 members returns multiple rows, and the
+      // `Object.fromEntries(roleMap)` below collapses them to whichever role
+      // sorts last — so an owner who invited a member would resolve to that
+      // member's role and silently lose owner/admin access (settings tabs,
+      // billing, implicit project access). One row per workspace = correct role.
       const { data: memberships, error: membershipError } = await client
         .from('workspace_members')
         .select('workspace_id, role')
+        .eq('user_id', userId)
 
       if (membershipError) {
         throw createError({ statusCode: 500, message: membershipError.message })
