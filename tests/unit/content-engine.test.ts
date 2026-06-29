@@ -244,6 +244,56 @@ describe('content engine', () => {
     expect(applyPlan).toHaveBeenCalled()
   })
 
+  it('merges a partial collection update with the existing entry (preserves untouched fields)', async () => {
+    // Regression: save_content advertises "MERGES with existing data — only
+    // send changed fields", but MCP's planContentSave replaces an entry
+    // wholesale. A partial field edit must NOT drop the untouched fields.
+    const model = {
+      id: 'faq',
+      kind: 'collection',
+      i18n: true,
+      domain: 'marketing',
+      fields: {
+        question: { type: 'string', required: true },
+        answer: { type: 'text', required: true },
+        order: { type: 'integer', required: true },
+      },
+    }
+    const config = { domains: ['marketing'], locales: { default: 'en', supported: ['en'] }, stack: 'astro', version: 1, workflow: 'auto-merge' }
+    const existing = { faq1: { question: 'How long does it take?', answer: 'It depends.', order: 4 } }
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/faq')) return JSON.stringify(model)
+        if (path.endsWith('config.json')) return JSON.stringify(config)
+        if (path.includes('/faq/') && path.endsWith('en.json')) return JSON.stringify(existing)
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    // Agent sends ONLY `answer` — question + order must survive.
+    const result = await engine.saveContent(
+      'faq',
+      'en',
+      { faq1: { answer: 'The timeline depends on scope.' } },
+      'user@example.com',
+      { autoPublish: true },
+    )
+
+    expect(result.validation.valid).toBe(true)
+    expect(applyPlan).toHaveBeenCalled()
+    const changes = applyPlan.mock.calls[0]![0].changes as Array<{ path: string, content: string | null }>
+    const contentChange = changes.find(c => c.path.endsWith('en.json'))
+    const written = JSON.parse(contentChange!.content as string) as Record<string, Record<string, unknown>>
+    expect(written.faq1).toMatchObject({
+      question: 'How long does it take?', // untouched — preserved
+      answer: 'The timeline depends on scope.', // edited — applied
+      order: 4, // untouched — preserved
+    })
+  })
+
   it('rejects a collection entry missing a schema-required field before any write', async () => {
     const model = {
       id: 'product',
