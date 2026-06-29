@@ -79,6 +79,17 @@ export async function saveContent(
   const fields = modelDef.fields ?? {}
   let validation: ValidationResult = { valid: true, errors: [] }
 
+  // The save_content contract (and the agent-facing tool description) is
+  // "MERGES with existing data — only send changed fields." Studio's
+  // validation already merges partial input with the on-disk entry, but
+  // MCP's `planContentSave` REPLACES an entry wholesale (`existing[id] =
+  // entry.data`). Without carrying the merge into the write, a partial
+  // field edit validates green against the merged entry yet persists only
+  // the sent fields — silently dropping every untouched field. We build
+  // the field-merged payload here and hand THAT to the writer so the
+  // contract holds (matches the document path, which already merges).
+  let dataForWrite: Record<string, unknown> = data
+
   if (modelDef.kind === 'collection') {
     let existingForValidation: Record<string, Record<string, unknown>> = {}
     try {
@@ -112,6 +123,14 @@ export async function saveContent(
       validation.errors.push(...entryValidation.errors)
       if (!entryValidation.valid) validation.valid = false
     }
+
+    // Persist the merged entries for only the touched IDs — never the
+    // untouched siblings (that would needlessly rewrite + re-stamp them).
+    const mergedForWrite: Record<string, unknown> = {}
+    for (const entryId of Object.keys(normalizedData)) {
+      mergedForWrite[entryId] = mergedEntries[entryId]
+    }
+    dataForWrite = mergedForWrite
   }
   else if (modelDef.kind === 'singleton') {
     let existingSingleton: Record<string, unknown> = {}
@@ -121,6 +140,7 @@ export async function saveContent(
     catch { /* no existing */ }
     const mergedSingleton = { ...existingSingleton, ...data }
     validation = validateContent(mergedSingleton, fields, modelId, locale)
+    dataForWrite = mergedSingleton
   }
   else if (modelDef.kind === 'dictionary') {
     for (const [key, val] of Object.entries(data)) {
@@ -158,7 +178,7 @@ export async function saveContent(
   }
   catch { /* no vocabulary */ }
 
-  const entries = shapeEntriesForSave(modelDef, data, locale)
+  const entries = shapeEntriesForSave(modelDef, dataForWrite, locale)
 
   let plan
   try {
