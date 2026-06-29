@@ -296,11 +296,17 @@ export function projectMethods(): ProjectMethods {
 
     async createProjectMember(input) {
       const admin = getAdmin()
+      // `project_members` is keyed by project_id only — the workspace is
+      // derived via projects.workspace_id (see the membership lookup in
+      // members.ts). There is no `workspace_id` column on this table, so
+      // writing one made PostgREST reject the insert with "Could not find
+      // the 'workspace_id' column of 'project_members' in the schema cache".
+      // `input.workspaceId` stays in the signature for the caller's
+      // authorization context but is intentionally not persisted here.
       const { data, error } = await admin
         .from('project_members')
         .insert({
           project_id: input.projectId,
-          workspace_id: input.workspaceId,
           user_id: input.userId,
           role: input.role,
           invited_email: input.invitedEmail,
