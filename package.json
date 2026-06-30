@@ -96,6 +96,7 @@
     "h3": "^1.15.8",
     "happy-dom": "^20.9.0",
     "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
     "lint-staged": "^16.4.0",
     "nuxt-mcp-dev": "^0.3.2",
     "playwright-core": "^1.59.1",
