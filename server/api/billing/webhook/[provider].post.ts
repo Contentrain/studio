@@ -136,7 +136,8 @@ export default defineEventHandler(async (event) => {
         subscriptionId: result.subscriptionId ?? null,
         subscriptionStatus: result.subscriptionStatus ?? 'trialing',
         currentPeriodEnd: result.currentPeriodEnd ?? null,
-        trialEndsAt: result.trialEndsAt ?? (result.subscriptionStatus === 'trialing' ? result.currentPeriodEnd ?? null : null),
+        // Only the provider's real trial_end — never the billing period end.
+        trialEndsAt: result.trialEndsAt ?? null,
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: null,
         plan: result.plan ?? null,
@@ -178,9 +179,13 @@ export default defineEventHandler(async (event) => {
         subscriptionId: result.subscriptionId ?? null,
         subscriptionStatus: result.subscriptionStatus ?? null,
         currentPeriodEnd: result.currentPeriodEnd ?? null,
-        // Clear trial_ends_at when transitioning to active
+        // Clear trial_ends_at when transitioning to active. While still
+        // trialing (e.g. a portal plan change mid-trial), keep the real
+        // trial_end — preserve the existing value when the provider omits it
+        // on the update, and never fall back to the billing period end (which
+        // is a cycle boundary, not the trial expiry).
         trialEndsAt: result.subscriptionStatus === 'trialing'
-          ? result.trialEndsAt ?? result.currentPeriodEnd ?? null
+          ? result.trialEndsAt ?? (existingAccount?.trial_ends_at as string | null) ?? null
           : null,
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: becameActive ? null : undefined,

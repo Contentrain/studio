@@ -129,6 +129,36 @@ describe('billing webhook integration', () => {
     expect(markWorkspaceTrialConsumed).not.toHaveBeenCalled()
   })
 
+  it('keeps the real trial_end on a trialing plan change (no billing-period-end stamp)', async () => {
+    // Existing Starter trial ends in ~14 days.
+    getActivePaymentAccount.mockResolvedValue({
+      subscription_status: 'trialing',
+      trial_ends_at: '2026-04-16T00:00:00.000Z',
+    })
+    // Portal upgrade to Pro keeps the trial; the provider omits trial_end on
+    // the update event and reports a far-future (annual) period end.
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.updated',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'trialing',
+      currentPeriodEnd: '2027-04-02T00:00:00.000Z',
+      cancelAtPeriodEnd: false,
+    })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+
+    expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+      subscriptionStatus: 'trialing',
+      // Original 14-day trial end is preserved — NOT the +1y period end.
+      trialEndsAt: '2026-04-16T00:00:00.000Z',
+      plan: 'pro',
+    }))
+  })
+
   it('downgrades to free on subscription.canceled', async () => {
     handleWebhookMock.mockResolvedValue({
       event: 'subscription.canceled',
