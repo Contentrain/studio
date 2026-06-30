@@ -205,7 +205,9 @@ function frameworkLabel(fw: string): string {
         </div>
 
         <!-- STATE 1: Select Starter -->
-        <div v-else-if="state === 'select'" class="flex max-h-[70vh] flex-col">
+        <!-- Fixed height (not max-h) so switching framework filters only
+             scrolls the inner grid — the modal box never resizes/re-centers. -->
+        <div v-else-if="state === 'select'" class="flex h-[70vh] flex-col">
           <!-- Framework filter chips -->
           <div class="flex flex-wrap gap-2 border-b border-secondary-200 px-6 py-3 dark:border-secondary-800">
             <button
