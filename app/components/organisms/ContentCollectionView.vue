@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
@@ -20,22 +21,31 @@ const emit = defineEmits<{
 const toast = useToast()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
-async function togglePublish(entryId: string) {
-  if (!props.workspaceId || !props.projectId || !props.modelId) return
-  const currentStatus = getEntryStatus(entryId, props.meta)
-  const newStatus = currentStatus === 'published' ? 'draft' : 'published'
+// Statuses an Owner/Admin can set directly from the badge menu. Review-workflow
+// states (in_review/rejected) are produced by the review flow, not set here.
+const SETTABLE_STATUSES = ['draft', 'published', 'archived'] as const
 
+// Per-entry in-flight guard so the badge shows a spinner and repeat clicks are ignored.
+const savingIds = reactive(new Set<string>())
+
+async function setStatus(entryId: string, newStatus: string) {
+  if (!props.workspaceId || !props.projectId || !props.modelId) return
+  if (savingIds.has(entryId) || getEntryStatus(entryId, props.meta) === newStatus) return
+
+  savingIds.add(entryId)
   try {
     await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/content/${props.modelId}/status`, {
       method: 'PATCH',
       body: { entryIds: [entryId], status: newStatus, locale: props.locale ?? 'en' },
     })
-    toast.success(newStatus === 'published' ? 'Published' : 'Unpublished')
+    toast.success(t('content.status_updated'))
     emit('saved')
   }
   catch (e: unknown) {
-    const { t } = useContent()
     toast.error(resolveApiError(e, t('content.status_error')))
+  }
+  finally {
+    savingIds.delete(entryId)
   }
 }
 
@@ -60,7 +70,7 @@ const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const getModelFields = inject(getModelFieldsKey, () => ({}))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
-const sendChatPrompt = inject(sendChatPromptKey, () => {})
+const sendChatPrompt = inject(sendChatPromptKey, () => { })
 
 function deleteEntry(entryId: string, entry: Record<string, unknown>) {
   const title = getEntryTitle(entry, entryId.substring(0, 8))
@@ -152,33 +162,30 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
   <div>
     <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
       <details
-        v-for="(entry, entryId) in content"
-        :key="String(entryId)"
-        class="group/entry"
-        draggable="true"
-        @dragstart="onEntryDragStart($event, String(entryId), entry)"
-        @dragend="endDrag"
+        v-for="(entry, entryId) in content" :key="String(entryId)" class="group/entry" draggable="true"
+        @dragstart="onEntryDragStart($event, String(entryId), entry)" @dragend="endDrag"
       >
-        <summary class="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900">
-          <span class="icon-[annon--chevron-right] size-3.5 shrink-0 text-muted transition-transform group-open/entry:rotate-90" aria-hidden="true" />
+        <summary
+          class="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900"
+        >
+          <span
+            class="icon-[annon--chevron-right] size-3.5 shrink-0 text-muted transition-transform group-open/entry:rotate-90"
+            aria-hidden="true"
+          />
           <span class="min-w-0 flex-1 truncate font-medium text-heading dark:text-secondary-100">
             {{ getEntryTitle(entry, String(entryId)) }}
           </span>
           <!-- Edit entry (modal) -->
           <button
-            v-if="editable"
-            type="button"
+            v-if="editable" type="button"
             class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :aria-label="t('content.edit_entry')"
-            @click.prevent="openEditModal(String(entryId), entry)"
+            :aria-label="t('content.edit_entry')" @click.prevent="openEditModal(String(entryId), entry)"
           >
             <span class="icon-[annon--edit-2] size-3" aria-hidden="true" />
           </button>
           <!-- Delete entry -->
           <button
-            v-if="editable"
-            type="button"
-            :aria-label="t('content.delete_entry')"
+            v-if="editable" type="button" :aria-label="t('content.delete_entry')"
             class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
             @click.prevent="deleteEntry(String(entryId), entry)"
           >
@@ -186,8 +193,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           </button>
           <!-- Pin entry -->
           <button
-            type="button"
-            aria-label="Pin to context"
+            type="button" aria-label="Pin to context"
             class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
             :class="isPinned('entry', modelId ?? '', String(entryId))
               ? 'text-primary-500 opacity-100'
@@ -196,25 +202,51 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           >
             <span class="icon-[annon--pin] size-3" aria-hidden="true" />
           </button>
-          <!-- Status badge (clickable for owner/admin to publish/unpublish) -->
-          <button
-            v-if="getEntryStatus(String(entryId), meta) && isOwnerOrAdmin && editable"
-            type="button"
-            class="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :title="getEntryStatus(String(entryId), meta) === 'published' ? 'Unpublish' : 'Publish'"
-            @click.prevent="togglePublish(String(entryId))"
-          >
-            <AtomsBadge
-              :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
-              size="sm"
-            >
-              {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId), meta) }}
-            </AtomsBadge>
-          </button>
+          <!-- Status picker (owner/admin) — click badge to change status -->
+          <DropdownMenuRoot v-if="getEntryStatus(String(entryId), meta) && isOwnerOrAdmin && editable">
+            <DropdownMenuTrigger as-child>
+              <button
+                type="button" :disabled="savingIds.has(String(entryId))"
+                class="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-wait"
+                :title="t('content.change_status')" :aria-label="t('content.change_status')"
+              >
+                <AtomsBadge
+                  :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
+                  size="sm" class="gap-1"
+                >
+                  {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId),
+                                                                                                     meta) }}
+                  <span
+                    v-if="savingIds.has(String(entryId))" class="icon-[annon--loader] size-2.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                  <span v-else class="icon-[annon--chevron-down] size-2.5 opacity-60" aria-hidden="true" />
+                </AtomsBadge>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuContent
+                align="end" :side-offset="4"
+                class="z-50 min-w-36 rounded-lg border border-secondary-200 bg-white p-1 shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
+              >
+                <DropdownMenuItem
+                  v-for="status in SETTABLE_STATUSES" :key="status"
+                  :disabled="savingIds.has(String(entryId))"
+                  class="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
+                  @select="setStatus(String(entryId), status)"
+                >
+                  {{ t(`content.status_${status}`) }}
+                  <span
+                    v-if="getEntryStatus(String(entryId), meta) === status"
+                    class="icon-[annon--check] size-3.5 text-primary-500" aria-hidden="true"
+                  />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenuPortal>
+          </DropdownMenuRoot>
           <AtomsBadge
             v-else-if="getEntryStatus(String(entryId), meta)"
-            :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
-            size="sm"
+            :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'" size="sm"
             class="shrink-0"
           >
             {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId), meta) }}
@@ -226,10 +258,8 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
         <div class="space-y-3 px-5 pb-4 pt-1">
           <template v-for="fieldId in getUserFieldIds()" :key="fieldId">
             <div
-              v-if="typeof entry === 'object' && entry !== null && fieldId in entry"
-              class="group/field"
-              draggable="true"
-              @dragstart="onFieldDragStart($event, String(entryId), fieldId, entry[fieldId])"
+              v-if="typeof entry === 'object' && entry !== null && fieldId in entry" class="group/field"
+              draggable="true" @dragstart="onFieldDragStart($event, String(entryId), fieldId, entry[fieldId])"
               @dragend="endDrag"
             >
               <div class="flex items-center gap-1">
@@ -264,18 +294,10 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
 
     <!-- Edit modal -->
     <OrganismsContentEditModal
-      v-if="editable && editModalEntryId"
-      v-model:open="editModalOpen"
-      :model-name="modelMeta?.name ?? ''"
-      model-kind="collection"
-      :fields="(getModelFields() as Record<string, any>)"
-      :entry-id="editModalEntryId"
-      :entry-data="editModalEntryData"
-      :entry-title="editModalEntryTitle"
-      :workspace-id="workspaceId ?? ''"
-      :project-id="projectId ?? ''"
-      :model-id="modelId ?? ''"
-      :locale="locale ?? 'en'"
+      v-if="editable && editModalEntryId" v-model:open="editModalOpen"
+      :model-name="modelMeta?.name ?? ''" model-kind="collection" :fields="(getModelFields() as Record<string, any>)"
+      :entry-id="editModalEntryId" :entry-data="editModalEntryData" :entry-title="editModalEntryTitle"
+      :workspace-id="workspaceId ?? ''" :project-id="projectId ?? ''" :model-id="modelId ?? ''" :locale="locale ?? 'en'"
       @saved="handleModalSaved"
     />
   </div>
