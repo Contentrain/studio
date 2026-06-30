@@ -83,8 +83,11 @@ function mapSubscriptionToResult(
     customerId: subscription.customer as string,
     subscriptionStatus: subscription.status,
     currentPeriodEnd: secondsToIso(itemPeriodEnd),
+    // Trial end must come from the provider's actual trial_end — never the
+    // billing period end. A 1-month / 1-year cycle boundary is not a trial
+    // expiry; conflating them stamped bogus multi-month "trials".
     trialEndsAt: subscription.status === 'trialing'
-      ? secondsToIso(subscription.trial_end) ?? secondsToIso(itemPeriodEnd)
+      ? secondsToIso(subscription.trial_end)
       : undefined,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
   }

@@ -24,6 +24,7 @@ provide('contextPanel', { open: contextOpen, toggle: toggleContext })
     <!-- Main -->
     <main class="flex min-w-0 flex-1 flex-col overflow-y-auto">
       <MoleculesTrialBanner
+        class="sticky top-0 z-30 shrink-0"
         @choose-plan="showPlanModal()"
         @manage-billing="openPortal()"
       />

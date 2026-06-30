@@ -48,6 +48,7 @@ const showPaywall = computed(() =>
            the paywall takes over). -->
       <MoleculesTrialBanner
         v-if="isWorkspaceRoute && !showPaywall"
+        class="sticky top-0 z-30 shrink-0"
         @choose-plan="showPlanModal()"
         @manage-billing="openPortal()"
       />
