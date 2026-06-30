@@ -295,13 +295,13 @@ function getFieldTypeBadge(type: string): string {
           </div>
           <div :class="{ 'pointer-events-none opacity-50': !editable }">
             <AtomsFormSelect
-              :model-value="captcha || ''"
+              :model-value="captcha || 'none'"
               :options="[
-                { value: '', label: t('forms.captcha_none') },
+                { value: 'none', label: t('forms.captcha_none') },
                 { value: 'turnstile', label: t('forms.captcha_turnstile') },
               ]"
               size="sm"
-              @update:model-value="captcha = ($event as 'turnstile' | '')"
+              @update:model-value="captcha = ($event === 'turnstile' ? 'turnstile' : '')"
             />
           </div>
         </div>
