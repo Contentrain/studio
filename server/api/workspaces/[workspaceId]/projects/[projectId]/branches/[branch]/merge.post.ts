@@ -6,7 +6,10 @@ export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
   const projectId = getRouterParam(event, 'projectId')
-  const branch = getRouterParam(event, 'branch')
+  // cr/* branch names contain slashes, so the client sends them
+  // percent-encoded; without { decode: true } the raw "cr%2F..." fails the
+  // startsWith('cr/') guard and would be passed verbatim to the Git API.
+  const branch = getRouterParam(event, 'branch', { decode: true })
 
   if (!workspaceId || !projectId || !branch)
     throw createError({ statusCode: 400, message: errorMessage('validation.branch_params_required') })

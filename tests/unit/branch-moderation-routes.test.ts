@@ -11,10 +11,11 @@ function stubRouteGlobals(branch: string) {
     user: { id: 'user-1' },
     accessToken: 'token-1',
   }))
-  vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+  vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string, opts?: { decode?: boolean }) => {
     if (key === 'workspaceId') return 'workspace-1'
     if (key === 'projectId') return 'project-1'
-    if (key === 'branch') return branch
+    // Mirror h3: the raw param is returned verbatim unless { decode: true }.
+    if (key === 'branch') return opts?.decode ? decodeURIComponent(branch) : branch
     return undefined
   }))
   vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
@@ -84,6 +85,41 @@ describe('branch moderation routes', () => {
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/branches/[branch]/merge.post')).default
     const result = await handler({} as never)
 
+    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
+    expect(result).toEqual({
+      merged: true,
+      sha: 'merge-sha',
+      pullRequestUrl: null,
+    })
+  })
+
+  it('decodes percent-encoded branch names before merging (cr/* names contain slashes)', async () => {
+    const mergeBranch = vi.fn().mockResolvedValue({
+      merged: true,
+      sha: 'merge-sha',
+      pullRequestUrl: null,
+    })
+
+    // The client sends the branch percent-encoded (encodeURIComponent), since
+    // cr/* names contain slashes. Without { decode: true } the handler would
+    // see "cr%2F..." and 400 on the startsWith('cr/') guard.
+    stubRouteGlobals('cr%2Fcontent%2Ffaq%2Fen%2F1234567890-abcd')
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      availableTools: ['merge_branch'],
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: {},
+      contentRoot: '',
+    }))
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({
+      mergeBranch,
+    }))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/branches/[branch]/merge.post')).default
+    const result = await handler({} as never)
+
+    // The decoded name must reach the engine.
     expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
     expect(result).toEqual({
       merged: true,
