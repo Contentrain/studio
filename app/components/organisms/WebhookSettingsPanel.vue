@@ -206,8 +206,8 @@ watch(createOpen, (isOpen) => {
     <!-- Webhooks Management -->
     <div v-else class="flex-1 overflow-y-auto">
       <!-- Header -->
-      <div class="flex items-center justify-between border-b border-secondary-200 px-5 py-3 dark:border-secondary-800">
-        <div>
+      <div class="flex items-start justify-between gap-4 border-b border-secondary-200 px-5 py-3 dark:border-secondary-800">
+        <div class="min-w-0">
           <div class="text-sm font-medium text-heading dark:text-secondary-100">
             {{ t('webhooks.title') }}
           </div>
@@ -215,7 +215,7 @@ watch(createOpen, (isOpen) => {
             {{ t('webhooks.description') }}
           </p>
         </div>
-        <AtomsBaseButton v-if="canManage" variant="primary" size="sm" @click="createOpen = true">
+        <AtomsBaseButton v-if="canManage" variant="primary" size="sm" class="shrink-0" @click="createOpen = true">
           <template #prepend>
             <span class="icon-[annon--plus] size-3.5" aria-hidden="true" />
           </template>
