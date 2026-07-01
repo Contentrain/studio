@@ -1,6 +1,64 @@
 # Changelog
 
 
+## v0.1.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.8...v0.1.0)
+
+### 🚀 Enhancements
+
+- **media:** Scope foundation for the media management API ([af98d3d](https://github.com/Contentrain/studio/commit/af98d3d))
+- **media:** Public media CRUD API routes (/api/media/v1) ([5541c96](https://github.com/Contentrain/studio/commit/5541c96))
+- **media:** Scope selection UI for CDN/media keys ([c5fa3a1](https://github.com/Contentrain/studio/commit/c5fa3a1))
+- **cdn:** CDN/media architecture alignment — edition/plan gating, Assets↔CDN, upsell ([#74](https://github.com/Contentrain/studio/pull/74))
+- **observability:** Add Sentry error & performance monitoring ([#79](https://github.com/Contentrain/studio/pull/79))
+- **editor:** Source-mode markdown editor + agent markdown authoring guide ([#82](https://github.com/Contentrain/studio/pull/82))
+- **seo:** Add page titles, head meta, and Open Graph tags ([#84](https://github.com/Contentrain/studio/pull/84))
+- **cdn:** Public media delivery + build-time path rewrite ([#83](https://github.com/Contentrain/studio/pull/83))
+- **chat:** Attach external files and links to conversations ([#87](https://github.com/Contentrain/studio/pull/87))
+- **agent:** Align system prompt + enforcement with governance and edition ([#88](https://github.com/Contentrain/studio/pull/88))
+- **agent:** Publish/media/branch tools + relation integrity at save ([#89](https://github.com/Contentrain/studio/pull/89))
+- Array<object> field editing + explicit chat attachment intent ([#90](https://github.com/Contentrain/studio/pull/90))
+
+### 🩹 Fixes
+
+- **media:** Reuse existing cdn.key_mismatch + chat.rate_limited error keys ([bca7b7f](https://github.com/Contentrain/studio/commit/bca7b7f))
+- **e2e:** Target CDN key-name input by type (scope checkboxes broke the first-input locator) ([81c62f6](https://github.com/Contentrain/studio/commit/81c62f6))
+- **media:** Attribute API-key uploads to the workspace owner (uploaded_by uuid FK) ([c342e10](https://github.com/Contentrain/studio/commit/c342e10))
+- **media:** Gate the media API on CDN activation (cdn_enabled) ([1ee8612](https://github.com/Contentrain/studio/commit/1ee8612))
+- **billing:** Grant the free trial once per workspace + fix plan modal ([#75](https://github.com/Contentrain/studio/pull/75))
+- **billing:** Surface a clean error when the payment provider call fails ([#76](https://github.com/Contentrain/studio/pull/76))
+- **cdn:** Move key-scope checkboxes below the PERMISSIONS label ([#77](https://github.com/Contentrain/studio/pull/77))
+- **chat:** Replace retired Claude model IDs ([#80](https://github.com/Contentrain/studio/pull/80))
+- **config:** Fail boot if the service-role key isn't actually service_role ([#81](https://github.com/Contentrain/studio/pull/81))
+- **content:** Merge document saves with the existing entry ([#85](https://github.com/Contentrain/studio/pull/85))
+- **content:** Resolve document paths under the model id ([#85](https://github.com/Contentrain/studio/pull/85), [#86](https://github.com/Contentrain/studio/pull/86))
+- **chat:** Turn streaming, document date validation, and live context reactivity ([#91](https://github.com/Contentrain/studio/pull/91))
+- **content:** Merge partial collection/singleton saves instead of replacing ([#92](https://github.com/Contentrain/studio/pull/92))
+- **members:** Drop non-existent workspace_id from project_members insert ([#93](https://github.com/Contentrain/studio/pull/93))
+- **workspace:** Owner keeps owner role after inviting a member ([#94](https://github.com/Contentrain/studio/pull/94))
+- Plan info lost after deploy until redeploy (ee bridge / sharp native load) ([#95](https://github.com/Contentrain/studio/pull/95))
+- **webhooks:** Add missing dictionary keys + fix header spacing ([#100](https://github.com/Contentrain/studio/pull/100))
+- **forms:** Render "None" captcha option in form settings ([#101](https://github.com/Contentrain/studio/pull/101))
+- **content:** Status badge picker with loading state ([#102](https://github.com/Contentrain/studio/pull/102))
+- **starters:** Add missing common.all string + stop modal height jump ([#104](https://github.com/Contentrain/studio/pull/104))
+- **billing:** Use real trial_end, never the billing period end ([#103](https://github.com/Contentrain/studio/pull/103))
+- **branches:** Decode percent-encoded branch route param ([#105](https://github.com/Contentrain/studio/pull/105))
+
+### 📖 Documentation
+
+- Close mobile responsive shell todo (shipped since v0.1.0-beta.1) ([14b5694](https://github.com/Contentrain/studio/commit/14b5694))
+
+### 🏡 Chore
+
+- Standardize contentrain.io email addresses ([aef6f4d](https://github.com/Contentrain/studio/commit/aef6f4d))
+- **deps-dev:** Bump vue-tsc from 3.2.6 to 3.3.6 ([#99](https://github.com/Contentrain/studio/pull/99))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+- Contentrain <mcp@contentrain.io>
+
 ## v0.1.0-beta.8
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.7...v0.1.0-beta.8)
