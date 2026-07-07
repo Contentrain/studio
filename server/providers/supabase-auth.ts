@@ -1,5 +1,5 @@
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult, ProviderTokens } from './auth'
-import { createSupabaseAdminClient } from './supabase-client'
+import { createSupabaseAdminClient, createSupabaseAuthFlowClient } from './supabase-client'
 
 /**
  * Extract provider-side OAuth tokens from a Supabase session, if the
@@ -46,8 +46,8 @@ function extractProviderTokens(
 export function createSupabaseAuthProvider(): AuthProvider {
   return {
     async validateToken(accessToken: string): Promise<AuthUser | null> {
-      const admin = createSupabaseAdminClient()
-      const { data, error } = await admin.auth.getUser(accessToken)
+      const client = createSupabaseAuthFlowClient()
+      const { data, error } = await client.auth.getUser(accessToken)
 
       if (error || !data.user)
         return null
@@ -56,8 +56,11 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async refreshSession(refreshToken: string): Promise<AuthTokens | null> {
-      const admin = createSupabaseAdminClient()
-      const { data, error } = await admin.auth.refreshSession({ refresh_token: refreshToken })
+      // Session-bearing GoTrue call — MUST stay on the auth-flow client.
+      // On the admin singleton this poisoned every later "admin" query
+      // with the refreshed user's RLS scope (see supabase-client.ts).
+      const client = createSupabaseAuthFlowClient()
+      const { data, error } = await client.auth.refreshSession({ refresh_token: refreshToken })
 
       if (error || !data.session)
         return null
@@ -122,14 +125,14 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async getOAuthRedirectUrl(provider: 'github' | 'google', redirectTo: string): Promise<OAuthRedirectResult> {
-      const admin = createSupabaseAdminClient()
+      const client = createSupabaseAuthFlowClient()
       const config = useRuntimeConfig()
 
       // Generate CSRF state token — stored by caller, validated on code exchange
       const { randomBytes } = await import('node:crypto')
       const state = randomBytes(32).toString('hex')
 
-      const { data, error } = await admin.auth.signInWithOAuth({
+      const { data, error } = await client.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: redirectTo.startsWith('http') ? redirectTo : `${config.public.siteUrl}${redirectTo}`,
@@ -148,9 +151,11 @@ export function createSupabaseAuthProvider(): AuthProvider {
 
     async exchangeCode(code: string, _state?: string): Promise<AuthSession> {
       // State validation is done at the route level (session cookie comparison)
-      // Supabase PKCE handles the code_verifier/code_challenge exchange
-      const admin = createSupabaseAdminClient()
-      const { data, error } = await admin.auth.exchangeCodeForSession(code)
+      // Supabase PKCE handles the code_verifier/code_challenge exchange.
+      // Must run on the SAME auth-flow client that served signInWithOAuth —
+      // the PKCE code verifier lives in that client's in-memory storage.
+      const client = createSupabaseAuthFlowClient()
+      const { data, error } = await client.auth.exchangeCodeForSession(code)
 
       if (error || !data.session)
         throw createError({ statusCode: 401, message: errorMessage('auth.code_exchange_failed', { detail: error?.message ?? 'Unknown error' }) })
@@ -167,8 +172,8 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async exchangeTokens(accessToken: string, refreshToken?: string): Promise<AuthSession> {
-      const admin = createSupabaseAdminClient()
-      const { data, error } = await admin.auth.getUser(accessToken)
+      const client = createSupabaseAuthFlowClient()
+      const { data, error } = await client.auth.getUser(accessToken)
 
       if (error || !data.user)
         throw createError({ statusCode: 401, message: errorMessage('auth.token_validation_failed', { detail: error?.message ?? 'Unknown error' }) })
@@ -199,10 +204,10 @@ export function createSupabaseAuthProvider(): AuthProvider {
     },
 
     async sendMagicLink(email: string, redirectTo: string): Promise<void> {
-      const admin = createSupabaseAdminClient()
+      const client = createSupabaseAuthFlowClient()
       const config = useRuntimeConfig()
 
-      const { error } = await admin.auth.signInWithOtp({
+      const { error } = await client.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo: `${config.public.siteUrl}${redirectTo}`,
