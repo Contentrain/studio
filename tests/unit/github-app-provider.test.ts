@@ -15,6 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const githubState = vi.hoisted(() => {
   const octokit = {
     request: vi.fn(),
+    hook: {
+      after: vi.fn(),
+    },
     git: {
       getTree: vi.fn(),
     },
@@ -32,11 +35,21 @@ const githubState = vi.hoisted(() => {
     },
   }
 
-  return {
-    octokit,
-    Octokit: vi.fn(function Octokit() {
+  const OctokitMock = Object.assign(
+    vi.fn(function Octokit() {
       return octokit
     }),
+    // `github-app.ts` composes plugins at module scope
+    // (`Octokit.plugin(throttling, retry)`); the mock returns itself so
+    // the enhanced class is the same constructor.
+    { plugin: vi.fn(function plugin() {
+      return OctokitMock
+    }) },
+  )
+
+  return {
+    octokit,
+    Octokit: OctokitMock,
     createAppAuth: vi.fn(),
   }
 })
