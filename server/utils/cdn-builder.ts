@@ -338,9 +338,16 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     progress({ phase: 'cleanup', message: 'Cleaning stale objects...' })
     try {
       if (options.fullRebuild || !options.changedPaths?.length) {
-        // Full rebuild: delete everything not in the new build
+        // Full rebuild: delete every build-owned object not in the new build.
+        // The `media/` prefix is out-of-band, owned by the MediaProvider
+        // (binaries are uploaded directly on asset upload and are never part
+        // of a build's `uploadedPaths`), so it must be excluded from the
+        // stale-object sweep — otherwise every full rebuild would delete all
+        // media originals + variants while their DB rows and _media_manifest
+        // survive, 404-ing every delivery URL.
         const existing = await cdn.listObjects(projectId)
         for (const obj of existing) {
+          if (obj.path.startsWith('media/')) continue
           if (!uploadedPaths.has(obj.path)) {
             await cdn.deleteObject(projectId, obj.path)
             filesDeleted++

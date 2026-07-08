@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelDefinition } from '@contentrain/types'
 import type { GitProvider } from '../../server/providers/git'
-import type { CDNProvider } from '../../server/providers/cdn'
+import type { CDNObject, CDNProvider } from '../../server/providers/cdn'
 import { executeCDNBuild, getAffectedModels } from '../../server/utils/cdn-builder'
 import {
   resolveConfigPath,
@@ -44,6 +44,9 @@ function createGitProvider(files: Record<string, string>): GitProvider {
 }
 
 function createCDNProvider() {
+  // Backed by an in-memory Map keyed `${projectId}:${path}`, mirroring the R2
+  // provider's flat `${projectId}/${path}` namespace so listObjects/deleteObject
+  // actually exercise the build's stale-object sweep (Step 7).
   const objects = new Map<string, string>()
 
   const provider: CDNProvider = {
@@ -57,10 +60,30 @@ function createCDNProvider() {
         etag: `${path}-etag`,
       }
     }),
-    getObject: vi.fn(),
-    deleteObject: vi.fn(),
-    deletePrefix: vi.fn(),
-    listObjects: vi.fn(),
+    getObject: vi.fn(async (projectId: string, path: string) => {
+      const value = objects.get(`${projectId}:${path}`)
+      if (value == null) return null
+      return { data: Buffer.from(value, 'utf-8'), contentType: 'application/json', etag: `${path}-etag` }
+    }),
+    deleteObject: vi.fn(async (projectId: string, path: string) => {
+      objects.delete(`${projectId}:${path}`)
+    }),
+    deletePrefix: vi.fn(async (projectId: string, prefix: string) => {
+      const full = `${projectId}:${prefix}`
+      for (const key of [...objects.keys()]) {
+        if (key.startsWith(full)) objects.delete(key)
+      }
+    }),
+    listObjects: vi.fn(async (projectId: string, prefix?: string) => {
+      const out: CDNObject[] = []
+      for (const [key, value] of objects) {
+        if (!key.startsWith(`${projectId}:`)) continue
+        const path = key.slice(projectId.length + 1)
+        if (prefix && !path.startsWith(prefix)) continue
+        out.push({ path, size: value.length, contentType: 'application/json', etag: `${path}-etag` })
+      }
+      return out
+    }),
     purgeCache: vi.fn().mockResolvedValue(undefined),
     getStorageKey: vi.fn((projectId: string, path: string) => `${projectId}/${path}`),
   }
@@ -205,6 +228,91 @@ describe('cdn builder', () => {
     expect(content.a1.gallery[0]).toBe('https://cdn.test/api/cdn/v1/proj/media/original/b.webp')
     expect(content.a1.gallery[1]).toBe('https://ext.example/c.jpg')
     expect(content.a1.question).toBe('Q')
+  })
+
+  // Regression: the full-rebuild stale-object sweep must never delete media/*
+  // binaries. They are uploaded out-of-band by the MediaProvider and are never
+  // part of a build's uploadedPaths, so an unguarded sweep 404s every delivery
+  // URL while the DB rows + _media_manifest survive.
+  function seedProject(projectId: string) {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq',
+        name: 'FAQ',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({
+        a1: { question: 'Live' },
+      }),
+      '.contentrain/meta/faq/en.json': JSON.stringify({
+        a1: { status: 'published' },
+      }),
+    }
+    const git = createGitProvider(files)
+    const { provider, objects } = createCDNProvider()
+
+    // Out-of-band media (original + variant) written by the MediaProvider, plus
+    // genuinely-stale build content from a model that no longer exists.
+    objects.set(`${projectId}:media/original/keep.webp`, 'IMG')
+    objects.set(`${projectId}:media/thumbnail/keep.jpg`, 'THUMB')
+    objects.set(`${projectId}:content/old-model/en.json`, '{"gone":1}')
+    objects.set(`${projectId}:meta/old-model/en.json`, '{"gone":1}')
+
+    return { git, provider, objects }
+  }
+
+  it('preserves out-of-band media/* during a full rebuild while still pruning stale build content', async () => {
+    const { git, provider, objects } = seedProject('proj')
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    // Media binaries survive — owned by MediaProvider, not the build.
+    expect(objects.has('proj:media/original/keep.webp')).toBe(true)
+    expect(objects.has('proj:media/thumbnail/keep.jpg')).toBe(true)
+    // Genuinely-stale build content is still garbage-collected.
+    expect(objects.has('proj:content/old-model/en.json')).toBe(false)
+    expect(objects.has('proj:meta/old-model/en.json')).toBe(false)
+    // filesDeleted counts the two stale content objects, never the media.
+    expect(result.filesDeleted).toBe(2)
+  })
+
+  it('preserves media/* when a build runs with empty changedPaths (webhook empty-commits path)', async () => {
+    const { git, provider, objects } = seedProject('proj2')
+
+    // No fullRebuild, but empty changedPaths → same full-sweep branch as Rebuild now.
+    const result = await executeCDNBuild({
+      projectId: 'proj2',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      changedPaths: [],
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(objects.has('proj2:media/original/keep.webp')).toBe(true)
+    expect(objects.has('proj2:media/thumbnail/keep.jpg')).toBe(true)
+    expect(objects.has('proj2:content/old-model/en.json')).toBe(false)
   })
 
   it('rewrites media paths in document frontmatter, body, and rendered HTML', async () => {
