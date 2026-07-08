@@ -17,6 +17,7 @@
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "check:strings": "node ./scripts/check-dictionary-keys.mjs",
     "test": "vitest --project unit --project integration --project nuxt",
     "test:watch": "vitest --project unit --project integration --project nuxt",
     "test:unit": "vitest run --project unit",

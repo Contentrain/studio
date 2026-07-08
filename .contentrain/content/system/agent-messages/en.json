@@ -33,6 +33,7 @@
   "media.upload_failed": "Image upload failed. You can use an external URL (Unsplash, etc) directly in the content field instead.",
   "media.uploaded": "Image uploaded, optimized, and variants generated. Use the path in your content fields.",
   "media.url_bad_status": "URL returned {status}",
+  "media.url_blocked": "URL not allowed. Only public http(s) URLs can be fetched.",
   "media.url_required": "url is required",
   "model.created": "Model created successfully. You can now add content entries.",
   "model.deleted": "Model and all its content deleted.",
