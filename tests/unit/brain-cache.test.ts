@@ -102,7 +102,7 @@ describe('brain cache', () => {
     expect(mod.isBrainStale('project-1')).toBe(false)
   })
 
-  it('rebuilds after invalidation and produces a compact content index', async () => {
+  it('produces a compact content index', async () => {
     const git = createGit()
     const mod = await import('../../server/utils/brain-cache')
 
@@ -111,10 +111,116 @@ describe('brain cache', () => {
 
     expect(index).toContain('Posts (posts): collection, 2 entries')
     expect(index).toContain('published: 1, draft: 1')
+  })
 
-    await mod.getOrBuildBrainCache(git as never, '', 'project-2')
+  it('marks the entry stale on invalidation and refreshes it incrementally', async () => {
+    // v1 tree, then a write bumps only the content blob's SHA.
+    let phase: 1 | 2 = 1
+    const contentV2 = JSON.stringify({
+      entry1: { title: 'Hello' },
+      entry2: { title: 'World' },
+      entry3: { title: 'Again' },
+    })
+    const git = createGit({
+      getTree: async () => [
+        { path: '.contentrain/config.json', sha: 'sha-config', type: 'blob' },
+        { path: '.contentrain/models/posts.json', sha: 'sha-model', type: 'blob' },
+        { path: '.contentrain/content/marketing/posts/en.json', sha: phase === 1 ? 'sha-content' : 'sha-content-v2', type: 'blob' },
+        { path: '.contentrain/meta/marketing/posts/en.json', sha: 'sha-meta', type: 'blob' },
+      ],
+    })
+    const baseRead = git.readFile.getMockImplementation()!
+    git.readFile.mockImplementation(async (path: string) =>
+      (phase === 2 && path === '.contentrain/content/marketing/posts/en.json') ? contentV2 : baseRead(path),
+    )
+
+    const mod = await import('../../server/utils/brain-cache')
+    const first = await mod.getOrBuildBrainCache(git as never, '', 'project-2')
+    expect(first.contentSummary.posts?.count).toBe(2)
+
     mod.invalidateBrainCache('project-2')
-    expect(mod.getBrainCache('project-2')).toBeNull()
+    // The entry is retained (stale), not dropped.
+    expect(mod.getBrainCache('project-2')).not.toBeNull()
+    expect(mod.isBrainStale('project-2')).toBe(true)
+
+    phase = 2
+    git.readFile.mockClear()
+    const second = await mod.getOrBuildBrainCache(git as never, '', 'project-2')
+
+    // Incremental: only the affected model was re-read — no config, no
+    // model definitions, no vocabulary/context.
+    const readPaths = git.readFile.mock.calls.map(c => c[0])
+    expect(readPaths).toContain('.contentrain/content/marketing/posts/en.json')
+    expect(readPaths).not.toContain('.contentrain/config.json')
+    expect(readPaths).not.toContain('.contentrain/models/posts.json')
+    expect(readPaths).not.toContain('.contentrain/vocabulary.json')
+
+    expect(second).not.toBe(first)
+    expect(second.stale).toBe(false)
+    expect(second.contentSummary.posts?.count).toBe(3)
+    expect(mod.isBrainStale('project-2')).toBe(false)
+    // The old snapshot object is untouched (concurrent readers).
+    expect(first.contentSummary.posts?.count).toBe(2)
+  })
+
+  it('incremental refresh output matches a full rebuild (parity)', async () => {
+    let phase: 1 | 2 = 1
+    const contentV2 = JSON.stringify({ entry1: { title: 'Hello v2' } })
+    const git = createGit({
+      getTree: async () => [
+        { path: '.contentrain/config.json', sha: 'sha-config', type: 'blob' },
+        { path: '.contentrain/models/posts.json', sha: 'sha-model', type: 'blob' },
+        { path: '.contentrain/content/marketing/posts/en.json', sha: phase === 1 ? 'sha-content' : 'sha-content-v2', type: 'blob' },
+        { path: '.contentrain/meta/marketing/posts/en.json', sha: 'sha-meta', type: 'blob' },
+      ],
+    })
+    const baseRead = git.readFile.getMockImplementation()!
+    git.readFile.mockImplementation(async (path: string) =>
+      (phase === 2 && path === '.contentrain/content/marketing/posts/en.json') ? contentV2 : baseRead(path),
+    )
+
+    const mod = await import('../../server/utils/brain-cache')
+    const v1 = await mod.buildBrainSnapshot(git as never, '', 'project-parity')
+
+    phase = 2
+    const refreshed = await mod.refreshBrainSnapshot(git as never, '', 'project-parity', v1)
+    const full = await mod.buildBrainSnapshot(git as never, '', 'project-parity', v1)
+
+    expect(refreshed).not.toBeNull()
+    // Fake timers freeze lastRefresh, so the entries compare fully.
+    expect(refreshed).toEqual(full)
+  })
+
+  it('falls back to a full rebuild when a model definition changes (structural)', async () => {
+    const git = createGit()
+    const mod = await import('../../server/utils/brain-cache')
+    const v1 = await mod.buildBrainSnapshot(git as never, '', 'project-structural')
+
+    const structuralTree = [
+      { path: '.contentrain/config.json', sha: 'sha-config', type: 'blob' as const },
+      { path: '.contentrain/models/posts.json', sha: 'sha-model-CHANGED', type: 'blob' as const },
+      { path: '.contentrain/content/marketing/posts/en.json', sha: 'sha-content', type: 'blob' as const },
+      { path: '.contentrain/meta/marketing/posts/en.json', sha: 'sha-meta', type: 'blob' as const },
+    ]
+    const refreshed = await mod.refreshBrainSnapshot(git as never, '', 'project-structural', v1, structuralTree)
+    expect(refreshed).toBeNull()
+  })
+
+  it('dedupes concurrent stale refreshes into one build', async () => {
+    const git = createGit()
+    const mod = await import('../../server/utils/brain-cache')
+
+    await mod.getOrBuildBrainCache(git as never, '', 'project-dedup')
+    mod.invalidateBrainCache('project-dedup')
+
+    git.getTree.mockClear()
+    const [a, b] = await Promise.all([
+      mod.getOrBuildBrainCache(git as never, '', 'project-dedup'),
+      mod.getOrBuildBrainCache(git as never, '', 'project-dedup'),
+    ])
+
+    expect(a).toBe(b)
+    expect(git.getTree).toHaveBeenCalledTimes(1)
   })
 
   it('keeps document date fields as strings instead of gray-matter Date objects', async () => {

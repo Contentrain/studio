@@ -194,111 +194,170 @@ export async function* runConversationLoop(
   let iteration = 0
   let lastStopReason: string | undefined
 
-  while (iteration < maxIterations) {
-    if (config.abortSignal?.aborted) break
+  // Turn-scoped merge coalescing: write tools land on contentrain
+  // per-save; context regen + contentrain→main advance run once here.
+  const turnMerge: TurnMergeState = { pendingFinalize: [] }
+  let turnMergeFlushed = false
+  const flushTurnMerges = async (): Promise<void> => {
+    if (turnMergeFlushed || turnMerge.pendingFinalize.length === 0) return
+    turnMergeFlushed = true
+    try {
+      await toolCtx.engine.finalizeContentrain(turnMerge.pendingFinalize)
+    }
+    catch (e) {
+      // Best-effort, same contract as per-save regen: context.json and
+      // the main advance self-heal on the next merge.
+      // eslint-disable-next-line no-console
+      console.warn('[conversation] turn-end finalize failed (self-heals on next merge):', e instanceof Error ? e.message : e)
+    }
+  }
 
-    iteration++
+  try {
+    while (iteration < maxIterations) {
+      if (config.abortSignal?.aborted) break
 
-    const turn = yield* runModelStream(4096)
-    totalInputTokens += turn.usage.inputTokens
-    totalOutputTokens += turn.usage.outputTokens
-    totalCacheCreationInputTokens += turn.usage.cacheCreationInputTokens
-    totalCacheReadInputTokens += turn.usage.cacheReadInputTokens
-    lastStopReason = turn.stopReason
-    lastAssistantContent = turn.assistantBlocks
+      iteration++
 
-    if (turn.stopReason !== 'tool_use' || turn.currentToolCalls.length === 0) {
+      const turn = yield* runModelStream(4096)
+      totalInputTokens += turn.usage.inputTokens
+      totalOutputTokens += turn.usage.outputTokens
+      totalCacheCreationInputTokens += turn.usage.cacheCreationInputTokens
+      totalCacheReadInputTokens += turn.usage.cacheReadInputTokens
+      lastStopReason = turn.stopReason
+      lastAssistantContent = turn.assistantBlocks
+
+      if (turn.stopReason !== 'tool_use' || turn.currentToolCalls.length === 0) {
       // Final iteration — no tool execution this turn. Persist the
       // assistant blocks alone (no tool_result row will exist for
       // this iteration).
-      trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
-      break
-    }
+        trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
+        break
+      }
 
-    // === TOOL EXECUTION with state guard + workflow-aware auto-merge ===
-    const toolResultBlocks: AIContentBlock[] = []
+      // === TOOL EXECUTION with state guard + workflow-aware auto-merge ===
+      const toolResultBlocks: AIContentBlock[] = []
 
-    for (const tc of turn.currentToolCalls) {
+      for (const tc of turn.currentToolCalls) {
       // Stop tool execution if client disconnected
-      if (config.abortSignal?.aborted) {
-        toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify({ error: 'Request cancelled' }) })
-        continue
+        if (config.abortSignal?.aborted) {
+          toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify({ error: 'Request cancelled' }) })
+          continue
+        }
+
+        // State machine guard
+        const stateCheck = checkStateTransition(toolCtx.phase, tc.name)
+        if (!stateCheck.allowed) {
+          const errorResult = { error: stateCheck.reason, suggestion: stateCheck.suggestion }
+          yield { type: 'tool_result', id: tc.id, name: tc.name, result: errorResult }
+          toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(errorResult) })
+          continue
+        }
+
+        // Execute tool
+        const result = await executeToolWithAutoMerge(
+          tc.name, tc.input, toolCtx.engine, toolCtx.git, toolCtx.userEmail, toolCtx.userId, toolCtx.contentRoot, toolCtx.workflow, toolCtx.permissions, toolCtx.plan, toolCtx.projectId, toolCtx.workspaceId, toolCtx.uiContext, turnMerge,
+        )
+
+        // Accumulate affected resources
+        accumulatedAffected = mergeAffected(accumulatedAffected, result.affected)
+
+        // Truncate for context. The cap is intentionally generous (see
+        // DEFAULT_MAX_TOOL_RESULT_LENGTH) so full content entries survive
+        // intact — an over-tight cap previously chopped reads into invalid
+        // JSON mid-object, which sent the agent in circles re-reading the
+        // same content it could never see in full.
+        let resultStr = JSON.stringify(result.result)
+        if (resultStr.length > maxResultLength) {
+          resultStr = resultStr.substring(0, maxResultLength) + '\n...(truncated — result exceeded the size limit; narrow the query, e.g. by entryId or locale, to read the rest)'
+        }
+
+        // Carry this tool's affected resources on the event so the client
+        // can refresh the context panel live (debounced) as each operation
+        // lands, instead of only once the whole turn finishes on `done`.
+        yield { type: 'tool_result', id: tc.id, name: tc.name, result: result.result, affected: result.affected }
+        toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr })
       }
 
-      // State machine guard
-      const stateCheck = checkStateTransition(toolCtx.phase, tc.name)
-      if (!stateCheck.allowed) {
-        const errorResult = { error: stateCheck.reason, suggestion: stateCheck.suggestion }
-        yield { type: 'tool_result', id: tc.id, name: tc.name, result: errorResult }
-        toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(errorResult) })
-        continue
-      }
-
-      // Execute tool
-      const result = await executeToolWithAutoMerge(
-        tc.name, tc.input, toolCtx.engine, toolCtx.git, toolCtx.userEmail, toolCtx.userId, toolCtx.contentRoot, toolCtx.workflow, toolCtx.permissions, toolCtx.plan, toolCtx.projectId, toolCtx.workspaceId, toolCtx.uiContext,
-      )
-
-      // Accumulate affected resources
-      accumulatedAffected = mergeAffected(accumulatedAffected, result.affected)
-
-      // Truncate for context. The cap is intentionally generous (see
-      // DEFAULT_MAX_TOOL_RESULT_LENGTH) so full content entries survive
-      // intact — an over-tight cap previously chopped reads into invalid
-      // JSON mid-object, which sent the agent in circles re-reading the
-      // same content it could never see in full.
-      let resultStr = JSON.stringify(result.result)
-      if (resultStr.length > maxResultLength) {
-        resultStr = resultStr.substring(0, maxResultLength) + '\n...(truncated — result exceeded the size limit; narrow the query, e.g. by entryId or locale, to read the rest)'
-      }
-
-      // Carry this tool's affected resources on the event so the client
-      // can refresh the context panel live (debounced) as each operation
-      // lands, instead of only once the whole turn finishes on `done`.
-      yield { type: 'tool_result', id: tc.id, name: tc.name, result: result.result, affected: result.affected }
-      toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr })
+      config.messages.push({ role: 'assistant', content: turn.assistantBlocks })
+      config.messages.push({ role: 'user', content: toolResultBlocks })
+      lastAssistantContent = turn.assistantBlocks
+      trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks })
     }
 
-    config.messages.push({ role: 'assistant', content: turn.assistantBlocks })
-    config.messages.push({ role: 'user', content: toolResultBlocks })
-    lastAssistantContent = turn.assistantBlocks
-    trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks })
-  }
+    // === GRACEFUL CLOSE on iteration exhaustion ===
+    // If the loop hit the iteration ceiling while the model still wanted
+    // to call tools (it never reached a natural end_turn), the user would
+    // otherwise be left with an answer that stops mid-work. Make one final
+    // tools-disabled streaming call so the model summarizes what it did —
+    // streamed live, and recorded as the final visible assistant turn.
+    if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
+      const wrap = yield* runModelStream(4096, [])
+      totalInputTokens += wrap.usage.inputTokens
+      totalOutputTokens += wrap.usage.outputTokens
+      totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
+      totalCacheReadInputTokens += wrap.usage.cacheReadInputTokens
+      if (wrap.assistantBlocks.length > 0) {
+        lastAssistantContent = wrap.assistantBlocks
+        trace.push({ iteration: iteration + 1, assistantBlocks: wrap.assistantBlocks, toolResultBlocks: [] })
+      }
+    }
 
-  // === GRACEFUL CLOSE on iteration exhaustion ===
-  // If the loop hit the iteration ceiling while the model still wanted
-  // to call tools (it never reached a natural end_turn), the user would
-  // otherwise be left with an answer that stops mid-work. Make one final
-  // tools-disabled streaming call so the model summarizes what it did —
-  // streamed live, and recorded as the final visible assistant turn.
-  if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
-    const wrap = yield* runModelStream(4096, [])
-    totalInputTokens += wrap.usage.inputTokens
-    totalOutputTokens += wrap.usage.outputTokens
-    totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
-    totalCacheReadInputTokens += wrap.usage.cacheReadInputTokens
-    if (wrap.assistantBlocks.length > 0) {
-      lastAssistantContent = wrap.assistantBlocks
-      trace.push({ iteration: iteration + 1, assistantBlocks: wrap.assistantBlocks, toolResultBlocks: [] })
+    // Flush BEFORE the done event so the client's done-triggered refresh
+    // sees the finalized context.json / advanced main.
+    await flushTurnMerges()
+
+    // === DONE with affected resources ===
+    yield {
+      type: 'done',
+      usage: {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        cacheCreationInputTokens: totalCacheCreationInputTokens,
+        cacheReadInputTokens: totalCacheReadInputTokens,
+      },
+      affected: accumulatedAffected,
+      lastContent: lastAssistantContent,
+      iterations: trace,
     }
   }
-
-  // === DONE with affected resources ===
-  yield {
-    type: 'done',
-    usage: {
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
-      cacheCreationInputTokens: totalCacheCreationInputTokens,
-      cacheReadInputTokens: totalCacheReadInputTokens,
-    },
-    affected: accumulatedAffected,
-    lastContent: lastAssistantContent,
-    iterations: trace,
+  finally {
+    // Single guaranteed exit point: mid-turn throws, aborts, and early
+    // generator termination (client disconnect → .return()) all pass
+    // through here — branches that already landed on contentrain still
+    // get their finalize (context regen + main advance).
+    await flushTurnMerges()
   }
 }
 
 // ─── Tool Execution ───
+
+/**
+ * Per-turn merge coalescing state. Write tools land their branch on
+ * `contentrain` immediately (durability unchanged) and queue the
+ * finalize step — context.json regeneration + contentrain→main advance
+ * — which the conversation loop flushes ONCE at turn end instead of
+ * once per write.
+ */
+export interface TurnMergeState {
+  pendingFinalize: string[]
+}
+
+/**
+ * Merge a write tool's branch. With a `turnMerge` state, only step 1
+ * (cr/* → contentrain) runs now and the finalize is queued for the
+ * turn-end flush. Without one (standalone callers), this is the exact
+ * legacy `engine.mergeBranch` behavior.
+ */
+async function mergeForTool(
+  engine: ReturnType<typeof createContentEngine>,
+  branch: string,
+  turnMerge?: TurnMergeState,
+): Promise<{ merged: boolean }> {
+  if (!turnMerge) return engine.mergeBranch(branch)
+  const step1 = await engine.mergeToContentrain(branch)
+  if (step1.merged) turnMerge.pendingFinalize.push(branch)
+  return { merged: step1.merged }
+}
 
 /**
  * Execute tool with workflow-aware auto-merge and affected resources.
@@ -317,6 +376,7 @@ export async function executeToolWithAutoMerge(
   projectId: string,
   workspaceId: string,
   uiContext: ChatUIContext,
+  turnMerge?: TurnMergeState,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
   const params = (input ?? {}) as Record<string, unknown>
   const affected: AffectedResources = emptyAffected()
@@ -447,7 +507,7 @@ export async function executeToolWithAutoMerge(
 
         // Role-aware auto-merge
         if (shouldAutoMerge(workflow, permissions) && writeResult.branch) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, workflow }
         }
         else if (writeResult.branch) {
@@ -484,7 +544,7 @@ export async function executeToolWithAutoMerge(
         invalidateBrainCache(projectId)
 
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
@@ -508,7 +568,7 @@ export async function executeToolWithAutoMerge(
         invalidateBrainCache(projectId)
 
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
@@ -568,7 +628,7 @@ export async function executeToolWithAutoMerge(
 
         if (writeResult.branch) {
           if (shouldAutoMerge(workflow, permissions)) {
-            await engine.mergeBranch(writeResult.branch)
+            await mergeForTool(engine, writeResult.branch, turnMerge)
           }
           invalidateBrainCache(projectId)
         }
@@ -670,7 +730,7 @@ export async function executeToolWithAutoMerge(
         invalidateBrainCache(projectId)
 
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
@@ -855,7 +915,7 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
@@ -973,7 +1033,7 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
@@ -997,7 +1057,7 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
@@ -1049,7 +1109,7 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
         if (shouldAutoMerge(workflow, permissions)) {
-          const mergeResult = await engine.mergeBranch(writeResult.branch)
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {

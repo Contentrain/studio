@@ -16,6 +16,8 @@ import {
 function makeBrain(overrides: Partial<BrainCacheEntry> = {}): BrainCacheEntry {
   return {
     treeSha: 'test-sha',
+    fileShas: new Map(),
+    stale: false,
     config: {
       version: 1,
       stack: 'nuxt',

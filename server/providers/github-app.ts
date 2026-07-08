@@ -25,6 +25,8 @@
 
 import { createAppAuth } from '@octokit/auth-app'
 import { Octokit } from '@octokit/rest'
+import { retry } from '@octokit/plugin-retry'
+import { throttling } from '@octokit/plugin-throttling'
 import type {
   BranchProtection,
   FrameworkDetection,
@@ -45,20 +47,103 @@ interface GitHubAppBaseConfig {
 }
 
 /**
- * Build an installation-token-authenticated Octokit client.
+ * Octokit with rate-limit resilience:
+ *
+ * - `throttling` paces requests and retries when GitHub answers with a
+ *   primary (`x-ratelimit-remaining: 0`) or secondary ("abuse") rate
+ *   limit, honoring `retry-after`. The secondary limit is the one an
+ *   agent turn with many rapid commits trips.
+ * - `retry` re-runs transient failures (5xx, ECONNRESET). Its default
+ *   `doNotRetry` list (400/401/403/404/422/451) preserves the 404
+ *   semantics `fileExists()`-style probes rely on.
+ */
+const StudioOctokit = Octokit.plugin(throttling, retry)
+
+const THROTTLE_OPTIONS = {
+  onRateLimit: (retryAfter: number, options: { method: string, url: string }, _octokit: unknown, retryCount: number) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[github-throttle] primary rate limit: ${options.method} ${options.url} retry-after=${retryAfter}s attempt=${retryCount}`)
+    return retryCount < 1
+  },
+  onSecondaryRateLimit: (retryAfter: number, options: { method: string, url: string }, _octokit: unknown, retryCount: number) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[github-throttle] secondary rate limit: ${options.method} ${options.url} retry-after=${retryAfter}s attempt=${retryCount}`)
+    return retryCount < 2
+  },
+}
+
+/**
+ * Per-installation request counters + throttled `x-ratelimit-*` logging.
+ * The counter is the measurement instrument for API-budget work: it
+ * counts every GitHub request the process makes per installation.
+ */
+const requestCounters = new Map<number, number>()
+const lastRateLog = new Map<number, number>()
+const RATE_LOG_INTERVAL_MS = 30_000
+
+export function getGitHubRequestCount(installationId: number): number {
+  return requestCounters.get(installationId) ?? 0
+}
+
+function registerRateObservability(client: Octokit, installationId: number): void {
+  client.hook.after('request', (response) => {
+    requestCounters.set(installationId, (requestCounters.get(installationId) ?? 0) + 1)
+    const now = Date.now()
+    if (now - (lastRateLog.get(installationId) ?? 0) < RATE_LOG_INTERVAL_MS) return
+    const remaining = response.headers?.['x-ratelimit-remaining']
+    const used = response.headers?.['x-ratelimit-used']
+    if (remaining === undefined) return
+    lastRateLog.set(installationId, now)
+    // eslint-disable-next-line no-console
+    console.info(`[github-rate] installation=${installationId} used=${used} remaining=${remaining} processRequests=${requestCounters.get(installationId)}`)
+  })
+}
+
+/**
+ * Installation-client cache. Safe to reuse across requests: the
+ * `@octokit/auth-app` strategy caches the 1-hour installation token
+ * inside the instance and refreshes it before expiry, so a cached
+ * client stays valid indefinitely. Keyed by installationId only —
+ * a deployment has a single GitHub App, so appId/privateKey are
+ * constant for the process lifetime.
+ */
+const installationOctokitCache = new Map<number, Octokit>()
+const MAX_OCTOKIT_CACHE = 200
+
+/**
+ * Build (or reuse) an installation-token-authenticated Octokit client.
  *
  * Token refresh is handled internally by `@octokit/auth-app`; callers
  * must not attempt manual re-auth or token extraction.
  */
 export function createInstallationOctokit(config: GitHubAppBaseConfig): Octokit {
-  return new Octokit({
+  const cached = installationOctokitCache.get(config.installationId)
+  if (cached) return cached
+
+  const client = new StudioOctokit({
     authStrategy: createAppAuth,
     auth: {
       appId: config.appId,
       privateKey: config.privateKey,
       installationId: config.installationId,
     },
+    throttle: THROTTLE_OPTIONS,
   })
+  registerRateObservability(client, config.installationId)
+
+  if (installationOctokitCache.size >= MAX_OCTOKIT_CACHE) {
+    const oldest = installationOctokitCache.keys().next().value
+    if (oldest !== undefined) installationOctokitCache.delete(oldest)
+  }
+  installationOctokitCache.set(config.installationId, client)
+  return client
+}
+
+/** Test helper — drop cached installation clients. */
+export function __resetInstallationOctokitCache(): void {
+  installationOctokitCache.clear()
+  requestCounters.clear()
+  lastRateLog.clear()
 }
 
 /**
@@ -68,15 +153,17 @@ export function createInstallationOctokit(config: GitHubAppBaseConfig): Octokit 
  * cannot perform: deleting an installation (`DELETE /app/installations/{id}`),
  * suspending/unsuspending installations, reading App-level metadata.
  * `@octokit/auth-app` signs a short-lived JWT (~10min TTL) with the
- * App's private key.
+ * App's private key. Not cached — `createGitAppService` memoizes its own
+ * instance and `revokeInstallation` intentionally mints per call.
  */
 export function createAppOctokit(config: { appId: string, privateKey: string }): Octokit {
-  return new Octokit({
+  return new StudioOctokit({
     authStrategy: createAppAuth,
     auth: {
       appId: config.appId,
       privateKey: config.privateKey,
     },
+    throttle: THROTTLE_OPTIONS,
   })
 }
 

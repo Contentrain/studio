@@ -23,6 +23,18 @@ const CONTENT_REF = 'contentrain'
 
 export interface BrainCacheEntry {
   treeSha: string
+  /**
+   * Per-path blob SHA of every tracked file (same file set `treeSha`
+   * hashes over). Basis for the SHA-diff incremental refresh: after an
+   * invalidation, only paths whose blob SHA changed are re-read.
+   */
+  fileShas: Map<string, string>
+  /**
+   * Set by `invalidateBrainCache`. A stale entry is refreshed
+   * incrementally (SHA diff → re-read changed models only) on the next
+   * `getOrBuildBrainCache` instead of being rebuilt from scratch.
+   */
+  stale: boolean
   config: ContentrainConfig | null
   models: Map<string, ModelDefinition>
   /** Content data keyed by `${modelId}:${locale}` */
@@ -51,18 +63,31 @@ export function getBrainCache(projectId: string): BrainCacheEntry | null {
 }
 
 /**
- * Check if cache is stale (TTL expired).
+ * Check if cache is stale (invalidated by a write, or TTL expired).
  */
 export function isBrainStale(projectId: string): boolean {
   const entry = brainCache.get(projectId)
   if (!entry) return true
+  if (entry.stale) return true
   return Date.now() - entry.lastRefresh > BRAIN_TTL_MS
 }
 
 /**
- * Invalidate cache for a project. Next access triggers rebuild.
+ * Invalidate cache for a project. The entry is kept and marked stale so
+ * the next access can refresh it incrementally (SHA diff) instead of
+ * paying a full O(models × locales) rebuild.
  */
 export function invalidateBrainCache(projectId: string): void {
+  const entry = brainCache.get(projectId)
+  if (entry) entry.stale = true
+}
+
+/**
+ * Hard-drop the cached entry (next access = full rebuild). Not used by
+ * production write paths — those mark stale; this exists for tests and
+ * operational escape hatches.
+ */
+export function dropBrainCache(projectId: string): void {
   brainCache.delete(projectId)
 }
 
@@ -107,11 +132,11 @@ function deCoerceDate(value: unknown, fieldDef?: FieldDef): unknown {
 }
 
 /**
- * Compute a simple hash from tree entries for delta detection.
- * Tracks .contentrain/ files + any custom content_path locations from models.
+ * Blobs the brain tracks: .contentrain/ files + any custom content_path
+ * locations from models. Sorted for stable hashing.
  */
-function computeTreeHash(tree: TreeEntry[], extraPaths?: string[]): string {
-  const contentFiles = tree
+function trackedFiles(tree: TreeEntry[], extraPaths?: string[]): TreeEntry[] {
+  return tree
     .filter((e) => {
       if (e.type !== 'blob') return false
       if (e.path.includes('.contentrain/')) return true
@@ -122,12 +147,37 @@ function computeTreeHash(tree: TreeEntry[], extraPaths?: string[]): string {
       return false
     })
     .sort((a, b) => a.path.localeCompare(b.path))
-  return contentFiles.map(e => `${e.path}:${e.sha}`).join('|')
 }
 
 /**
+ * Compute a simple hash from tree entries for delta detection.
+ */
+function computeTreeHash(tree: TreeEntry[], extraPaths?: string[]): string {
+  return trackedFiles(tree, extraPaths).map(e => `${e.path}:${e.sha}`).join('|')
+}
+
+/** Per-path blob SHA map over the same tracked file set as the hash. */
+function buildFileShaMap(tree: TreeEntry[], extraPaths?: string[]): Map<string, string> {
+  return new Map(trackedFiles(tree, extraPaths).map(e => [e.path, e.sha]))
+}
+
+/**
+ * In-flight build/refresh dedup — parallel tool calls in one agent turn
+ * previously each triggered a full rebuild after an invalidation.
+ */
+const inflightBuilds = new Map<string, Promise<BrainCacheEntry>>()
+
+/**
  * Get brain cache, building from Git if needed.
- * Optimized: checks tree SHA first (1 Git call), only rebuilds if changed.
+ *
+ * Freshness ladder (cheapest first):
+ * 1. Valid entry (not stale, TTL ok): 1 `getTree` + hash compare — return
+ *    on match; on mismatch, incremental refresh with the tree in hand.
+ * 2. Stale entry (write invalidation, TTL ok): incremental refresh —
+ *    1 `getTree` + re-read only the paths whose blob SHA changed.
+ * 3. No entry / TTL expired / structural change (config, models/,
+ *    unclassifiable path): full rebuild. The 10-minute TTL keeps its
+ *    original meaning — a periodic guaranteed full rebuild.
  */
 export async function getOrBuildBrainCache(
   git: GitProvider,
@@ -135,8 +185,9 @@ export async function getOrBuildBrainCache(
   projectId: string,
 ): Promise<BrainCacheEntry> {
   const cached = brainCache.get(projectId)
+  const ttlExpired = !cached || Date.now() - cached.lastRefresh > BRAIN_TTL_MS
 
-  if (cached && !isBrainStale(projectId)) {
+  if (cached && !cached.stale && !ttlExpired) {
     // Quick SHA check via tree
     try {
       const tree = await git.getTree(CONTENT_REF).catch(() => git.getTree())
@@ -148,7 +199,9 @@ export async function getOrBuildBrainCache(
       if (cached.treeSha === currentHash) {
         return cached
       }
-      // Tree changed — rebuild
+      // Tree changed underneath us — refresh incrementally with the
+      // tree we already fetched.
+      return await dedupedBuild(projectId, () => refreshOrRebuild(git, contentRoot, projectId, cached, tree))
     }
     catch {
       // Git error — use stale cache rather than fail
@@ -156,9 +209,49 @@ export async function getOrBuildBrainCache(
     }
   }
 
+  if (cached && cached.stale && !ttlExpired) {
+    try {
+      return await dedupedBuild(projectId, () => refreshOrRebuild(git, contentRoot, projectId, cached))
+    }
+    catch {
+      // Git error mid-refresh — serve the stale entry rather than fail;
+      // the next access retries (entry keeps its stale flag).
+      return cached
+    }
+  }
+
   // Build fresh (pass previous brain for breaking change detection)
-  const previousBrain = cached ?? null
-  const entry = await buildBrainSnapshot(git, contentRoot, projectId, previousBrain)
+  return dedupedBuild(projectId, async () => {
+    const entry = await buildBrainSnapshot(git, contentRoot, projectId, cached ?? null)
+    setBrainCache(projectId, entry)
+    return entry
+  })
+}
+
+async function dedupedBuild(
+  projectId: string,
+  work: () => Promise<BrainCacheEntry>,
+): Promise<BrainCacheEntry> {
+  const existing = inflightBuilds.get(projectId)
+  if (existing) return existing
+  const promise = work().finally(() => inflightBuilds.delete(projectId))
+  inflightBuilds.set(projectId, promise)
+  return promise
+}
+
+async function refreshOrRebuild(
+  git: GitProvider,
+  contentRoot: string,
+  projectId: string,
+  cached: BrainCacheEntry,
+  tree?: TreeEntry[],
+): Promise<BrainCacheEntry> {
+  const refreshed = await refreshBrainSnapshot(git, contentRoot, projectId, cached, tree)
+  if (refreshed) {
+    setBrainCache(projectId, refreshed)
+    return refreshed
+  }
+  const entry = await buildBrainSnapshot(git, contentRoot, projectId, cached)
   setBrainCache(projectId, entry)
   return entry
 }
@@ -177,6 +270,140 @@ function setBrainCache(projectId: string, entry: BrainCacheEntry): void {
     if (oldestKey) brainCache.delete(oldestKey)
   }
   brainCache.set(projectId, entry)
+}
+
+interface ModelBundle {
+  content: Array<[string, unknown]>
+  meta: Array<[string, Record<string, unknown>]>
+}
+
+/**
+ * Read one model's content + meta across its locales. This is the ONLY
+ * code path that parses model content into brain shape — both the full
+ * `buildBrainSnapshot` and the incremental `refreshBrainSnapshot` go
+ * through it, which is what guarantees an incremental patch produces
+ * exactly what a full rebuild would.
+ */
+async function readModelBundle(
+  git: GitProvider,
+  ctx: { contentRoot: string },
+  contentRoot: string,
+  model: ModelDefinition,
+  supportedLocales: string[],
+  defaultLocale: string,
+  contentRef: string | undefined,
+): Promise<ModelBundle> {
+  const kind = (model.kind ?? 'collection') as string
+  const locales = model.i18n ? supportedLocales : ['data']
+  const modelId = model.id
+  const bundle: ModelBundle = { content: [], meta: [] }
+
+  await Promise.all(locales.map(async (locale) => {
+    const key = `${modelId}:${locale === 'data' ? defaultLocale : locale}`
+
+    if (kind === 'document') {
+      // Document kind: list slugs, parse markdown
+      try {
+        const contentDir = model.content_path
+          ? (contentRoot ? `${contentRoot}/${model.content_path}` : model.content_path)
+          : `${contentRoot ? `${contentRoot}/` : ''}.contentrain/content/${model.domain}/${model.id}`
+
+        const items = await git.listDirectory(contentDir, contentRef)
+        const entries: Array<Record<string, unknown>> = []
+
+        for (const item of items) {
+          try {
+            let slug: string
+            let mdPath: string
+
+            if (model.i18n) {
+              slug = item
+              mdPath = `${contentDir}/${slug}/${locale}.md`
+            }
+            else {
+              if (!item.endsWith('.md')) continue
+              slug = item.replace(/\.md$/, '')
+              mdPath = `${contentDir}/${item}`
+            }
+
+            const raw = await git.readFile(mdPath, contentRef)
+            const parsed = matter(raw)
+
+            // Read per-document meta
+            let entryMeta: Record<string, unknown> | null = null
+            try {
+              const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale, slug)
+              entryMeta = JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>
+            }
+            catch { /* no meta */ }
+
+            entries.push({
+              slug,
+              frontmatter: normalizeFrontmatterDates(parsed.data as Record<string, unknown>, model.fields),
+              body: parsed.content,
+              meta: entryMeta,
+            })
+          }
+          catch { /* skip invalid document */ }
+        }
+
+        bundle.content.push([key, entries])
+      }
+      catch { /* directory not accessible */ }
+    }
+    else {
+      // JSON kinds: collection, singleton, dictionary
+      try {
+        const contentPath = resolveContentPath(ctx, model, locale)
+        const raw = await git.readFile(contentPath, contentRef)
+        bundle.content.push([key, JSON.parse(raw)])
+      }
+      catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(`[brain] ✗ Content failed for ${modelId}:${locale}:`, (e as Error).message?.substring(0, 100))
+      }
+
+      // Meta
+      try {
+        const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale)
+        bundle.meta.push([key, JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>])
+      }
+      catch { /* no meta */ }
+    }
+  }))
+
+  return bundle
+}
+
+/** Entry counts + locales per model — pure, derived from the content map. */
+function computeContentSummary(
+  models: Map<string, ModelDefinition>,
+  content: Map<string, unknown>,
+  defaultLocale: string,
+): Record<string, { count: number, locales: string[], kind: ModelKind }> {
+  const contentSummary: Record<string, { count: number, locales: string[], kind: ModelKind }> = {}
+  for (const [modelId, model] of models) {
+    const kind = (model.kind ?? 'collection') as ModelKind
+    let entryCount = 0
+    const localesFound: string[] = []
+
+    for (const [k, v] of content) {
+      if (!k.startsWith(`${modelId}:`)) continue
+      const locale = k.split(':')[1] ?? defaultLocale
+      localesFound.push(locale)
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        entryCount = Math.max(entryCount, Object.keys(v).length)
+      }
+      else if (Array.isArray(v)) {
+        entryCount = Math.max(entryCount, v.length)
+      }
+      else if (v !== null) {
+        entryCount = 1
+      }
+    }
+    contentSummary[modelId] = { count: entryCount, locales: localesFound, kind }
+  }
+  return contentSummary
 }
 
 /**
@@ -218,6 +445,8 @@ export async function buildBrainSnapshot(
   if (!config) {
     return {
       treeSha,
+      fileShas: buildFileShaMap(tree),
+      stale: false,
       config: null,
       models: new Map(),
       content: new Map(),
@@ -281,126 +510,15 @@ export async function buildBrainSnapshot(
   // 4. Read all content + meta for each model
   const content = new Map<string, unknown>()
   const metaMap = new Map<string, Record<string, unknown>>()
-  const contentSummary: Record<string, { count: number, locales: string[], kind: ModelKind }> = {}
 
-  const contentReads: Promise<void>[] = []
-
-  for (const [modelId, model] of models) {
-    const kind = (model.kind ?? 'collection') as string
-    const locales = model.i18n ? supportedLocales : ['data']
-    // eslint-disable-next-line no-console
-    console.log(`[brain] Reading content for model ${modelId} (${kind}, i18n: ${model.i18n}, locales: ${locales.join(',')})`)
-
-    for (const locale of locales) {
-      contentReads.push((async () => {
-        const key = `${modelId}:${locale === 'data' ? defaultLocale : locale}`
-
-        if (kind === 'document') {
-          // Document kind: list slugs, parse markdown
-          try {
-            const contentDir = model.content_path
-              ? (contentRoot ? `${contentRoot}/${model.content_path}` : model.content_path)
-              : `${contentRoot ? `${contentRoot}/` : ''}.contentrain/content/${model.domain}/${model.id}`
-
-            const items = await git.listDirectory(contentDir, contentRef)
-            const entries: Array<Record<string, unknown>> = []
-
-            for (const item of items) {
-              try {
-                let slug: string
-                let mdPath: string
-
-                if (model.i18n) {
-                  slug = item
-                  mdPath = `${contentDir}/${slug}/${locale}.md`
-                }
-                else {
-                  if (!item.endsWith('.md')) continue
-                  slug = item.replace(/\.md$/, '')
-                  mdPath = `${contentDir}/${item}`
-                }
-
-                const raw = await git.readFile(mdPath, contentRef)
-                const parsed = matter(raw)
-
-                // Read per-document meta
-                let entryMeta: Record<string, unknown> | null = null
-                try {
-                  const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale, slug)
-                  entryMeta = JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>
-                }
-                catch { /* no meta */ }
-
-                entries.push({
-                  slug,
-                  frontmatter: normalizeFrontmatterDates(parsed.data as Record<string, unknown>, model.fields),
-                  body: parsed.content,
-                  meta: entryMeta,
-                })
-              }
-              catch { /* skip invalid document */ }
-            }
-
-            content.set(key, entries)
-            // locale tracked in summary post-processing
-          }
-          catch { /* directory not accessible */ }
-        }
-        else {
-          // JSON kinds: collection, singleton, dictionary
-          try {
-            const contentPath = resolveContentPath(ctx, model, locale)
-            // eslint-disable-next-line no-console
-            console.log(`[brain] Reading content: ${contentPath}`)
-            const raw = await git.readFile(contentPath, contentRef)
-            content.set(key, JSON.parse(raw))
-            // locale tracked in summary post-processing
-            // eslint-disable-next-line no-console
-            console.log(`[brain] ✓ Content loaded for ${key}`)
-          }
-          catch (e) {
-            // eslint-disable-next-line no-console
-            console.error(`[brain] ✗ Content failed for ${modelId}:${locale}:`, (e as Error).message?.substring(0, 100))
-          }
-
-          // Meta
-          try {
-            const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale)
-            metaMap.set(key, JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>)
-          }
-          catch { /* no meta */ }
-        }
-      })())
-    }
-
-    // Content summary computed after Promise.all below (not here — race condition)
-    // Summary computed after Promise.all(contentReads) below
-  }
-
-  await Promise.all(contentReads)
+  await Promise.all([...models.values()].map(async (model) => {
+    const bundle = await readModelBundle(git, ctx, contentRoot, model, supportedLocales, defaultLocale, contentRef)
+    for (const [key, value] of bundle.content) content.set(key, value)
+    for (const [key, value] of bundle.meta) metaMap.set(key, value)
+  }))
 
   // 4.5 Compute content summaries (after all reads complete — no race condition)
-  for (const [modelId, model] of models) {
-    const kind = (model.kind ?? 'collection') as ModelKind
-    let entryCount = 0
-    const localesFound: string[] = []
-
-    for (const [k, v] of content) {
-      if (!k.startsWith(`${modelId}:`)) continue
-      const locale = k.split(':')[1] ?? defaultLocale
-      localesFound.push(locale)
-      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
-        entryCount = Math.max(entryCount, Object.keys(v).length)
-      }
-      else if (Array.isArray(v)) {
-        entryCount = Math.max(entryCount, v.length)
-      }
-      else if (v !== null) {
-        entryCount = 1
-      }
-    }
-    contentSummary[modelId] = { count: entryCount, locales: localesFound, kind }
-  }
+  const contentSummary = computeContentSummary(models, content, defaultLocale)
 
   // eslint-disable-next-line no-console
   console.log(`[brain] Content summary:`, Object.entries(contentSummary).map(([id, s]) => `${id}: ${s.count} entries (${s.locales.join(',')})`).join(', '))
@@ -422,6 +540,10 @@ export async function buildBrainSnapshot(
 
   const brain: BrainCacheEntry = {
     treeSha: finalTreeSha,
+    // Same tracked file set as `finalTreeSha` (extraPaths-aware) so the
+    // quick-path hash compare and the SHA diff never disagree.
+    fileShas: buildFileShaMap(tree, extraContentPaths),
+    stale: false,
     config,
     models,
     content,
@@ -442,6 +564,182 @@ export async function buildBrainSnapshot(
   catch { /* validation failure shouldn't block brain build */ }
 
   return brain
+}
+
+/**
+ * Classify a changed tree path against the cached snapshot's layout.
+ *
+ * Built FORWARD from the cached models + config (the same path
+ * resolvers the readers use) — never by reverse-parsing paths. Anything
+ * that doesn't classify cleanly forces a full rebuild, so unknown
+ * layouts can never be patched incorrectly.
+ */
+type PathClass
+  = | { type: 'structural' }
+    | { type: 'model', modelId: string }
+    | { type: 'vocabulary' }
+    | { type: 'context' }
+
+function buildPathClassifier(
+  ctx: { contentRoot: string },
+  contentRoot: string,
+  cached: BrainCacheEntry,
+): (path: string) => PathClass {
+  const configPath = resolveConfigPath(ctx)
+  const vocabularyPath = resolveVocabularyPath(ctx)
+  const contextPath = resolveContextPath(ctx)
+  const modelsDirPrefix = `${resolveModelsDir(ctx)}/`
+
+  // Per model: a content-directory prefix and a meta-directory prefix.
+  // Trailing slashes disambiguate sibling ids ("post" vs "posts").
+  const modelPrefixes: Array<[string, string]> = []
+  for (const [modelId, model] of cached.models) {
+    const contentPrefix = model.content_path
+      ? `${contentRoot ? `${contentRoot}/` : ''}${model.content_path}/`
+      : `${contentRoot ? `${contentRoot}/` : ''}.contentrain/content/${model.domain}/${model.id}/`
+    const metaPrefix = `${contentRoot ? `${contentRoot}/` : ''}.contentrain/meta/${model.id}/`
+    modelPrefixes.push([contentPrefix, modelId], [metaPrefix, modelId])
+  }
+
+  return (path: string): PathClass => {
+    if (path === configPath || path.startsWith(modelsDirPrefix)) return { type: 'structural' }
+    if (path === vocabularyPath) return { type: 'vocabulary' }
+    if (path === contextPath) return { type: 'context' }
+    for (const [prefix, modelId] of modelPrefixes) {
+      if (path.startsWith(prefix)) return { type: 'model', modelId }
+    }
+    // Unclassifiable tracked path — layouts we don't model. Rebuild.
+    return { type: 'structural' }
+  }
+}
+
+/**
+ * Incrementally refresh a cached snapshot: diff per-path blob SHAs
+ * against the current tree and re-read only the affected models (plus
+ * vocabulary/context when their files changed). Returns `null` when a
+ * structural change (config, models/, unknown path) makes patching
+ * unsafe — the caller falls back to a full rebuild.
+ */
+export async function refreshBrainSnapshot(
+  git: GitProvider,
+  contentRoot: string,
+  projectId: string,
+  cached: BrainCacheEntry,
+  presetTree?: TreeEntry[],
+): Promise<BrainCacheEntry | null> {
+  // A config-less snapshot has nothing to patch; full rebuild is cheap.
+  if (!cached.config) return null
+
+  // Reads below pin to the contentrain branch — the same ref the full
+  // build uses when the branch exists. If the branch is missing (never
+  // initialized), tree fetch fails and the caller full-rebuilds.
+  const contentRef: string | undefined = CONTENT_REF
+  let tree = presetTree
+  if (!tree) {
+    tree = await git.getTree(CONTENT_REF)
+  }
+
+  const extraPaths = [...cached.models.values()]
+    .filter(m => m.content_path)
+    .map(m => m.content_path!)
+  const newShas = buildFileShaMap(tree, extraPaths)
+
+  const changedPaths: string[] = []
+  for (const [path, sha] of newShas) {
+    if (cached.fileShas.get(path) !== sha) changedPaths.push(path)
+  }
+  for (const path of cached.fileShas.keys()) {
+    if (!newShas.has(path)) changedPaths.push(path)
+  }
+
+  const now = Date.now()
+  const newTreeSha = computeTreeHash(tree, extraPaths)
+
+  if (changedPaths.length === 0) {
+    const entry: BrainCacheEntry = { ...cached, treeSha: newTreeSha, fileShas: newShas, stale: false, lastRefresh: now }
+    return entry
+  }
+
+  const ctx = { contentRoot }
+  const classify = buildPathClassifier(ctx, contentRoot, cached)
+  const affectedModels = new Set<string>()
+  let vocabularyChanged = false
+  let contextChanged = false
+
+  for (const path of changedPaths) {
+    const cls = classify(path)
+    if (cls.type === 'structural') return null
+    if (cls.type === 'model') affectedModels.add(cls.modelId)
+    if (cls.type === 'vocabulary') vocabularyChanged = true
+    if (cls.type === 'context') contextChanged = true
+  }
+
+  const config = cached.config
+  const defaultLocale = config.locales?.default ?? 'en'
+  const supportedLocales = config.locales?.supported ?? [defaultLocale]
+
+  // New entry with copied maps — never mutate `cached` in place:
+  // concurrent readers hold the old object, and it stays intact as
+  // `previousBrain` for breaking-change detection.
+  const content = new Map(cached.content)
+  const metaMap = new Map(cached.meta)
+
+  await Promise.all([...affectedModels].map(async (modelId) => {
+    const model = cached.models.get(modelId)
+    if (!model) return
+    for (const key of [...content.keys()]) {
+      if (key.startsWith(`${modelId}:`)) content.delete(key)
+    }
+    for (const key of [...metaMap.keys()]) {
+      if (key.startsWith(`${modelId}:`)) metaMap.delete(key)
+    }
+    const bundle = await readModelBundle(git, ctx, contentRoot, model, supportedLocales, defaultLocale, contentRef)
+    for (const [key, value] of bundle.content) content.set(key, value)
+    for (const [key, value] of bundle.meta) metaMap.set(key, value)
+  }))
+
+  let vocabulary = cached.vocabulary
+  if (vocabularyChanged) {
+    vocabulary = null
+    try {
+      const vocabData = JSON.parse(await git.readFile(resolveVocabularyPath(ctx), contentRef)) as { terms?: Record<string, Record<string, string>> }
+      vocabulary = vocabData.terms ?? null
+    }
+    catch { /* no vocabulary */ }
+  }
+
+  let contentContext = cached.contentContext
+  if (contextChanged) {
+    contentContext = null
+    try {
+      contentContext = JSON.parse(await git.readFile(resolveContextPath(ctx), contentRef)) as Record<string, unknown>
+    }
+    catch { /* no context */ }
+  }
+
+  const entry: BrainCacheEntry = {
+    treeSha: newTreeSha,
+    fileShas: newShas,
+    stale: false,
+    config,
+    models: new Map(cached.models),
+    content,
+    meta: metaMap,
+    vocabulary,
+    contentContext,
+    contentSummary: computeContentSummary(cached.models, content, defaultLocale),
+    schemaValidation: null,
+    lastRefresh: now,
+    projectId,
+  }
+
+  try {
+    const { validateProjectSchema } = await import('./schema-validation')
+    entry.schemaValidation = validateProjectSchema(entry, cached)
+  }
+  catch { /* validation failure shouldn't block refresh */ }
+
+  return entry
 }
 
 /**

@@ -485,3 +485,207 @@ describe('conversation engine regression', () => {
     })
   })
 })
+
+describe('turn-end merge coalescing (W4)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function makeWriteEngine() {
+    let n = 0
+    return {
+      saveContent: vi.fn().mockImplementation(async () => ({
+        branch: `cr/content/posts/en/${++n}-test`,
+        commit: { sha: `sha-${n}` },
+        diff: [],
+        validation: { valid: true, errors: [] },
+      })),
+      mergeToContentrain: vi.fn().mockResolvedValue({ merged: true, sha: 'step1-sha' }),
+      finalizeContentrain: vi.fn().mockResolvedValue({ merged: true, sha: 'final-sha', pullRequestUrl: null }),
+      mergeBranch: vi.fn().mockResolvedValue({ merged: true, sha: 'legacy-sha', pullRequestUrl: null }),
+    }
+  }
+
+  function stubWriteGlobals(aiProvider: Partial<AIProvider>) {
+    vi.stubGlobal('emptyAffected', vi.fn(emptyAffectedValue))
+    vi.stubGlobal('mergeAffected', vi.fn((a, b) => ({
+      models: [...new Set([...a.models, ...b.models])],
+      locales: [...new Set([...a.locales, ...b.locales])],
+      snapshotChanged: a.snapshotChanged || b.snapshotChanged,
+      branchesChanged: a.branchesChanged || b.branchesChanged,
+    })))
+    vi.stubGlobal('checkStateTransition', vi.fn().mockReturnValue({ allowed: true }))
+    vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue(aiProvider))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      models: new Map([['posts', { id: 'posts', kind: 'collection' }]]),
+      content: new Map(),
+      config: null,
+    }))
+  }
+
+  function writeToolContext(engine: ReturnType<typeof makeWriteEngine>, overrides: { workflow?: string, workspaceRole?: string } = {}) {
+    const ctx = createToolContext()
+    return {
+      ...ctx,
+      engine: engine as never,
+      workflow: overrides.workflow ?? 'auto-merge',
+      permissions: {
+        ...ctx.permissions,
+        workspaceRole: (overrides.workspaceRole ?? 'owner') as never,
+        availableTools: ['save_content'],
+      },
+    }
+  }
+
+  /** Provider: iteration 1 emits `saves` × save_content, iteration 2 ends the turn. */
+  function twoPhaseProvider(saves: number): Partial<AIProvider> {
+    let call = 0
+    return {
+      streamCompletion() {
+        const idx = call++
+        return (async function* () {
+          if (idx === 0) {
+            for (let i = 1; i <= saves; i++) {
+              yield { type: 'tool_use_start', toolId: `tool-${i}`, toolName: 'save_content' }
+              yield { type: 'tool_use_end', toolId: `tool-${i}`, toolName: 'save_content', toolInput: { model: 'posts', locale: 'en', data: { [`e${i}`]: { title: `T${i}` } } } }
+            }
+            yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 10, outputTokens: 5 } }
+          }
+          else {
+            yield { type: 'text', content: 'All saved.' }
+            yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 4, outputTokens: 2 } }
+          }
+        })() as never
+      },
+      createCompletion: vi.fn(),
+    }
+  }
+
+  it('lands each save on contentrain immediately and finalizes once, before done', async () => {
+    const engine = makeWriteEngine()
+    const provider = twoPhaseProvider(2)
+    stubWriteGlobals(provider)
+    const { runConversationLoop } = await loadConversationEngineModule()
+
+    let finalizeCallsAtDone = -1
+    for await (const evt of runConversationLoop(
+      {
+        model: 'claude-test',
+        apiKey: 'sk-test',
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'update posts' } as AIMessage],
+        tools: [{ name: 'save_content', description: 'save', inputSchema: { type: 'object' } }],
+      },
+      writeToolContext(engine),
+    )) {
+      if (evt.type === 'done') finalizeCallsAtDone = engine.finalizeContentrain.mock.calls.length
+    }
+
+    expect(engine.mergeToContentrain).toHaveBeenCalledTimes(2)
+    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    expect(engine.finalizeContentrain).toHaveBeenCalledTimes(1)
+    expect(engine.finalizeContentrain).toHaveBeenCalledWith([
+      'cr/content/posts/en/1-test',
+      'cr/content/posts/en/2-test',
+    ])
+    // Flush happens BEFORE the done event reaches the client.
+    expect(finalizeCallsAtDone).toBe(1)
+  })
+
+  it('still finalizes landed branches when the model stream fails mid-turn', async () => {
+    const engine = makeWriteEngine()
+    let call = 0
+    const provider: Partial<AIProvider> = {
+      streamCompletion() {
+        const idx = call++
+        return (async function* () {
+          if (idx === 0) {
+            yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'save_content' }
+            yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'save_content', toolInput: { model: 'posts', locale: 'en', data: { e1: { title: 'T' } } } }
+            yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 1, outputTokens: 1 } }
+          }
+          else {
+            throw new Error('provider crashed')
+          }
+        })() as never
+      },
+      createCompletion: vi.fn(),
+    }
+    stubWriteGlobals(provider)
+    const { runConversationLoop } = await loadConversationEngineModule()
+
+    await expect(async () => {
+      for await (const _evt of runConversationLoop(
+        {
+          model: 'claude-test',
+          apiKey: 'sk-test',
+          systemPrompt: 'system',
+          messages: [{ role: 'user', content: 'update posts' } as AIMessage],
+          tools: [{ name: 'save_content', description: 'save', inputSchema: { type: 'object' } }],
+        },
+        writeToolContext(engine),
+      )) { /* drain */ }
+    }).rejects.toThrow('provider crashed')
+
+    expect(engine.finalizeContentrain).toHaveBeenCalledTimes(1)
+    expect(engine.finalizeContentrain).toHaveBeenCalledWith(['cr/content/posts/en/1-test'])
+  })
+
+  it('finalizes landed branches when the consumer stops iterating early', async () => {
+    const engine = makeWriteEngine()
+    const provider = twoPhaseProvider(1)
+    stubWriteGlobals(provider)
+    const { runConversationLoop } = await loadConversationEngineModule()
+
+    for await (const evt of runConversationLoop(
+      {
+        model: 'claude-test',
+        apiKey: 'sk-test',
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'update posts' } as AIMessage],
+        tools: [{ name: 'save_content', description: 'save', inputSchema: { type: 'object' } }],
+      },
+      writeToolContext(engine),
+    )) {
+      // Client disconnect: bail after the first tool result.
+      if (evt.type === 'tool_result') break
+    }
+
+    expect(engine.finalizeContentrain).toHaveBeenCalledTimes(1)
+    expect(engine.finalizeContentrain).toHaveBeenCalledWith(['cr/content/posts/en/1-test'])
+  })
+
+  it('never finalizes in review workflow for non-admin members', async () => {
+    const engine = makeWriteEngine()
+    const provider = twoPhaseProvider(1)
+    stubWriteGlobals(provider)
+    const { runConversationLoop } = await loadConversationEngineModule()
+
+    const events = []
+    for await (const evt of runConversationLoop(
+      {
+        model: 'claude-test',
+        apiKey: 'sk-test',
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'update posts' } as AIMessage],
+        tools: [{ name: 'save_content', description: 'save', inputSchema: { type: 'object' } }],
+      },
+      writeToolContext(engine, { workflow: 'review', workspaceRole: 'member' }),
+    )) {
+      events.push(evt)
+    }
+
+    expect(engine.mergeToContentrain).not.toHaveBeenCalled()
+    expect(engine.finalizeContentrain).not.toHaveBeenCalled()
+    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    const toolResult = events.find(e => e.type === 'tool_result') as { result: { reviewBranch?: string } }
+    expect(toolResult.result.reviewBranch).toBe('cr/content/posts/en/1-test')
+  })
+})
