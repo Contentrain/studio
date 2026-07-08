@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const providerState = vi.hoisted(() => {
   const state = {
     adminClient: {} as Record<string, unknown>,
+    authFlowClient: {} as Record<string, unknown>,
     createSupabaseAdminClient: vi.fn(() => state.adminClient),
+    createSupabaseAuthFlowClient: vi.fn(() => state.authFlowClient),
   }
 
   return state
@@ -11,13 +13,16 @@ const providerState = vi.hoisted(() => {
 
 vi.mock('../../server/providers/supabase-client', () => ({
   createSupabaseAdminClient: providerState.createSupabaseAdminClient,
+  createSupabaseAuthFlowClient: providerState.createSupabaseAuthFlowClient,
 }))
 
 describe('supabase auth provider', () => {
   beforeEach(() => {
     vi.resetModules()
     providerState.adminClient = {}
+    providerState.authFlowClient = {}
     providerState.createSupabaseAdminClient.mockClear()
+    providerState.createSupabaseAuthFlowClient.mockClear()
     vi.stubGlobal('createError', ({ statusCode, message }: { statusCode: number, message: string }) =>
       Object.assign(new Error(message), { statusCode, message }),
     )
@@ -34,7 +39,7 @@ describe('supabase auth provider', () => {
   })
 
   it('maps validated Supabase users to the AuthUser shape', async () => {
-    providerState.adminClient = {
+    providerState.authFlowClient = {
       auth: {
         getUser: vi.fn().mockResolvedValue({
           data: {
@@ -66,7 +71,7 @@ describe('supabase auth provider', () => {
   })
 
   it('refreshes sessions and preserves Supabase expiry timestamps', async () => {
-    providerState.adminClient = {
+    providerState.authFlowClient = {
       auth: {
         refreshSession: vi.fn().mockResolvedValue({
           data: {
@@ -91,8 +96,49 @@ describe('supabase auth provider', () => {
     })
   })
 
-  it('builds OAuth redirect URLs and returns a CSRF state token', async () => {
+  it('never runs user-session flows on the admin client', async () => {
+    // Regression guard for the plan-loss bug: `refreshSession` /
+    // `exchangeCodeForSession` store the user session in the client's
+    // in-memory storage, and supabase-js then serves PostgREST queries
+    // with that session's token instead of the service-role key. The
+    // session-bearing flows must therefore run on the isolated
+    // auth-flow client, never on the admin singleton.
     providerState.adminClient = {
+      auth: {
+        refreshSession: vi.fn(),
+        exchangeCodeForSession: vi.fn(),
+      },
+    }
+    providerState.authFlowClient = {
+      auth: {
+        refreshSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: 'a', refresh_token: 'r', expires_at: 1 } },
+          error: null,
+        }),
+        exchangeCodeForSession: vi.fn().mockResolvedValue({
+          data: {
+            user: { id: 'user-1', email: 'u@example.com', app_metadata: {}, user_metadata: {} },
+            session: { access_token: 'a', refresh_token: 'r', expires_at: 1 },
+          },
+          error: null,
+        }),
+      },
+    }
+
+    const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
+    const provider = createSupabaseAuthProvider()
+
+    await provider.refreshSession('refresh-1')
+    await provider.exchangeCode('code-1')
+
+    const adminAuth = providerState.adminClient.auth as Record<string, ReturnType<typeof vi.fn>>
+    expect(adminAuth.refreshSession).not.toHaveBeenCalled()
+    expect(adminAuth.exchangeCodeForSession).not.toHaveBeenCalled()
+    expect(providerState.createSupabaseAdminClient).not.toHaveBeenCalled()
+  })
+
+  it('builds OAuth redirect URLs and returns a CSRF state token', async () => {
+    providerState.authFlowClient = {
       auth: {
         signInWithOAuth: vi.fn().mockResolvedValue({
           data: {
@@ -116,7 +162,7 @@ describe('supabase auth provider', () => {
     const tokenPayload = Buffer.from(JSON.stringify({ exp: nowExp })).toString('base64url')
     const accessToken = `header.${tokenPayload}.sig`
 
-    providerState.adminClient = {
+    providerState.authFlowClient = {
       auth: {
         exchangeCodeForSession: vi.fn().mockResolvedValue({
           data: {
@@ -196,9 +242,13 @@ describe('supabase auth provider', () => {
       error: null,
     })
 
-    providerState.adminClient = {
+    providerState.authFlowClient = {
       auth: {
         signInWithOtp,
+      },
+    }
+    providerState.adminClient = {
+      auth: {
         admin: {
           inviteUserByEmail,
           getUserById,
