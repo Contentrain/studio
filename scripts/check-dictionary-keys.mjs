@@ -15,7 +15,17 @@
  * Dynamic usages (template literals, variables) are listed for manual
  * review but do not fail the check.
  *
- * Usage: node scripts/check-dictionary-keys.mjs   (exit 1 on missing keys)
+ * Usage:
+ *   node scripts/check-dictionary-keys.mjs            missing-key check (exit 1 on findings)
+ *   node scripts/check-dictionary-keys.mjs --unused   orphan report: keys defined in the
+ *                                                     content layer but never referenced in
+ *                                                     code (report-only, exit 0)
+ *
+ * Orphan detection is conservative: a key counts as used if it appears
+ * as a quoted string literal anywhere in the scanned source (covers
+ * indirect consumers like `labelKey:`, option arrays, `upgradeKey:`),
+ * or if it matches the static prefix of any template literal /
+ * string-concatenation prefix (covers `t(\`cdn.build_\${status}\`)`).
  */
 /* eslint-disable no-console -- CLI reporter */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -86,6 +96,18 @@ const IGNORED_VARS = new Set(['key', 'slug', 'templateslug', 'featuremessagekey'
 
 const missing = new Map()
 const dynamic = []
+// Orphan detection: the raw source corpus (keys are checked as
+// quote-delimited substrings — parsing nested quotes in Vue templates
+// is not worth the false positives), plus static prefixes of template
+// literals ("cdn.build_" from `cdn.build_${status}`) and prefix-shaped
+// plain strings ('members.role_' in concatenations).
+const corpusParts = []
+const dynamicPrefixes = new Set()
+// A "prefix" is a dotted path ending in a separator: `branch.` from
+// `branch.${status}`, 'members.role_' from a concatenation.
+const isKeyPrefix = s => /\w/.test(s) && s.includes('.') && /^[\w.-]+$/.test(s) && /[._-]$/.test(s)
+const TEMPLATE_PREFIX_RE = /`([\w.-]+)\$\{/g
+const PLAIN_PREFIX_RE = /(['"])([\w.-]+)\1/g
 
 for (const file of files) {
   const src = readFileSync(file, 'utf8')
@@ -113,6 +135,44 @@ for (const file of files) {
     if (!arg.startsWith('`') && IGNORED_VARS.has(arg.toLowerCase())) continue
     dynamic.push(`${rel}:${lineOf(m.index)}  ${m[1]}(${arg})`)
   }
+
+  corpusParts.push(src)
+  TEMPLATE_PREFIX_RE.lastIndex = 0
+  for (let m; (m = TEMPLATE_PREFIX_RE.exec(src));) {
+    if (isKeyPrefix(m[1])) dynamicPrefixes.add(m[1])
+  }
+  PLAIN_PREFIX_RE.lastIndex = 0
+  for (let m; (m = PLAIN_PREFIX_RE.exec(src));) {
+    if (isKeyPrefix(m[2])) dynamicPrefixes.add(m[2])
+  }
+}
+const corpus = corpusParts.join('\n')
+
+// ── Orphan report (--unused) ──
+if (process.argv.includes('--unused')) {
+  const isUsed = key =>
+    corpus.includes(`'${key}'`)
+    || corpus.includes(`"${key}"`)
+    || corpus.includes(`\`${key}\``)
+    || [...dynamicPrefixes].some(p => key.startsWith(p))
+
+  let orphanTotal = 0
+  const allDicts = { ...dicts, 'email-templates': emailSlugs }
+  for (const [dict, defined] of Object.entries(allDicts)) {
+    const orphans = [...defined].sort().filter(k => !isUsed(k))
+    if (orphans.length) {
+      console.log(`\n${dict}: ${orphans.length} defined but unused key(s)`)
+      for (const key of orphans) console.log(`  ${key}`)
+      orphanTotal += orphans.length
+    }
+  }
+  if (dynamicPrefixes.size) {
+    console.log(`\nDynamic prefixes treated as usage: ${[...dynamicPrefixes].sort().join(', ')}`)
+  }
+  console.log(orphanTotal > 0
+    ? `\n${orphanTotal} orphan key(s) — review before deleting (report-only, does not fail).`
+    : '\n✓ No orphan keys.')
+  process.exit(0)
 }
 
 // ── Report ──
