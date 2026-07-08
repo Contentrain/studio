@@ -108,6 +108,14 @@ watch(results, () => {
 function handleAction(actionKey: string, payload?: Record<string, unknown>) {
   const slug = activeWorkspace.value?.slug
 
+  // AI model switch — actions are `set-model:<model id>`, generated
+  // from the shared catalog in command-registry.ts.
+  if (actionKey.startsWith(SET_MODEL_ACTION_PREFIX)) {
+    selectedModel.value = actionKey.slice(SET_MODEL_ACTION_PREFIX.length)
+    open.value = false
+    return
+  }
+
   switch (actionKey) {
     // Appearance
     case 'toggle-theme':
@@ -169,17 +177,6 @@ function handleAction(actionKey: string, payload?: Record<string, unknown>) {
       break
     case 'open-conversation-keys':
       emitAction({ type: 'open-project-settings', payload: 'api' })
-      break
-
-    // AI model
-    case 'set-model-haiku':
-      selectedModel.value = 'claude-haiku-4-5-20251001'
-      break
-    case 'set-model-sonnet':
-      selectedModel.value = 'claude-sonnet-4-6'
-      break
-    case 'set-model-opus':
-      selectedModel.value = 'claude-opus-4-8'
       break
 
     // Agent prompts

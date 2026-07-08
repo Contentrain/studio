@@ -35,6 +35,12 @@ export function createAnthropicProvider(): AIProvider {
         messages: toAnthropicMessages(request.messages),
         tools: toAnthropicTools(request.tools),
         max_tokens: request.maxTokens,
+        // Explicitly off, not merely omitted: newer models (Sonnet 5+)
+        // default to adaptive thinking when the field is absent, and
+        // Studio's engine neither persists nor replays thinking blocks
+        // — an assistant turn echoed back without them would break the
+        // tool-use loop.
+        thinking: { type: 'disabled' },
       }, { signal: request.abortSignal })
 
       let currentToolId: string | undefined
@@ -158,6 +164,8 @@ export function createAnthropicProvider(): AIProvider {
         messages: toAnthropicMessages(request.messages),
         tools: toAnthropicTools(request.tools),
         max_tokens: request.maxTokens,
+        // See streamCompletion — thinking must be explicitly disabled.
+        thinking: { type: 'disabled' },
       }, { signal: request.abortSignal })
 
       const respUsage = response.usage as {

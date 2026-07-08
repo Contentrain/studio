@@ -6,6 +6,7 @@ import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
+import { chatModelIdsFor, DEFAULT_CHAT_MODEL } from '../../../../../../shared/utils/ai-models'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEdition } from '../../../../../utils/license'
@@ -153,14 +154,14 @@ export default defineEventHandler(async (event) => {
     if (!conversationId)
       throw createError({ statusCode: 500, message: errorMessage('chat.conversation_create_failed') })
 
-    // Model: plan-gated selection. Picked here (before history) because
-    // `selectHistoryBudget` is model-aware — Haiku gets a smaller window
-    // than Sonnet/Opus.
-    const ALL_MODELS = ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5-20251001']
-    const STARTER_MODELS = ['claude-haiku-4-5-20251001']
-    const availableModels = hasFeature(plan, 'ai.studio_key') ? ALL_MODELS : STARTER_MODELS
+    // Model: plan-gated selection from the shared catalog. Picked here
+    // (before history) because `selectHistoryBudget` is model-aware —
+    // Haiku gets a smaller window than Sonnet/Opus.
+    const availableModels = chatModelIdsFor(hasFeature(plan, 'ai.studio_key'))
     const requestedModel = body.model as string | undefined
-    const model = (requestedModel && availableModels.includes(requestedModel)) ? requestedModel : availableModels[0]!
+    const model = (requestedModel && availableModels.includes(requestedModel))
+      ? requestedModel
+      : (availableModels.includes(DEFAULT_CHAT_MODEL) ? DEFAULT_CHAT_MODEL : availableModels[0]!)
 
     // === HISTORY ===
     const budget = selectHistoryBudget({ plan, model, source: usageSource })

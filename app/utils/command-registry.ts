@@ -3,6 +3,11 @@
  * No composable dependencies, no side effects.
  */
 
+import { CHAT_MODELS } from '~~/shared/utils/ai-models'
+
+/** Prefix for model-switch actions — `set-model:<model id>`. */
+export const SET_MODEL_ACTION_PREFIX = 'set-model:'
+
 export type CommandScope = 'global' | 'workspace' | 'project'
 export type CommandGroup = 'appearance' | 'navigation' | 'workspace' | 'project' | 'ai-model' | 'agent'
 
@@ -222,36 +227,18 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
       action: 'open-conversation-keys',
     })
 
-    // ─── AI Model Selection ──────────────────────────────────
-    commands.push({
-      id: 'cmd:model-haiku',
-      label: 'Switch to Haiku 4.5',
-      icon: 'icon-[annon--lightning]',
-      keywords: ['haiku', 'fast', 'economic', 'model', 'ai', 'switch'],
-      group: 'ai-model',
-      scope: 'project',
-      action: 'set-model-haiku',
-    })
-
-    commands.push({
-      id: 'cmd:model-sonnet',
-      label: 'Switch to Sonnet 4',
-      icon: 'icon-[annon--star]',
-      keywords: ['sonnet', 'balanced', 'model', 'ai', 'switch'],
-      group: 'ai-model',
-      scope: 'project',
-      action: 'set-model-sonnet',
-    })
-
-    commands.push({
-      id: 'cmd:model-opus',
-      label: 'Switch to Opus 4',
-      icon: 'icon-[annon--trophy]',
-      keywords: ['opus', 'capable', 'best', 'model', 'ai', 'switch'],
-      group: 'ai-model',
-      scope: 'project',
-      action: 'set-model-opus',
-    })
+    // ─── AI Model Selection (from the shared catalog) ────────
+    for (const model of CHAT_MODELS) {
+      commands.push({
+        id: `cmd:model-${model.id}`,
+        label: `Switch to ${model.label}`,
+        icon: model.paletteIcon,
+        keywords: [...model.paletteKeywords, 'model', 'ai', 'switch'],
+        group: 'ai-model',
+        scope: 'project',
+        action: `${SET_MODEL_ACTION_PREFIX}${model.id}`,
+      })
+    }
 
     // ─── Agent Commands (send chat prompt) ───────────────────
     commands.push({

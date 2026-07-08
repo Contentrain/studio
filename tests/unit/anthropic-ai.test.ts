@@ -97,6 +97,15 @@ describe('anthropic provider', () => {
         },
       },
     ])
+
+    // Thinking must be explicitly disabled on every request: models that
+    // default it ON when the field is omitted (Sonnet 5+) would emit
+    // thinking blocks Studio's engine never persists or replays, breaking
+    // the tool-use loop on the echoed assistant turn.
+    expect(anthropicState.stream).toHaveBeenCalledWith(
+      expect.objectContaining({ thinking: { type: 'disabled' } }),
+      expect.anything(),
+    )
   })
 
   it('captures prompt cache token buckets reported by the provider', async () => {
