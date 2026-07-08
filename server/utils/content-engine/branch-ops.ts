@@ -75,15 +75,17 @@ export async function listContentBranches(ctx: EngineInternalContext): Promise<B
 }
 
 /**
- * Two-step merge per git-architecture.md §3:
- * Step 1: cr/* -> contentrain (always immediate)
- * Step 2: contentrain -> main (may fallback to PR if branch-protected)
+ * Step 1 of the two-step merge: land a `cr/*` branch on `contentrain`
+ * (the content SSOT) and clean the feature branch up. Durability is
+ * unchanged — every write still reaches `contentrain` immediately.
  */
-export async function mergeBranch(ctx: EngineInternalContext, branch: string): Promise<MergeResult> {
-  // Step 1: merge feature branch -> contentrain
+export async function mergeToContentrain(
+  ctx: EngineInternalContext,
+  branch: string,
+): Promise<{ merged: boolean, sha: string | null }> {
   const step1 = await ctx.git.mergeBranch(branch, CONTENT_BRANCH)
   if (!step1.merged) {
-    return { merged: false, sha: null, pullRequestUrl: null }
+    return { merged: false, sha: null }
   }
 
   // Clean up feature branch after successful merge to contentrain
@@ -94,10 +96,30 @@ export async function mergeBranch(ctx: EngineInternalContext, branch: string): P
     // Branch may have been auto-deleted
   }
 
-  // Regenerate context.json on contentrain now that the content has
-  // landed — feature branches no longer carry it (MCP 1.5.0 model), so
-  // it is rebuilt here from the merged tree before main is advanced.
-  await regenerateContextOnContentrain(ctx, branch)
+  return { merged: true, sha: step1.sha }
+}
+
+/**
+ * Finalize `contentrain` after one or more branches landed on it:
+ * regenerate context.json once, then advance contentrain -> main
+ * (step 2, with PR fallback on protected branches).
+ *
+ * `mergedBranches` carries the branches landed since the last finalize;
+ * the LAST one wins `lastOperation` in context.json — identical to the
+ * sequential per-save behavior, where the final merge's regeneration
+ * was the survivor.
+ */
+export async function finalizeContentrain(
+  ctx: EngineInternalContext,
+  mergedBranches: string[],
+): Promise<MergeResult> {
+  const lastBranch = mergedBranches.at(-1)
+  if (lastBranch) {
+    // Regenerate context.json on contentrain now that the content has
+    // landed — feature branches no longer carry it (MCP 1.5.0 model), so
+    // it is rebuilt here from the merged tree before main is advanced.
+    await regenerateContextOnContentrain(ctx, lastBranch)
+  }
 
   // Step 2: advance contentrain -> main
   const defaultBranch = await ctx.git.getDefaultBranch()
@@ -118,6 +140,24 @@ export async function mergeBranch(ctx: EngineInternalContext, branch: string): P
     }
     throw e
   }
+}
+
+/**
+ * Two-step merge per git-architecture.md §3:
+ * Step 1: cr/* -> contentrain (always immediate)
+ * Step 2: contentrain -> main (may fallback to PR if branch-protected)
+ *
+ * Pure composition of `mergeToContentrain` + `finalizeContentrain` —
+ * single-write callers (UI routes, forms, MCP-cloud reconcile) keep
+ * exactly this behavior. The agent tool loop calls the two halves
+ * separately so a multi-save turn finalizes once at turn end.
+ */
+export async function mergeBranch(ctx: EngineInternalContext, branch: string): Promise<MergeResult> {
+  const step1 = await mergeToContentrain(ctx, branch)
+  if (!step1.merged) {
+    return { merged: false, sha: null, pullRequestUrl: null }
+  }
+  return finalizeContentrain(ctx, [branch])
 }
 
 /**
@@ -166,8 +206,8 @@ async function regenerateContextOnContentrain(
       catch { /* brain unavailable — fall back to the MCP walk */ }
     }
 
+    const reader = pinReaderToContentrain(ctx.git)
     if (!contextChange) {
-      const reader = pinReaderToContentrain(ctx.git)
       contextChange = await buildContextChange(reader, operation, 'mcp-studio')
     }
 

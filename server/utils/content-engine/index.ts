@@ -1,5 +1,5 @@
 import type { ContentEngineContext, EngineInternalContext } from './types'
-import { createBranchGuard, listContentBranches, mergeBranch, rejectBranch } from './branch-ops'
+import { createBranchGuard, finalizeContentrain, listContentBranches, mergeBranch, mergeToContentrain, rejectBranch } from './branch-ops'
 import { deleteContent } from './delete-content'
 import { initProject } from './init-project'
 import { saveContent } from './save-content'
@@ -55,6 +55,11 @@ export function createContentEngine(ctx: ContentEngineContext) {
       updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail),
     listContentBranches: () => listContentBranches(internal),
     mergeBranch: (branch: string) => mergeBranch(internal, branch),
+    // Split halves of mergeBranch — the agent tool loop lands each write
+    // on contentrain immediately and finalizes (context regen + main
+    // advance) once per turn.
+    mergeToContentrain: (branch: string) => mergeToContentrain(internal, branch),
+    finalizeContentrain: (mergedBranches: string[]) => finalizeContentrain(internal, mergedBranches),
     rejectBranch: (branch: string) => rejectBranch(internal, branch),
     copyLocale: (modelId: string, fromLocale: string, toLocale: string, userEmail: string) =>
       copyLocale(internal, modelId, fromLocale, toLocale, userEmail),
