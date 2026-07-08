@@ -3,6 +3,8 @@
  * conversation history, and model selection.
  */
 
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '~~/shared/utils/ai-models'
+
 export interface ToolCall {
   id: string
   name: string
@@ -94,12 +96,8 @@ export interface ConversationSummary {
   updated_at: string
 }
 
-/** Available AI models */
-export const AI_MODELS = [
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', description: 'Fast & economic' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Balanced' },
-  { id: 'claude-opus-4-8', label: 'Opus 4.8', description: 'Most capable' },
-] as const
+/** Available AI models — sourced from the shared catalog. */
+export const AI_MODELS = CHAT_MODELS
 
 /**
  * Reconstruct displayable attachments from a persisted user row's
@@ -141,7 +139,7 @@ export function useChat(options?: {
   const conversations = useState<ConversationSummary[]>('chat-conversations', () => [])
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
-  const selectedModel = useState('chat-model', () => 'claude-sonnet-4-6')
+  const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
   // Module-instance abort handle so the composer can stop a stream mid-flight.
   let abortController: AbortController | null = null
 

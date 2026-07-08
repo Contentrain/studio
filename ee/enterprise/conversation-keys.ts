@@ -97,7 +97,7 @@ export function createConversationKeysBridge() {
       const validRoles = ['viewer', 'editor', 'admin']
       const role = validRoles.includes(body.role ?? '') ? body.role : 'editor'
 
-      const validModels = ['claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
+      const validModels = ['claude-sonnet-5', 'claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
       const aiModel = validModels.includes(body.aiModel ?? '') ? body.aiModel : 'claude-sonnet-4-5'
 
       const rateLimitPerMinute = Math.max(1, Math.min(body.rateLimitPerMinute ?? 10, 60))
@@ -166,7 +166,7 @@ export function createConversationKeysBridge() {
       }
 
       const validRoles = ['viewer', 'editor', 'admin']
-      const validModels = ['claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
+      const validModels = ['claude-sonnet-5', 'claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
 
       const updates: Record<string, unknown> = {}
       if (body.name !== undefined) updates.name = body.name.trim()

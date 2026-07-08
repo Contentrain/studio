@@ -22,6 +22,7 @@
  */
 import type { AIContentBlock, AIMessage } from '../providers/ai'
 import type { DatabaseRow } from '../providers/database'
+import { CHAT_MODELS } from '../../shared/utils/ai-models'
 
 export interface HistoryBudget {
   /** Approximate input-token ceiling for the entire history block. */
@@ -49,14 +50,13 @@ export interface HistoryBudget {
  * claude.com/docs/en/about-claude/pricing.
  */
 const MODEL_HISTORY_BUDGETS: Record<string, number> = {
-  'claude-haiku-4-5-20251001': 12_000,
+  // Chat-picker models — budgets live on the shared catalog entries.
+  ...Object.fromEntries(CHAT_MODELS.map(m => [m.id, m.historyBudget])),
 
+  // Conversation-API / legacy models not offered in the chat picker.
   'claude-sonnet-4-5': 40_000,
-  'claude-sonnet-4-6': 48_000,
-
   'claude-opus-4-1-20250805': 32_000,
   'claude-opus-4-7': 48_000,
-  'claude-opus-4-8': 48_000,
 }
 
 /** Unknown model IDs (future / preview) get the same starting point as Haiku. */

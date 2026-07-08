@@ -11,6 +11,13 @@ describe('selectHistoryBudget', () => {
       .toMatchObject({ maxTokens: 40_000 })
     expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-4-7', source: 'studio' }))
       .toMatchObject({ maxTokens: 48_000 })
+    // Catalog-sourced entries (shared/utils/ai-models.ts)
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-4-6', source: 'studio' }))
+      .toMatchObject({ maxTokens: 48_000 })
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-5', source: 'studio' }))
+      .toMatchObject({ maxTokens: 48_000 })
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-4-8', source: 'studio' }))
+      .toMatchObject({ maxTokens: 48_000 })
   })
 
   it('falls back for unknown models', () => {
