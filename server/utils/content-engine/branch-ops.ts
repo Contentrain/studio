@@ -1,7 +1,10 @@
+import type { FileChange } from '@contentrain/types'
 import { buildContextChange } from '@contentrain/mcp/core/context'
 import type { Branch, EngineInternalContext, MergeResult } from './types'
 import { STUDIO_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain } from './helpers'
+import { buildContextChangeFromBrain } from './context-build'
+import { getOrBuildBrainCache } from '../brain-cache'
 
 /**
  * Ensure the dedicated `contentrain` branch exists and is synced with main.
@@ -144,8 +147,29 @@ async function regenerateContextOnContentrain(
   mergedBranch: string,
 ): Promise<void> {
   try {
-    const reader = pinReaderToContentrain(ctx.git)
-    const contextChange = await buildContextChange(reader, parseMergeOperation(mergedBranch), 'mcp-studio')
+    const operation = parseMergeOperation(mergedBranch)
+
+    // Preferred path: derive stats from the brain snapshot. Running
+    // AFTER the cr→contentrain merge, the brain's tree compare (or its
+    // stale flag) picks up the merged content — an incremental refresh
+    // of ~1-3 calls instead of MCP's O(models × locales) repo walk.
+    // Also emits the contentRoot-aware context path, fixing the latent
+    // bug where the MCP fallback (provider built without contentRoot in
+    // resolveProjectContext) writes context.json at the repo root for
+    // contentRoot projects.
+    let contextChange: FileChange | null = null
+    if (ctx.projectId) {
+      try {
+        const brain = await getOrBuildBrainCache(ctx.git, ctx.pathCtx.contentRoot, ctx.projectId)
+        contextChange = buildContextChangeFromBrain(brain, ctx.pathCtx, operation)
+      }
+      catch { /* brain unavailable — fall back to the MCP walk */ }
+    }
+
+    if (!contextChange) {
+      const reader = pinReaderToContentrain(ctx.git)
+      contextChange = await buildContextChange(reader, operation, 'mcp-studio')
+    }
 
     // Skip an empty commit when the merged tree already carries an
     // identical context.json.
