@@ -28,6 +28,7 @@ import { clearServerSession, getServerSession, setAuthState, setServerSession, v
 import { requireAuth } from '../../server/utils/auth'
 import { getClientIp } from '../../server/utils/form-types'
 import { extractMediaStoragePath } from '../../server/utils/media-rewrite'
+import { reportDataLossRisk } from '../../server/utils/alert'
 
 const runtimeConfig = {
   sessionSecret: 'test-session-secret-32-characters-min',
@@ -77,6 +78,7 @@ beforeEach(() => {
   vi.stubGlobal('useAIProvider', useAIProvider)
   vi.stubGlobal('useAuthProvider', useAuthProvider)
   vi.stubGlobal('useCDNProvider', useCDNProvider)
+  vi.stubGlobal('reportDataLossRisk', reportDataLossRisk)
   // Default mock — individual tests override with vi.stubGlobal('useDatabaseProvider', ...)
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({}))
   vi.stubGlobal('useEmailProvider', useEmailProvider)

@@ -22,8 +22,9 @@ export default defineEventHandler(async (event) => {
         try {
           await cdn.deletePrefix(project.id as string, '')
         }
-        catch {
-          // R2 cleanup failure should not block deletion
+        catch (e) {
+          // R2 cleanup failure should not block account deletion, but surface it.
+          reportDataLossRisk(e, { op: 'account-delete.r2', projectId: project.id as string, workspaceId: ws.id as string })
         }
       }
     }

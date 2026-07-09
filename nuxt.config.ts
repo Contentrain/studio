@@ -47,7 +47,7 @@ export default defineNuxtConfig({
       r2AccountId: '', // NUXT_CDN_R2_ACCOUNT_ID
       r2AccessKeyId: '', // NUXT_CDN_R2_ACCESS_KEY_ID
       r2SecretAccessKey: '', // NUXT_CDN_R2_SECRET_ACCESS_KEY
-      r2Bucket: 'contentrain-cdn', // NUXT_CDN_R2_BUCKET
+      r2Bucket: '', // NUXT_CDN_R2_BUCKET — required when R2 creds are set (no implicit default)
     },
     supabase: {
       url: '',

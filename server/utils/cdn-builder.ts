@@ -15,6 +15,7 @@ import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import { Marked } from 'marked'
 import { normalizeModelContentMedia, rewriteEntryMedia, rewriteMarkdownMedia } from './media-rewrite'
+import { reportDataLossRisk } from './alert'
 
 // Configure marked for safe HTML output — escape user HTML input
 const safeMarked = new Marked({
@@ -370,8 +371,11 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
         }
       }
     }
-    catch {
-      // Cleanup failure is non-fatal — uploaded content is still correct
+    catch (e) {
+      // Uploaded content is still correct, but a partial sweep can leave stale
+      // or inconsistent objects behind — surface it instead of silently
+      // reporting the build as a success.
+      reportDataLossRisk(e, { op: 'cdn-build.cleanup', projectId, filesDeleted, fullRebuild: options.fullRebuild ?? false })
     }
 
     // 8. Media manifest (if MediaProvider is available)

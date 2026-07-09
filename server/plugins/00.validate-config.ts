@@ -75,9 +75,14 @@ export default defineNitroPlugin(() => {
   if (!config.anthropic.apiKey)
     warnings.push('NUXT_ANTHROPIC_API_KEY is not set — chat requires user BYOA keys')
 
-  // CDN — optional (graceful degradation)
+  // CDN — optional (graceful degradation), but if R2 is configured it must be
+  // configured completely.
   if (config.cdn.r2AccountId && (!config.cdn.r2AccessKeyId || !config.cdn.r2SecretAccessKey))
     warnings.push('NUXT_CDN_R2_ACCOUNT_ID is set but access credentials are incomplete — CDN disabled')
+  // NUXT_CDN_R2_BUCKET has NO implicit default: a blank bucket with valid creds
+  // must fail loudly rather than silently writing to a shared/prod bucket name.
+  if (config.cdn.r2AccountId && config.cdn.r2AccessKeyId && config.cdn.r2SecretAccessKey && !config.cdn.r2Bucket)
+    errors.push('NUXT_CDN_R2_BUCKET is required when R2 credentials are set (no implicit default — prevents silently targeting a shared bucket)')
 
   // Report
   for (const w of warnings)
