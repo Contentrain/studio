@@ -457,6 +457,7 @@ provide(sendChatPromptKey, sendChatPrompt)
             <OrganismsContentDocumentView
               v-else-if="modelContentKind === 'document' && Array.isArray(modelContent)"
               :entries="(modelContent as Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>)"
+              :meta="modelContentMeta"
               :workspace-id="workspaceId" :project-id="projectId" :model-id="activeModelId ?? undefined"
               :locale="currentLocale" :editable="editable" @saved="emit('back')"
             />

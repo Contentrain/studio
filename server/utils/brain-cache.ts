@@ -310,6 +310,12 @@ async function readModelBundle(
 
         const items = await git.listDirectory(contentDir, contentRef)
         const entries: Array<Record<string, unknown>> = []
+        // Document meta lives per-slug (`.../meta/{modelId}/{slug}/{locale}.json`).
+        // Collapse it into one slug-keyed map so the brain/UI read document
+        // status exactly like a collection's id-keyed meta map (`meta[slug].status`).
+        // Previously each entry carried its own `meta` and `bundle.meta` stayed
+        // empty for documents, so the status never reached the content panel.
+        const metaBySlug: Record<string, unknown> = {}
 
         for (const item of items) {
           try {
@@ -329,25 +335,24 @@ async function readModelBundle(
             const raw = await git.readFile(mdPath, contentRef)
             const parsed = matter(raw)
 
-            // Read per-document meta
-            let entryMeta: Record<string, unknown> | null = null
+            // Read this slug's meta into the shared slug-keyed map.
             try {
               const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale, slug)
-              entryMeta = JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>
+              metaBySlug[slug] = JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>
             }
-            catch { /* no meta */ }
+            catch { /* no meta for this slug */ }
 
             entries.push({
               slug,
               frontmatter: normalizeFrontmatterDates(parsed.data as Record<string, unknown>, model.fields),
               body: parsed.content,
-              meta: entryMeta,
             })
           }
           catch { /* skip invalid document */ }
         }
 
         bundle.content.push([key, entries])
+        if (Object.keys(metaBySlug).length > 0) bundle.meta.push([key, metaBySlug])
       }
       catch { /* directory not accessible */ }
     }

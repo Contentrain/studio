@@ -307,4 +307,54 @@ describe('brain cache', () => {
     const dateErrors = (brain.schemaValidation?.warnings ?? []).filter(w => w.message.includes('expected date'))
     expect(dateErrors).toEqual([])
   })
+
+  it('exposes document status as a slug-keyed meta map (per-slug meta → bundle.meta)', async () => {
+    // Regression: document meta lives per-slug. The brain used to nest it inside
+    // each entry and leave bundle.meta empty for documents, so the content panel
+    // never received a status. It must now surface a slug-keyed map
+    // (`meta[slug].status`), symmetric with a collection's id-keyed map.
+    const git = {
+      getTree: vi.fn(async () => [
+        { path: '.contentrain/config.json', sha: 'c', type: 'blob' as const },
+        { path: '.contentrain/models/guide-sections.json', sha: 'm', type: 'blob' as const },
+        { path: '.contentrain/content/blog/guide-sections/intro/tr.md', sha: 'd1', type: 'blob' as const },
+        { path: '.contentrain/content/blog/guide-sections/setup/tr.md', sha: 'd2', type: 'blob' as const },
+      ]),
+      readFile: vi.fn(async (path: string) => {
+        if (path === '.contentrain/config.json') {
+          return JSON.stringify({ stack: 'nuxt', domains: ['blog'], workflow: 'auto-merge', locales: { default: 'tr', supported: ['tr'] } })
+        }
+        if (path === '.contentrain/models/guide-sections.json') {
+          return JSON.stringify({ id: 'guide-sections', name: 'Guide Sections', kind: 'document', domain: 'blog', i18n: true, fields: { title: { type: 'string' } } })
+        }
+        if (path === '.contentrain/content/blog/guide-sections/intro/tr.md') return '---\ntitle: Intro\n---\nHello\n'
+        if (path === '.contentrain/content/blog/guide-sections/setup/tr.md') return '---\ntitle: Setup\n---\nWorld\n'
+        if (path === '.contentrain/meta/guide-sections/intro/tr.json') return JSON.stringify({ status: 'published', updated_by: 'a@b.c' })
+        if (path === '.contentrain/meta/guide-sections/setup/tr.json') return JSON.stringify({ status: 'draft' })
+        throw new Error(`Unexpected read: ${path}`)
+      }),
+      listDirectory: vi.fn(async (path: string) => {
+        if (path === '.contentrain/models') return ['guide-sections.json']
+        if (path === '.contentrain/content/blog/guide-sections') return ['intro', 'setup']
+        return []
+      }),
+    }
+
+    // The suite's beforeEach stubs resolveMetaPath to a single fixed path; a
+    // document needs the real per-slug shape so each slug maps to its own file.
+    vi.stubGlobal('resolveMetaPath', vi.fn((_ctx: unknown, _model: unknown, locale: string, slug?: string) =>
+      slug ? `.contentrain/meta/guide-sections/${slug}/${locale}.json` : `.contentrain/meta/guide-sections/${locale}.json`))
+
+    const mod = await import('../../server/utils/brain-cache')
+    const brain = await mod.buildBrainSnapshot(git as never, '', 'project-doc-meta')
+
+    const meta = brain.meta.get('guide-sections:tr') as Record<string, { status?: string }> | undefined
+    expect(meta).toBeDefined()
+    expect(meta!.intro?.status).toBe('published')
+    expect(meta!.setup?.status).toBe('draft')
+
+    // The redundant per-entry `meta` nesting is gone — status lives only in the map.
+    const docs = brain.content.get('guide-sections:tr') as Array<Record<string, unknown>>
+    expect(docs.every(d => !('meta' in d))).toBe(true)
+  })
 })

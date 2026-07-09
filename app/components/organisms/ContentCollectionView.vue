@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
 
-const props = defineProps<{
+defineProps<{
   content: Record<string, Record<string, unknown>>
   meta?: Record<string, unknown> | null
   workspaceId?: string
@@ -18,45 +17,8 @@ const emit = defineEmits<{
   saved: []
 }>()
 
-const toast = useToast()
-const { isOwnerOrAdmin } = useWorkspaceRole()
-
-// Statuses an Owner/Admin can set directly from the badge menu. Review-workflow
-// states (in_review/rejected) are produced by the review flow, not set here.
-const SETTABLE_STATUSES = ['draft', 'published', 'archived'] as const
-
-// Per-entry in-flight guard so the badge shows a spinner and repeat clicks are ignored.
-const savingIds = reactive(new Set<string>())
-
-async function setStatus(entryId: string, newStatus: string) {
-  if (!props.workspaceId || !props.projectId || !props.modelId) return
-  if (savingIds.has(entryId) || getEntryStatus(entryId, props.meta) === newStatus) return
-
-  savingIds.add(entryId)
-  try {
-    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/content/${props.modelId}/status`, {
-      method: 'PATCH',
-      body: { entryIds: [entryId], status: newStatus, locale: props.locale ?? 'en' },
-    })
-    toast.success(t('content.status_updated'))
-    emit('saved')
-  }
-  catch (e: unknown) {
-    toast.error(resolveApiError(e, t('content.status_error')))
-  }
-  finally {
-    savingIds.delete(entryId)
-  }
-}
-
-const statusVariants: Record<string, { variant: 'success' | 'warning' | 'primary' | 'secondary' | 'danger', label: string }> = {
-  published: { variant: 'success', label: 'published' },
-  draft: { variant: 'warning', label: 'draft' },
-  in_review: { variant: 'primary', label: 'review' },
-  rejected: { variant: 'danger', label: 'rejected' },
-  archived: { variant: 'secondary', label: 'archived' },
-}
-
+// Resolve an entry's status from the id-keyed collection meta map. The badge +
+// PATCH live in the shared MoleculesEntryStatusPicker (also used by documents).
 function getEntryStatus(entryId: string, metaData: Record<string, unknown> | null | undefined): string | null {
   if (!metaData) return null
   const entryMeta = metaData[entryId] as { status?: string } | undefined
@@ -202,55 +164,13 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           >
             <span class="icon-[annon--pin] size-3" aria-hidden="true" />
           </button>
-          <!-- Status picker (owner/admin) — click badge to change status -->
-          <DropdownMenuRoot v-if="getEntryStatus(String(entryId), meta) && isOwnerOrAdmin && editable">
-            <DropdownMenuTrigger as-child>
-              <button
-                type="button" :disabled="savingIds.has(String(entryId))"
-                class="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-wait"
-                :title="t('content.change_status')" :aria-label="t('content.change_status')"
-              >
-                <AtomsBadge
-                  :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'"
-                  size="sm" class="gap-1"
-                >
-                  {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId),
-                                                                                                     meta) }}
-                  <span
-                    v-if="savingIds.has(String(entryId))" class="icon-[annon--loader] size-2.5 animate-spin"
-                    aria-hidden="true"
-                  />
-                  <span v-else class="icon-[annon--chevron-down] size-2.5 opacity-60" aria-hidden="true" />
-                </AtomsBadge>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuContent
-                align="end" :side-offset="4"
-                class="z-50 min-w-36 rounded-lg border border-secondary-200 bg-white p-1 shadow-lg dark:border-secondary-800 dark:bg-secondary-950"
-              >
-                <DropdownMenuItem
-                  v-for="status in SETTABLE_STATUSES" :key="status"
-                  :disabled="savingIds.has(String(entryId))"
-                  class="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-sm text-heading outline-none transition-colors data-highlighted:bg-secondary-50 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
-                  @select="setStatus(String(entryId), status)"
-                >
-                  {{ t(`content.status_${status}`) }}
-                  <span
-                    v-if="getEntryStatus(String(entryId), meta) === status"
-                    class="icon-[annon--check] size-3.5 text-primary-500" aria-hidden="true"
-                  />
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenuPortal>
-          </DropdownMenuRoot>
-          <AtomsBadge
-            v-else-if="getEntryStatus(String(entryId), meta)"
-            :variant="statusVariants[getEntryStatus(String(entryId), meta)!]?.variant ?? 'secondary'" size="sm"
-            class="shrink-0"
-          >
-            {{ statusVariants[getEntryStatus(String(entryId), meta)!]?.label ?? getEntryStatus(String(entryId), meta) }}
-          </AtomsBadge>
+          <!-- Status badge + picker (shared with the document view) -->
+          <MoleculesEntryStatusPicker
+            :status="getEntryStatus(String(entryId), meta)"
+            :entry-id="String(entryId)"
+            :workspace-id="workspaceId" :project-id="projectId" :model-id="modelId"
+            :locale="locale" :editable="editable" @saved="emit('saved')"
+          />
           <span class="shrink-0 font-mono text-[10px] text-disabled">
             {{ String(entryId).substring(0, 8) }}
           </span>
