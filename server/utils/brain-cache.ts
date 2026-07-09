@@ -630,13 +630,21 @@ export async function refreshBrainSnapshot(
   // A config-less snapshot has nothing to patch; full rebuild is cheap.
   if (!cached.config) return null
 
-  // Reads below pin to the contentrain branch — the same ref the full
-  // build uses when the branch exists. If the branch is missing (never
-  // initialized), tree fetch fails and the caller full-rebuilds.
+  // Reads below pin to the contentrain branch. When it is missing —
+  // e.g. transiently absent after a merge deletes it — a targeted patch
+  // can't proceed, so bail to a full rebuild (`null`). `buildBrainSnapshot`
+  // then handles the missing branch by falling back to the default
+  // branch; serving the stale cached entry instead would show old
+  // content until contentrain reappears.
   const contentRef: string | undefined = CONTENT_REF
   let tree = presetTree
   if (!tree) {
-    tree = await git.getTree(CONTENT_REF)
+    try {
+      tree = await git.getTree(CONTENT_REF)
+    }
+    catch {
+      return null
+    }
   }
 
   const extraPaths = [...cached.models.values()]

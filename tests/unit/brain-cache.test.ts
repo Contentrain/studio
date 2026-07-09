@@ -223,6 +223,48 @@ describe('brain cache', () => {
     expect(git.getTree).toHaveBeenCalledTimes(1)
   })
 
+  it('full-rebuilds off the default branch when contentrain is missing on a stale refresh', async () => {
+    // When the contentrain branch is transiently gone (e.g. deleted by a
+    // merge), a stale-cache refresh must not serve the old cached entry —
+    // it must fall back to a full rebuild that reads the default branch.
+    let phase: 1 | 2 = 1
+    const treeFor = (contentSha: string) => [
+      { path: '.contentrain/config.json', sha: 'sha-config', type: 'blob' as const },
+      { path: '.contentrain/models/posts.json', sha: 'sha-model', type: 'blob' as const },
+      { path: '.contentrain/content/marketing/posts/en.json', sha: contentSha, type: 'blob' as const },
+      { path: '.contentrain/meta/marketing/posts/en.json', sha: 'sha-meta', type: 'blob' as const },
+    ]
+    const contentV2 = JSON.stringify({ e1: { title: 'A' }, e2: { title: 'B' }, e3: { title: 'C' } })
+
+    const git = createGit({
+      // contentrain 404s in phase 2; the no-ref (default branch) fetch
+      // still resolves — with the post-merge content.
+      getTree: (async (ref?: string) => {
+        if (ref === 'contentrain') {
+          if (phase === 2) throw new Error('404: contentrain missing')
+          return treeFor('sha-content')
+        }
+        return phase === 2 ? treeFor('sha-content-v2') : treeFor('sha-content')
+      }) as never,
+    })
+    const baseRead = git.readFile.getMockImplementation()!
+    git.readFile.mockImplementation(async (path: string) =>
+      (phase === 2 && path === '.contentrain/content/marketing/posts/en.json') ? contentV2 : baseRead(path),
+    )
+
+    const mod = await import('../../server/utils/brain-cache')
+    const first = await mod.getOrBuildBrainCache(git as never, '', 'project-missing-ref')
+    expect(first.contentSummary.posts?.count).toBe(2)
+
+    mod.invalidateBrainCache('project-missing-ref')
+    phase = 2
+    const second = await mod.getOrBuildBrainCache(git as never, '', 'project-missing-ref')
+
+    // Rebuilt off the default branch — NOT the stale count of 2.
+    expect(second.stale).toBe(false)
+    expect(second.contentSummary.posts?.count).toBe(3)
+  })
+
   it('keeps document date fields as strings instead of gray-matter Date objects', async () => {
     // Regression: gray-matter (js-yaml DEFAULT_SCHEMA) coerces an unquoted
     // `published_at: 2026-03-12` into a JS Date, which the field validator
