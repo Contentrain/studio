@@ -248,7 +248,16 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
     createBranch: (name: string, fromRef?: string) => core.createBranch(name, fromRef),
     deleteBranch: (name: string) => core.deleteBranch(name),
     getBranchDiff: (branch: string, base?: string) => core.getBranchDiff(branch, base),
-    mergeBranch: (branch: string, into: string) => core.mergeBranch(branch, into),
+    // `removeSourceBranch: false` is load-bearing. Since MCP 1.8.0,
+    // `mergeBranch` deletes the merged HEAD branch by default. Studio's
+    // two-step flow merges `main → contentrain` (sync) and
+    // `contentrain → main` (advance), so the default would try to delete
+    // `main` (rejected by GitHub, 422) and — worse — actually delete the
+    // `contentrain` SSOT branch after advancing main. Studio owns branch
+    // deletion explicitly (`deleteBranch` for `cr/*` after merge, branch
+    // cleanup cron), so merges must never delete their source. This
+    // restores the pre-1.8.0 semantics exactly.
+    mergeBranch: (branch: string, into: string) => core.mergeBranch(branch, into, { removeSourceBranch: false }),
     isMerged: (branch: string, into?: string) => core.isMerged(branch, into),
     getDefaultBranch: () => core.getDefaultBranch(),
 
