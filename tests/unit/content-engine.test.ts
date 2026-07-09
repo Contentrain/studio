@@ -557,6 +557,81 @@ describe('content engine', () => {
     expect(metaChange?.content).toContain('"new-entry"')
   })
 
+  it('updates document status via per-slug meta files (no malformed `//` path)', async () => {
+    // Regression: documents store meta at `.../{modelId}/{slug}/{locale}.json`.
+    // Passing no slug to resolveMetaPath produced `.../guide-sections//tr.json`,
+    // which GitHub's tree API rejects as a malformed path component. Each entryId
+    // is a slug and gets its own top-level EntryMeta file (not an id-keyed map).
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/guide-sections.json')) {
+          return JSON.stringify({
+            id: 'guide-sections',
+            name: 'Guide Sections',
+            kind: 'document',
+            domain: 'blog',
+            i18n: true,
+            fields: {},
+          })
+        }
+        if (path.endsWith('/meta/guide-sections/instagram-1/tr.json')) {
+          return JSON.stringify({ status: 'draft', source: 'agent' })
+        }
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['tr'], default: 'tr' } })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    await engine.updateEntryStatus('guide-sections', 'tr', ['instagram-1', 'youtube-4'], 'published', 'user@example.com')
+
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    // One meta file per slug, at the per-slug document path — and never a `//`.
+    const paths = call.changes.map(c => c.path)
+    expect(paths).toContain('.contentrain/meta/guide-sections/instagram-1/tr.json')
+    expect(paths).toContain('.contentrain/meta/guide-sections/youtube-4/tr.json')
+    expect(paths.some(p => p.includes('//'))).toBe(false)
+
+    // Each file is a single top-level EntryMeta object, not an id-keyed map.
+    const first = call.changes.find(c => c.path.endsWith('/instagram-1/tr.json'))
+    const firstMeta = JSON.parse(first!.content as string) as Record<string, unknown>
+    expect(firstMeta.status).toBe('published')
+    expect(firstMeta.updated_by).toBe('user@example.com')
+    expect(firstMeta.source).toBe('agent') // preserved from existing meta
+    expect(firstMeta).not.toHaveProperty('instagram-1')
+  })
+
+  it('rejects a document status update when a slug is malformed', async () => {
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/guide-sections.json')) {
+          return JSON.stringify({
+            id: 'guide-sections',
+            name: 'Guide Sections',
+            kind: 'document',
+            domain: 'blog',
+            i18n: true,
+            fields: {},
+          })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.updateEntryStatus('guide-sections', 'tr', [''], 'published', 'user@example.com')
+    expect(result.validation.valid).toBe(false)
+    expect(git.applyPlan).not.toHaveBeenCalled()
+  })
+
   it('rejects locale copy on models without i18n support', async () => {
     const git = createGitProvider({
       readFile: vi.fn(async () => JSON.stringify({
@@ -574,6 +649,58 @@ describe('content engine', () => {
 
     expect(result.validation.valid).toBe(false)
     expect(result.validation.errors[0]?.message).toBe('Model does not support i18n')
+  })
+
+  it('copies a document locale per-slug (content + per-slug meta, no malformed path)', async () => {
+    // Documents store content + meta per-slug; the single-file copy path read the
+    // content *directory* as a file (→ "source locale not found") and wrote a
+    // slug-less `//` meta path. The copy must enumerate slugs and copy each pair.
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/guide-sections.json')) {
+          return JSON.stringify({
+            id: 'guide-sections',
+            name: 'Guide Sections',
+            kind: 'document',
+            domain: 'blog',
+            i18n: true,
+            fields: {},
+          })
+        }
+        if (path.endsWith('/intro/en.md')) return '---\ntitle: Intro\n---\nHello'
+        if (path.endsWith('/setup/en.md')) return '---\ntitle: Setup\n---\nWorld'
+        if (path.endsWith('/meta/guide-sections/intro/en.json')) return JSON.stringify({ status: 'published' })
+        if (path.endsWith('/meta/guide-sections/setup/en.json')) return JSON.stringify({ status: 'draft' })
+        // Any target-locale (tr) read → not found → copy proceeds.
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listDirectory: vi.fn(async (path: string) => {
+        if (path.endsWith('/content/blog/guide-sections')) return ['intro', 'setup']
+        return []
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.copyLocale('guide-sections', 'en', 'tr', 'user@example.com')
+    expect(result.validation.valid).toBe(true)
+
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    const paths = call.changes.map(c => c.path)
+    // Per-slug content + meta for the target locale, never a `//` segment.
+    expect(paths).toContain('.contentrain/content/blog/guide-sections/intro/tr.md')
+    expect(paths).toContain('.contentrain/content/blog/guide-sections/setup/tr.md')
+    expect(paths).toContain('.contentrain/meta/guide-sections/intro/tr.json')
+    expect(paths).toContain('.contentrain/meta/guide-sections/setup/tr.json')
+    expect(paths.some(p => p.includes('//'))).toBe(false)
+
+    // Copied meta carries the source status verbatim.
+    const introMeta = call.changes.find(c => c.path.endsWith('/meta/guide-sections/intro/tr.json'))
+    expect(JSON.parse(introMeta!.content as string).status).toBe('published')
   })
 
   it('saves model definitions without committing context.json on the feature branch', async () => {

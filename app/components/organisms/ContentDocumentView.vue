@@ -2,8 +2,11 @@
 import { marked } from 'marked'
 import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
-defineProps<{
+const props = defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
+  // Slug-keyed status map (`meta[slug].status`), symmetric with the collection
+  // view's id-keyed map. Populated by the brain's per-slug document meta read.
+  meta?: Record<string, unknown> | null
   workspaceId?: string
   projectId?: string
   modelId?: string
@@ -14,6 +17,13 @@ defineProps<{
 const emit = defineEmits<{
   saved: []
 }>()
+
+// Resolve a document's status from the slug-keyed meta map; the badge + PATCH
+// live in the shared MoleculesEntryStatusPicker (also used by collections).
+function getEntryStatus(slug: string): string | null {
+  if (!props.meta) return null
+  return (props.meta[slug] as { status?: string } | undefined)?.status ?? null
+}
 
 const { t } = useContent()
 const { sanitize } = useSanitize()
@@ -165,6 +175,13 @@ function handleModalSaved() {
           >
             <span class="icon-[annon--pin] size-3" aria-hidden="true" />
           </button>
+          <!-- Status badge + picker (shared with the collection view) -->
+          <MoleculesEntryStatusPicker
+            :status="getEntryStatus(doc.slug)"
+            :entry-id="doc.slug"
+            :workspace-id="workspaceId" :project-id="projectId" :model-id="modelId"
+            :locale="locale" :editable="editable" @saved="emit('saved')"
+          />
         </summary>
         <div class="space-y-3 px-5 pb-4 pt-1">
           <!-- Schema fields first -->
