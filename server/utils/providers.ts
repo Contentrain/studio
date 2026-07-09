@@ -142,7 +142,10 @@ export function useCDNProvider(): CDNProvider | null {
     accountId: r2AccountId,
     accessKeyId: r2AccessKeyId,
     secretAccessKey: r2SecretAccessKey,
-    bucket: r2Bucket || 'contentrain-cdn',
+    // No implicit bucket default: boot validation (00.validate-config.ts)
+    // rejects R2 creds without an explicit NUXT_CDN_R2_BUCKET, so a blank env
+    // fails loudly instead of silently targeting a shared/prod bucket.
+    bucket: r2Bucket,
   })
 
   return _cdnProvider

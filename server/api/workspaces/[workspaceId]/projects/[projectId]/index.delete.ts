@@ -29,8 +29,10 @@ export default defineEventHandler(async (event) => {
     try {
       await cdn.deletePrefix(projectId, '')
     }
-    catch {
-      // R2 cleanup failure should not block deletion
+    catch (e) {
+      // R2 cleanup failure should not block deletion, but a failed teardown can
+      // orphan objects/quota — surface it instead of swallowing it silently.
+      reportDataLossRisk(e, { op: 'project-delete.r2', projectId, workspaceId })
     }
   }
 
