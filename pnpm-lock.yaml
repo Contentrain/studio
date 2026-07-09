@@ -15,14 +15,14 @@ importers:
         specifier: ^3.1076.0
         version: 3.1076.0
       '@contentrain/mcp':
-        specifier: 1.6.0
-        version: 1.6.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
+        specifier: 1.8.0
+        version: 1.8.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
       '@contentrain/query':
-        specifier: ^6.1.0
-        version: 6.1.0
+        specifier: ^6.1.1
+        version: 6.1.1
       '@contentrain/types':
-        specifier: 0.6.0
-        version: 0.6.0
+        specifier: 0.7.0
+        version: 0.7.0
       '@gitbeaker/rest':
         specifier: ^43.8.0
         version: 43.8.0
@@ -654,8 +654,8 @@ packages:
     resolution: {integrity: sha512-ZJoS8oSq2CAZEpc/YI9SulLrdiIyXeHb/OGqGrkUP6Q7YV+0ouNAa7GjqRdXeQPncHQIDz/jbCTlHScvYvO/gA==}
     engines: {node: '>=v18'}
 
-  '@contentrain/mcp@1.6.0':
-    resolution: {integrity: sha512-xj48ag8jbsL0RI6OmU18BBR9ioBoc4BVH++XTKiMKNtZlT9iwwzrLj8J6qltdueXo8V+enEhdg3J9FNIYCPE7g==}
+  '@contentrain/mcp@1.8.0':
+    resolution: {integrity: sha512-4RObAOqN28XiTRE0ljcDjSvWIjommP+HNwmjKpO148TE0LaSt7VVgEgasZCWGM0UJheKYqhGTMPNM/67ypBsRw==}
     hasBin: true
     peerDependencies:
       '@gitbeaker/rest': '>=43.0.0'
@@ -666,12 +666,12 @@ packages:
       '@octokit/rest':
         optional: true
 
-  '@contentrain/query@6.1.0':
-    resolution: {integrity: sha512-+ARNRM0/LwUcAxOLWDBypXpA0kfPqdnHToeNidfj1tg3CoK3Qtoxfm6dIpUEPGG4lCGRQ61L+8VUOn0AIsj8+Q==}
+  '@contentrain/query@6.1.1':
+    resolution: {integrity: sha512-RL4ipR/RSUOwKLpNBj/q1XyhOeVfHdei071wktgQVcEM1kb5rVKpBokGtCdUUQEzLPf489WxU2KahdmFBA4yFw==}
     hasBin: true
 
-  '@contentrain/types@0.6.0':
-    resolution: {integrity: sha512-qXLMQoXsEKdBLWHQniXPEqZChraRLVVXCJMy/8Eyw4RvrfN9zy2jvGHoEBanc2nfQ60dgf7vL+wptgHhnshkzg==}
+  '@contentrain/types@0.7.0':
+    resolution: {integrity: sha512-TlZ/ysX5fSIhn6vIQlMCElO4/Uv+KeqBn+fUP8tp51XfYUMWJJCVP5fiRptz+sVCTAOn5qYNGyYsUy0MHXFc8Q==}
 
   '@conventional-changelog/git-client@2.6.0':
     resolution: {integrity: sha512-T+uPDciKf0/ioNNDpMGc8FDsehJClZP0yR3Q5MN6wE/Y/1QZ7F+80OgznnTCOlMEG4AV0LvH2UJi3C/nBnaBUg==}
@@ -6188,9 +6188,6 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
-  simple-git@3.33.0:
-    resolution: {integrity: sha512-D4V/tGC2sjsoNhoMybKyGoE+v8A60hRawKQ1iFRA1zwuDgGZCBJ4ByOzZ5J8joBbi4Oam0qiPH+GhzmSBwbJng==}
-
   simple-git@3.36.0:
     resolution: {integrity: sha512-cGQjLjK8bxJw4QuYT7gxHw3/IouVESbhahSsHrX97MzCL1gu2u7oy38W6L2ZIGECEfIBG4BabsWDPjBxJENv9Q==}
 
@@ -7995,28 +7992,28 @@ snapshots:
       conventional-commits-parser: 6.3.0
       picocolors: 1.1.1
 
-  '@contentrain/mcp@1.6.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
+  '@contentrain/mcp@1.8.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
     dependencies:
-      '@contentrain/types': 0.6.0
+      '@contentrain/types': 0.7.0
       '@modelcontextprotocol/sdk': 1.27.1(zod@3.25.76)
-      simple-git: 3.33.0
+      simple-git: 3.36.0
       typescript: 5.9.3
       zod: 3.25.76
     optionalDependencies:
       '@astrojs/compiler': 2.13.1
       '@gitbeaker/rest': 43.8.0
       '@octokit/rest': 22.0.1
-      '@vue/compiler-sfc': 3.5.32
+      '@vue/compiler-sfc': 3.5.39
       svelte: 4.2.20
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@contentrain/query@6.1.0':
+  '@contentrain/query@6.1.1':
     dependencies:
-      '@contentrain/types': 0.6.0
+      '@contentrain/types': 0.7.0
 
-  '@contentrain/types@0.6.0': {}
+  '@contentrain/types@0.7.0': {}
 
   '@conventional-changelog/git-client@2.6.0(conventional-commits-parser@6.3.0)':
     dependencies:
@@ -11136,8 +11133,8 @@ snapshots:
   code-red@1.0.4:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
-      '@types/estree': 1.0.8
-      acorn: 8.16.0
+      '@types/estree': 1.0.9
+      acorn: 8.17.0
       estree-walker: 3.0.3
       periscopic: 3.1.0
     optional: true
@@ -12429,7 +12426,7 @@ snapshots:
 
   is-reference@3.0.3:
     dependencies:
-      '@types/estree': 1.0.8
+      '@types/estree': 1.0.9
     optional: true
 
   is-stream@2.0.1: {}
@@ -13523,7 +13520,7 @@ snapshots:
 
   periscopic@3.1.0:
     dependencies:
-      '@types/estree': 1.0.8
+      '@types/estree': 1.0.9
       estree-walker: 3.0.3
       is-reference: 3.0.3
     optional: true
@@ -14130,14 +14127,6 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  simple-git@3.33.0:
-    dependencies:
-      '@kwsites/file-exists': 1.1.1
-      '@kwsites/promise-deferred': 1.1.1
-      debug: 4.4.3
-    transitivePeerDependencies:
-      - supports-color
-
   simple-git@3.36.0:
     dependencies:
       '@kwsites/file-exists': 1.1.1
@@ -14304,8 +14293,8 @@ snapshots:
       '@ampproject/remapping': 2.3.0
       '@jridgewell/sourcemap-codec': 1.5.5
       '@jridgewell/trace-mapping': 0.3.31
-      '@types/estree': 1.0.8
-      acorn: 8.16.0
+      '@types/estree': 1.0.9
+      acorn: 8.17.0
       aria-query: 5.3.2
       axobject-query: 4.1.0
       code-red: 1.0.4
