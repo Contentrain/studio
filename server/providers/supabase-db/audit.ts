@@ -7,7 +7,7 @@
 import type { DatabaseProvider } from '../database'
 import { getAdmin } from './helpers'
 
-type AuditMethods = Pick<DatabaseProvider, 'createAuditLog' | 'listAuditLogs'>
+type AuditMethods = Pick<DatabaseProvider, 'createAuditLog' | 'listAuditLogs' | 'cleanupAuditLogs'>
 
 export function auditMethods(): AuditMethods {
   return {
@@ -59,6 +59,20 @@ export function auditMethods(): AuditMethods {
       }
 
       return { data: (data ?? []) as Record<string, unknown>[], total: count ?? 0 }
+    },
+
+    async cleanupAuditLogs(retentionDays) {
+      const { data, error } = await getAdmin()
+        .rpc('cleanup_audit_logs', { retention_days: retentionDays ?? 90 })
+
+      if (error) {
+        // Retention cleanup failure is not critical — the next cycle retries.
+        // eslint-disable-next-line no-console
+        console.error('[audit] Retention cleanup failed:', error.message)
+        return 0
+      }
+
+      return Number(data ?? 0)
     },
   }
 }

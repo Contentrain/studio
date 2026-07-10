@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const providerMocks = vi.hoisted(() => ({
   createSupabaseAuthProvider: vi.fn(() => ({ kind: 'auth-provider' })),
+  createSupabaseDatabaseProvider: vi.fn(() => ({ kind: 'database-provider' })),
   createStudioGitProvider: vi.fn((options: unknown) => ({ kind: 'git-provider', options })),
   createAnthropicProvider: vi.fn(() => ({ kind: 'ai-provider' })),
   createSharpMediaProvider: vi.fn((options: unknown) => ({ kind: 'media-provider', options })),
@@ -9,6 +10,10 @@ const providerMocks = vi.hoisted(() => ({
 
 vi.mock('../../server/providers/supabase-auth', () => ({
   createSupabaseAuthProvider: providerMocks.createSupabaseAuthProvider,
+}))
+
+vi.mock('../../server/providers/supabase-db', () => ({
+  createSupabaseDatabaseProvider: providerMocks.createSupabaseDatabaseProvider,
 }))
 
 vi.mock('../../server/providers/git', () => ({
@@ -27,9 +32,14 @@ describe('provider resolver utilities', () => {
   beforeEach(() => {
     vi.resetModules()
     providerMocks.createSupabaseAuthProvider.mockClear()
+    providerMocks.createSupabaseDatabaseProvider.mockClear()
     providerMocks.createStudioGitProvider.mockClear()
     providerMocks.createAnthropicProvider.mockClear()
     providerMocks.createSharpMediaProvider.mockClear()
+    // The auth/db factories read the provider selectors off the runtime
+    // config — default to an empty config (= supabase pair) unless a test
+    // stubs its own.
+    vi.stubGlobal('useRuntimeConfig', () => ({}))
   })
 
   afterEach(() => {
@@ -84,5 +94,32 @@ describe('provider resolver utilities', () => {
 
     expect(useCDNProvider()).toBeNull()
     expect(useMediaProvider()).toBeNull()
+  })
+
+  it('selects the Supabase database provider by default and caches the singleton', async () => {
+    const { useDatabaseProvider } = await import('../../server/utils/providers')
+
+    expect(useDatabaseProvider()).toBe(useDatabaseProvider())
+    expect(providerMocks.createSupabaseDatabaseProvider).toHaveBeenCalledTimes(1)
+  })
+
+  it('selects the Supabase pair when the selectors are set explicitly', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ authProvider: 'supabase', databaseProvider: 'supabase' }))
+
+    const { useAuthProvider, useDatabaseProvider } = await import('../../server/utils/providers')
+
+    expect(useAuthProvider()).toEqual({ kind: 'auth-provider' })
+    expect(useDatabaseProvider()).toEqual({ kind: 'database-provider' })
+  })
+
+  it('throws before constructing anything when the managed/postgres pair is selected', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ authProvider: 'managed', databaseProvider: 'postgres' }))
+
+    const { useAuthProvider, useDatabaseProvider } = await import('../../server/utils/providers')
+
+    expect(() => useAuthProvider()).toThrowError('[providers] authProvider "managed" is not implemented yet')
+    expect(() => useDatabaseProvider()).toThrowError('[providers] databaseProvider "postgres" is not implemented yet')
+    expect(providerMocks.createSupabaseAuthProvider).not.toHaveBeenCalled()
+    expect(providerMocks.createSupabaseDatabaseProvider).not.toHaveBeenCalled()
   })
 })

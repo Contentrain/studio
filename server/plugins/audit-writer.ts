@@ -45,12 +45,10 @@ export default defineNitroPlugin((nitroApp) => {
   const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000 // 24 hours
   const interval = setInterval(async () => {
     try {
-      const { createSupabaseAdminClient } = await import('../providers/supabase-db/index')
-      const admin = createSupabaseAdminClient()
-      const { data } = await admin.rpc('cleanup_audit_logs', { retention_days: 90 })
-      if (data && Number(data) > 0) {
+      const purged = await useDatabaseProvider().cleanupAuditLogs(90)
+      if (purged > 0) {
         // eslint-disable-next-line no-console
-        console.info(`[audit] Retention cleanup: purged ${data} logs older than 90 days`)
+        console.info(`[audit] Retention cleanup: purged ${purged} logs older than 90 days`)
       }
     }
     catch {

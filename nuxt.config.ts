@@ -49,6 +49,14 @@ export default defineNuxtConfig({
       r2SecretAccessKey: '', // NUXT_CDN_R2_SECRET_ACCESS_KEY
       r2Bucket: '', // NUXT_CDN_R2_BUCKET — required when R2 creds are set (no implicit default)
     },
+    // Provider selection — pairs must match: supabase+supabase (default) or
+    // managed+postgres. Enforced at boot by server/plugins/00.validate-config.ts.
+    authProvider: 'supabase', // NUXT_AUTH_PROVIDER — 'supabase' | 'managed'
+    databaseProvider: 'supabase', // NUXT_DATABASE_PROVIDER — 'supabase' | 'postgres'
+    postgres: {
+      url: '', // NUXT_POSTGRES_URL — required when databaseProvider=postgres
+    },
+    authJwtSecret: '', // NUXT_AUTH_JWT_SECRET — min 32 chars, managed-auth JWT signing
     supabase: {
       url: '',
       serviceRoleKey: '',
@@ -97,7 +105,6 @@ export default defineNuxtConfig({
         tracesSampleRate: 0.1, // NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE — perf-tracing sample (errors are always captured at 100%)
       },
     },
-    deploymentProfile: '', // NUXT_DEPLOYMENT_PROFILE — 'managed' | 'dedicated' | 'on-premise' | 'community' (unset = auto-detect)
     emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
     emailSenderName: '', // NUXT_EMAIL_SENDER_NAME
   },

@@ -756,4 +756,9 @@ export interface DatabaseProvider {
     action?: string
     sort?: 'newest' | 'oldest'
   }) => Promise<{ data: DatabaseRow[], total: number }>
+
+  // Purges audit logs older than retentionDays (default 90). Returns the
+  // purged row count; implementations log-and-return-0 on failure — the
+  // audit path must never break a request or a maintenance cycle.
+  cleanupAuditLogs: (retentionDays?: number) => Promise<number>
 }

@@ -31,15 +31,29 @@ let _mediaProvider: MediaProvider | null = null
 let _emailProvider: EmailProvider | null | undefined
 
 export function useAuthProvider(): AuthProvider {
-  if (!_authProvider)
+  if (!_authProvider) {
+    const kind = useRuntimeConfig().authProvider || 'supabase'
+    if (kind === 'managed') {
+      // Ships with the managed-auth phase. Boot validation (00.validate-config.ts)
+      // rejects this selection until then — this throw is the defensive backstop.
+      throw new Error('[providers] authProvider "managed" is not implemented yet')
+    }
     _authProvider = createSupabaseAuthProvider()
+  }
 
   return _authProvider
 }
 
 export function useDatabaseProvider(): DatabaseProvider {
-  if (!_databaseProvider)
+  if (!_databaseProvider) {
+    const kind = useRuntimeConfig().databaseProvider || 'supabase'
+    if (kind === 'postgres') {
+      // Ships with the postgres-db phase. Boot validation (00.validate-config.ts)
+      // rejects this selection until then — this throw is the defensive backstop.
+      throw new Error('[providers] databaseProvider "postgres" is not implemented yet')
+    }
     _databaseProvider = createSupabaseDatabaseProvider()
+  }
 
   return _databaseProvider
 }
