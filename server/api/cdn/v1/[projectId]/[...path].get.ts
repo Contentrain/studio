@@ -16,7 +16,15 @@ import { trackEnterpriseCdnUsage, trackEnterprisePublicCdnUsage } from '../../..
  * Both modes still require `cdn_enabled` and the `cdn.delivery` plan feature,
  * so public media changes the auth model, not the entitlement.
  *
- * Cache: ETag + Cache-Control headers.
+ * Hot path: key/project/plan lookups are served from in-process TTL caches
+ * (server/utils/cdn-delivery-cache.ts) — on a warm request the only remaining
+ * round-trips are the Redis rate limit and the R2 read. All gates still run
+ * per request; only their DB inputs are memoized.
+ *
+ * Cache: ETag + conditional R2 reads (304 without body transfer).
+ * Cache-Control is split by auth mode — keyed responses are `private` so a
+ * shared/edge cache can never replay keyed content to keyless clients;
+ * only keyless public media is shared-cacheable.
  */
 export default defineEventHandler(async (event) => {
   const routeProjectId = getRouterParam(event, 'projectId')
@@ -32,13 +40,21 @@ export default defineEventHandler(async (event) => {
   const authHeader = getHeader(event, 'authorization')
   const hasKey = authHeader?.startsWith('Bearer crn_') ?? false
 
+  const authStart = Date.now()
   let projectId = routeProjectId
   let keyId: string | null = null
+  let projectPromise: ReturnType<typeof cachedProjectDelivery> | null = null
 
   if (hasKey) {
     // ── Keyed delivery ── validate + ownership + CORS + per-key rate limit.
-    // Runs before any project lookup so a bad key/origin fails fast.
-    const validated = await validateCDNKey(authHeader)
+    // The project lookup starts in parallel (both are usually warm cache
+    // hits; on a cold miss this halves the sequential round-trips). Key
+    // errors keep precedence: the project promise gets a no-op catch so an
+    // early 401 can't surface an unhandled rejection.
+    projectPromise = cachedProjectDelivery(routeProjectId)
+    projectPromise.catch(() => {})
+
+    const validated = await cachedValidateCDNKey(authHeader)
     projectId = validated.projectId
     if (routeProjectId !== projectId)
       throw createError({ statusCode: 403, message: errorMessage('cdn.key_mismatch') })
@@ -58,13 +74,12 @@ export default defineEventHandler(async (event) => {
   }
   else if (!isMediaBinary) {
     // Keyless content / manifest is never public — require a key (throws 401).
-    await validateCDNKey(authHeader)
+    await cachedValidateCDNKey(authHeader)
   }
   // else: keyless media → public candidate, validated against the project flag below.
 
   // Project gate (both modes): cdn_enabled, plus cdn_public_media for keyless.
-  const db = useDatabaseProvider()
-  const project = await db.getProjectById(projectId, 'workspace_id, cdn_enabled, cdn_public_media')
+  const project = await (projectPromise ?? cachedProjectDelivery(projectId))
 
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
@@ -77,7 +92,7 @@ export default defineEventHandler(async (event) => {
     // (keyless content already required a key above). A project that opted out
     // of public media still requires a key (throws 401).
     if (project.cdn_public_media !== true)
-      await validateCDNKey(authHeader)
+      await cachedValidateCDNKey(authHeader)
 
     // No key to scope by — rate limit per project + client IP.
     const ip = getClientIp(event)
@@ -89,7 +104,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Plan gate — cdn.delivery entitlement applies to both auth modes.
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'plan')
+  const workspace = await cachedWorkspacePlan(project.workspace_id as string)
   const plan = getWorkspacePlan(workspace ?? {})
   if (!hasFeature(plan, 'cdn.delivery'))
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
@@ -99,26 +114,49 @@ export default defineEventHandler(async (event) => {
   if (!cdn)
     throw createError({ statusCode: 503, message: errorMessage('cdn.storage_not_configured') })
 
-  // ETag conditional request
+  const authMs = Date.now() - authStart
+
+  // Keyed responses must never enter a shared cache — a cached keyed body
+  // would be replayable on the keyless URL (the cache key carries no key).
+  const cacheControl = hasKey
+    ? 'private, max-age=60'
+    : 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400'
+
+  // Conditional request — forwarded to R2 so a 304 skips the body transfer.
   const ifNoneMatch = getHeader(event, 'if-none-match')
 
   // Media files served as-is, content files default to .json
   const isMediaPath = isMediaBinary || path === '_media_manifest.json'
   const resolvedPath = isMediaPath || path.endsWith('.json') ? path : `${path}.json`
-  const result = await cdn.getObject(projectId, resolvedPath)
+
+  const r2Start = Date.now()
+  const result = await cdn.getObject(projectId, resolvedPath, ifNoneMatch ? { ifNoneMatch } : undefined)
+  const r2Ms = Date.now() - r2Start
+
+  setResponseHeader(event, 'Server-Timing', `auth;dur=${authMs}, r2;dur=${r2Ms}`)
 
   if (!result)
     throw createError({ statusCode: 404, message: errorMessage('cdn.content_not_found') })
 
-  // 304 Not Modified
+  // 304 Not Modified — answered by R2's conditional read, no body transferred.
+  if ('notModified' in result) {
+    setResponseStatus(event, 304)
+    setResponseHeader(event, 'Cache-Control', cacheControl)
+    if (ifNoneMatch) setResponseHeader(event, 'ETag', ifNoneMatch)
+    return ''
+  }
+
+  // 304 fallback for providers that ignore the ifNoneMatch option.
   if (ifNoneMatch && ifNoneMatch === result.etag) {
     setResponseStatus(event, 304)
+    setResponseHeader(event, 'Cache-Control', cacheControl)
+    setResponseHeader(event, 'ETag', result.etag)
     return ''
   }
 
   // Response headers
   setResponseHeader(event, 'Content-Type', result.contentType)
-  setResponseHeader(event, 'Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400')
+  setResponseHeader(event, 'Cache-Control', cacheControl)
   setResponseHeader(event, 'ETag', result.etag)
   if (keyId)
     setResponseHeader(event, 'X-Contentrain-Key', keyId.substring(0, 8))

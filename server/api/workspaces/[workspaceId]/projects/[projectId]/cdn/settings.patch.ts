@@ -29,5 +29,8 @@ export default defineEventHandler(async (event) => {
 
   const data = await db.updateProject(projectId, update, 'cdn_enabled, cdn_branch')
 
+  // Delivery gates read project flags through a TTL cache — apply immediately.
+  bustProjectDeliveryCache(projectId)
+
   return data
 })

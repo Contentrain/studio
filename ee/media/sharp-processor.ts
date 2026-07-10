@@ -158,9 +158,9 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       const row = await db.getMediaAsset(assetId)
       if (!row) throw createError({ statusCode: 404, message: 'Asset not found' })
 
-      // Fetch original from R2
+      // Fetch original from R2 (`notModified` can't occur without ifNoneMatch — type guard only)
       const original = await cdn.getObject(row.project_id as string, row.original_path as string)
-      if (!original) throw createError({ statusCode: 404, message: 'Original file not found in storage' })
+      if (!original || 'notModified' in original) throw createError({ statusCode: 404, message: 'Original file not found in storage' })
 
       // Generate NEW variants first (before deleting old ones)
       const generated = await generateVariants(original.data, assetId, variants)

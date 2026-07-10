@@ -18,5 +18,8 @@ export default defineEventHandler(async (event) => {
 
   await db.revokeCDNKey(keyId, projectId)
 
+  // Revocation must not wait out the delivery cache TTL on this instance.
+  bustCDNKeyCache(keyId)
+
   return { revoked: true }
 })
