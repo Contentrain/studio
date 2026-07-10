@@ -342,6 +342,33 @@ export interface ConversationApiKeysTable {
   revoked_at: string | null
 }
 
+export interface WebhookDeliveriesTable {
+  id: Generated<string>
+  webhook_id: string
+  event: string
+  payload: unknown
+  status: Generated<string>
+  response_code: number | null
+  response_body: string | null
+  retry_count: Generated<number>
+  next_retry_at: string | null
+  delivered_at: string | null
+  created_at: Generated<string>
+}
+
+export interface UsageEventsOutboxTable {
+  id: Generated<string>
+  workspace_id: string
+  meter_name: string
+  value: number | string
+  occurred_at: Generated<string>
+  idempotency_key: string
+  metadata: Generated<unknown>
+  ingested_at: string | null
+  attempt_count: Generated<number>
+  last_error: string | null
+}
+
 export interface StudioDatabase {
   profiles: ProfilesTable
   oauth_provider_tokens: OAuthProviderTokensTable
@@ -366,4 +393,6 @@ export interface StudioDatabase {
   media_usage: MediaUsageTable
   form_submissions: FormSubmissionsTable
   conversation_api_keys: ConversationApiKeysTable
+  webhook_deliveries: WebhookDeliveriesTable
+  usage_events_outbox: UsageEventsOutboxTable
 }
