@@ -131,51 +131,72 @@ function toUnixOrNull(expiresIn: unknown): number | null {
   return typeof expiresIn === 'number' ? Math.floor(Date.now() / 1000) + expiresIn : null
 }
 
-const githubHandler = defineOAuthGitHubEventHandler({
-  config: { emailRequired: true },
-  async onSuccess(event, { user, tokens }) {
-    // GitHubTokens doesn't type the refresh fields — classic OAuth Apps never
-    // send them, GitHub Apps with expiring user tokens do. Read them loosely.
-    const t = tokens as { access_token?: string, refresh_token?: string | null, expires_in?: number, refresh_token_expires_in?: number }
+// Handlers are built lazily so redirectURL can come from runtime config:
+// behind Railway's proxy the module would otherwise derive the exchange
+// redirect_uri from the request URL (http://…), mismatching the https
+// authorize leg — GitHub rejects the token exchange on that mismatch.
+let _githubHandler: ReturnType<typeof defineOAuthGitHubEventHandler> | null = null
+let _googleHandler: ReturnType<typeof defineOAuthGoogleEventHandler> | null = null
 
-    return onSignedIn(event, {
-      provider: 'github',
-      providerAccountId: String(user.id),
-      email: user.email ?? null,
-      name: user.name ?? null,
-      userName: user.login ?? null,
-      avatarUrl: user.avatar_url ?? null,
-      providerTokens: t?.access_token
-        ? {
-            accessToken: t.access_token,
-            refreshToken: t.refresh_token ?? null,
-            expiresAt: toUnixOrNull(t.expires_in),
-            refreshTokenExpiresAt: toUnixOrNull(t.refresh_token_expires_in),
-          }
-        : null,
-    })
-  },
-  onError(event) {
-    return sendRedirect(event, '/auth/login?error=oauth')
-  },
-})
+function oauthHandlers() {
+  if (_githubHandler && _googleHandler)
+    return { github: _githubHandler, google: _googleHandler }
 
-const googleHandler = defineOAuthGoogleEventHandler({
-  async onSuccess(event, { user }) {
-    return onSignedIn(event, {
-      provider: 'google',
-      providerAccountId: String(user.sub),
-      email: user.email ?? null,
-      name: user.name ?? null,
-      userName: null,
-      avatarUrl: user.picture ?? null,
-      providerTokens: null, // Google tokens are not persisted (parity with the Supabase pair)
-    })
-  },
-  onError(event) {
-    return sendRedirect(event, '/auth/login?error=oauth')
-  },
-})
+  const siteUrl = (useRuntimeConfig().public.siteUrl as string).replace(/\/+$/, '')
+
+  _githubHandler = defineOAuthGitHubEventHandler({
+    config: { emailRequired: true, redirectURL: `${siteUrl}/api/auth/oauth/github` },
+    async onSuccess(event, { user, tokens }) {
+      // GitHubTokens doesn't type the refresh fields — classic OAuth Apps never
+      // send them, GitHub Apps with expiring user tokens do. Read them loosely.
+      const t = tokens as { access_token?: string, refresh_token?: string | null, expires_in?: number, refresh_token_expires_in?: number }
+
+      return onSignedIn(event, {
+        provider: 'github',
+        providerAccountId: String(user.id),
+        email: user.email ?? null,
+        name: user.name ?? null,
+        userName: user.login ?? null,
+        avatarUrl: user.avatar_url ?? null,
+        providerTokens: t?.access_token
+          ? {
+              accessToken: t.access_token,
+              refreshToken: t.refresh_token ?? null,
+              expiresAt: toUnixOrNull(t.expires_in),
+              refreshTokenExpiresAt: toUnixOrNull(t.refresh_token_expires_in),
+            }
+          : null,
+      })
+    },
+    onError(event, error) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth] github oauth failed:', error instanceof Error ? error.message : error)
+      return sendRedirect(event, '/auth/login?error=oauth')
+    },
+  })
+
+  _googleHandler = defineOAuthGoogleEventHandler({
+    config: { redirectURL: `${siteUrl}/api/auth/oauth/google` },
+    async onSuccess(event, { user }) {
+      return onSignedIn(event, {
+        provider: 'google',
+        providerAccountId: String(user.sub),
+        email: user.email ?? null,
+        name: user.name ?? null,
+        userName: null,
+        avatarUrl: user.picture ?? null,
+        providerTokens: null, // Google tokens are not persisted (parity with the Supabase pair)
+      })
+    },
+    onError(event, error) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth] google oauth failed:', error instanceof Error ? error.message : error)
+      return sendRedirect(event, '/auth/login?error=oauth')
+    },
+  })
+
+  return { github: _githubHandler, google: _googleHandler }
+}
 
 export default defineEventHandler(async (event) => {
   if (useRuntimeConfig().authProvider !== 'managed') {
@@ -211,5 +232,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('auth.invalid_state') })
   }
 
-  return provider === 'github' ? githubHandler(event) : googleHandler(event)
+  const handlers = oauthHandlers()
+  return provider === 'github' ? handlers.github(event) : handlers.google(event)
 })
