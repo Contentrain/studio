@@ -104,7 +104,7 @@ describe('CDN route integration', () => {
     }))
     vi.stubGlobal('setResponseHeader', setResponseHeader)
     vi.stubGlobal('setResponseStatus', setResponseStatus)
-    vi.stubGlobal('validateCDNKey', vi.fn().mockResolvedValue({
+    vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockResolvedValue({
       projectId: 'project-1',
       keyId: 'key-1',
       rateLimitPerHour: 60,
@@ -124,16 +124,61 @@ describe('CDN route integration', () => {
         data: Buffer.from('{"ok":true}'),
       }),
     }))
-    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }),
-      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
-    }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }))
+    vi.stubGlobal('cachedWorkspacePlan', vi.fn().mockResolvedValue({ plan: 'pro' }))
 
     const handler = await loadPublicCDNHandler()
 
     await expect(handler(event)).resolves.toBe('')
     expect(setResponseStatus).toHaveBeenCalledWith(event, 304)
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'X-RateLimit-Remaining', '59')
+    // Keyed responses must never be shared-cacheable — even on 304.
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Cache-Control', 'private, max-age=60')
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Server-Timing', expect.stringContaining('auth;dur='))
+  })
+
+  it('returns 304 from the provider conditional read without a body transfer', async () => {
+    const event = {} as never
+    const setResponseHeader = vi.fn()
+    const setResponseStatus = vi.fn()
+    const getObject = vi.fn().mockResolvedValue({ notModified: true })
+    const trackUsage = vi.fn()
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'projectId') return 'project-1'
+      if (key === 'path') return 'content/posts/en.json'
+      return undefined
+    }))
+    vi.stubGlobal('getHeader', vi.fn((_: unknown, key: string) => {
+      if (key === 'authorization') return 'Bearer crn_live_example'
+      if (key === 'if-none-match') return 'etag-1'
+      return undefined
+    }))
+    vi.stubGlobal('setResponseHeader', setResponseHeader)
+    vi.stubGlobal('setResponseStatus', setResponseStatus)
+    vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockResolvedValue({
+      projectId: 'project-1',
+      keyId: 'key-1',
+      rateLimitPerHour: 60,
+      allowedOrigins: [],
+    }))
+    vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({ allowed: true, remaining: 59, retryAfterMs: 0 }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('trackEnterpriseCdnUsage', trackUsage)
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ getObject }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }))
+    vi.stubGlobal('cachedWorkspacePlan', vi.fn().mockResolvedValue({ plan: 'pro' }))
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler(event)).resolves.toBe('')
+    expect(setResponseStatus).toHaveBeenCalledWith(event, 304)
+    // The conditional header must be forwarded to the provider.
+    expect(getObject).toHaveBeenCalledWith('project-1', 'content/posts/en.json', { ifNoneMatch: 'etag-1' })
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'ETag', 'etag-1')
+    // 304 transfers no body — nothing to meter.
+    expect(trackUsage).not.toHaveBeenCalled()
   })
 
   it('blocks CDN reads from disallowed origins', async () => {
@@ -148,12 +193,13 @@ describe('CDN route integration', () => {
       if (key === 'path') return 'models/posts'
       return undefined
     }))
-    vi.stubGlobal('validateCDNKey', vi.fn().mockResolvedValue({
+    vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockResolvedValue({
       projectId: 'project-1',
       keyId: 'key-1',
       rateLimitPerHour: 60,
       allowedOrigins: ['https://allowed.example'],
     }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }))
 
     const handler = await loadPublicCDNHandler()
 
@@ -177,7 +223,7 @@ describe('CDN route integration', () => {
       return undefined
     }))
     vi.stubGlobal('setResponseHeader', setResponseHeader)
-    vi.stubGlobal('validateCDNKey', vi.fn().mockResolvedValue({
+    vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockResolvedValue({
       projectId: 'project-1',
       keyId: 'key-1',
       rateLimitPerHour: 60,
@@ -192,23 +238,23 @@ describe('CDN route integration', () => {
         data: binary,
       }),
     }))
-    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }),
-      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
-    }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }))
+    vi.stubGlobal('cachedWorkspacePlan', vi.fn().mockResolvedValue({ plan: 'pro' }))
 
     const handler = await loadPublicCDNHandler()
 
     await expect(handler(event)).resolves.toEqual(binary)
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'Content-Type', 'image/png')
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'ETag', 'etag-binary')
+    // Keyed media is still keyed — private cache only.
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Cache-Control', 'private, max-age=60')
   })
 
   it('serves a media binary without a key when cdn_public_media is enabled', async () => {
     const event = {} as never
     const binary = Buffer.from([1, 2, 3, 4])
     const setResponseHeader = vi.fn()
-    const validateCDNKey = vi.fn()
+    const cachedValidateCDNKey = vi.fn()
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'projectId') return 'project-1'
@@ -217,7 +263,7 @@ describe('CDN route integration', () => {
     }))
     vi.stubGlobal('getHeader', vi.fn(() => undefined)) // no Authorization → keyless
     vi.stubGlobal('setResponseHeader', setResponseHeader)
-    vi.stubGlobal('validateCDNKey', validateCDNKey)
+    vi.stubGlobal('cachedValidateCDNKey', cachedValidateCDNKey)
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({
@@ -227,18 +273,18 @@ describe('CDN route integration', () => {
         data: binary,
       }),
     }))
-    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: true }),
-      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
-    }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: true }))
+    vi.stubGlobal('cachedWorkspacePlan', vi.fn().mockResolvedValue({ plan: 'pro' }))
 
     const handler = await loadPublicCDNHandler()
 
     await expect(handler(event)).resolves.toEqual(binary)
     // No key → no key-scoped response header was emitted.
-    expect(validateCDNKey).not.toHaveBeenCalled()
+    expect(cachedValidateCDNKey).not.toHaveBeenCalled()
     expect(setResponseHeader).not.toHaveBeenCalledWith(event, 'X-Contentrain-Key', expect.anything())
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'Content-Type', 'image/webp')
+    // Keyless public media stays shared-cacheable.
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400')
   })
 
   it('requires a key for a keyless content (non-media) request', async () => {
@@ -249,7 +295,7 @@ describe('CDN route integration', () => {
       return undefined
     }))
     vi.stubGlobal('getHeader', vi.fn(() => undefined))
-    vi.stubGlobal('validateCDNKey', vi.fn().mockRejectedValue({ statusCode: 401 }))
+    vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockRejectedValue({ statusCode: 401 }))
 
     const handler = await loadPublicCDNHandler()
 
@@ -264,14 +310,66 @@ describe('CDN route integration', () => {
       return undefined
     }))
     vi.stubGlobal('getHeader', vi.fn(() => undefined))
-    vi.stubGlobal('validateCDNKey', vi.fn().mockRejectedValue({ statusCode: 401 }))
-    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      getProjectById: vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: false }),
-    }))
+    vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockRejectedValue({ statusCode: 401 }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: false }))
 
     const handler = await loadPublicCDNHandler()
 
     await expect(handler(event)).rejects.toMatchObject({ statusCode: 401 })
+  })
+
+  it('busts the key cache when a CDN key is revoked', async () => {
+    const event = {} as never
+    const bustCDNKeyCache = vi.fn()
+    const revokeCDNKey = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      if (key === 'keyId') return 'key-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('bustCDNKeyCache', bustCDNKeyCache)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      revokeCDNKey,
+    }))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/cdn/keys/[keyId].delete')).default
+
+    await expect(handler(event)).resolves.toEqual({ revoked: true })
+    expect(revokeCDNKey).toHaveBeenCalledWith('key-1', 'project-1')
+    expect(bustCDNKeyCache).toHaveBeenCalledWith('key-1')
+  })
+
+  it('busts the project delivery cache when CDN settings change', async () => {
+    const event = { context: {} } as never
+    const bustProjectDeliveryCache = vi.fn()
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_enabled: false }))
+    vi.stubGlobal('bustProjectDeliveryCache', bustProjectDeliveryCache)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      updateProject: vi.fn().mockResolvedValue({ cdn_enabled: false, cdn_branch: null }),
+    }))
+
+    const handler = await loadCDNSettingsPatchHandler()
+
+    await expect(handler(event)).resolves.toEqual({ cdn_enabled: false, cdn_branch: null })
+    expect(bustProjectDeliveryCache).toHaveBeenCalledWith('project-1')
   })
 
   it('rejects enabling CDN on plans without the delivery feature', async () => {

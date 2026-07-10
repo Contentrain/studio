@@ -19,8 +19,12 @@ export interface CDNProvider {
   /** Upload content to CDN storage. Path is relative to project namespace. */
   putObject: (projectId: string, path: string, data: string | Buffer, contentType: string) => Promise<CDNObject>
 
-  /** Read content from CDN storage. Returns null if not found. */
-  getObject: (projectId: string, path: string) => Promise<{ data: Buffer, contentType: string, etag: string } | null>
+  /**
+   * Read content from CDN storage. Returns null if not found.
+   * Pass `opts.ifNoneMatch` for a conditional read — when the stored ETag
+   * matches, resolves `{ notModified: true }` without transferring the body.
+   */
+  getObject: (projectId: string, path: string, opts?: { ifNoneMatch?: string }) => Promise<{ data: Buffer, contentType: string, etag: string } | { notModified: true } | null>
 
   /** Delete a single object. */
   deleteObject: (projectId: string, path: string) => Promise<void>

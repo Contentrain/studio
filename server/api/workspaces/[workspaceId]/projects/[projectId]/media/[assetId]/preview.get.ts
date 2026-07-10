@@ -43,7 +43,8 @@ export default defineEventHandler(async (event) => {
     : asset.originalPath
 
   const result = await cdn.getObject(projectId, path)
-  if (!result)
+  // `notModified` can't occur without an ifNoneMatch option — type guard only.
+  if (!result || 'notModified' in result)
     throw createError({ statusCode: 404, message: errorMessage('media.file_not_found_storage') })
 
   setResponseHeader(event, 'Content-Type', result.contentType)

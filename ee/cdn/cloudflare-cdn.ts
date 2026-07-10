@@ -54,13 +54,14 @@ export function createCloudflareR2Provider(config: CloudflareR2Config): CDNProvi
       }
     },
 
-    async getObject(projectId, path) {
+    async getObject(projectId, path, opts) {
       const key = `${projectId}/${path}`
 
       try {
         const result = await client.send(new GetObjectCommand({
           Bucket: bucket,
           Key: key,
+          IfNoneMatch: opts?.ifNoneMatch,
         }))
 
         if (!result.Body) return null
@@ -74,6 +75,9 @@ export function createCloudflareR2Provider(config: CloudflareR2Config): CDNProvi
       }
       catch (e: unknown) {
         if ((e as { name?: string }).name === 'NoSuchKey') return null
+        // Conditional read matched — R2 answered 304 with no body.
+        if ((e as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304)
+          return { notModified: true }
         throw e
       }
     },
