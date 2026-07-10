@@ -14,7 +14,7 @@ vi.stubGlobal('createError', (input: { statusCode: number, message: string }) =>
   return Object.assign(new Error(input.message), input)
 })
 
-vi.stubGlobal('errorMessage', (key: string) => key)
+vi.stubGlobal('errorMessage', (key: string, _params?: Record<string, unknown>) => key)
 
 vi.stubGlobal('useRuntimeConfig', () => ({
   sessionSecret: CONTRACT_SESSION_SECRET,
