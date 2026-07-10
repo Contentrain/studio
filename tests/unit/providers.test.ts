@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const providerMocks = vi.hoisted(() => ({
   createSupabaseAuthProvider: vi.fn(() => ({ kind: 'auth-provider' })),
   createSupabaseDatabaseProvider: vi.fn(() => ({ kind: 'database-provider' })),
+  createManagedAuthProvider: vi.fn(() => ({ kind: 'managed-auth-provider' })),
+  createPostgresDatabaseProvider: vi.fn(() => ({ kind: 'postgres-database-provider' })),
+  configurePostgresDb: vi.fn(),
   createStudioGitProvider: vi.fn((options: unknown) => ({ kind: 'git-provider', options })),
   createAnthropicProvider: vi.fn(() => ({ kind: 'ai-provider' })),
   createSharpMediaProvider: vi.fn((options: unknown) => ({ kind: 'media-provider', options })),
@@ -14,6 +17,15 @@ vi.mock('../../server/providers/supabase-auth', () => ({
 
 vi.mock('../../server/providers/supabase-db', () => ({
   createSupabaseDatabaseProvider: providerMocks.createSupabaseDatabaseProvider,
+}))
+
+vi.mock('../../server/providers/managed-auth', () => ({
+  createManagedAuthProvider: providerMocks.createManagedAuthProvider,
+}))
+
+vi.mock('../../server/providers/postgres-db', () => ({
+  createPostgresDatabaseProvider: providerMocks.createPostgresDatabaseProvider,
+  configurePostgresDb: providerMocks.configurePostgresDb,
 }))
 
 vi.mock('../../server/providers/git', () => ({
@@ -33,6 +45,9 @@ describe('provider resolver utilities', () => {
     vi.resetModules()
     providerMocks.createSupabaseAuthProvider.mockClear()
     providerMocks.createSupabaseDatabaseProvider.mockClear()
+    providerMocks.createManagedAuthProvider.mockClear()
+    providerMocks.createPostgresDatabaseProvider.mockClear()
+    providerMocks.configurePostgresDb.mockClear()
     providerMocks.createStudioGitProvider.mockClear()
     providerMocks.createAnthropicProvider.mockClear()
     providerMocks.createSharpMediaProvider.mockClear()
@@ -112,13 +127,23 @@ describe('provider resolver utilities', () => {
     expect(useDatabaseProvider()).toEqual({ kind: 'database-provider' })
   })
 
-  it('throws before constructing anything when the managed/postgres pair is selected', async () => {
-    vi.stubGlobal('useRuntimeConfig', () => ({ authProvider: 'managed', databaseProvider: 'postgres' }))
+  it('selects the managed/postgres pair and configures the pg client from runtime config', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({
+      authProvider: 'managed',
+      databaseProvider: 'postgres',
+      postgres: { url: 'postgres://user:pw@host:5432/db' },
+      authJwtSecret: 'j'.repeat(32),
+    }))
 
     const { useAuthProvider, useDatabaseProvider } = await import('../../server/utils/providers')
 
-    expect(() => useAuthProvider()).toThrowError('[providers] authProvider "managed" is not implemented yet')
-    expect(() => useDatabaseProvider()).toThrowError('[providers] databaseProvider "postgres" is not implemented yet')
+    expect(useAuthProvider()).toEqual({ kind: 'managed-auth-provider' })
+    expect(useDatabaseProvider()).toEqual({ kind: 'postgres-database-provider' })
+    expect(useDatabaseProvider()).toBe(useDatabaseProvider())
+    expect(providerMocks.configurePostgresDb).toHaveBeenCalledWith({
+      url: 'postgres://user:pw@host:5432/db',
+      authJwtSecret: 'j'.repeat(32),
+    })
     expect(providerMocks.createSupabaseAuthProvider).not.toHaveBeenCalled()
     expect(providerMocks.createSupabaseDatabaseProvider).not.toHaveBeenCalled()
   })

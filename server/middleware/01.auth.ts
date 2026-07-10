@@ -10,6 +10,8 @@ const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/callback',
   '/api/auth/magic-link',
+  '/api/auth/magic/', // managed pair: GET verify landing (email click carries no session)
+  '/api/auth/oauth/', // managed pair: OAuth dance legs (pre-session by definition)
   '/api/auth/verify',
   '/api/auth/refresh',
   '/api/health',

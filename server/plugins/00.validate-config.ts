@@ -79,8 +79,6 @@ export default defineNitroPlugin(() => {
   if (databaseProvider === 'postgres') {
     if (!config.postgres?.url)
       errors.push('NUXT_POSTGRES_URL is required when NUXT_DATABASE_PROVIDER=postgres')
-    // TODO(postgres-db): remove when the Postgres DatabaseProvider lands.
-    errors.push('NUXT_DATABASE_PROVIDER="postgres" is not available yet — the Postgres provider ships in an upcoming release')
   }
 
   // Managed auth — required while the managed auth provider is selected
@@ -89,8 +87,13 @@ export default defineNitroPlugin(() => {
       errors.push('NUXT_AUTH_JWT_SECRET must be at least 32 characters when NUXT_AUTH_PROVIDER=managed')
     if (!config.resend?.apiKey)
       errors.push('NUXT_RESEND_API_KEY is required when NUXT_AUTH_PROVIDER=managed (magic link + invite emails)')
-    // TODO(managed-auth): remove when the managed AuthProvider lands.
-    errors.push('NUXT_AUTH_PROVIDER="managed" is not available yet — the managed auth provider ships in an upcoming release')
+
+    // OAuth login apps — the managed pair runs the dance itself.
+    const oauth = config.oauth as { github?: { clientId?: string, clientSecret?: string }, google?: { clientId?: string, clientSecret?: string } } | undefined
+    if (!oauth?.github?.clientId || !oauth.github.clientSecret)
+      errors.push('NUXT_OAUTH_GITHUB_CLIENT_ID / NUXT_OAUTH_GITHUB_CLIENT_SECRET are required when NUXT_AUTH_PROVIDER=managed')
+    if (!oauth?.google?.clientId || !oauth.google.clientSecret)
+      warnings.push('NUXT_OAUTH_GOOGLE_CLIENT_ID / NUXT_OAUTH_GOOGLE_CLIENT_SECRET are not set — Google sign-in disabled')
   }
 
   // GitHub App — required for repo operations
