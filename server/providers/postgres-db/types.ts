@@ -167,7 +167,7 @@ export interface MediaAssetsTable {
   tags: Generated<string[]>
   original_path: string
   variants: Generated<unknown>
-  uploaded_by: string
+  uploaded_by: string | null // nullable since 015 (detached on uploader account deletion)
   source: Generated<string>
   created_at: Generated<string>
   updated_at: Generated<string>
@@ -235,6 +235,113 @@ export interface MessagesTable {
   internal: Generated<boolean>
 }
 
+export interface CdnApiKeysTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  key_hash: string
+  key_prefix: string
+  name: string
+  environment: Generated<string>
+  rate_limit_per_hour: Generated<number>
+  allowed_origins: string[] | null
+  scopes: Generated<string[]>
+  last_used_at: string | null
+  expires_at: string | null
+  created_at: Generated<string>
+  revoked_at: string | null
+}
+
+export interface CdnBuildsTable {
+  id: Generated<string>
+  project_id: string
+  trigger_type: Generated<string>
+  commit_sha: string
+  branch: string
+  status: Generated<string>
+  content_hash: string | null
+  file_count: number | null
+  total_size_bytes: number | null
+  changed_models: string[] | null
+  build_duration_ms: number | null
+  error_message: string | null
+  started_at: Generated<string>
+  completed_at: string | null
+}
+
+export interface McpCloudKeysTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  key_hash: string
+  key_prefix: string
+  name: string
+  allowed_tools: Generated<string[]>
+  rate_limit_per_minute: Generated<number>
+  monthly_call_limit: number | null
+  last_used_at: string | null
+  created_at: Generated<string>
+  created_by: string | null
+  revoked_at: string | null
+}
+
+export interface McpCloudUsageTable {
+  workspace_id: string
+  month: string
+  mcp_key_id: string
+  call_count: Generated<number>
+  last_call_at: Generated<string>
+}
+
+export interface MediaUsageTable {
+  id: Generated<string>
+  asset_id: string
+  project_id: string
+  model_id: string
+  entry_id: string
+  field_id: string
+  locale: string
+  created_at: Generated<string>
+}
+
+export interface FormSubmissionsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  model_id: string
+  data: unknown
+  status: Generated<string>
+  source_ip: string | null
+  user_agent: string | null
+  referrer: string | null
+  locale: Generated<string | null>
+  approved_at: string | null
+  approved_by: string | null
+  entry_id: string | null
+  created_at: Generated<string>
+}
+
+export interface ConversationApiKeysTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  key_hash: string
+  key_prefix: string
+  name: string
+  role: Generated<string>
+  specific_models: Generated<boolean>
+  allowed_models: Generated<string[] | null>
+  allowed_tools: Generated<string[] | null>
+  allowed_locales: Generated<string[] | null>
+  custom_instructions: string | null
+  ai_model: Generated<string>
+  rate_limit_per_minute: Generated<number>
+  monthly_message_limit: Generated<number>
+  last_used_at: string | null
+  created_at: Generated<string>
+  revoked_at: string | null
+}
+
 export interface StudioDatabase {
   profiles: ProfilesTable
   oauth_provider_tokens: OAuthProviderTokensTable
@@ -252,4 +359,11 @@ export interface StudioDatabase {
   cdn_usage: CdnUsageTable
   conversations: ConversationsTable
   messages: MessagesTable
+  cdn_api_keys: CdnApiKeysTable
+  cdn_builds: CdnBuildsTable
+  mcp_cloud_keys: McpCloudKeysTable
+  mcp_cloud_usage: McpCloudUsageTable
+  media_usage: MediaUsageTable
+  form_submissions: FormSubmissionsTable
+  conversation_api_keys: ConversationApiKeysTable
 }
