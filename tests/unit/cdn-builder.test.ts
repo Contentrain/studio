@@ -377,5 +377,164 @@ describe('cdn builder', () => {
     // html: rendered <img>/<a> inherit the absolute URLs
     expect(doc.html).toContain('src="https://cdn.test/api/cdn/v1/proj/media/original/inline.webp"')
     expect(doc.html).toContain('href="https://cdn.test/api/cdn/v1/proj/media/original/file.pdf"')
+
+    // The document index is bundled path-identically (per-slug bodies are not).
+    const bundle = JSON.parse(objects.get('proj:_bundle/en.json') ?? '{}')
+    expect(bundle.paths['documents/posts/_index/en.json']).toEqual(
+      JSON.parse(objects.get('proj:documents/posts/_index/en.json') ?? '[]'),
+    )
+    expect(bundle.paths['documents/posts/my-post/en.json']).toBeUndefined()
+  })
+
+  it('emits per-locale bundles that mirror the standalone artifacts', async () => {
+    const { git, provider, objects } = seedProject('proj')
+    // A bundle for a locale the config no longer supports must be swept.
+    objects.set('proj:_bundle/tr.json', '{"version":"1","paths":{}}')
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 'sha-bundle',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    const bundle = JSON.parse(objects.get('proj:_bundle/en.json') ?? '{}')
+    expect(bundle.version).toBe('1')
+    expect(bundle.commitSha).toBe('sha-bundle')
+    expect(bundle.locale).toBe('en')
+    // Bodies are identical to the standalone artifacts (SDK primes its cache from them).
+    expect(bundle.paths['content/faq/en.json']).toEqual(
+      JSON.parse(objects.get('proj:content/faq/en.json') ?? '{}'),
+    )
+    // meta/ stays per-path in bundle v1.
+    expect(bundle.paths['meta/faq/en.json']).toBeUndefined()
+    // The dropped-locale bundle is garbage-collected; the live one survives the sweep.
+    expect(objects.has('proj:_bundle/tr.json')).toBe(false)
+    expect(objects.has('proj:_bundle/en.json')).toBe(true)
+  })
+
+  it('merges unchanged models from storage into the bundle on selective builds', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq',
+        name: 'FAQ',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: {},
+      }),
+      '.contentrain/models/team.json': JSON.stringify({
+        id: 'team',
+        name: 'Team',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({
+        a1: { question: 'Fresh from git' },
+      }),
+      // NOTE: no team content in git — the bundle must source it from storage.
+    }
+    const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+    const git = {
+      ...createGitProvider(files),
+      listDirectory: vi.fn(async (p: string) => {
+        if (normalize(p) === '.contentrain/models') return ['faq.json', 'team.json']
+        return []
+      }),
+    } as unknown as GitProvider
+    const { provider, objects } = createCDNProvider()
+
+    // The unchanged model's artifact already lives in CDN storage.
+    objects.set('proj:content/team/en.json', JSON.stringify({ m1: { name: 'Existing member' } }))
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      changedPaths: ['.contentrain/content/marketing/faq/en.json'],
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.changedModels).toEqual(['faq'])
+
+    const bundle = JSON.parse(objects.get('proj:_bundle/en.json') ?? '{}')
+    expect(bundle.paths['content/faq/en.json']).toEqual({ a1: { question: 'Fresh from git' } })
+    expect(bundle.paths['content/team/en.json']).toEqual({ m1: { name: 'Existing member' } })
+  })
+
+  it('includes non-i18n bodies in every locale bundle', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en', 'tr'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq',
+        name: 'FAQ',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: {},
+      }),
+      '.contentrain/models/settings.json': JSON.stringify({
+        id: 'settings',
+        name: 'Settings',
+        kind: 'singleton',
+        domain: 'marketing',
+        i18n: false,
+        fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({ a1: { q: 'EN' } }),
+      '.contentrain/content/marketing/faq/tr.json': JSON.stringify({ a1: { q: 'TR' } }),
+      '.contentrain/content/marketing/settings/data.json': JSON.stringify({ title: 'Shared' }),
+    }
+    const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+    const git = {
+      ...createGitProvider(files),
+      listDirectory: vi.fn(async (p: string) => {
+        if (normalize(p) === '.contentrain/models') return ['faq.json', 'settings.json']
+        return []
+      }),
+    } as unknown as GitProvider
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    const en = JSON.parse(objects.get('proj:_bundle/en.json') ?? '{}')
+    const tr = JSON.parse(objects.get('proj:_bundle/tr.json') ?? '{}')
+    // Locale-specific bodies land in their own bundle...
+    expect(en.paths['content/faq/en.json']).toEqual({ a1: { q: 'EN' } })
+    expect(tr.paths['content/faq/tr.json']).toEqual({ a1: { q: 'TR' } })
+    expect(en.paths['content/faq/tr.json']).toBeUndefined()
+    // ...while the non-i18n body ships in every bundle under its real path.
+    expect(en.paths['content/settings/data.json']).toEqual({ title: 'Shared' })
+    expect(tr.paths['content/settings/data.json']).toEqual({ title: 'Shared' })
   })
 })
