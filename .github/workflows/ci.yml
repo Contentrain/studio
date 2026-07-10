@@ -52,6 +52,11 @@ jobs:
       - name: Verify managed schema (roles, shim, bootstrap chain, RLS)
         run: node scripts/verify-managed-schema.mjs
 
+      - name: Contract tests (postgres DatabaseProvider)
+        run: pnpm test:contract
+        env:
+          CONTRACT_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+
   ci:
     runs-on: ubuntu-latest
 
