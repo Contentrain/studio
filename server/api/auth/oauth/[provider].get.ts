@@ -1,23 +1,24 @@
 /**
  * GET /api/auth/oauth/:provider — the managed pair's OAuth dance.
  *
- * Leg 1 (no ?code): stashes flow context (redirect target, CLI port, CSRF
- * state) in a sealed short-lived session cookie, then redirects to the
- * provider's authorize URL.
- * Leg 2 (?code): validates state against the cookie, then delegates the
- * token exchange to the nuxt-auth-utils handler; onSuccess links/creates
- * the user (managed-auth), persists GitHub provider tokens, and either
- * sets the web session cookie or redirects the CLI with a one-time code.
+ * BOTH legs are owned by the nuxt-auth-utils handler (authorize redirect +
+ * token exchange): it generates and validates its own CSRF state cookie, so
+ * this route adds no state of its own — running only the callback leg
+ * through the module made it reject every login with "state mismatch".
+ *
+ * This wrapper's job: gate on the managed pair, stash flow context
+ * (redirect target / CLI callback) in a sealed cookie on the first leg, and
+ * finish sign-in in onSuccess — link/create the user (managed-auth),
+ * persist GitHub provider tokens, then set the web session cookie or
+ * redirect the CLI with a one-time code.
  *
  * 404s on the Supabase pair — GoTrue owns OAuth there.
  */
-import { randomBytes } from 'node:crypto'
 import type { H3Event } from 'h3'
 import type { ProviderTokens } from '../../../providers/auth'
 import { completeOAuthSignIn, createCliAuthCode } from '../../../providers/managed-auth'
 
 interface OAuthFlowData {
-  state: string
   redirect: string
   cliRedirect?: string
   cliState?: string
@@ -33,32 +34,6 @@ async function flowSession(event: H3Event) {
     name: FLOW_COOKIE,
     maxAge: FLOW_MAX_AGE,
   })
-}
-
-function providerAuthorizeUrl(event: H3Event, provider: 'github' | 'google', state: string): string {
-  const config = useRuntimeConfig()
-  const oauth = config.oauth as { github?: { clientId?: string }, google?: { clientId?: string } }
-  const siteUrl = (config.public.siteUrl as string).replace(/\/+$/, '')
-  const redirectUri = `${siteUrl}/api/auth/oauth/${provider}`
-
-  if (provider === 'github') {
-    const params = new URLSearchParams({
-      client_id: oauth.github?.clientId ?? '',
-      redirect_uri: redirectUri,
-      scope: 'read:user user:email',
-      state,
-    })
-    return `https://github.com/login/oauth/authorize?${params.toString()}`
-  }
-
-  const params = new URLSearchParams({
-    client_id: oauth.google?.clientId ?? '',
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: 'openid email profile',
-    state,
-  })
-  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
 
 /** Shared success path for both providers. */
@@ -208,28 +183,19 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('auth.invalid_provider') })
   }
 
-  const query = getQuery(event) as { code?: string, state?: string, redirect?: string, cli_redirect?: string, cli_state?: string }
+  const query = getQuery(event) as { code?: string, redirect?: string, cli_redirect?: string, cli_state?: string }
 
-  // ── Leg 1: start the dance ──
+  // Leg 1 (no ?code): stash flow context, then fall through — the module
+  // handler generates its CSRF state cookie and redirects to the provider.
+  // Leg 2 (?code): the module validates its own state during the exchange.
   if (!query.code) {
-    const state = query.state || randomBytes(16).toString('hex')
     const flow = await flowSession(event)
     await flow.update({
-      state,
       redirect: query.redirect || '/',
       cliRedirect: query.cli_redirect,
       cliState: query.cli_state,
       createdAt: Date.now(),
     })
-    return sendRedirect(event, providerAuthorizeUrl(event, provider, state))
-  }
-
-  // ── Leg 2: provider callback — CSRF check, then exchange ──
-  const flow = await flowSession(event)
-  const expected = flow.data?.state
-  if (!expected || !query.state || expected !== query.state) {
-    await flow.clear()
-    throw createError({ statusCode: 403, message: errorMessage('auth.invalid_state') })
   }
 
   const handlers = oauthHandlers()
