@@ -206,6 +206,35 @@ export interface CdnUsageTable {
   bandwidth_bytes: Generated<number>
 }
 
+export interface ConversationsTable {
+  id: Generated<string>
+  project_id: string
+  user_id: string | null
+  api_key_id: string | null
+  title: string | null
+  created_at: Generated<string | null>
+  updated_at: Generated<string | null>
+}
+
+export interface MessagesTable {
+  id: Generated<string>
+  conversation_id: string
+  role: string
+  content: string
+  tool_calls: unknown | null
+  token_count_input: Generated<number>
+  token_count_output: Generated<number>
+  cache_creation_input_tokens: Generated<number>
+  cache_read_input_tokens: Generated<number>
+  model: string | null
+  created_at: Generated<string | null>
+  content_blocks: unknown | null
+  turn_id: Generated<string>
+  turn_sequence: Generated<number>
+  iteration: number | null
+  internal: Generated<boolean>
+}
+
 export interface StudioDatabase {
   profiles: ProfilesTable
   oauth_provider_tokens: OAuthProviderTokensTable
@@ -221,4 +250,6 @@ export interface StudioDatabase {
   agent_usage: AgentUsageTable
   api_message_usage: ApiMessageUsageTable
   cdn_usage: CdnUsageTable
+  conversations: ConversationsTable
+  messages: MessagesTable
 }
