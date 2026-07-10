@@ -7,14 +7,17 @@
  * DatabaseProvider method bundle exists; until then this file only assembles
  * what is already ported.
  *
- * Ported so far: profiles, oauth-tokens, audit, trial-reminders.
- * Next: workspaces + members, projects + usage, conversations, cdn/mcp/media/
- * forms, webhooks + payment-accounts.
+ * Ported so far: profiles, oauth-tokens, audit, trial-reminders,
+ * workspaces, members.
+ * Next: projects + usage, conversations, cdn/mcp/media/forms,
+ * webhooks + payment-accounts.
  */
 import { auditMethods } from './audit'
+import { memberMethods } from './members'
 import { oauthTokenMethods } from './oauth-tokens'
 import { profileMethods } from './profiles'
 import { trialReminderMethods } from './trial-reminders'
+import { workspaceMethods } from './workspaces'
 
 export { closePostgresDb, configurePostgresDb, getPostgresConfig } from './client'
 export type { PostgresDbConfig } from './client'
@@ -26,5 +29,7 @@ export function postgresDbMethodBundles() {
     ...oauthTokenMethods(),
     ...auditMethods(),
     ...trialReminderMethods(),
+    ...workspaceMethods(),
+    ...memberMethods(),
   }
 }

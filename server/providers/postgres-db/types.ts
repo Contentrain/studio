@@ -73,10 +73,12 @@ export interface WorkspacesTable {
   owner_id: string
   logo_url: string | null
   github_installation_id: number | null
+  github_installation_status: Generated<string>
   plan: Generated<string>
   created_at: Generated<string | null>
   media_storage_bytes: Generated<number>
   trial_ends_at: string | null
+  trial_consumed_at: string | null
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
   subscription_status: string | null
@@ -87,10 +89,75 @@ export interface WorkspacesTable {
   trial_reminder_stage: Generated<number>
 }
 
+export interface WorkspaceMembersTable {
+  id: Generated<string>
+  workspace_id: string
+  user_id: string | null
+  role: string
+  invited_email: string | null
+  invited_at: Generated<string | null>
+  accepted_at: string | null
+}
+
+export interface AiKeysTable {
+  id: Generated<string>
+  workspace_id: string
+  user_id: string
+  provider: string
+  encrypted_key: string
+  key_hint: string | null
+  created_at: Generated<string | null>
+}
+
+export interface ProjectsTable {
+  id: Generated<string>
+  workspace_id: string
+  repo_full_name: string
+  default_branch: Generated<string>
+  content_root: Generated<string>
+  detected_stack: string | null
+  status: Generated<string>
+  access_status: Generated<string>
+  created_at: Generated<string | null>
+  content_updated_at: string | null
+  cdn_enabled: Generated<boolean>
+  cdn_branch: string | null
+}
+
+export interface ProjectMembersTable {
+  id: Generated<string>
+  project_id: string
+  user_id: string | null
+  role: string
+  specific_models: Generated<boolean>
+  allowed_models: Generated<string[]>
+  invited_email: string | null
+  invited_at: Generated<string | null>
+  accepted_at: string | null
+}
+
+export interface WebhooksTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  url: string
+  events: string[]
+  secret: string
+  active: Generated<boolean>
+  name: Generated<string>
+  created_at: Generated<string>
+  updated_at: Generated<string>
+}
+
 export interface StudioDatabase {
   profiles: ProfilesTable
   oauth_provider_tokens: OAuthProviderTokensTable
   audit_logs: AuditLogsTable
   payment_accounts: PaymentAccountsTable
   workspaces: WorkspacesTable
+  workspace_members: WorkspaceMembersTable
+  ai_keys: AiKeysTable
+  projects: ProjectsTable
+  project_members: ProjectMembersTable
+  webhooks: WebhooksTable
 }
