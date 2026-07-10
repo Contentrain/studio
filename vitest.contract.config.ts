@@ -15,6 +15,13 @@ const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
   root: rootDir,
+  esbuild: {
+    // Bypass tsconfig file lookup entirely: the project tsconfig references
+    // .nuxt/tsconfig.*.json, which only exists after `nuxt prepare` — and the
+    // lean CI job installs with --ignore-scripts on purpose. The contract
+    // suite needs no special transform options.
+    tsconfigRaw: '{}',
+  },
   test: {
     root: rootDir,
     name: 'contract',
