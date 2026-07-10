@@ -24,6 +24,7 @@ function baseConfig(overrides: RuntimeConfigStub = {}): RuntimeConfigStub {
     anthropic: { apiKey: 'anthropic-key' },
     cdn: { r2AccountId: '', r2AccessKeyId: '', r2SecretAccessKey: '', r2Bucket: '' },
     resend: { apiKey: '' },
+    oauth: {},
     ...overrides,
   }
 }
@@ -114,23 +115,32 @@ describe('00.validate-config boot validation', () => {
     expect(runAndCapture(plugin)?.message).toMatch(/cannot be combined/)
   })
 
-  it('gates a fully-configured managed+postgres pair behind the not-available guards only', async () => {
+  it('accepts a fully-configured managed+postgres pair without demanding Supabase env', async () => {
     const plugin = await loadPlugin(baseConfig({
       authProvider: 'managed',
       databaseProvider: 'postgres',
       postgres: { url: 'postgres://user:pw@host:5432/db' },
       authJwtSecret: 'j'.repeat(32),
       resend: { apiKey: 're_key' },
+      oauth: { github: { clientId: 'Ov23liXXXX', clientSecret: 'oauth-secret' } },
       // Supabase env is intentionally absent — it must NOT be demanded here.
       supabase: { url: '', serviceRoleKey: '', anonKey: '' },
     }))
 
-    const error = runAndCapture(plugin)
-    expect(error).not.toBeNull()
-    expect(error?.message).toMatch(/NUXT_DATABASE_PROVIDER="postgres" is not available yet/)
-    expect(error?.message).toMatch(/NUXT_AUTH_PROVIDER="managed" is not available yet/)
-    expect(error?.message).not.toMatch(/is required/)
-    expect(error?.message).not.toMatch(/cannot be combined/)
+    expect(() => plugin()).not.toThrow()
+  })
+
+  it('requires the GitHub login OAuth app for managed auth', async () => {
+    const plugin = await loadPlugin(baseConfig({
+      authProvider: 'managed',
+      databaseProvider: 'postgres',
+      postgres: { url: 'postgres://user:pw@host:5432/db' },
+      authJwtSecret: 'j'.repeat(32),
+      resend: { apiKey: 're_key' },
+      supabase: { url: '', serviceRoleKey: '', anonKey: '' },
+    }))
+
+    expect(runAndCapture(plugin)?.message).toMatch(/NUXT_OAUTH_GITHUB_CLIENT_ID/)
   })
 
   it('requires NUXT_POSTGRES_URL for the postgres database provider', async () => {

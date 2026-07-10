@@ -131,4 +131,12 @@ export interface AuthProvider {
    * Cascades to profiles, workspaces (owned), memberships, etc.
    */
   deleteUser: (userId: string) => Promise<void>
+
+  /**
+   * Revoke the server-side session behind a refresh token (logout).
+   * Optional: cookie-only providers (Supabase pair — GoTrue sessions are
+   * not tracked here) simply omit it; the managed pair revokes the whole
+   * rotation family so the refresh token can never mint again.
+   */
+  revokeSession?: (refreshToken: string) => Promise<void>
 }

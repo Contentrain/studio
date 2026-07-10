@@ -75,8 +75,14 @@ export default defineEventHandler(async (event) => {
   )
 
   if (isCli) {
-    // CLI manages its own state — don't set cookie
-    return { url: result.url, state: query.state || result.state }
+    // CLI manages its own state — don't set cookie. Forward the CLI's state
+    // as a query param so the managed pair's OAuth route can echo it on the
+    // localhost callback (harmless extra param for the Supabase pair).
+    let url = result.url
+    if (query.state)
+      url += `${url.includes('?') ? '&' : '?'}cli_state=${encodeURIComponent(query.state)}`
+
+    return { url, state: query.state || result.state }
   }
 
   // Web: store provider-generated state in encrypted cookie for validation on callback

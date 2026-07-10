@@ -5,7 +5,10 @@ const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'tes
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/image', ...(isTestEnv ? [] : ['@sentry/nuxt/module', 'nuxt-mcp-dev'])],
+  // nuxt-auth-utils supplies the OAuth provider handlers for the managed
+  // auth pair (server utils only — its session/client composables are unused;
+  // Studio keeps its own sealed-cookie session in server/utils/session.ts).
+  modules: ['@nuxt/eslint', '@nuxt/image', 'nuxt-auth-utils', ...(isTestEnv ? [] : ['@sentry/nuxt/module', 'nuxt-mcp-dev'])],
   ssr: false,
   devtools: { enabled: true },
 

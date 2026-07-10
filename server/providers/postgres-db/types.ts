@@ -369,30 +369,71 @@ export interface UsageEventsOutboxTable {
   last_error: string | null
 }
 
+// ─── auth schema (postgres/migrations/000_auth_shim.sql) ───
+// Owned by the managed AuthProvider; present only on the postgres pair.
+
+export interface AuthUsersTable {
+  id: Generated<string>
+  email: string
+  raw_user_meta_data: Generated<unknown>
+  provider: string | null
+  provider_account_id: string | null
+  email_verified_at: string | null
+  last_sign_in_at: string | null
+  created_at: Generated<string>
+  updated_at: Generated<string>
+}
+
+export interface AuthRefreshTokensTable {
+  id: Generated<string>
+  user_id: string
+  token_hash: string
+  family_id: string
+  created_at: Generated<string>
+  expires_at: string
+  rotated_at: string | null
+  revoked_at: string | null
+}
+
+export interface AuthOneTimeTokensTable {
+  id: Generated<string>
+  email: string
+  user_id: string | null
+  token_hash: string
+  token_type: string
+  payload: Generated<unknown>
+  created_at: Generated<string>
+  expires_at: string
+  consumed_at: string | null
+}
+
 export interface StudioDatabase {
-  profiles: ProfilesTable
-  oauth_provider_tokens: OAuthProviderTokensTable
-  audit_logs: AuditLogsTable
-  payment_accounts: PaymentAccountsTable
-  workspaces: WorkspacesTable
-  workspace_members: WorkspaceMembersTable
-  ai_keys: AiKeysTable
-  projects: ProjectsTable
-  project_members: ProjectMembersTable
-  webhooks: WebhooksTable
-  media_assets: MediaAssetsTable
-  agent_usage: AgentUsageTable
-  api_message_usage: ApiMessageUsageTable
-  cdn_usage: CdnUsageTable
-  conversations: ConversationsTable
-  messages: MessagesTable
-  cdn_api_keys: CdnApiKeysTable
-  cdn_builds: CdnBuildsTable
-  mcp_cloud_keys: McpCloudKeysTable
-  mcp_cloud_usage: McpCloudUsageTable
-  media_usage: MediaUsageTable
-  form_submissions: FormSubmissionsTable
-  conversation_api_keys: ConversationApiKeysTable
-  webhook_deliveries: WebhookDeliveriesTable
-  usage_events_outbox: UsageEventsOutboxTable
+  'auth.users': AuthUsersTable
+  'auth.refresh_tokens': AuthRefreshTokensTable
+  'auth.one_time_tokens': AuthOneTimeTokensTable
+  'profiles': ProfilesTable
+  'oauth_provider_tokens': OAuthProviderTokensTable
+  'audit_logs': AuditLogsTable
+  'payment_accounts': PaymentAccountsTable
+  'workspaces': WorkspacesTable
+  'workspace_members': WorkspaceMembersTable
+  'ai_keys': AiKeysTable
+  'projects': ProjectsTable
+  'project_members': ProjectMembersTable
+  'webhooks': WebhooksTable
+  'media_assets': MediaAssetsTable
+  'agent_usage': AgentUsageTable
+  'api_message_usage': ApiMessageUsageTable
+  'cdn_usage': CdnUsageTable
+  'conversations': ConversationsTable
+  'messages': MessagesTable
+  'cdn_api_keys': CdnApiKeysTable
+  'cdn_builds': CdnBuildsTable
+  'mcp_cloud_keys': McpCloudKeysTable
+  'mcp_cloud_usage': McpCloudUsageTable
+  'media_usage': MediaUsageTable
+  'form_submissions': FormSubmissionsTable
+  'conversation_api_keys': ConversationApiKeysTable
+  'webhook_deliveries': WebhookDeliveriesTable
+  'usage_events_outbox': UsageEventsOutboxTable
 }

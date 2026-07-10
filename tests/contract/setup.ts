@@ -19,6 +19,8 @@ vi.stubGlobal('errorMessage', (key: string, _params?: Record<string, unknown>) =
 vi.stubGlobal('useRuntimeConfig', () => ({
   sessionSecret: CONTRACT_SESSION_SECRET,
   sessionSecretPrevious: '',
+  public: { siteUrl: 'http://localhost:3000' },
+  oauth: {},
 }))
 
 configurePostgresDb({ url: contractPgUrl(), authJwtSecret: CONTRACT_JWT_SECRET })

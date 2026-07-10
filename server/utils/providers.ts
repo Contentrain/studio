@@ -9,6 +9,8 @@ import type { PaymentPluginConfig, PaymentProvider } from '../providers/payment'
 import { bootstrapPaymentPlugins, resolveDefaultPlugin } from '../providers/payment'
 import { createSupabaseAuthProvider } from '../providers/supabase-auth'
 import { createSupabaseDatabaseProvider } from '../providers/supabase-db'
+import { createManagedAuthProvider } from '../providers/managed-auth'
+import { configurePostgresDb, createPostgresDatabaseProvider } from '../providers/postgres-db'
 import { createStudioGitProvider } from '../providers/git'
 import { createGitAppService, createGitHubAppInstallationProvider } from '../providers/github-app'
 import { createAnthropicProvider } from '../providers/anthropic-ai'
@@ -30,15 +32,25 @@ let _cdnProvider: CDNProvider | null = null
 let _mediaProvider: MediaProvider | null = null
 let _emailProvider: EmailProvider | null | undefined
 
+/** Point the postgres-db client at runtime config exactly once (idempotent). */
+function ensurePostgresConfigured(): void {
+  const config = useRuntimeConfig()
+  configurePostgresDb({
+    url: (config.postgres as { url?: string })?.url ?? '',
+    authJwtSecret: (config.authJwtSecret as string) ?? '',
+  })
+}
+
 export function useAuthProvider(): AuthProvider {
   if (!_authProvider) {
     const kind = useRuntimeConfig().authProvider || 'supabase'
     if (kind === 'managed') {
-      // Ships with the managed-auth phase. Boot validation (00.validate-config.ts)
-      // rejects this selection until then — this throw is the defensive backstop.
-      throw new Error('[providers] authProvider "managed" is not implemented yet')
+      ensurePostgresConfigured()
+      _authProvider = createManagedAuthProvider()
     }
-    _authProvider = createSupabaseAuthProvider()
+    else {
+      _authProvider = createSupabaseAuthProvider()
+    }
   }
 
   return _authProvider
@@ -48,11 +60,12 @@ export function useDatabaseProvider(): DatabaseProvider {
   if (!_databaseProvider) {
     const kind = useRuntimeConfig().databaseProvider || 'supabase'
     if (kind === 'postgres') {
-      // Ships with the postgres-db phase. Boot validation (00.validate-config.ts)
-      // rejects this selection until then — this throw is the defensive backstop.
-      throw new Error('[providers] databaseProvider "postgres" is not implemented yet')
+      ensurePostgresConfigured()
+      _databaseProvider = createPostgresDatabaseProvider()
     }
-    _databaseProvider = createSupabaseDatabaseProvider()
+    else {
+      _databaseProvider = createSupabaseDatabaseProvider()
+    }
   }
 
   return _databaseProvider
