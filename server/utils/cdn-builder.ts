@@ -164,6 +164,25 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
   const changedModelIds: string[] = []
   const uploadedPaths = new Set<string>()
 
+  // Locale bundles (_bundle/{locale}.json) collect every content body built in
+  // this run, keyed by the exact delivery path — the SDK primes its per-path
+  // cache from one conditional fetch (docs/CDN_BUNDLE.md). Non-i18n bodies are
+  // shared across all locale bundles (locale = null).
+  const bundleShared = new Map<string, unknown>()
+  const bundleByLocale = new Map<string, Map<string, unknown>>()
+  const addBundleEntry = (locale: string | null, entryPath: string, body: unknown): void => {
+    if (locale === null) {
+      bundleShared.set(entryPath, body)
+      return
+    }
+    let entries = bundleByLocale.get(locale)
+    if (!entries) {
+      entries = new Map()
+      bundleByLocale.set(locale, entries)
+    }
+    entries.set(entryPath, body)
+  }
+
   try {
     // 1. Load project config
     progress({ phase: 'init', message: 'Loading project config...' })
@@ -269,7 +288,9 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
         try {
           if (model.kind === 'document') {
-            await buildDocumentModel(projectId, git, cdn, ctx, model, locale, branch, uploadedPaths)
+            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, branch, uploadedPaths)
+            const cdnLocale = model.i18n ? locale : 'data'
+            addBundleEntry(model.i18n ? locale : null, `documents/${model.id}/_index/${cdnLocale}.json`, indexEntries)
           }
           else {
             // JSON kinds: collection, singleton, dictionary
@@ -306,6 +327,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
             uploadedPaths.add(outputPath)
             filesUploaded++
             totalSizeBytes += Buffer.byteLength(data)
+            addBundleEntry(model.i18n ? locale : null, outputPath, content)
 
             // Upload meta (filtered)
             try {
@@ -332,6 +354,60 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
         catch {
           // Content file doesn't exist for this locale — skip
         }
+      }
+    }
+
+    // 6.5 Locale bundles — one conditional fetch replaces N per-model reads
+    // (SDK preload mode, docs/CDN_BUNDLE.md). Emitted on every build so the
+    // bundle always mirrors the standalone artifacts; skipped only when a
+    // selective build touched no models (content unchanged → bundles current).
+    const isSelective = !options.fullRebuild && !!options.changedPaths?.length
+    if (!isSelective || targetModels.length > 0) {
+      if (isSelective) {
+        // Selective builds only re-read changed models from git; fill the
+        // bundle's gaps from the artifacts already in CDN storage — zero
+        // extra git traffic. A missing artifact is skipped; the next full
+        // rebuild heals the bundle.
+        const targetIds = new Set(targetModels.map(m => m.id))
+        for (const model of models) {
+          if (targetIds.has(model.id)) continue
+          for (const locale of locales) {
+            if (!model.i18n && locale !== locales[0]) continue
+            const effectiveLocale = model.i18n ? locale : 'data'
+            const entryPath = model.kind === 'document'
+              ? `documents/${model.id}/_index/${effectiveLocale}.json`
+              : `content/${model.id}/${effectiveLocale}.json`
+            try {
+              const existing = await cdn.getObject(projectId, entryPath)
+              // `notModified` guard: forward-compat with conditional reads
+              // (never returned without an ifNoneMatch option).
+              if (!existing || 'notModified' in existing) continue
+              addBundleEntry(model.i18n ? locale : null, entryPath, JSON.parse(existing.data.toString('utf-8')))
+            }
+            catch { /* unreadable artifact — self-heals on full rebuild */ }
+          }
+        }
+      }
+
+      progress({ phase: 'upload', message: 'Uploading locale bundles...' })
+      for (const locale of locales) {
+        const paths: Record<string, unknown> = {}
+        for (const [entryPath, body] of bundleShared) paths[entryPath] = body
+        for (const [entryPath, body] of bundleByLocale.get(locale) ?? []) paths[entryPath] = body
+        if (Object.keys(paths).length === 0) continue
+
+        const bundleData = JSON.stringify({
+          version: '1',
+          commitSha,
+          builtAt: new Date().toISOString(),
+          locale,
+          paths,
+        }, null, 2)
+        const bundlePath = `_bundle/${locale}.json`
+        await cdn.putObject(projectId, bundlePath, bundleData, 'application/json')
+        uploadedPaths.add(bundlePath)
+        filesUploaded++
+        totalSizeBytes += Buffer.byteLength(bundleData)
       }
     }
 
@@ -444,6 +520,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
 /**
  * Build document model — handles slug directories and markdown → HTML.
+ * Returns the published index entries so the caller can bundle them.
  *
  * CRITICAL: Documents can live in custom content_path (e.g. "docs/")
  * outside .contentrain/. Uses getModelContentDir() for correct base path.
@@ -461,10 +538,10 @@ async function buildDocumentModel(
   locale: string,
   branch: string,
   uploadedPaths: Set<string>,
-): Promise<void> {
+): Promise<Array<Record<string, unknown>>> {
   // Get the content directory — handles content_path override
   const contentDir = getModelContentDir(ctx, model)
-  if (!contentDir) return
+  if (!contentDir) return []
 
   // Remove trailing slash for clean path
   const baseDir = contentDir.replace(/\/$/, '')
@@ -473,7 +550,7 @@ async function buildDocumentModel(
   try {
     entries = await git.listDirectory(baseDir, branch)
   }
-  catch { return }
+  catch { return [] }
 
   const indexEntries: Array<Record<string, unknown>> = []
 
@@ -537,4 +614,6 @@ async function buildDocumentModel(
   const indexData = JSON.stringify(indexEntries, null, 2)
   await cdn.putObject(projectId, docIndexPath, indexData, 'application/json')
   uploadedPaths.add(docIndexPath)
+
+  return indexEntries
 }
