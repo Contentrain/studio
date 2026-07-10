@@ -27,27 +27,70 @@ export default defineNitroPlugin(() => {
   if (!config.sessionSecret || config.sessionSecret.length < 32)
     errors.push('NUXT_SESSION_SECRET must be at least 32 characters')
 
-  // Supabase — required for all database operations
-  if (!config.supabase.url)
-    errors.push('NUXT_SUPABASE_URL is required')
-  if (!config.supabase.serviceRoleKey)
-    errors.push('NUXT_SUPABASE_SERVICE_ROLE_KEY is required')
-  if (!config.supabase.anonKey)
-    errors.push('NUXT_SUPABASE_ANON_KEY is required')
+  // ─── Provider selection ───
+  // Auth + database providers ship as matched pairs. The Supabase DB provider
+  // authorizes its user-scoped (RLS) queries with Supabase-issued JWTs, while
+  // the managed auth provider issues JWTs only the Postgres provider
+  // understands — mixing the pairs silently breaks every accessToken-bearing
+  // DatabaseProvider method.
+  const authProvider = config.authProvider || 'supabase'
+  const databaseProvider = config.databaseProvider || 'supabase'
+  const authProviderKnown = authProvider === 'supabase' || authProvider === 'managed'
+  const databaseProviderKnown = databaseProvider === 'supabase' || databaseProvider === 'postgres'
 
-  // The service-role key must actually carry the `service_role` claim. A
-  // present-but-wrong key — most commonly the anon key pasted into this slot
-  // — passes the "is set" checks above but silently degrades EVERY admin
-  // operation to anon-level access: RLS-blocked reads return empty (e.g. the
-  // billing panel shows Free despite an active subscription) and writes fail
-  // with `42501`. Catch it at boot instead of shipping a container that
-  // serves wrong data.
-  if (config.supabase.serviceRoleKey) {
-    const role = decodeJwtRole(config.supabase.serviceRoleKey)
-    if (role && role !== 'service_role')
-      errors.push(`NUXT_SUPABASE_SERVICE_ROLE_KEY has role "${role}" — expected "service_role" (admin ops would silently degrade to anon / RLS-blocked)`)
-    if (config.supabase.anonKey && config.supabase.serviceRoleKey === config.supabase.anonKey)
-      errors.push('NUXT_SUPABASE_SERVICE_ROLE_KEY must not equal NUXT_SUPABASE_ANON_KEY')
+  if (!authProviderKnown)
+    errors.push(`NUXT_AUTH_PROVIDER "${authProvider}" is unknown — expected "supabase" or "managed"`)
+  if (!databaseProviderKnown)
+    errors.push(`NUXT_DATABASE_PROVIDER "${databaseProvider}" is unknown — expected "supabase" or "postgres"`)
+
+  if (authProviderKnown && databaseProviderKnown) {
+    const validPair = (authProvider === 'supabase' && databaseProvider === 'supabase')
+      || (authProvider === 'managed' && databaseProvider === 'postgres')
+    if (!validPair)
+      errors.push(`NUXT_AUTH_PROVIDER "${authProvider}" cannot be combined with NUXT_DATABASE_PROVIDER "${databaseProvider}" — valid pairs: supabase+supabase, managed+postgres`)
+  }
+
+  // Supabase — required while the Supabase database provider is selected
+  if (databaseProvider === 'supabase') {
+    if (!config.supabase.url)
+      errors.push('NUXT_SUPABASE_URL is required')
+    if (!config.supabase.serviceRoleKey)
+      errors.push('NUXT_SUPABASE_SERVICE_ROLE_KEY is required')
+    if (!config.supabase.anonKey)
+      errors.push('NUXT_SUPABASE_ANON_KEY is required')
+
+    // The service-role key must actually carry the `service_role` claim. A
+    // present-but-wrong key — most commonly the anon key pasted into this slot
+    // — passes the "is set" checks above but silently degrades EVERY admin
+    // operation to anon-level access: RLS-blocked reads return empty (e.g. the
+    // billing panel shows Free despite an active subscription) and writes fail
+    // with `42501`. Catch it at boot instead of shipping a container that
+    // serves wrong data.
+    if (config.supabase.serviceRoleKey) {
+      const role = decodeJwtRole(config.supabase.serviceRoleKey)
+      if (role && role !== 'service_role')
+        errors.push(`NUXT_SUPABASE_SERVICE_ROLE_KEY has role "${role}" — expected "service_role" (admin ops would silently degrade to anon / RLS-blocked)`)
+      if (config.supabase.anonKey && config.supabase.serviceRoleKey === config.supabase.anonKey)
+        errors.push('NUXT_SUPABASE_SERVICE_ROLE_KEY must not equal NUXT_SUPABASE_ANON_KEY')
+    }
+  }
+
+  // Postgres — required while the Postgres database provider is selected
+  if (databaseProvider === 'postgres') {
+    if (!config.postgres?.url)
+      errors.push('NUXT_POSTGRES_URL is required when NUXT_DATABASE_PROVIDER=postgres')
+    // TODO(postgres-db): remove when the Postgres DatabaseProvider lands.
+    errors.push('NUXT_DATABASE_PROVIDER="postgres" is not available yet — the Postgres provider ships in an upcoming release')
+  }
+
+  // Managed auth — required while the managed auth provider is selected
+  if (authProvider === 'managed') {
+    if (!config.authJwtSecret || config.authJwtSecret.length < 32)
+      errors.push('NUXT_AUTH_JWT_SECRET must be at least 32 characters when NUXT_AUTH_PROVIDER=managed')
+    if (!config.resend?.apiKey)
+      errors.push('NUXT_RESEND_API_KEY is required when NUXT_AUTH_PROVIDER=managed (magic link + invite emails)')
+    // TODO(managed-auth): remove when the managed AuthProvider lands.
+    errors.push('NUXT_AUTH_PROVIDER="managed" is not available yet — the managed auth provider ships in an upcoming release')
   }
 
   // GitHub App — required for repo operations
