@@ -23,7 +23,6 @@ import { SignJWT, jwtVerify } from 'jose'
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, ProviderTokens } from './auth'
 import { decryptApiKey, encryptApiKey } from '../utils/encryption'
 import { getDb, getPostgresConfig } from './postgres-db/client'
-import { renderInviteEmail, renderMagicLinkEmail } from '../utils/auth-emails'
 
 const ACCESS_TOKEN_TTL_SECONDS = 3600 // GoTrue jwt_expiry parity
 const REFRESH_TOKEN_TTL_DAYS = 30
@@ -512,11 +511,9 @@ export function createManagedAuthProvider(): AuthProvider {
       if (!emailProvider)
         throw createError({ statusCode: 500, message: 'Email provider is not configured (NUXT_RESEND_API_KEY)' })
 
-      await emailProvider.sendEmail({
-        to: email_,
-        subject: 'Sign in to Contentrain Studio',
-        html: renderMagicLinkEmail(url),
-      })
+      // Copy lives in the email-templates content model (auth-magic-link).
+      const tpl = emailTemplate('auth-magic-link', { url })
+      await emailProvider.sendEmail({ to: email_, subject: tpl.subject, html: tpl.body })
     },
 
     async inviteUserByEmail(email, options) {
@@ -535,11 +532,9 @@ export function createManagedAuthProvider(): AuthProvider {
       if (!emailProvider)
         throw createError({ statusCode: 500, message: 'Email provider is not configured (NUXT_RESEND_API_KEY)' })
 
-      await emailProvider.sendEmail({
-        to: row.email,
-        subject: 'You\'ve been invited to Contentrain Studio',
-        html: renderInviteEmail(url),
-      })
+      // Copy lives in the email-templates content model (auth-invite).
+      const tpl = emailTemplate('auth-invite', { url })
+      await emailProvider.sendEmail({ to: row.email, subject: tpl.subject, html: tpl.body })
 
       return { userId: row.id }
     },

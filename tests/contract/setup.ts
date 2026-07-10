@@ -16,6 +16,14 @@ vi.stubGlobal('createError', (input: { statusCode: number, message: string }) =>
 
 vi.stubGlobal('errorMessage', (key: string, _params?: Record<string, unknown>) => key)
 
+// Same idiom as errorMessage: the real accessor reads the email-templates
+// content model through the Nitro auto-import; specs only assert the
+// provider's URL/token behavior, not template copy.
+vi.stubGlobal('emailTemplate', (slug: string, params?: Record<string, string | number>) => ({
+  subject: slug,
+  body: `<p><a href="${params?.url ?? ''}">${slug}</a></p>`,
+}))
+
 vi.stubGlobal('useRuntimeConfig', () => ({
   sessionSecret: CONTRACT_SESSION_SECRET,
   sessionSecretPrevious: '',
