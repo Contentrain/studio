@@ -7,6 +7,51 @@ on:
     branches: [main]
 
 jobs:
+  # Proves the single migration lineage stands up on plain Postgres
+  # (Supabase-free): auth shim + 001..N apply cleanly, the signup bootstrap
+  # trigger chain fires, and RLS isolates rows under the request.jwt.claim.sub
+  # GUC contract. Guards the managed (postgres) deployment pair.
+  postgres-lineage:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NUXT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.26.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The lineage scripts only need the `pg` driver — skip postinstall
+      # (nuxt prepare etc.) to keep this job fast.
+      - run: pnpm install --ignore-scripts
+
+      - name: Apply migration lineage to plain Postgres
+        run: node scripts/migrate-postgres.mjs
+
+      - name: Verify managed schema (roles, shim, bootstrap chain, RLS)
+        run: node scripts/verify-managed-schema.mjs
+
   ci:
     runs-on: ubuntu-latest
 
