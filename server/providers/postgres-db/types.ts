@@ -149,6 +149,92 @@ export interface WebhooksTable {
   updated_at: Generated<string>
 }
 
+export interface MediaAssetsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  content_hash: string
+  width: number | null
+  height: number | null
+  format: string
+  blurhash: string | null
+  focal_point: unknown | null
+  duration_seconds: string | null
+  alt: string | null
+  tags: Generated<string[]>
+  original_path: string
+  variants: Generated<unknown>
+  uploaded_by: string
+  source: Generated<string>
+  created_at: Generated<string>
+  updated_at: Generated<string>
+}
+
+export interface AgentUsageTable {
+  id: Generated<string>
+  workspace_id: string
+  user_id: string
+  month: string
+  message_count: Generated<number>
+  input_tokens: Generated<number>
+  output_tokens: Generated<number>
+  source: Generated<string>
+  updated_at: Generated<string | null>
+  api_key_id: string | null
+}
+
+export interface ApiMessageUsageTable {
+  id: Generated<string>
+  workspace_id: string
+  api_key_id: string
+  month: string
+  message_count: Generated<number>
+  input_tokens: Generated<number>
+  output_tokens: Generated<number>
+  updated_at: Generated<string>
+}
+
+export interface CdnUsageTable {
+  id: Generated<string>
+  project_id: string
+  api_key_id: string | null
+  period_start: string
+  request_count: Generated<number>
+  bandwidth_bytes: Generated<number>
+}
+
+export interface ConversationsTable {
+  id: Generated<string>
+  project_id: string
+  user_id: string | null
+  api_key_id: string | null
+  title: string | null
+  created_at: Generated<string | null>
+  updated_at: Generated<string | null>
+}
+
+export interface MessagesTable {
+  id: Generated<string>
+  conversation_id: string
+  role: string
+  content: string
+  tool_calls: unknown | null
+  token_count_input: Generated<number>
+  token_count_output: Generated<number>
+  cache_creation_input_tokens: Generated<number>
+  cache_read_input_tokens: Generated<number>
+  model: string | null
+  created_at: Generated<string | null>
+  content_blocks: unknown | null
+  turn_id: Generated<string>
+  turn_sequence: Generated<number>
+  iteration: number | null
+  internal: Generated<boolean>
+}
+
 export interface StudioDatabase {
   profiles: ProfilesTable
   oauth_provider_tokens: OAuthProviderTokensTable
@@ -160,4 +246,10 @@ export interface StudioDatabase {
   projects: ProjectsTable
   project_members: ProjectMembersTable
   webhooks: WebhooksTable
+  media_assets: MediaAssetsTable
+  agent_usage: AgentUsageTable
+  api_message_usage: ApiMessageUsageTable
+  cdn_usage: CdnUsageTable
+  conversations: ConversationsTable
+  messages: MessagesTable
 }

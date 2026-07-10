@@ -23,17 +23,20 @@ let _pool: pg.Pool | null = null
 let _db: Kysely<StudioDatabase> | null = null
 
 const TIMESTAMPTZ_OID = 1184
+const DATE_OID = 1082
 const INT8_OID = 20
 
 /**
- * PostgREST returns timestamps as ISO strings and int8 aggregates as plain
- * numbers — mirror that on the pg driver so both DatabaseProvider
+ * PostgREST returns timestamps/dates as ISO strings and int8 aggregates as
+ * plain numbers — mirror that on the pg driver so both DatabaseProvider
  * implementations hand callers identical value shapes.
  */
 const typeParsers: pg.CustomTypesConfig = {
   getTypeParser: (oid, format) => {
     if (oid === TIMESTAMPTZ_OID)
       return (value: string) => new Date(value).toISOString()
+    if (oid === DATE_OID)
+      return (value: string) => value // 'YYYY-MM-DD', not a local-midnight Date
     if (oid === INT8_OID)
       return (value: string) => Number(value)
     return pg.types.getTypeParser(oid as never, format as never)

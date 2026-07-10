@@ -8,15 +8,17 @@
  * what is already ported.
  *
  * Ported so far: profiles, oauth-tokens, audit, trial-reminders,
- * workspaces, members.
- * Next: projects + usage, conversations, cdn/mcp/media/forms,
- * webhooks + payment-accounts.
+ * workspaces, members, projects, usage, conversations.
+ * Next: cdn/mcp/media/forms, webhooks + payment-accounts.
  */
 import { auditMethods } from './audit'
+import { conversationMethods } from './conversations'
 import { memberMethods } from './members'
 import { oauthTokenMethods } from './oauth-tokens'
 import { profileMethods } from './profiles'
+import { projectMethods } from './projects'
 import { trialReminderMethods } from './trial-reminders'
+import { usageMethods } from './usage'
 import { workspaceMethods } from './workspaces'
 
 export { closePostgresDb, configurePostgresDb, getPostgresConfig } from './client'
@@ -31,5 +33,8 @@ export function postgresDbMethodBundles() {
     ...trialReminderMethods(),
     ...workspaceMethods(),
     ...memberMethods(),
+    ...projectMethods(),
+    ...usageMethods(),
+    ...conversationMethods(),
   }
 }
