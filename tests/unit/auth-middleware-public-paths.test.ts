@@ -47,6 +47,7 @@ describe('auth middleware public paths', () => {
     '/api/cdn/v1/project-123/img/logo.png', // CDN — Bearer key
     '/api/webhooks/github', // GitHub webhook — HMAC signature
     '/api/billing/webhook/polar', // billing webhook — provider signature
+    '/api/_auth/session', // nuxt-auth-utils module session — own sealed cookie
   ])('lets self-authenticating external endpoint %s through without a session lookup', async (path) => {
     await expect(run(path)).resolves.toBeUndefined()
     expect(getServerSession).not.toHaveBeenCalled()

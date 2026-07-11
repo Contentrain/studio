@@ -27,6 +27,16 @@ export default defineNitroPlugin(() => {
   if (!config.sessionSecret || config.sessionSecret.length < 32)
     errors.push('NUXT_SESSION_SECRET must be at least 32 characters')
 
+  // nuxt-auth-utils module session — separate from NUXT_SESSION_SECRET.
+  // Studio never stores anything in it, but the module registers
+  // /api/_auth/session and an SSR plugin that fetches it on every
+  // server-rendered page load; with an empty password every one of those
+  // fetches 500s ("Empty password") in production logs. Dev auto-generates
+  // the value, so the gap only ever surfaces in deployed builds.
+  const moduleSession = config.session as { password?: string } | undefined
+  if (!moduleSession?.password || moduleSession.password.length < 32)
+    warnings.push('NUXT_SESSION_PASSWORD is not set (min 32 chars) — nuxt-auth-utils /api/_auth/session will 500 on every SSR page load (harmless to auth, noisy in logs)')
+
   // ─── Provider selection ───
   // Auth + database providers ship as matched pairs. The Supabase DB provider
   // authorizes its user-scoped (RLS) queries with Supabase-issued JWTs, while
