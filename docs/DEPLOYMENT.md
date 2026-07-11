@@ -24,7 +24,7 @@ Recommended options:
 
 Required:
 
-- PostgreSQL/Auth stack via Supabase-compatible deployment
+- One auth/database provider pair: a Supabase-compatible deployment (`supabase` pair), or any plain PostgreSQL 14+ (`managed + postgres` pair)
 - GitHub App for repository operations
 - Application secrets in environment variables
 
@@ -48,10 +48,24 @@ Optional but recommended:
 
 ### Database / Auth
 
+Pick one provider pair (`NUXT_AUTH_PROVIDER` + `NUXT_DATABASE_PROVIDER`; mixing is rejected at boot).
+
+Supabase pair (default):
+
 - Provide `NUXT_SUPABASE_URL`
 - Provide `NUXT_SUPABASE_SERVICE_ROLE_KEY`
 - Provide `NUXT_SUPABASE_ANON_KEY`
-- Apply all migrations before first production traffic
+- Apply migrations with the Supabase CLI (`pnpm db:migrate`) before first production traffic
+
+Managed + postgres pair (plain PostgreSQL, no Supabase):
+
+- Set `NUXT_AUTH_PROVIDER=managed` and `NUXT_DATABASE_PROVIDER=postgres`
+- Provide `NUXT_POSTGRES_URL`
+- Provide `NUXT_AUTH_JWT_SECRET` (≥32 chars) and `NUXT_SESSION_PASSWORD` (≥32 chars)
+- Provide the login OAuth app: `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` (Google optional). OAuth apps support a single callback URL — one app per environment.
+- Provide `NUXT_RESEND_API_KEY` (magic link + invites — required for this pair)
+- Apply migrations with the plain-PG runner before first production traffic:
+  `pnpm db:migrate:pg` (single lineage: `postgres/migrations/000_auth_shim.sql` + `supabase/migrations/*`), then verify with `pnpm db:verify:pg`
 
 ### GitHub
 
@@ -66,7 +80,7 @@ Optional but recommended:
 
 ### Email
 
-- Set `NUXT_RESEND_API_KEY`
+- Set `NUXT_RESEND_API_KEY` (optional on the supabase pair; **required** on the managed pair — magic link + invites)
 - Set `NUXT_EMAIL_SENDER_ADDRESS`
 - Set `NUXT_EMAIL_SENDER_NAME`
 - If local Supabase auth SMTP is in use, also set `RESEND_API_KEY`

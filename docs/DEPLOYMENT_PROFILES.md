@@ -164,11 +164,24 @@ Any profile can be used locally. AGPL-3.0 applies to all contributions to the co
 Typically `community` (no `ee/`) or an Evaluation License (`ee/LICENSE` §2.3 — 60 days, 1 instance, 5 users, non-production).
 
 ```bash
+# Supabase pair (default)
 pnpm install
 pnpm db:start           # local Supabase
 pnpm db:migrate
 pnpm dev                # auto-detects community
+
+# Managed + postgres pair (any plain PostgreSQL)
+pnpm install
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+NUXT_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres pnpm db:migrate:pg
+pnpm dev                # with the managed-pair env set (see .env.example)
 ```
+
+## Provider pairs are orthogonal to profiles
+
+The auth/database **provider pair** (`supabase + supabase` or `managed + postgres`, selected via `NUXT_AUTH_PROVIDER` / `NUXT_DATABASE_PROVIDER`) is an independent axis: any profile can run on either pair. Mixing pairs is rejected at boot.
+
+> Naming heads-up: the `managed` **profile** (ee + subscription billing on contentrain.io) and the `managed` **auth provider** (the Supabase-free built-in auth) are unrelated concepts that happen to share a name. A `community`-profile deployment can absolutely run the `managed` auth provider.
 
 ## Environment variables by profile
 
@@ -176,16 +189,25 @@ pnpm dev                # auto-detects community
 |---|---|---|---|---|
 | `NUXT_DEPLOYMENT_PROFILE` | set / auto | set explicitly | set / auto | set / auto |
 | `NUXT_SESSION_SECRET` | required | required | required | required |
-| `NUXT_SUPABASE_*` | required | required | required | required |
+| `NUXT_AUTH_PROVIDER` / `NUXT_DATABASE_PROVIDER` | pair choice | pair choice | pair choice | pair choice |
+| `NUXT_SUPABASE_*` | required (supabase pair) | required (supabase pair) | required (supabase pair) | required (supabase pair) |
+| `NUXT_POSTGRES_URL` | required (managed pair) | required (managed pair) | required (managed pair) | required (managed pair) |
+| `NUXT_AUTH_JWT_SECRET` | required (managed pair) | required (managed pair) | required (managed pair) | required (managed pair) |
+| `NUXT_SESSION_PASSWORD` | required (managed pair)¹ | required (managed pair)¹ | required (managed pair)¹ | required (managed pair)¹ |
+| `NUXT_OAUTH_GITHUB_*` | required (managed pair) | required (managed pair) | required (managed pair) | required (managed pair) |
+| `NUXT_OAUTH_GOOGLE_*` | optional (managed pair) | optional (managed pair) | optional (managed pair) | optional (managed pair) |
 | `NUXT_GITHUB_APP_*` | required | required | required | required (if using GitHub) |
 | `NUXT_POLAR_*` | required | optional (flat fee ok) | — | — |
 | `NUXT_STRIPE_*` | optional fallback | optional | — | — |
 | `NUXT_PUBLIC_BILLING_ENABLED` | auto-set true by registry | auto-set | auto-set false | auto-set false |
-| `NUXT_RESEND_*` | recommended | recommended | optional | optional |
+| `NUXT_RESEND_*` | recommended² | recommended² | optional² | optional² |
 | `NUXT_CDN_R2_*` | optional (EE media) | optional | optional | — (EE feature) |
 | `NUXT_ANTHROPIC_API_KEY` | optional (Studio-hosted key) | optional | optional | required for AI chat |
 
-All profiles share the same base requirements (session secret, database, auth, GitHub). Only billing / EE feature envs differ.
+¹ Session store for the OAuth login module — dev auto-generates it, deployed builds must set it (boot warns otherwise).
+² `NUXT_RESEND_API_KEY` becomes **required** on the managed pair regardless of profile (magic link + invite emails).
+
+All profiles share the same base requirements (session secret, one provider pair, GitHub). Only billing / EE feature envs differ.
 
 ## Verifying your profile at runtime
 

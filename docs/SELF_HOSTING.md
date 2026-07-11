@@ -34,17 +34,43 @@ See [DOCKER.md](DOCKER.md) for the full image-tag policy and [RELEASING.md](RELE
 ### Required
 
 - A reachable public app URL
-- Supabase-compatible auth/database deployment
+- One auth/database **provider pair** (see below): a Supabase-compatible deployment, **or** any plain PostgreSQL 14+ instance
 - GitHub App credentials for repository operations
 - A strong `NUXT_SESSION_SECRET`
 
 ### Optional
 
 - Anthropic API key
-- Resend sender configuration
+- Resend sender configuration (required for the managed pair — magic link + invites)
 - Stripe billing
 - R2 object storage
 - Redis
+
+## Choosing a Provider Pair
+
+Auth and database providers ship as **matched pairs** — mixing them is rejected at boot:
+
+| Pair | Env | Auth | Database |
+|---|---|---|---|
+| `supabase + supabase` (default) | `NUXT_AUTH_PROVIDER=supabase`, `NUXT_DATABASE_PROVIDER=supabase` | Supabase Auth (GoTrue) | Supabase PostgreSQL |
+| `managed + postgres` | `NUXT_AUTH_PROVIDER=managed`, `NUXT_DATABASE_PROVIDER=postgres` | Built-in: JWT (HS256) + refresh rotation, OAuth via GitHub/Google login apps, magic link via Resend | Any plain PostgreSQL 14+ |
+
+**The managed + postgres pair removes the Supabase dependency entirely** — bring any PostgreSQL (RDS, Railway, a container, your own cluster). It requires:
+
+- `NUXT_POSTGRES_URL` — the connection string
+- `NUXT_AUTH_JWT_SECRET` — ≥32 chars, signs access/refresh tokens
+- `NUXT_RESEND_API_KEY` — magic-link + invite emails
+- `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` — a GitHub **OAuth App** for login (one callback per app: `https://<your-domain>/api/auth/oauth/github`); Google optional
+- `NUXT_SESSION_PASSWORD` — ≥32 chars for the OAuth module session endpoint (dev auto-generates it; deployed builds must set it)
+
+Migrations run through the bundled plain-PG runner (one lineage: `postgres/migrations/000_auth_shim.sql` + `supabase/migrations/*.sql`):
+
+```bash
+pnpm db:migrate:pg          # applies the lineage (NUXT_POSTGRES_URL or --url)
+pnpm db:verify:pg           # verifies schema, trigger chain, and RLS isolation
+```
+
+Both commands are idempotent — re-runs skip applied files via `public.schema_migrations`. The Supabase pair keeps using the Supabase CLI (`pnpm db:migrate`), which reads the same `supabase/migrations/` files.
 
 ## Recommended Topology
 
@@ -54,10 +80,10 @@ User
 Reverse Proxy / TLS
   ↓
 Contentrain Studio (Nuxt/Nitro)
-  ├─ Supabase-compatible DB/Auth
+  ├─ DB/Auth — Supabase pair OR plain PostgreSQL (managed pair)
   ├─ GitHub App
   ├─ Redis (optional, recommended for multi-instance)
-  ├─ Resend (optional)
+  ├─ Resend (optional; required with the managed pair)
   ├─ Stripe (optional)
   └─ R2 / S3-compatible storage (optional)
 ```
@@ -70,7 +96,7 @@ Use this when you want to run the AGPL core yourself without the `ee/` proprieta
 
 Recommended config:
 
-- Supabase configured
+- either provider pair configured (Supabase, or plain PostgreSQL with the managed pair)
 - GitHub App configured
 - `ee/` directory absent (or excluded from the deployed image)
 - no Polar / Stripe env vars
@@ -100,7 +126,7 @@ Use this when you have an executed On-Premises Deployment License (`ee/LICENSE` 
 
 Recommended config:
 
-- Supabase configured + GitHub App configured
+- either provider pair configured + GitHub App configured
 - `ee/` directory present (matching the core release tag)
 - no Polar / Stripe env vars (billing off)
 - Redis for multi-instance
@@ -133,6 +159,8 @@ For session/encryption secret rotation:
 3. deploy
 4. allow keys/sessions to re-encrypt or refresh
 5. remove the previous secret after the migration window
+
+Managed pair extras: rotating `NUXT_AUTH_JWT_SECRET` invalidates every outstanding access/refresh token — users re-login; nothing else breaks. `NUXT_SESSION_PASSWORD` stores no durable state and can be rotated freely.
 
 ## Backups and Persistence
 

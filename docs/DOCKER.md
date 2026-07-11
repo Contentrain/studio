@@ -53,12 +53,21 @@ Health endpoint:
 
 ## Required Runtime Secrets
 
-At minimum, production requires:
+At minimum, production requires `NUXT_SESSION_SECRET` plus one provider pair:
 
-- `NUXT_SESSION_SECRET`
+Supabase pair (default):
+
 - `NUXT_SUPABASE_URL`
 - `NUXT_SUPABASE_SERVICE_ROLE_KEY`
 - `NUXT_SUPABASE_ANON_KEY`
+
+Managed + postgres pair (plain PostgreSQL — set `NUXT_AUTH_PROVIDER=managed`, `NUXT_DATABASE_PROVIDER=postgres`):
+
+- `NUXT_POSTGRES_URL`
+- `NUXT_AUTH_JWT_SECRET`
+- `NUXT_SESSION_PASSWORD`
+- `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET`
+- `NUXT_RESEND_API_KEY`
 
 Depending on enabled surfaces, you may also need:
 

@@ -7,8 +7,8 @@ Conversation-first CMS — chat with AI agent to manage structured content.
 
 - **Framework:** Nuxt 4 (full-stack, single project — NOT monorepo)
 - **UI:** Radix Vue (headless primitives) + Tailwind CSS 4 (CSS-based config, @theme)
-- **Auth:** AuthProvider interface — current impl: Supabase Auth (GitHub OAuth, Google OAuth, Magic Link)
-- **Database:** DatabaseProvider interface — current impl: Supabase PostgreSQL with RLS
+- **Auth:** AuthProvider interface — two impls, shipped as matched pairs: `supabase-auth.ts` (Supabase Auth) and `managed-auth.ts` (Supabase-free: jose HS256 JWT + refresh rotation, nuxt-auth-utils OAuth dance, Resend magic link)
+- **Database:** DatabaseProvider interface — two impls: `supabase-db/` (Supabase PostgreSQL) and `postgres-db/` (kysely + pg over any plain PostgreSQL; same RLS policies via the `request.jwt.claim.sub` GUC contract)
 - **Content engine:** `@contentrain/mcp` (core/ops + overlay-reader + validator + providers) + `@contentrain/types` (canonical contracts) + `@contentrain/query` SDK for UI strings. Studio composes `GitHubProvider` from `@contentrain/mcp/providers/github` with Studio extensions (tree listing, framework detection, PR helpers) — see `server/providers/git.ts`
 - **Icons:** Annon custom icon set via @iconify/tailwind4
 - **Images:** @nuxt/image (NuxtImg for all images)
@@ -26,20 +26,23 @@ Provider interfaces live in `server/providers/`:
 - `server/providers/storage.ts` — StorageProvider interface
 - `server/providers/git.ts` — GitProvider interface
 
-Concrete implementations live alongside interfaces in `server/providers/`, named `[impl]-[service].ts`:
+Concrete implementations live alongside interfaces in `server/providers/` (single-file `[impl]-[service].ts` or a directory for multi-module providers):
 - `server/providers/supabase-auth.ts` — SupabaseAuthProvider
-- `server/providers/supabase-db.ts` — SupabaseDatabaseProvider (future)
+- `server/providers/managed-auth.ts` — ManagedAuthProvider (jose HS256 JWT + refresh rotation in `auth.refresh_tokens`, OAuth via nuxt-auth-utils handlers, magic link/invites via Resend)
+- `server/providers/supabase-db/` — SupabaseDatabaseProvider
+- `server/providers/postgres-db/` — PostgresDatabaseProvider (kysely + pg; user-scoped queries via `withUser()` = `SET LOCAL ROLE authenticated` + `request.jwt.claim.sub` GUC)
+
+**Provider pairs.** Auth and database providers are selected via `NUXT_AUTH_PROVIDER` (`supabase` | `managed`) and `NUXT_DATABASE_PROVIDER` (`supabase` | `postgres`) and only ship as matched pairs — `supabase+supabase` (default) or `managed+postgres`. Mixed pairs are rejected at boot by `server/plugins/00.validate-config.ts` (the Supabase DB provider authorizes RLS queries with Supabase-issued JWTs; managed-auth JWTs only the postgres provider understands). Migrations are one lineage (`postgres/migrations/000_auth_shim.sql` + `supabase/migrations/*.sql`) with two runners: Supabase CLI for the supabase pair, `scripts/migrate-postgres.mjs` (`pnpm db:migrate:pg`, verify with `pnpm db:verify:pg`) for plain PG.
 
 **Rules — never violate:**
-- NEVER import `@supabase/supabase-js` outside of `server/providers/impl/`
+- NEVER import `@supabase/supabase-js` outside `server/providers/supabase-auth.ts`, `server/providers/supabase-db/`, and `server/providers/supabase-client.ts`
 - NEVER use `useSupabaseClient()`, `useSupabaseUser()`, `useSupabaseSession()` in components or pages
 - NEVER use `@nuxtjs/supabase` auto-injected composables outside the adapter layer
 - NEVER write Supabase-specific SQL (RLS policies, `auth.users` joins) in application logic — only in migration files
 - ALL auth checks in server routes use `AuthProvider.getSession()`, never the Supabase client directly
 - Provider instances are resolved via a factory/injection in `server/utils/providers.ts`
 
-**Current implementation:** Supabase (Auth + PostgreSQL).
-**Alternative implementations** (future): standard OAuth + plain PostgreSQL, Auth0, Clerk, etc.
+**Studio's own staging/prod runs the `managed+postgres` pair** (Railway PostgreSQL); the Supabase pair remains the AGPL/community default for self-hosters.
 Any new provider implementation must satisfy the same interface — zero application code changes required.
 
 ### Payment providers (plugin registry)
@@ -331,7 +334,7 @@ Studio runs a **trunk-based Git flow**. `main` is the single integration branch 
 
 | Branch    | Role                                                     | Deploy target                 |
 |-----------|----------------------------------------------------------|-------------------------------|
-| `main`    | Trunk — default, PR target, OSS face, stable-at-HEAD     | `staging.contentrain.io` auto; prod on `v*` tag |
+| `main`    | Trunk — default, PR target, OSS face, stable-at-HEAD     | Railway staging env (`studio-staging-5610.up.railway.app`) auto; prod (`studio.contentrain.io`) on `v*` tag |
 | `feat/*`  | Per-task feature branches                                | (no auto-deploy)              |
 | `fix/*`   | Per-task bug-fix branches                                | (no auto-deploy)              |
 | `cr/*`    | Contentrain MCP auto-generated content branches          | (auto-merged by MCP)          |
@@ -344,7 +347,7 @@ Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** 
 - **Never push directly to `main`.** All changes go through PR + CI gate.
 - **Release tags (`v*`) are cut from `main`** — they trigger the production deploy. See `docs/RELEASING.md`.
 - **Self-hosters deploy from tagged releases** (`v0.1.0`, `v0.2.0`), not from `main` HEAD. `main` is stable-at-HEAD for CI purposes but tags are the supported deploy contract.
-- **Staging environment ≠ staging branch.** Railway deploys every merge to `main` into `staging.contentrain.io` automatically, so the pre-prod verification lives in the deploy pipeline rather than in Git topology.
+- **Staging environment ≠ staging branch.** Railway deploys every merge to `main` into the staging environment (`studio-staging-5610.up.railway.app` — `staging.contentrain.io` is NOT bound) automatically, so the pre-prod verification lives in the deploy pipeline rather than in Git topology.
 - **Commitlint is lenient for MCP auto-commits** — messages prefixed with `[contentrain]` are ignored by commitlint (see `commitlint.config.ts`). Every human commit must obey Conventional Commits.
 
 ### Contributor flow
@@ -352,7 +355,7 @@ Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** 
 1. Contributor forks, opens a branch from `main`
 2. PR targets `main` (GitHub's default base, no extra step needed)
 3. Forked PRs run CI but cannot deploy (GitHub secrets are not exposed to forks — intended security boundary)
-4. Maintainer reviews + merges → Railway auto-deploys to `staging.contentrain.io`
+4. Maintainer reviews + merges → Railway auto-deploys to the staging environment
 5. When ready to ship, a maintainer cuts a version tag (`v*`) on `main` → prod deploy via `.github/workflows/release.yml`
 
 ## Dev Tooling
@@ -361,7 +364,14 @@ Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** 
 - `pnpm lint` / `pnpm lint:fix` — @nuxt/eslint with Stylistic (no Prettier)
 - `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow; run from `main` on a clean tree
 - lint-staged on pre-commit (only changed files)
-- GitHub Actions CI on every push/PR to `main` (commit lint + build)
+- GitHub Actions CI on every push/PR to `main` — two jobs: `ci` (lint, typecheck, unit+integration+nuxt, RLS + e2e against local Supabase, build) and `postgres-lineage` (migration lineage + `pnpm db:verify:pg` + contract suite + RLS suite against a plain `postgres:16` service)
+
+### Test matrix (provider pairs)
+
+- `pnpm test` / `test:ci` — unit + integration + nuxt (DB mocked)
+- `pnpm test:rls` — RLS contract suite; Supabase local by default, plain PG when `RLS_DB_URL` is set (global setup migrates it via `scripts/migrate-postgres.mjs`)
+- `pnpm test:contract` — postgres DatabaseProvider against a throwaway `postgres:16` (`docker run -d -p 54329:5432 -e POSTGRES_PASSWORD=postgres postgres:16`; `CONTRACT_PG_URL` overrides)
+- `pnpm test:e2e` — per-file Nuxt boots; `app-smoke` covers the supabase pair, `app-smoke-managed` boots the managed+postgres pair (no DB needed — pg connects lazily)
 
 ## Open Core Model & Editions — CRITICAL
 
@@ -412,7 +422,7 @@ Under `ee/LICENSE` scope. Requires an active Contentrain subscription or separat
 
 Always available, in every edition. Plan-independent.
 
-- All auth flows (Supabase Auth + OAuth providers + magic link), workspace/project CRUD, member management (Owner/Admin/Member)
+- All auth flows (both provider pairs: Supabase Auth, and managed auth with OAuth + magic link), workspace/project CRUD, member management (Owner/Admin/Member)
 - Chat engine + every deterministic agent tool (content CRUD, validation, branch/merge, brain, search)
 - Content CRUD — all 4 kinds (collection, singleton, document, dictionary), all 27 field types
 - Auto-merge workflow (cr/* → contentrain → main), review workflow gating via `workflow.review`
