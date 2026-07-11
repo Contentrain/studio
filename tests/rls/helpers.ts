@@ -1,10 +1,27 @@
 import { spawnSync } from 'node:child_process'
 
+/**
+ * Target database resolution — the RLS suite runs against BOTH backends:
+ *
+ *  - Supabase local (default): `supabase start`'s Postgres on 54322,
+ *    migrated by the Supabase CLI. Override with SUPABASE_DB_URL.
+ *  - Plain Postgres (managed pair): set RLS_DB_URL to any migrated plain-PG
+ *    instance (the throwaway `postgres:16` on 54329, or CI's 5432 service).
+ *    When RLS_DB_URL is set, tests/rls/global-setup.ts applies the migration
+ *    lineage first via scripts/migrate-postgres.mjs.
+ *
+ * The suite itself is backend-agnostic: the RLS contract is the
+ * `set local role` + `request.jwt.claim.sub` GUC pair, identical on both.
+ */
 const defaultDbUrl = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+
+export function rlsDbUrl(): string {
+  return process.env.RLS_DB_URL ?? process.env.SUPABASE_DB_URL ?? defaultDbUrl
+}
 
 function runPsql(script: string) {
   const result = spawnSync('psql', [
-    process.env.SUPABASE_DB_URL ?? defaultDbUrl,
+    rlsDbUrl(),
     '-v',
     'ON_ERROR_STOP=1',
     '-X',
@@ -23,7 +40,7 @@ function runPsql(script: string) {
   return result.stdout.trim()
 }
 
-export function assertLocalSupabaseDb() {
+export function assertDbReachable() {
   runPsql('select 1;')
 }
 
