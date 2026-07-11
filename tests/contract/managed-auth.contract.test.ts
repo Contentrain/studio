@@ -257,4 +257,20 @@ describe('managed-auth provider (contract)', () => {
     expect(await auth.refreshProviderToken('google', 'x')).toBeNull()
     expect(await auth.refreshProviderToken('github', 'ghr_missing_creds')).toBeNull()
   })
+
+  it('getOAuthRedirectUrl carries flow context but NEVER a state param', async () => {
+    // Regression guard: a `state` here makes nuxt-auth-utils' handleState()
+    // treat leg 1 as the callback and skip setting its CSRF cookie → every
+    // login fails with "state mismatch". State is the module's alone.
+    const web = new URL((await auth.getOAuthRedirectUrl('github', '/w/home')).url)
+    expect(web.pathname).toBe('/api/auth/oauth/github')
+    expect(web.searchParams.has('state')).toBe(false)
+    expect(web.searchParams.get('redirect')).toBe('/w/home')
+    expect(web.searchParams.has('cli_redirect')).toBe(false)
+
+    const cli = new URL((await auth.getOAuthRedirectUrl('github', 'http://127.0.0.1:9876/callback')).url)
+    expect(cli.searchParams.has('state')).toBe(false)
+    expect(cli.searchParams.get('cli_redirect')).toBe('http://127.0.0.1:9876/callback')
+    expect(cli.searchParams.has('redirect')).toBe(false)
+  })
 })
