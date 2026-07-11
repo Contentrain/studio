@@ -79,6 +79,13 @@ export interface IngestFileInput {
   plan: string
   /** Desired destination. Defaults to `context` (ephemeral). */
   intent?: AttachmentIntent
+  /**
+   * Whether the project serves CDN delivery (`projects.cdn_enabled`).
+   * Media-intent images are refused without it: the upload itself would
+   * succeed, but the delivery URL 403s for everyone — including the
+   * model, which kills the whole chat turn (issue #137).
+   */
+  cdnEnabled?: boolean
 }
 
 /** Max converted text length (~25K tokens) before truncation. */
@@ -312,6 +319,11 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
     const media = useMediaProvider()
     if (!media || !hasFeature(input.plan, 'media.upload'))
       return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_unavailable') })
+    // Delivery is gated on cdn_enabled — an asset uploaded while CDN is off
+    // yields a URL that 403s for the browser AND for Anthropic's fetcher
+    // (which 400s the entire model call). Fail here, actionably, instead.
+    if (input.cdnEnabled !== true)
+      return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.cdn_disabled') })
     try {
       const asset = await media.upload({
         projectId: input.projectId,

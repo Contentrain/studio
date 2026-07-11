@@ -3,6 +3,7 @@
   "api.key_id_required": "Workspace ID and key ID are required.",
   "api.provider_key_required": "AI provider and API key are required.",
   "api.unsupported_provider": "This AI provider is not supported. Please use a supported provider.",
+  "attachment.cdn_disabled": "Media upload needs CDN delivery, which is disabled for this project. Enable CDN in project settings, or attach the image as context instead.",
   "attachment.content_mismatch": "The file contents don’t match its type.",
   "attachment.docx_parse_failed": "Couldn’t read this Word document.",
   "attachment.empty_extraction": "No readable content was found in this file.",

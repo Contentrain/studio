@@ -124,12 +124,43 @@ describe('ingestFile — image branch', () => {
     uploadMock.mockResolvedValue({ originalPath: 'media/abc.png', size: 123, width: 4, height: 4, variants: {} })
     vi.stubGlobal('hasFeature', vi.fn(() => true))
 
-    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media' }))
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media', cdnEnabled: true }))
     expect(uploadMock).toHaveBeenCalledOnce()
     expect(ref.destination).toBe('media')
     const block = ref.blocks[0] as { type: string, source: { type: string, url: string } }
     expect(block.source.type).toBe('url')
     expect(block.source.url).toBe('https://cdn.example/api/cdn/v1/proj/media/abc.png')
+  })
+
+  it('refuses intent=media when the project has CDN delivery disabled (issue #137)', async () => {
+    // Upload would succeed, but the delivery URL 403s for the browser AND
+    // for Anthropic's fetcher — which 400s the whole model call. The gate
+    // must fire BEFORE the asset lands in the library.
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media', cdnEnabled: false }))
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(ref.blocks).toEqual([])
+    expect(ref.error).toBe('attachment.cdn_disabled')
+  })
+
+  it('treats an absent cdnEnabled flag as disabled for intent=media', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media' }))
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(ref.error).toBe('attachment.cdn_disabled')
+  })
+
+  it('ignores cdnEnabled entirely for intent=context (base64 path)', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'context', cdnEnabled: false }))
+    expect(ref.error).toBeUndefined()
+    expect((ref.blocks[0] as { source: { type: string } }).source.type).toBe('base64')
   })
 
   it('stays ephemeral base64 for intent=context even when CDN is available', async () => {
