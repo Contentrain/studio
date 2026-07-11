@@ -81,7 +81,7 @@ Typical path:
 
 ### Open Core Model
 
-- **Core (`app/`, `server/`, `supabase/`, tests)**: AGPL-3.0
+- **Core (`app/`, `server/`, `supabase/`, `postgres/`, tests)**: AGPL-3.0
 - **Enterprise (`ee/`)**: proprietary implementations for premium operational surfaces
 
 See:
@@ -108,8 +108,8 @@ User → Workspace → Project → Repository
 | --- | --- |
 | Framework | Nuxt 4 |
 | UI | Radix Vue + Tailwind CSS 4 |
-| Auth | Provider interface, currently Supabase Auth |
-| Database | Provider interface, currently Supabase PostgreSQL + RLS |
+| Auth | Provider interface — Supabase Auth, or the built-in managed provider (JWT + OAuth + magic link) |
+| Database | Provider interface — Supabase PostgreSQL, or any plain PostgreSQL (managed pair) |
 | Git | Provider interface, currently GitHub App |
 | AI | Provider interface, currently Anthropic |
 | Email | Provider interface, currently Resend |
@@ -169,8 +169,9 @@ studio/
 ├─ app/                 # Frontend pages, layouts, components, composables
 ├─ server/              # Nitro routes, middleware, providers, utilities
 ├─ supabase/            # Migrations, local Supabase config, RLS policies
+├─ postgres/            # Plain-PG auth shim (000_auth_shim.sql) — managed pair lineage head
 ├─ ee/                  # Proprietary enterprise implementations
-├─ tests/               # Unit, integration, Nuxt, RLS, and E2E suites
+├─ tests/               # Unit, integration, Nuxt, RLS, contract, and E2E suites
 ├─ .contentrain/        # Content models and generated query client
 └─ docs/                # Release-facing deployment and self-hosting docs
 ```
@@ -182,9 +183,11 @@ studio/
 - Node.js 22+
 - pnpm 10+
 - Git
-- [Supabase CLI](https://supabase.com/docs/guides/cli) for local database/auth flows
+- [Supabase CLI](https://supabase.com/docs/guides/cli) for the default local database/auth flow (or any plain PostgreSQL for the managed pair)
 
 ### Local Development
+
+Option A — Supabase pair (default):
 
 ```bash
 git clone https://github.com/Contentrain/studio.git
@@ -193,6 +196,20 @@ pnpm install
 cp .env.example .env
 pnpm db:start
 pnpm db:migrate
+npx contentrain generate
+pnpm dev
+```
+
+Option B — managed + postgres pair (no Supabase; any plain PostgreSQL):
+
+```bash
+git clone https://github.com/Contentrain/studio.git
+cd studio
+pnpm install
+cp .env.example .env    # set the managed-pair block (NUXT_AUTH_PROVIDER=managed, NUXT_DATABASE_PROVIDER=postgres, NUXT_POSTGRES_URL, …)
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+pnpm db:migrate:pg      # single lineage: postgres/migrations + supabase/migrations
+pnpm db:verify:pg       # schema + trigger chain + RLS isolation checks
 npx contentrain generate
 pnpm dev
 ```
@@ -228,7 +245,8 @@ pnpm typecheck
 pnpm test:unit
 pnpm test:integration
 pnpm test:nuxt
-pnpm test:rls
+pnpm test:rls        # RLS contracts — Supabase local by default; RLS_DB_URL=… targets plain PG
+pnpm test:contract   # postgres DatabaseProvider vs a throwaway postgres:16 (port 54329)
 pnpm test:e2e
 pnpm test:ci
 pnpm build

@@ -57,6 +57,14 @@ jobs:
         env:
           CONTRACT_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+      # Same vitest RLS suite the Supabase job runs — here against the plain
+      # Postgres service, proving row isolation on the managed pair too.
+      # (psql ships preinstalled on ubuntu-latest runners.)
+      - name: RLS tests (plain Postgres)
+        run: pnpm test:rls
+        env:
+          RLS_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+
   ci:
     runs-on: ubuntu-latest
 

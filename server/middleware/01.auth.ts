@@ -14,6 +14,12 @@ const PUBLIC_PATHS = [
   '/api/auth/oauth/', // managed pair: OAuth dance legs (pre-session by definition)
   '/api/auth/verify',
   '/api/auth/refresh',
+  // nuxt-auth-utils module session endpoint (GET/DELETE). The module's SSR
+  // plugin fetches it on every server-rendered page load — logged-out
+  // included — and the route self-authenticates via its own sealed cookie
+  // (server-only `secure` data is never returned). Walling it behind the
+  // Studio session just turns every logged-out SSR load into a 401.
+  '/api/_auth/',
   '/api/health',
   '/api/webhooks/',
   '/api/cdn/',

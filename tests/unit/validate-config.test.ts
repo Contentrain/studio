@@ -176,4 +176,24 @@ describe('00.validate-config boot validation', () => {
     expect(error?.message).toMatch(/NUXT_GITHUB_CLIENT_ID is required/)
     expect(error?.message).toMatch(/NUXT_GITHUB_PRIVATE_KEY is required/)
   })
+
+  it('warns (not errors) when the nuxt-auth-utils session password is missing', async () => {
+    const warnSpy = vi.spyOn(console, 'warn')
+    const plugin = await loadPlugin(baseConfig())
+
+    expect(runAndCapture(plugin)).toBeNull()
+    const warned = warnSpy.mock.calls.some(call => String(call[0]).includes('NUXT_SESSION_PASSWORD'))
+    expect(warned).toBe(true)
+  })
+
+  it('stays quiet about the module session when its password is configured', async () => {
+    const warnSpy = vi.spyOn(console, 'warn')
+    const plugin = await loadPlugin(baseConfig({
+      session: { password: 'p'.repeat(32) },
+    }))
+
+    expect(runAndCapture(plugin)).toBeNull()
+    const warned = warnSpy.mock.calls.some(call => String(call[0]).includes('NUXT_SESSION_PASSWORD'))
+    expect(warned).toBe(false)
+  })
 })

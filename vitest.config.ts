@@ -89,17 +89,9 @@ export default defineConfig({
           setupFiles: ['tests/setup/e2e.ts'],
         },
       },
-      {
-        test: {
-          name: 'rls',
-          include: ['tests/rls/**/*.rls.test.ts'],
-          environment: 'node',
-          setupFiles: ['tests/setup/unit.ts'],
-          testTimeout: 120_000,
-          hookTimeout: 120_000,
-          fileParallelism: false,
-        },
-      },
+      // The rls project lives in vitest.rls.config.ts (standalone, like the
+      // contract suite) so CI's lean postgres-lineage job can run it without
+      // `nuxt prepare`. `pnpm test:rls` targets it on both backends.
     ],
   },
 })
