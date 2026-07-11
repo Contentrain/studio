@@ -455,19 +455,22 @@ export function createManagedAuthProvider(): AuthProvider {
     },
 
     async getOAuthRedirectUrl(provider, redirectTo) {
-      // The OAuth dance is owned by /api/auth/oauth/[provider]; flow context
-      // travels as query params and is moved into a sealed cookie by that
-      // route before redirecting to the provider. A localhost 98xx callback
-      // target marks the CLI flow (validated upstream in login.post.ts).
+      // Entry URL for /api/auth/oauth/[provider]. Carries ONLY flow context
+      // (redirect target / CLI callback). It must NOT carry a `state` param:
+      // nuxt-auth-utils' handleState() treats a present query.state as "this
+      // is the callback leg" and reads its cookie instead of setting one, so
+      // a state here breaks its CSRF cookie and every login fails with
+      // "state mismatch". CSRF state is wholly owned by the module.
+      // A localhost 98xx callback target marks the CLI flow (validated
+      // upstream in login.post.ts).
       const siteUrl = (useRuntimeConfig().public.siteUrl as string).replace(/\/+$/, '')
-      const state = randomBytes(16).toString('hex')
 
       const isCliTarget = /^http:\/\/(?:127\.0\.0\.1|localhost):98\d{2}\/callback$/.test(redirectTo)
-      const params = new URLSearchParams({ state })
+      const params = new URLSearchParams()
       if (isCliTarget) params.set('cli_redirect', redirectTo)
       else params.set('redirect', redirectTo)
 
-      return { url: `${siteUrl}/api/auth/oauth/${provider}?${params.toString()}`, state }
+      return { url: `${siteUrl}/api/auth/oauth/${provider}?${params.toString()}` }
     },
 
     async exchangeCode(code) {
