@@ -6,6 +6,7 @@
  * - installation → update workspace github_installation_id
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import type { PushDiffDecision } from '../../utils/cdn-push-diff'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -47,8 +48,12 @@ export default defineEventHandler(async (event) => {
     if (cdnProjects?.length) {
       const ref = body.ref as string | undefined
       const pushBranch = ref?.replace('refs/heads/', '')
-      const commits = body.commits as Array<{ added?: string[], modified?: string[], removed?: string[] }> | undefined
-      const changedPaths = commits?.flatMap(c => [...(c.added ?? []), ...(c.modified ?? []), ...(c.removed ?? [])]) ?? []
+
+      // The true before...after diff is resolved once per push via the
+      // Compare API and shared across the (rare) multi-project case —
+      // payload commit file lists are unreliable for merges, capped
+      // arrays, and force pushes (issue #133, see cdn-push-diff.ts).
+      let pushDiff: PushDiffDecision | null = null
 
       for (const proj of cdnProjects) {
         const targetBranch = (proj.cdn_branch ?? proj.default_branch ?? 'main') as string
@@ -64,6 +69,20 @@ export default defineEventHandler(async (event) => {
         const contentRoot = normalizeContentRoot(proj.content_root as string)
         const commitSha = (body.after as string) ?? 'webhook'
 
+        // Git provider resolves BEFORE the build record is created — a
+        // missing installation used to leave a row stuck in 'pending'.
+        const [repoOwner = '', repoName = ''] = repoFullName.split('/')
+        const wsForGit = await db.getWorkspaceById(proj.workspace_id as string, 'github_installation_id')
+        if (!wsForGit?.github_installation_id || !repoOwner || !repoName) continue
+        const git = useGitProvider({ installationId: wsForGit.github_installation_id as number, owner: repoOwner, repo: repoName })
+
+        pushDiff ??= await resolvePushDiff({
+          before: body.before as string | undefined,
+          after: body.after as string | undefined,
+          getDiff: (head, base) => git.getBranchDiff(head, base),
+        })
+        if (pushDiff.action === 'skip') continue
+
         // Create build record + execute async
         const build = await db.createCDNBuild({
           projectId: proj.id as string,
@@ -73,39 +92,35 @@ export default defineEventHandler(async (event) => {
         })
 
         if (build) {
-          const [repoOwner = '', repoName = ''] = repoFullName.split('/')
-          const wsForGit = await db.getWorkspaceById(proj.workspace_id as string, 'github_installation_id')
-          if (wsForGit?.github_installation_id && repoOwner && repoName) {
-            const git = useGitProvider({ installationId: wsForGit.github_installation_id as number, owner: repoOwner, repo: repoName })
-            executeCDNBuild({
-              projectId: proj.id as string,
-              buildId: build.id as string,
-              git,
-              cdn,
-              contentRoot,
-              commitSha,
-              branch: targetBranch,
-              changedPaths,
-            }).then(async (result) => {
-              await db.updateCDNBuild(build.id as string, {
-                status: result.error ? 'failed' : 'success',
-                file_count: result.filesUploaded,
-                total_size_bytes: result.totalSizeBytes,
-                changed_models: result.changedModels,
-                build_duration_ms: result.durationMs,
-                error_message: result.error ?? null,
-                completed_at: new Date().toISOString(),
-              })
-            }).catch(async (err: unknown) => {
-              // Ensure build never stays stuck in 'building'
-              const msg = err instanceof Error ? err.message : 'Build failed'
-              await db.updateCDNBuild(build.id as string, {
-                status: 'failed',
-                error_message: msg,
-                completed_at: new Date().toISOString(),
-              })
+          executeCDNBuild({
+            projectId: proj.id as string,
+            buildId: build.id as string,
+            git,
+            cdn,
+            contentRoot,
+            commitSha,
+            branch: targetBranch,
+            changedPaths: pushDiff.changedPaths,
+            fullRebuild: pushDiff.fullRebuild,
+          }).then(async (result) => {
+            await db.updateCDNBuild(build.id as string, {
+              status: result.error ? 'failed' : 'success',
+              file_count: result.filesUploaded,
+              total_size_bytes: result.totalSizeBytes,
+              changed_models: result.changedModels,
+              build_duration_ms: result.durationMs,
+              error_message: result.error ?? null,
+              completed_at: new Date().toISOString(),
             })
-          }
+          }).catch(async (err: unknown) => {
+            // Ensure build never stays stuck in 'building'
+            const msg = err instanceof Error ? err.message : 'Build failed'
+            await db.updateCDNBuild(build.id as string, {
+              status: 'failed',
+              error_message: msg,
+              completed_at: new Date().toISOString(),
+            })
+          })
         }
       }
     }
