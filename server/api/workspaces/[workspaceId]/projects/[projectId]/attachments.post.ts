@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
 
-  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id,cdn_enabled')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
@@ -91,6 +91,7 @@ export default defineEventHandler(async (event) => {
       userId: session.user.id,
       plan,
       intent,
+      cdnEnabled: project.cdn_enabled === true,
     })
   }))
 
