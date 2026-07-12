@@ -69,6 +69,7 @@ async function main() {
       'public.usage_events_outbox',
       'public.audit_logs',
       'public.oauth_provider_tokens',
+      'public.mcp_oauth_usage',
     ]
     for (const table of expectedTables) {
       const { rows } = await client.query('SELECT to_regclass($1) AS reg', [table])

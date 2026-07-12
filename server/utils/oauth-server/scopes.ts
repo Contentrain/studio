@@ -8,6 +8,7 @@
  * clients request everything a server advertises, and a dead scope on the
  * consent screen is a directory-review liability.
  */
+import { METADATA_TOOL_NAMES, READ_TOOL_NAMES, WRITE_TOOL_NAMES } from '../mcp-tool-classes'
 
 export const SUPPORTED_SCOPES = [
   'content:read',
@@ -64,4 +65,45 @@ export function normalizeScope(requested: string | undefined | null): string | n
 
 export function scopeIncludes(scope: string, member: SupportedScope): boolean {
   return scope.split(' ').includes(member)
+}
+
+// ─── Scope → tool derivation (remote MCP surface) ───
+
+/**
+ * Which tools a grant's scope may call — feeds the proxy pipeline's
+ * allowlist. `media:*` maps to no remote tool today (reserved until the
+ * media stack reaches the MCP Cloud surface); lifecycle tools are excluded
+ * from every scope (Studio owns the merge/review lifecycle).
+ */
+export function toolsForScope(scope: string): string[] {
+  const parts = new Set(scope.split(' '))
+  const tools = new Set<string>()
+
+  if (parts.has('project:metadata')) {
+    for (const name of METADATA_TOOL_NAMES) tools.add(name)
+  }
+  if (parts.has('content:read')) {
+    for (const name of READ_TOOL_NAMES) tools.add(name)
+  }
+  if (parts.has('content:write')) {
+    for (const name of WRITE_TOOL_NAMES) tools.add(name)
+  }
+
+  return [...tools]
+}
+
+export function scopeAllowsTool(scope: string, tool: string): boolean {
+  return toolsForScope(scope).includes(tool)
+}
+
+/**
+ * The scope a denied tool would need — drives the 403 insufficient_scope
+ * step-up challenge. Null for tools no scope can grant (lifecycle tools,
+ * unknown names): those get a plain 403, never a step-up loop.
+ */
+export function scopeForTool(tool: string): SupportedScope | null {
+  if (METADATA_TOOL_NAMES.has(tool)) return 'project:metadata'
+  if (READ_TOOL_NAMES.has(tool)) return 'content:read'
+  if (WRITE_TOOL_NAMES.has(tool)) return 'content:write'
+  return null
 }

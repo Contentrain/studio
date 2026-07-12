@@ -522,6 +522,33 @@ export async function getWorkspaceGrant(grantId: string, workspaceId: string): P
   }
 }
 
+// ─── Usage accounting (combined pool with the API-key surface) ───
+
+/**
+ * Atomic monthly-quota increment for the OAuth surface. The RPC checks the
+ * COMBINED workspace total (mcp_cloud_usage + mcp_oauth_usage) against the
+ * plan limit, then upserts this grant's row — one `api.mcp_calls_per_month`
+ * pool across both MCP surfaces.
+ */
+export async function incrementOauthUsageIfAllowed(input: {
+  workspaceId: string
+  grantId: string
+  month: string
+  limit: number | null
+}): Promise<{ allowed: boolean, used: number }> {
+  const outcome = await sql<{ result: { allowed: boolean, used: number } }>`
+    SELECT public.increment_mcp_oauth_usage_if_allowed(
+      p_workspace_id => ${input.workspaceId},
+      p_month => ${input.month},
+      p_grant_id => ${input.grantId},
+      p_limit => ${input.limit}
+    ) AS result
+  `.execute(getDb())
+
+  const row = outcome.rows[0]!.result
+  return { allowed: !!row.allowed, used: Number(row.used ?? 0) }
+}
+
 // ─── Housekeeping ───
 
 /**
