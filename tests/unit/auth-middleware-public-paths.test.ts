@@ -59,6 +59,15 @@ describe('auth middleware public paths', () => {
     expect(getServerSession).toHaveBeenCalled()
   })
 
+  // The OAuth consent API renders workspace/project data for the signed-in
+  // user — it must stay session-guarded even though the /oauth/* protocol
+  // endpoints (server/routes/, outside this middleware) are public.
+  it('keeps /api/oauth/consent session-guarded', async () => {
+    getServerSession.mockResolvedValue(null)
+    await expect(run('/api/oauth/consent')).rejects.toMatchObject({ statusCode: 401 })
+    expect(getServerSession).toHaveBeenCalled()
+  })
+
   it('ignores non-API routes entirely', async () => {
     await expect(run('/w/acme/projects')).resolves.toBeUndefined()
     expect(getServerSession).not.toHaveBeenCalled()

@@ -7,16 +7,21 @@ process.env.NUXT_PUBLIC_SITE_URL ??= 'http://localhost:3000'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
+// Workspace projects do NOT inherit the root-level resolve config — without
+// this per-project alias block, any server module imported via `~~/…` that a
+// test does not vi.mock fails to resolve inside unit/integration runs.
+const aliasConfig = {
+  alias: {
+    '~': rootDir,
+    '@': rootDir,
+    '~~': rootDir,
+    '@@': rootDir,
+  },
+}
+
 export default defineConfig({
   root: rootDir,
-  resolve: {
-    alias: {
-      '~': rootDir,
-      '@': rootDir,
-      '~~': rootDir,
-      '@@': rootDir,
-    },
-  },
+  resolve: aliasConfig,
   test: {
     root: rootDir,
     globals: true,
@@ -42,6 +47,7 @@ export default defineConfig({
     },
     projects: [
       {
+        resolve: aliasConfig,
         test: {
           name: 'unit',
           include: ['tests/unit/**/*.test.ts'],
@@ -50,6 +56,7 @@ export default defineConfig({
         },
       },
       {
+        resolve: aliasConfig,
         test: {
           name: 'integration',
           include: ['tests/integration/**/*.integration.test.ts'],
@@ -79,6 +86,7 @@ export default defineConfig({
         },
       }),
       {
+        resolve: aliasConfig,
         test: {
           name: 'e2e',
           include: ['tests/e2e/**/*.e2e.test.ts'],

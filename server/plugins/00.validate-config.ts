@@ -104,6 +104,20 @@ export default defineNitroPlugin(() => {
       errors.push('NUXT_OAUTH_GITHUB_CLIENT_ID / NUXT_OAUTH_GITHUB_CLIENT_SECRET are required when NUXT_AUTH_PROVIDER=managed')
     if (!oauth?.google?.clientId || !oauth.google.clientSecret)
       warnings.push('NUXT_OAUTH_GOOGLE_CLIENT_ID / NUXT_OAUTH_GOOGLE_CLIENT_SECRET are not set — Google sign-in disabled')
+
+    // The managed pair is also the OAuth AS for the remote MCP surface:
+    // public.siteUrl is the issuer in every discovery document and the base
+    // of every redirect the dance constructs. MCP clients require https on
+    // all AS endpoints — an http issuer fails every remote-MCP connection.
+    // Warn, don't error: NODE_ENV=production also covers local prod builds
+    // and http-only self-hosts that never use the OAuth surface.
+    const siteUrl = (config.public?.siteUrl as string | undefined) ?? ''
+    if (process.env.NODE_ENV === 'production') {
+      if (!siteUrl.startsWith('https://'))
+        warnings.push('NUXT_PUBLIC_SITE_URL is not https — the OAuth authorization server (remote MCP connections from Claude/ChatGPT) will not work over http')
+      else if (siteUrl.endsWith('/'))
+        warnings.push('NUXT_PUBLIC_SITE_URL has a trailing slash — issuer/resource identifiers are normalized, but prefer the bare origin')
+    }
   }
 
   // GitHub App — required for repo operations

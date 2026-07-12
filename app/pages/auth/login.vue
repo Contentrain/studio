@@ -5,6 +5,7 @@ definePageMeta({
 
 const { signInWithOAuth, signInWithMagicLink } = useAuth()
 const { t } = useContent()
+const route = useRoute()
 
 useHead({ title: () => t('auth.sign_in_title') })
 
@@ -14,11 +15,14 @@ const sentEmail = ref('')
 const loading = ref(false)
 const error = ref('')
 
+// Where to land after sign-in (e.g. a pending /oauth/authorize request).
+const redirectTarget = computed(() => safeInternalRedirect(route.query.redirect))
+
 async function handleOAuth(provider: 'github' | 'google') {
   loading.value = true
   error.value = ''
   try {
-    await signInWithOAuth(provider)
+    await signInWithOAuth(provider, redirectTarget.value)
   }
   catch (e: unknown) {
     error.value = resolveApiError(e, t('auth.login_failed'))
@@ -30,7 +34,7 @@ async function handleMagicLink(email: string) {
   loading.value = true
   error.value = ''
   try {
-    await signInWithMagicLink(email)
+    await signInWithMagicLink(email, redirectTarget.value)
     sentEmail.value = email
     magicLinkSent.value = true
   }
