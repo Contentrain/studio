@@ -69,4 +69,56 @@ describe('app smoke (managed + postgres pair)', () => {
     const body = await response.json() as Record<string, unknown>
     expect(body.user).toBeUndefined()
   })
+
+  // ── OAuth AS surface (remote MCP) ──
+  // These pin that Nitro actually registers the server/routes/ endpoints in
+  // a real boot — including the `.well-known` DOT-directory, which no
+  // handler-level integration test can prove.
+
+  it('serves RFC 8414 authorization-server metadata from the well-known path', async () => {
+    const response = await fetch('/.well-known/oauth-authorization-server')
+    expect(response.status).toBe(200)
+
+    const meta = await response.json() as Record<string, unknown>
+    expect(meta.issuer).toBe('http://localhost:3000')
+    expect(meta.authorization_endpoint).toBe('http://localhost:3000/oauth/authorize')
+    expect(meta.code_challenge_methods_supported).toEqual(['S256'])
+    // The CIMD selection pair Claude checks before choosing CIMD over DCR.
+    expect(meta.client_id_metadata_document_supported).toBe(true)
+    expect(meta.token_endpoint_auth_methods_supported).toEqual(['none'])
+  })
+
+  it('serves the OIDC discovery alias', async () => {
+    const response = await fetch('/.well-known/openid-configuration')
+    expect(response.status).toBe(200)
+    const meta = await response.json() as Record<string, unknown>
+    expect(meta.issuer).toBe('http://localhost:3000')
+  })
+
+  it('answers the token endpoint with RFC 6749 error JSON (no DB required)', async () => {
+    const response = await fetch('/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=client_credentials',
+    })
+    expect(response.status).toBe(400)
+    const body = await response.json() as Record<string, unknown>
+    expect(body.error).toBe('unsupported_grant_type')
+  })
+
+  it('rejects DCR registrations with invalid redirect URIs', async () => {
+    const response = await fetch('/oauth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: ['http://example.com/cb'] }),
+    })
+    expect(response.status).toBe(400)
+    const body = await response.json() as Record<string, unknown>
+    expect(body.error).toBe('invalid_redirect_uri')
+  })
+
+  it('400s an authorize request without a client_id', async () => {
+    const response = await fetch('/oauth/authorize')
+    expect(response.status).toBe(400)
+  })
 })

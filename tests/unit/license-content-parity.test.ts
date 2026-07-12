@@ -52,6 +52,7 @@ const REQUIRED_FEATURES = [
   'api.custom_instructions',
   'api.webhooks_outbound',
   'api.mcp_cloud',
+  'api.mcp_cloud_oauth',
   'api.mcp_cloud_sso',
   'api.mcp_cloud_custom_domain',
   'sso.saml',
@@ -216,6 +217,7 @@ describe('license ↔ content parity', () => {
       expect(FEATURE_MATRIX['forms.enabled']!.plans).toContain('community')
       expect(FEATURE_MATRIX['workflow.review']!.plans).toContain('community')
       expect(FEATURE_MATRIX['api.mcp_cloud']!.plans).toContain('community')
+      expect(FEATURE_MATRIX['api.mcp_cloud_oauth']!.plans).toContain('community')
       expect(FEATURE_MATRIX['cdn.delivery']!.plans).not.toContain('community')
       expect(FEATURE_MATRIX['media.upload']!.plans).not.toContain('community')
       expect(FEATURE_MATRIX['roles.reviewer']!.plans).not.toContain('community')
