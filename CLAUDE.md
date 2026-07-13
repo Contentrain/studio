@@ -293,6 +293,22 @@ rate-limited but free. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
 (15 min TTL). Multiple instances need sticky sessions for `mcp-session-id`
 affinity; rate limit (Redis) and quota (DB) are already instance-safe.
 
+**Media facet (MCP 1.10.0's 5 media tools).** The facet is
+`RepoProvider.media` — absent = the tools are hidden from `tools/list`.
+Policy lives at the **proxy** (`runMcpCloudProxy` computes `mediaEligible`
+= media stack + plan `media.upload` + project `cdn_enabled` + workspace
+owner), which injects `x-cr-project-id`/`x-cr-workspace-id`/`x-cr-media-owner`/`x-cr-plan`
+ONLY when eligible; the loopback (`mcp-cloud-server.ts`) turns those into
+`buildMcpMediaFacet` (`server/utils/mcp-media-facet.ts`), a passthrough
+over the ee media stack (`useMediaProvider`) that owns SSRF/MIME/size (via
+`fetchRemoteMedia`) + storage-quota + tenant isolation. Key-surface
+exception: media tools are **never** covered by the empty-`allowed_tools`
+"unrestricted" rule — a key needs `media_enabled=true` or an explicit
+listing (else existing keys would silently gain URL ingest + destructive
+delete). OAuth advertises `media:read`/`media:write` only where the media
+stack is configured (`advertisedScopes`). The tenant fingerprint includes
+project id, so an eligibility flip re-inits the session within one request.
+
 **Two deliberate boundaries — keep them in mind when changing this path:**
 
 - **Reduced tool surface.** The loopback server runs against Studio's

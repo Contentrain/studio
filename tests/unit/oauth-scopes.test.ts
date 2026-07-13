@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ADVERTISED_SCOPES,
   SUPPORTED_SCOPES,
+  advertisedScopes,
   normalizeScope,
   scopeAllowsTool,
   scopeForTool,
@@ -19,7 +20,7 @@ import {
 } from '../../server/utils/mcp-tool-classes'
 
 describe('scope registry', () => {
-  it('registers six scopes but advertises only the live four', () => {
+  it('registers six scopes with a base-four advertised set', () => {
     expect(SUPPORTED_SCOPES).toHaveLength(6)
     expect(ADVERTISED_SCOPES).toEqual([
       'content:read',
@@ -27,10 +28,31 @@ describe('scope registry', () => {
       'project:metadata',
       'offline_access',
     ])
-    // media:* stays registered (grants keep validating) but unadvertised.
     expect(SUPPORTED_SCOPES).toContain('media:read')
     expect(SUPPORTED_SCOPES).toContain('media:write')
     expect(ADVERTISED_SCOPES).not.toContain('media:read')
+  })
+})
+
+describe('advertisedScopes', () => {
+  it('returns the base four when the media stack is absent', () => {
+    expect(advertisedScopes({ mediaAvailable: false })).toEqual([
+      'content:read',
+      'content:write',
+      'project:metadata',
+      'offline_access',
+    ])
+  })
+
+  it('adds media:read/media:write in canonical order when media is available', () => {
+    expect(advertisedScopes({ mediaAvailable: true })).toEqual([
+      'content:read',
+      'content:write',
+      'project:metadata',
+      'media:read',
+      'media:write',
+      'offline_access',
+    ])
   })
 })
 

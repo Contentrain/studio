@@ -13,25 +13,35 @@
  */
 import type { H3Event } from 'h3'
 import { getHeader, proxyRequest, readRawBody, setResponseHeader } from 'h3'
-import { WRITE_TOOL_NAMES } from '~~/server/utils/mcp-tool-classes'
+import { MEDIA_TOOL_NAMES, WRITE_TOOL_NAMES } from '~~/server/utils/mcp-tool-classes'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
 import { publicMediaBase } from '~~/server/utils/media-url'
-import { useDatabaseProvider } from '~~/server/utils/providers'
+import { useDatabaseProvider, useMediaProvider } from '~~/server/utils/providers'
 import { checkRateLimit } from '~~/server/utils/rate-limit'
 import type { Plan } from '~~/server/utils/license'
-import { getPlanLimit } from '~~/server/utils/license'
+import { getPlanLimit, hasFeature } from '~~/server/utils/license'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { reconcileMcpCloudAutoMerge } from '~~/server/utils/mcp-cloud-automerge'
 import { incrementOauthUsageIfAllowed } from '~~/server/utils/oauth-server/store'
 
-/** Headers the proxy itself injects — any incoming value is discarded. */
+/**
+ * Headers the proxy itself injects — any incoming value is discarded.
+ * The media identity headers (project/workspace/owner/plan) are injected
+ * ONLY when the request is media-eligible; listing them here still means
+ * a client-supplied value is always stripped first, so a forged
+ * `x-cr-project-id` can never reach the loopback.
+ */
 export const STUDIO_HEADERS = [
   'x-cr-installation-id',
   'x-cr-repo-owner',
   'x-cr-repo-name',
   'x-cr-content-root',
   'x-cr-media-base',
+  'x-cr-project-id',
+  'x-cr-workspace-id',
+  'x-cr-media-owner',
+  'x-cr-plan',
 ] as const
 
 /**
@@ -84,6 +94,16 @@ export interface McpProxyContext {
   installationId: number
   repoFullName: string
   contentRoot: string
+  /** projects.cdn_enabled — media delivery gate (public media API precedent). */
+  cdnEnabled: boolean
+  /** workspaces.owner_id — `uploaded_by` for keyless media ingest; null hides media. */
+  mediaOwnerId: string | null
+  /**
+   * Key surface only: an explicit opt-in that lets an empty (unrestricted)
+   * allowlist reach media tools. OAuth passes a concrete scope-derived list
+   * and never sets this.
+   */
+  mediaToolsOptIn?: boolean
   /** Empty = unrestricted (key surface); scope-derived set (OAuth surface). */
   allowedTools: string[]
   rateLimitPerMinute: number
@@ -129,17 +149,24 @@ export async function runMcpCloudProxy(
     : undefined
   const toolCalls = extractToolCalls(rawBody)
 
-  // Tool allowlist: empty = unrestricted, non-empty = whitelist.
-  // Checked before the quota so denied calls never consume it.
-  if (ctx.allowedTools.length > 0) {
-    const denied = toolCalls.find(name => !ctx.allowedTools.includes(name))
-    if (denied) {
-      if (ctx.onToolDenied) ctx.onToolDenied(event, denied)
-      throw createError({
-        statusCode: 403,
-        message: errorMessage('mcp_cloud.tool_not_allowed', { tool: denied }),
-      })
-    }
+  // Tool allowlist. Non-media tools: empty = unrestricted, non-empty =
+  // whitelist. Media tools are NEVER covered by the empty "unrestricted"
+  // semantics — a key minted before the media facet existed must not
+  // silently gain URL ingest / destructive delete. They pass only when
+  // explicitly listed or (key surface) via the `media_enabled` opt-in.
+  // OAuth always passes a concrete `toolsForScope` list, so a media:*
+  // grant keeps working and a missing scope still triggers step-up.
+  const denied = toolCalls.find((name) => {
+    if (MEDIA_TOOL_NAMES.has(name))
+      return !ctx.allowedTools.includes(name) && ctx.mediaToolsOptIn !== true
+    return ctx.allowedTools.length > 0 && !ctx.allowedTools.includes(name)
+  })
+  if (denied) {
+    if (ctx.onToolDenied) ctx.onToolDenied(event, denied)
+    throw createError({
+      statusCode: 403,
+      message: errorMessage('mcp_cloud.tool_not_allowed', { tool: denied }),
+    })
   }
 
   // Only tool calls consume the monthly quota and produce meter events.
@@ -207,6 +234,18 @@ export async function runMcpCloudProxy(
 
   const target = slug.length > 0 ? `${mcpUrl}/${slug}` : mcpUrl
 
+  // Media facet eligibility — the policy decision lives HERE (once, for
+  // both surfaces). When eligible, inject the identity headers the
+  // loopback turns into the media facet; when not, omit them so the
+  // loopback builds a facet-less provider and the media tools stay hidden
+  // from tools/list. Requires: the media stack (ee + R2), the plan's
+  // media feature, project CDN delivery, and a workspace owner for
+  // `uploaded_by`.
+  const mediaEligible = useMediaProvider() !== null
+    && hasFeature(ctx.plan, 'media.upload')
+    && ctx.cdnEnabled
+    && ctx.mediaOwnerId !== null
+
   const response = await proxyRequest(event, target, {
     headers: {
       'x-cr-installation-id': String(ctx.installationId),
@@ -216,6 +255,14 @@ export async function runMcpCloudProxy(
       // Public media delivery base — lets MCP's content-write path normalize
       // `media/...` references to absolute URLs (provider.mediaBaseUrl).
       'x-cr-media-base': publicMediaBase(ctx.projectId),
+      ...(mediaEligible
+        ? {
+            'x-cr-project-id': ctx.projectId,
+            'x-cr-workspace-id': ctx.workspaceId,
+            'x-cr-media-owner': ctx.mediaOwnerId!,
+            'x-cr-plan': ctx.plan,
+          }
+        : {}),
       // h3's proxyRequest strips the client's `accept` header (it's in h3's
       // ignoredHeaders set). The MCP streamable-HTTP transport rejects any
       // request whose Accept doesn't include BOTH `application/json` and

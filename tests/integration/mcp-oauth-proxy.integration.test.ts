@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   rateCheck: { allowed: true, remaining: 59, retryAfterMs: 0 },
   quota: { allowed: true, used: 1 },
   planOk: true,
+  mediaProvider: null as unknown,
   db: {
     getProjectById: vi.fn(),
     getWorkspaceById: vi.fn(),
@@ -61,6 +62,7 @@ vi.mock('~~/server/utils/mcp-cloud-runtime', () => ({
 
 vi.mock('~~/server/utils/providers', () => ({
   useDatabaseProvider: vi.fn(() => state.db),
+  useMediaProvider: vi.fn(() => state.mediaProvider),
 }))
 
 vi.mock('~~/server/utils/rate-limit', () => ({
@@ -136,18 +138,21 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     state.rateCheck = { allowed: true, remaining: 59, retryAfterMs: 0 }
     state.quota = { allowed: true, used: 1 }
     state.planOk = true
+    state.mediaProvider = null
 
     state.db.getProjectById.mockResolvedValue({
       id: 'proj-1',
       repo_full_name: 'acme/site',
       content_root: '',
       workspace_id: 'ws-1',
+      cdn_enabled: true,
     })
     state.db.getWorkspaceById.mockResolvedValue({
       id: 'ws-1',
       github_installation_id: 42,
       plan: 'pro',
       overage_settings: {},
+      owner_id: 'owner-1',
     })
     state.proxyRequest.mockResolvedValue('proxied')
     state.reconcile.mockResolvedValue(undefined)
@@ -282,6 +287,28 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
 
     await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 403 })
     expect(wwwAuthenticate()).toContain('scope="content:read project:metadata"')
+  })
+
+  it('media-scoped grants pass a media tool and get the media headers when eligible', async () => {
+    state.mediaProvider = { listAssets: vi.fn() }
+    state.grant!.scope = 'content:read media:read media:write offline_access'
+    const handler = await loadHandler()
+    await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_ingest') }) as never)).resolves.toBe('proxied')
+
+    const headers = (state.proxyRequest.mock.calls.at(-1)![2] as { headers: Record<string, unknown> }).headers
+    expect(headers).toMatchObject({ 'x-cr-project-id': 'proj-1', 'x-cr-media-owner': 'owner-1', 'x-cr-plan': 'pro' })
+  })
+
+  it('grants without a media scope get the 403 insufficient_scope step-up on a media tool', async () => {
+    state.mediaProvider = { listAssets: vi.fn() }
+    state.grant!.scope = 'content:read content:write project:metadata'
+    const handler = await loadHandler()
+
+    await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_ingest') }) as never)).rejects.toMatchObject({ statusCode: 403 })
+    const challenge = wwwAuthenticate()!
+    expect(challenge).toContain('error="insufficient_scope"')
+    expect(challenge).toContain('media:write')
+    expect(state.proxyRequest).not.toHaveBeenCalled()
   })
 
   it('lifecycle tools stay a plain 403 — no step-up loop for ungrantable tools', async () => {

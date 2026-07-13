@@ -27,13 +27,27 @@
 
 import { startHttpMcpServerWith } from '@contentrain/mcp/server/http'
 import { createStudioGitProvider } from '../providers/git'
+import { buildMcpMediaFacet } from '../utils/mcp-media-facet'
 import { closeInternalMcp, mcpTenantFingerprint, setInternalMcp } from '../utils/mcp-cloud-runtime'
+import type { Plan } from '../utils/license'
 
 const HEADER_INSTALLATION_ID = 'x-cr-installation-id'
 const HEADER_REPO_OWNER = 'x-cr-repo-owner'
 const HEADER_REPO_NAME = 'x-cr-repo-name'
 const HEADER_CONTENT_ROOT = 'x-cr-content-root'
 const HEADER_MEDIA_BASE = 'x-cr-media-base'
+// Media facet identity — injected by the proxy only for media-eligible
+// requests (plan + cdn_enabled + media stack checked proxy-side). All
+// four must be present or the facet is not built and the media tools
+// stay hidden from tools/list.
+const HEADER_PROJECT_ID = 'x-cr-project-id'
+const HEADER_WORKSPACE_ID = 'x-cr-workspace-id'
+const HEADER_MEDIA_OWNER = 'x-cr-media-owner'
+const HEADER_PLAN = 'x-cr-plan'
+
+function headerString(value: string | string[] | undefined): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
 
 export default defineNitroPlugin((nitroApp) => {
   // Fire-and-forget: we do not want to block Nitro's startup on an
@@ -83,6 +97,18 @@ async function bootInternalMcpServer(): Promise<void> {
       // same absolute URLs Studio's own write path produces.
       const mediaBase = headers[HEADER_MEDIA_BASE]
 
+      // Media facet — built only when the proxy attested eligibility by
+      // injecting ALL four identity headers (client values are stripped
+      // proxy-side, so these are trusted). Absent set → no facet → the 5
+      // media tools stay out of this session's tools/list.
+      const projectId = headerString(headers[HEADER_PROJECT_ID])
+      const workspaceId = headerString(headers[HEADER_WORKSPACE_ID])
+      const mediaOwner = headerString(headers[HEADER_MEDIA_OWNER])
+      const plan = headerString(headers[HEADER_PLAN])
+      const media = (projectId && workspaceId && mediaOwner && plan)
+        ? buildMcpMediaFacet({ projectId, workspaceId, uploadedBy: mediaOwner, plan: plan as Plan }) ?? undefined
+        : undefined
+
       return createStudioGitProvider({
         installationId,
         owner,
@@ -93,6 +119,7 @@ async function bootInternalMcpServer(): Promise<void> {
         mediaBaseUrl: typeof mediaBase === 'string' && mediaBase.length > 0
           ? mediaBase
           : undefined,
+        media,
       })
     },
   })

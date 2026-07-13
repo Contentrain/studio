@@ -4,6 +4,7 @@
  * `resource` field still names the canonical MCP endpoint.
  */
 import { protectedResourceMetadata } from '~~/server/utils/oauth-server/metadata'
+import { useMediaProvider } from '~~/server/utils/providers'
 
 export default defineEventHandler((event) => {
   if (useRuntimeConfig().authProvider !== 'managed') {
@@ -11,5 +12,5 @@ export default defineEventHandler((event) => {
   }
 
   setResponseHeader(event, 'Cache-Control', 'public, max-age=300')
-  return protectedResourceMetadata()
+  return protectedResourceMetadata(undefined, { mediaAvailable: useMediaProvider() !== null })
 })

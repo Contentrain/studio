@@ -14,6 +14,7 @@ interface McpCloudKey {
   key_prefix: string
   project_id: string
   allowed_tools: string[]
+  media_enabled: boolean
   rate_limit_per_minute: number
   monthly_call_limit: number | null
   last_used_at: string | null
@@ -33,6 +34,7 @@ const loading = ref(true)
 
 const newKeyName = ref('')
 const newKeyProjectId = ref<string>('')
+const newKeyMediaEnabled = ref(false)
 const creating = ref(false)
 
 const revealedKey = ref<string | null>(null)
@@ -118,6 +120,7 @@ async function handleCreate() {
         body: {
           name: newKeyName.value.trim(),
           projectId: newKeyProjectId.value,
+          mediaEnabled: newKeyMediaEnabled.value,
         },
       },
     )
@@ -125,6 +128,7 @@ async function handleCreate() {
     revealedProjectId.value = created.project_id ?? newKeyProjectId.value
     revealDialogOpen.value = true
     newKeyName.value = ''
+    newKeyMediaEnabled.value = false
     toast.success(t('mcp_cloud.create_success'))
     await refresh()
   }
@@ -198,8 +202,13 @@ function formatRelative(iso: string | null): string {
         <li v-for="key in keys" :key="key.id" class="flex items-center gap-3 px-4 py-3">
           <span class="icon-[annon--key] size-4 text-muted" aria-hidden="true" />
           <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-heading dark:text-secondary-100">
-              {{ key.name }}
+            <div class="flex items-center gap-2">
+              <span class="truncate text-sm font-medium text-heading dark:text-secondary-100">
+                {{ key.name }}
+              </span>
+              <AtomsBadge v-if="key.media_enabled" variant="info" size="sm">
+                {{ t('mcp_cloud.media_badge') }}
+              </AtomsBadge>
             </div>
             <div class="text-xs text-muted">
               <span class="font-mono">{{ key.key_prefix }}…</span>
@@ -249,6 +258,16 @@ function formatRelative(iso: string | null): string {
             :placeholder="t('mcp_cloud.select_project')"
             class="mt-1.5"
           />
+        </div>
+        <div>
+          <AtomsFormSwitch
+            :model-value="newKeyMediaEnabled"
+            :label="t('mcp_cloud.media_enabled_label')"
+            @update:model-value="newKeyMediaEnabled = $event"
+          />
+          <p class="mt-1 text-xs text-muted">
+            {{ t('mcp_cloud.media_enabled_hint') }}
+          </p>
         </div>
         <AtomsBaseButton type="submit" variant="primary" size="md" :disabled="!newKeyName.trim() || !newKeyProjectId || creating">
           {{ creating ? t('mcp_cloud.creating') : t('mcp_cloud.create') }}

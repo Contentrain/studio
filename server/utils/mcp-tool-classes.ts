@@ -27,9 +27,10 @@ export const STUDIO_OWNED_LIFECYCLE_TOOLS = new Set([
  * media facet and NEVER touch the content branch, so they are excluded
  * from the write set (no brain invalidation, no auto-merge reconcile) and
  * from the content scopes (they map to `media:read` / `media:write`).
- * On today's loopback provider the facet is absent, so the MCP server
- * hides them from tools/list entirely — the sets exist so scope
- * enforcement is already correct the day the facet ships.
+ * The loopback provider attaches the facet only for media-eligible
+ * sessions (media stack + plan + cdn_enabled); when absent, the MCP
+ * server hides these tools from tools/list — but the classification is
+ * always correct, so the key gate and scope mapping hold either way.
  */
 export const MEDIA_TOOL_NAMES = new Set(
   Object.entries(TOOL_REQUIREMENTS)
