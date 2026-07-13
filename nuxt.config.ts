@@ -60,6 +60,12 @@ export default defineNuxtConfig({
       url: '', // NUXT_POSTGRES_URL — required when databaseProvider=postgres
     },
     authJwtSecret: '', // NUXT_AUTH_JWT_SECRET — min 32 chars, managed-auth JWT signing
+    // Directory-review support (managed pair only, both optional):
+    openaiAppsChallenge: '', // NUXT_OPENAI_APPS_CHALLENGE — domain-verification token served at /.well-known/openai-apps-challenge
+    reviewAccount: {
+      email: '', // NUXT_REVIEW_ACCOUNT_EMAIL — the ONLY address the password login accepts
+      password: '', // NUXT_REVIEW_ACCOUNT_PASSWORD — min 16 chars; unset = /auth/review-login does not exist
+    },
     supabase: {
       url: '',
       serviceRoleKey: '',
