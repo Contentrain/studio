@@ -338,6 +338,19 @@ export async function createCliAuthCode(user: AuthUser, providerTokens: Provider
   })
 }
 
+/**
+ * Session for the directory-review account (POST /api/auth/review-login).
+ * The route owns ALL gating (env opt-in, single allowed address,
+ * timing-safe password check, rate limit) — this just materializes the
+ * user through the normal email bootstrap chain and issues Studio tokens.
+ */
+export async function createReviewSession(email: string): Promise<AuthSession> {
+  const row = await upsertEmailUser(email)
+  const user = toAuthUser(row)
+  const tokens = await issueTokens(user)
+  return { user, tokens }
+}
+
 /** Consume a magic-link token (GET /api/auth/magic/verify). */
 export async function consumeMagicLinkToken(raw: string): Promise<AuthSession | null> {
   if (!raw.startsWith('mlc_') && !raw.startsWith('inv_')) return null

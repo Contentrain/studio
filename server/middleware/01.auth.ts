@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   '/api/auth/oauth/', // managed pair: OAuth dance legs (pre-session by definition)
   '/api/auth/verify',
   '/api/auth/refresh',
+  '/api/auth/review-login', // managed pair: directory-review password login (env-gated, pre-session)
   // nuxt-auth-utils module session endpoint (GET/DELETE). The module's SSR
   // plugin fetches it on every server-rendered page load — logged-out
   // included — and the route self-authenticates via its own sealed cookie

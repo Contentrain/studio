@@ -105,6 +105,17 @@ export default defineNitroPlugin(() => {
     if (!oauth?.google?.clientId || !oauth.google.clientSecret)
       warnings.push('NUXT_OAUTH_GOOGLE_CLIENT_ID / NUXT_OAUTH_GOOGLE_CLIENT_SECRET are not set — Google sign-in disabled')
 
+    // Directory-review account — optional, but when opted in it must be
+    // opted in COMPLETELY and with a non-trivial password: this is a
+    // password login into a real account.
+    const review = config.reviewAccount as { email?: string, password?: string } | undefined
+    if (review?.email || review?.password) {
+      if (!review.email || !review.password)
+        warnings.push('NUXT_REVIEW_ACCOUNT_EMAIL / NUXT_REVIEW_ACCOUNT_PASSWORD must BOTH be set — review login stays disabled')
+      else if (review.password.length < 16)
+        errors.push('NUXT_REVIEW_ACCOUNT_PASSWORD must be at least 16 characters (it gates a password login)')
+    }
+
     // The managed pair is also the OAuth AS for the remote MCP surface:
     // public.siteUrl is the issuer in every discovery document and the base
     // of every redirect the dance constructs. MCP clients require https on
