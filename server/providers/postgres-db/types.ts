@@ -293,6 +293,14 @@ export interface McpCloudUsageTable {
   last_call_at: Generated<string>
 }
 
+export interface McpOauthUsageTable {
+  workspace_id: string
+  month: string
+  grant_id: string
+  call_count: Generated<number>
+  last_call_at: Generated<string>
+}
+
 export interface MediaUsageTable {
   id: Generated<string>
   asset_id: string
@@ -501,6 +509,7 @@ export interface StudioDatabase {
   'cdn_builds': CdnBuildsTable
   'mcp_cloud_keys': McpCloudKeysTable
   'mcp_cloud_usage': McpCloudUsageTable
+  'mcp_oauth_usage': McpOauthUsageTable
   'media_usage': MediaUsageTable
   'form_submissions': FormSubmissionsTable
   'conversation_api_keys': ConversationApiKeysTable

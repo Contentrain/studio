@@ -133,15 +133,17 @@ export function mcpCloudMethods(): McpCloudMethods {
     },
 
     async getWorkspaceMonthlyMcpCloudUsage(workspaceId, month) {
+      // Combined pool: API-key traffic (mcp_cloud_usage) + OAuth-grant
+      // traffic (mcp_oauth_usage) — the same total the quota RPCs enforce,
+      // so the usage screen never disagrees with the 429s.
       const admin = getAdmin()
-      const { data, error } = await admin
-        .from('mcp_cloud_usage')
-        .select('call_count')
-        .eq('workspace_id', workspaceId)
-        .eq('month', month)
+      const { data, error } = await admin.rpc('workspace_mcp_month_total', {
+        p_workspace_id: workspaceId,
+        p_month: month,
+      })
 
       if (error) throw createError({ statusCode: 500, message: error.message })
-      return (data ?? []).reduce((sum, row) => sum + ((row as { call_count?: number }).call_count ?? 0), 0)
+      return Number(data ?? 0)
     },
   }
 }

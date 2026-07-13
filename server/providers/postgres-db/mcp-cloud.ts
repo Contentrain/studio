@@ -170,15 +170,18 @@ export function mcpCloudMethods(): McpCloudMethods {
     },
 
     async getWorkspaceMonthlyMcpCloudUsage(workspaceId, month) {
+      // Combined pool: API-key traffic (mcp_cloud_usage) + OAuth-grant
+      // traffic (mcp_oauth_usage) — the same total the quota RPCs enforce,
+      // so the usage screen never disagrees with the 429s.
       try {
-        const row = await getAdmin()
-          .selectFrom('mcp_cloud_usage')
-          .select(eb => eb.fn.coalesce(eb.fn.sum('call_count'), eb.lit(0)).as('total'))
-          .where('workspace_id', '=', workspaceId)
-          .where('month', '=', month)
-          .executeTakeFirst()
+        const outcome = await sql<{ total: number }>`
+          SELECT public.workspace_mcp_month_total(
+            p_workspace_id => ${workspaceId},
+            p_month => ${month}
+          ) AS total
+        `.execute(getAdmin())
 
-        return Number(row?.total ?? 0)
+        return Number(outcome.rows[0]?.total ?? 0)
       }
       catch (error) {
         throwDbError(error)

@@ -121,4 +121,29 @@ describe('app smoke (managed + postgres pair)', () => {
     const response = await fetch('/oauth/authorize')
     expect(response.status).toBe(400)
   })
+
+  it('serves RFC 9728 protected-resource metadata on the path-inserted well-known', async () => {
+    const response = await fetch('/.well-known/oauth-protected-resource/api/mcp/remote')
+    expect(response.status).toBe(200)
+
+    const prm = await response.json() as Record<string, unknown>
+    expect(prm.resource).toBe('http://localhost:3000/api/mcp/remote')
+    expect(prm.authorization_servers).toEqual(['http://localhost:3000'])
+  })
+
+  it('serves the root protected-resource metadata fallback', async () => {
+    const response = await fetch('/.well-known/oauth-protected-resource')
+    expect(response.status).toBe(200)
+    const prm = await response.json() as Record<string, unknown>
+    expect(prm.resource).toBe('http://localhost:3000/api/mcp/remote')
+  })
+
+  it('answers a bare remote-MCP request with the 401 discovery challenge (no DB needed)', async () => {
+    const response = await fetch('/api/mcp/remote', { method: 'POST' })
+    expect(response.status).toBe(401)
+
+    const challenge = response.headers.get('www-authenticate')!
+    expect(challenge).toContain('Bearer error="invalid_token"')
+    expect(challenge).toContain('resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource/api/mcp/remote"')
+  })
 })

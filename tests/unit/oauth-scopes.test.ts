@@ -3,8 +3,17 @@ import {
   ADVERTISED_SCOPES,
   SUPPORTED_SCOPES,
   normalizeScope,
+  scopeAllowsTool,
+  scopeForTool,
   scopeIncludes,
+  toolsForScope,
 } from '../../server/utils/oauth-server/scopes'
+import {
+  METADATA_TOOL_NAMES,
+  READ_TOOL_NAMES,
+  STUDIO_OWNED_LIFECYCLE_TOOLS,
+  WRITE_TOOL_NAMES,
+} from '../../server/utils/mcp-tool-classes'
 
 describe('scope registry', () => {
   it('registers six scopes but advertises only the live four', () => {
@@ -53,5 +62,75 @@ describe('scopeIncludes', () => {
     expect(scopeIncludes('content:read content:write', 'content:write')).toBe(true)
     expect(scopeIncludes('content:readx', 'content:read')).toBe(false)
     expect(scopeIncludes('content:read', 'offline_access')).toBe(false)
+  })
+})
+
+describe('tool classification (derived from TOOL_ANNOTATIONS)', () => {
+  it('partitions the tool surface: metadata / read / write / lifecycle are disjoint', () => {
+    const sets = [METADATA_TOOL_NAMES, READ_TOOL_NAMES, WRITE_TOOL_NAMES, STUDIO_OWNED_LIFECYCLE_TOOLS]
+    for (let a = 0; a < sets.length; a++) {
+      for (let b = a + 1; b < sets.length; b++) {
+        for (const name of sets[a]!) {
+          expect(sets[b]!.has(name), `${name} must appear in exactly one class`).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('pins the canonical members of each class', () => {
+    expect([...METADATA_TOOL_NAMES]).toEqual(
+      expect.arrayContaining(['contentrain_status', 'contentrain_describe', 'contentrain_describe_format']),
+    )
+    expect(READ_TOOL_NAMES.has('contentrain_content_list')).toBe(true)
+    expect(WRITE_TOOL_NAMES.has('contentrain_content_save')).toBe(true)
+    expect(WRITE_TOOL_NAMES.has('contentrain_model_delete')).toBe(true)
+    expect(STUDIO_OWNED_LIFECYCLE_TOOLS.has('contentrain_merge')).toBe(true)
+  })
+})
+
+describe('toolsForScope', () => {
+  it('project:metadata grants exactly the metadata tools', () => {
+    expect(new Set(toolsForScope('project:metadata'))).toEqual(METADATA_TOOL_NAMES)
+  })
+
+  it('content:read grants the readOnly rest — not metadata, not writes', () => {
+    const tools = new Set(toolsForScope('content:read'))
+    expect(tools).toEqual(READ_TOOL_NAMES)
+    expect(tools.has('contentrain_status')).toBe(false)
+    expect(tools.has('contentrain_content_save')).toBe(false)
+  })
+
+  it('content:write adds the write set', () => {
+    const tools = new Set(toolsForScope('content:read content:write'))
+    for (const name of WRITE_TOOL_NAMES) expect(tools.has(name), name).toBe(true)
+  })
+
+  it('lifecycle tools are never granted, whatever the scope', () => {
+    const everything = toolsForScope(SUPPORTED_SCOPES.join(' '))
+    for (const name of STUDIO_OWNED_LIFECYCLE_TOOLS) {
+      expect(everything).not.toContain(name)
+    }
+  })
+
+  it('media scopes and offline_access grant no tools today (reserved)', () => {
+    expect(toolsForScope('media:read media:write offline_access')).toEqual([])
+  })
+
+  it('scopeAllowsTool agrees with the derivation', () => {
+    expect(scopeAllowsTool('content:read', 'contentrain_content_list')).toBe(true)
+    expect(scopeAllowsTool('content:read', 'contentrain_content_save')).toBe(false)
+  })
+})
+
+describe('scopeForTool (step-up challenge routing)', () => {
+  it('routes each tool class to its scope', () => {
+    expect(scopeForTool('contentrain_status')).toBe('project:metadata')
+    expect(scopeForTool('contentrain_content_list')).toBe('content:read')
+    expect(scopeForTool('contentrain_content_save')).toBe('content:write')
+  })
+
+  it('returns null for lifecycle/unknown tools — no step-up loop', () => {
+    expect(scopeForTool('contentrain_merge')).toBeNull()
+    expect(scopeForTool('not_a_tool')).toBeNull()
   })
 })
