@@ -31,6 +31,7 @@ logs
 # Agent local configs (per-user, not shared)
 .claude/
 .windsurf/
+.codex/
 
 # Local env files
 .env
