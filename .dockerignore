@@ -14,4 +14,7 @@ tests
 coverage
 .vscode
 .idea
-supabase
+# Exclude Supabase local-dev assets (config, seed, snippets, templates) but
+# KEEP migrations — the runtime image's migration runner reads them.
+supabase/*
+!supabase/migrations
