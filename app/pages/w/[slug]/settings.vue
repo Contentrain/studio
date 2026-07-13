@@ -28,7 +28,7 @@ useHead({
 const aiKeysEnabled = useFeature('ai.byoa')
 
 const validTabs = computed(() => {
-  const base = ['overview', 'members', 'billing', 'github', 'mcp-cloud'] as const
+  const base = ['overview', 'members', 'billing', 'github', 'mcp-cloud', 'connected-apps'] as const
   return aiKeysEnabled.value ? [...base, 'ai-keys'] as const : base
 })
 
@@ -111,6 +111,9 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger value="mcp-cloud" :class="tabTriggerClass">
           {{ t('settings.mcp_cloud_tab') }}
         </TabsTrigger>
+        <TabsTrigger value="connected-apps" :class="tabTriggerClass">
+          {{ t('settings.connected_apps_tab') }}
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview" class="mt-6">
@@ -135,6 +138,10 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
 
       <TabsContent value="mcp-cloud" class="mt-6">
         <OrganismsWorkspaceMcpCloudPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
+      </TabsContent>
+
+      <TabsContent value="connected-apps" class="mt-6">
+        <OrganismsWorkspaceConnectedAppsPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
     </TabsRoot>
   </div>

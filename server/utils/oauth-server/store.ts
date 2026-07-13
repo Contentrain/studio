@@ -549,6 +549,18 @@ export async function incrementOauthUsageIfAllowed(input: {
   return { allowed: !!row.allowed, used: Number(row.used ?? 0) }
 }
 
+/** Per-grant call counts for a month — feeds the Connected Apps panel. */
+export async function getWorkspaceOauthMonthUsage(workspaceId: string, month: string): Promise<Record<string, number>> {
+  const rows = await getDb()
+    .selectFrom('mcp_oauth_usage')
+    .select(['grant_id', 'call_count'])
+    .where('workspace_id', '=', workspaceId)
+    .where('month', '=', month)
+    .execute()
+
+  return Object.fromEntries(rows.map(row => [row.grant_id, Number(row.call_count)]))
+}
+
 // ─── Housekeeping ───
 
 /**
