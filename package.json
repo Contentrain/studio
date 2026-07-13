@@ -54,9 +54,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-s3": "^3.1076.0",
-    "@contentrain/mcp": "1.8.1",
-    "@contentrain/query": "^6.1.1",
-    "@contentrain/types": "0.7.0",
+    "@contentrain/mcp": "1.10.0",
+    "@contentrain/query": "^6.2.1",
+    "@contentrain/types": "0.8.0",
     "@gitbeaker/rest": "^43.8.0",
     "@nuxt/eslint": "1.15.2",
     "@nuxt/image": "2.0.0",

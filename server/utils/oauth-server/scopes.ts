@@ -1,14 +1,15 @@
 /**
  * Scope registry for the remote MCP OAuth surface.
  *
- * Six scopes are defined; four are advertised. `media:*` maps to no remote
- * tool today (the media stack isn't part of the MCP Cloud tool surface) —
- * the scopes stay registered so already-issued grants keep validating when
- * media tools ship, but they are kept out of `scopes_supported` until then:
- * clients request everything a server advertises, and a dead scope on the
- * consent screen is a directory-review liability.
+ * Six scopes are defined; four are advertised. `media:*` maps to the
+ * 1.10.0 media tools, but the loopback provider doesn't implement the
+ * media facet yet — the MCP server hides those tools from tools/list
+ * entirely (TOOL_REQUIREMENTS), so the scopes stay OUT of
+ * `scopes_supported` until the facet ships: clients request everything a
+ * server advertises, and a scope granting invisible tools is a
+ * directory-review liability. Flip ADVERTISED_SCOPES when the facet lands.
  */
-import { METADATA_TOOL_NAMES, READ_TOOL_NAMES, WRITE_TOOL_NAMES } from '../mcp-tool-classes'
+import { MEDIA_READ_TOOL_NAMES, MEDIA_WRITE_TOOL_NAMES, METADATA_TOOL_NAMES, READ_TOOL_NAMES, WRITE_TOOL_NAMES } from '../mcp-tool-classes'
 
 export const SUPPORTED_SCOPES = [
   'content:read',
@@ -71,9 +72,11 @@ export function scopeIncludes(scope: string, member: SupportedScope): boolean {
 
 /**
  * Which tools a grant's scope may call — feeds the proxy pipeline's
- * allowlist. `media:*` maps to no remote tool today (reserved until the
- * media stack reaches the MCP Cloud surface); lifecycle tools are excluded
- * from every scope (Studio owns the merge/review lifecycle).
+ * allowlist. Media scopes map to the 1.10.0 media tools; the tools only
+ * materialize in tools/list once the loopback provider ships its media
+ * facet, but the scope enforcement is already correct for that day.
+ * Lifecycle tools are excluded from every scope (Studio owns the
+ * merge/review lifecycle).
  */
 export function toolsForScope(scope: string): string[] {
   const parts = new Set(scope.split(' '))
@@ -87,6 +90,12 @@ export function toolsForScope(scope: string): string[] {
   }
   if (parts.has('content:write')) {
     for (const name of WRITE_TOOL_NAMES) tools.add(name)
+  }
+  if (parts.has('media:read')) {
+    for (const name of MEDIA_READ_TOOL_NAMES) tools.add(name)
+  }
+  if (parts.has('media:write')) {
+    for (const name of MEDIA_WRITE_TOOL_NAMES) tools.add(name)
   }
 
   return [...tools]
@@ -105,5 +114,7 @@ export function scopeForTool(tool: string): SupportedScope | null {
   if (METADATA_TOOL_NAMES.has(tool)) return 'project:metadata'
   if (READ_TOOL_NAMES.has(tool)) return 'content:read'
   if (WRITE_TOOL_NAMES.has(tool)) return 'content:write'
+  if (MEDIA_READ_TOOL_NAMES.has(tool)) return 'media:read'
+  if (MEDIA_WRITE_TOOL_NAMES.has(tool)) return 'media:write'
   return null
 }

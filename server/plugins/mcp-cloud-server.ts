@@ -27,7 +27,7 @@
 
 import { startHttpMcpServerWith } from '@contentrain/mcp/server/http'
 import { createStudioGitProvider } from '../providers/git'
-import { closeInternalMcp, setInternalMcp } from '../utils/mcp-cloud-runtime'
+import { closeInternalMcp, mcpTenantFingerprint, setInternalMcp } from '../utils/mcp-cloud-runtime'
 
 const HEADER_INSTALLATION_ID = 'x-cr-installation-id'
 const HEADER_REPO_OWNER = 'x-cr-repo-owner'
@@ -54,6 +54,10 @@ async function bootInternalMcpServer(): Promise<void> {
     port: 0,
     host: '127.0.0.1',
     sessionTtlMs: 15 * 60 * 1000,
+    // Bind every session to the tenant identity the proxy injected when it
+    // was created — a follow-up request whose `x-cr-*` headers resolve to a
+    // different project 404s instead of reusing someone else's provider.
+    sessionFingerprint: req => mcpTenantFingerprint(req.headers),
     resolveProvider: (req) => {
       const headers = req.headers
       const installationIdRaw = headers[HEADER_INSTALLATION_ID]
