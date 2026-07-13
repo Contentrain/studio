@@ -20,6 +20,7 @@ interface CreateKeyInput {
   projectId: string
   name: string
   allowedTools?: string[]
+  mediaEnabled?: boolean
   rateLimitPerMinute?: number
   monthlyCallLimit?: number | null
 }
@@ -93,6 +94,7 @@ export default defineEventHandler(async (event) => {
     keyHash,
     keyPrefix,
     allowedTools,
+    mediaEnabled: body.mediaEnabled === true,
     rateLimitPerMinute: body.rateLimitPerMinute,
     monthlyCallLimit: body.monthlyCallLimit ?? null,
     createdBy: session.user.id,
@@ -105,6 +107,7 @@ export default defineEventHandler(async (event) => {
     name: row.name,
     projectId: row.project_id,
     allowedTools: row.allowed_tools ?? [],
+    mediaEnabled: row.media_enabled === true,
     rateLimitPerMinute: row.rate_limit_per_minute,
     monthlyCallLimit: row.monthly_call_limit,
     createdAt: row.created_at,

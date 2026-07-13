@@ -16,7 +16,8 @@ describe('mcpTenantFingerprint', () => {
   }
 
   it('derives a stable fingerprint from the tenant headers', () => {
-    expect(mcpTenantFingerprint(headers)).toBe('42:acme/site:content')
+    // Trailing empty component = no project-id injected (content-only session).
+    expect(mcpTenantFingerprint(headers)).toBe('42:acme/site:content:')
     expect(mcpTenantFingerprint({ ...headers })).toBe(mcpTenantFingerprint(headers))
   })
 
@@ -27,6 +28,16 @@ describe('mcpTenantFingerprint', () => {
     expect(mcpTenantFingerprint({ ...headers, 'x-cr-content-root': '' })).not.toBe(base)
   })
 
+  it('binds the session to the project id when media is eligible', () => {
+    const base = mcpTenantFingerprint(headers)
+    const withProject = mcpTenantFingerprint({ ...headers, 'x-cr-project-id': 'proj-1' })
+    // An eligibility flip (project-id appears/disappears) invalidates the session.
+    expect(withProject).not.toBe(base)
+    expect(withProject).toBe('42:acme/site:content:proj-1')
+    // Two projects sharing repo+root no longer collide.
+    expect(mcpTenantFingerprint({ ...headers, 'x-cr-project-id': 'proj-2' })).not.toBe(withProject)
+  })
+
   it('returns undefined when required headers are missing or malformed', () => {
     expect(mcpTenantFingerprint({})).toBeUndefined()
     expect(mcpTenantFingerprint({ ...headers, 'x-cr-repo-owner': undefined })).toBeUndefined()
@@ -35,6 +46,6 @@ describe('mcpTenantFingerprint', () => {
 
   it('treats a missing content root as the empty root', () => {
     const { 'x-cr-content-root': _root, ...rest } = headers
-    expect(mcpTenantFingerprint(rest)).toBe('42:acme/site:')
+    expect(mcpTenantFingerprint(rest)).toBe('42:acme/site::')
   })
 })

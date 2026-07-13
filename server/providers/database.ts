@@ -630,6 +630,7 @@ export interface DatabaseProvider {
     keyHash: string
     keyPrefix: string
     allowedTools: string[]
+    mediaEnabled?: boolean
     rateLimitPerMinute?: number
     monthlyCallLimit?: number | null
     createdBy?: string | null

@@ -19,6 +19,7 @@ import type {
   Commit,
   CommitAuthor,
   FileChange,
+  MediaProvider as ContractMediaProvider,
   RepoProvider,
 } from '@contentrain/types'
 import { createGitHubExtensions, createInstallationOctokit } from './github-app'
@@ -208,6 +209,13 @@ export interface StudioGitHubInput {
   contentRoot?: string
   /** Public media delivery base for MCP Cloud writes (see GitProvider.mediaBaseUrl). */
   mediaBaseUrl?: string
+  /**
+   * Contract media facet (@contentrain/types MediaProvider). Set only for
+   * media-eligible MCP Cloud loopback sessions — its presence is what makes
+   * MCP's 5 media tools appear in tools/list. Absent for local/CLI
+   * providers and non-eligible sessions.
+   */
+  media?: ContractMediaProvider
 }
 
 /**
@@ -239,6 +247,9 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
 
   return {
     mediaBaseUrl: opts.mediaBaseUrl,
+    // Contract media facet — RepoProvider.media (types 0.8.0). Undefined
+    // for content-only providers, which keeps the 5 media tools hidden.
+    media: opts.media,
     get capabilities() { return core.capabilities },
     readFile: (path: string, ref?: string) => core.readFile(path, ref),
     listDirectory: (path: string, ref?: string) => core.listDirectory(path, ref),

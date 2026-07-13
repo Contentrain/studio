@@ -45,7 +45,7 @@ export function mcpCloudMethods(): McpCloudMethods {
       const admin = getAdmin()
       let query = admin
         .from('mcp_cloud_keys')
-        .select('id, name, key_prefix, project_id, allowed_tools, rate_limit_per_minute, monthly_call_limit, last_used_at, created_at, created_by, revoked_at')
+        .select('id, name, key_prefix, project_id, allowed_tools, media_enabled, rate_limit_per_minute, monthly_call_limit, last_used_at, created_at, created_by, revoked_at')
         .eq('workspace_id', workspaceId)
         .is('revoked_at', null)
         .order('created_at', { ascending: false })
@@ -68,6 +68,7 @@ export function mcpCloudMethods(): McpCloudMethods {
           key_hash: input.keyHash,
           key_prefix: input.keyPrefix,
           allowed_tools: input.allowedTools,
+          media_enabled: input.mediaEnabled ?? false,
           rate_limit_per_minute: input.rateLimitPerMinute ?? 60,
           monthly_call_limit: input.monthlyCallLimit ?? null,
           created_by: input.createdBy ?? null,

@@ -6,6 +6,7 @@
  * are all a public-client authorization-code flow needs.
  */
 import { authorizationServerMetadata } from '~~/server/utils/oauth-server/metadata'
+import { useMediaProvider } from '~~/server/utils/providers'
 
 export default defineEventHandler((event) => {
   if (useRuntimeConfig().authProvider !== 'managed') {
@@ -13,5 +14,5 @@ export default defineEventHandler((event) => {
   }
 
   setResponseHeader(event, 'Cache-Control', 'public, max-age=300')
-  return authorizationServerMetadata()
+  return authorizationServerMetadata(undefined, { mediaAvailable: useMediaProvider() !== null })
 })

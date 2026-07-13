@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
 
   const project = await db.getProjectById(
     grant.projectId,
-    'id, repo_full_name, content_root, workspace_id',
+    'id, repo_full_name, content_root, workspace_id, cdn_enabled',
   )
   if (!project || project.workspace_id !== grant.workspaceId) {
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
 
   const workspace = await db.getWorkspaceById(
     grant.workspaceId,
-    'id, github_installation_id, plan, overage_settings',
+    'id, github_installation_id, plan, overage_settings, owner_id',
   )
   if (!workspace?.github_installation_id) {
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
@@ -87,6 +87,8 @@ export default defineEventHandler(async (event) => {
     installationId: workspace.github_installation_id as number,
     repoFullName: project.repo_full_name as string,
     contentRoot: (project.content_root as string | null) ?? '',
+    cdnEnabled: project.cdn_enabled === true,
+    mediaOwnerId: (workspace.owner_id as string | null) ?? null,
     allowedTools: toolsForScope(grant.scope),
     rateLimitPerMinute: OAUTH_RATE_LIMIT_PER_MINUTE,
     rateLimitKey: `mcp-oauth:${grant.grantId}`,

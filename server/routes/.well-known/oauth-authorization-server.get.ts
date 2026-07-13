@@ -7,6 +7,7 @@
  * construction. 404s on the Supabase pair — the OAuth AS is managed-only.
  */
 import { authorizationServerMetadata } from '~~/server/utils/oauth-server/metadata'
+import { useMediaProvider } from '~~/server/utils/providers'
 
 export default defineEventHandler((event) => {
   if (useRuntimeConfig().authProvider !== 'managed') {
@@ -15,5 +16,5 @@ export default defineEventHandler((event) => {
 
   // Claude caches discovery globally for ~5 min; match that horizon.
   setResponseHeader(event, 'Cache-Control', 'public, max-age=300')
-  return authorizationServerMetadata()
+  return authorizationServerMetadata(undefined, { mediaAvailable: useMediaProvider() !== null })
 })

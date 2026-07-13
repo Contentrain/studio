@@ -43,6 +43,13 @@ describe('authorization server metadata (RFC 8414)', () => {
       expect(meta.scopes_supported).not.toContain(scope)
   })
 
+  it('omits media scopes by default and advertises them only when media is available', () => {
+    expect(meta.scopes_supported).not.toContain('media:read')
+    const withMedia = authorizationServerMetadata(SITE, { mediaAvailable: true })
+    expect(withMedia.scopes_supported).toContain('media:read')
+    expect(withMedia.scopes_supported).toContain('media:write')
+  })
+
   it('supports exactly the code + refresh grant pair', () => {
     expect(meta.response_types_supported).toEqual(['code'])
     expect(meta.grant_types_supported).toEqual(['authorization_code', 'refresh_token'])
@@ -63,5 +70,12 @@ describe('protected resource metadata (RFC 9728)', () => {
 
   it('advertises header bearer methods only (tokens never in query strings)', () => {
     expect(prm.bearer_methods_supported).toEqual(['header'])
+  })
+
+  it('advertises media scopes only when the media stack is available', () => {
+    expect(prm.scopes_supported).not.toContain('media:write')
+    const withMedia = protectedResourceMetadata(SITE, { mediaAvailable: true })
+    expect(withMedia.scopes_supported).toContain('media:read')
+    expect(withMedia.scopes_supported).toContain('media:write')
   })
 })

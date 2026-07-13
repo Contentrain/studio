@@ -1,13 +1,13 @@
 /**
  * Scope registry for the remote MCP OAuth surface.
  *
- * Six scopes are defined; four are advertised. `media:*` maps to the
- * 1.10.0 media tools, but the loopback provider doesn't implement the
- * media facet yet — the MCP server hides those tools from tools/list
- * entirely (TOOL_REQUIREMENTS), so the scopes stay OUT of
- * `scopes_supported` until the facet ships: clients request everything a
- * server advertises, and a scope granting invisible tools is a
- * directory-review liability. Flip ADVERTISED_SCOPES when the facet lands.
+ * Six scopes are defined; the base four are always advertised. `media:*`
+ * maps to the 1.10.0 media tools and is advertised only on deployments
+ * where the media stack exists (EE bridge + R2) — the MCP loopback hides
+ * the media tools when the facet is absent, and advertising a scope that
+ * grants invisible tools is a directory-review liability. Availability is
+ * injected by the (server-side) metadata routes via `advertisedScopes()`,
+ * keeping this module pure for unit tests.
  */
 import { MEDIA_READ_TOOL_NAMES, MEDIA_WRITE_TOOL_NAMES, METADATA_TOOL_NAMES, READ_TOOL_NAMES, WRITE_TOOL_NAMES } from '../mcp-tool-classes'
 
@@ -22,13 +22,24 @@ export const SUPPORTED_SCOPES = [
 
 export type SupportedScope = (typeof SUPPORTED_SCOPES)[number]
 
-/** Advertised in AS metadata + PRM. offline_access is what makes Claude request a refresh token. */
+/** Always-advertised base. offline_access is what makes Claude request a refresh token. */
 export const ADVERTISED_SCOPES: SupportedScope[] = [
   'content:read',
   'content:write',
   'project:metadata',
   'offline_access',
 ]
+
+/**
+ * Scopes to advertise in AS metadata + PRM. The base four always; the two
+ * media scopes only when the deployment's media stack is configured.
+ * Returned in canonical registry order so equal sets compare equal.
+ */
+export function advertisedScopes(opts: { mediaAvailable: boolean }): SupportedScope[] {
+  if (!opts.mediaAvailable) return [...ADVERTISED_SCOPES]
+  const withMedia = new Set<SupportedScope>([...ADVERTISED_SCOPES, 'media:read', 'media:write'])
+  return SUPPORTED_SCOPES.filter(scope => withMedia.has(scope))
+}
 
 /** Scope hint on 401 challenges — the minimum a functional connection needs. */
 export const CHALLENGE_SCOPES: SupportedScope[] = [

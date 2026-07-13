@@ -14,7 +14,12 @@
  * - `code_challenge_methods_supported: ["S256"]` is required by the MCP
  *   spec — clients MUST refuse to proceed when it's absent.
  */
-import { ADVERTISED_SCOPES } from './scopes'
+import { advertisedScopes } from './scopes'
+
+interface MetadataOptions {
+  /** Advertise the media:* scopes (deployment has the media stack). */
+  mediaAvailable?: boolean
+}
 
 export function canonicalSiteUrl(): string {
   return (useRuntimeConfig().public.siteUrl as string).replace(/\/+$/, '')
@@ -29,13 +34,13 @@ export function protectedResourceMetadataUrl(siteUrl = canonicalSiteUrl()): stri
   return `${siteUrl}/.well-known/oauth-protected-resource/api/mcp/remote`
 }
 
-export function authorizationServerMetadata(siteUrl = canonicalSiteUrl()): Record<string, unknown> {
+export function authorizationServerMetadata(siteUrl = canonicalSiteUrl(), opts?: MetadataOptions): Record<string, unknown> {
   return {
     issuer: siteUrl,
     authorization_endpoint: `${siteUrl}/oauth/authorize`,
     token_endpoint: `${siteUrl}/oauth/token`,
     registration_endpoint: `${siteUrl}/oauth/register`,
-    scopes_supported: ADVERTISED_SCOPES,
+    scopes_supported: advertisedScopes({ mediaAvailable: opts?.mediaAvailable === true }),
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
@@ -44,11 +49,11 @@ export function authorizationServerMetadata(siteUrl = canonicalSiteUrl()): Recor
   }
 }
 
-export function protectedResourceMetadata(siteUrl = canonicalSiteUrl()): Record<string, unknown> {
+export function protectedResourceMetadata(siteUrl = canonicalSiteUrl(), opts?: MetadataOptions): Record<string, unknown> {
   return {
     resource: remoteMcpResource(siteUrl),
     authorization_servers: [siteUrl],
-    scopes_supported: ADVERTISED_SCOPES,
+    scopes_supported: advertisedScopes({ mediaAvailable: opts?.mediaAvailable === true }),
     bearer_methods_supported: ['header'],
   }
 }

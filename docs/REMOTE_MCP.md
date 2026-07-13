@@ -36,12 +36,24 @@ different project (the old connection stays until you disconnect it).
 | `project:metadata` | Project structure reads: `status`, `describe`, `describe_format` |
 | `content:read` | Content reads: `content_list`, `validate`, … |
 | `content:write` | Content/model writes: `content_save`, `content_delete`, `model_save`, `model_delete` |
+| `media:read` | Media reads: `media_list`, `media_get` |
+| `media:write` | Media writes: `media_ingest` (from a URL), `media_update`, `media_delete` |
 | `offline_access` | A refresh token (stay connected without re-approving) |
 
-`media:read` / `media:write` are reserved for the media stack and grant no
-tools yet. Studio's merge/review lifecycle tools are never exposed over
-remote MCP — writes land as `cr/*` branches and follow the project's
-workflow (auto-merge or review), exactly like the API-key surface.
+The `media:*` scopes are **advertised only on deployments where the media
+stack is configured** (Enterprise + object storage). The media tools
+additionally require the workspace plan's `media.upload` feature and the
+project's CDN delivery being enabled — where any of those is missing, the
+tools don't appear at all. Ingest is **URL-only** (MCP has no binary
+channel) and the fetch is SSRF-guarded, MIME-whitelisted and size-capped
+server-side. Studio's merge/review lifecycle tools are never exposed over
+remote MCP — content writes land as `cr/*` branches and follow the
+project's workflow (auto-merge or review), exactly like the API-key
+surface; media writes go through the media service, not git.
+
+API keys never gain media tools implicitly: an "unrestricted" key (empty
+tool list) still cannot call them — media access must be explicitly
+enabled per key (the "Allow media tools" toggle, or by listing the tools).
 
 Calls from remote MCP connections and API keys draw on the **same**
 `api.mcp_calls_per_month` workspace quota.

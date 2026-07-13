@@ -277,6 +277,7 @@ export interface McpCloudKeysTable {
   key_prefix: string
   name: string
   allowed_tools: Generated<string[]>
+  media_enabled: Generated<boolean>
   rate_limit_per_minute: Generated<number>
   monthly_call_limit: number | null
   last_used_at: string | null
