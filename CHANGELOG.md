@@ -1,6 +1,56 @@
 # Changelog
 
 
+## v0.2.0-beta.1
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0...v0.2.0-beta.1)
+
+### 🚀 Enhancements
+
+- **ai:** Add Claude Sonnet 5 + single-source chat model catalog ([#113](https://github.com/Contentrain/studio/pull/113))
+- **durability:** Alert on swallowed R2-teardown failures + require explicit CDN bucket ([#121](https://github.com/Contentrain/studio/pull/121))
+- **cdn:** Emit per-locale content bundles for single-fetch delivery ([#125](https://github.com/Contentrain/studio/pull/125))
+- **providers:** Add auth/database provider selectors behind boot validation ([#126](https://github.com/Contentrain/studio/pull/126))
+- **db:** Portable migration lineage — plain-Postgres auth shim, runner, CI proof ([#127](https://github.com/Contentrain/studio/pull/127))
+- **db:** Postgres DatabaseProvider core — client, RLS helpers, first 4 modules, contract suite ([#128](https://github.com/Contentrain/studio/pull/128))
+- **db:** Postgres provider — projects, usage, conversations (43 methods) + conversation delete-policy fix ([#130](https://github.com/Contentrain/studio/pull/130))
+- **db:** Postgres DatabaseProvider COMPLETE — final 6 modules + delete-safe FK fixes ([#131](https://github.com/Contentrain/studio/pull/131))
+- **auth:** Managed AuthProvider — the postgres pair is now selectable ([#132](https://github.com/Contentrain/studio/pull/132))
+- **tests:** Plain-PG test matrix + managed-pair boot smoke + provider-pair docs (Faz 4) ([#138](https://github.com/Contentrain/studio/pull/138))
+- **oauth:** Studio-managed OAuth 2.1 AS for the remote MCP surface ([#141](https://github.com/Contentrain/studio/pull/141))
+- **mcp:** ProjectId-less remote MCP endpoint behind the OAuth grant ([#142](https://github.com/Contentrain/studio/pull/142))
+- **ui:** Connected apps panel — see and revoke remote MCP grants ([#143](https://github.com/Contentrain/studio/pull/143))
+- **auth:** Directory-review support — env-gated reviewer login + submission prep ([#144](https://github.com/Contentrain/studio/pull/144))
+- **mcp:** Bump @contentrain/mcp to 1.10.0 — session fingerprint + media tool classes ([#145](https://github.com/Contentrain/studio/pull/145))
+- **mcp:** Media facet — the 1.10.0 media tools over MCP Cloud ([#146](https://github.com/Contentrain/studio/pull/146))
+
+### 🔥 Performance
+
+- ~6x fewer GitHub API calls in the agent write path (W1-W4) ([#116](https://github.com/Contentrain/studio/pull/116))
+- **cdn:** Serve delivery hot path from in-process caches + conditional R2 reads ([#124](https://github.com/Contentrain/studio/pull/124))
+
+### 🩹 Fixes
+
+- **auth:** Keep user sessions off the service-role Supabase client ([#112](https://github.com/Contentrain/studio/pull/112))
+- **content:** Add 17 dictionary keys used in code but never defined ([#114](https://github.com/Contentrain/studio/pull/114))
+- **cdn:** Stop full rebuild from wiping out-of-band media binaries ([#115](https://github.com/Contentrain/studio/pull/115))
+- **git:** Never auto-delete the source branch on merge (MCP 1.8.0) ([#118](https://github.com/Contentrain/studio/pull/118))
+- **brain:** Full-rebuild off default branch when contentrain is missing ([#119](https://github.com/Contentrain/studio/pull/119))
+- **content:** Handle document per-slug meta in status, copy-locale, and UI ([#123](https://github.com/Contentrain/studio/pull/123))
+- **auth:** Pin the OAuth exchange redirect_uri to siteUrl behind proxies ([#134](https://github.com/Contentrain/studio/pull/134))
+- **auth:** Let the oauth module own both dance legs — its state, its check ([#135](https://github.com/Contentrain/studio/pull/135))
+- **auth:** Drop the state param from the oauth entry URL — it broke module CSRF ([#136](https://github.com/Contentrain/studio/pull/136))
+- **cdn:** Derive webhook build paths from the compare API, not payload commits ([#139](https://github.com/Contentrain/studio/pull/139))
+- **chat:** Refuse media-intent uploads while project CDN delivery is off ([#140](https://github.com/Contentrain/studio/pull/140))
+
+### 🏡 Chore
+
+- **gitignore:** Ignore .codex/ agent local configs ([#147](https://github.com/Contentrain/studio/pull/147))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.1.0
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.8...v0.1.0)
