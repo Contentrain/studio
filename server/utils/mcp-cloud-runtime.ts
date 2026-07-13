@@ -10,6 +10,28 @@
  * named values from a plugin file is brittle across builds.
  */
 
+/**
+ * Tenant fingerprint for loopback MCP sessions (1.10.0
+ * `sessionFingerprint`). Derived from the SAME proxy-injected `x-cr-*`
+ * headers `resolveProvider` reads, so a session created for one
+ * project can never be replayed against another via a stolen
+ * `Mcp-Session-Id`: a mismatch makes the loopback answer 404 and the
+ * client re-initializes against its own provider.
+ */
+export function mcpTenantFingerprint(headers: Record<string, string | string[] | undefined>): string | undefined {
+  const pick = (name: string) => {
+    const value = headers[name]
+    return typeof value === 'string' ? value : undefined
+  }
+
+  const installationId = pick('x-cr-installation-id')
+  const owner = pick('x-cr-repo-owner')
+  const repo = pick('x-cr-repo-name')
+  if (!installationId || !owner || !repo) return undefined
+
+  return `${installationId}:${owner}/${repo}:${pick('x-cr-content-root') ?? ''}`
+}
+
 let mcpUrl: string | null = null
 let closer: (() => Promise<void>) | null = null
 
