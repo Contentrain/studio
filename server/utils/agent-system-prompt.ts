@@ -527,6 +527,9 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     agentPrompt('rules.update_existing_id'),
     agentPrompt('rules.update_merge'),
 
+    // Write sizing — keep tool calls under the output-token ceiling
+    agentPrompt('rules.batch_writes'),
+
     // Relations
     agentPrompt('rules.relation_value'),
     agentPrompt('rules.polymorphic_relation'),

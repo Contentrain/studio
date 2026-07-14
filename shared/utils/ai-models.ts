@@ -34,6 +34,19 @@ export interface ChatModelEntry {
    * and source in `server/utils/conversation-history.ts`.
    */
   historyBudget: number
+  /**
+   * Output-token ceiling (`max_tokens`) sent to the provider for this
+   * model. This is a CAP, not a target — the model bills only for what
+   * it actually generates, so a generous ceiling is cost-neutral for
+   * normal turns and only matters when a single response (notably a
+   * large write tool call — a full dictionary, many entries) would
+   * otherwise be cut off mid-generation. Too small a value silently
+   * truncates the tool call and the operation never runs; too large a
+   * value risks a provider 400 for exceeding the model's own limit.
+   * Values here stay comfortably within every listed model's documented
+   * output limit (Sonnet/Haiku 64K, Opus 32K).
+   */
+  maxOutputTokens: number
   /** Command palette icon class. */
   paletteIcon: string
   /** Command palette search keywords (base set; palette adds generics). */
@@ -47,6 +60,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     description: 'Fast & economic',
     tier: 'starter',
     historyBudget: 12_000,
+    maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--lightning]',
     paletteKeywords: ['haiku', 'fast', 'economic'],
   },
@@ -56,6 +70,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     description: 'Balanced',
     tier: 'pro',
     historyBudget: 48_000,
+    maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--star]',
     paletteKeywords: ['sonnet', 'balanced'],
   },
@@ -69,6 +84,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     description: 'Balanced, newest generation',
     tier: 'pro',
     historyBudget: 48_000,
+    maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--star]',
     paletteKeywords: ['sonnet', 'balanced', 'newest', 'sonnet 5'],
   },
@@ -78,6 +94,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     description: 'Most capable',
     tier: 'pro',
     historyBudget: 48_000,
+    maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--trophy]',
     paletteKeywords: ['opus', 'capable', 'best'],
   },
@@ -95,4 +112,20 @@ export const DEFAULT_CHAT_MODEL = 'claude-sonnet-4-6'
  */
 export function chatModelIdsFor(hasStudioKey: boolean): string[] {
   return CHAT_MODELS.filter(m => hasStudioKey || m.tier === 'starter').map(m => m.id)
+}
+
+/**
+ * Fallback output-token ceiling for model IDs not in the chat catalog
+ * (Conversation-API / legacy models). Safe for every current Claude
+ * model and still double the historical 4K default the tool loop used.
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+
+/**
+ * Output-token ceiling (`max_tokens`) for a model. Catalog-driven for
+ * chat-picker models; `DEFAULT_MAX_OUTPUT_TOKENS` for anything else
+ * (legacy / Conversation-API model IDs). See `ChatModelEntry.maxOutputTokens`.
+ */
+export function maxOutputTokensFor(modelId: string): number {
+  return CHAT_MODELS.find(m => m.id === modelId)?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
 }

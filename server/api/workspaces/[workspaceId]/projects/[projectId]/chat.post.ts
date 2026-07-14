@@ -6,7 +6,7 @@ import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
-import { chatModelIdsFor, DEFAULT_CHAT_MODEL } from '../../../../../../shared/utils/ai-models'
+import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEdition } from '../../../../../utils/license'
@@ -258,7 +258,7 @@ export default defineEventHandler(async (event) => {
 
       try {
         for await (const evt of runConversationLoop(
-          { model, apiKey, systemPrompt, messages, tools: aiTools, abortSignal: abortController.signal },
+          { model, apiKey, systemPrompt, messages, tools: aiTools, maxOutputTokens: maxOutputTokensFor(model), abortSignal: abortController.signal },
           { engine: contentEngine, git, userEmail: session.user.email ?? '', userId: session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext, phase },
         )) {
         // Stop processing if client disconnected
