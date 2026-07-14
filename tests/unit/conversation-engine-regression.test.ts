@@ -119,6 +119,39 @@ describe('conversation engine regression', () => {
     expect(messages).toHaveLength(1)
   })
 
+  it('surfaces a typed error when the model is cut off at the output-token limit', async () => {
+    // Regression: a `max_tokens` stop mid-response (the model was
+    // emitting a tool call that never completed) used to fall through
+    // the generic "final iteration" check and end the turn silently,
+    // stranding the user on a "…saving now:" preamble whose save never
+    // ran. It must instead emit an `output_truncated` error and still
+    // close the turn, preserving whatever text streamed.
+    const { events } = await collectConversationEvents({
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'text', content: 'Saving now:' }
+          yield {
+            type: 'message_end',
+            stopReason: 'max_tokens',
+            usage: { inputTokens: 100, outputTokens: 4096 },
+          }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    const errorEvent = events.find(e => e.type === 'error')
+    expect(errorEvent).toBeTruthy()
+    expect(errorEvent).toMatchObject({ type: 'error', code: 'output_truncated' })
+
+    // The turn still closes cleanly and keeps the partial text.
+    const done = events[events.length - 1]!
+    expect(done).toMatchObject({
+      type: 'done',
+      lastContent: [{ type: 'text', text: 'Saving now:' }],
+    })
+  })
+
   it('streams the post-tool continuation instead of buffering it', async () => {
     // Every iteration now streams — the first turn AND the post-tool
     // continuation. The follow-up answer must arrive as streamed text

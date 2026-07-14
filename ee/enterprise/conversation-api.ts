@@ -15,6 +15,7 @@ import { errorMessage } from '../../server/utils/content-strings'
 import { normalizeContentRoot } from '../../server/utils/content-paths'
 import { runConversationLoop } from '../../server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '../../server/utils/conversation-history'
+import { maxOutputTokensFor } from '../../shared/utils/ai-models'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
 import { getPlanLimit, getWorkspacePlan, hasFeature } from '../../server/utils/license'
@@ -326,7 +327,7 @@ async function runConversationMessage(
     let iterations: Array<{ iteration: number, assistantBlocks: AIContentBlock[], toolResultBlocks: AIContentBlock[] }> = []
 
     for await (const evt of runConversationLoop(
-      { model, apiKey, systemPrompt, messages, tools: aiTools },
+      { model, apiKey, systemPrompt, messages, tools: aiTools, maxOutputTokens: maxOutputTokensFor(model) },
       {
         engine: contentEngine,
         git,

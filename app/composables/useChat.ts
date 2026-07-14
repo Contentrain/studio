@@ -434,8 +434,14 @@ export function useChat(options?: {
 
       case 'error': {
         const { t } = useContent()
-        // SSE error events may contain raw backend messages — use fallback
-        error.value = t('chat.send_error')
+        // Output-token truncation is a distinct, actionable failure: the
+        // turn was cut off before a pending save/create ran. Give it its
+        // own localized message instead of the generic send failure. Any
+        // partial text already streamed stays in the bubble.
+        error.value = event.code === 'output_truncated'
+          ? t('chat.output_truncated')
+          // Other SSE error events may carry raw backend messages — use fallback
+          : t('chat.send_error')
         break
       }
     }

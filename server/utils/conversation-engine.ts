@@ -3,6 +3,7 @@ import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
+import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -68,6 +69,15 @@ export interface ConversationConfig {
   tools: AITool[]
   maxToolIterations?: number
   maxToolResultLength?: number
+  /**
+   * Output-token ceiling (`max_tokens`) per model turn. A CAP, not a
+   * target — billed on actual output, so a generous value is
+   * cost-neutral and only prevents large tool calls (a full dictionary,
+   * many entries) from being truncated mid-generation. Callers pass the
+   * model-aware value from `maxOutputTokensFor`; defaults to
+   * `DEFAULT_MAX_OUTPUT_TOKENS` when omitted.
+   */
+  maxOutputTokens?: number
   abortSignal?: AbortSignal
 }
 
@@ -117,6 +127,7 @@ export async function* runConversationLoop(
 ): AsyncGenerator<ConversationEvent> {
   const maxIterations = config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS
   const maxResultLength = config.maxToolResultLength ?? DEFAULT_MAX_TOOL_RESULT_LENGTH
+  const maxOutputTokens = config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
   const aiProvider = useAIProvider()
 
   let totalInputTokens = 0
@@ -218,13 +229,32 @@ export async function* runConversationLoop(
 
       iteration++
 
-      const turn = yield* runModelStream(4096)
+      const turn = yield* runModelStream(maxOutputTokens)
       totalInputTokens += turn.usage.inputTokens
       totalOutputTokens += turn.usage.outputTokens
       totalCacheCreationInputTokens += turn.usage.cacheCreationInputTokens
       totalCacheReadInputTokens += turn.usage.cacheReadInputTokens
       lastStopReason = turn.stopReason
       lastAssistantContent = turn.assistantBlocks
+
+      // === OUTPUT-TOKEN TRUNCATION ===
+      // The model hit the `max_tokens` ceiling mid-response. If it was
+      // emitting a tool call, that call was cut off before completion —
+      // no `tool_use_end` fires, so it never lands in `currentToolCalls`
+      // and never executes. Treating this as a normal end-of-turn (the
+      // generic check below) strands the user on a "…saving now:"
+      // preamble whose action silently never ran. Instead: keep the
+      // partial (text-only) content for the transcript, surface a
+      // typed error the client localizes, and end the turn honestly.
+      if (turn.stopReason === 'max_tokens') {
+        trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
+        yield {
+          type: 'error',
+          code: 'output_truncated',
+          message: 'The response was cut off at the output-token limit before it finished. Any pending save/create did not run. Split large operations into smaller steps (e.g. one locale or a few entries per call) and retry.',
+        }
+        break
+      }
 
       if (turn.stopReason !== 'tool_use' || turn.currentToolCalls.length === 0) {
       // Final iteration — no tool execution this turn. Persist the
@@ -291,7 +321,7 @@ export async function* runConversationLoop(
     // tools-disabled streaming call so the model summarizes what it did —
     // streamed live, and recorded as the final visible assistant turn.
     if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
-      const wrap = yield* runModelStream(4096, [])
+      const wrap = yield* runModelStream(maxOutputTokens, [])
       totalInputTokens += wrap.usage.inputTokens
       totalOutputTokens += wrap.usage.outputTokens
       totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
