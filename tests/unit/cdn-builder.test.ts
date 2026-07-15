@@ -3,6 +3,7 @@ import type { ModelDefinition } from '@contentrain/types'
 import type { GitProvider } from '../../server/providers/git'
 import type { CDNObject, CDNProvider } from '../../server/providers/cdn'
 import { executeCDNBuild, getAffectedModels } from '../../server/utils/cdn-builder'
+import { reportDataLossRisk } from '../../server/utils/alert'
 import {
   resolveConfigPath,
   resolveContentPath,
@@ -11,6 +12,10 @@ import {
   resolveModelsDir,
 } from '../../server/utils/content-paths'
 import { rewriteMediaUrl, toDeliveryUrl } from '../../server/utils/media-url'
+
+// Spy on the data-loss reporter so we can assert per-model build failures are
+// surfaced (not silently swallowed) without pulling in Sentry.
+vi.mock('../../server/utils/alert', () => ({ reportDataLossRisk: vi.fn() }))
 
 function createGitProvider(files: Record<string, string>): GitProvider {
   const normalize = (path: string) => path.replace(/^\/+/, '')
@@ -93,6 +98,7 @@ function createCDNProvider() {
 
 describe('cdn builder', () => {
   beforeEach(() => {
+    vi.mocked(reportDataLossRisk).mockClear()
     vi.stubGlobal('resolveConfigPath', resolveConfigPath)
     vi.stubGlobal('resolveModelPath', resolveModelPath)
     vi.stubGlobal('resolveModelsDir', resolveModelsDir)
@@ -476,6 +482,220 @@ describe('cdn builder', () => {
     const bundle = JSON.parse(objects.get('proj:_bundle/en.json') ?? '{}')
     expect(bundle.paths['content/faq/en.json']).toEqual({ a1: { question: 'Fresh from git' } })
     expect(bundle.paths['content/team/en.json']).toEqual({ m1: { name: 'Existing member' } })
+  })
+
+  // Regression: for i18n:false content, meta lives under the DEFAULT locale
+  // (MCP's contract), which is NOT necessarily supported[0]. The builder used
+  // `locales[0]` (= supported[0]) to resolve the meta path, so when
+  // default ∉ supported[0] (here default=tr, supported=[en,tr]) it read a
+  // non-existent meta file → the meta filter went blind: drafts leaked into the
+  // published artifact and the meta output stayed empty. Must read meta/{model}/tr.json.
+  it('resolves non-i18n collection meta under the default locale, not supported[0]', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'tr', supported: ['en', 'tr'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/sponsors.json': JSON.stringify({
+        id: 'sponsors',
+        name: 'Sponsors',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: false,
+        fields: {},
+      }),
+      '.contentrain/content/marketing/sponsors/data.json': JSON.stringify({
+        live: { name: 'Live sponsor' },
+        hidden: { name: 'Draft sponsor' },
+      }),
+      // Meta is written under the DEFAULT locale (tr), not supported[0] (en).
+      '.contentrain/meta/sponsors/tr.json': JSON.stringify({
+        live: { status: 'published' },
+        hidden: { status: 'draft' },
+      }),
+    }
+    const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+    const git = {
+      ...createGitProvider(files),
+      listDirectory: vi.fn(async (p: string) => {
+        if (normalize(p) === '.contentrain/models') return ['sponsors.json']
+        return []
+      }),
+    } as unknown as GitProvider
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+
+    // The draft must be filtered out (meta was actually read) — pre-fix this
+    // leaked because the meta lookup missed and defaulted to include-all.
+    const content = JSON.parse(objects.get('proj:content/sponsors/data.json') ?? 'null')
+    expect(content).toEqual({ live: { name: 'Live sponsor' } })
+
+    // And the filtered meta must be published under the `data` artifact —
+    // pre-fix the meta read threw, so no meta object was uploaded at all.
+    const meta = JSON.parse(objects.get('proj:meta/sponsors/data.json') ?? 'null')
+    expect(meta).toEqual({ live: { status: 'published' } })
+  })
+
+  // Regression (#3): singleton/dictionary content is a single unit gated by ONE
+  // meta object ({ status, ... }), NOT an id-keyed map. A draft/unpublished unit
+  // must not reach the CDN. Previously only `collection` was status-filtered, so
+  // draft singletons/dictionaries leaked in full.
+  it('hides a draft singleton (content + meta) from the CDN', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/settings.json': JSON.stringify({
+        id: 'settings', name: 'Settings', kind: 'singleton', domain: 'marketing', i18n: false, fields: {},
+      }),
+      '.contentrain/content/marketing/settings/data.json': JSON.stringify({ title: 'Unpublished draft' }),
+      // Singleton meta is a SINGLE object under the default locale.
+      '.contentrain/meta/settings/en.json': JSON.stringify({ status: 'draft' }),
+    }
+    const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+    const git = {
+      ...createGitProvider(files),
+      listDirectory: vi.fn(async (p: string) => (normalize(p) === '.contentrain/models' ? ['settings.json'] : [])),
+    } as unknown as GitProvider
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj', buildId: 'b', git, cdn: provider, contentRoot: '', commitSha: 's', branch: 'main', fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    // Draft unit → neither content nor meta artifact is published.
+    expect(objects.has('proj:content/settings/data.json')).toBe(false)
+    expect(objects.has('proj:meta/settings/data.json')).toBe(false)
+  })
+
+  it('publishes a published singleton with its single meta object verbatim', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt', locales: { default: 'en', supported: ['en'] }, domains: ['marketing'],
+      }),
+      '.contentrain/models/settings.json': JSON.stringify({
+        id: 'settings', name: 'Settings', kind: 'singleton', domain: 'marketing', i18n: false, fields: {},
+      }),
+      '.contentrain/content/marketing/settings/data.json': JSON.stringify({ title: 'Live' }),
+      '.contentrain/meta/settings/en.json': JSON.stringify({ status: 'published', source: 'human' }),
+    }
+    const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+    const git = {
+      ...createGitProvider(files),
+      listDirectory: vi.fn(async (p: string) => (normalize(p) === '.contentrain/models' ? ['settings.json'] : [])),
+    } as unknown as GitProvider
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj', buildId: 'b', git, cdn: provider, contentRoot: '', commitSha: 's', branch: 'main', fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(JSON.parse(objects.get('proj:content/settings/data.json') ?? 'null')).toEqual({ title: 'Live' })
+    // Meta ships as the single object as-is (not wrapped in an id-map).
+    expect(JSON.parse(objects.get('proj:meta/settings/data.json') ?? 'null')).toEqual({ status: 'published', source: 'human' })
+  })
+
+  it('publishes a singleton with no meta file (legacy content without status)', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt', locales: { default: 'en', supported: ['en'] }, domains: ['marketing'],
+      }),
+      '.contentrain/models/settings.json': JSON.stringify({
+        id: 'settings', name: 'Settings', kind: 'singleton', domain: 'marketing', i18n: false, fields: {},
+      }),
+      '.contentrain/content/marketing/settings/data.json': JSON.stringify({ title: 'Legacy' }),
+      // no meta file at all
+    }
+    const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+    const git = {
+      ...createGitProvider(files),
+      listDirectory: vi.fn(async (p: string) => (normalize(p) === '.contentrain/models' ? ['settings.json'] : [])),
+    } as unknown as GitProvider
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj', buildId: 'b', git, cdn: provider, contentRoot: '', commitSha: 's', branch: 'main', fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(JSON.parse(objects.get('proj:content/settings/data.json') ?? 'null')).toEqual({ title: 'Legacy' })
+    // No meta file existed → no meta artifact uploaded.
+    expect(objects.has('proj:meta/settings/data.json')).toBe(false)
+  })
+
+  // Regression (#2): a corrupt meta file must SURFACE (data-loss alert), not be
+  // silently swallowed into an unfiltered publish. Content-file absence stays a
+  // silent skip; only genuine errors are reported.
+  it('surfaces a corrupt meta file instead of silently over-publishing', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt', locales: { default: 'en', supported: ['en'] }, domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq', name: 'FAQ', kind: 'collection', domain: 'marketing', i18n: true, fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({ a1: { q: 'Q' } }),
+      // Corrupt meta — not valid JSON.
+      '.contentrain/meta/faq/en.json': '{ not valid json',
+    }
+    const { provider, objects } = createCDNProvider()
+    const git = createGitProvider(files)
+
+    const result = await executeCDNBuild({
+      projectId: 'proj', buildId: 'b', git, cdn: provider, contentRoot: '', commitSha: 's', branch: 'main', fullRebuild: true,
+    })
+
+    // Build itself completes (best-effort), but the failure is reported...
+    expect(result.error).toBeUndefined()
+    expect(vi.mocked(reportDataLossRisk)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ op: 'cdn-build.model', projectId: 'proj', modelId: 'faq' }),
+    )
+    // ...and the model's content was NOT published unfiltered (parse threw first).
+    expect(objects.has('proj:content/faq/en.json')).toBe(false)
+  })
+
+  it('silently skips a locale whose content file is absent (no data-loss alert)', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt', locales: { default: 'en', supported: ['en', 'tr'] }, domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq', name: 'FAQ', kind: 'collection', domain: 'marketing', i18n: true, fields: {},
+      }),
+      // Only the EN content exists; TR is genuinely absent (expected skip).
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({ a1: { q: 'Q' } }),
+      '.contentrain/meta/faq/en.json': JSON.stringify({ a1: { status: 'published' } }),
+    }
+    const git = createGitProvider(files)
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj', buildId: 'b', git, cdn: provider, contentRoot: '', commitSha: 's', branch: 'main', fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    // EN published, TR absent — and absence is NOT reported as a data-loss risk.
+    expect(objects.has('proj:content/faq/en.json')).toBe(true)
+    expect(objects.has('proj:content/faq/tr.json')).toBe(false)
+    expect(vi.mocked(reportDataLossRisk)).not.toHaveBeenCalled()
   })
 
   it('includes non-i18n bodies in every locale bundle', async () => {

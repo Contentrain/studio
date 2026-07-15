@@ -52,6 +52,54 @@ describe('content path resolution', () => {
     expect(resolveContentPath(nestedCtx, documentModel, 'en')).toBe('apps/web/docs/content')
   })
 
+  // Regression: resolveContentPath MUST honor model.locale_strategy, staying
+  // byte-for-byte aligned with MCP's canonical contentFilePath/documentFilePath
+  // (that's what planContentSave actually commits). A wrong strategy reads a
+  // non-existent path → silent skip in the CDN build + brain cache.
+  it('honors every locale_strategy for i18n JSON kinds', () => {
+    const base = { id: 'faq', kind: 'collection', domain: 'marketing', i18n: true, content_path: undefined }
+
+    // file (default) — one dir per model, one file per locale
+    expect(resolveContentPath(rootCtx, base, 'en')).toBe('.contentrain/content/marketing/faq/en.json')
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'file' }, 'en')).toBe('.contentrain/content/marketing/faq/en.json')
+    // suffix — {modelId}.{locale}.json in the model dir
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'suffix' }, 'en')).toBe('.contentrain/content/marketing/faq/faq.en.json')
+    // directory — {locale}/{modelId}.json
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'directory' }, 'en')).toBe('.contentrain/content/marketing/faq/en/faq.json')
+    // none — single {modelId}.json, locale not encoded
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'none' }, 'en')).toBe('.contentrain/content/marketing/faq/faq.json')
+  })
+
+  it('honors every locale_strategy for i18n document kinds', () => {
+    const base = { id: 'docs', kind: 'document', domain: 'marketing', i18n: true, content_path: undefined }
+
+    expect(resolveContentPath(rootCtx, base, 'en', 'intro')).toBe('.contentrain/content/marketing/docs/intro/en.md')
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'suffix' }, 'en', 'intro')).toBe('.contentrain/content/marketing/docs/intro.en.md')
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'directory' }, 'en', 'intro')).toBe('.contentrain/content/marketing/docs/en/intro.md')
+    expect(resolveContentPath(rootCtx, { ...base, locale_strategy: 'none' }, 'en', 'intro')).toBe('.contentrain/content/marketing/docs/intro.md')
+  })
+
+  it('ignores locale_strategy for non-i18n models (always data.json / flat .md)', () => {
+    const json = { id: 'nav', kind: 'singleton', domain: 'marketing', i18n: false, content_path: undefined }
+    const doc = { id: 'docs', kind: 'document', domain: 'marketing', i18n: false, content_path: undefined }
+    for (const strategy of ['file', 'suffix', 'directory', 'none'] as const) {
+      expect(resolveContentPath(rootCtx, { ...json, locale_strategy: strategy }, 'en')).toBe('.contentrain/content/marketing/nav/data.json')
+      expect(resolveContentPath(rootCtx, { ...doc, locale_strategy: strategy }, 'en', 'intro')).toBe('.contentrain/content/marketing/docs/intro.md')
+    }
+  })
+
+  it('applies locale_strategy under a content_path override too', () => {
+    const model = { id: 'faq', kind: 'collection', domain: 'marketing', i18n: true, content_path: 'content/faq', locale_strategy: 'suffix' as const }
+    expect(resolveContentPath(rootCtx, model, 'tr')).toBe('content/faq/faq.tr.json')
+  })
+
+  it('still rejects path-traversal and protected content_path targets', () => {
+    const traversal = { id: 'x', kind: 'collection', domain: 'm', i18n: true, content_path: '../secrets' }
+    const protectedPath = { id: 'x', kind: 'collection', domain: 'm', i18n: true, content_path: '.contentrain/models' }
+    expect(() => resolveContentPath(rootCtx, traversal, 'en')).toThrow(/path traversal/)
+    expect(() => resolveContentPath(rootCtx, protectedPath, 'en')).toThrow(/protected directory/)
+  })
+
   it('normalizes content roots for monorepo and root projects', () => {
     expect(normalizeContentRoot('/')).toBe('')
     expect(normalizeContentRoot('')).toBe('')

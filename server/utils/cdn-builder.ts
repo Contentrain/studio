@@ -199,7 +199,12 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    const locales = config.locales?.supported ?? [config.locales?.default ?? 'en']
+    // Non-i18n content/meta lives under the DEFAULT locale (that's where MCP
+    // writes it), which is NOT necessarily supported[0]. Keep this distinct
+    // from `locales[0]` — mirrors brain-cache.ts's `locale === 'data' ?
+    // defaultLocale : locale` contract.
+    const defaultLocale = config.locales?.default ?? 'en'
+    const locales = config.locales?.supported ?? [defaultLocale]
 
     // 2. Load all model definitions
     progress({ phase: 'init', message: 'Loading model definitions...' })
@@ -288,33 +293,77 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
         try {
           if (model.kind === 'document') {
-            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, branch, uploadedPaths)
+            // Non-i18n document meta lives under the default locale (MCP's
+            // contract), so decouple the meta locale from the content locale.
+            const metaLocale = model.i18n ? locale : defaultLocale
+            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, metaLocale, branch, uploadedPaths)
             const cdnLocale = model.i18n ? locale : 'data'
             addBundleEntry(model.i18n ? locale : null, `documents/${model.id}/_index/${cdnLocale}.json`, indexEntries)
           }
           else {
             // JSON kinds: collection, singleton, dictionary
             const contentPath = resolveContentPath(ctx, model, effectiveLocale === 'data' ? 'data' : locale)
-            const raw = await git.readFile(contentPath, branch)
+            let raw: string
+            try {
+              raw = await git.readFile(contentPath, branch)
+            }
+            catch {
+              // Content file genuinely absent for this locale — expected, there
+              // is nothing to publish. This is the ONLY silently-skipped case;
+              // any error past this point is real and reaches the outer catch.
+              continue
+            }
             let content = JSON.parse(raw)
 
-            // Filter by meta (published only)
-            if (model.kind === 'collection') {
-              const metaPath = resolveMetaPath(ctx, model, effectiveLocale === 'data' ? locales[0]! : locale)
-              let meta: Record<string, EntryMeta> = {}
-              try {
-                meta = JSON.parse(await git.readFile(metaPath, branch)) as Record<string, EntryMeta>
-              }
-              catch { /* no meta */ }
+            // Read this model's meta ONCE. A missing meta *file* means "no status
+            // info" → legacy include-all (shouldIncludeEntry(undefined) === true).
+            // A meta file that fails to PARSE is corruption — let it throw to the
+            // outer catch instead of silently publishing everything unfiltered.
+            const metaPath = resolveMetaPath(ctx, model, effectiveLocale === 'data' ? defaultLocale : locale)
+            let metaRaw: string | null = null
+            try {
+              metaRaw = await git.readFile(metaPath, branch)
+            }
+            catch {
+              // No meta file for this model/locale — legacy content without meta.
+            }
+            const metaParsed = metaRaw === null
+              ? null
+              : JSON.parse(metaRaw) as Record<string, EntryMeta>
 
-              // Filter entries by publication status
+            // Filter by publication status. `outputMeta` is what ships alongside
+            // the content (null → the model has no meta file, nothing to upload).
+            let outputMeta: Record<string, EntryMeta> | EntryMeta | null = null
+
+            if (model.kind === 'collection') {
+              // Collection meta is an id-keyed map — filter per entry.
+              const metaMap = metaParsed ?? {}
               const filtered: Record<string, unknown> = {}
               for (const [id, entry] of Object.entries(content as Record<string, unknown>)) {
-                if (shouldIncludeEntry(meta[id])) {
-                  filtered[id] = entry
-                }
+                if (shouldIncludeEntry(metaMap[id])) filtered[id] = entry
               }
               content = filtered
+
+              if (metaParsed !== null) {
+                const filteredMeta: Record<string, EntryMeta> = {}
+                for (const [id, m] of Object.entries(metaMap)) {
+                  if (shouldIncludeEntry(m)) filteredMeta[id] = m
+                }
+                outputMeta = filteredMeta
+              }
+            }
+            else {
+              // singleton / dictionary: MCP writes meta as a SINGLE object
+              // ({ status, source, updated_by }), not an id-map. One status gates
+              // the whole artifact — a draft/scheduled/expired unit must not be
+              // served at all.
+              const single = metaParsed as EntryMeta | null
+              if (!shouldIncludeEntry(single ?? undefined)) {
+                // Not published — skip content AND meta so the stale-object sweep
+                // garbage-collects any previously-published copy.
+                continue
+              }
+              outputMeta = single
             }
 
             // Safety net: rewrite any relative media paths that reached the
@@ -329,30 +378,23 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
             totalSizeBytes += Buffer.byteLength(data)
             addBundleEntry(model.i18n ? locale : null, outputPath, content)
 
-            // Upload meta (filtered)
-            try {
-              const metaPath = resolveMetaPath(ctx, model, effectiveLocale === 'data' ? locales[0]! : locale)
-              const metaRaw = await git.readFile(metaPath, branch)
-              const metaData = JSON.parse(metaRaw) as Record<string, EntryMeta>
-
-              // Only include published entries' meta
-              const filteredMeta: Record<string, EntryMeta> = {}
-              for (const [id, m] of Object.entries(metaData)) {
-                if (shouldIncludeEntry(m)) filteredMeta[id] = m
-              }
-
+            // Upload meta alongside the content (skip when the model has no meta).
+            if (outputMeta !== null) {
               const metaOutput = `meta/${model.id}/${effectiveLocale === 'data' ? 'data' : locale}.json`
-              const metaStr = JSON.stringify(filteredMeta, null, 2)
+              const metaStr = JSON.stringify(outputMeta, null, 2)
               await cdn.putObject(projectId, metaOutput, metaStr, 'application/json')
               uploadedPaths.add(metaOutput)
               filesUploaded++
               totalSizeBytes += Buffer.byteLength(metaStr)
             }
-            catch { /* no meta to upload */ }
           }
         }
-        catch {
-          // Content file doesn't exist for this locale — skip
+        catch (e) {
+          // A content/meta parse error, media-normalize failure, or upload error
+          // for THIS model+locale. Previously swallowed → published content
+          // silently vanished from the CDN. Surface it (best-effort per model,
+          // the build continues for the rest) instead of dropping it on the floor.
+          reportDataLossRisk(e, { op: 'cdn-build.model', projectId, modelId: model.id, locale })
         }
       }
     }
@@ -528,6 +570,14 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
  * Directory structure:
  *   i18n=true:  {contentDir}/{slug}/{locale}.md
  *   i18n=false: {contentDir}/{slug}.md (flat files, not directories)
+ *
+ * NOTE: the slug enumeration below assumes the default `file` (and the
+ * equivalent `none`) locale_strategy layout. `suffix`
+ * ({contentDir}/{slug}.{locale}.md) and `directory`
+ * ({contentDir}/{locale}/{slug}.md) documents would enumerate wrong here —
+ * only the per-file READ path (resolveContentPath) honors those strategies
+ * today. Generalizing document listing is a separate follow-up (the same
+ * limitation exists in brain-cache's document walk).
  */
 async function buildDocumentModel(
   projectId: string,
@@ -536,6 +586,7 @@ async function buildDocumentModel(
   ctx: { contentRoot: string },
   model: ModelDefinition,
   locale: string,
+  metaLocale: string,
   branch: string,
   uploadedPaths: Set<string>,
 ): Promise<Array<Record<string, unknown>>> {
@@ -576,7 +627,7 @@ async function buildDocumentModel(
 
       // Check meta
       try {
-        const metaPath = resolveMetaPath(ctx, model, locale, slug)
+        const metaPath = resolveMetaPath(ctx, model, metaLocale, slug)
         const metaRaw = JSON.parse(await git.readFile(metaPath, branch)) as EntryMeta
         if (!shouldIncludeEntry(metaRaw)) continue
       }
