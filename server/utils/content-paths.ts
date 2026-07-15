@@ -23,13 +23,16 @@ export function resolveModelPath(ctx: PathContext, modelId: string): string {
   return prefixed(ctx.contentRoot, PATH_PATTERNS.model.replace('{modelId}', modelId))
 }
 
-export function resolveContentPath(
+/**
+ * Content directory (content-root-relative) for a model. Mirrors MCP's
+ * `contentDir` (`@contentrain/mcp/core/ops/paths`): a `content_path` override
+ * moves files OUTSIDE `.contentrain/`, otherwise they live under the model id.
+ * The content_path validation is Studio-only hardening MCP's helper omits.
+ */
+function resolveContentDirForModel(
   ctx: PathContext,
-  model: Pick<ModelDefinition, 'id' | 'kind' | 'domain' | 'i18n' | 'content_path'>,
-  locale: string,
-  slug?: string,
+  model: Pick<ModelDefinition, 'id' | 'domain' | 'content_path'>,
 ): string {
-  // Custom content_path override — files live OUTSIDE .contentrain/
   if (model.content_path) {
     // Validate content_path — prevent path traversal and sensitive path access
     const normalized = model.content_path.replace(/\\/g, '/')
@@ -42,50 +45,52 @@ export function resolveContentPath(
     if (sensitivePatterns.some(p => lowerNorm === p || lowerNorm.startsWith(`${p}/`))) {
       throw new Error(`Invalid content_path: "${model.content_path}" — targets a protected directory`)
     }
-    const basePath = prefixed(ctx.contentRoot, model.content_path)
-    if (model.kind === 'document') {
-      if (model.i18n && slug) return `${basePath}/${slug}/${locale}.md`
-      if (slug) return `${basePath}/${slug}.md`
-      return basePath
-    }
-    // JSON kinds with content_path override
-    if (!model.i18n) return `${basePath}/data.json`
-    return `${basePath}/${locale}.json`
+    return prefixed(ctx.contentRoot, model.content_path)
   }
+  return prefixed(ctx.contentRoot, `${CONTENTRAIN_DIR}/content/${model.domain}/${model.id}`)
+}
 
-  // i18n: false → uses noLocale pattern (data.json)
-  if (!model.i18n && model.kind !== 'document') {
-    const pattern = PATH_PATTERNS.content.noLocale as string
-    const resolved = pattern
-      .replace('{domain}', model.domain)
-      .replace('{modelId}', model.id)
-    return prefixed(ctx.contentRoot, resolved)
-  }
+/**
+ * Resolve the on-disk path for a content file.
+ *
+ * CRITICAL: honors `model.locale_strategy` — MUST stay byte-for-byte aligned
+ * with MCP's canonical `contentFilePath`/`documentFilePath`
+ * (`@contentrain/mcp/core/ops/paths`), which is what the write path (`planContentSave`)
+ * actually commits. Resolving with the wrong strategy reads a non-existent path
+ * → silent skip (missing content in the CDN build + brain cache). `i18n: false`
+ * always collapses to `data.json` / `{slug}.md` regardless of strategy.
+ *
+ * With no `slug` for a document kind, returns the model's content directory
+ * (callers use it for `listDirectory`).
+ */
+export function resolveContentPath(
+  ctx: PathContext,
+  model: Pick<ModelDefinition, 'id' | 'kind' | 'domain' | 'i18n' | 'content_path' | 'locale_strategy'>,
+  locale: string,
+  slug?: string,
+): string {
+  const dir = resolveContentDirForModel(ctx, model)
+  const strategy = model.locale_strategy ?? 'file'
 
-  // Standard documents live UNDER the model id —
-  // `.contentrain/content/{domain}/{modelId}/{slug}/{locale}.md` (i18n) or
-  // `.../{slug}.md` — matching how `@contentrain/mcp` planContentSave writes
-  // them. `PATH_PATTERNS.content.document` omits `{modelId}`, so resolving via
-  // the generic pattern below produced a path that doesn't exist on disk (a
-  // 404 on read). Build the model-id path directly.
   if (model.kind === 'document') {
-    const base = `${CONTENTRAIN_DIR}/content/${model.domain}/${model.id}`
-    if (model.i18n && slug) return prefixed(ctx.contentRoot, `${base}/${slug}/${locale}.md`)
-    if (slug) return prefixed(ctx.contentRoot, `${base}/${slug}.md`)
-    return prefixed(ctx.contentRoot, base)
+    if (!slug) return dir
+    if (!model.i18n) return `${dir}/${slug}.md`
+    switch (strategy) {
+      case 'suffix': return `${dir}/${slug}.${locale}.md`
+      case 'directory': return `${dir}/${locale}/${slug}.md`
+      case 'none': return `${dir}/${slug}.md`
+      default: return `${dir}/${slug}/${locale}.md`
+    }
   }
 
-  // Standard path from PATH_PATTERNS
-  const pattern = PATH_PATTERNS.content[model.kind as keyof typeof PATH_PATTERNS.content]
-    ?? PATH_PATTERNS.content.collection
-
-  const resolved = (pattern as string)
-    .replace('{domain}', model.domain)
-    .replace('{modelId}', model.id)
-    .replace('{locale}', locale)
-    .replace('{slug}', slug ?? '')
-
-  return prefixed(ctx.contentRoot, resolved)
+  // JSON kinds: collection, singleton, dictionary
+  if (!model.i18n) return `${dir}/data.json`
+  switch (strategy) {
+    case 'suffix': return `${dir}/${model.id}.${locale}.json`
+    case 'directory': return `${dir}/${locale}/${model.id}.json`
+    case 'none': return `${dir}/${model.id}.json`
+    default: return `${dir}/${locale}.json`
+  }
 }
 
 export function resolveMetaPath(
