@@ -472,7 +472,9 @@ describe('CDN route integration', () => {
     }))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({}))
     vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
-    vi.stubGlobal('executeCDNBuild', vi.fn().mockImplementation(async ({ onProgress }) => {
+    // The handler delegates to runCDNBuild (execute + persist + catch-up); it
+    // forwards onProgress to the SSE stream and acts on the returned result.
+    const runCDNBuild = vi.fn().mockImplementation(async ({ onProgress }) => {
       onProgress?.({ phase: 'upload', message: 'Uploading files', current: 1, total: 2 })
       return {
         filesUploaded: 2,
@@ -481,7 +483,8 @@ describe('CDN route integration', () => {
         durationMs: 321,
         error: null,
       }
-    }))
+    })
+    vi.stubGlobal('runCDNBuild', runCDNBuild)
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
       getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
@@ -499,8 +502,9 @@ describe('CDN route integration', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(updateCDNBuild).toHaveBeenCalledWith('build-1', expect.objectContaining({
-      status: 'success',
+    expect(runCDNBuild).toHaveBeenCalledWith(expect.objectContaining({
+      buildId: 'build-1',
+      fullRebuild: true,
     }))
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"upload"'))
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"complete"'))
@@ -513,6 +517,39 @@ describe('CDN route integration', () => {
       status: 'success',
       filesUploaded: 2,
     }))
+  })
+
+  it('returns 409 when a build is already in flight (claim blocked)', async () => {
+    const event = { context: {} } as never
+    const runCDNBuild = vi.fn()
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'user-1' }, accessToken: 'token-1' }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: { listBranches: vi.fn().mockResolvedValue([{ name: 'main', sha: 'abc123' }]) },
+      contentRoot: '.',
+    }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('runCDNBuild', runCDNBuild)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+      getWorkspaceById: vi.fn().mockResolvedValue({ plan: 'pro' }),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({ cdn_enabled: true, cdn_branch: null, default_branch: 'main' }),
+      // Claim blocked → another build already holds the in-flight slot.
+      createCDNBuild: vi.fn().mockResolvedValue(null),
+      updateCDNBuild: vi.fn(),
+    }))
+
+    const handler = await loadCDNBuildTriggerHandler()
+    await expect(handler(event)).rejects.toMatchObject({ statusCode: 409 })
+    // No build started while one is in flight.
+    expect(runCDNBuild).not.toHaveBeenCalled()
   })
 
   it('returns 404 for CDN build history requested through the wrong workspace path', async () => {

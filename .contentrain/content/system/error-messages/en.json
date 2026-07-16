@@ -46,6 +46,7 @@
   "branches.permanent_branch": "The contentrain branch is permanent and cannot be rejected.",
   "branches.reject_forbidden": "You do not have permission to reject branches in this project.",
   "cdn.build_failed": "Failed to create build record: {detail}",
+  "cdn.build_in_progress": "A CDN build is already in progress for this project. Wait for it to finish before starting another.",
   "cdn.content_not_found": "The requested content was not found in CDN storage.",
   "cdn.key_expired": "This API key has expired. Please generate a new one in project settings.",
   "cdn.key_invalid": "Invalid or missing API key. Please check your API key and try again.",
