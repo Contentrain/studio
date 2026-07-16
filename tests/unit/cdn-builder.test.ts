@@ -484,6 +484,97 @@ describe('cdn builder', () => {
     expect(bundle.paths['content/team/en.json']).toEqual({ m1: { name: 'Existing member' } })
   })
 
+  // Regression: a selective build whose diff touches zero content models (a
+  // pure code push — app/, server/, …) must be a true no-op. Uploading the
+  // manifest would advance `_manifest.json.commitSha` past every
+  // `_bundle/*.json` (the bundle block is skipped when no models change),
+  // leaving the manifest ahead of the bundle until a full rebuild re-aligns
+  // them — the divergence that stranded content in CDN consumers.
+  it('is a no-op when a selective build touches no content models', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq',
+        name: 'FAQ',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({ a1: { question: 'Q' } }),
+    }
+    const { provider, objects } = createCDNProvider()
+
+    // Seed a pre-existing bundle + manifest at an OLD commit, as a healthy
+    // full rebuild would have left them. The no-op must not touch either.
+    objects.set('proj:_manifest.json', JSON.stringify({ version: '1', commitSha: 'old' }))
+    objects.set('proj:_bundle/en.json', JSON.stringify({ version: '1', commitSha: 'old', paths: {} }))
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git: createGitProvider(files),
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 'newcode',
+      branch: 'main',
+      changedPaths: ['app/pages/index.vue', 'server/api/foo.ts'],
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.filesUploaded).toBe(0)
+    expect(result.filesDeleted).toBe(0)
+    expect(result.changedModels).toEqual([])
+    // Nothing written or deleted — manifest/bundle stay at the old commit.
+    expect(provider.putObject).not.toHaveBeenCalled()
+    expect(provider.deleteObject).not.toHaveBeenCalled()
+    expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').commitSha).toBe('old')
+    expect(JSON.parse(objects.get('proj:_bundle/en.json') ?? '{}').commitSha).toBe('old')
+  })
+
+  // Counter-case: a config change reaching the same selective path must still
+  // full-build (getAffectedModels returns every model), so the no-op guard
+  // never suppresses a real content-affecting build.
+  it('still builds when a selective diff includes the config file', async () => {
+    const files = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq',
+        name: 'FAQ',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({ a1: { question: 'Q' } }),
+    }
+    const { provider, objects } = createCDNProvider()
+
+    const result = await executeCDNBuild({
+      projectId: 'proj',
+      buildId: 'b',
+      git: createGitProvider(files),
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 'newcfg',
+      branch: 'main',
+      changedPaths: ['.contentrain/config.json'],
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.filesUploaded).toBeGreaterThan(0)
+    expect(result.changedModels).toEqual(['faq'])
+    expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').commitSha).toBe('newcfg')
+  })
+
   // Regression: for i18n:false content, meta lives under the DEFAULT locale
   // (MCP's contract), which is NOT necessarily supported[0]. The builder used
   // `locales[0]` (= supported[0]) to resolve the meta path, so when

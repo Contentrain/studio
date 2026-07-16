@@ -231,6 +231,30 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
     changedModelIds.push(...targetModels.map(m => m.id))
 
+    // A selective build whose diff touches no content models (a pure code
+    // push: only app/, server/, etc.) must be a true no-op. Uploading the
+    // manifest here would advance `_manifest.json.commitSha` to the code
+    // commit while the bundle block below is skipped (targetModels empty) —
+    // leaving `_manifest.json.commitSha` ahead of every `_bundle/*.json`.
+    // Consumers that key content freshness off the manifest then read stale/
+    // empty content until a full rebuild re-aligns them. The manifest tracks
+    // the CONTENT version, so a content-less push must not bump it.
+    // fullRebuild (manual trigger) and config/model-def changes never reach
+    // here: the former skips the `else` branch above, the latter make
+    // getAffectedModels non-empty.
+    if (!options.fullRebuild && options.changedPaths?.length && targetModels.length === 0) {
+      return {
+        projectId,
+        buildId,
+        commitSha,
+        filesUploaded: 0,
+        filesDeleted: 0,
+        totalSizeBytes: 0,
+        changedModels: [],
+        durationMs: Date.now() - start,
+      }
+    }
+
     // 4. Upload manifest
     progress({ phase: 'upload', message: 'Uploading manifest...', current: 0, total: targetModels.length })
     const manifest = {
