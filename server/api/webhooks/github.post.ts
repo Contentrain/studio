@@ -83,7 +83,10 @@ export default defineEventHandler(async (event) => {
         })
         if (pushDiff.action === 'skip') continue
 
-        // Create build record + execute async
+        // Claim the single in-flight slot + execute async. A null claim means
+        // a build is already running for this project — skip; that build's
+        // catch-up (runCDNBuild) chases this push's commit when it finishes, so
+        // nothing is stranded.
         const build = await db.createCDNBuild({
           projectId: proj.id as string,
           triggerType: 'webhook',
@@ -91,10 +94,12 @@ export default defineEventHandler(async (event) => {
           branch: targetBranch,
         })
 
-        if (build) {
-          executeCDNBuild({
+        if (build?.id) {
+          const buildId = build.id as string
+          runCDNBuild({
+            db,
             projectId: proj.id as string,
-            buildId: build.id as string,
+            buildId,
             git,
             cdn,
             contentRoot,
@@ -102,20 +107,10 @@ export default defineEventHandler(async (event) => {
             branch: targetBranch,
             changedPaths: pushDiff.changedPaths,
             fullRebuild: pushDiff.fullRebuild,
-          }).then(async (result) => {
-            await db.updateCDNBuild(build.id as string, {
-              status: result.error ? 'failed' : 'success',
-              file_count: result.filesUploaded,
-              total_size_bytes: result.totalSizeBytes,
-              changed_models: result.changedModels,
-              build_duration_ms: result.durationMs,
-              error_message: result.error ?? null,
-              completed_at: new Date().toISOString(),
-            })
           }).catch(async (err: unknown) => {
             // Ensure build never stays stuck in 'building'
             const msg = err instanceof Error ? err.message : 'Build failed'
-            await db.updateCDNBuild(build.id as string, {
+            await db.updateCDNBuild(buildId, {
               status: 'failed',
               error_message: msg,
               completed_at: new Date().toISOString(),

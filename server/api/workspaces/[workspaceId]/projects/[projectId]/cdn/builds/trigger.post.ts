@@ -45,7 +45,9 @@ export default defineEventHandler(async (event) => {
   }
   catch { /* use 'manual' */ }
 
-  // Create build record
+  // Claim the single in-flight slot. Null → a build is already running for
+  // this project; a manual rebuild must not race it (its full-rebuild cleanup
+  // would fight the in-flight build's uploads), so surface a clear 409.
   const build = await db.createCDNBuild({
     projectId,
     triggerType: 'manual',
@@ -54,14 +56,17 @@ export default defineEventHandler(async (event) => {
   })
 
   if (!build?.id)
-    throw createError({ statusCode: 500, message: errorMessage('cdn.build_failed', { detail: 'unknown' }) })
+    throw createError({ statusCode: 409, message: errorMessage('cdn.build_in_progress') })
 
   // SSE stream for progress
   const eventStream = createEventStream(event)
 
   const processBuild = async () => {
     try {
-      const result = await executeCDNBuild({
+      // runCDNBuild persists the build row's result and runs the mid-build
+      // catch-up (chasing any push that landed while we built).
+      const result = await runCDNBuild({
+        db,
         projectId,
         buildId: build.id as string,
         git,
@@ -73,17 +78,6 @@ export default defineEventHandler(async (event) => {
         onProgress: (progressEvent) => {
           eventStream.push(JSON.stringify(progressEvent))
         },
-      })
-
-      // Update build record
-      await db.updateCDNBuild(build.id as string, {
-        status: result.error ? 'failed' : 'success',
-        file_count: result.filesUploaded,
-        total_size_bytes: result.totalSizeBytes,
-        changed_models: result.changedModels,
-        build_duration_ms: result.durationMs,
-        error_message: result.error ?? null,
-        completed_at: new Date().toISOString(),
       })
 
       // Emit webhook event (fire-and-forget)

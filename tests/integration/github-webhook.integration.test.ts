@@ -284,14 +284,14 @@ describe('GitHub webhook integration', () => {
   })
 
   it('ignores CDN builds when a push hits a different branch than the configured CDN branch', async () => {
-    const executeCDNBuild = vi.fn()
+    const runCDNBuild = vi.fn()
     const createCDNBuild = vi.fn()
 
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
       github: { webhookSecret: 'webhook-secret' },
     }))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('executeCDNBuild', executeCDNBuild)
+    vi.stubGlobal('runCDNBuild', runCDNBuild)
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
     vi.stubGlobal('normalizeContentRoot', vi.fn().mockImplementation((value: string | null) => value ?? ''))
@@ -340,7 +340,7 @@ describe('GitHub webhook integration', () => {
         repo: 'acme/site',
       })
       expect(createCDNBuild).not.toHaveBeenCalled()
-      expect(executeCDNBuild).not.toHaveBeenCalled()
+      expect(runCDNBuild).not.toHaveBeenCalled()
     })
   })
 
@@ -348,18 +348,20 @@ describe('GitHub webhook integration', () => {
 
   function stubCdnPushGlobals(input: {
     getBranchDiff: ReturnType<typeof vi.fn>
-    executeCDNBuild?: ReturnType<typeof vi.fn>
+    runCDNBuild?: ReturnType<typeof vi.fn>
     createCDNBuild?: ReturnType<typeof vi.fn>
     installationId?: number | null
   }) {
-    const executeCDNBuild = input.executeCDNBuild ?? vi.fn().mockResolvedValue({})
+    // The webhook delegates the build to runCDNBuild (execute + persist +
+    // mid-build catch-up); stub it so the real builder/git aren't exercised.
+    const runCDNBuild = input.runCDNBuild ?? vi.fn().mockResolvedValue({})
     const createCDNBuild = input.createCDNBuild ?? vi.fn().mockResolvedValue({ id: 'build-1' })
 
     vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
       github: { webhookSecret: 'webhook-secret' },
     }))
     vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({}))
-    vi.stubGlobal('executeCDNBuild', executeCDNBuild)
+    vi.stubGlobal('runCDNBuild', runCDNBuild)
     vi.stubGlobal('resolvePushDiff', resolvePushDiff)
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
@@ -383,7 +385,7 @@ describe('GitHub webhook integration', () => {
       updateCDNBuild: vi.fn().mockResolvedValue(undefined),
     }))
 
-    return { executeCDNBuild, createCDNBuild }
+    return { runCDNBuild, createCDNBuild }
   }
 
   async function postPush(payload: unknown) {
@@ -414,7 +416,7 @@ describe('GitHub webhook integration', () => {
     const getBranchDiff = vi.fn().mockResolvedValue([
       { path: '.contentrain/content/blog/posts/en.json', status: 'modified', before: null, after: null },
     ])
-    const { executeCDNBuild, createCDNBuild } = stubCdnPushGlobals({ getBranchDiff })
+    const { runCDNBuild, createCDNBuild } = stubCdnPushGlobals({ getBranchDiff })
 
     const status = await postPush({
       ref: 'refs/heads/main',
@@ -427,14 +429,14 @@ describe('GitHub webhook integration', () => {
     expect(status).toBe(200)
     expect(getBranchDiff).toHaveBeenCalledWith('b'.repeat(40), 'a'.repeat(40))
     expect(createCDNBuild).toHaveBeenCalled()
-    expect(executeCDNBuild).toHaveBeenCalledWith(expect.objectContaining({
+    expect(runCDNBuild).toHaveBeenCalledWith(expect.objectContaining({
       changedPaths: ['.contentrain/content/blog/posts/en.json'],
       fullRebuild: undefined,
     }))
   })
 
   it('skips the build entirely when the compare shows an identical tree', async () => {
-    const { executeCDNBuild, createCDNBuild } = stubCdnPushGlobals({
+    const { runCDNBuild, createCDNBuild } = stubCdnPushGlobals({
       getBranchDiff: vi.fn().mockResolvedValue([]),
     })
 
@@ -448,11 +450,11 @@ describe('GitHub webhook integration', () => {
 
     expect(status).toBe(200)
     expect(createCDNBuild).not.toHaveBeenCalled()
-    expect(executeCDNBuild).not.toHaveBeenCalled()
+    expect(runCDNBuild).not.toHaveBeenCalled()
   })
 
   it('never creates a build record when the installation is missing (no stuck pending rows)', async () => {
-    const { executeCDNBuild, createCDNBuild } = stubCdnPushGlobals({
+    const { runCDNBuild, createCDNBuild } = stubCdnPushGlobals({
       getBranchDiff: vi.fn(),
       installationId: null,
     })
@@ -467,6 +469,31 @@ describe('GitHub webhook integration', () => {
 
     expect(status).toBe(200)
     expect(createCDNBuild).not.toHaveBeenCalled()
-    expect(executeCDNBuild).not.toHaveBeenCalled()
+    expect(runCDNBuild).not.toHaveBeenCalled()
+  })
+
+  it('skips the build (no createCDNBuild) when a claim reports a build already in flight', async () => {
+    // createCDNBuild returns null when another build holds the in-flight slot;
+    // the webhook must simply not start a build (the running build's catch-up
+    // chases this commit when it finishes).
+    const createCDNBuild = vi.fn().mockResolvedValue(null)
+    const { runCDNBuild } = stubCdnPushGlobals({
+      getBranchDiff: vi.fn().mockResolvedValue([
+        { path: '.contentrain/content/blog/posts/en.json', status: 'modified' },
+      ]),
+      createCDNBuild,
+    })
+
+    const status = await postPush({
+      ref: 'refs/heads/main',
+      before: 'a'.repeat(40),
+      after: 'b'.repeat(40),
+      repository: { full_name: 'acme/site' },
+      commits: [{ added: [], modified: [], removed: [] }],
+    })
+
+    expect(status).toBe(200)
+    expect(createCDNBuild).toHaveBeenCalled()
+    expect(runCDNBuild).not.toHaveBeenCalled()
   })
 })
