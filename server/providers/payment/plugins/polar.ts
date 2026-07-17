@@ -171,7 +171,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
       }
       catch (err) {
         if (err instanceof WebhookVerificationError) {
-          throw new Error('Webhook signature verification failed')
+          throw new Error('Webhook signature verification failed', { cause: err })
         }
         throw err
       }
