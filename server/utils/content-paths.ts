@@ -1,6 +1,6 @@
 import type { ModelDefinition } from '@contentrain/types'
 import { CONTENTRAIN_DIR, PATH_PATTERNS } from '@contentrain/types'
-import { contentFilePath, documentFilePath, metaFilePath } from '@contentrain/mcp/core/ops'
+import { contentDirPath, contentFilePath, documentFilePath, metaFilePath } from '@contentrain/mcp/core/ops'
 
 /**
  * Resolve file paths for Contentrain content operations.
@@ -12,8 +12,7 @@ import { contentFilePath, documentFilePath, metaFilePath } from '@contentrain/mc
  * across locales instead of pinning to the default locale. Studio keeps only
  * what MCP's helpers deliberately don't cover: the `contentRoot` prefix, the
  * `content_path` security hardening, and the "return the directory when a
- * document has no slug" case (MCP requires a slug and does not export its
- * `contentDirPath`).
+ * document has no slug" case (MCP requires a slug).
  */
 
 export interface PathContext {
@@ -52,18 +51,18 @@ function assertSafeContentPath(model: Pick<ModelDefinition, 'content_path'>): vo
 }
 
 /**
- * Content directory (content-root-relative) for a model. Mirrors MCP's
- * `contentDirPath` (`@contentrain/mcp/core/ops`, not publicly exported): a
- * `content_path` override moves files OUTSIDE `.contentrain/`, otherwise they
- * live under the model id. Prefixed with the project's content root.
+ * Content directory (content-root-relative) for a model. Delegates the dir
+ * computation to MCP's `contentDirPath` (`@contentrain/mcp/core/ops`, exported
+ * since 2.1.0) so the `content_path` override / default layout can never drift
+ * from MCP's write path. Studio adds only the `content_path` security guard and
+ * the project content-root prefix — neither of which MCP's helper covers.
  */
 function resolveContentDirForModel(
   ctx: PathContext,
   model: Pick<ModelDefinition, 'id' | 'domain' | 'content_path'>,
 ): string {
   assertSafeContentPath(model)
-  const dir = model.content_path ?? `${CONTENTRAIN_DIR}/content/${model.domain}/${model.id}`
-  return prefixed(ctx.contentRoot, dir)
+  return prefixed(ctx.contentRoot, contentDirPath(model))
 }
 
 /**
