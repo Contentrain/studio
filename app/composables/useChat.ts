@@ -385,13 +385,18 @@ export function useChat(options?: {
     messages.value.push(userMsg)
 
     // Create assistant placeholder
-    const assistantMsg: ChatMessage = {
+    messages.value.push({
       id: `assistant-${Date.now()}`,
       role: 'assistant',
       segments: [],
       createdAt: new Date().toISOString(),
-    }
-    messages.value.push(assistantMsg)
+    })
+    // Mutate ONLY through the reactive proxy read back from the array.
+    // Writing to the raw object captured before the push bypasses Vue's
+    // proxies entirely — no effect ever fires, the message list never
+    // re-renders mid-stream, and the whole turn pops in at once when
+    // `isStreaming` flips at the end.
+    const assistantMsg = messages.value[messages.value.length - 1]!
 
     isStreaming.value = true
     abortController = new AbortController()
