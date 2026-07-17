@@ -198,6 +198,35 @@ describe('conversation engine regression', () => {
     })
   })
 
+  it('surfaces tool input on tool_input and tool_result events', async () => {
+    // The card UI shows what a tool is doing while it's pending: the
+    // engine emits `tool_input` as soon as the model finishes the call
+    // (before execution) and repeats the input on `tool_result` as the
+    // guaranteed carrier.
+    const { events } = await collectConversationEvents({
+      maxToolIterations: 1,
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { model: 'posts', locale: 'en' } }
+          yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 5, outputTokens: 2 } }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(events).toContainEqual({
+      type: 'tool_input',
+      id: 'tool-1',
+      input: { model: 'posts', locale: 'en' },
+    })
+    const toolResult = events.find(e => e.type === 'tool_result')
+    expect(toolResult).toMatchObject({
+      id: 'tool-1',
+      input: { model: 'posts', locale: 'en' },
+    })
+  })
+
   it('preserves streamed interleaved text and tool_use block order', async () => {
     const { events, messages } = await collectConversationEvents({
       maxToolIterations: 1,

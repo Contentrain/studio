@@ -22,7 +22,7 @@ import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 // ─── Event Types ───
 
 export interface ConversationEvent {
-  type: 'conversation' | 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'
+  type: 'conversation' | 'text' | 'tool_use' | 'tool_input' | 'tool_result' | 'done' | 'error'
   [key: string]: unknown
 }
 
@@ -183,6 +183,10 @@ export async function* runConversationLoop(
           const input = (typeof streamEvent.toolInput === 'object' && streamEvent.toolInput !== null) ? streamEvent.toolInput : {}
           currentToolCalls.push({ id: streamEvent.toolId!, name: streamEvent.toolName!, input })
           assistantBlocks.push({ type: 'tool_use', id: streamEvent.toolId!, name: streamEvent.toolName!, input })
+          // The model has finished emitting the call but execution hasn't
+          // started — surface the input now so the client card can show
+          // what's being done during the (potentially long) pending window.
+          yield { type: 'tool_input', id: streamEvent.toolId, input }
           break
         }
         case 'message_end':
@@ -278,7 +282,7 @@ export async function* runConversationLoop(
         const stateCheck = checkStateTransition(toolCtx.phase, tc.name)
         if (!stateCheck.allowed) {
           const errorResult = { error: stateCheck.reason, suggestion: stateCheck.suggestion }
-          yield { type: 'tool_result', id: tc.id, name: tc.name, result: errorResult }
+          yield { type: 'tool_result', id: tc.id, name: tc.name, input: tc.input, result: errorResult }
           toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(errorResult) })
           continue
         }
@@ -304,7 +308,7 @@ export async function* runConversationLoop(
         // Carry this tool's affected resources on the event so the client
         // can refresh the context panel live (debounced) as each operation
         // lands, instead of only once the whole turn finishes on `done`.
-        yield { type: 'tool_result', id: tc.id, name: tc.name, result: result.result, affected: result.affected }
+        yield { type: 'tool_result', id: tc.id, name: tc.name, input: tc.input, result: result.result, affected: result.affected }
         toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr })
       }
 
