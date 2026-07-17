@@ -1,6 +1,35 @@
 # Changelog
 
 
+## v0.2.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.2.0-beta.1...v0.2.0)
+
+### 🩹 Fixes
+
+- **docker:** Carry the migration runner + SQL lineage in the runtime image ([#149](https://github.com/Contentrain/studio/pull/149))
+- **docker:** Un-ignore supabase/migrations so the runtime COPY resolves ([#150](https://github.com/Contentrain/studio/pull/150))
+- **chat:** Stop silent output-token truncation from stranding agent writes ([#151](https://github.com/Contentrain/studio/pull/151))
+- **cdn:** Honor default locale, locale_strategy, and singleton status in builds ([#152](https://github.com/Contentrain/studio/pull/152))
+- **cdn:** Skip content-less builds so the manifest never outruns the bundle ([#153](https://github.com/Contentrain/studio/pull/153))
+- **cdn:** Serialize builds per project to stop concurrent-build corruption ([#154](https://github.com/Contentrain/studio/pull/154))
+- **content:** Pin non-i18n meta to default locale; upgrade contentrain to 2.x ([#155](https://github.com/Contentrain/studio/pull/155))
+- **chat:** Render agent turns as chronological segments with scroll-follow ([#159](https://github.com/Contentrain/studio/pull/159))
+- **chat:** Keep the full agent trace visible in history and never end a turn without a summary ([#160](https://github.com/Contentrain/studio/pull/160))
+- **chat:** Stream updates never re-rendered — mutate the assistant message via its reactive proxy ([#161](https://github.com/Contentrain/studio/pull/161))
+
+### 💅 Refactors
+
+- **content:** Delegate content-dir resolution to MCP contentDirPath (mcp 2.1.0) ([#162](https://github.com/Contentrain/studio/pull/162))
+
+### 📖 Documentation
+
+- **mcp:** Refresh remote-MCP submission runbook ([#148](https://github.com/Contentrain/studio/pull/148))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.2.0-beta.1
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0...v0.2.0-beta.1)
