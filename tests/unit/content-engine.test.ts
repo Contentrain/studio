@@ -621,6 +621,7 @@ describe('content engine', () => {
             fields: {},
           })
         }
+        if (path.endsWith('/config.json')) return JSON.stringify({ locales: { default: 'en', supported: ['en', 'tr'] } })
         throw new Error(`Unexpected path: ${path}`)
       }),
       listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
@@ -672,6 +673,7 @@ describe('content engine', () => {
         if (path.endsWith('/setup/en.md')) return '---\ntitle: Setup\n---\nWorld'
         if (path.endsWith('/meta/guide-sections/intro/en.json')) return JSON.stringify({ status: 'published' })
         if (path.endsWith('/meta/guide-sections/setup/en.json')) return JSON.stringify({ status: 'draft' })
+        if (path.endsWith('/config.json')) return JSON.stringify({ locales: { default: 'en', supported: ['en', 'tr'] } })
         // Any target-locale (tr) read → not found → copy proceeds.
         throw new Error(`Unexpected path: ${path}`)
       }),

@@ -343,7 +343,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
             // info" → legacy include-all (shouldIncludeEntry(undefined) === true).
             // A meta file that fails to PARSE is corruption — let it throw to the
             // outer catch instead of silently publishing everything unfiltered.
-            const metaPath = resolveMetaPath(ctx, model, effectiveLocale === 'data' ? defaultLocale : locale)
+            const metaPath = resolveMetaPath(ctx, model, locale, defaultLocale)
             let metaRaw: string | null = null
             try {
               metaRaw = await git.readFile(metaPath, branch)
@@ -651,7 +651,9 @@ async function buildDocumentModel(
 
       // Check meta
       try {
-        const metaPath = resolveMetaPath(ctx, model, metaLocale, slug)
+        // `metaLocale` is already the effective meta locale (i18n → locale,
+        // non-i18n → defaultLocale), so it stands in for both args here.
+        const metaPath = resolveMetaPath(ctx, model, metaLocale, metaLocale, slug)
         const metaRaw = JSON.parse(await git.readFile(metaPath, branch)) as EntryMeta
         if (!shouldIncludeEntry(metaRaw)) continue
       }

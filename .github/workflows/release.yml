@@ -100,7 +100,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate Contentrain client
-        run: npx contentrain generate
+        run: pnpm exec contentrain-query generate
 
       - name: Lint
         run: pnpm lint

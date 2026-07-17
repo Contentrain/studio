@@ -131,7 +131,7 @@ export async function saveDocument(
     }
   }
 
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, safeSlug)
+  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, config.locales?.default ?? 'en', safeSlug)
   const patchedChanges = await applyStudioMetaOverrides({
     planChanges: plan.changes,
     metaPath,

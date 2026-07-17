@@ -204,7 +204,7 @@ export async function saveContent(
     ? plan.result.map(r => r.id).filter((id): id is string => typeof id === 'string')
     : []
 
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale)
+  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, config.locales?.default ?? 'en')
   const patchedChanges = await applyStudioMetaOverrides({
     planChanges: plan.changes,
     metaPath,
