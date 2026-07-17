@@ -13,6 +13,17 @@ export interface ToolCall {
   status: 'pending' | 'streaming' | 'complete' | 'error'
 }
 
+/**
+ * One chronological slice of an assistant turn. A multi-iteration
+ * agent turn interleaves narration and tool execution (text → tools →
+ * text → tools…); segments preserve that order so the transcript reads
+ * as a step-by-step record instead of one glued text wall with all
+ * tool cards dumped at the end.
+ */
+export type MessageSegment
+  = | { kind: 'text', text: string }
+    | { kind: 'tool', call: ToolCall }
+
 /** How an attachment renders in a message bubble. */
 export interface MessageAttachment {
   kind: 'text' | 'document' | 'image'
@@ -49,9 +60,11 @@ export interface UIAttachment {
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
-  text: string
-  toolCalls: ToolCall[]
+  /** Ordered narration/tool slices — see `MessageSegment`. */
+  segments: MessageSegment[]
   createdAt: string
+  /** Persisted turn id — used to fold same-turn assistant rows on load. */
+  turnId?: string
   /** Context items attached to this message (user messages only) */
   contextItems?: Array<{
     type: 'model' | 'entry' | 'field' | 'asset'
@@ -60,6 +73,28 @@ export interface ChatMessage {
   }>
   /** Files/links attached to this message (user messages only) */
   attachments?: MessageAttachment[]
+}
+
+/** Structural view accepted by the message helpers — also matches the
+ * deep-readonly messages exposed by `useChat()`. */
+interface MessageView {
+  segments: readonly MessageSegment[]
+  attachments?: readonly unknown[]
+}
+
+/** Concatenated text of a message's text segments. */
+export function messageText(msg: MessageView): string {
+  let out = ''
+  for (const seg of msg.segments) {
+    if (seg.kind === 'text') out += seg.text
+  }
+  return out
+}
+
+/** Whether a message has anything worth rendering (or keeping on error). */
+export function hasVisibleContent(msg: MessageView): boolean {
+  if (msg.attachments?.length) return true
+  return msg.segments.some(seg => seg.kind === 'tool' || seg.text.trim().length > 0)
 }
 
 /** UI context sent with each message */
@@ -131,6 +166,55 @@ function hydrateAttachments(blocks: unknown): MessageAttachment[] | undefined {
   return out.length ? out : undefined
 }
 
+/** A persisted transcript row as returned by the messages endpoint. */
+interface ConversationRow {
+  id: string
+  role: string
+  content: string
+  content_blocks: unknown
+  tool_calls: unknown
+  created_at: string
+  turn_id?: string | null
+}
+
+/**
+ * Build ordered segments from a persisted assistant row.
+ *
+ * Priority: `content_blocks` (post-009 trace rows — the real
+ * text/tool_use order Claude produced; the plain `content` column is a
+ * text-only fallback that degrades to a literal `[tool calls]`
+ * placeholder for tool-only iterations, so it must never render when
+ * blocks exist) → legacy `tool_calls` wrapper (pre-trace rows) →
+ * plain `content` text.
+ */
+function rowToSegments(row: ConversationRow): MessageSegment[] {
+  if (Array.isArray(row.content_blocks) && row.content_blocks.length > 0) {
+    const segments: MessageSegment[] = []
+    for (const raw of row.content_blocks) {
+      const b = raw as { type?: string, text?: string, id?: string, name?: string, input?: unknown }
+      if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim()) {
+        segments.push({ kind: 'text', text: b.text })
+      }
+      else if (b?.type === 'tool_use' && b.id && b.name) {
+        // Results live on internal tool_result rows that the transcript
+        // endpoint doesn't return — the card renders name + input only.
+        segments.push({ kind: 'tool', call: { id: b.id, name: b.name, input: b.input ?? null, status: 'complete' } })
+      }
+    }
+    if (segments.length > 0) return segments
+  }
+
+  const segments: MessageSegment[] = []
+  if (row.content.trim()) segments.push({ kind: 'text', text: row.content })
+  if (Array.isArray(row.tool_calls)) {
+    for (const raw of row.tool_calls as Array<{ id: string, name: string, input: unknown, result?: unknown }>) {
+      if (!raw.name) continue
+      segments.push({ kind: 'tool', call: { id: raw.id, name: raw.name, input: raw.input, result: raw.result, status: 'complete' } })
+    }
+  }
+  return segments
+}
+
 export function useChat(options?: {
   onContentChanged?: (affected: AffectedResources) => void
 }) {
@@ -140,6 +224,10 @@ export function useChat(options?: {
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
   const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
+  // Monotonic counter bumped on every content-bearing SSE event. The
+  // panel watches it for scroll-follow — cheaper than deep-watching the
+  // whole message tree.
+  const streamTick = useState('chat-stream-tick', () => 0)
   // Module-instance abort handle so the composer can stop a stream mid-flight.
   let abortController: AbortController | null = null
 
@@ -204,32 +292,44 @@ export function useChat(options?: {
 
   async function loadConversation(workspaceId: string, projectId: string, convId: string) {
     try {
-      const data = await $fetch<Array<{
-        id: string
-        role: string
-        content: string
-        content_blocks: unknown
-        tool_calls: unknown
-        created_at: string
-      }>>(`/api/workspaces/${workspaceId}/projects/${projectId}/conversations/${convId}/messages`)
+      const data = await $fetch<ConversationRow[]>(
+        `/api/workspaces/${workspaceId}/projects/${projectId}/conversations/${convId}/messages`,
+      )
 
-      // Convert DB messages to ChatMessage format
-      messages.value = data.map(row => ({
-        id: row.id,
-        role: row.role as 'user' | 'assistant',
-        text: row.content,
-        toolCalls: Array.isArray(row.tool_calls)
-          ? (row.tool_calls as Array<{ id: string, name: string, input: unknown, result?: unknown }>).filter(b => b.name).map(b => ({
-              id: b.id,
-              name: b.name,
-              input: b.input,
-              result: b.result,
-              status: 'complete' as const,
-            }))
-          : [],
-        createdAt: row.created_at,
-        attachments: row.role === 'user' ? hydrateAttachments(row.content_blocks) : undefined,
-      }))
+      // Convert DB messages to ChatMessage format. A turn persists one
+      // assistant row PER iteration (all visible since the trace
+      // visibility change) — consecutive assistant rows sharing a
+      // turn_id fold into one message whose segments concatenate in
+      // order, mirroring how the turn streamed live. The seed user row
+      // shares the turn_id but user rows always start a new message, so
+      // grouping stays assistant-only. Legacy rows carry distinct
+      // turn_ids and degrade to one message per row.
+      const grouped: ChatMessage[] = []
+      for (const row of data) {
+        if (row.role === 'user') {
+          grouped.push({
+            id: row.id,
+            role: 'user',
+            segments: row.content.trim() ? [{ kind: 'text', text: row.content }] : [],
+            createdAt: row.created_at,
+            attachments: hydrateAttachments(row.content_blocks),
+          })
+          continue
+        }
+        const prev = grouped[grouped.length - 1]
+        if (prev && prev.role === 'assistant' && row.turn_id && prev.turnId === row.turn_id) {
+          prev.segments.push(...rowToSegments(row))
+          continue
+        }
+        grouped.push({
+          id: row.id,
+          role: 'assistant',
+          segments: rowToSegments(row),
+          createdAt: row.created_at,
+          turnId: row.turn_id ?? undefined,
+        })
+      }
+      messages.value = grouped
 
       conversationId.value = convId
     }
@@ -275,8 +375,7 @@ export function useChat(options?: {
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      text,
-      toolCalls: [],
+      segments: [{ kind: 'text', text }],
       createdAt: new Date().toISOString(),
       contextItems: attachedChips?.length ? attachedChips : undefined,
       attachments: readyAttachments.length
@@ -289,8 +388,7 @@ export function useChat(options?: {
     const assistantMsg: ChatMessage = {
       id: `assistant-${Date.now()}`,
       role: 'assistant',
-      text: '',
-      toolCalls: [],
+      segments: [],
       createdAt: new Date().toISOString(),
     }
     messages.value.push(assistantMsg)
@@ -370,7 +468,7 @@ export function useChat(options?: {
     catch (e: unknown) {
       // User-initiated stop: keep whatever already streamed, no error toast.
       if ((e as Error)?.name === 'AbortError') {
-        if (!assistantMsg.text && assistantMsg.toolCalls.length === 0) {
+        if (!hasVisibleContent(assistantMsg)) {
           messages.value.pop()
         }
       }
@@ -378,7 +476,7 @@ export function useChat(options?: {
         const { t } = useContent()
         error.value = resolveApiError(e, t('chat.send_error'))
         // Remove empty assistant message on error
-        if (!assistantMsg.text && assistantMsg.toolCalls.length === 0) {
+        if (!hasVisibleContent(assistantMsg)) {
           messages.value.pop()
         }
       }
@@ -393,34 +491,65 @@ export function useChat(options?: {
     }
   }
 
+  /** Latest tool segment matching an id — searched from the end because
+   * tool ids are unique per turn and live updates always target the
+   * most recent calls. */
+  function findToolCall(msg: ChatMessage, id: unknown): ToolCall | undefined {
+    for (let i = msg.segments.length - 1; i >= 0; i--) {
+      const seg = msg.segments[i]!
+      if (seg.kind === 'tool' && seg.call.id === id) return seg.call
+    }
+    return undefined
+  }
+
   function handleSSEEvent(event: Record<string, unknown>, msg: ChatMessage) {
     switch (event.type) {
       case 'conversation':
         conversationId.value = event.id as string
         break
 
-      case 'text':
-        msg.text += event.content as string
+      case 'text': {
+        const last = msg.segments[msg.segments.length - 1]
+        if (last?.kind === 'text') last.text += event.content as string
+        else msg.segments.push({ kind: 'text', text: event.content as string })
+        streamTick.value++
         break
+      }
 
       case 'tool_use':
-        msg.toolCalls.push({
-          id: event.id as string,
-          name: event.name as string,
-          input: null,
-          status: 'pending',
+        msg.segments.push({
+          kind: 'tool',
+          call: {
+            id: event.id as string,
+            name: event.name as string,
+            input: null,
+            status: 'pending',
+          },
         })
+        streamTick.value++
         break
 
+      case 'tool_input': {
+        // Input arrives when the model finishes emitting the call —
+        // before the (potentially long) execution — so the card shows
+        // what's being done while it's pending.
+        const tc = findToolCall(msg, event.id)
+        if (tc) tc.input = event.input ?? null
+        streamTick.value++
+        break
+      }
+
       case 'tool_result': {
-        const tc = msg.toolCalls.find(t => t.id === event.id)
+        const tc = findToolCall(msg, event.id)
         if (tc) {
           tc.result = event.result
+          if (event.input !== undefined && tc.input == null) tc.input = event.input
           tc.status = 'complete'
         }
         // Live refresh: reflect this operation in the context panel without
         // waiting for the whole turn to finish (debounced + coalesced).
         scheduleContentRefresh(event.affected as AffectedResources | undefined)
+        streamTick.value++
         break
       }
 
@@ -442,6 +571,7 @@ export function useChat(options?: {
           ? t('chat.output_truncated')
           // Other SSE error events may carry raw backend messages — use fallback
           : t('chat.send_error')
+        streamTick.value++
         break
       }
     }
@@ -459,6 +589,7 @@ export function useChat(options?: {
     conversations: readonly(conversations),
     isStreaming: readonly(isStreaming),
     error: readonly(error),
+    streamTick: readonly(streamTick),
     selectedModel,
     sendMessage,
     stopStreaming,

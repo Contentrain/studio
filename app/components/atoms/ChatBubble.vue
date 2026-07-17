@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { marked } from 'marked'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
 
-const props = defineProps<{
+defineProps<{
   role: 'user' | 'assistant'
   text: string
   userAvatarUrl?: string | null
@@ -14,7 +13,6 @@ const props = defineProps<{
 }>()
 
 const { t } = useContent()
-const { sanitize } = useSanitize()
 
 // Full-size image preview (lightbox).
 const lightboxUrl = ref<string | null>(null)
@@ -24,45 +22,6 @@ function attachmentIcon(kind: string, mime?: string): string {
   if (mime === 'text/uri-list') return 'icon-[annon--link-1]'
   return 'icon-[annon--file-text]'
 }
-
-// Markdown parsing + sanitize runs over the FULL accumulated text. While
-// an assistant message streams, `text` grows by a token on every delta,
-// so re-parsing on each change is O(n²) and makes long messages janky.
-// Throttle the source that feeds the parser to ~12fps, with a guaranteed
-// trailing run so the final text always renders in full.
-const PARSE_THROTTLE_MS = 80
-const parseSource = ref(props.text)
-let lastParsedAt = 0
-let trailing: ReturnType<typeof setTimeout> | null = null
-
-watch(() => props.text, (val) => {
-  if (trailing) {
-    clearTimeout(trailing)
-    trailing = null
-  }
-  const elapsed = Date.now() - lastParsedAt
-  if (elapsed >= PARSE_THROTTLE_MS) {
-    lastParsedAt = Date.now()
-    parseSource.value = val
-  }
-  else {
-    trailing = setTimeout(() => {
-      lastParsedAt = Date.now()
-      parseSource.value = props.text
-      trailing = null
-    }, PARSE_THROTTLE_MS - elapsed)
-  }
-}, { immediate: true })
-
-onBeforeUnmount(() => {
-  if (trailing) clearTimeout(trailing)
-})
-
-const renderedHtml = computed(() => {
-  if (!parseSource.value) return ''
-  if (props.role === 'user') return parseSource.value
-  return sanitize(marked.parse(parseSource.value, { async: false }) as string)
-})
 
 const contextTypeIcons: Record<string, string> = {
   model: 'icon-[annon--layers]',
@@ -142,10 +101,7 @@ const contextTypeIcons: Record<string, string> = {
         </p>
 
         <!-- Assistant: rendered markdown -->
-        <div
-          v-else class="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-          v-html="renderedHtml"
-        />
+        <AtomsChatMarkdown v-else :text="text" />
       </div>
     </div>
 
