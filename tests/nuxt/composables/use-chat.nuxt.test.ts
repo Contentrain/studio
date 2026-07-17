@@ -90,6 +90,66 @@ describe('useChat', () => {
     expect(messageText(msg)).not.toContain('[tool calls]')
   })
 
+  it('folds same-turn assistant rows into one message with concatenated segments', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([
+      { id: 'r1', role: 'user', content: 'Makaleleri ekle', turn_id: 'turn-1', created_at: '2026-03-25T00:00:00.000Z' },
+      {
+        id: 'r2',
+        role: 'assistant',
+        content: 'Şimdi kaydediyorum.',
+        content_blocks: [
+          { type: 'text', text: 'Şimdi kaydediyorum.' },
+          { type: 'tool_use', id: 't1', name: 'save_content', input: { locale: 'tr' } },
+        ],
+        turn_id: 'turn-1',
+        created_at: '2026-03-25T00:00:01.000Z',
+      },
+      {
+        id: 'r3',
+        role: 'assistant',
+        content: 'Tamamlandı.',
+        content_blocks: [{ type: 'text', text: 'Tamamlandı.' }],
+        turn_id: 'turn-1',
+        created_at: '2026-03-25T00:00:02.000Z',
+      },
+      // Next turn: the user row breaks the fold even before turn_id changes.
+      { id: 'r4', role: 'user', content: 'Teşekkürler', turn_id: 'turn-2', created_at: '2026-03-25T00:01:00.000Z' },
+      {
+        id: 'r5',
+        role: 'assistant',
+        content: 'Rica ederim.',
+        content_blocks: [{ type: 'text', text: 'Rica ederim.' }],
+        turn_id: 'turn-2',
+        created_at: '2026-03-25T00:01:01.000Z',
+      },
+    ]))
+
+    const chat = useChat()
+    await chat.loadConversation('workspace-1', 'project-1', 'conv-1')
+
+    expect(chat.messages.value).toHaveLength(4)
+    const turn1 = chat.messages.value[1]!
+    expect(turn1.id).toBe('r2')
+    expect(turn1.segments.map(s => s.kind)).toEqual(['text', 'tool', 'text'])
+    expect(turn1.segments[2]).toEqual({ kind: 'text', text: 'Tamamlandı.' })
+    expect(chat.messages.value[2]?.role).toBe('user')
+    expect(chat.messages.value[3]?.id).toBe('r5')
+  })
+
+  it('keeps legacy rows with distinct turn ids as separate messages', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([
+      { id: 'r1', role: 'assistant', content: 'First reply', turn_id: 'legacy-1', created_at: '2026-03-25T00:00:00.000Z' },
+      { id: 'r2', role: 'assistant', content: 'Second reply', turn_id: 'legacy-2', created_at: '2026-03-25T00:00:01.000Z' },
+    ]))
+
+    const chat = useChat()
+    await chat.loadConversation('workspace-1', 'project-1', 'conv-1')
+
+    expect(chat.messages.value).toHaveLength(2)
+    expect(messageText(chat.messages.value[0]!)).toBe('First reply')
+    expect(messageText(chat.messages.value[1]!)).toBe('Second reply')
+  })
+
   it('streams assistant text, tool results, and affected resources from sse', async () => {
     const onContentChanged = vi.fn()
     const fetchConversations = vi.fn().mockResolvedValue([])

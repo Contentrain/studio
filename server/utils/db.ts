@@ -239,15 +239,14 @@ export async function inviteOrLookupUser(
  *     landing at the same `created_at` tick still resolve in order.
  *
  * Visibility (`internal=true`):
- *   - Intermediate assistant rows AND every tool_result row are
- *     internal; they live in the protocol replay but should not
- *     appear in the user-facing transcript.
- *   - The LAST assistant row in the trace is visible — usually the
- *     final `end_turn` text reply; on max-iteration cutoff it's the
- *     last tool-use turn (UI sees the `[tool calls]` placeholder
- *     content text, same fallback the pre-trace path used).
+ *   - Every assistant iteration row is visible — the transcript shows
+ *     the full chronological narration + tool trace of the turn (the
+ *     client groups same-turn assistant rows into one message and
+ *     renders their `content_blocks` as ordered segments).
+ *   - tool_result rows stay internal: they are protocol-replay
+ *     payload (often large truncated JSON) and never render.
  *
- * Token columns land only on the final visible assistant row —
+ * Token columns land only on the final assistant row —
  * Anthropic's `usage` is per-call total, not per-iteration.
  */
 function buildTraceRows(input: {
@@ -312,7 +311,7 @@ function buildTraceRows(input: {
       turnId,
       turnSequence: seq++,
       iteration: iter.iteration,
-      internal: !isFinal,
+      internal: false,
       ...(isFinal
         ? {
             tokenCountInput: input.inputTokens,

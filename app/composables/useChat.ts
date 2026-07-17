@@ -63,6 +63,8 @@ export interface ChatMessage {
   /** Ordered narration/tool slices — see `MessageSegment`. */
   segments: MessageSegment[]
   createdAt: string
+  /** Persisted turn id — used to fold same-turn assistant rows on load. */
+  turnId?: string
   /** Context items attached to this message (user messages only) */
   contextItems?: Array<{
     type: 'model' | 'entry' | 'field' | 'asset'
@@ -172,6 +174,7 @@ interface ConversationRow {
   content_blocks: unknown
   tool_calls: unknown
   created_at: string
+  turn_id?: string | null
 }
 
 /**
@@ -293,16 +296,40 @@ export function useChat(options?: {
         `/api/workspaces/${workspaceId}/projects/${projectId}/conversations/${convId}/messages`,
       )
 
-      // Convert DB messages to ChatMessage format
-      messages.value = data.map(row => ({
-        id: row.id,
-        role: row.role as 'user' | 'assistant',
-        segments: row.role === 'user'
-          ? (row.content.trim() ? [{ kind: 'text' as const, text: row.content }] : [])
-          : rowToSegments(row),
-        createdAt: row.created_at,
-        attachments: row.role === 'user' ? hydrateAttachments(row.content_blocks) : undefined,
-      }))
+      // Convert DB messages to ChatMessage format. A turn persists one
+      // assistant row PER iteration (all visible since the trace
+      // visibility change) — consecutive assistant rows sharing a
+      // turn_id fold into one message whose segments concatenate in
+      // order, mirroring how the turn streamed live. The seed user row
+      // shares the turn_id but user rows always start a new message, so
+      // grouping stays assistant-only. Legacy rows carry distinct
+      // turn_ids and degrade to one message per row.
+      const grouped: ChatMessage[] = []
+      for (const row of data) {
+        if (row.role === 'user') {
+          grouped.push({
+            id: row.id,
+            role: 'user',
+            segments: row.content.trim() ? [{ kind: 'text', text: row.content }] : [],
+            createdAt: row.created_at,
+            attachments: hydrateAttachments(row.content_blocks),
+          })
+          continue
+        }
+        const prev = grouped[grouped.length - 1]
+        if (prev && prev.role === 'assistant' && row.turn_id && prev.turnId === row.turn_id) {
+          prev.segments.push(...rowToSegments(row))
+          continue
+        }
+        grouped.push({
+          id: row.id,
+          role: 'assistant',
+          segments: rowToSegments(row),
+          createdAt: row.created_at,
+          turnId: row.turn_id ?? undefined,
+        })
+      }
+      messages.value = grouped
 
       conversationId.value = convId
     }
