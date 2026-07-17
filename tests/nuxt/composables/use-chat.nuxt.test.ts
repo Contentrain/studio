@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { watch } from 'vue'
 import { messageText, useChat } from '../../../app/composables/useChat'
 
 function createStreamResponse(chunks: string[], options?: { failAfter?: Error }) {
@@ -251,6 +252,40 @@ describe('useChat', () => {
       kind: 'tool',
       call: { id: 't2', input: { model: 'faq', entryId: 'e1' }, status: 'complete' },
     })
+  })
+
+  it('mutates the assistant message through the reactive proxy so the UI re-renders mid-stream', async () => {
+    // Regression: the SSE reducer used to mutate the RAW placeholder
+    // object captured before `messages.value.push(...)`. Raw-target
+    // mutations bypass Vue's proxies, so the message list never
+    // re-rendered during a stream — the whole turn appeared at once
+    // when `isStreaming` flipped at the end. A sync-flush watcher on
+    // the proxied message must fire for every content event.
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"text","content":"Başlıyorum."}\n',
+      'data: {"type":"tool_use","id":"t1","name":"save_content"}\n',
+      'data: {"type":"tool_result","id":"t1","result":{"ok":true}}\n',
+      'data: {"type":"text","content":"Bitti."}\n',
+    ])))
+
+    const chat = useChat()
+    let updates = 0
+    const stop = watch(
+      () => {
+        const msg = chat.messages.value[1]
+        if (!msg) return ''
+        return `${msg.segments.length}:${messageText(msg)}:${msg.segments.filter(s => s.kind === 'tool' && s.call.status === 'complete').length}`
+      },
+      () => { updates++ },
+      { flush: 'sync' },
+    )
+    await chat.sendMessage('workspace-1', 'project-1', 'makale yaz')
+    stop()
+
+    // placeholder append + text + tool_use + tool_result + closing text
+    expect(updates).toBeGreaterThanOrEqual(4)
+    expect(chat.messages.value[1]?.segments.map(s => s.kind)).toEqual(['text', 'tool', 'text'])
   })
 
   it('keeps partially streamed content when the user aborts mid-turn', async () => {
