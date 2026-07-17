@@ -1,4 +1,4 @@
-import type { FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { planContentDelete } from '@contentrain/mcp/core/ops'
 import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
@@ -29,11 +29,17 @@ export async function deleteContent(
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
 
+  // MCP 2.x `planContentDelete` needs the default locale to resolve a non-i18n
+  // model's single meta record (it lives under the default locale, not the
+  // caller's). Read it from config — same source `planContentSave` uses.
+  const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
+  const defaultLocale = config.locales?.default ?? 'en'
+
   let workingReader: RepoReader = reader
   const changesByPath = new Map<string, FileChange>()
 
   for (const id of entryIds) {
-    const plan = await planContentDelete(workingReader, { model: modelDef, id, locale })
+    const plan = await planContentDelete(workingReader, { model: modelDef, id, locale, defaultLocale })
     for (const change of plan.changes) {
       changesByPath.set(change.path, change)
     }

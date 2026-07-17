@@ -1,4 +1,4 @@
-import type { EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
@@ -24,6 +24,13 @@ export async function updateEntryStatus(
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
 
+  // A non-i18n model keeps ONE meta record, pinned to the default locale. A
+  // status write must target that exact path — otherwise it lands at the
+  // caller's locale and the readers (brain/CDN, normalized to default) never
+  // see the change. `resolveMetaPath` needs the default locale to do this.
+  const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
+  const defaultLocale = config.locales?.default ?? 'en'
+
   // The meta layout differs by kind, so status writes must branch on it too:
   //  - collection: one id-keyed map at `.../{modelId}/{locale}.json`
   //  - document:   one top-level EntryMeta *per slug* at
@@ -48,7 +55,7 @@ export async function updateEntryStatus(
         }
       }
 
-      const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, slug)
+      const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale, slug)
       let existingMeta: Record<string, unknown> = {}
       try {
         existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
@@ -62,7 +69,7 @@ export async function updateEntryStatus(
     }
   }
   else if (modelDef.kind === 'collection') {
-    const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale)
+    const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale)
     let existingMeta: Record<string, EntryMeta> = {}
     try {
       existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, EntryMeta>
@@ -81,7 +88,7 @@ export async function updateEntryStatus(
   }
   else {
     // singleton / dictionary — a single top-level EntryMeta object.
-    const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale)
+    const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale)
     let existingMeta: Record<string, unknown> = {}
     try {
       existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
@@ -139,13 +146,18 @@ export async function copyLocale(
     }
   }
 
+  // i18n-guarded above, so `resolveMetaPath` uses the per-locale path regardless
+  // of `defaultLocale`; we still thread it to satisfy the shared signature.
+  const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
+  const defaultLocale = config.locales?.default ?? 'en'
+
   // Documents store content + meta per-slug, so a locale copy has to enumerate
   // every slug and copy each `{slug}/{locale}.md` + its per-slug meta. The
   // single-file logic below only fits the JSON kinds (collection / singleton /
   // dictionary); for a document it read the content *directory* as a file and
   // wrote a slug-less `//` meta path, so copy_locale silently did nothing.
   if (modelDef.kind === 'document') {
-    return copyDocumentLocale(ctx, modelDef, modelId, fromLocale, toLocale, userEmail, reader)
+    return copyDocumentLocale(ctx, modelDef, modelId, fromLocale, toLocale, userEmail, reader, defaultLocale)
   }
 
   const sourcePath = resolveContentPath(ctx.pathCtx, modelDef, fromLocale)
@@ -176,13 +188,13 @@ export async function copyLocale(
   }
   catch { /* target doesn't exist — good */ }
 
-  const sourceMetaPath = resolveMetaPath(ctx.pathCtx, modelDef, fromLocale)
+  const sourceMetaPath = resolveMetaPath(ctx.pathCtx, modelDef, fromLocale, defaultLocale)
   let metaContent = '{}\n'
   try {
     metaContent = await reader.readFile(sourceMetaPath)
   }
   catch { /* no meta */ }
-  const targetMetaPath = resolveMetaPath(ctx.pathCtx, modelDef, toLocale)
+  const targetMetaPath = resolveMetaPath(ctx.pathCtx, modelDef, toLocale, defaultLocale)
 
   const copyChanges: FileChange[] = [
     { path: targetPath, content: sourceContent },
@@ -233,6 +245,7 @@ async function copyDocumentLocale(
   toLocale: string,
   userEmail: string,
   reader: RepoReader,
+  defaultLocale: string,
 ): Promise<WriteResult> {
   // No slug → `resolveContentPath` returns the model's content directory.
   const contentDir = resolveContentPath(ctx.pathCtx, modelDef, fromLocale)
@@ -265,13 +278,13 @@ async function copyDocumentLocale(
 
     let metaContent = canonicalStringify({})
     try {
-      metaContent = await reader.readFile(resolveMetaPath(ctx.pathCtx, modelDef, fromLocale, slug))
+      metaContent = await reader.readFile(resolveMetaPath(ctx.pathCtx, modelDef, fromLocale, defaultLocale, slug))
     }
     catch { /* no source meta */ }
 
     changes.push(
       { path: targetPath, content: sourceContent },
-      { path: resolveMetaPath(ctx.pathCtx, modelDef, toLocale, slug), content: metaContent },
+      { path: resolveMetaPath(ctx.pathCtx, modelDef, toLocale, defaultLocale, slug), content: metaContent },
     )
   }
 

@@ -70,7 +70,7 @@ describe('content validation', () => {
     expect(result.valid).toBe(false)
     expect(result.errors).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ field: 'tags[1]', message: 'tags[1] must be a string' }),
+        expect.objectContaining({ field: 'tags[1]', message: 'Type mismatch: expected string, got number' }),
         expect.objectContaining({ field: 'seo[1].title', message: 'Required field is missing or empty' }),
         expect.objectContaining({ field: 'status', message: 'Value "archived" is not in allowed options: [draft, published]' }),
       ]),
@@ -96,8 +96,8 @@ describe('content validation', () => {
     expect(result.valid).toBe(true)
     expect(result.errors).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ field: 'email', severity: 'warning', message: 'email may not be a valid email' }),
-        expect.objectContaining({ field: 'website', severity: 'warning', message: 'website may not be a valid URL' }),
+        expect.objectContaining({ field: 'email', severity: 'warning', message: '"not-an-email" may not be a valid email' }),
+        expect.objectContaining({ field: 'website', severity: 'warning', message: '"ftp://example.com" may not be a valid URL' }),
         expect.objectContaining({ field: 'code', severity: 'warning', message: 'Invalid pattern regex: [' }),
       ]),
     )
