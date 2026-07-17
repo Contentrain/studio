@@ -17,5 +17,12 @@ export default defineEventHandler(async (event) => {
   if (!conv)
     throw createError({ statusCode: 404, message: errorMessage('chat.conversation_not_found') })
 
-  return db.loadConversationMessages(conversationId, 100, 'id, role, content, content_blocks, tool_calls, model, created_at')
+  // 300 rows: assistant iteration rows are all visible since the trace
+  // visibility change (up to ~10 visible rows per heavy turn instead of
+  // 2), and tool_result rows — the biggest blobs — stay internal, so
+  // the payload cost is narration + tool inputs only. Note the provider
+  // orders ascending and applies the limit after, so a conversation
+  // beyond the cap truncates its NEWEST turns — a pre-existing wart,
+  // tracked separately.
+  return db.loadConversationMessages(conversationId, 300, 'id, role, content, content_blocks, tool_calls, model, created_at, turn_id')
 })

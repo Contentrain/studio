@@ -80,23 +80,28 @@ describe('postgres-db conversations (contract)', () => {
       iteration: null,
     }
 
+    // Mirrors the trace writer: assistant iteration rows are visible,
+    // tool_result payload rows stay internal.
     await methods.insertMessages([
       { ...base, role: 'user', content: 'Hello', turnSequence: 0 },
-      { ...base, role: 'assistant', content: 'Working…', turnSequence: 1, internal: true, iteration: 1, toolCalls: [{ name: 'contentrain_status', args: {} }] },
-      { ...base, role: 'assistant', content: 'Done', turnSequence: 2, contentBlocks: [{ type: 'text', text: 'Done' }], tokenCountInput: 10, tokenCountOutput: 5, model: 'claude-sonnet-5' },
+      { ...base, role: 'assistant', content: 'Working…', turnSequence: 1, iteration: 1, toolCalls: [{ name: 'contentrain_status', args: {} }] },
+      { ...base, role: 'user', content: '[tool results]', turnSequence: 2, internal: true, iteration: 1, contentBlocks: [{ type: 'tool_result', toolUseId: 'tu', content: '{"ok":true}' }] },
+      { ...base, role: 'assistant', content: 'Done', turnSequence: 3, contentBlocks: [{ type: 'text', text: 'Done' }], tokenCountInput: 10, tokenCountOutput: 5, model: 'claude-sonnet-5' },
     ])
     await methods.insertMessage({ ...base, role: 'user', content: 'Thanks', turnSequence: 0, turnId: randomUUID() })
 
     const visible = await methods.loadConversationMessages(conversationId, 20)
-    expect(visible.map(m => m.content)).toEqual(['Hello', 'Done', 'Thanks'])
+    expect(visible.map(m => m.content)).toEqual(['Hello', 'Working…', 'Done', 'Thanks'])
     expect(Object.keys(visible[0]!).sort()).toEqual(
       ['content', 'content_blocks', 'internal', 'iteration', 'role', 'tool_calls', 'turn_id', 'turn_sequence'],
     )
 
     const all = await methods.loadConversationMessages(conversationId, 20, 'role, content, tool_calls, internal', { includeInternal: true })
-    expect(all).toHaveLength(4)
-    expect(all[1]!.internal).toBe(true)
+    expect(all).toHaveLength(5)
+    expect(all[1]!.internal).toBe(false)
     expect(all[1]!.tool_calls).toEqual([{ name: 'contentrain_status', args: {} }])
+    expect(all[2]!.internal).toBe(true)
+    expect(all[2]!.content).toBe('[tool results]')
 
     // jsonb round-trip: content_blocks stays a JSON array, not a pg array
     const blocks = await sql<{ content_blocks: unknown }>`
@@ -107,7 +112,7 @@ describe('postgres-db conversations (contract)', () => {
 
     // limit applies after protocol ordering
     const limited = await methods.loadConversationMessages(conversationId, 2)
-    expect(limited.map(m => m.content)).toEqual(['Hello', 'Done'])
+    expect(limited.map(m => m.content)).toEqual(['Hello', 'Working…'])
 
     await methods.updateConversationTimestamp(conversationId)
   })

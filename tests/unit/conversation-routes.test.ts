@@ -60,7 +60,7 @@ describe('conversation routes', () => {
 
     expect(result).toEqual([{ id: 'msg-1', role: 'user', content: 'Hello', tool_calls: null, model: null, created_at: 'now' }])
     expect(getConversation).toHaveBeenCalledWith('conv-1', 'project-1', { userId: 'user-1' })
-    expect(loadConversationMessages).toHaveBeenCalledWith('conv-1', 100, 'id, role, content, content_blocks, tool_calls, model, created_at')
+    expect(loadConversationMessages).toHaveBeenCalledWith('conv-1', 300, 'id, role, content, content_blocks, tool_calls, model, created_at, turn_id')
   })
 
   it('returns 404 for foreign or missing conversations', async () => {

@@ -103,6 +103,28 @@ export interface ToolExecutionContext {
 const DEFAULT_MAX_TOOL_ITERATIONS = 8
 const DEFAULT_MAX_TOOL_RESULT_LENGTH = 32000
 
+/**
+ * Appended to the last tool_result message before the graceful-close
+ * wrap call. Without it the wrap just replays the conversation with
+ * tools disabled and the model can legitimately answer with empty
+ * content (observed on staging) — leaving the turn with no summary.
+ * Hardcoded English on purpose (same precedent as the output_truncated
+ * message): it instructs the model to answer in the conversation's
+ * language, and it is never persisted or shown verbatim.
+ */
+const GRACEFUL_CLOSE_INSTRUCTION
+  = 'You have reached the tool-step limit for this turn. Answer now with a concise summary of what you just did and its results, in the language of the conversation. Do not propose further actions.'
+
+/** Deterministic last-resort summary when even the instructed wrap returns no text. */
+function buildFallbackSummary(executedToolNames: string[]): string {
+  if (executedToolNames.length === 0)
+    return 'The turn reached its step limit before completing any operations. Please retry with a smaller request.'
+  const counts = new Map<string, number>()
+  for (const name of executedToolNames) counts.set(name, (counts.get(name) ?? 0) + 1)
+  const parts = [...counts.entries()].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name))
+  return `Completed ${executedToolNames.length} operation(s) before reaching the step limit for this turn: ${parts.join(', ')}. The results above reflect what was applied.`
+}
+
 // ─── Conversation Loop ───
 
 /**
@@ -136,6 +158,9 @@ export async function* runConversationLoop(
   let totalCacheReadInputTokens = 0
   let lastAssistantContent: AIContentBlock[] = []
   let accumulatedAffected: AffectedResources = emptyAffected()
+  // Names of tools that actually executed this turn — feeds the
+  // graceful-close fallback summary when the wrap call returns no text.
+  const executedToolNames: string[] = []
   // Full iteration-by-iteration trace surfaced on `done` so the
   // caller can persist the actual Anthropic-protocol shape Claude
   // saw — intermediate assistant turns AND tool_result blocks —
@@ -291,6 +316,7 @@ export async function* runConversationLoop(
         const result = await executeToolWithAutoMerge(
           tc.name, tc.input, toolCtx.engine, toolCtx.git, toolCtx.userEmail, toolCtx.userId, toolCtx.contentRoot, toolCtx.workflow, toolCtx.permissions, toolCtx.plan, toolCtx.projectId, toolCtx.workspaceId, toolCtx.uiContext, turnMerge,
         )
+        executedToolNames.push(tc.name)
 
         // Accumulate affected resources
         accumulatedAffected = mergeAffected(accumulatedAffected, result.affected)
@@ -325,14 +351,45 @@ export async function* runConversationLoop(
     // tools-disabled streaming call so the model summarizes what it did —
     // streamed live, and recorded as the final visible assistant turn.
     if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
+      // Nudge the wrap with an explicit summarize instruction appended
+      // after the final tool_result blocks. REPLACE the message — never
+      // mutate its content array, which `trace` still references — so
+      // the instruction lives only in this one API call and is never
+      // persisted or replayed on resume.
+      const lastMsg = config.messages[config.messages.length - 1]
+      if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content)) {
+        config.messages[config.messages.length - 1] = {
+          role: 'user',
+          content: [...lastMsg.content, { type: 'text', text: GRACEFUL_CLOSE_INSTRUCTION }],
+        }
+      }
+
       const wrap = yield* runModelStream(maxOutputTokens, [])
       totalInputTokens += wrap.usage.inputTokens
       totalOutputTokens += wrap.usage.outputTokens
       totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
       totalCacheReadInputTokens += wrap.usage.cacheReadInputTokens
-      if (wrap.assistantBlocks.length > 0) {
+
+      const wrapText = wrap.assistantBlocks
+        .filter(b => b.type === 'text')
+        .map(b => (b as { text: string }).text)
+        .join('')
+        .trim()
+      if (wrapText) {
         lastAssistantContent = wrap.assistantBlocks
         trace.push({ iteration: iteration + 1, assistantBlocks: wrap.assistantBlocks, toolResultBlocks: [] })
+      }
+      else {
+        // Observed on staging: the wrap can return zero blocks without
+        // erroring, which used to leave the turn with no summary at all.
+        // Synthesize a deterministic one so the transcript never ends
+        // tool-only.
+        // eslint-disable-next-line no-console
+        console.warn('[conversation] graceful-close wrap returned no text; synthesizing fallback summary')
+        const fallbackText = buildFallbackSummary(executedToolNames)
+        yield { type: 'text', content: fallbackText }
+        lastAssistantContent = [{ type: 'text', text: fallbackText }]
+        trace.push({ iteration: iteration + 1, assistantBlocks: lastAssistantContent, toolResultBlocks: [] })
       }
     }
 
