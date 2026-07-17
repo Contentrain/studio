@@ -16,7 +16,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useContent()
-const { messages, conversationId, conversations, isStreaming, error, selectedModel, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
+const { messages, conversationId, conversations, isStreaming, error, streamTick, selectedModel, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
   onContentChanged: (affected) => {
     emit('contentChanged', affected)
   },
@@ -49,8 +49,21 @@ const { chips, toContextItems, clear: clearContext } = useChatContext()
 const { state: authState } = useAuth()
 const toast = useToast()
 const messagesEndRef = ref<HTMLElement | null>(null)
+const scrollContainerRef = ref<HTMLElement | null>(null)
 const historyOpen = ref(false)
 const confirmDeleteId = ref<string | null>(null)
+
+// Scroll-follow: keep the view pinned to the bottom while a turn
+// streams, but release the pin the moment the user scrolls up to read.
+// Scrolling back near the bottom re-pins.
+const PIN_THRESHOLD_PX = 96
+const isPinned = ref(true)
+
+function onMessagesScroll() {
+  const el = scrollContainerRef.value
+  if (!el) return
+  isPinned.value = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX
+}
 
 async function handleSend(text: string, attachments?: UIAttachment[]) {
   // Capture chips before clearing
@@ -88,6 +101,16 @@ watch(
     })
   },
 )
+
+// Scroll-follow during streaming: every content-bearing SSE event bumps
+// `streamTick`; while pinned, keep the anchor in view. `auto` (not
+// `smooth`) so rapid deltas don't queue competing animations.
+watch(streamTick, () => {
+  if (!isPinned.value) return
+  nextTick(() => {
+    messagesEndRef.value?.scrollIntoView({ behavior: 'auto' })
+  })
+})
 
 // Show error toast
 watch(error, (err) => {
@@ -231,7 +254,7 @@ function formatConversationDate(dateStr: string): string {
     </div>
 
     <!-- Messages -->
-    <div class="flex-1 overflow-y-auto">
+    <div ref="scrollContainerRef" class="flex-1 overflow-y-auto" @scroll.passive="onMessagesScroll">
       <!-- Initial loading skeleton -->
       <div v-if="messages.length === 0 && !projectStatus" class="flex h-full flex-col items-center justify-center gap-3 p-8">
         <AtomsSkeleton variant="custom" class="size-12 rounded-full" />
@@ -273,23 +296,39 @@ function formatConversationDate(dateStr: string): string {
       <!-- Message list -->
       <div v-else class="space-y-4 p-4">
         <div v-for="msg in messages" :key="msg.id">
-          <!-- Chat bubble -->
+          <!-- User: bubble with context chips + attachments -->
           <AtomsChatBubble
-            v-if="msg.text || (msg.attachments && msg.attachments.length > 0)"
-            :role="msg.role"
-            :text="msg.text"
+            v-if="msg.role === 'user' && hasVisibleContent(msg)"
+            role="user"
+            :text="messageText(msg)"
             :user-avatar-url="authState.user?.avatarUrl"
             :user-name="authState.user?.email"
             :context-items="msg.contextItems"
             :attachments="msg.attachments"
           />
 
-          <!-- Tool calls -->
-          <div v-if="msg.toolCalls.length > 0" class="mt-2 space-y-2" :class="msg.role === 'user' ? 'ml-10' : 'ml-10'">
-            <AtomsToolCallCard
-              v-for="tc in msg.toolCalls" :key="tc.id" :name="tc.name" :input="tc.input"
-              :result="tc.result" :status="tc.status"
-            />
+          <!-- Assistant: chronological narration/tool flow -->
+          <div v-else-if="msg.role === 'assistant' && hasVisibleContent(msg)" class="flex gap-3">
+            <div class="shrink-0 pt-0.5">
+              <div class="flex size-7 items-center justify-center rounded-full bg-secondary-100 dark:bg-secondary-800">
+                <AtomsLogo variant="icon" color="auto" class="size-4" />
+              </div>
+            </div>
+            <div class="min-w-0 max-w-[85%] flex-1 space-y-2">
+              <template v-for="(seg, segIdx) in msg.segments" :key="seg.kind === 'tool' ? seg.call.id : `txt-${segIdx}`">
+                <div
+                  v-if="seg.kind === 'text' && seg.text.trim()"
+                  class="rounded-2xl bg-secondary-50 px-4 py-2.5 text-sm text-heading dark:bg-secondary-900 dark:text-secondary-100"
+                >
+                  <AtomsChatMarkdown :text="seg.text" />
+                </div>
+                <AtomsToolCallCard
+                  v-else-if="seg.kind === 'tool'"
+                  :name="seg.call.name" :input="seg.call.input"
+                  :result="seg.call.result" :status="seg.call.status"
+                />
+              </template>
+            </div>
           </div>
         </div>
 

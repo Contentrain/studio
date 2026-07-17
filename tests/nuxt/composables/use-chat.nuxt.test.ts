@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useChat } from '../../../app/composables/useChat'
+import { messageText, useChat } from '../../../app/composables/useChat'
 
-function createStreamResponse(chunks: string[]) {
+function createStreamResponse(chunks: string[], options?: { failAfter?: Error }) {
   let index = 0
 
   return {
@@ -11,6 +11,7 @@ function createStreamResponse(chunks: string[]) {
         return {
           async read() {
             if (index >= chunks.length) {
+              if (options?.failAfter) throw options.failAfter
               return { done: true, value: undefined }
             }
             const chunk = new TextEncoder().encode(chunks[index])
@@ -31,9 +32,10 @@ describe('useChat', () => {
     useState('chat-streaming').value = false
     useState('chat-error').value = null
     useState('chat-model').value = 'claude-sonnet-4-6'
+    useState('chat-stream-tick').value = 0
   })
 
-  it('loads existing conversations and maps tool calls into chat messages', async () => {
+  it('loads legacy conversations and maps tool_calls into tool segments', async () => {
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([
       {
         id: 'message-1',
@@ -48,16 +50,44 @@ describe('useChat', () => {
     await chat.loadConversation('workspace-1', 'project-1', 'conv-1')
 
     expect(chat.conversationId.value).toBe('conv-1')
-    expect(chat.messages.value[0]).toMatchObject({
-      id: 'message-1',
-      role: 'assistant',
-      text: 'Saved successfully',
+    const msg = chat.messages.value[0]!
+    expect(msg).toMatchObject({ id: 'message-1', role: 'assistant' })
+    expect(msg.segments).toHaveLength(2)
+    expect(msg.segments[0]).toEqual({ kind: 'text', text: 'Saved successfully' })
+    expect(msg.segments[1]).toMatchObject({
+      kind: 'tool',
+      call: { id: 'tool-1', name: 'save_content', status: 'complete' },
     })
-    expect(chat.messages.value[0]?.toolCalls[0]).toMatchObject({
-      id: 'tool-1',
-      name: 'save_content',
-      status: 'complete',
+  })
+
+  it('hydrates segments from content_blocks and never renders the [tool calls] placeholder', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([
+      {
+        id: 'message-1',
+        role: 'assistant',
+        // Tool-only iteration: content column carries the placeholder,
+        // content_blocks carries the real trace.
+        content: '[tool calls]',
+        content_blocks: [
+          { type: 'text', text: 'Şimdi kaydediyorum.' },
+          { type: 'tool_use', id: 'tool-1', name: 'save_content', input: { model: 'faq' } },
+        ],
+        tool_calls: null,
+        created_at: '2026-03-25T00:00:00.000Z',
+      },
+    ]))
+
+    const chat = useChat()
+    await chat.loadConversation('workspace-1', 'project-1', 'conv-1')
+
+    const msg = chat.messages.value[0]!
+    expect(msg.segments).toHaveLength(2)
+    expect(msg.segments[0]).toEqual({ kind: 'text', text: 'Şimdi kaydediyorum.' })
+    expect(msg.segments[1]).toMatchObject({
+      kind: 'tool',
+      call: { id: 'tool-1', name: 'save_content', input: { model: 'faq' }, status: 'complete' },
     })
+    expect(messageText(msg)).not.toContain('[tool calls]')
   })
 
   it('streams assistant text, tool results, and affected resources from sse', async () => {
@@ -77,13 +107,17 @@ describe('useChat', () => {
 
     expect(chat.conversationId.value).toBe('conv-1')
     expect(chat.messages.value).toHaveLength(2)
-    expect(chat.messages.value[0]?.text).toBe('FAQ kaydet')
-    expect(chat.messages.value[1]?.text).toBe('Merhaba')
-    expect(chat.messages.value[1]?.toolCalls[0]).toMatchObject({
-      id: 'tool-1',
-      name: 'save_content',
-      result: { branch: 'cr/content/faq/tr/1234567890-abcd' },
-      status: 'complete',
+    expect(messageText(chat.messages.value[0]!)).toBe('FAQ kaydet')
+    const assistant = chat.messages.value[1]!
+    expect(assistant.segments[0]).toEqual({ kind: 'text', text: 'Merhaba' })
+    expect(assistant.segments[1]).toMatchObject({
+      kind: 'tool',
+      call: {
+        id: 'tool-1',
+        name: 'save_content',
+        result: { branch: 'cr/content/faq/tr/1234567890-abcd' },
+        status: 'complete',
+      },
     })
     expect(onContentChanged).toHaveBeenCalledWith({
       models: ['faq'],
@@ -91,6 +125,105 @@ describe('useChat', () => {
       snapshotChanged: false,
       branchesChanged: true,
     })
+  })
+
+  it('keeps narration and tool calls in chronological segments across iterations', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"text","content":"TR içeriğini kaydediyorum."}\n',
+      'data: {"type":"tool_use","id":"t1","name":"save_content"}\n',
+      'data: {"type":"tool_result","id":"t1","result":{"ok":true}}\n',
+      'data: {"type":"text","content":"Şimdi EN lokali."}\n',
+      'data: {"type":"tool_use","id":"t2","name":"save_content"}\n',
+      'data: {"type":"tool_result","id":"t2","result":{"ok":true}}\n',
+      'data: {"type":"text","content":"Bitti."}\n',
+      'data: {"type":"done","affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'iki lokale kaydet')
+
+    const assistant = chat.messages.value[1]!
+    expect(assistant.segments.map(s => s.kind)).toEqual(['text', 'tool', 'text', 'tool', 'text'])
+    // Iteration texts stay separate segments — not glued into one wall.
+    expect(assistant.segments[0]).toEqual({ kind: 'text', text: 'TR içeriğini kaydediyorum.' })
+    expect(assistant.segments[2]).toEqual({ kind: 'text', text: 'Şimdi EN lokali.' })
+    expect(assistant.segments[4]).toEqual({ kind: 'text', text: 'Bitti.' })
+  })
+
+  it('populates tool input from tool_input events before the result arrives', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"tool_use","id":"t1","name":"save_content"}\n',
+      'data: {"type":"tool_input","id":"t1","input":{"model":"faq","locale":"tr"}}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'FAQ kaydet')
+
+    const assistant = chat.messages.value[1]!
+    expect(assistant.segments[0]).toMatchObject({
+      kind: 'tool',
+      call: { id: 't1', input: { model: 'faq', locale: 'tr' }, status: 'pending' },
+    })
+  })
+
+  it('backfills tool input from the tool_result event without clobbering an existing value', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"tool_use","id":"t1","name":"save_content"}\n',
+      'data: {"type":"tool_result","id":"t1","input":{"model":"faq"},"result":{"ok":true}}\n',
+      'data: {"type":"tool_use","id":"t2","name":"brain_query"}\n',
+      'data: {"type":"tool_input","id":"t2","input":{"model":"faq","entryId":"e1"}}\n',
+      'data: {"type":"tool_result","id":"t2","result":{"data":null}}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'FAQ kaydet')
+
+    const assistant = chat.messages.value[1]!
+    expect(assistant.segments[0]).toMatchObject({
+      kind: 'tool',
+      call: { id: 't1', input: { model: 'faq' }, status: 'complete' },
+    })
+    // t2's input came via tool_input; the input-less result must not erase it.
+    expect(assistant.segments[1]).toMatchObject({
+      kind: 'tool',
+      call: { id: 't2', input: { model: 'faq', entryId: 'e1' }, status: 'complete' },
+    })
+  })
+
+  it('keeps partially streamed content when the user aborts mid-turn', async () => {
+    const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"text","content":"Başladım…"}\n',
+    ], { failAfter: abortError })))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'uzun iş')
+
+    expect(chat.messages.value).toHaveLength(2)
+    expect(messageText(chat.messages.value[1]!)).toBe('Başladım…')
+    expect(chat.error.value).toBeNull()
+  })
+
+  it('bumps streamTick on content-bearing sse events', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"conversation","id":"conv-1"}\n',
+      'data: {"type":"text","content":"a"}\n',
+      'data: {"type":"tool_use","id":"t1","name":"save_content"}\n',
+      'data: {"type":"tool_input","id":"t1","input":{}}\n',
+      'data: {"type":"tool_result","id":"t1","result":{"ok":true}}\n',
+      'data: {"type":"done","affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'test')
+
+    // conversation + done don't move content — 4 content events tick.
+    expect(chat.streamTick.value).toBe(4)
   })
 
   it('refreshes content from a tool result even when the stream ends without a done event', async () => {
