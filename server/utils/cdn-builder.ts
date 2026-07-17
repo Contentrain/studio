@@ -621,7 +621,7 @@ async function buildDocumentModel(
   // Remove trailing slash for clean path
   const baseDir = contentDir.replace(/\/$/, '')
 
-  let entries: string[] = []
+  let entries: string[]
   try {
     entries = await git.listDirectory(baseDir, branch)
   }

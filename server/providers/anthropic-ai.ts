@@ -108,7 +108,7 @@ export function createAnthropicProvider(): AIProvider {
 
           case 'content_block_stop':
             if (currentToolId) {
-              let parsedInput: unknown = null
+              let parsedInput: unknown
               try {
                 parsedInput = JSON.parse(currentToolInput)
               }
