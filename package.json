@@ -113,7 +113,7 @@
     "eslint": "^10.7.0",
     "fake-indexeddb": "^6.2.5",
     "h3": "^1.15.8",
-    "happy-dom": "^20.10.6",
+    "happy-dom": "^20.11.0",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "lint-staged": "^17.0.8",
