@@ -47,11 +47,13 @@ User-facing docs live in [REMOTE_MCP.md](./REMOTE_MCP.md).
 | Read/write split — no catch-all `api_request` | ✅ |
 | Legal URLs live on contentrain.io (`/legal/privacy-policy`, `/legal/terms`, `/legal/cookie-policy`, `/legal/mcp-connector-privacy`) | ✅ |
 | Public documentation (`docs.contentrain.io/developer/mcp-connector`, `contentrain.io/docs/mcp-connector`) | ✅ |
-| **Review account** — `POST /api/auth/review-login` **404 on prod AND staging** = env unset | ❌ **open** |
-| **Prod-origin E2E** (staging was fully verified 2026-07-14; prod not repeated) | ❌ **open** |
+| **Review account** — provisioned on prod against a populated, media-eligible demo workspace | ✅ |
+| **Prod-origin E2E** — all 14 tools, write chain, media, scope step-up, revocation | ✅ (§4) |
+| Refresh rotation (needs a >1h connection) | ⏳ pending |
 | **Claude Team/Enterprise org** | ❌ **open — the only remaining gate** |
 
-Everything technical is done. What is left is operational.
+Everything technical is verified against production. What is left is operational —
+plus the four defects in §4.1, two of which are ours.
 
 ## 1. Organizational prerequisites (weeks of lead time — start first)
 
@@ -79,15 +81,28 @@ Everything technical is done. What is left is operational.
 - [x] **Migrations applied to prod.** DCR returning 201 is the proof. Keep
       the Railway **Pre-Deploy Command** (`node scripts/migrate-postgres.mjs`)
       in place on both services so schema always precedes the image.
-- [ ] **Review account** — `/auth/review-login` is a password login with no
-      OAuth/MFA/email step (OpenAI + Claude hard requirement). Set
-      `NUXT_REVIEW_ACCOUNT_EMAIL` + `NUXT_REVIEW_ACCOUNT_PASSWORD` (≥16
-      chars) on **prod** for the review window, pointing at a
-      **fully-populated** workspace: connected repo with real content
-      models/entries, plan including `api.mcp_cloud_oauth`, GitHub App
-      installed. **Make it media-eligible** — the portal syncs tools from the
-      connected server, so a non-eligible review account means the 5 media
-      tools are never listed and never reviewed. Rotate/unset after each cycle.
+- [x] **Review account** — `/auth/review-login` is a password login with no
+      OAuth/MFA/email step (OpenAI + Claude hard requirement). Live on prod
+      via `NUXT_REVIEW_ACCOUNT_EMAIL` + `NUXT_REVIEW_ACCOUNT_PASSWORD` (≥16
+      chars, boot-validated — a shorter value fails startup).
+
+      One non-obvious thing: **do not create the user by hand.** The route's
+      `upsertEmailUser` insert fires the `handle_new_user()` trigger, which
+      provisions the profile and a `primary` workspace, and no password is
+      stored in the DB — the route compares against the env value only. So the
+      env comes *first*, and the first login *is* the account creation. The
+      workspace it creates starts on the free tier; on the managed profile,
+      entitlement resolution is not driven by `workspaces.plan` alone, so
+      confirm the review workspace actually resolves to a paid tier before
+      handing credentials to a reviewer.
+
+      **Make it media-eligible** — the portal syncs tools from the connected
+      server, so a non-eligible review account means the 5 media tools are
+      never listed and never reviewed. Rotate/unset after each cycle.
+
+      Operator specifics for Contentrain's own review account (identities,
+      entitlement steps, teardown) are deliberately **not** in this public
+      AGPL repo — keep them in the internal operator notes.
 - **No domain verification is needed for Anthropic.** Their directory
   explicitly requires no DNS/`.well-known` ownership proof — that applies
   only to the open MCP Registry and to OpenAI (§6). Do not chase it here.
@@ -124,25 +139,67 @@ both its `const` and inline-default positions), and the sourcemap filename.
 ## 4. Manual test matrix (prod origin — staging is not sufficient for the attestation)
 
 CIMD is the primary path; DCR is the fallback (Codex, and Claude when CIMD
-selection fails). **Staging was fully verified 2026-07-14** — discovery →
-browser consent → token → `tools/list` (12 real models), plus `content_save` /
-`content_delete` / `validate`, writes landing on `cr/content/*` and
-auto-merging to `contentrain`. That covered rows 1–2 and 9. The rows below
-still need a pass **on the production origin**, and rows 6–8 were never run
-anywhere.
+selection fails).
 
-| # | Client | Steps | Pass criteria |
-|---|--------|-------|---------------|
-| 1 | MCP Inspector | Point at `/api/mcp/remote`; walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once | Each tool returns a non-generic response; the portal makes you attest to this |
-| 2 | Claude custom connector | Settings → Connectors → add the URL | Connect card appears from the bare 401; consent shows the client host; tools run |
-| 3 | Claude Code | `claude mcp add --transport http contentrain <url>` | RFC 8252 loopback callback works (port-agnostic redirect match) |
-| 4 | ChatGPT developer mode | Add MCP server in Settings → Connectors/Plugins | CIMD/DCR registration + consent complete; tools listed |
-| 5 | Codex | `[mcp_servers.contentrain]` in config.toml → `codex mcp login contentrain` | DCR path completes; tools run |
-| 6 | Scope step-up | Connect read-only, call `contentrain_content_save` | 403 `insufficient_scope` → client re-prompts consent → retry succeeds |
-| 7 | Refresh rotation | Stay connected > 1h, call a tool | Silent refresh; no re-auth prompt |
-| 8 | Revocation | Disconnect in Settings → Connected Apps | Client's next call prompts a clean re-authorization |
-| 9 | Write path | `contentrain_content_save` on a test project | `cr/*` branch lands + auto-merge reconcile fires (or waits on review-gated projects) |
-| 10 | Media | `media_list` → `media_ingest` on the media-eligible review workspace | Tools appear in `tools/list` and return real assets |
+**Verified against the production origin 2026-07-27.** The whole dance —
+review-login → DCR → authorize → consent → code → token (all 6 scopes +
+refresh) → `initialize` → `tools/list` — then every one of the 14 tools, the
+full write chain (`content_save`/`model_save` → `cr/*` → auto-merge →
+`contentrain` → `context.json` regeneration → `cr/*` auto-deletion), real
+`media_ingest` (webp + variants + blurhash), scope step-up and revocation.
+The demo repo was left in its original state and the probe grants were
+deleted from Connected Apps.
+
+`tools/list` returns **14**, not 24: the 10 `projectRoot`/`localWorktree`
+tools are never registered on this provider (MCP's `skipTools`). That is
+correct — expect 14 in the portal's tool sync.
+
+One honest caveat: the pass above ran through a raw HTTP harness. The portal
+asks you to confirm you exercised the tools *"via MCP Inspector or as a custom
+connector in Claude"*. Functionally equivalent, but do one pass through a real
+client before ticking that box.
+
+| # | Client | Pass criteria | Prod |
+|---|--------|---------------|------|
+| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 14/14 (raw harness — see caveat above) |
+| 2 | Claude custom connector | Connect card appears from the bare 401; consent shows the client host; tools run | ⏳ do one pass for the attestation |
+| 3 | Claude Code | `claude mcp add --transport http contentrain <url>`; RFC 8252 loopback callback works | ✅ on staging 2026-07-14 |
+| 4 | ChatGPT developer mode | CIMD/DCR registration + consent complete; tools listed | ○ |
+| 5 | Codex | `codex mcp login contentrain`; DCR path completes | ○ |
+| 6 | Scope step-up | 403 `insufficient_scope` → client re-prompts consent → retry succeeds | ✅ 403 + `WWW-Authenticate: insufficient_scope` with `scope` + `resource_metadata`; reads keep working |
+| 7 | Refresh rotation | Stay connected > 1h; silent refresh, no re-auth prompt | ⏳ needs the wait |
+| 8 | Revocation | Client's next call prompts a clean re-authorization | ✅ 401 + `invalid_token`; **refresh token rejected too** (family revoked) |
+| 9 | Write path | `cr/*` lands + auto-merge reconcile fires | ✅ merge + `context.json` regeneration + `cr/*` auto-deletion all confirmed on GitHub |
+| 10 | Media | Tools appear in `tools/list` and return real assets | ✅ all 5; `media_ingest` produced webp + og/card variants + blurhash |
+
+### 4.1 Defects found while running the matrix
+
+Four, in review-risk order. **Two are ours.** All four are the same class the
+2.1.1 `dry_run` fix belonged to: *a response that does not match what the
+surface actually does.* Anthropic's criteria call this out twice — descriptions
+must match behaviour, and errors must be actionable.
+
+1. **Read-after-write race — `studio`.** `reconcileMcpCloudAutoMerge` is
+   fire-and-forget, so a write returns before its `cr/*` branch reaches
+   `contentrain`. An agent that creates an entry and immediately lists it sees
+   stale data; one that creates and immediately deletes gets a hard failure
+   (`content_delete` → `Invalid tree info`, `model_delete` → `Model not found`).
+   Both succeeded once the merge landed. Reviewers exercise tools in sequence,
+   so "create → verify" and "create → delete" are exactly the paths they walk.
+2. **Connecting a repo does not create the `contentrain` branch — `studio`.**
+   `POST /api/workspaces/:workspaceId/projects` never calls `initProject`; the
+   only caller is the chat agent. Until someone inits through chat, every write
+   fails on the missing base ref while reads, `validate` and `/health`
+   (`healthScore: 100`) all look perfect. Diagnose with
+   `GET /repos/<owner>/<repo>/git/ref/heads/contentrain` → 404.
+3. **Raw GitHub errors reach the MCP client — `ai`.** e.g.
+   `Not Found - https://docs.github.com/rest/git/refs#get-a-reference` and
+   `Invalid tree info - https://docs.github.com/rest/git/trees#create-a-tree`,
+   carrying only a `stage` field. Non-actionable; a plausible rejection on its
+   own.
+4. **`contentrain_validate` recommends an unavailable tool — `ai`.** Its
+   `next_steps` says "Run contentrain_submit to push changes", but `submit` is
+   `localWorktree`-gated and absent from this surface.
 
 ## 5. Claude submission (claude.ai → Admin settings → Directory)
 
