@@ -34,9 +34,9 @@ If Studio later exposes a publishable SDK or CLI, that should be extracted as a 
 
 ## Pre-Release Verification on Staging
 
-Studio is trunk-based (see [CONTRIBUTING.md](../CONTRIBUTING.md) → Branch Model). Every merge to `main` is deployed automatically to `staging.contentrain.io` by Railway, so pre-release verification happens on that environment before a tag is cut — not on a separate branch.
+Studio is trunk-based (see [CONTRIBUTING.md](../CONTRIBUTING.md) → Branch Model). Every merge to `main` is deployed automatically to the Railway staging environment — `studio-staging-5610.up.railway.app` — so pre-release verification happens there before a tag is cut, not on a separate branch. (`staging.contentrain.io` is not a bound host; do not look for it.)
 
-Before tagging, confirm on `staging.contentrain.io`:
+Before tagging, confirm on staging:
 
 - Auth flows (login, OAuth, magic link)
 - Workspace and project list load
@@ -53,7 +53,7 @@ Before cutting a tag, make sure:
 - You are on `main` and it is up to date with `origin/main`
 - `main` is clean (no uncommitted changes)
 - `package.json` has the intended version
-- `staging.contentrain.io` is running the exact `main` HEAD you are about to tag
+- staging is running the exact `main` HEAD you are about to tag
 
 Run the local release gate:
 
