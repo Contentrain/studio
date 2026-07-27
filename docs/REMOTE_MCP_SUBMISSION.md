@@ -42,7 +42,7 @@ User-facing docs live in [REMOTE_MCP.md](./REMOTE_MCP.md).
 | ASM (RFC 8414) — issuer + authorize/token/register, `S256`, CIMD advertised | ✅ 200 on prod |
 | Bare `POST /api/mcp/remote` → 401 + `WWW-Authenticate` w/ `resource_metadata` + `scope` | ✅ on prod |
 | **`POST /oauth/register` (DCR) → 201** — proves `016`/`017`/`018` applied to the prod DB | ✅ **the old §2.1 blocker is closed** |
-| Tool annotations @ MCP **2.1.1** — 24 tools, all `title` + `readOnlyHint`/`destructiveHint`, names ≤64, `openWorldHint` only on `media_ingest` | ✅ zero gaps |
+| Tool annotations @ MCP **2.3.0** — 24 tools, all `title` + `readOnlyHint`/`destructiveHint`, names ≤64, `openWorldHint` only on `media_ingest` | ✅ zero gaps |
 | Unavailable tools are **not registered** (MCP's `skipTools`) — no listed-but-always-erroring tool | ✅ |
 | Read/write split — no catch-all `api_request` | ✅ |
 | Legal URLs live on contentrain.io (`/legal/privacy-policy`, `/legal/terms`, `/legal/cookie-policy`, `/legal/mcp-connector-privacy`) | ✅ |
@@ -52,8 +52,13 @@ User-facing docs live in [REMOTE_MCP.md](./REMOTE_MCP.md).
 | Refresh rotation (needs a >1h connection) | ⏳ pending |
 | **Claude Team/Enterprise org** | ❌ **open — the only remaining gate** |
 
-Everything technical is verified against production. What is left is operational —
-plus the four defects in §4.1, two of which are ours.
+Everything technical is verified against production, and all four defects the
+E2E run surfaced (§4.1) are fixed. What is left is operational.
+
+**One sequencing trap:** Railway auto-deploys `main` to *staging*; production
+deploys only on a `v*` tag. Fixes merged to `main` are therefore not on the
+origin being submitted until a release is cut. Cut the tag before submitting,
+or reviewers meet the bugs the fixes already closed.
 
 ## 1. Organizational prerequisites (weeks of lead time — start first)
 
@@ -103,11 +108,15 @@ plus the four defects in §4.1, two of which are ours.
       Operator specifics for Contentrain's own review account (identities,
       entitlement steps, teardown) are deliberately **not** in this public
       AGPL repo — keep them in the internal operator notes.
-- **No domain verification is needed for Anthropic.** Their directory
-  explicitly requires no DNS/`.well-known` ownership proof — that applies
-  only to the open MCP Registry and to OpenAI (§6). Do not chase it here.
+- **No domain-verification *challenge* for Anthropic.** The Connectors
+  Directory explicitly requires no DNS/`.well-known` ownership proof — that
+  mechanism belongs to the open MCP Registry and to OpenAI (§6), so do not
+  chase it here. Note the distinction though: the Software Directory Policy
+  still obliges developers to "verify that they own or control any API
+  endpoint, domain, or user interface". It is an attestation, not a challenge
+  — and it binds both directories.
 
-## 3. Upstream `@contentrain/mcp` — pinned 2.1.1
+## 3. Upstream `@contentrain/mcp` — pinned 2.3.0
 
 **The 2.1.0 → 2.1.1 bump is submission-relevant, not housekeeping.** 2.1.0's
 `DEFAULT_INSTRUCTIONS` told every client to *"Preview writes with
@@ -125,6 +134,15 @@ Verified by tarball diff rather than trusting the changelog: the only deltas
 between 2.1.0 and 2.1.1 are the `version` string, that instructions string (in
 both its `const` and inline-default positions), and the sourcemap filename.
 **No git-internals change, no tool-behavior change.**
+
+The same check on 2.1.1 → 2.3.0 (which carries §4.1's defects 3 and 4, plus a
+normalize fix for a `contentrain_apply` path that is `projectRoot`-gated and so
+never reachable here): the GitHub provider diff is entirely additive — a new
+`providers/shared/errors.ts` — while `applyPlan` and `createBranch` differ only
+by their sourcemap name. `isNotFoundError` keeps its behaviour on a superset of
+error shapes. Studio references none of the MCP error contract, and the
+`applyPlan` self-heal keys on `input.base` rather than the error, so neither is
+exposed to the new envelope.
 
 - [x] `title` on every tool; `readOnlyHint`/`destructiveHint` correct;
       names ≤ 64 chars; `openWorldHint` present (`media_ingest` only).
@@ -174,11 +192,15 @@ client before ticking that box.
 
 ### 4.1 Defects found while running the matrix
 
-Four, in review-risk order. **Two are ours and both are now fixed**; the other
-two are upstream in `Contentrain/ai`. All four are the same class the 2.1.1
-`dry_run` fix belonged to: *a response that does not match what the surface
-actually does.* Anthropic's criteria call this out twice — descriptions must
-match behaviour, and errors must be actionable.
+Four, in review-risk order. **All four are fixed** — two here, two upstream in
+`Contentrain/ai` (2.3.0). They are the same class the 2.1.1 `dry_run` fix
+belonged to: *a response that does not match what the surface actually does.*
+Anthropic's criteria call this out twice — descriptions must match behaviour,
+and errors must be actionable.
+
+They are recorded rather than deleted because the shape recurs: anything that
+narrows this surface (a capability gate, an async reconcile, a provider error)
+can leave a response describing a world the caller is not in.
 
 1. **Read-after-write race — `studio`, FIXED.** `reconcileMcpCloudAutoMerge`
    was fire-and-forget, so a write returned before its `cr/*` branch reached
@@ -206,14 +228,18 @@ match behaviour, and errors must be actionable.
    branch before the row exists, and `applyPlan` self-heals projects connected
    before that (`server/utils/ensure-content-branch.ts`). Diagnose the old state
    with `GET /repos/<owner>/<repo>/git/ref/heads/contentrain` → 404.
-3. **Raw GitHub errors reach the MCP client — `ai`.** e.g.
+3. **Raw GitHub errors reached the MCP client — `ai`, FIXED in 2.3.0.** e.g.
    `Not Found - https://docs.github.com/rest/git/refs#get-a-reference` and
    `Invalid tree info - https://docs.github.com/rest/git/trees#create-a-tree`,
-   carrying only a `stage` field. Non-actionable; a plausible rejection on its
-   own.
-4. **`contentrain_validate` recommends an unavailable tool — `ai`.** Its
-   `next_steps` says "Run contentrain_submit to push changes", but `submit` is
-   `localWorktree`-gated and absent from this surface.
+   carrying only a `stage` field — non-actionable, and a plausible rejection on
+   its own. Provider rejections now map onto the same structured envelope the
+   local git paths already produced: a `PROVIDER_*` code plus `agent_hint` and
+   `developer_action`, vendor documentation URLs stripped and the detail length
+   capped.
+4. **`contentrain_validate` recommended an unavailable tool — `ai`, FIXED in
+   2.3.0.** Its `next_steps` said "Run contentrain_submit to push changes", but
+   `submit` is `localWorktree`-gated and absent from this surface. The hint is
+   now gated on `isToolAvailable(...)`, so it is simply not emitted here.
 
 ## 5. Claude submission (claude.ai → Admin settings → Directory)
 
