@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
+import { ensureContentBranch } from '../../server/utils/ensure-content-branch'
 
 async function loadProjectCreateHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/index.post')).default
@@ -27,6 +28,8 @@ async function loadBranchDiffHandler() {
 
 describe('project config and branch route integration', () => {
   it('creates projects with setup status when the repository is not initialized', async () => {
+    const createBranch = vi.fn().mockResolvedValue(undefined)
+
     vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
@@ -35,9 +38,18 @@ describe('project config and branch route integration', () => {
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'workspace-1', plan: 'starter', github_installation_id: 123 }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'workspace-1', github_installation_id: 123 }),
       checkDuplicateProject: vi.fn().mockResolvedValue(false),
       createProject: vi.fn().mockResolvedValue({ id: 'project-1', status: 'setup', content_root: '/' }),
     }))
+    vi.stubGlobal('useGitProvider', vi.fn().mockReturnValue({
+      listBranches: vi.fn().mockResolvedValue([]),
+      createBranch,
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+    }))
+    // Real helper against the stubbed provider — the route reaches it through
+    // Nitro auto-import, which this harness resolves via globals.
+    vi.stubGlobal('ensureContentBranch', ensureContentBranch)
 
     await withTestServer({
       routes: [
@@ -59,6 +71,11 @@ describe('project config and branch route integration', () => {
         status: 'setup',
         content_root: '/',
       })
+
+      // A stored project must imply a write-ready one: the content SSOT
+      // branch is established before the row exists, otherwise reads and
+      // /health look healthy while every write dies on the missing base ref.
+      expect(createBranch).toHaveBeenCalledWith('contentrain', 'main')
     })
   })
 

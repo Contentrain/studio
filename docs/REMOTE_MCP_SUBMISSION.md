@@ -179,19 +179,31 @@ Four, in review-risk order. **Two are ours.** All four are the same class the
 surface actually does.* Anthropic's criteria call this out twice — descriptions
 must match behaviour, and errors must be actionable.
 
-1. **Read-after-write race — `studio`.** `reconcileMcpCloudAutoMerge` is
+1. **Read-after-write race — `studio`, OPEN.** `reconcileMcpCloudAutoMerge` is
    fire-and-forget, so a write returns before its `cr/*` branch reaches
    `contentrain`. An agent that creates an entry and immediately lists it sees
    stale data; one that creates and immediately deletes gets a hard failure
    (`content_delete` → `Invalid tree info`, `model_delete` → `Model not found`).
    Both succeeded once the merge landed. Reviewers exercise tools in sequence,
    so "create → verify" and "create → delete" are exactly the paths they walk.
-2. **Connecting a repo does not create the `contentrain` branch — `studio`.**
-   `POST /api/workspaces/:workspaceId/projects` never calls `initProject`; the
-   only caller is the chat agent. Until someone inits through chat, every write
-   fails on the missing base ref while reads, `validate` and `/health`
-   (`healthScore: 100`) all look perfect. Diagnose with
-   `GET /repos/<owner>/<repo>/git/ref/heads/contentrain` → 404.
+
+   **The obvious fix does not work.** Awaiting the reconcile where it is called
+   changes nothing for the caller: h3's `proxyRequest` writes the loopback
+   response to the socket before it resolves, so the agent already holds the
+   result by the time that line runs — the existing comment is accurate. Making
+   the write durable before responding means the proxy can no longer stream a
+   write `tools/call`: it has to buffer the loopback response, reconcile, then
+   send. That touches a path which also carries header stripping, quota and
+   rate limiting, so it wants its own change with its own tests.
+2. **Connecting a repo does not create the `contentrain` branch — `studio`,
+   FIXED.** `POST /api/workspaces/:workspaceId/projects` never called
+   `initProject`; the only caller is the chat agent, which never runs for a
+   repo with nothing left to scaffold. Until someone inited through chat, every
+   write failed on the missing base ref while reads, `validate` and `/health`
+   (`healthScore: 100`) all looked perfect. Project creation now establishes the
+   branch before the row exists, and `applyPlan` self-heals projects connected
+   before that (`server/utils/ensure-content-branch.ts`). Diagnose the old state
+   with `GET /repos/<owner>/<repo>/git/ref/heads/contentrain` → 404.
 3. **Raw GitHub errors reach the MCP client — `ai`.** e.g.
    `Not Found - https://docs.github.com/rest/git/refs#get-a-reference` and
    `Invalid tree info - https://docs.github.com/rest/git/trees#create-a-tree`,

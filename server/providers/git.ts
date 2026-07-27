@@ -13,7 +13,9 @@
  * See `.internal/refactor/02-studio-handoff.md` — Faz S1 for context.
  */
 
+import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { GitHubProvider } from '@contentrain/mcp/providers/github'
+import { ensureContentBranch } from '~~/server/utils/ensure-content-branch'
 import type {
   ApplyPlanInput,
   Commit,
@@ -254,7 +256,22 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
     readFile: (path: string, ref?: string) => core.readFile(path, ref),
     listDirectory: (path: string, ref?: string) => core.listDirectory(path, ref),
     fileExists: (path: string, ref?: string) => core.fileExists(path, ref),
-    applyPlan: (input: ApplyPlanInput) => core.applyPlan(input),
+    async applyPlan(input: ApplyPlanInput) {
+      try {
+        return await core.applyPlan(input)
+      }
+      catch (error) {
+        // Projects connected before content-branch provisioning existed have
+        // no `contentrain` branch, so every write dies resolving the base ref
+        // and the raw GitHub 404 reaches the caller. Retry only when we had
+        // to create the branch ourselves — if it was already there the
+        // failure was something else and must surface unchanged.
+        if (input.base !== CONTENTRAIN_BRANCH) throw error
+        const created = await ensureContentBranch(core).catch(() => false)
+        if (!created) throw error
+        return core.applyPlan(input)
+      }
+    },
     listBranches: (prefix?: string) => core.listBranches(prefix),
     createBranch: (name: string, fromRef?: string) => core.createBranch(name, fromRef),
     deleteBranch: (name: string) => core.deleteBranch(name),
