@@ -263,9 +263,11 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
       catch (error) {
         // Projects connected before content-branch provisioning existed have
         // no `contentrain` branch, so every write dies resolving the base ref
-        // and the raw GitHub 404 reaches the caller. Retry only when we had
-        // to create the branch ourselves — if it was already there the
-        // failure was something else and must surface unchanged.
+        // (a PROVIDER_NOT_FOUND since MCP 2.3.0). Retry only when we had to
+        // create the branch ourselves — if it was already there the failure
+        // was something else and must surface unchanged. Deliberately keyed
+        // on `input.base` rather than the error, so provider error shapes can
+        // keep evolving without silently disabling this.
         if (input.base !== CONTENTRAIN_BRANCH) throw error
         const created = await ensureContentBranch(core).catch(() => false)
         if (!created) throw error
