@@ -1,6 +1,24 @@
 # Changelog
 
 
+## v0.2.1
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.2.0...v0.2.1)
+
+### 🩹 Fixes
+
+- **projects:** Establish the contentrain branch when a repository is connected ([#171](https://github.com/Contentrain/studio/pull/171))
+- **mcp-cloud:** Make a write durable before its response reaches the agent ([#172](https://github.com/Contentrain/studio/pull/172))
+
+### 🏡 Chore
+
+- **mcp:** Pin 2.1.1 and refresh the directory submission runbook ([#168](https://github.com/Contentrain/studio/pull/168))
+- **mcp:** Pin 2.3.0 — structured provider errors and a gated submit hint ([#173](https://github.com/Contentrain/studio/pull/173))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.2.0
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.2.0-beta.1...v0.2.0)
