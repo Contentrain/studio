@@ -30,6 +30,9 @@ const state = vi.hoisted(() => ({
   incrementOauthUsage: vi.fn(),
   proxyRequest: vi.fn(),
   setResponseHeader: vi.fn(),
+  setResponseStatus: vi.fn(),
+  /** Write calls are buffered rather than streamed, so they hit fetch directly. */
+  upstreamFetch: vi.fn(),
   invalidateBrainCache: vi.fn(),
   reconcile: vi.fn(),
   recordMCPCallUsage: vi.fn(),
@@ -44,6 +47,8 @@ vi.mock('h3', async () => {
     readRawBody: async (event: { __body?: string }) => event.__body,
     proxyRequest: state.proxyRequest,
     setResponseHeader: state.setResponseHeader,
+    setResponseStatus: state.setResponseStatus,
+    getProxyRequestHeaders: () => ({}),
   }
 })
 
@@ -156,6 +161,10 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     })
     state.proxyRequest.mockResolvedValue('proxied')
     state.reconcile.mockResolvedValue(undefined)
+    state.upstreamFetch.mockResolvedValue(
+      new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    vi.stubGlobal('fetch', state.upstreamFetch)
 
     vi.stubGlobal('recordMCPCallUsage', state.recordMCPCallUsage.mockResolvedValue(undefined))
     vi.stubGlobal('useRuntimeConfig', () => ({
