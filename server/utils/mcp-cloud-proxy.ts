@@ -12,7 +12,7 @@
  * .integration.test.ts — the v1 route's semantics must never drift from it.
  */
 import type { H3Event } from 'h3'
-import { getHeader, proxyRequest, readRawBody, setResponseHeader } from 'h3'
+import { getHeader, getProxyRequestHeaders, proxyRequest, readRawBody, setResponseHeader, setResponseStatus } from 'h3'
 import { MEDIA_TOOL_NAMES, WRITE_TOOL_NAMES } from '~~/server/utils/mcp-tool-classes'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
@@ -246,53 +246,108 @@ export async function runMcpCloudProxy(
     && ctx.cdnEnabled
     && ctx.mediaOwnerId !== null
 
-  const response = await proxyRequest(event, target, {
-    headers: {
-      'x-cr-installation-id': String(ctx.installationId),
-      'x-cr-repo-owner': owner,
-      'x-cr-repo-name': repoName,
-      'x-cr-content-root': ctx.contentRoot,
-      // Public media delivery base — lets MCP's content-write path normalize
-      // `media/...` references to absolute URLs (provider.mediaBaseUrl).
-      'x-cr-media-base': publicMediaBase(ctx.projectId),
-      ...(mediaEligible
-        ? {
-            'x-cr-project-id': ctx.projectId,
-            'x-cr-workspace-id': ctx.workspaceId,
-            'x-cr-media-owner': ctx.mediaOwnerId!,
-            'x-cr-plan': ctx.plan,
-          }
-        : {}),
-      // h3's proxyRequest strips the client's `accept` header (it's in h3's
-      // ignoredHeaders set). The MCP streamable-HTTP transport rejects any
-      // request whose Accept doesn't include BOTH `application/json` and
-      // `text/event-stream` with a 406, so re-inject it here — otherwise
-      // every external MCP client fails at `initialize`.
-      'accept': getHeader(event, 'accept') || 'application/json, text/event-stream',
-    },
-    fetchOptions: {
-      method: event.method,
-      body: rawBody,
-    },
-  })
-
-  if (shouldInvalidateBrain) {
-    invalidateBrainCache(ctx.projectId)
-
-    // MCP's remote write path always reports `pending-review` and delegates
-    // the merge to Studio. Land those branches when the project's effective
-    // workflow is auto-merge (plan + config aware), matching the native
-    // write paths. Fire-and-forget — it can never affect the response the
-    // external agent already received.
-    void reconcileMcpCloudAutoMerge({
-      workspaceId: ctx.workspaceId,
-      projectId: ctx.projectId,
-      installationId: ctx.installationId,
-      repoFullName: ctx.repoFullName,
-      contentRoot: ctx.contentRoot,
-      plan: ctx.plan,
-    }).catch(() => {})
+  const proxyHeaders = {
+    'x-cr-installation-id': String(ctx.installationId),
+    'x-cr-repo-owner': owner,
+    'x-cr-repo-name': repoName,
+    'x-cr-content-root': ctx.contentRoot,
+    // Public media delivery base — lets MCP's content-write path normalize
+    // `media/...` references to absolute URLs (provider.mediaBaseUrl).
+    'x-cr-media-base': publicMediaBase(ctx.projectId),
+    ...(mediaEligible
+      ? {
+          'x-cr-project-id': ctx.projectId,
+          'x-cr-workspace-id': ctx.workspaceId,
+          'x-cr-media-owner': ctx.mediaOwnerId!,
+          'x-cr-plan': ctx.plan,
+        }
+      : {}),
+    // h3's proxyRequest strips the client's `accept` header (it's in h3's
+    // ignoredHeaders set). The MCP streamable-HTTP transport rejects any
+    // request whose Accept doesn't include BOTH `application/json` and
+    // `text/event-stream` with a 406, so re-inject it here — otherwise
+    // every external MCP client fails at `initialize`.
+    'accept': getHeader(event, 'accept') || 'application/json, text/event-stream',
   }
 
-  return response
+  const fetchOptions = { method: event.method, body: rawBody }
+
+  if (!shouldInvalidateBrain) {
+    return await proxyRequest(event, target, { headers: proxyHeaders, fetchOptions })
+  }
+
+  // Write call — this one is buffered instead of streamed.
+  //
+  // `proxyRequest` writes the loopback response straight to the socket, so
+  // anything awaited after it is invisible to the agent: the merge lands
+  // *after* the caller already holds its `pending-review` result. An agent
+  // that immediately re-reads what it wrote sees stale content, and one that
+  // immediately deletes it fails outright, because the delete plan is computed
+  // against `contentrain` where the entry does not exist yet. Reviewers
+  // exercise tools in sequence, so those are the first paths they walk.
+  //
+  // Buffering costs nothing here: a write `tools/call` answers with a short
+  // JSON or single-event SSE payload, never a long-lived stream. Reads keep
+  // streaming through the branch above.
+  const upstream = await fetch(target, {
+    ...fetchOptions,
+    headers: { ...getProxyRequestHeaders(event), ...proxyHeaders },
+  })
+  const payload = new Uint8Array(await upstream.arrayBuffer())
+
+  invalidateBrainCache(ctx.projectId)
+
+  // MCP's remote write path always reports `pending-review` and delegates the
+  // merge to Studio. Land those branches when the project's effective workflow
+  // is auto-merge (plan + config aware), matching the native write paths.
+  // Bounded: its *outcome* still cannot change the response — failures are
+  // swallowed and a reconcile that outruns the deadline is left to finish in
+  // the background, degrading to the previous fire-and-forget behaviour rather
+  // than holding the caller open.
+  await settleAutoMerge({
+    workspaceId: ctx.workspaceId,
+    projectId: ctx.projectId,
+    installationId: ctx.installationId,
+    repoFullName: ctx.repoFullName,
+    contentRoot: ctx.contentRoot,
+    plan: ctx.plan,
+  })
+
+  setResponseStatus(event, upstream.status, upstream.statusText)
+  for (const [name, value] of upstream.headers) {
+    // The body was buffered and `fetch` already decoded it, so the upstream
+    // framing headers no longer describe what goes out on the wire.
+    if (HOP_BY_HOP_HEADERS.has(name.toLowerCase())) continue
+    setResponseHeader(event, name, value)
+  }
+
+  return payload
+}
+
+/** Response headers that describe the upstream framing, not the payload. */
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'transfer-encoding',
+])
+
+/** How long a write may wait for its own merge before the response goes out. */
+const AUTO_MERGE_DEADLINE_MS = 15_000
+
+async function settleAutoMerge(params: Parameters<typeof reconcileMcpCloudAutoMerge>[0]): Promise<void> {
+  const reconcile = reconcileMcpCloudAutoMerge(params).catch(() => {})
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, AUTO_MERGE_DEADLINE_MS)
+  })
+
+  try {
+    await Promise.race([reconcile, deadline])
+  }
+  finally {
+    if (timer) clearTimeout(timer)
+  }
 }

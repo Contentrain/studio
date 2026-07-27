@@ -174,27 +174,29 @@ client before ticking that box.
 
 ### 4.1 Defects found while running the matrix
 
-Four, in review-risk order. **Two are ours.** All four are the same class the
-2.1.1 `dry_run` fix belonged to: *a response that does not match what the
-surface actually does.* Anthropic's criteria call this out twice — descriptions
-must match behaviour, and errors must be actionable.
+Four, in review-risk order. **Two are ours and both are now fixed**; the other
+two are upstream in `Contentrain/ai`. All four are the same class the 2.1.1
+`dry_run` fix belonged to: *a response that does not match what the surface
+actually does.* Anthropic's criteria call this out twice — descriptions must
+match behaviour, and errors must be actionable.
 
-1. **Read-after-write race — `studio`, OPEN.** `reconcileMcpCloudAutoMerge` is
-   fire-and-forget, so a write returns before its `cr/*` branch reaches
-   `contentrain`. An agent that creates an entry and immediately lists it sees
-   stale data; one that creates and immediately deletes gets a hard failure
+1. **Read-after-write race — `studio`, FIXED.** `reconcileMcpCloudAutoMerge`
+   was fire-and-forget, so a write returned before its `cr/*` branch reached
+   `contentrain`. An agent that created an entry and immediately listed it saw
+   stale data; one that created and immediately deleted it got a hard failure
    (`content_delete` → `Invalid tree info`, `model_delete` → `Model not found`).
    Both succeeded once the merge landed. Reviewers exercise tools in sequence,
    so "create → verify" and "create → delete" are exactly the paths they walk.
 
-   **The obvious fix does not work.** Awaiting the reconcile where it is called
-   changes nothing for the caller: h3's `proxyRequest` writes the loopback
-   response to the socket before it resolves, so the agent already holds the
-   result by the time that line runs — the existing comment is accurate. Making
-   the write durable before responding means the proxy can no longer stream a
-   write `tools/call`: it has to buffer the loopback response, reconcile, then
-   send. That touches a path which also carries header stripping, quota and
-   rate limiting, so it wants its own change with its own tests.
+   Awaiting the reconcile where it stood would have changed nothing: h3's
+   `proxyRequest` writes the loopback response to the socket before it
+   resolves, so the agent already held the result. Write `tools/call`s are
+   therefore **buffered instead of streamed** — they answer with a short JSON
+   or single-event SSE payload, never a long-lived stream, so nothing is lost.
+   Reads still stream. The reconcile's *outcome* still cannot change the
+   response: failures are swallowed, and one that outruns a 15s deadline is
+   left to finish in the background, degrading to the old behaviour rather
+   than holding the caller open.
 2. **Connecting a repo does not create the `contentrain` branch — `studio`,
    FIXED.** `POST /api/workspaces/:workspaceId/projects` never called
    `initProject`; the only caller is the chat agent, which never runs for a
