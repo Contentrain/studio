@@ -300,6 +300,87 @@ describe('cdn builder', () => {
     expect(result.filesDeleted).toBe(2)
   })
 
+  // `_manifest.json` is the content version pointer — consumers key freshness
+  // off its commitSha. It used to go up FIRST, so for the whole upload (~105s on
+  // a measured full rebuild, one object at a time) it advertised a commit whose
+  // content and bundles were still in flight. A consumer reading in that window
+  // pinned the new commitSha to pre-build bodies.
+  it('publishes _manifest.json after every artifact it describes', async () => {
+    const { git, provider } = seedProject('order-proj')
+
+    const result = await executeCDNBuild({
+      projectId: 'order-proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    const written = vi.mocked(provider.putObject).mock.calls.map(c => c[1] as string)
+    expect(written).toContain('_manifest.json')
+    // Nothing the manifest points at may be written after it.
+    expect(written.at(-1)).toBe('_manifest.json')
+    expect(written.indexOf('_manifest.json')).toBeGreaterThan(written.indexOf('content/faq/en.json'))
+    expect(written.indexOf('_manifest.json')).toBeGreaterThan(written.indexOf('_bundle/en.json'))
+  })
+
+  // The sweep deletes every build-owned object outside uploadedPaths. The media
+  // manifest used to be written AFTER it, so each full rebuild deleted it and
+  // re-uploaded it a moment later — a window where the path 404s. The delivery
+  // SDK throws on non-2xx and caches the media manifest for the life of the
+  // instance, so a consumer booting inside that window stays broken.
+  it('never deletes _media_manifest.json during a full rebuild that has media', async () => {
+    const { git, provider, objects } = seedProject('media-proj')
+    objects.set('media-proj:_media_manifest.json', '{"version":"1","assets":{}}')
+    vi.stubGlobal('useMediaProvider', () => ({
+      listAssets: async () => ({
+        assets: [{ originalPath: 'media/original/keep.webp', variants: {}, width: 1, height: 1, format: 'webp', size: 3, blurhash: null, alt: null }],
+      }),
+    }))
+
+    const result = await executeCDNBuild({
+      projectId: 'media-proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    const deleted = vi.mocked(provider.deleteObject).mock.calls.map(c => c[1] as string)
+    expect(deleted).not.toContain('_media_manifest.json')
+    expect(objects.has('media-proj:_media_manifest.json')).toBe(true)
+  })
+
+  // The inverse still has to hold: with no media assets nothing is uploaded, so
+  // a leftover manifest is genuinely stale and the sweep must collect it.
+  it('sweeps a stale _media_manifest.json when the project has no media assets', async () => {
+    const { git, provider, objects } = seedProject('nomedia-proj')
+    objects.set('nomedia-proj:_media_manifest.json', '{"version":"1","assets":{}}')
+    vi.stubGlobal('useMediaProvider', () => ({ listAssets: async () => ({ assets: [] }) }))
+
+    const result = await executeCDNBuild({
+      projectId: 'nomedia-proj',
+      buildId: 'b',
+      git,
+      cdn: provider,
+      contentRoot: '',
+      commitSha: 's',
+      branch: 'main',
+      fullRebuild: true,
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(objects.has('nomedia-proj:_media_manifest.json')).toBe(false)
+  })
+
   it('preserves media/* when a build runs with empty changedPaths (webhook empty-commits path)', async () => {
     const { git, provider, objects } = seedProject('proj2')
 
