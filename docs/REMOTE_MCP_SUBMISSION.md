@@ -219,6 +219,17 @@ can leave a response describing a world the caller is not in.
    response: failures are swallowed, and one that outruns a 15s deadline is
    left to finish in the background, degrading to the old behaviour rather
    than holding the caller open.
+
+   **Only step 1 of the merge is awaited.** Measured on prod at `v0.2.1`, a
+   write cost ~18s against ~1-2s for a read, because the reconcile ran all
+   ~13 sequential GitHub round trips before answering. Roughly 8 of those —
+   `context.json` regeneration and the `contentrain → main` advance — are
+   bookkeeping no MCP caller observes: agents read `contentrain`, and content
+   reads come from the tree. That half now runs detached, mirroring the chat
+   agent, which lands writes on `contentrain` per save and flushes the
+   finalize once at turn end. Keep the split: collapsing it back restores the
+   18s write and leaves ~1s of margin under the deadline, where a slow GitHub
+   day silently reinstates the stale-read bug.
 2. **Connecting a repo does not create the `contentrain` branch — `studio`,
    FIXED.** `POST /api/workspaces/:workspaceId/projects` never called
    `initProject`; the only caller is the chat agent, which never runs for a

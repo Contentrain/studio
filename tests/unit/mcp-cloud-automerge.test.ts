@@ -10,7 +10,8 @@ const git = {
 }
 const engine = {
   listContentBranches: vi.fn(),
-  mergeBranch: vi.fn(),
+  mergeToContentrain: vi.fn(),
+  finalizeContentrain: vi.fn(),
 }
 const invalidateBrainCache = vi.fn()
 let hasReviewFeature = true
@@ -49,13 +50,42 @@ describe('reconcileMcpCloudAutoMerge', () => {
     engine.listContentBranches.mockResolvedValue([
       { name: 'cr/content/posts/en/1-aa', sha: 's1', protected: false },
     ])
-    engine.mergeBranch.mockResolvedValue({ merged: true, sha: 'm', pullRequestUrl: null })
+    engine.mergeToContentrain.mockResolvedValue({ merged: true, sha: 'm' })
+    engine.finalizeContentrain.mockResolvedValue({ merged: true, sha: 'm', pullRequestUrl: null })
   })
 
-  it('merges pending branches on an auto-merge project', async () => {
+  it('lands pending branches on contentrain on an auto-merge project', async () => {
     await reconcileMcpCloudAutoMerge(baseParams)
 
-    expect(engine.mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1-aa')
+    expect(engine.mergeToContentrain).toHaveBeenCalledWith('cr/content/posts/en/1-aa')
+    expect(invalidateBrainCache).toHaveBeenCalledWith('proj-1')
+  })
+
+  it('resolves before the finalize completes — the caller waits on step 1 only', async () => {
+    let releaseFinalize: () => void = () => {}
+    const finalizeDone = new Promise<void>((resolve) => {
+      releaseFinalize = resolve
+    })
+    engine.finalizeContentrain.mockReturnValue(finalizeDone)
+
+    // Would hang if the reconciler awaited step 2.
+    await expect(reconcileMcpCloudAutoMerge(baseParams)).resolves.toBeUndefined()
+
+    expect(engine.finalizeContentrain).toHaveBeenCalledWith(['cr/content/posts/en/1-aa'])
+    releaseFinalize()
+    await finalizeDone
+  })
+
+  it('invalidates the brain cache again once the finalize lands', async () => {
+    await reconcileMcpCloudAutoMerge(baseParams)
+    await vi.waitFor(() => expect(invalidateBrainCache).toHaveBeenCalledTimes(2))
+  })
+
+  it('never throws when the detached finalize rejects', async () => {
+    engine.finalizeContentrain.mockRejectedValue(new Error('regen conflict'))
+
+    await expect(reconcileMcpCloudAutoMerge(baseParams)).resolves.toBeUndefined()
+    // The landed content is still live; only the bookkeeping half failed.
     expect(invalidateBrainCache).toHaveBeenCalledWith('proj-1')
   })
 
@@ -65,7 +95,7 @@ describe('reconcileMcpCloudAutoMerge', () => {
 
     await reconcileMcpCloudAutoMerge(baseParams)
 
-    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    expect(engine.mergeToContentrain).not.toHaveBeenCalled()
     expect(invalidateBrainCache).not.toHaveBeenCalled()
   })
 
@@ -75,7 +105,7 @@ describe('reconcileMcpCloudAutoMerge', () => {
 
     await reconcileMcpCloudAutoMerge(baseParams)
 
-    expect(engine.mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1-aa')
+    expect(engine.mergeToContentrain).toHaveBeenCalledWith('cr/content/posts/en/1-aa')
   })
 
   it('skips already-merged branches', async () => {
@@ -83,7 +113,7 @@ describe('reconcileMcpCloudAutoMerge', () => {
 
     await reconcileMcpCloudAutoMerge(baseParams)
 
-    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    expect(engine.mergeToContentrain).not.toHaveBeenCalled()
     expect(invalidateBrainCache).not.toHaveBeenCalled()
   })
 
@@ -92,21 +122,22 @@ describe('reconcileMcpCloudAutoMerge', () => {
 
     await reconcileMcpCloudAutoMerge(baseParams)
 
-    expect(engine.mergeBranch).toHaveBeenCalled()
+    expect(engine.mergeToContentrain).toHaveBeenCalled()
   })
 
   it('no-ops on an invalid repo full name', async () => {
     await reconcileMcpCloudAutoMerge({ ...baseParams, repoFullName: 'invalid' })
 
     expect(engine.listContentBranches).not.toHaveBeenCalled()
-    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    expect(engine.mergeToContentrain).not.toHaveBeenCalled()
   })
 
   it('never throws when a merge fails (best-effort)', async () => {
-    engine.mergeBranch.mockRejectedValue(new Error('merge conflict'))
+    engine.mergeToContentrain.mockRejectedValue(new Error('merge conflict'))
 
     await expect(reconcileMcpCloudAutoMerge(baseParams)).resolves.toBeUndefined()
-    // No successful merge → brain cache untouched.
+    // No successful merge → neither the cache nor the finalize is touched.
     expect(invalidateBrainCache).not.toHaveBeenCalled()
+    expect(engine.finalizeContentrain).not.toHaveBeenCalled()
   })
 })
