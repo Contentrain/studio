@@ -505,18 +505,21 @@ describe('CDN route integration', () => {
     expect(runCDNBuild).toHaveBeenCalledWith(expect.objectContaining({
       buildId: 'build-1',
       fullRebuild: true,
+      // Forwarded so the runner can route `cdn.build_complete`.
+      workspaceId: 'workspace-1',
     }))
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"upload"'))
     expect(eventStreamState.stream.push).toHaveBeenCalledWith(expect.stringContaining('"phase":"complete"'))
     expect(eventStreamState.stream.close).toHaveBeenCalledOnce()
     expect(eventStreamState.stream.onClosed).toHaveBeenCalledOnce()
 
+    // `cdn.build_complete` is emitted by runCDNBuild, NOT here. It used to be
+    // emitted by this endpoint alone, which is why push-triggered builds never
+    // announced themselves and consumers kept serving pre-build payloads. The
+    // emit is asserted in tests/unit/cdn-build-runner.test.ts; this endpoint
+    // must not double-emit on top of it.
     const emitMock = vi.mocked(globalThis.emitWebhookEvent as ReturnType<typeof vi.fn>)
-    expect(emitMock).toHaveBeenCalledWith('project-1', 'workspace-1', 'cdn.build_complete', expect.objectContaining({
-      buildId: 'build-1',
-      status: 'success',
-      filesUploaded: 2,
-    }))
+    expect(emitMock).not.toHaveBeenCalled()
   })
 
   it('returns 409 when a build is already in flight (claim blocked)', async () => {

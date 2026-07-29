@@ -63,11 +63,13 @@ export default defineEventHandler(async (event) => {
 
   const processBuild = async () => {
     try {
-      // runCDNBuild persists the build row's result and runs the mid-build
+      // runCDNBuild persists the build row's result, emits `cdn.build_complete`
+      // (for this build AND any catch-up it drives), and runs the mid-build
       // catch-up (chasing any push that landed while we built).
       const result = await runCDNBuild({
         db,
         projectId,
+        workspaceId,
         buildId: build.id as string,
         git,
         cdn,
@@ -79,15 +81,6 @@ export default defineEventHandler(async (event) => {
           eventStream.push(JSON.stringify(progressEvent))
         },
       })
-
-      // Emit webhook event (fire-and-forget)
-      emitWebhookEvent(projectId, workspaceId, 'cdn.build_complete', {
-        buildId: build.id,
-        status: result.error ? 'failed' : 'success',
-        filesUploaded: result.filesUploaded,
-        durationMs: result.durationMs,
-        error: result.error ?? null,
-      }).catch(() => {})
 
       await eventStream.push(JSON.stringify({
         phase: 'complete',
