@@ -22,8 +22,15 @@
  * branches stay pending for human review.
  *
  * Best-effort by contract: every step is guarded so a reconciliation failure
- * can never surface to the external caller. The caller invokes it
- * fire-and-forget after a successful write tool call.
+ * can never surface to the external caller.
+ *
+ * The two-step merge is split deliberately. Step 1 (`cr/* → contentrain`) is
+ * awaited, because it is the half the caller can observe — an agent that
+ * immediately re-reads or deletes what it just wrote is otherwise racing its
+ * own merge. Step 2 (context.json regeneration + `contentrain → main`) runs
+ * detached: no MCP caller reads `main`, and content reads come from the tree.
+ * This mirrors the chat agent, which lands writes on `contentrain` per save
+ * and flushes the finalize once at turn end.
  */
 import type { ContentrainConfig } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
@@ -79,19 +86,39 @@ export async function reconcileMcpCloudAutoMerge(params: McpCloudAutoMergeParams
     const engine = createContentEngine({ git, contentRoot, projectId })
     const branches = await engine.listContentBranches()
 
-    let merged = false
+    // Step 1 only — `cr/* → contentrain`. This is the half the caller can
+    // observe: once it lands, an agent that immediately lists or deletes what
+    // it just wrote sees it. The awaited path is therefore kept to it alone.
+    const landed: string[] = []
     for (const branch of branches) {
       const isMerged = await git.isMerged(branch.name).catch(() => true)
       if (isMerged) continue
       try {
-        await engine.mergeBranch(branch.name)
-        merged = true
+        const step1 = await engine.mergeToContentrain(branch.name)
+        if (step1.merged) landed.push(branch.name)
       }
       catch { /* best-effort: another path may merge it, or it conflicts */ }
     }
 
+    if (landed.length === 0) return
+
     // Refresh the brain cache so the next read reflects the landed content.
-    if (merged) invalidateBrainCache(projectId)
+    invalidateBrainCache(projectId)
+
+    // Step 2 — context.json regeneration + the `contentrain → main` advance —
+    // is bookkeeping no MCP caller observes: agents read `contentrain`, never
+    // `main`, and content reads come from the tree rather than `context.json`.
+    // The chat agent already defers exactly this half to its turn end
+    // (`flushTurnMerges`); MCP Cloud has no turn boundary, so it runs detached
+    // instead of holding the agent open for ~9s of round trips it cannot see.
+    //
+    // Same failure contract as every other finalize call site: best-effort,
+    // self-healing on the next merge. The second invalidation matters — the
+    // regeneration rebuilds the brain snapshot, so dropping it again closes
+    // the window where a reader could cache pre-finalize stats.
+    void engine.finalizeContentrain(landed)
+      .then(() => invalidateBrainCache(projectId))
+      .catch(() => {})
   }
   catch { /* best-effort: MCP Cloud writes still succeeded as pending branches */ }
 }
