@@ -232,13 +232,13 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     changedModelIds.push(...targetModels.map(m => m.id))
 
     // A selective build whose diff touches no content models (a pure code
-    // push: only app/, server/, etc.) must be a true no-op. Uploading the
-    // manifest here would advance `_manifest.json.commitSha` to the code
-    // commit while the bundle block below is skipped (targetModels empty) —
-    // leaving `_manifest.json.commitSha` ahead of every `_bundle/*.json`.
-    // Consumers that key content freshness off the manifest then read stale/
-    // empty content until a full rebuild re-aligns them. The manifest tracks
-    // the CONTENT version, so a content-less push must not bump it.
+    // push: only app/, server/, etc.) must be a true no-op. Running the rest
+    // would advance `_manifest.json.commitSha` to the code commit while the
+    // bundle block is skipped (targetModels empty), leaving the manifest ahead
+    // of every `_bundle/*.json`. Consumers that key content freshness off the
+    // manifest then read stale/empty content until a full rebuild re-aligns
+    // them (#153). The manifest tracks the CONTENT version, so a content-less
+    // push must not bump it — returning here also saves a wasted build cycle.
     // fullRebuild (manual trigger) and config/model-def changes never reach
     // here: the former skips the `else` branch above, the latter make
     // getAffectedModels non-empty.
@@ -255,33 +255,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    // 4. Upload manifest
-    progress({ phase: 'upload', message: 'Uploading manifest...', current: 0, total: targetModels.length })
-    const manifest = {
-      version: '1',
-      commitSha,
-      builtAt: new Date().toISOString(),
-      branch,
-      config: {
-        stack: config.stack,
-        locales: config.locales,
-        domains: config.domains,
-      },
-      models: models.map(m => ({
-        id: m.id,
-        name: m.name,
-        kind: m.kind,
-        domain: m.domain,
-        i18n: m.i18n,
-      })),
-    }
-    const manifestData = JSON.stringify(manifest, null, 2)
-    await cdn.putObject(projectId, '_manifest.json', manifestData, 'application/json')
-    uploadedPaths.add('_manifest.json')
-    filesUploaded++
-    totalSizeBytes += Buffer.byteLength(manifestData)
-
-    // 5. Upload model index + definitions
+    // 4. Upload model index + definitions
     const modelSummaries = models.map(m => ({
       id: m.id,
       name: m.name,
@@ -305,7 +279,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       totalSizeBytes += Buffer.byteLength(modelData)
     }
 
-    // 6. Build content for each target model
+    // 5. Build content for each target model
     let modelStep = 0
     for (const model of targetModels) {
       modelStep++
@@ -423,7 +397,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    // 6.5 Locale bundles — one conditional fetch replaces N per-model reads
+    // 6. Locale bundles — one conditional fetch replaces N per-model reads
     // (SDK preload mode, docs/CDN_BUNDLE.md). Emitted on every build so the
     // bundle always mirrors the standalone artifacts; skipped only when a
     // selective build touched no models (content unchanged → bundles current).
@@ -477,7 +451,89 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    // 7. Diff-based stale object cleanup
+    // 7. Media manifest (if MediaProvider is available).
+    //
+    // Runs BEFORE the sweep on purpose. `_media_manifest.json` is written by the
+    // build, so it has to be in `uploadedPaths` by the time the full-rebuild
+    // sweep runs — otherwise the sweep deletes it and step 8 re-uploads it a
+    // moment later, leaving a window where the path 404s. The delivery SDK
+    // throws on any non-2xx and caches the media manifest for the lifetime of
+    // the instance, so a consumer that boots inside that window stays broken
+    // until it is replaced. Ordering it here also keeps the inverse correct: a
+    // project with no media assets uploads nothing, the path stays out of
+    // `uploadedPaths`, and the sweep garbage-collects a stale manifest.
+    try {
+      const mediaProvider = useMediaProvider()
+      if (mediaProvider) {
+        const { assets: mediaAssets } = await mediaProvider.listAssets(projectId, { limit: 10000 })
+        if (mediaAssets.length > 0) {
+          // Build media manifest
+          const mediaManifest: Record<string, { original: string, variants: Record<string, string>, meta: Record<string, unknown> }> = {}
+          for (const asset of mediaAssets) {
+            mediaManifest[asset.originalPath] = {
+              original: asset.originalPath,
+              variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
+              meta: {
+                width: asset.width,
+                height: asset.height,
+                format: asset.format,
+                size: asset.size,
+                blurhash: asset.blurhash,
+                alt: asset.alt,
+              },
+            }
+          }
+          const mediaManifestData = JSON.stringify({ version: '1', assets: mediaManifest }, null, 2)
+          await cdn.putObject(projectId, '_media_manifest.json', mediaManifestData, 'application/json')
+          uploadedPaths.add('_media_manifest.json')
+          filesUploaded++
+          totalSizeBytes += Buffer.byteLength(mediaManifestData)
+        }
+      }
+    }
+    catch {
+      // Media manifest generation is non-fatal
+    }
+
+    // 8. Manifest — published LAST, after every artifact it describes.
+    //
+    // `_manifest.json` is the CONTENT VERSION POINTER: consumers key freshness
+    // off its commitSha. Publishing it first (as this used to) advertised a
+    // commit whose content, bundles and media manifest were still uploading —
+    // measured at ~105s on a full rebuild, since every object goes up one at a
+    // time. A consumer reading in that window pinned the new commitSha to
+    // pre-build bodies and, if it caches per commit, never re-read them. Same
+    // invariant #153 protected (manifest must not outrun the bundle); that fix
+    // covered a build that skipped the bundle, this covers every build that
+    // simply hadn't written it yet. A build that dies midway now leaves the old
+    // manifest pointing at the old, complete content instead of a half-written
+    // snapshot.
+    progress({ phase: 'upload', message: 'Uploading manifest...', current: targetModels.length, total: targetModels.length })
+    const manifest = {
+      version: '1',
+      commitSha,
+      builtAt: new Date().toISOString(),
+      branch,
+      config: {
+        stack: config.stack,
+        locales: config.locales,
+        domains: config.domains,
+      },
+      models: models.map(m => ({
+        id: m.id,
+        name: m.name,
+        kind: m.kind,
+        domain: m.domain,
+        i18n: m.i18n,
+      })),
+    }
+    const manifestData = JSON.stringify(manifest, null, 2)
+    await cdn.putObject(projectId, '_manifest.json', manifestData, 'application/json')
+    uploadedPaths.add('_manifest.json')
+    filesUploaded++
+    totalSizeBytes += Buffer.byteLength(manifestData)
+
+    // 9. Diff-based stale object cleanup
     progress({ phase: 'cleanup', message: 'Cleaning stale objects...' })
     try {
       if (options.fullRebuild || !options.changedPaths?.length) {
@@ -520,41 +576,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       reportDataLossRisk(e, { op: 'cdn-build.cleanup', projectId, filesDeleted, fullRebuild: options.fullRebuild ?? false })
     }
 
-    // 8. Media manifest (if MediaProvider is available)
-    try {
-      const mediaProvider = useMediaProvider()
-      if (mediaProvider) {
-        const { assets: mediaAssets } = await mediaProvider.listAssets(projectId, { limit: 10000 })
-        if (mediaAssets.length > 0) {
-          // Build media manifest
-          const mediaManifest: Record<string, { original: string, variants: Record<string, string>, meta: Record<string, unknown> }> = {}
-          for (const asset of mediaAssets) {
-            mediaManifest[asset.originalPath] = {
-              original: asset.originalPath,
-              variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
-              meta: {
-                width: asset.width,
-                height: asset.height,
-                format: asset.format,
-                size: asset.size,
-                blurhash: asset.blurhash,
-                alt: asset.alt,
-              },
-            }
-          }
-          const manifestData = JSON.stringify({ version: '1', assets: mediaManifest }, null, 2)
-          await cdn.putObject(projectId, '_media_manifest.json', manifestData, 'application/json')
-          uploadedPaths.add('_media_manifest.json')
-          filesUploaded++
-          totalSizeBytes += Buffer.byteLength(manifestData)
-        }
-      }
-    }
-    catch {
-      // Media manifest generation is non-fatal
-    }
-
-    // 9. Purge edge cache
+    // 10. Purge edge cache
     progress({ phase: 'done', message: `Build complete — ${filesUploaded} uploaded, ${filesDeleted} deleted`, current: targetModels.length, total: targetModels.length })
     await cdn.purgeCache(projectId)
 
