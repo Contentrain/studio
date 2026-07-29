@@ -14,12 +14,20 @@
  * The claim (DatabaseProvider.createCDNBuild) is what guarantees the mutual
  * exclusion across instances; this runner only decides WHETHER a follow-up is
  * warranted and drives it.
+ *
+ * It is also the single place that announces `cdn.build_complete`. That event is
+ * how a consuming site learns its cached renders are stale — the delivery CDN is
+ * only the data plane, and a site that caches (ISR / edge / durable KV) will keep
+ * serving pre-build payloads until its TTL lapses unless the webhook purges it.
+ * Emitting from here (rather than from a single trigger endpoint) is what keeps
+ * push-triggered and catch-up builds from silently skipping that purge.
  */
 import type { DatabaseProvider } from '../providers/database'
 import type { GitProvider } from '../providers/git'
 import type { CDNProvider } from '../providers/cdn'
 import type { BuildProgressEvent, BuildResult } from './cdn-builder'
 import { executeCDNBuild } from './cdn-builder'
+import { emitWebhookEvent } from './webhook-engine'
 
 // Hard ceiling on catch-up chaining so a branch under continuous pushes can't
 // spin builds forever. Each iteration still reflects the latest HEAD, so the
@@ -29,6 +37,8 @@ const MAX_CATCHUP_BUILDS = 5
 export interface RunCDNBuildInput {
   db: DatabaseProvider
   projectId: string
+  /** Owning workspace — required to route the `cdn.build_complete` webhook. */
+  workspaceId: string
   buildId: string
   git: GitProvider
   cdn: CDNProvider
@@ -52,9 +62,31 @@ async function resolveBranchHead(git: GitProvider, branch: string): Promise<stri
   }
 }
 
+/**
+ * Announce a finished build so consumers can purge their own caches.
+ *
+ * Fire-and-forget: a webhook failure must never fail or delay the build that
+ * already landed. A clean 0-file no-op (the content-less push short-circuit in
+ * executeCDNBuild) published nothing, so there is nothing to invalidate — every
+ * other outcome, including a failure, is announced so the consumer can react.
+ */
+function announceBuildComplete(input: { projectId: string, workspaceId: string, buildId: string, result: BuildResult }): void {
+  const { result } = input
+  if (!result.error && result.filesUploaded === 0) return
+
+  // Payload shape is a published contract — consumers parse these fields.
+  void emitWebhookEvent(input.projectId, input.workspaceId, 'cdn.build_complete', {
+    buildId: input.buildId,
+    status: result.error ? 'failed' : 'success',
+    filesUploaded: result.filesUploaded,
+    durationMs: result.durationMs,
+    error: result.error ?? null,
+  }).catch(() => {})
+}
+
 /** Execute a build, persist its result row, then chase any mid-build push. */
 export async function runCDNBuild(input: RunCDNBuildInput): Promise<BuildResult> {
-  const { db, projectId, git, cdn, contentRoot, branch } = input
+  const { db, projectId, workspaceId, git, cdn, contentRoot, branch } = input
 
   const result = await executeCDNBuild({
     projectId,
@@ -79,10 +111,12 @@ export async function runCDNBuild(input: RunCDNBuildInput): Promise<BuildResult>
     completed_at: new Date().toISOString(),
   })
 
+  announceBuildComplete({ projectId, workspaceId, buildId: input.buildId, result })
+
   // Catch-up only after a clean build — a failed build is retried by the next
   // push, not by chasing HEAD on top of a broken state.
   if (!result.error)
-    await catchUp({ db, projectId, git, cdn, contentRoot, branch, builtSha: input.commitSha, depth: 0 })
+    await catchUp({ db, projectId, workspaceId, git, cdn, contentRoot, branch, builtSha: input.commitSha, depth: 0 })
 
   return result
 }
@@ -90,6 +124,7 @@ export async function runCDNBuild(input: RunCDNBuildInput): Promise<BuildResult>
 async function catchUp(args: {
   db: DatabaseProvider
   projectId: string
+  workspaceId: string
   git: GitProvider
   cdn: CDNProvider
   contentRoot: string
@@ -134,6 +169,10 @@ async function catchUp(args: {
     error_message: result.error ?? null,
     completed_at: new Date().toISOString(),
   })
+
+  // A catch-up rebuilt the CDN at a newer commit, so the consumer's caches are
+  // stale again — announce it exactly like the build that triggered the chase.
+  announceBuildComplete({ projectId: args.projectId, workspaceId: args.workspaceId, buildId: build.id as string, result })
 
   if (!result.error)
     await catchUp({ ...args, builtSha: head, depth: args.depth + 1 })

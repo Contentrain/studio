@@ -99,6 +99,7 @@ export default defineEventHandler(async (event) => {
           runCDNBuild({
             db,
             projectId: proj.id as string,
+            workspaceId: proj.workspace_id as string,
             buildId,
             git,
             cdn,
