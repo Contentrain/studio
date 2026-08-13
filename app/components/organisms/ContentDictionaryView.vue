@@ -53,7 +53,7 @@ function onRowDragStart(e: DragEvent, key: string, value: unknown) {
   <div class="flex h-full flex-col">
     <!-- Search -->
     <div class="shrink-0 border-b border-secondary-200 px-5 py-2 dark:border-secondary-800">
-      <AtomsFormInput v-model="searchQuery" type="search" :placeholder="t('content.filter_keys')" />
+      <AtomsFormInput v-model="searchQuery" type="search" :placeholder="t('content.filter_keys')" clearable />
     </div>
 
     <!-- Table -->
