@@ -100,6 +100,7 @@ onUnmounted(() => {
       <AtomsFormInput
         v-model="filters.search"
         :placeholder="t('media.search_placeholder')"
+        clearable
         class="flex-1"
       />
       <AtomsIconButton
