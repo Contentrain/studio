@@ -238,14 +238,14 @@ const mobileTab = ref<'chat' | 'content'>('chat')
 // Radix sizes panels in percent, but the widths worth defending are pixels, so
 // the constraints are recomputed from the measured group width (see
 // app/utils/panel-sizing.ts). Seeded from the viewport so the first paint is
-// already close — the shell is capped at 1920px and the sidebar is 240px —
-// then corrected by the observer.
+// already close — the shell is capped at 1920px, less the sidebar's default —
+// then corrected by the observer, which is what actually keeps this honest now
+// that the sidebar is resizable and the seed is only ever an opening guess.
 const SHELL_MAX_PX = 1920
-const SIDEBAR_PX = 240
 
 const panelsEl = ref<HTMLElement | null>(null)
 const groupWidth = ref(
-  import.meta.client ? Math.max(0, Math.min(window.innerWidth, SHELL_MAX_PX) - SIDEBAR_PX) : 0,
+  import.meta.client ? Math.max(0, Math.min(window.innerWidth, SHELL_MAX_PX) - SIDEBAR_DEFAULT_PX) : 0,
 )
 const contentBounds = computed(() => contentPanelBounds(groupWidth.value))
 
@@ -392,9 +392,12 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
         <!-- Drag to resize, double-click to collapse. It replaces the content
              panel's old left border, so there is only ever one divider. Hidden
              below lg, where the bottom tab bar owns the switch instead. -->
+        <!-- 1px line, ~9px grab area: the visual weight of a divider and the
+             hit area of a control are different requirements, and a 1px drag
+             target is one the pointer keeps missing. -->
         <SplitterResizeHandle
           :aria-label="t('content.resize_panel')"
-          class="hidden w-px shrink-0 cursor-col-resize bg-secondary-200 transition-colors hover:bg-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 data-[resize-handle-state=drag]:bg-primary-500 lg:block dark:bg-secondary-800"
+          class="relative hidden w-px shrink-0 cursor-col-resize bg-secondary-200 transition-colors after:absolute after:inset-y-0 after:-left-1 after:-right-1 after:content-[''] hover:bg-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 data-[resize-handle-state=drag]:bg-primary-500 lg:block dark:bg-secondary-800"
           @dblclick="toggleContentPanel"
         />
 

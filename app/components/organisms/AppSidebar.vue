@@ -165,8 +165,10 @@ function onProjectDeleted() {
 </script>
 
 <template>
+  <!-- Size comes from the caller, not from here: in the shell it is a resizable
+       splitter panel, in the mobile drawer it is the dialog's fixed width. -->
   <aside
-    class="flex h-screen w-60 flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
+    class="flex size-full flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
   >
     <!-- Brand + Workspace -->
     <div class="shrink-0 px-3 pt-3 pb-2">
