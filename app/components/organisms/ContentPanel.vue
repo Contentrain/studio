@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DeepReadonly } from 'vue'
 import type { FieldDef } from '@contentrain/types'
+import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 interface SnapshotModel {
@@ -11,6 +12,7 @@ interface SnapshotModel {
   readonly fields: Record<string, unknown> | Readonly<Record<string, unknown>>
   readonly domain: string
   readonly i18n: boolean
+  readonly title_field?: string
 }
 
 // Accept both mutable and DeepReadonly variants from useSnapshot
@@ -137,25 +139,54 @@ function getFieldType(fieldId: string): string {
   return fields[fieldId]?.type ?? 'string'
 }
 
-function getPrimaryFieldId(): string | null {
-  if (!activeModel.value?.fields) return null
-  const fields = activeModel.value.fields as Record<string, FieldDef>
-  for (const [key, def] of Object.entries(fields)) {
-    if (def.required && (def.type === 'string' || def.type === 'slug')) return key
+// ── Title field picker ─────────────────────────────────────
+// Written through a direct PATCH rather than the chat agent, unlike the other
+// actions in this header. An MCP write takes ~18s; a radio button that stays
+// unconfirmed that long reads as broken. The chat path still works — the agent
+// calls `contentrain_model_save` — so nothing is lost by not routing through it.
+const titleFieldOpen = ref(false)
+const titleFieldSaving = ref(false)
+const titleFieldError = ref('')
+
+const titleFieldChoices = computed(() => titleFieldOptions(activeModel.value))
+const currentTitleField = computed(() => resolveTitleFieldId(activeModel.value))
+
+async function setTitleField(field: string) {
+  if (!props.workspaceId || !props.projectId || !props.activeModelId) return
+  if (field === activeModel.value?.title_field) {
+    titleFieldOpen.value = false
+    return
   }
-  for (const [key, def] of Object.entries(fields)) {
-    if (def.type === 'string' || def.type === 'slug') return key
+
+  titleFieldSaving.value = true
+  titleFieldError.value = ''
+  try {
+    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/models/${props.activeModelId}`, {
+      method: 'PATCH',
+      body: { titleField: field },
+    })
+    // The list titles read from the brain, so it has to be re-synced before the
+    // change is visible. The endpoint invalidates the server cache; this drops
+    // the client's copy and pulls the new definition back down — the same pair
+    // the project page uses after a merge.
+    await brain.invalidate(props.projectId)
+    await brain.sync(props.workspaceId, props.projectId)
+    titleFieldOpen.value = false
   }
-  return Object.keys(fields)[0] ?? null
+  catch {
+    titleFieldError.value = t('content.title_field_error')
+  }
+  finally {
+    titleFieldSaving.value = false
+  }
 }
 
+// The model now declares which field titles its entries. The old guess ranked
+// `slug` alongside `string`, which is why articles listed by slug; it lives on
+// as a fallback in app/utils/entry-title.ts, shared with the relation labels so
+// one entry cannot be titled two different ways in two places.
 function getEntryTitle(entry: Record<string, unknown>, fallback: string): string {
-  const primaryField = getPrimaryFieldId()
-  if (primaryField && typeof entry[primaryField] === 'string') return entry[primaryField] as string
-  for (const value of Object.values(entry)) {
-    if (typeof value === 'string' && value.length > 0 && value.length < 100) return value
-  }
-  return fallback
+  return resolveEntryTitle(entry, activeModel.value, fallback)
 }
 
 function getUserFieldIds(): string[] {
@@ -286,6 +317,60 @@ provide(sendChatPromptKey, sendChatPrompt)
           size="sm"
           @click="deleteModel"
         />
+        <!-- Title field. Not behind the forms gate: which field titles an entry
+             is part of the model contract, not a forms feature. -->
+        <PopoverRoot v-if="editable && activeModel && activeModel.kind !== 'dictionary'" v-model:open="titleFieldOpen">
+          <PopoverTrigger as-child>
+            <AtomsIconButton
+              icon="icon-[annon--text]"
+              :label="t('content.title_field')"
+              size="sm"
+            />
+          </PopoverTrigger>
+          <PopoverPortal>
+            <PopoverContent
+              side="bottom"
+              align="end"
+              :side-offset="6"
+              :collision-padding="8"
+              class="z-50 w-64 rounded-lg border border-secondary-200 bg-white p-3 shadow-lg dark:border-secondary-700 dark:bg-secondary-900"
+            >
+              <p class="text-xs font-medium text-heading dark:text-secondary-100">
+                {{ t('content.title_field') }}
+              </p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-muted">
+                {{ t('content.title_field_description') }}
+              </p>
+
+              <p v-if="titleFieldChoices.length === 0" class="mt-2 text-[11px] text-muted">
+                {{ t('content.title_field_none') }}
+              </p>
+              <div v-else class="mt-2 max-h-56 space-y-0.5 overflow-y-auto">
+                <button
+                  v-for="field in titleFieldChoices"
+                  :key="field"
+                  type="button"
+                  :disabled="titleFieldSaving"
+                  :aria-pressed="field === currentTitleField"
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-800"
+                  :class="field === currentTitleField ? 'text-heading dark:text-secondary-100' : 'text-body dark:text-secondary-300'"
+                  @click="setTitleField(field)"
+                >
+                  <span
+                    class="size-3.5 shrink-0"
+                    :class="field === currentTitleField ? 'icon-[annon--check-circle] text-primary-500' : 'icon-[annon--radio] text-disabled'"
+                    aria-hidden="true"
+                  />
+                  <span class="min-w-0 flex-1 truncate font-mono">{{ field }}</span>
+                </button>
+              </div>
+
+              <p v-if="titleFieldError" class="mt-2 text-[11px] text-danger-500">
+                {{ titleFieldError }}
+              </p>
+            </PopoverContent>
+          </PopoverPortal>
+        </PopoverRoot>
         <!-- Locale switcher -->
         <AtomsFormSelect
           v-if="supportedLocales.length > 1" :model-value="currentLocale"

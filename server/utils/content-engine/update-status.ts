@@ -42,6 +42,11 @@ export async function updateEntryStatus(
   // component" — the failure that made `update_status` unusable on documents.
   const changes: FileChange[] = []
 
+  // A status change is a write, and gets the same stamp a content write does.
+  // One timestamp for the whole call, so a bulk status change reads as the
+  // single operation it was.
+  const updatedAt = new Date().toISOString()
+
   if (modelDef.kind === 'document') {
     for (const rawSlug of entryIds) {
       const slug = rawSlug.toLowerCase()
@@ -64,7 +69,7 @@ export async function updateEntryStatus(
 
       changes.push({
         path: metaPath,
-        content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail }),
+        content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
       })
     }
   }
@@ -81,6 +86,7 @@ export async function updateEntryStatus(
         ...existingMeta[entryId],
         status,
         updated_by: userEmail,
+        updated_at: updatedAt,
       } as EntryMeta
     }
 
@@ -97,7 +103,7 @@ export async function updateEntryStatus(
 
     changes.push({
       path: metaPath,
-      content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail }),
+      content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
     })
   }
 
