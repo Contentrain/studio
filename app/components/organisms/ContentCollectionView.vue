@@ -58,19 +58,111 @@ const visibleCount = ref(PAGE_SIZE)
 
 const allIds = computed(() => Object.keys(props.content))
 
+// ── Filter + sort ──────────────────────────────────────────
+// The axes come from the model, so they differ per model and cannot be
+// hardcoded. The full definition comes from the brain rather than the injected
+// meta, which carries only id/name/kind — `title_field` and `fields` are needed
+// here to title a sort and to derive the axes.
+const modelDefinition = computed(() =>
+  brain.models.value.find(m => m.id === props.modelId) ?? null,
+)
+
+const filterSelection = ref<FilterSelection>({})
+const sortBy = ref<string>(SORT_DEFAULT)
+
+/**
+ * Human labels for relation targets, so a relation axis reads as titles rather
+ * than as `f3a81c09d24e`. Loaded when the model changes, not per render.
+ */
+const relationLabels = ref<Record<string, Record<string, string>>>({})
+
+async function loadRelationLabels() {
+  const model = modelDefinition.value
+  const fields = (model?.fields ?? {}) as Record<string, { type?: string, model?: string | string[] }>
+  const next: Record<string, Record<string, string>> = {}
+
+  for (const [fieldId, def] of Object.entries(fields)) {
+    if (def?.type !== 'relation' && def?.type !== 'relations') continue
+    const targets = Array.isArray(def.model) ? def.model : def.model ? [def.model] : []
+    const labels: Record<string, string> = {}
+
+    for (const targetId of targets) {
+      const targetModel = brain.models.value.find(m => m.id === targetId) ?? null
+      const result = await brain.queryContent(targetId, props.locale ?? 'en')
+      const data = result?.data as Record<string, Record<string, unknown>> | Array<Record<string, unknown>> | null
+      if (Array.isArray(data)) {
+        for (const doc of data) {
+          const slug = doc.slug as string
+          if (slug) labels[slug] = resolveEntryTitle(doc, targetModel, slug)
+        }
+      }
+      else if (data) {
+        for (const [ref, entry] of Object.entries(data)) labels[ref] = resolveEntryTitle(entry, targetModel, ref)
+      }
+    }
+
+    if (Object.keys(labels).length > 0) next[fieldId] = labels
+  }
+
+  relationLabels.value = next
+}
+
+const filterAxes = computed(() => deriveFilterAxes({
+  model: modelDefinition.value,
+  content: props.content,
+  meta: props.meta as Record<string, { status?: string, updated_at?: string }> | null,
+  relationLabels: relationLabels.value,
+  t,
+}))
+
+const sortOptions = computed(() => deriveSortOptions({
+  model: modelDefinition.value,
+  meta: props.meta as Record<string, { status?: string, updated_at?: string }> | null,
+  hasStatusAxis: filterAxes.value.some(a => a.id === STATUS_AXIS_ID),
+  t,
+}))
+
+const activeFilterCount = computed(() =>
+  Object.values(filterSelection.value).reduce((sum, values) => sum + values.length, 0),
+)
+
 /**
  * Search runs against the brain's index, not the rendered rows — otherwise it
  * would only ever find what is already on screen, which is the opposite of what
  * it is for. The index holds every entry, so a match on page twenty is found
  * without paging there.
  */
-const matchedIds = computed(() => {
+const searchedIds = computed(() => {
   if (!searchQuery.value.trim()) return allIds.value
   if (!searchIds.value) return []
   // Intersect rather than trust the index: it is rebuilt per sync, so it can
   // briefly name an entry this locale's payload no longer has.
   const present = new Set(allIds.value)
   return searchIds.value.filter(id => present.has(id))
+})
+
+/**
+ * Search and filter compose as an intersection, then the result is ordered.
+ *
+ * Both work over the whole model — search through the index, filters through
+ * the in-memory payload — so neither is limited to the rows already rendered.
+ * The page limit is applied last, to whatever survived.
+ */
+const matchedIds = computed(() => {
+  const filtered = applyFilters(
+    searchedIds.value,
+    props.content,
+    props.meta as Record<string, { status?: string, updated_at?: string }> | null,
+    filterAxes.value,
+    filterSelection.value,
+  )
+  return sortIds(
+    filtered,
+    props.content,
+    props.meta as Record<string, { status?: string, updated_at?: string }> | null,
+    sortBy.value,
+    modelDefinition.value,
+  )
 })
 
 /**
@@ -139,13 +231,23 @@ onBeforeUnmount(() => {
   if (searchTimer) clearTimeout(searchTimer)
 })
 
-// A different model or locale is a different list; the old query and page
-// position mean nothing there.
+// A different model or locale is a different list; the old query, filters and
+// page position mean nothing there — one model's `category` is not another's.
 watch(() => [props.modelId, props.locale], () => {
   searchQuery.value = ''
   searchIds.value = null
   visibleCount.value = PAGE_SIZE
-})
+  filterSelection.value = {}
+  sortBy.value = SORT_DEFAULT
+  relationLabels.value = {}
+  void loadRelationLabels()
+}, { immediate: true })
+
+// Paging restarts whenever the surviving set changes, so page two of the old
+// filter is never page two of the new one.
+watch([filterSelection, sortBy], () => {
+  visibleCount.value = PAGE_SIZE
+}, { deep: true })
 
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getEntryTitle = inject(getEntryTitleKey, (_e: Record<string, unknown>, f: string) => f)
@@ -254,7 +356,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
   <div>
     <!-- Search. Runs against the brain's index, so it finds entries this list
          has not rendered — the whole point at 1000 articles. -->
-    <div class="sticky top-0 z-10 border-b border-secondary-100 bg-white px-5 py-2.5 dark:border-secondary-800 dark:bg-secondary-950">
+    <div class="sticky top-0 z-10 space-y-2 border-b border-secondary-100 bg-white px-5 py-2.5 dark:border-secondary-800 dark:bg-secondary-950">
       <AtomsFormInput
         v-model="searchQuery"
         type="search"
@@ -262,6 +364,16 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
         size="sm"
         :placeholder="t('content.search_entries')"
         :aria-label="t('content.search_entries')"
+      />
+      <!-- Filters live behind one button. The axis count is derived from the
+           model, so a row of dropdowns would overflow some models and look
+           empty on others; a button costs the same for every model. -->
+      <MoleculesContentFilterBar
+        v-model:selection="filterSelection"
+        v-model:sort="sortBy"
+        :axes="filterAxes"
+        :sort-options="sortOptions"
+        :active-count="activeFilterCount"
       />
     </div>
 
@@ -385,17 +497,31 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
         :title="t('common.loading')"
         :description="t('content.searching_description')"
       />
+      <!-- "Nothing matched" and "this model is empty" are different facts, and
+           only one of them has a way out. -->
       <AtomsEmptyState
-        v-else-if="searchQuery.trim()"
+        v-else-if="searchQuery.trim() || activeFilterCount > 0"
         icon="icon-[annon--search]"
         :title="t('content.no_matches_title')"
         :description="t('content.no_matches_description')"
+      >
+        <template #action>
+          <AtomsBaseButton v-if="activeFilterCount > 0" variant="ghost" size="sm" @click="filterSelection = {}">
+            {{ t('content.filter_clear') }}
+          </AtomsBaseButton>
+        </template>
+      </AtomsEmptyState>
+      <AtomsEmptyState
+        v-else
+        icon="icon-[annon--file-text]"
+        :title="t('content.no_entries')"
+        :description="t('content.no_content_description')"
       />
     </div>
 
     <div class="flex items-center gap-3 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
       <span class="min-w-0 flex-1 truncate text-xs text-muted">
-        <template v-if="searchQuery.trim()">
+        <template v-if="searchQuery.trim() || activeFilterCount > 0">
           {{ t('content.entry_count_filtered', { shown: visibleEntries.length, matched: matchedIds.length, total: allIds.length }) }}
         </template>
         <template v-else-if="hasMore">
