@@ -304,21 +304,24 @@ function getRelationLabel(key: string): string {
       @update:model-value="localValue = $event"
     />
 
-    <!-- ═══ Date ═══ -->
+    <!-- ═══ Date ═══
+         Converted in both directions: the input only accepts YYYY-MM-DD and
+         silently blanks anything else, and writing its raw output back would
+         drop the stored ISO shape. See app/utils/date-field.ts. -->
     <AtomsFormInput
       v-else-if="type === 'date'"
-      :model-value="String(localValue ?? '')"
+      :model-value="toDateInputValue(localValue)"
       type="date"
-      @update:model-value="localValue = $event"
+      @update:model-value="localValue = fromDateInputValue($event)"
       @keydown="handleKeydown"
     />
 
     <!-- ═══ Datetime ═══ -->
     <AtomsFormInput
       v-else-if="type === 'datetime'"
-      :model-value="String(localValue ?? '')"
+      :model-value="toDateTimeInputValue(localValue)"
       type="datetime-local"
-      @update:model-value="localValue = $event"
+      @update:model-value="localValue = fromDateTimeInputValue($event)"
       @keydown="handleKeydown"
     />
 
