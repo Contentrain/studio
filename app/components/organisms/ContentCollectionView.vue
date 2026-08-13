@@ -3,7 +3,7 @@ import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKe
 
 const { t } = useContent()
 
-defineProps<{
+const props = defineProps<{
   content: Record<string, Record<string, unknown>>
   meta?: Record<string, unknown> | null
   workspaceId?: string
@@ -33,6 +33,14 @@ const getModelFields = inject(getModelFieldsKey, () => ({}))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 const sendChatPrompt = inject(sendChatPromptKey, () => { })
+
+// A pin button is a toggle, so the label has to name the direction it will go —
+// tooltip and `aria-label` both read from here so the two can never drift.
+function pinLabel(kind: 'entry' | 'field', entryId: string, fieldId?: string) {
+  const pinned = isPinned(kind, props.modelId ?? '', entryId, fieldId)
+  if (pinned) return t('content.unpin')
+  return kind === 'entry' ? t('content.pin_entry') : t('content.pin_field')
+}
 
 function deleteEntry(entryId: string, entry: Record<string, unknown>) {
   const title = getEntryTitle(entry, entryId.substring(0, 8))
@@ -138,32 +146,40 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
             {{ getEntryTitle(entry, String(entryId)) }}
           </span>
           <!-- Edit entry (modal) -->
-          <button
-            v-if="editable" type="button"
-            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :aria-label="t('content.edit_entry')" @click.prevent="openEditModal(String(entryId), entry)"
-          >
-            <span class="icon-[annon--edit-2] size-3" aria-hidden="true" />
-          </button>
+          <AtomsTooltip v-if="editable" :text="t('content.edit_entry')">
+            <button
+              type="button"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 text-muted transition-[color,opacity] hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :aria-label="t('content.edit_entry')" @click.prevent="openEditModal(String(entryId), entry)"
+            >
+              <span class="icon-[annon--edit-2] size-3" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
           <!-- Delete entry -->
-          <button
-            v-if="editable" type="button" :aria-label="t('content.delete_entry')"
-            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            @click.prevent="deleteEntry(String(entryId), entry)"
-          >
-            <span class="icon-[annon--trash] size-3" aria-hidden="true" />
-          </button>
-          <!-- Pin entry -->
-          <button
-            type="button" aria-label="Pin to context"
-            class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :class="isPinned('entry', modelId ?? '', String(entryId))
-              ? 'text-primary-500 opacity-100'
-              : 'text-muted opacity-0 hover:opacity-100 group-hover/entry:opacity-60'"
-            @click="pinEntry($event, String(entryId), entry)"
-          >
-            <span class="icon-[annon--pin] size-3" aria-hidden="true" />
-          </button>
+          <AtomsTooltip v-if="editable" :text="t('content.delete_entry')">
+            <button
+              type="button" :aria-label="t('content.delete_entry')"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 text-muted transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              @click.prevent="deleteEntry(String(entryId), entry)"
+            >
+              <span class="icon-[annon--trash] size-3" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
+          <!-- Pin entry. The label says what pinning does — attach the entry to
+               the chat's context — because "pin" alone never told anyone. -->
+          <AtomsTooltip :text="pinLabel('entry', String(entryId))">
+            <button
+              type="button" :aria-label="pinLabel('entry', String(entryId))"
+              :aria-pressed="isPinned('entry', modelId ?? '', String(entryId))"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :class="isPinned('entry', modelId ?? '', String(entryId))
+                ? 'text-primary-500 opacity-100'
+                : 'text-muted hover:opacity-100 group-hover/entry:opacity-60'"
+              @click="pinEntry($event, String(entryId), entry)"
+            >
+              <span class="icon-[annon--pin] size-3" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
           <!-- Status badge + picker (shared with the document view) -->
           <MoleculesEntryStatusPicker
             :status="getEntryStatus(String(entryId), meta)"
@@ -185,16 +201,19 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
               <div class="flex items-center gap-1">
                 <AtomsSectionLabel :label="fieldId" class="flex-1 px-0 py-0" />
                 <!-- Pin field -->
-                <button
-                  type="button"
-                  class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  :class="isPinned('field', modelId ?? '', String(entryId), fieldId)
-                    ? 'text-info-500 opacity-100'
-                    : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"
-                  @click="pinField($event, String(entryId), fieldId, entry[fieldId])"
-                >
-                  <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
-                </button>
+                <AtomsTooltip :text="pinLabel('field', String(entryId), fieldId)">
+                  <button
+                    type="button" :aria-label="pinLabel('field', String(entryId), fieldId)"
+                    :aria-pressed="isPinned('field', modelId ?? '', String(entryId), fieldId)"
+                    class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                    :class="isPinned('field', modelId ?? '', String(entryId), fieldId)
+                      ? 'text-info-500 opacity-100'
+                      : 'text-muted hover:opacity-100 group-hover/field:opacity-60'"
+                    @click="pinField($event, String(entryId), fieldId, entry[fieldId])"
+                  >
+                    <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+                  </button>
+                </AtomsTooltip>
               </div>
               <div class="mt-0.5">
                 <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />
@@ -209,7 +228,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
       </details>
     </div>
     <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
-      <span class="text-xs text-muted">{{ Object.keys(content).length }} entries</span>
+      <span class="text-xs text-muted">{{ t('content.entry_count', { count: Object.keys(content).length }) }}</span>
     </div>
 
     <!-- Edit modal -->
