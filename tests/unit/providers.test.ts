@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const providerMocks = vi.hoisted(() => ({
   createSupabaseAuthProvider: vi.fn(() => ({ kind: 'auth-provider' })),
@@ -41,6 +41,15 @@ vi.mock('../../ee/media/sharp-processor', () => ({
 }))
 
 describe('provider resolver utilities', () => {
+  // Pay the module-graph transform once, outside any test's clock. Every test
+  // re-imports the resolver (`vi.resetModules()` is what makes the singleton
+  // assertions meaningful), and the first import has to transform the whole
+  // provider graph — which intermittently ran past the 5s default on a busy
+  // machine and failed a test that asserts nothing about speed.
+  beforeAll(async () => {
+    await import('../../server/utils/providers')
+  }, 30_000)
+
   beforeEach(() => {
     vi.resetModules()
     providerMocks.createSupabaseAuthProvider.mockClear()
