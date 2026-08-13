@@ -8,6 +8,8 @@
 
 import { createStore, del, get, keys, set } from 'idb-keyval'
 import FlexSearch from 'flexsearch'
+// A worker has no Nuxt auto-imports, so this is explicit.
+import { collectSearchHits, indexFetchLimit } from '../utils/search-results'
 
 // Custom IDB stores in 'cr-brain' database
 const metaStore = createStore('cr-brain', 'brain-meta')
@@ -127,24 +129,19 @@ self.onmessage = async (event: MessageEvent) => {
       }
 
       case 'search': {
-        const { id, query, modelId: searchModelId, limit } = msg
-        const results: Array<{ modelId: string, entryId: string, locale: string, score: number }> = []
+        const { id, query, modelId: searchModelId, locale: searchLocale, limit } = msg
+        const filters = { modelId: searchModelId, locale: searchLocale, limit: limit ?? 10 }
+        let results: Array<{ modelId: string, entryId: string, locale: string, score: number }> = []
 
         if (searchIndex) {
-          const flexResults = searchIndex.search(query, { limit: limit ?? 10 })
-          for (const field of flexResults) {
-            for (const resultId of field.result) {
-              const doc = searchIndex.get(resultId as unknown as string)
-              if (doc && (!searchModelId || doc.modelId === searchModelId)) {
-                results.push({
-                  modelId: doc.modelId,
-                  entryId: doc.entryId,
-                  locale: doc.locale,
-                  score: 1,
-                })
-              }
-            }
-          }
+          const flexResults = searchIndex.search(query, { limit: indexFetchLimit(filters) })
+          // One result set per indexed field, flattened in rank order.
+          const docIds = flexResults.flatMap((field: { result: unknown[] }) => field.result.map(String))
+          results = collectSearchHits(
+            docIds,
+            (docId: string) => searchIndex.get(docId),
+            filters,
+          )
         }
 
         self.postMessage({ type: 'searchResult', id, results })
