@@ -4,6 +4,7 @@
   "kind": "singleton",
   "domain": "system",
   "i18n": true,
+  "title_field": "headline",
   "description": "Auth page right panel marketing content — headline, tagline, and illustration",
   "fields": {
     "headline": {

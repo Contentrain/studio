@@ -1,6 +1,11 @@
 {
-  "description": "Subscription plans with pricing, seat limits, and trial availability",
+  "id": "plans",
+  "name": "Plans",
+  "kind": "collection",
   "domain": "system",
+  "i18n": true,
+  "title_field": "name",
+  "description": "Subscription plans with pricing, seat limits, and trial availability",
   "fields": {
     "ai_model_tier": {
       "description": "Default AI model tier for this plan (e.g. haiku, sonnet)",
@@ -58,9 +63,5 @@
       "required": true,
       "type": "integer"
     }
-  },
-  "i18n": true,
-  "id": "plans",
-  "kind": "collection",
-  "name": "Plans"
+  }
 }
