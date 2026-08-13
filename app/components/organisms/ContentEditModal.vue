@@ -158,7 +158,10 @@ async function loadRelationEntries() {
       if (!result?.data && defaultLocale && defaultLocale !== locale) {
         result = await brain.queryContent(targetModelId, defaultLocale)
       }
-      options.push(...buildRelationOptions(targetModelId, result?.data, polymorphic))
+      // Hand over the target model so its declared `title_field` names the
+      // option — without it a relation lists raw ids.
+      const targetModel = brain.models.value.find(m => m.id === targetModelId) ?? null
+      options.push(...buildRelationOptions(targetModelId, result?.data, polymorphic, targetModel))
     }
 
     map[fieldId] = options

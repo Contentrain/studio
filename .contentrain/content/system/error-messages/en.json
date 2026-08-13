@@ -167,6 +167,8 @@
   "members.seat_limit_reached": "Team member limit reached ({limit}). Upgrade your plan to invite more members.",
   "model.access_denied": "You don't have access to this model. Your role is restricted to specific models.",
   "model.not_found": "Content model not found. It may have been deleted or renamed.",
+  "model.title_field_dictionary": "Dictionary entries are titled by their key, so \"key\" is the only value this model accepts.",
+  "model.title_field_invalid": "\"{field}\" cannot title this model's entries. Choose a field that holds readable text.",
   "oauth.flow_expired": "The authorization request has expired. Start the connection again from the app.",
   "oauth.invalid_request": "Invalid authorization request.",
   "oauth.plan_required": "Your workspace plan does not include the remote MCP endpoint. Upgrade the workspace plan in Studio settings to connect this app.",

@@ -18,6 +18,12 @@ interface ModelSummary {
   fields: Record<string, unknown> | Readonly<Record<string, unknown>>
   domain: string
   i18n: boolean
+  /**
+   * Which field titles an entry. Carried all the way from the repo through the
+   * brain — and then dropped here, because this summary is built field by field
+   * and a new part of the contract does not add itself.
+   */
+  title_field?: string
 }
 
 interface ContentSummary {
@@ -56,6 +62,7 @@ export function useSnapshot() {
         fields: (m.fields ?? {}) as Record<string, unknown>,
         domain: m.domain ?? '',
         i18n: m.i18n ?? false,
+        title_field: m.title_field,
       })),
       content: brain.contentSummary.value,
       vocabulary: brain.vocabulary.value,

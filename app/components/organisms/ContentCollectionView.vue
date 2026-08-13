@@ -25,6 +25,22 @@ function getEntryStatus(entryId: string, metaData: Record<string, unknown> | nul
   return entryMeta?.status ?? null
 }
 
+/**
+ * When the entry was last written. Absent is normal, not an error: the field
+ * arrived with `@contentrain/types@1.0.0` and is deliberately not backfilled —
+ * an entry written before it existed has no recoverable value, and inventing
+ * one would be worse than saying nothing, because it would sort.
+ */
+function getEntryUpdatedAt(entryId: string, metaData: Record<string, unknown> | null | undefined): string | null {
+  if (!metaData) return null
+  const entryMeta = metaData[entryId] as { updated_at?: string } | undefined
+  const raw = entryMeta?.updated_at
+  if (!raw) return null
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getEntryTitle = inject(getEntryTitleKey, (_e: Record<string, unknown>, f: string) => f)
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
@@ -220,9 +236,17 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
               </div>
             </div>
           </template>
-          <div class="border-t border-secondary-100 pt-2 dark:border-secondary-800">
-            <AtomsSectionLabel label="ID" class="px-0 py-0" />
-            <span class="font-mono text-xs text-disabled">{{ String(entryId) }}</span>
+          <div class="flex items-start gap-6 border-t border-secondary-100 pt-2 dark:border-secondary-800">
+            <div class="min-w-0">
+              <AtomsSectionLabel label="ID" class="px-0 py-0" />
+              <span class="font-mono text-xs text-disabled">{{ String(entryId) }}</span>
+            </div>
+            <div class="min-w-0">
+              <AtomsSectionLabel :label="t('content.updated_at')" class="px-0 py-0" />
+              <span class="text-xs text-disabled">
+                {{ getEntryUpdatedAt(String(entryId), meta) ?? t('content.updated_at_unknown') }}
+              </span>
+            </div>
           </div>
         </div>
       </details>

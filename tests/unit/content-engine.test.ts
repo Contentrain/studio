@@ -365,6 +365,51 @@ describe('content engine', () => {
     expect(applyPlan).toHaveBeenCalled()
   })
 
+  it('stamps `updated_at` on a content write, in Studio\'s own meta override', async () => {
+    // MCP mints `updated_at` too, but Studio replaces MCP's meta wholesale to
+    // keep its own autoPublish / updated_by semantics. Without stamping it in
+    // the override the field never survives a Studio write — and "sort by
+    // recently edited" would have no data for the entries Studio users create.
+    const model = {
+      id: 'faq',
+      kind: 'collection',
+      i18n: true,
+      domain: 'marketing',
+      title_field: 'question',
+      fields: { question: { type: 'string', required: true } },
+    }
+    const config = { domains: ['marketing'], locales: { default: 'en', supported: ['en'] }, stack: 'astro', version: 1, workflow: 'auto-merge' }
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.includes('/models/faq')) return JSON.stringify(model)
+        if (path.endsWith('config.json')) return JSON.stringify(config)
+        throw new Error(`not found: ${path}`)
+      }),
+      applyPlan,
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const before = new Date().toISOString()
+    await engine.saveContent(
+      'faq',
+      'en',
+      { 'faq-1': { question: 'How do I connect a repository?' } },
+      'user@example.com',
+      { autoPublish: true },
+    )
+
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    const metaChange = call.changes.find(c => c.path === '.contentrain/meta/faq/en.json')
+    const meta = JSON.parse(metaChange!.content!) as Record<string, { updated_at?: string, updated_by?: string, status?: string }>
+
+    expect(meta['faq-1']?.updated_at).toBeDefined()
+    expect(meta['faq-1']!.updated_at! >= before).toBe(true)
+    // The stamp is added to, not instead of, what the override already owned.
+    expect(meta['faq-1']?.updated_by).toBe('user@example.com')
+    expect(meta['faq-1']?.status).toBe('published')
+  })
+
   it('deletes merged content branches after a successful two-step merge', async () => {
     const git = createGitProvider({
       getDefaultBranch: vi.fn().mockResolvedValue('main'),
@@ -555,6 +600,13 @@ describe('content engine', () => {
     expect(metaChange?.content).toContain('"status": "published"')
     expect(metaChange?.content).toContain('"updated_by": "user@example.com"')
     expect(metaChange?.content).toContain('"new-entry"')
+
+    // A status change is a write, so it carries the same `updated_at` stamp a
+    // content write does — one timestamp shared across the entries of the call,
+    // because it was one operation.
+    const meta = JSON.parse(metaChange!.content!) as Record<string, { updated_at?: string }>
+    expect(meta.keep?.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/)
+    expect(meta['new-entry']?.updated_at).toBe(meta.keep?.updated_at)
   })
 
   it('updates document status via per-slug meta files (no malformed `//` path)', async () => {

@@ -131,6 +131,14 @@ export async function applyStudioMetaOverrides(args: {
   }
   catch { /* no existing meta */ }
 
+  // `updated_at` describes THIS write, like `source` and `updated_by` — so it
+  // is stamped every time and shares one timestamp across the entries of a
+  // single save. MCP mints it too, but this override replaces MCP's meta
+  // wholesale; without stamping it here the field would never survive a Studio
+  // write, and "sort by recently edited" would have no data for exactly the
+  // entries Studio users create.
+  const updatedAt = new Date().toISOString()
+
   let updatedMeta: unknown
   if (model.kind === 'collection') {
     const metaMap = { ...existingMeta } as Record<string, EntryMeta>
@@ -141,6 +149,7 @@ export async function applyStudioMetaOverrides(args: {
         status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
         source: 'agent',
         updated_by: userEmail,
+        updated_at: updatedAt,
       } as EntryMeta
     }
     updatedMeta = metaMap
@@ -152,6 +161,7 @@ export async function applyStudioMetaOverrides(args: {
       status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
       source: 'agent' as const,
       updated_by: userEmail,
+      updated_at: updatedAt,
     }
   }
 
