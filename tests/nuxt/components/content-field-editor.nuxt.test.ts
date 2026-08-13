@@ -2,162 +2,132 @@ import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import ContentFieldEditor from '../../../app/components/atoms/ContentFieldEditor.vue'
 
-const stubs = {
-  AtomsFormSelect: {
-    props: ['modelValue', 'options'],
-    emits: ['update:modelValue'],
-    template: `<select data-test="select" :value="modelValue" @change="$emit('update:modelValue', ($event.target).value)">
-      <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
-    </select>`,
-  },
-  AtomsFormInput: {
-    props: ['modelValue'],
-    emits: ['update:modelValue'],
-    template: `<input data-test="input" :value="modelValue" @input="$emit('update:modelValue', ($event.target).value)">`,
-  },
-  AtomsBaseButton: { template: '<button type="button"><slot /></button>' },
-}
+const base = { fieldId: 'f1', standalone: false }
 
-describe('ContentFieldEditor — relations', () => {
-  it('single relation: shows the current ref and emits the picked ref (non-polymorphic)', async () => {
+describe('ContentFieldEditor composite fields', () => {
+  it('edits an array of plain values written in the object form', async () => {
+    // `items: 'string'` reached the chip editor and `items: { type: 'string' }`
+    // did not — the same schema spelled two ways, two different outcomes. The
+    // object form fell through to the placeholder and took every nested field
+    // inside it out of reach.
     const wrapper = await mountSuspended(ContentFieldEditor, {
-      props: {
-        type: 'relation',
-        fieldId: 'author',
-        fieldDef: { type: 'relation', model: 'team-members' },
-        modelValue: 'id1',
-        relatedEntries: [
-          { value: 'id1', label: 'Ahmet' },
-          { value: 'id2', label: 'Jane' },
-        ],
-        standalone: false,
-      },
-      global: { stubs },
+      props: { ...base, type: 'array', modelValue: ['alpha'], fieldDef: { type: 'array', items: { type: 'string' } } },
     })
 
-    const select = wrapper.get('[data-test="select"]')
-    expect((select.element as HTMLSelectElement).value).toBe('id1')
-
-    await select.setValue('id2')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['id2'])
+    expect(wrapper.text()).toContain('alpha')
+    expect(wrapper.text()).not.toContain('Edit complex structures via chat')
   })
 
-  it('single relation: encodes/decodes polymorphic { model, ref } values', async () => {
+  it('still edits the shorthand form the same way', async () => {
     const wrapper = await mountSuspended(ContentFieldEditor, {
-      props: {
-        type: 'relation',
-        fieldId: 'target',
-        fieldDef: { type: 'relation', model: ['blog-post', 'page'] },
-        modelValue: { model: 'blog-post', ref: 'getting-started' },
-        relatedEntries: [
-          { value: 'blog-post::getting-started', label: 'blog-post: Getting Started' },
-          { value: 'page::about', label: 'page: About' },
-        ],
-        standalone: false,
-      },
-      global: { stubs },
+      props: { ...base, type: 'array', modelValue: ['alpha'], fieldDef: { type: 'array', items: 'string' } },
     })
 
-    const select = wrapper.get('[data-test="select"]')
-    expect((select.element as HTMLSelectElement).value).toBe('blog-post::getting-started')
-
-    await select.setValue('page::about')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([{ model: 'page', ref: 'about' }])
+    expect(wrapper.text()).toContain('alpha')
   })
 
-  it('multi relations: appends the picked ref to the array and hides already-selected entries', async () => {
+  it('says an object schema defines no fields instead of drawing an empty box', async () => {
     const wrapper = await mountSuspended(ContentFieldEditor, {
-      props: {
-        type: 'relations',
-        fieldId: 'tags',
-        fieldDef: { type: 'relations', model: 'tags' },
-        modelValue: ['t1'],
-        relatedEntries: [
-          { value: 't1', label: 'One' },
-          { value: 't2', label: 'Two' },
-        ],
-        standalone: false,
-      },
-      global: { stubs },
+      props: { ...base, type: 'object', modelValue: {}, fieldDef: { type: 'object', fields: {} } },
     })
 
-    // Only the not-yet-selected option remains in the add dropdown.
-    const optionValues = wrapper.findAll('[data-test="select"] option').map(o => (o.element as HTMLOptionElement).value)
-    expect(optionValues).toEqual(['t2'])
-
-    await wrapper.get('[data-test="select"]').setValue('t2')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['t1', 't2']])
+    expect(wrapper.text()).toContain('defines no fields')
   })
 
-  it('multi relations: offers a manual entry fallback when the target has no loaded entries', async () => {
+  it('says an array never described its items', async () => {
     const wrapper = await mountSuspended(ContentFieldEditor, {
-      props: {
-        type: 'relations',
-        fieldId: 'tags',
-        fieldDef: { type: 'relations', model: 'tags' },
-        modelValue: [],
-        relatedEntries: [],
-        standalone: false,
-      },
-      global: { stubs },
+      props: { ...base, type: 'array', modelValue: [], fieldDef: { type: 'array', items: { type: 'object' } } },
     })
 
-    // No select (no entries) — the manual ref input is shown instead.
-    expect(wrapper.find('[data-test="select"]').exists()).toBe(false)
-    await wrapper.get('[data-test="input"]').setValue('manual-ref')
-    await wrapper.get('button').trigger('click')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['manual-ref']])
+    expect(wrapper.text()).toContain('doesn\'t say what an item looks like')
+  })
+
+  it('distinguishes a Studio limit from a schema gap', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, {
+      props: {
+        ...base,
+        type: 'object',
+        modelValue: {},
+        depth: 2,
+        fieldDef: { type: 'object', fields: { inner: { type: 'string' } } },
+      },
+    })
+
+    // A fixable schema and a form limit used to show the identical hint, which
+    // is why the field report concluded nothing composite was editable.
+    expect(wrapper.text()).toContain('nests deeper')
+    expect(wrapper.text()).not.toContain('defines no fields')
+  })
+
+  it('still renders a real nested object as a form', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, {
+      props: {
+        ...base,
+        type: 'object',
+        modelValue: { title: 'Hero' },
+        fieldDef: { type: 'object', fields: { title: { type: 'string' } } },
+      },
+    })
+
+    expect(wrapper.find('input').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('nests deeper')
   })
 })
 
-describe('ContentFieldEditor — array of objects (repeater)', () => {
-  const linksDef = {
-    type: 'array',
-    items: { type: 'object', fields: { label: { type: 'string' }, url: { type: 'string' } } },
+describe('ContentFieldEditor relation ordering', () => {
+  const relationProps = {
+    ...base,
+    type: 'relations',
+    modelValue: ['a', 'b', 'c'],
+    fieldDef: { type: 'relations', model: 'articles' },
+    relatedEntries: [
+      { value: 'a', label: 'Alpha' },
+      { value: 'b', label: 'Beta' },
+      { value: 'c', label: 'Gamma' },
+    ],
   }
 
-  async function mountLinks(modelValue: unknown) {
-    return mountSuspended(ContentFieldEditor, {
-      props: { type: 'array', fieldId: 'links', fieldDef: linksDef, modelValue, standalone: false },
-      global: { stubs },
-    })
-  }
+  it('moves a chip later with the forward arrow keys', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, { props: relationProps })
 
-  it('renders an editor row per item instead of the chat-only placeholder', async () => {
-    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }])
-    // Two flat fields (label, url) → two inputs; no placeholder hint.
-    expect(wrapper.findAll('[data-test="input"]')).toHaveLength(2)
-    expect(wrapper.text()).not.toContain('Edit complex structures via chat')
-    expect((wrapper.findAll('[data-test="input"]')[0]!.element as HTMLInputElement).value).toBe('Docs')
+    await wrapper.findAll('[role="listitem"]')[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual(['b', 'a', 'c'])
   })
 
-  it('edits a nested field and emits the updated array', async () => {
-    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }])
-    await wrapper.findAll('[data-test="input"]')[0]!.setValue('Guides')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([[{ label: 'Guides', url: 'https://docs' }]])
+  it('moves a chip earlier with the back arrow keys', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, { props: relationProps })
+
+    await wrapper.findAll('[role="listitem"]')[2]!.trigger('keydown', { key: 'ArrowUp' })
+
+    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual(['a', 'c', 'b'])
   })
 
-  it('appends a fresh item (fields defaulted) on add', async () => {
-    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }])
-    const addBtn = wrapper.findAll('button').find(b => b.text().includes('Add'))
-    await addBtn!.trigger('click')
-    const next = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as unknown[]
-    expect(next).toHaveLength(2)
-    expect(next[1]).toEqual({ label: null, url: null })
+  it('refuses to move past either end', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, { props: relationProps })
+    const chips = wrapper.findAll('[role="listitem"]')
+
+    await chips[0]!.trigger('keydown', { key: 'ArrowLeft' })
+    await chips[2]!.trigger('keydown', { key: 'ArrowRight' })
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 
-  it('removes an item by index', async () => {
-    const wrapper = await mountLinks([{ label: 'Docs', url: 'https://docs' }, { label: 'Blog', url: 'https://blog' }])
-    // First remove button belongs to item #1.
-    await wrapper.findAll('[aria-label="Remove"]')[0]!.trigger('click')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([[{ label: 'Blog', url: 'https://blog' }]])
+  it('leaves other keys to the browser', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, { props: relationProps })
+
+    await wrapper.findAll('[role="listitem"]')[0]!.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 
-  it('still shows the placeholder for object items nested too deep (depth ≥ 2)', async () => {
-    const wrapper = await mountSuspended(ContentFieldEditor, {
-      props: { type: 'array', fieldId: 'deep', fieldDef: linksDef, modelValue: [], standalone: false, depth: 2 },
-      global: { stubs },
-    })
-    expect(wrapper.text()).toContain('Edit complex structures via chat')
+  it('reaches the keyboard as well as the pointer', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, { props: relationProps })
+    const chip = wrapper.findAll('[role="listitem"]')[0]!
+
+    // Drag alone would put reordering out of reach of a keyboard user.
+    expect(chip.attributes('tabindex')).toBe('0')
+    expect(chip.attributes('draggable')).toBe('true')
+    expect(chip.attributes('aria-label')).toContain('1 of 3')
   })
 })
