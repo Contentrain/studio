@@ -69,8 +69,80 @@ const modeBadge = computed((): { label: string, color: 'primary' | 'secondary' |
 
 const isInProject = computed(() => !!route.params.projectId)
 
+// ── Entry search ───────────────────────────────────────────
+// The palette's own help promised "search models, entries, vocabulary" and
+// "@modelId to search within a model", and neither searched an entry: nothing
+// in the app called `searchContent`. It does now.
+//
+// `buildResults` is synchronous and `searchContent` is not, so entry hits are
+// filled into their own ref and appended, rather than forced into the computed.
+const brain = useContentBrain()
+
+interface EntryHit { modelId: string, entryId: string, locale: string, title: string }
+const entryHits = ref<EntryHit[]>([])
+
+let entryToken = 0
+let entryTimer: ReturnType<typeof setTimeout> | null = null
+
+async function resolveEntryHits(query: string, modelId?: string) {
+  const token = ++entryToken
+  const results = await brain.searchContent(query, { modelId, limit: 8 })
+  if (token !== entryToken) return
+
+  const hits: EntryHit[] = []
+  for (const r of results) {
+    // The index stores no title — `SearchResult` is ids and a score — so the
+    // entry is read back and titled the same way the list titles it. Without
+    // this the palette would list `f3a81c09d24e`.
+    const model = brain.models.value.find(m => m.id === r.modelId) ?? null
+    const content = await brain.queryContent(r.modelId, r.locale)
+    const data = content?.data as Record<string, Record<string, unknown>> | Array<Record<string, unknown>> | null
+    let entry: Record<string, unknown> | undefined
+    if (Array.isArray(data)) entry = data.find(d => d.slug === r.entryId)
+    else if (data) entry = data[r.entryId]
+
+    hits.push({
+      modelId: r.modelId,
+      entryId: r.entryId,
+      locale: r.locale,
+      title: resolveEntryTitle(entry, model, r.entryId),
+    })
+  }
+
+  if (token !== entryToken) return
+  entryHits.value = hits
+}
+
+watch(parsed, ({ mode, query, modelId }) => {
+  if (entryTimer) clearTimeout(entryTimer)
+
+  const trimmed = query.trim()
+  const wantsEntries = isInProject.value && trimmed.length > 1 && (mode === 'global' || mode === 'model')
+  if (!wantsEntries) {
+    entryToken++
+    entryHits.value = []
+    return
+  }
+
+  entryTimer = setTimeout(() => resolveEntryHits(trimmed, mode === 'model' ? modelId : undefined), 150)
+})
+
+onBeforeUnmount(() => {
+  if (entryTimer) clearTimeout(entryTimer)
+})
+
+const entryResults = computed<ResultItem[]>(() => entryHits.value.map(hit => ({
+  id: `entry:${hit.modelId}:${hit.entryId}`,
+  label: hit.title,
+  sublabel: hit.modelId,
+  icon: 'icon-[annon--file-text]',
+  group: t('content.search_entries_group'),
+  type: 'entry',
+  action: () => navigateToEntry(hit),
+})))
+
 // Build results via composable
-const results = computed<ResultItem[]>(() => {
+const baseResults = computed<ResultItem[]>(() => {
   const { mode, query, modelId } = parsed.value
   return buildResults({
     mode,
@@ -96,10 +168,17 @@ const results = computed<ResultItem[]>(() => {
   })
 })
 
+// Entries go after the synchronous items so keyboard navigation starts where it
+// always did — the top result does not jump when an async search lands.
+const results = computed<ResultItem[]>(() => [...baseResults.value, ...entryResults.value])
+
 const groupedResults = computed(() => groupResults(results.value))
 const hasResults = computed(() => results.value.length > 0)
 
-watch(results, () => {
+// Reset the cursor when the QUERY changes, not when results do: entry hits
+// arrive a beat later, and resetting on those would yank the selection out from
+// under someone already arrowing through the list.
+watch(baseResults, () => {
   selectedIndex.value = 0
 })
 
@@ -195,6 +274,17 @@ function handleAction(actionKey: string, payload?: Record<string, unknown>) {
 function navigateToModel(modelId: string, modelName: string) {
   addRecent({ id: `model:${modelId}`, label: modelName, sublabel: 'model', icon: 'icon-[annon--layers]', type: 'model' })
   router.replace({ query: { model: modelId } })
+  open.value = false
+}
+
+/**
+ * Open the model AND point at the entry. Opening the model alone would hand
+ * someone a thousand rows and let them find it themselves, which is what they
+ * used the search for.
+ */
+function navigateToEntry(hit: EntryHit) {
+  addRecent({ id: `entry:${hit.modelId}:${hit.entryId}`, label: hit.title, sublabel: hit.modelId, icon: 'icon-[annon--file-text]', type: 'entry' })
+  router.replace({ query: { model: hit.modelId, entry: hit.entryId } })
   open.value = false
 }
 

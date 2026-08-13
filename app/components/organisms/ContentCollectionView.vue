@@ -41,6 +41,112 @@ function getEntryUpdatedAt(entryId: string, metaData: Record<string, unknown> | 
   return d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// ── Search + progressive rendering ─────────────────────────
+// The list used to render every entry: one `<details>`, one stateful Radix
+// dropdown and three action buttons each. At 1000 articles that is the whole
+// cost of opening a model — not the data, the components. Rendering a page at a
+// time fixes it without touching the row, and without a virtualiser (a new
+// dependency, and rows change height when they expand).
+const PAGE_SIZE = 50
+
+const brain = useContentBrain()
+
+const searchQuery = ref('')
+const searchIds = ref<string[] | null>(null)
+const searching = ref(false)
+const visibleCount = ref(PAGE_SIZE)
+
+const allIds = computed(() => Object.keys(props.content))
+
+/**
+ * Search runs against the brain's index, not the rendered rows — otherwise it
+ * would only ever find what is already on screen, which is the opposite of what
+ * it is for. The index holds every entry, so a match on page twenty is found
+ * without paging there.
+ */
+const matchedIds = computed(() => {
+  if (!searchQuery.value.trim()) return allIds.value
+  if (!searchIds.value) return []
+  // Intersect rather than trust the index: it is rebuilt per sync, so it can
+  // briefly name an entry this locale's payload no longer has.
+  const present = new Set(allIds.value)
+  return searchIds.value.filter(id => present.has(id))
+})
+
+/**
+ * An entry named by `?entry=` — the palette's search result — is pulled to the
+ * front and opened. Otherwise "go to this entry" would drop someone at the top
+ * of a thousand rows to find it themselves, which is what they searched to
+ * avoid. Paging cannot hide it either: it is prepended, not paged to.
+ */
+const route = useRoute()
+const targetEntryId = computed(() => {
+  const id = route.query.entry
+  return typeof id === 'string' && id in props.content ? id : null
+})
+
+const visibleEntries = computed(() => {
+  const target = targetEntryId.value
+  const ordered = target
+    ? [target, ...matchedIds.value.filter(id => id !== target)]
+    : matchedIds.value
+
+  return ordered
+    .slice(0, visibleCount.value)
+    .map(id => ({ id, entry: props.content[id] as Record<string, unknown> }))
+})
+const hasMore = computed(() => matchedIds.value.length > visibleCount.value)
+
+// Distinguishable from "nothing matched": the worker resolves an empty array
+// when it is not there, and reporting that as no results is a lie.
+const searchUnavailable = computed(() => !!searchQuery.value.trim() && !brain.searchReady.value)
+
+// Hand-rolled rather than pulling in a utility library for one debounce. The
+// token guards against a slow early query landing after a faster later one and
+// overwriting it — the classic way a search box shows the wrong results.
+let searchToken = 0
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(searchQuery, (query) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  visibleCount.value = PAGE_SIZE
+
+  const trimmed = query.trim()
+  if (!trimmed) {
+    searchToken++
+    searchIds.value = null
+    searching.value = false
+    return
+  }
+
+  searching.value = true
+  searchTimer = setTimeout(async () => {
+    const token = ++searchToken
+    // A high limit on purpose: the palette wants a shortlist, a filtered list
+    // wants every match. `hasMore` still keeps the render bounded.
+    const results = await brain.searchContent(trimmed, {
+      modelId: props.modelId,
+      locale: props.locale,
+      limit: 1000,
+    })
+    if (token !== searchToken) return
+    searchIds.value = results.map(r => r.entryId)
+    searching.value = false
+  }, 200)
+})
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
+
+// A different model or locale is a different list; the old query and page
+// position mean nothing there.
+watch(() => [props.modelId, props.locale], () => {
+  searchQuery.value = ''
+  searchIds.value = null
+  visibleCount.value = PAGE_SIZE
+})
+
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getEntryTitle = inject(getEntryTitleKey, (_e: Record<string, unknown>, f: string) => f)
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
@@ -146,10 +252,24 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
 
 <template>
   <div>
+    <!-- Search. Runs against the brain's index, so it finds entries this list
+         has not rendered — the whole point at 1000 articles. -->
+    <div class="sticky top-0 z-10 border-b border-secondary-100 bg-white px-5 py-2.5 dark:border-secondary-800 dark:bg-secondary-950">
+      <AtomsFormInput
+        v-model="searchQuery"
+        type="search"
+        clearable
+        size="sm"
+        :placeholder="t('content.search_entries')"
+        :aria-label="t('content.search_entries')"
+      />
+    </div>
+
     <div class="divide-y divide-secondary-100 dark:divide-secondary-800">
       <details
-        v-for="(entry, entryId) in content" :key="String(entryId)" class="group/entry" draggable="true"
-        @dragstart="onEntryDragStart($event, String(entryId), entry)" @dragend="endDrag"
+        v-for="{ id: entryId, entry } in visibleEntries" :key="entryId" class="group/entry" draggable="true"
+        :open="entryId === targetEntryId"
+        @dragstart="onEntryDragStart($event, entryId, entry)" @dragend="endDrag"
       >
         <summary
           class="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900"
@@ -251,8 +371,49 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
         </div>
       </details>
     </div>
-    <div class="border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
-      <span class="text-xs text-muted">{{ t('content.entry_count', { count: Object.keys(content).length }) }}</span>
+    <!-- Nothing to show, and why -->
+    <div v-if="visibleEntries.length === 0" class="px-5 py-8">
+      <AtomsEmptyState
+        v-if="searchUnavailable"
+        icon="icon-[annon--alert-triangle]"
+        :title="t('content.search_unavailable_title')"
+        :description="t('content.search_unavailable_description')"
+      />
+      <AtomsEmptyState
+        v-else-if="searching"
+        icon="icon-[annon--search]"
+        :title="t('common.loading')"
+        :description="t('content.searching_description')"
+      />
+      <AtomsEmptyState
+        v-else-if="searchQuery.trim()"
+        icon="icon-[annon--search]"
+        :title="t('content.no_matches_title')"
+        :description="t('content.no_matches_description')"
+      />
+    </div>
+
+    <div class="flex items-center gap-3 border-t border-secondary-200 px-5 py-3 dark:border-secondary-800">
+      <span class="min-w-0 flex-1 truncate text-xs text-muted">
+        <template v-if="searchQuery.trim()">
+          {{ t('content.entry_count_filtered', { shown: visibleEntries.length, matched: matchedIds.length, total: allIds.length }) }}
+        </template>
+        <template v-else-if="hasMore">
+          {{ t('content.entry_count_partial', { shown: visibleEntries.length, total: allIds.length }) }}
+        </template>
+        <template v-else>
+          {{ t('content.entry_count', { count: allIds.length }) }}
+        </template>
+      </span>
+      <AtomsBaseButton
+        v-if="hasMore"
+        variant="ghost"
+        size="sm"
+        class="shrink-0"
+        @click="visibleCount += PAGE_SIZE"
+      >
+        {{ t('content.show_more') }}
+      </AtomsBaseButton>
     </div>
 
     <!-- Edit modal -->
