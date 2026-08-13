@@ -6,11 +6,13 @@ const searchContent = vi.hoisted(() => vi.fn())
 const routeQuery = vi.hoisted(() => ({ value: {} as Record<string, string> }))
 const searchReady = vi.hoisted(() => ({ value: true }))
 
+const brainModels = vi.hoisted(() => ({ value: [] as unknown[] }))
+
 mockNuxtImport('useContentBrain', () => () => ({
   searchContent,
   searchReady: computed(() => searchReady.value),
-  models: computed(() => []),
-  queryContent: vi.fn(),
+  models: computed(() => brainModels.value),
+  queryContent: vi.fn().mockResolvedValue({ data: null, kind: 'collection', meta: null }),
 }))
 
 mockNuxtImport('useRoute', () => () => ({ query: routeQuery.value, params: {} }))
@@ -114,6 +116,97 @@ describe('ContentCollectionView search', () => {
     expect(wrapper.text()).toContain('Search is not ready yet')
     expect(wrapper.text()).not.toContain('No matches')
     searchReady.value = true
+  })
+})
+
+describe('ContentCollectionView filtering', () => {
+  const model = {
+    id: 'articles',
+    kind: 'collection',
+    title_field: 'title',
+    fields: {
+      title: { type: 'string', required: true },
+      category: { type: 'select', options: ['news', 'guide'] },
+    },
+  }
+
+  const rows = {
+    a: { title: 'Alpha', category: 'news' },
+    b: { title: 'Beta', category: 'guide' },
+    c: { title: 'Gamma', category: 'news' },
+  }
+
+  async function mountFiltered() {
+    brainModels.value = [model]
+    return mountSuspended(ContentCollectionView, {
+      props: {
+        content: rows,
+        meta: { a: { status: 'published' }, b: { status: 'draft' }, c: { status: 'published' } },
+        modelId: 'articles',
+        locale: 'en',
+        editable: true,
+      },
+    })
+  }
+
+  it('offers an axis per filterable field, derived from the model', async () => {
+    const wrapper = await mountFiltered()
+
+    await wrapper.findAll('button').find(b => b.text().includes('Filter'))!.trigger('click')
+    await nextTick()
+
+    // Status (from meta) plus category (from the schema) — nothing configured.
+    expect(document.body.textContent).toContain('Status')
+    expect(document.body.textContent).toContain('Category')
+    document.body.innerHTML = ''
+  })
+
+  it('narrows the list, and the counter reflects it', async () => {
+    const wrapper = await mountFiltered()
+
+    await wrapper.findAll('button').find(b => b.text().includes('Filter'))!.trigger('click')
+    await nextTick()
+    const guide = [...document.body.querySelectorAll('button')].find(b => b.textContent?.trim() === 'guide')!
+    guide.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.findAll('details')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Showing 1 of 1 matches in 3 entries')
+    document.body.innerHTML = ''
+  })
+
+  it('intersects with the search rather than replacing it', async () => {
+    // Search says {a, b}; the `news` filter says {a, c}. Only `a` is both.
+    searchContent.mockResolvedValue([
+      { modelId: 'articles', entryId: 'a', locale: 'en', score: 1 },
+      { modelId: 'articles', entryId: 'b', locale: 'en', score: 1 },
+    ])
+    const wrapper = await mountFiltered()
+
+    await wrapper.find('input').setValue('needle')
+    await new Promise(r => setTimeout(r, 250))
+    await nextTick()
+    expect(wrapper.findAll('details')).toHaveLength(2)
+
+    await wrapper.findAll('button').find(b => b.text().includes('Filter'))!.trigger('click')
+    await nextTick()
+    const news = [...document.body.querySelectorAll('button')].find(b => b.textContent?.trim() === 'news')!
+    news.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.findAll('details')).toHaveLength(1)
+    document.body.innerHTML = ''
+  })
+
+  it('offers a way out when a filter matched nothing', async () => {
+    // "Nothing matched" and "this model is empty" are different facts, and only
+    // one of them has a way out.
+    const wrapper = await mountSuspended(ContentCollectionView, {
+      props: { content: {}, meta: {}, modelId: 'articles', locale: 'en', editable: true },
+    })
+
+    expect(wrapper.text()).toContain('No entries')
+    expect(wrapper.text()).not.toContain('Clear filters')
   })
 })
 
