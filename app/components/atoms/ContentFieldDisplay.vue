@@ -121,8 +121,10 @@ const ratingStars = computed(() => {
       <span class="truncate text-xs text-muted">{{ String(displayValue).split('/').pop() }}</span>
     </div>
 
-    <!-- URL -->
-    <span v-else-if="isUrl" class="truncate text-sm text-primary-500 dark:text-primary-400">
+    <!-- URL. `block` is load-bearing: overflow does not apply to inline
+         non-replaced boxes, so `truncate` on a bare span did nothing and a
+         long URL ran straight out of the panel. -->
+    <span v-else-if="isUrl" class="block truncate text-sm text-primary-500 dark:text-primary-400">
       {{ String(displayValue) }}
     </span>
 
@@ -158,10 +160,15 @@ const ratingStars = computed(() => {
         :key="i"
         class="rounded-lg border border-secondary-200 p-2 dark:border-secondary-800"
       >
-        <div v-for="(val, key) in item" :key="String(key)" class="flex items-start gap-2 py-0.5">
+        <div v-for="(val, key) in item" :key="String(key)" class="flex min-w-0 items-start gap-2 py-0.5">
           <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ String(key) }}</span>
-          <span class="ml-auto max-w-[60%] truncate text-right text-xs text-heading dark:text-secondary-100">
-            {{ typeof val === 'object' ? JSON.stringify(val) : String(val) }}
+          <AtomsContentObjectValue
+            v-if="val !== null && typeof val === 'object'"
+            :value="val as object"
+            class="ml-auto max-w-[60%]"
+          />
+          <span v-else class="ml-auto min-w-0 max-w-[60%] truncate text-right text-xs text-heading dark:text-secondary-100">
+            {{ String(val) }}
           </span>
         </div>
       </div>
@@ -191,16 +198,24 @@ const ratingStars = computed(() => {
 
     <!-- Nested object (e.g. frontmatter hero: { title, subtitle }) -->
     <div v-else-if="isObject" class="space-y-1 rounded-lg border border-secondary-200 p-2.5 dark:border-secondary-800">
-      <div v-for="(val, key) in (displayValue as Record<string, unknown>)" :key="String(key)" class="flex items-start gap-2 py-0.5">
+      <div v-for="(val, key) in (displayValue as Record<string, unknown>)" :key="String(key)" class="flex min-w-0 items-start gap-2 py-0.5">
         <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ String(key) }}</span>
-        <span class="ml-auto max-w-[60%] text-right text-xs text-heading dark:text-secondary-100" :class="typeof val === 'string' && val.length > 50 ? 'truncate' : ''">
-          {{ typeof val === 'object' ? JSON.stringify(val) : String(val) }}
+        <AtomsContentObjectValue
+          v-if="val !== null && typeof val === 'object'"
+          :value="val as object"
+          class="ml-auto max-w-[60%]"
+        />
+        <span v-else class="ml-auto min-w-0 max-w-[60%] truncate text-right text-xs text-heading dark:text-secondary-100">
+          {{ String(val) }}
         </span>
       </div>
     </div>
 
-    <!-- Default: string / unknown -->
-    <span v-else class="text-sm text-heading dark:text-secondary-100">
+    <!-- Default: string / unknown. `slug`, `icon` and plain `string` land here
+         (isRichText only covers markdown/richtext/text/code), so a long
+         unbroken value — a token, a base64 blob — used to run out of the
+         panel. Wrap rather than truncate: these are readable values. -->
+    <span v-else class="block break-words text-sm text-heading dark:text-secondary-100">
       {{ String(displayValue) }}
     </span>
   </div>
