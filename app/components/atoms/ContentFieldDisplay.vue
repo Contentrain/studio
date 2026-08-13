@@ -2,6 +2,7 @@
 import { marked } from 'marked'
 
 const { sanitize } = useSanitize()
+const { t } = useContent()
 
 /**
  * Renders a content field value based on its type.
@@ -20,7 +21,10 @@ const displayValue = computed(() => {
   return props.value
 })
 
-const isUrl = computed(() => ['url', 'image', 'video', 'file'].includes(props.type))
+// `image`, `video` and `file` used to sit in here too, which meant video and
+// file fell through to the URL branch and printed as raw text. They render as
+// media now (below), so this covers plain `url` only.
+const isUrl = computed(() => props.type === 'url')
 const isEmail = computed(() => props.type === 'email')
 const isPhone = computed(() => props.type === 'phone')
 const isBoolean = computed(() => props.type === 'boolean')
@@ -34,18 +38,49 @@ const isObject = computed(() => typeof props.value === 'object' && props.value !
 const isRichText = computed(() => ['markdown', 'richtext', 'text', 'code'].includes(props.type))
 const isImage = computed(() => props.type === 'image')
 
+const isVideo = computed(() => props.type === 'video')
+const isFile = computed(() => props.type === 'file')
+const isMedia = computed(() => isImage.value || isVideo.value || isFile.value)
+
+/**
+ * Three outcomes have to stay apart, because two of them used to look identical:
+ * a stored asset that loads, a stored asset that 404s (an error — the file
+ * should be there), and a value that was never a stored asset at all (an
+ * external URL, a project-specific reference). The third is not broken, and
+ * showing it as a broken thumbnail is what made editors report "media is
+ * corrupt" for values Studio never held.
+ */
+const isStoredAsset = computed(() => isStoredAssetPath(String(displayValue.value ?? '')))
+
 const route = useRoute()
 // A media field value is either a relative storage path (`media/...`, resolved
 // to the public CDN delivery URL on the same origin) or an already-absolute URL
 // (used as-is). Either way it renders without extra integration.
 const mediaSrc = computed(() => {
   const v = String(displayValue.value ?? '')
-  if (/^media\//.test(v)) {
+  if (isStoredAsset.value) {
     const projectId = route.params.projectId
     return projectId ? `/api/cdn/v1/${projectId}/${v}` : v
   }
   return v
 })
+
+// Only ask the browser for something it could actually fetch. A custom
+// reference is reported as-is rather than turned into a pointless 404.
+const canRenderMedia = computed(() => canRenderMediaValue(String(displayValue.value ?? '')))
+
+// A new value has not failed yet — without this, one broken asset would keep
+// the error state for every row the component is reused for.
+const mediaFailed = ref(false)
+watch(() => props.value, () => {
+  mediaFailed.value = false
+})
+
+const mediaName = computed(() => readableMediaName(String(displayValue.value ?? '')))
+
+// Hover opens the preview on its own; this is bound so a tap can open it too,
+// on a device where hover does not exist.
+const previewOpen = ref(false)
 
 const formattedDate = computed(() => {
   if (!isDate.value || !displayValue.value) return ''
@@ -78,7 +113,7 @@ const ratingStars = computed(() => {
       >
         <span v-if="displayValue" class="icon-[annon--check] block size-full text-white" aria-hidden="true" />
       </div>
-      <span class="ml-2 text-xs text-muted">{{ displayValue ? 'Yes' : 'No' }}</span>
+      <span class="ml-2 text-xs text-muted">{{ displayValue ? t('common.yes') : t('common.no') }}</span>
     </div>
 
     <!-- Color swatch -->
@@ -106,19 +141,78 @@ const ratingStars = computed(() => {
       {{ formattedDate }}
     </span>
 
-    <!-- Image thumbnail -->
-    <div v-else-if="isImage && displayValue" class="flex items-center gap-2">
-      <div class="size-8 shrink-0 overflow-hidden rounded border border-secondary-200 bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-800">
-        <NuxtImg
-          v-if="mediaSrc"
-          :src="mediaSrc"
-          :alt="String(displayValue).split('/').pop() ?? ''"
-          class="size-full object-cover"
-          loading="lazy"
+    <!-- Media: image / video / file. The row keeps its 32px tile — list density
+         is unchanged — and the full-size look lives behind hover or a tap. -->
+    <div v-else-if="isMedia && displayValue" class="flex min-w-0 items-center gap-2">
+      <!-- Renders, and can be previewed. The large variant is only requested
+           once the tooltip opens, because Radix mounts the content then. -->
+      <AtomsTooltip
+        v-if="!isFile && canRenderMedia && !mediaFailed"
+        v-model:open="previewOpen"
+        variant="panel"
+        side="right"
+        disable-closing-trigger
+      >
+        <button
+          type="button"
+          :aria-label="t('content.media_preview')"
+          class="size-8 shrink-0 overflow-hidden rounded border border-secondary-200 bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-800"
+          @click="previewOpen = !previewOpen"
+        >
+          <NuxtImg
+            v-if="!isVideo"
+            :src="mediaSrc"
+            :alt="mediaName"
+            class="size-full object-cover"
+            loading="lazy"
+            @error="mediaFailed = true"
+          />
+          <span v-else class="icon-[annon--play-circle] block size-full p-1.5 text-muted" aria-hidden="true" />
+        </button>
+        <template #content>
+          <video v-if="isVideo" :src="mediaSrc" controls preload="metadata" class="max-h-64 max-w-72 rounded" @error="mediaFailed = true" />
+          <NuxtImg
+            v-else
+            :src="mediaSrc"
+            :alt="mediaName"
+            class="max-h-64 max-w-72 rounded object-contain"
+            @error="mediaFailed = true"
+          />
+        </template>
+      </AtomsTooltip>
+
+      <!-- A `file` has nothing to preview, and neither does a value that failed
+           or was never ours — each gets a tile that says which it is. -->
+      <div
+        v-else
+        class="flex size-8 shrink-0 items-center justify-center rounded border"
+        :class="mediaFailed && isStoredAsset
+          ? 'border-danger-200 bg-danger-50 dark:border-danger-800 dark:bg-danger-900/30'
+          : 'border-secondary-200 bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-800'"
+      >
+        <span
+          class="size-4"
+          :class="mediaFailed && isStoredAsset
+            ? 'icon-[annon--alert-triangle] text-danger-500'
+            : isFile ? 'icon-[annon--file-text] text-muted' : 'icon-[annon--image] text-muted'"
+          aria-hidden="true"
         />
-        <span v-else class="icon-[annon--image] block size-full p-1.5 text-muted" aria-hidden="true" />
       </div>
-      <span class="truncate text-xs text-muted">{{ String(displayValue).split('/').pop() }}</span>
+
+      <div class="min-w-0">
+        <div class="truncate text-xs text-muted">
+          {{ mediaName }}
+        </div>
+        <!-- Only says something when there is something to say: a stored asset
+             that would not load is an error; a value that was never stored is
+             not, and used to be indistinguishable from one. -->
+        <div v-if="mediaFailed && isStoredAsset" class="truncate text-[10px] text-danger-500">
+          {{ t('content.media_missing') }}
+        </div>
+        <div v-else-if="!canRenderMedia" class="truncate text-[10px] text-muted">
+          {{ t('content.media_external') }}
+        </div>
+      </div>
     </div>
 
     <!-- URL. `block` is load-bearing: overflow does not apply to inline

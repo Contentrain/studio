@@ -21,6 +21,11 @@ defineEmits<{
 }>()
 
 const { startDrag, endDrag } = useChatContext()
+const { t } = useContent()
+
+// A pin button is a toggle, so the label has to name the direction it will go —
+// tooltip and `aria-label` both read from here so the two can never drift.
+const pinLabel = computed(() => props.pinned ? t('content.unpin') : t('content.pin_asset'))
 
 const isImage = computed(() => props.contentType.startsWith('image/'))
 const isVideo = computed(() => props.contentType.startsWith('video/'))
@@ -74,17 +79,20 @@ function formatSize(bytes: number): string {
     </div>
 
     <!-- Pin button -->
-    <button
-      type="button"
-      aria-label="Pin to context"
-      class="absolute left-1.5 top-1.5 rounded-md p-0.5 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-      :class="pinned
-        ? 'text-warning-500 opacity-100'
-        : 'text-white/70 opacity-0 hover:opacity-100 group-hover:opacity-60'"
-      @click.stop="$emit('pin')"
-    >
-      <span class="icon-[annon--pin] size-3.5" aria-hidden="true" />
-    </button>
+    <AtomsTooltip :text="pinLabel" side="right">
+      <button
+        type="button"
+        :aria-label="pinLabel"
+        :aria-pressed="pinned"
+        class="reveal-on-hover absolute left-1.5 top-1.5 rounded-md p-0.5 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+        :class="pinned
+          ? 'text-warning-500 opacity-100'
+          : 'text-white/70 hover:opacity-100 group-hover:opacity-60'"
+        @click.stop="$emit('pin')"
+      >
+        <span class="icon-[annon--pin] size-3.5" aria-hidden="true" />
+      </button>
+    </AtomsTooltip>
 
     <!-- Selection indicator -->
     <div
