@@ -206,6 +206,8 @@
   "validation.workspace_id_required": "Workspace ID is required.",
   "validation.workspace_member_required": "Workspace ID and member ID are required.",
   "vocabulary.modify_forbidden": "You do not have sufficient permissions to modify the project vocabulary.",
+  "vocabulary.read_failed": "Could not read the current vocabulary, so the change was not saved. Please try again.",
+  "vocabulary.save_conflict": "Another change to the vocabulary landed first. Your edit was not saved — please try again.",
   "webhook.delivery_failed": "Webhook delivery failed: {detail}",
   "webhook.empty_body": "Webhook request body is empty.",
   "webhook.events_required": "At least one event must be selected.",
