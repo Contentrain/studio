@@ -6,11 +6,17 @@ const {
   options,
   placeholder = '',
   size = 'md',
+  variant = 'default',
+  label = undefined,
 } = defineProps<{
   modelValue?: string
   options: Array<string | { value: string, label: string }>
   placeholder?: string
   size?: 'sm' | 'md'
+  /** `ghost` drops the chrome — for selects that sit inside another card. */
+  variant?: 'default' | 'ghost'
+  /** Accessible name; the trigger otherwise announces only its value. */
+  label?: string
 }>()
 
 const emit = defineEmits<{
@@ -27,13 +33,19 @@ const sizeClasses: Record<string, string> = {
   sm: 'h-7 min-w-14 px-2 text-xs',
   md: 'h-9 px-3 text-sm',
 }
+
+const variantClasses: Record<string, string> = {
+  default: 'border-secondary-200 bg-white hover:bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-800 dark:hover:bg-secondary-700',
+  ghost: 'border-transparent bg-transparent hover:bg-secondary-100 dark:hover:bg-secondary-800',
+}
 </script>
 
 <template>
   <SelectRoot :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)">
     <SelectTrigger
-      class="inline-flex items-center justify-between gap-1.5 rounded-lg border border-secondary-200 bg-white font-medium text-heading transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-800 dark:text-secondary-100 dark:hover:bg-secondary-700"
-      :class="sizeClasses[size]"
+      :aria-label="label"
+      class="inline-flex items-center justify-between gap-1.5 rounded-lg border font-medium text-heading transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-secondary-100"
+      :class="[sizeClasses[size], variantClasses[variant]]"
     >
       <SelectValue :placeholder="placeholder" />
       <span class="icon-[annon--chevron-down] size-3 shrink-0 text-muted" aria-hidden="true" />
