@@ -1,6 +1,7 @@
 import { createPage, url } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_CHAT_MODEL } from '../../shared/utils/ai-models'
 import { fulfillJson, setupBrowserE2E, ssePayload } from './helpers'
 
 await setupBrowserE2E(4327)
@@ -124,7 +125,9 @@ describe('chat stream e2e', () => {
       {
         message: 'Review the homepage copy',
         conversationId: null,
-        model: 'claude-sonnet-4-6',
+        // Whatever the catalog default is — asserting the literal here made
+        // this test fail on a default bump rather than on a real regression.
+        model: DEFAULT_CHAT_MODEL,
         context: {
           activeModelId: null,
           activeLocale: 'en',
