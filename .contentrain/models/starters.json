@@ -4,6 +4,7 @@
   "kind": "collection",
   "domain": "system",
   "i18n": false,
+  "title_field": "name",
   "description": "Starter template repositories for new Contentrain projects",
   "fields": {
     "description": {

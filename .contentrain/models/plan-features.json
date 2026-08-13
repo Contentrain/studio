@@ -4,6 +4,7 @@
   "kind": "collection",
   "domain": "system",
   "i18n": false,
+  "title_field": "name",
   "description": "Feature flags, usage limits, and overage pricing per plan",
   "fields": {
     "category": {
@@ -36,15 +37,6 @@
       "required": true,
       "type": "string"
     },
-    "requires_ee": {
-      "description": "Whether this feature requires the Enterprise Edition bridge (ee/) to function. When true, the feature is force-disabled in Community Edition regardless of plan-tier values.",
-      "required": true,
-      "type": "string"
-    },
-    "roadmap": {
-      "description": "True when the feature appears in the plan matrix as marketing but has no runtime enforcement yet. UI surfaces show a 'Coming Soon' badge.",
-      "type": "string"
-    },
     "key": {
       "description": "Dot-notation key used in hasFeature() and getPlanLimit() (e.g. cdn.delivery, ai.messages_per_month)",
       "required": true,
@@ -60,17 +52,26 @@
       "description": "Per-unit overage price in USD (null if not applicable)",
       "type": "number"
     },
-    "overage_unit": {
-      "description": "Overage billing unit (e.g. per message, per GB, per submission)",
-      "type": "string"
-    },
     "overage_settings_key": {
       "description": "JSONB key used inside workspaces.overage_settings to toggle this overage (e.g. ai_messages, cdn_bandwidth). Required when overage_price is set.",
+      "type": "string"
+    },
+    "overage_unit": {
+      "description": "Overage billing unit (e.g. per message, per GB, per submission)",
       "type": "string"
     },
     "pro_value": {
       "description": "Pro plan value",
       "required": true,
+      "type": "string"
+    },
+    "requires_ee": {
+      "description": "Whether this feature requires the Enterprise Edition bridge (ee/) to function. When true, the feature is force-disabled in Community Edition regardless of plan-tier values.",
+      "required": true,
+      "type": "string"
+    },
+    "roadmap": {
+      "description": "True when the feature appears in the plan matrix as marketing but has no runtime enforcement yet. UI surfaces show a 'Coming Soon' badge.",
       "type": "string"
     },
     "sort_order": {

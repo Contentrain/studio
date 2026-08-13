@@ -4,28 +4,29 @@
   "kind": "collection",
   "domain": "system",
   "i18n": true,
+  "title_field": "name",
   "description": "Transactional email templates with subject and HTML body. Supports {variable} interpolation at runtime.",
   "fields": {
-    "slug": {
-      "description": "Template identifier used in code (e.g. invite-added)",
+    "body": {
+      "description": "Email HTML body — supports {variable} interpolation",
       "required": true,
-      "type": "slug",
-      "unique": true
+      "type": "richtext"
     },
     "name": {
       "description": "Human-readable template name for admin reference",
       "required": true,
       "type": "string"
     },
+    "slug": {
+      "description": "Template identifier used in code (e.g. invite-added)",
+      "required": true,
+      "type": "slug",
+      "unique": true
+    },
     "subject": {
       "description": "Email subject line — supports {variable} interpolation",
       "required": true,
       "type": "string"
-    },
-    "body": {
-      "description": "Email HTML body — supports {variable} interpolation",
-      "required": true,
-      "type": "richtext"
     }
   }
 }

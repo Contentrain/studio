@@ -1,9 +1,4 @@
 {
-  "ai-agent": {
-    "source": "agent",
-    "status": "draft",
-    "updated_by": "contentrain-mcp"
-  },
   "ai-byoa": {
     "source": "agent",
     "status": "draft",
@@ -32,6 +27,42 @@
   "api-custom-instructions": {
     "source": "agent",
     "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
+  "api-mcp-calls-per-month": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.789Z",
+    "updated_by": "contentrain-mcp"
+  },
+  "api-mcp-cloud": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.790Z",
+    "updated_by": "contentrain-mcp"
+  },
+  "api-mcp-cloud-custom-domain": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.791Z",
+    "updated_by": "contentrain-mcp"
+  },
+  "api-mcp-cloud-oauth": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.792Z",
+    "updated_by": "contentrain-mcp"
+  },
+  "api-mcp-cloud-sso": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.792Z",
+    "updated_by": "contentrain-mcp"
+  },
+  "api-mcp-keys": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.793Z",
     "updated_by": "contentrain-mcp"
   },
   "api-messages-per-month": {
