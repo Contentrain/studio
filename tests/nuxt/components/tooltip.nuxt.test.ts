@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { TooltipProvider } from 'radix-vue'
 import Tooltip from '../../../app/components/atoms/Tooltip.vue'
+import TooltipScope from '../../../app/components/atoms/TooltipScope.vue'
 
 // The content is portalled to `document.body`, which outlives the wrapper —
 // without this, one test reads the tooltip a previous one left behind.
@@ -24,13 +26,33 @@ describe('Tooltip atom', () => {
     expect(trigger.attributes('data-state')).toBeDefined()
   })
 
-  it('carries its own provider, so it works with no app-level one', async () => {
-    // `TooltipRoot` throws without a provider — a component test mounting a
-    // tooltip-bearing component on its own would fail if this were hoisted.
+  it('carries its own provider when there is no app-level one', async () => {
+    // `TooltipRoot` throws without a provider — a component mounted on its own,
+    // in a test or outside the layout, has to keep working.
     await expect(mountSuspended(Tooltip, {
       props: { text: 'Standalone' },
       slots: { default: '<button type="button">x</button>' },
     })).resolves.toBeTruthy()
+  })
+
+  it('adds no provider of its own inside the app scope', async () => {
+    // The whole point of hoisting: one provider, so Radix's skipDelayDuration
+    // applies across a row's icons instead of never applying at all. A nested
+    // provider would silently defeat it.
+    const host = defineComponent({
+      components: { TooltipScope, Tooltip },
+      template: `<TooltipScope>
+        <Tooltip text="Hoisted"><button type="button">x</button></Tooltip>
+        <Tooltip text="Second"><button type="button">y</button></Tooltip>
+      </TooltipScope>`,
+    })
+
+    const wrapper = await mountSuspended(host)
+
+    // Two tooltips, one provider — the scope's.
+    expect(wrapper.findAllComponents(TooltipProvider)).toHaveLength(1)
+    expect(wrapper.findAllComponents(Tooltip)).toHaveLength(2)
+    expect(wrapper.find('button').attributes('data-state')).toBeDefined()
   })
 
   it('shows its text once opened', async () => {

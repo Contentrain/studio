@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { TooltipArrow, TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from 'radix-vue'
+import { tooltipProviderKey } from '~/utils/injection-keys'
 
 /**
  * Tooltip that wraps whatever you give it. `InfoTooltip` owns its own button and
  * can therefore only ever be an info icon; this takes the trigger as a slot, so
  * an action button keeps being an action button.
- *
- * The provider is inside the atom rather than at the app root because
- * `TooltipRoot` throws without one — mounting a component on its own in a test,
- * or rendering outside the layout, would break. The cost is Radix's
- * cross-tooltip `skipDelayDuration`: the delay is paid per trigger. That is what
- * the two hand-rolled stacks already did, so nothing regresses; hoisting the
- * provider later is a one-line change here.
  */
 withDefaults(defineProps<{
   /** Tooltip text. Ignored when the `content` slot is used. */
@@ -27,12 +21,10 @@ withDefaults(defineProps<{
    * close-on-click would immediately undo the tap that opened it.
    */
   disableClosingTrigger?: boolean
-  delayDuration?: number
 }>(), {
   side: 'top',
   sideOffset: 6,
   variant: 'text',
-  delayDuration: 200,
 })
 
 /**
@@ -41,10 +33,33 @@ withDefaults(defineProps<{
  * add whatever extra way of opening it needs.
  */
 const open = defineModel<boolean | undefined>('open', { default: undefined })
+
+/**
+ * `TooltipRoot` throws without a provider, and Radix does not export a way to
+ * ask whether one is present — hence the app root's own flag.
+ *
+ * When it is there this renders nothing extra, so the whole app shares one
+ * provider and Radix's `skipDelayDuration` works: moving between the icons on a
+ * row opens the second and third instantly instead of re-paying the delay each
+ * time. When it is absent — a component mounted alone in a test, anything
+ * outside the layout — the atom supplies its own and still works.
+ */
+const hasAppProvider = inject(tooltipProviderKey, false)
+
+const PassThrough = defineComponent({
+  name: 'TooltipProviderPassThrough',
+  setup(_props, { slots }) {
+    return () => slots.default?.()
+  },
+})
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="delayDuration">
+  <component
+    :is="hasAppProvider ? PassThrough : TooltipProvider"
+    :delay-duration="hasAppProvider ? undefined : TOOLTIP_DELAY_MS"
+    :skip-delay-duration="hasAppProvider ? undefined : TOOLTIP_SKIP_DELAY_MS"
+  >
     <TooltipRoot
       v-model:open="open"
       :disabled="disabled"
@@ -68,5 +83,5 @@ const open = defineModel<boolean | undefined>('open', { default: undefined })
         </TooltipContent>
       </TooltipPortal>
     </TooltipRoot>
-  </TooltipProvider>
+  </component>
 </template>
