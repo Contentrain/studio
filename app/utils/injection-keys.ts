@@ -11,3 +11,12 @@ export const getUserFieldIdsKey: InjectionKey<() => string[]> = Symbol('getUserF
 export const activeModelMetaKey: InjectionKey<ComputedRef<{ id: string, name: string, kind: string } | null>> = Symbol('activeModelMeta')
 export const getModelFieldsKey: InjectionKey<() => Record<string, unknown>> = Symbol('getModelFields')
 export const sendChatPromptKey: InjectionKey<(text: string) => void> = Symbol('sendChatPrompt')
+
+/**
+ * Set by the app root to say a Radix `TooltipProvider` is already in the tree.
+ *
+ * Radix does not export its own provider-context inject, so `AtomsTooltip`
+ * cannot ask it directly — and it must know, because `TooltipRoot` throws
+ * without a provider while a nested one would defeat the point of hoisting.
+ */
+export const tooltipProviderKey: InjectionKey<true> = Symbol('tooltipProvider')
