@@ -282,6 +282,7 @@
   "content.no_models_title": "No content models",
   "content.not_found_description": "Click \"Initialize project\" or describe your content needs in the chat — the agent will detect your framework and create the content structure automatically.",
   "content.not_found_title": "Project needs setup",
+  "content.resize_panel": "Resize content panel",
   "content.save_all": "Save changes",
   "content.save_error": "Failed to save content. Please try again.",
   "content.select_entry": "Select an entry",
