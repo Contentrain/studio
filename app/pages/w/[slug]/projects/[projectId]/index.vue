@@ -256,7 +256,14 @@ let panelObserver: ResizeObserver | null = null
 onMounted(() => {
   if (!panelsEl.value) return
   panelObserver = new ResizeObserver(([entry]) => {
-    if (entry) groupWidth.value = entry.contentRect.width
+    const width = entry?.contentRect.width ?? 0
+    // A zero reading is the absence of a measurement, not a measurement of
+    // zero — it means the element is detached or display:none, which the
+    // observer can report during teardown. Writing it through would hand the
+    // panel a maxSize of 0, and Radix clamps a panel that exceeds its maximum
+    // *and persists the result*, so one spurious frame would leave the panel
+    // collapsed on every later visit. Keep the last real width instead.
+    if (width > 0) groupWidth.value = width
   })
   panelObserver.observe(panelsEl.value)
 })

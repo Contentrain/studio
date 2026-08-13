@@ -19,8 +19,10 @@ describe('pxToPercent', () => {
   })
 
   it('survives a group that has not been measured yet', () => {
-    // The first render can run before ResizeObserver reports, and a division
-    // by zero here would reach Radix as NaN and blank the panel.
+    // A division by zero here would reach Radix as NaN and blank the panel.
+    // Note the caller must not feed a zero width through at all: the bounds
+    // it produces would give the panel a maxSize of 0, which Radix clamps to
+    // *and saves* — see the observer guard in the project page.
     expect(pxToPercent(384, 0)).toBe(0)
     expect(pxToPercent(384, -10)).toBe(0)
     expect(pxToPercent(384, Number.NaN)).toBe(0)
