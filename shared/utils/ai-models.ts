@@ -104,7 +104,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
  * Default model when the client didn't pick one or picked one its plan
  * doesn't grant. Must be a `CHAT_MODELS` id.
  */
-export const DEFAULT_CHAT_MODEL = 'claude-sonnet-4-6'
+export const DEFAULT_CHAT_MODEL = 'claude-sonnet-5'
 
 /**
  * Model IDs available to a plan, given whether it has the
