@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { watch } from 'vue'
+import { nextTick, watch } from 'vue'
+import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { messageText, useChat } from '../../../app/composables/useChat'
+import { DEFAULT_CHAT_MODEL } from '../../../shared/utils/ai-models'
+
+// The model scope comes from the route, so the persistence tests need to move
+// between projects. Hoisted because mockNuxtImport's factory is lifted above
+// the imports.
+const { route } = vi.hoisted(() => ({ route: { params: {} as { projectId?: string } } }))
+mockNuxtImport('useRoute', () => () => route)
 
 function createStreamResponse(chunks: string[], options?: { failAfter?: Error }) {
   let index = 0
@@ -26,14 +34,20 @@ function createStreamResponse(chunks: string[], options?: { failAfter?: Error })
 }
 
 describe('useChat', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     useState('chat-messages').value = []
     useState('chat-conversation-id').value = null
     useState('chat-conversations').value = []
     useState('chat-streaming').value = false
     useState('chat-error').value = null
-    useState('chat-model').value = 'claude-sonnet-4-6'
+    useState('chat-model').value = DEFAULT_CHAT_MODEL
     useState('chat-stream-tick').value = 0
+    route.params = {}
+    // Persistence watchers registered by an earlier useChat() call outlive
+    // their test — there is no component scope to stop them. Let their writes
+    // land before clearing, so each test starts from empty storage.
+    await nextTick()
+    localStorage.clear()
   })
 
   it('loads legacy conversations and maps tool_calls into tool segments', async () => {
@@ -371,5 +385,50 @@ describe('useChat', () => {
     // Network error without statusCode → resolveApiError returns user-friendly fallback
     expect(chat.error.value).not.toBe('Network failed')
     expect(chat.error.value).toBeTruthy()
+  })
+
+  describe('model persistence', () => {
+    const OPUS = 'claude-opus-4-8'
+    const HAIKU = 'claude-haiku-4-5-20251001'
+
+    it('stores the picked model against the open project', async () => {
+      route.params = { projectId: 'project-a' }
+      const chat = useChat()
+
+      chat.selectedModel.value = OPUS
+      await nextTick()
+
+      expect(localStorage.getItem('contentrain-chat-model:project-a')).toBe(OPUS)
+      expect(localStorage.getItem('contentrain-chat-model-last')).toBe(OPUS)
+    })
+
+    it('resumes each project with the model it was last worked on', () => {
+      localStorage.setItem('contentrain-chat-model:project-a', OPUS)
+      localStorage.setItem('contentrain-chat-model:project-b', HAIKU)
+
+      route.params = { projectId: 'project-a' }
+      expect(useChat().selectedModel.value).toBe(OPUS)
+
+      route.params = { projectId: 'project-b' }
+      expect(useChat().selectedModel.value).toBe(HAIKU)
+    })
+
+    it('opens a never-visited project with the model picked most recently anywhere', () => {
+      localStorage.setItem('contentrain-chat-model-last', OPUS)
+
+      route.params = { projectId: 'first-visit' }
+
+      expect(useChat().selectedModel.value).toBe(OPUS)
+    })
+
+    it('ignores a stored model that has left the catalog', () => {
+      // The server quietly falls back to an allowed model; the picker would
+      // otherwise keep showing a label for a model nobody can select.
+      localStorage.setItem('contentrain-chat-model:project-a', 'claude-sonnet-4-0')
+
+      route.params = { projectId: 'project-a' }
+
+      expect(useChat().selectedModel.value).toBe(DEFAULT_CHAT_MODEL)
+    })
   })
 })

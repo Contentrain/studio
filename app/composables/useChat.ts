@@ -215,6 +215,49 @@ function rowToSegments(row: ConversationRow): MessageSegment[] {
   return segments
 }
 
+const MODEL_KEY_PREFIX = 'contentrain-chat-model:'
+const MODEL_KEY_LAST = 'contentrain-chat-model-last'
+
+/**
+ * Remember the picked model per project, so reopening a project resumes with
+ * the model that project was last worked on. A project that has never been
+ * opened starts from the model picked most recently anywhere, then the
+ * catalog default.
+ *
+ * The scope comes from the route rather than a prop because the picker is not
+ * the only writer — the command palette sets the model too, from outside the
+ * chat panel.
+ */
+function useModelPersistence(selectedModel: Ref<string>) {
+  if (!import.meta.client) return
+
+  const route = useRoute()
+  const projectId = computed(() => (route.params.projectId as string | undefined) ?? null)
+
+  function read(id: string | null): string | null {
+    const stored = (id && localStorage.getItem(MODEL_KEY_PREFIX + id)) || localStorage.getItem(MODEL_KEY_LAST)
+    // A model that has left the catalog would keep showing a stale label: the
+    // server quietly falls back to an allowed one (chat.post.ts), the picker
+    // would not. Drop unknown ids instead of restoring them.
+    return stored && CHAT_MODELS.some(m => m.id === stored) ? stored : null
+  }
+
+  function hydrate(id: string | null) {
+    const stored = read(id)
+    if (stored) selectedModel.value = stored
+  }
+
+  // Navigating between two projects reuses the page component, so the initial
+  // read alone would leave the previous project's model selected.
+  hydrate(projectId.value)
+  watch(projectId, hydrate)
+
+  watch(selectedModel, (model) => {
+    localStorage.setItem(MODEL_KEY_LAST, model)
+    if (projectId.value) localStorage.setItem(MODEL_KEY_PREFIX + projectId.value, model)
+  })
+}
+
 export function useChat(options?: {
   onContentChanged?: (affected: AffectedResources) => void
 }) {
@@ -224,6 +267,7 @@ export function useChat(options?: {
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
   const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
+  useModelPersistence(selectedModel)
   // Monotonic counter bumped on every content-bearing SSE event. The
   // panel watches it for scroll-follow — cheaper than deep-watching the
   // whole message tree.
