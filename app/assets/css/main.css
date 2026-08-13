@@ -189,6 +189,16 @@
     cursor: pointer;
   }
 
+  /*
+   * Ground behind the app shell. The shell is capped and centred above
+   * 1920px, so past that width the body shows through on both sides — and
+   * nothing else paints it, which would leave those gutters white in dark
+   * mode. A step off the shell's own background reads as a recessed frame.
+   */
+  body {
+    @apply bg-secondary-50 dark:bg-secondary-900;
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: #e2e8f0 #f8fafc;
