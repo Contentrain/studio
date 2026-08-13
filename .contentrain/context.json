@@ -1,18 +1,14 @@
 {
   "lastOperation": {
-    "entries": [
-      "fce263ebd447",
-      "ecb03525d606"
-    ],
     "locale": "en",
-    "model": "email-templates",
+    "model": "*",
     "source": "mcp-local",
-    "timestamp": "2026-07-10T22:25:49.388Z",
-    "tool": "contentrain_content_save"
+    "timestamp": "2026-08-13T21:32:39.803Z",
+    "tool": "contentrain_validate"
   },
   "stats": {
-    "entries": 73,
-    "lastSync": "2026-07-10T22:25:49.390Z",
+    "entries": 74,
+    "lastSync": "2026-08-13T21:32:39.803Z",
     "locales": [
       "en"
     ],

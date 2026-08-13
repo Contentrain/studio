@@ -1,4 +1,10 @@
 {
+  "community": {
+    "source": "import",
+    "status": "draft",
+    "updated_at": "2026-08-13T21:32:39.794Z",
+    "updated_by": "contentrain-mcp"
+  },
   "enterprise": {
     "source": "import",
     "status": "draft",

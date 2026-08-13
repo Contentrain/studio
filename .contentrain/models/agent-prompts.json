@@ -4,5 +4,6 @@
   "kind": "dictionary",
   "domain": "system",
   "i18n": true,
+  "title_field": "key",
   "description": "System prompt sections, agent behavior rules, plan descriptions, feature guides. Used by buildSystemPrompt() server-side."
 }

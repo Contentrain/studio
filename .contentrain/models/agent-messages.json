@@ -4,5 +4,6 @@
   "kind": "dictionary",
   "domain": "system",
   "i18n": true,
+  "title_field": "key",
   "description": "Agent response messages, upgrade CTAs, tool result summaries, feature explanations. Displayed to users in chat bubbles."
 }

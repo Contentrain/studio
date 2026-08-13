@@ -4,5 +4,6 @@
   "kind": "dictionary",
   "domain": "system",
   "i18n": true,
+  "title_field": "key",
   "description": "User-facing UI labels, buttons, headings, and messages across the Studio application"
 }

@@ -4,5 +4,6 @@
   "kind": "dictionary",
   "domain": "system",
   "i18n": true,
+  "title_field": "key",
   "description": "HTTP error messages returned by createError(). Used in server API routes, middleware, and tool execution error responses."
 }
