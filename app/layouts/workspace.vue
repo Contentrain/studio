@@ -21,15 +21,17 @@ provide('contextPanel', { open: contextOpen, toggle: toggleContext })
       <slot name="sidebar" />
     </aside>
 
-    <!-- Main -->
-    <main class="flex min-w-0 flex-1 flex-col overflow-y-auto">
+    <!-- Main — banner is a sibling of <main>, see app/layouts/default.vue for why -->
+    <div class="relative flex min-w-0 flex-1 flex-col">
       <MoleculesTrialBanner
-        class="sticky top-0 z-30 shrink-0"
+        class="shrink-0 md:absolute md:right-4 md:top-2 md:z-30 md:w-auto"
         @choose-plan="showPlanModal()"
         @manage-billing="openPortal()"
       />
-      <slot />
-    </main>
+      <main class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <slot />
+      </main>
+    </div>
 
     <!-- Plan selection modal (managed profiles only — trial banner itself
          is already hidden elsewhere in community / on-premise). -->

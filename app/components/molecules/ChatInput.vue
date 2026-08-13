@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { UIAttachment } from '~/composables/useChat'
+import { AI_MODELS } from '~/composables/useChat'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 
 const props = defineProps<{
@@ -18,6 +19,10 @@ const emit = defineEmits<{
 const { t } = useContent()
 // "Upload to media library" is an ee/media-gated capability; hidden otherwise.
 const canUploadMedia = useFeature('media.upload')
+// The picker lives in the composer's action strip; the command palette writes
+// to the same state, so both stay in sync without prop drilling.
+const { selectedModel } = useChat()
+const modelOptions = computed(() => AI_MODELS.map(m => ({ value: m.id, label: m.label })))
 
 const input = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -223,153 +228,174 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+// Floor matches the textarea's `min-h`, so the composer opens at roughly three
+// lines and grows from there; ceiling matches its `max-h`.
+const MIN_TEXTAREA_HEIGHT = 72
+const MAX_TEXTAREA_HEIGHT = 160
+
 function autoResize() {
   const el = textareaRef.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  el.style.height = `${Math.max(MIN_TEXTAREA_HEIGHT, Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT))}px`
 }
 </script>
 
 <template>
   <div class="border-t border-secondary-200 p-3 dark:border-secondary-800">
-    <!-- Attachment tray -->
-    <ul v-if="attachments.length > 0" class="mb-2 flex flex-wrap gap-2">
-      <li
-        v-for="att in attachments" :key="att.id"
-        class="flex max-w-60 items-center gap-1.5 rounded-lg border px-2 py-1 text-xs"
-        :class="att.status === 'error'
-          ? 'border-danger-200 bg-error text-danger-600 dark:border-danger-500/30'
-          : 'border-secondary-200 bg-secondary-50 text-body dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-300'"
-      >
-        <NuxtImg
-          v-if="att.kind === 'image' && att.previewUrl && att.status === 'ready'" :src="att.previewUrl" alt=""
-          class="size-7 shrink-0 rounded object-cover"
-        />
-        <span
-          v-else-if="att.status === 'uploading'"
-          class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
-          aria-hidden="true"
-        />
-        <span v-else :class="attachmentIcon(att)" class="size-3.5 shrink-0" aria-hidden="true" />
-
-        <span class="truncate" :title="att.error || att.filename">{{ att.filename }}</span>
-
-        <span v-if="att.bytes" class="shrink-0 text-[10px] text-muted">{{ formatBytes(att.bytes) }}</span>
-
-        <!-- Destination badge — makes intent explicit for the user (and agent). -->
-        <span
-          v-if="att.status === 'ready'"
-          class="shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide" :class="att.destination === 'media'
-            ? 'bg-info-100 text-info-600 dark:bg-info-500/20 dark:text-info-300'
-            : 'bg-secondary-200 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300'"
+    <!-- Composer card: textarea, attachments, model picker and send all read as
+         one control. The focus ring lives here rather than on the textarea so
+         the whole card lights up as a unit. -->
+    <div
+      class="rounded-2xl border border-secondary-200 bg-white shadow-sm transition-colors focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900"
+    >
+      <!-- Attachment tray -->
+      <ul v-if="attachments.length > 0" class="flex flex-wrap gap-2 px-3 pt-3">
+        <li
+          v-for="att in attachments" :key="att.id"
+          class="flex max-w-60 items-center gap-1.5 rounded-lg border px-2 py-1 text-xs"
+          :class="att.status === 'error'
+            ? 'border-danger-200 bg-error text-danger-600 dark:border-danger-500/30'
+            : 'border-secondary-200 bg-secondary-50 text-body dark:border-secondary-700 dark:bg-secondary-800 dark:text-secondary-300'"
         >
-          {{ att.destination === 'media' ? t('chat.dest_media') : t('chat.dest_context') }}
-        </span>
+          <NuxtImg
+            v-if="att.kind === 'image' && att.previewUrl && att.status === 'ready'" :src="att.previewUrl" alt=""
+            class="size-7 shrink-0 rounded object-cover"
+          />
+          <span
+            v-else-if="att.status === 'uploading'"
+            class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
+            aria-hidden="true"
+          />
+          <span v-else :class="attachmentIcon(att)" class="size-3.5 shrink-0" aria-hidden="true" />
 
-        <span
-          v-if="att.truncated" class="shrink-0 text-[10px] text-warning-500"
-          :title="t('chat.attachment_truncated')"
-        >✂</span>
+          <span class="truncate" :title="att.error || att.filename">{{ att.filename }}</span>
 
-        <button
-          type="button"
-          class="shrink-0 rounded p-0.5 text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50"
-          :aria-label="t('chat.attachment_remove')" @click="removeAttachment(att.id)"
-        >
-          <span class="icon-[annon--cross] block size-3" aria-hidden="true" />
-        </button>
-      </li>
-    </ul>
+          <span v-if="att.bytes" class="shrink-0 text-[10px] text-muted">{{ formatBytes(att.bytes) }}</span>
 
-    <!-- Link input row (toggled from the + menu) -->
-    <div v-if="showLinkInput" class="mb-2 flex items-center gap-2">
-      <AtomsFormInput
-        v-model="linkValue" :placeholder="t('chat.attach_link_placeholder')"
-        @keydown.enter.prevent="submitLink" @keydown.escape="showLinkInput = false"
-      />
-      <AtomsBaseButton size="sm" :disabled="!linkValue.trim()" @click="submitLink">
-        <span>{{ t('common.add') }}</span>
-      </AtomsBaseButton>
-    </div>
+          <!-- Destination badge — makes intent explicit for the user (and agent). -->
+          <span
+            v-if="att.status === 'ready'"
+            class="shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide" :class="att.destination === 'media'
+              ? 'bg-info-100 text-info-600 dark:bg-info-500/20 dark:text-info-300'
+              : 'bg-secondary-200 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300'"
+          >
+            {{ att.destination === 'media' ? t('chat.dest_media') : t('chat.dest_context') }}
+          </span>
 
-    <div class="flex items-end gap-2">
+          <span
+            v-if="att.truncated" class="shrink-0 text-[10px] text-warning-500"
+            :title="t('chat.attachment_truncated')"
+          >✂</span>
+
+          <button
+            type="button"
+            class="shrink-0 rounded p-0.5 text-muted transition-colors hover:text-danger-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50"
+            :aria-label="t('chat.attachment_remove')" @click="removeAttachment(att.id)"
+          >
+            <span class="icon-[annon--cross] block size-3" aria-hidden="true" />
+          </button>
+        </li>
+      </ul>
+
+      <!-- Link input row (toggled from the + menu) -->
+      <div v-if="showLinkInput" class="flex items-center gap-2 px-3 pt-3">
+        <AtomsFormInput
+          v-model="linkValue" :placeholder="t('chat.attach_link_placeholder')"
+          @keydown.enter.prevent="submitLink" @keydown.escape="showLinkInput = false"
+        />
+        <AtomsBaseButton size="sm" :disabled="!linkValue.trim()" @click="submitLink">
+          <span>{{ t('common.add') }}</span>
+        </AtomsBaseButton>
+      </div>
+
       <!-- Hidden file input (accept set per pending intent) -->
       <input ref="fileInputRef" type="file" multiple :accept="pickerAccept" class="hidden" @change="onFilePicked">
 
-      <!-- Attach (+) menu -->
-      <DropdownMenuRoot>
-        <DropdownMenuTrigger as-child>
-          <button
-            type="button" :disabled="disabled"
-            class="flex size-9 shrink-0 items-center justify-center rounded-xl border border-secondary-200 text-muted transition-colors hover:bg-secondary-50 hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-secondary-700 dark:hover:bg-secondary-800 dark:hover:text-secondary-100"
-            :aria-label="t('chat.attach')"
-          >
-            <span class="icon-[annon--plus] size-4" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuPortal>
-          <DropdownMenuContent
-            side="top" align="start" :side-offset="8"
-            class="z-50 w-64 rounded-xl border border-secondary-200 bg-white p-1 shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
-          >
-            <DropdownMenuItem
-              class="flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-highlighted:bg-secondary-50 dark:data-highlighted:bg-secondary-900"
-              @select="openPicker('context')"
-            >
-              <span class="icon-[annon--file-text] mt-px size-4 shrink-0 text-muted" aria-hidden="true" />
-              <span class="min-w-0">
-                <span class="block font-medium text-heading dark:text-secondary-100">{{ t('chat.attach_context')
-                }}</span>
-                <span class="block text-xs text-muted">{{ t('chat.attach_context_desc') }}</span>
-              </span>
-            </DropdownMenuItem>
-
-            <DropdownMenuItem
-              v-if="canUploadMedia"
-              class="flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-highlighted:bg-secondary-50 dark:data-highlighted:bg-secondary-900"
-              @select="openPicker('media')"
-            >
-              <span class="icon-[annon--image-3] mt-px size-4 shrink-0 text-info-500" aria-hidden="true" />
-              <span class="min-w-0">
-                <span class="block font-medium text-heading dark:text-secondary-100">{{ t('chat.attach_media')
-                }}</span>
-                <span class="block text-xs text-muted">{{ t('chat.attach_media_desc') }}</span>
-              </span>
-            </DropdownMenuItem>
-
-            <DropdownMenuItem
-              class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-highlighted:bg-secondary-50 dark:data-highlighted:bg-secondary-900"
-              @select="openLinkInput"
-            >
-              <span class="icon-[annon--link-1] size-4 shrink-0 text-muted" aria-hidden="true" />
-              <span class="font-medium text-heading dark:text-secondary-100">{{ t('chat.attach_link') }}</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenuPortal>
-      </DropdownMenuRoot>
-
       <textarea
         ref="textareaRef" v-model="input" :placeholder="t('chat.placeholder')" :disabled="disabled" rows="1"
-        class="max-h-40 min-h-9 flex-1 resize-none rounded-xl border border-secondary-200 bg-white px-4 py-2 text-sm text-heading placeholder:text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+        class="max-h-40 min-h-[4.5rem] w-full resize-none bg-transparent px-4 pt-3 text-sm text-heading placeholder:text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-100"
         @input="autoResize" @keydown="handleKeydown" @paste="onPaste"
       />
 
-      <!-- Stop (while streaming) / Send -->
-      <button
-        v-if="streaming" type="button"
-        class="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary-200 text-heading transition-colors hover:bg-secondary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-secondary-700 dark:text-secondary-100 dark:hover:bg-secondary-600"
-        :aria-label="t('chat.stop')" @click="emit('stop')"
-      >
-        <span class="block size-2.5 rounded-[3px] bg-current" aria-hidden="true" />
-      </button>
-      <button
-        v-else type="button"
-        class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-primary-500 dark:hover:bg-primary-400"
-        :disabled="!canSend" :aria-label="t('chat.send')" @click="handleSend"
-      >
-        <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
-      </button>
+      <!-- Action strip -->
+      <div class="flex items-center gap-1 px-2 pb-2">
+        <!-- Attach (+) menu -->
+        <DropdownMenuRoot>
+          <DropdownMenuTrigger as-child>
+            <button
+              type="button" :disabled="disabled"
+              class="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-secondary-100 hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-secondary-800 dark:hover:text-secondary-100"
+              :aria-label="t('chat.attach')"
+            >
+              <span class="icon-[annon--plus] size-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuContent
+              side="top" align="start" :side-offset="8"
+              class="z-50 w-64 rounded-xl border border-secondary-200 bg-white p-1 shadow-xl dark:border-secondary-800 dark:bg-secondary-950"
+            >
+              <DropdownMenuItem
+                class="flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-highlighted:bg-secondary-50 dark:data-highlighted:bg-secondary-900"
+                @select="openPicker('context')"
+              >
+                <span class="icon-[annon--file-text] mt-px size-4 shrink-0 text-muted" aria-hidden="true" />
+                <span class="min-w-0">
+                  <span class="block font-medium text-heading dark:text-secondary-100">{{ t('chat.attach_context')
+                  }}</span>
+                  <span class="block text-xs text-muted">{{ t('chat.attach_context_desc') }}</span>
+                </span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                v-if="canUploadMedia"
+                class="flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-highlighted:bg-secondary-50 dark:data-highlighted:bg-secondary-900"
+                @select="openPicker('media')"
+              >
+                <span class="icon-[annon--image-3] mt-px size-4 shrink-0 text-info-500" aria-hidden="true" />
+                <span class="min-w-0">
+                  <span class="block font-medium text-heading dark:text-secondary-100">{{ t('chat.attach_media')
+                  }}</span>
+                  <span class="block text-xs text-muted">{{ t('chat.attach_media_desc') }}</span>
+                </span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-highlighted:bg-secondary-50 dark:data-highlighted:bg-secondary-900"
+                @select="openLinkInput"
+              >
+                <span class="icon-[annon--link-1] size-4 shrink-0 text-muted" aria-hidden="true" />
+                <span class="font-medium text-heading dark:text-secondary-100">{{ t('chat.attach_link') }}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
+
+        <AtomsFormSelect
+          v-model="selectedModel"
+          :options="modelOptions"
+          :label="t('chat.model')"
+          variant="ghost"
+          size="sm"
+        />
+
+        <!-- Stop (while streaming) / Send -->
+        <button
+          v-if="streaming" type="button"
+          class="ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary-200 text-heading transition-colors hover:bg-secondary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-secondary-700 dark:text-secondary-100 dark:hover:bg-secondary-600"
+          :aria-label="t('chat.stop')" @click="emit('stop')"
+        >
+          <span class="block size-2.5 rounded-[3px] bg-current" aria-hidden="true" />
+        </button>
+        <button
+          v-else type="button"
+          class="ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-primary-500 dark:hover:bg-primary-400"
+          :disabled="!canSend" :aria-label="t('chat.send')" @click="handleSend"
+        >
+          <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   </div>
 </template>

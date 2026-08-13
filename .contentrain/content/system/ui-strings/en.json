@@ -191,6 +191,7 @@
   "chat.init_project": "Initialize project",
   "chat.init_prompt": "Initialize my project — detect the framework and set up content structure.",
   "chat.load_error": "Failed to load conversation",
+  "chat.model": "AI model",
   "chat.new_conversation": "New conversation",
   "chat.no_conversations": "No previous conversations",
   "chat.output_truncated": "The response hit the output limit before finishing, so the operation didn’t complete. Try splitting it into smaller steps — for example, one language or a few entries at a time.",

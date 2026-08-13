@@ -24,7 +24,12 @@ const showPaywall = computed(() =>
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-white dark:bg-secondary-950">
+  <!-- The shell stops widening past 1920px and centres. Only the chat column
+       is elastic (sidebar and content panel are fixed), so on a very wide
+       display every extra pixel lands in the message bubbles and the line
+       length gets hard to read. Portalled surfaces — command palette, modals,
+       toasts — are `fixed` and stay centred on the viewport, which is right. -->
+  <div class="mx-auto flex h-screen w-full max-w-[120rem] overflow-hidden border-x border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950">
     <!-- Sidebar with SSR fallback skeleton (same dimensions, no content flash) -->
     <ClientOnly>
       <OrganismsAppSidebar class="hidden md:flex" />
@@ -42,19 +47,28 @@ const showPaywall = computed(() =>
       <AtomsIconButton icon="icon-[annon--menu]" :label="t('common.menu')" @click="toggleMobileSidebar" />
     </div>
 
-    <!-- Main content (with top padding on mobile for fixed header) -->
-    <main class="flex-1 overflow-y-auto pt-14 md:pt-0">
+    <!-- Main content (with top padding on mobile for fixed header).
+         The banner is a SIBLING of <main>, never a child: <main> is a scroll
+         container, so a banner inside it either takes layout height (pushing
+         full-height pages past the viewport) or scrolls away with the content. -->
+    <div class="relative flex min-w-0 flex-1 flex-col pt-14 md:pt-0">
       <!-- Trial / billing-state banner (workspace routes only; hidden when
-           the paywall takes over). -->
+           the paywall takes over). From `md` up it leaves the flow entirely
+           and floats as a compact pill, so toggling it never moves the page.
+           On mobile it stays in flow — any top-anchored overlay would cover
+           the chat header, and `min-h-0 flex-1` below already prevents the
+           overflow this banner used to cause. -->
       <MoleculesTrialBanner
         v-if="isWorkspaceRoute && !showPaywall"
-        class="sticky top-0 z-30 shrink-0"
+        class="shrink-0 md:absolute md:right-4 md:top-2 md:z-30 md:w-auto"
         @choose-plan="showPlanModal()"
         @manage-billing="openPortal()"
       />
-      <OrganismsPaywallOverlay v-if="showPaywall" />
-      <slot v-else />
-    </main>
+      <main class="min-h-0 flex-1 overflow-y-auto">
+        <OrganismsPaywallOverlay v-if="showPaywall" />
+        <slot v-else />
+      </main>
+    </div>
 
     <!-- Mobile sidebar drawer -->
     <ClientOnly>
