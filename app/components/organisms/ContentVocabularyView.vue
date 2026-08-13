@@ -115,15 +115,16 @@ function submitBulk() {
             </span>
           </div>
         </div>
-        <button
-          v-if="editable"
-          type="button"
-          class="shrink-0 rounded p-1 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 group-hover/row:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-          :title="t('vocabulary.delete_term')"
-          @click="deleteTerm(term)"
-        >
-          <span class="icon-[annon--trash] block size-3.5" aria-hidden="true" />
-        </button>
+        <AtomsTooltip v-if="editable" :text="t('vocabulary.delete_term')">
+          <button
+            type="button"
+            :aria-label="t('vocabulary.delete_term')"
+            class="reveal-on-hover shrink-0 rounded p-1 text-muted transition-[color,opacity] hover:text-danger-500 group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            @click="deleteTerm(term)"
+          >
+            <span class="icon-[annon--trash] block size-3.5" aria-hidden="true" />
+          </button>
+        </AtomsTooltip>
       </div>
     </div>
     <!-- Add term -->

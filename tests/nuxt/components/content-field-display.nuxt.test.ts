@@ -89,3 +89,71 @@ describe('ContentFieldDisplay overflow handling', () => {
     expect(classes).toContain('block')
   })
 })
+
+function mountMedia(type: string, value: unknown) {
+  return mountSuspended(ContentFieldDisplay, { props: { type, value, fieldId: 'cover' } })
+}
+
+describe('ContentFieldDisplay media fields', () => {
+  it('gives an image a preview trigger rather than a bare thumbnail', async () => {
+    const wrapper = await mountMedia('image', 'media/8d2ed576-57e5-4cab-8f57-bfe52d56ddff.webp')
+
+    const trigger = wrapper.find('button[aria-label="Show preview"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.find('img').exists()).toBe(true)
+  })
+
+  it('names a storage UUID by its kind instead of printing it whole', async () => {
+    const wrapper = await mountMedia('image', 'media/8d2ed576-57e5-4cab-8f57-bfe52d56ddff.webp')
+
+    expect(wrapper.text()).toContain('WEBP · 8d2ed576')
+    expect(wrapper.text()).not.toContain('57e5-4cab')
+  })
+
+  it('renders a video as media, not as raw text', async () => {
+    // `video` and `file` used to fall through to the URL branch, which printed
+    // the path as a blue string and nothing else.
+    const wrapper = await mountMedia('video', 'media/8d2ed576-57e5-4cab-8f57-bfe52d56ddff.mp4')
+
+    expect(wrapper.find('button[aria-label="Show preview"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('MP4 · 8d2ed576')
+  })
+
+  it('gives a file a tile but no preview — there is nothing to show', async () => {
+    const wrapper = await mountMedia('file', 'media/8d2ed576-57e5-4cab-8f57-bfe52d56ddff.pdf')
+
+    expect(wrapper.find('button[aria-label="Show preview"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('PDF · 8d2ed576')
+  })
+
+  it('marks a value that was never a stored asset as such, and does not fetch it', async () => {
+    // The actual complaint: this looked exactly like a corrupt asset.
+    const wrapper = await mountMedia('image', 'hero-image')
+
+    expect(wrapper.text()).toContain('Not a stored asset')
+    expect(wrapper.text()).not.toContain('could not be loaded')
+    expect(wrapper.find('img').exists()).toBe(false)
+  })
+
+  it('reports a stored asset that fails to load as an error', async () => {
+    const wrapper = await mountMedia('image', 'media/cover.webp')
+
+    await wrapper.find('img').trigger('error')
+
+    expect(wrapper.text()).toContain('could not be loaded')
+    expect(wrapper.text()).not.toContain('Not a stored asset')
+  })
+
+  it('clears the failure when the value changes', async () => {
+    // The component is reused down a list; one broken asset must not paint the
+    // rows after it red.
+    const wrapper = await mountMedia('image', 'media/cover.webp')
+    await wrapper.find('img').trigger('error')
+    expect(wrapper.text()).toContain('could not be loaded')
+
+    await wrapper.setProps({ value: 'media/other.webp' })
+
+    expect(wrapper.text()).not.toContain('could not be loaded')
+    expect(wrapper.find('button[aria-label="Show preview"]').exists()).toBe(true)
+  })
+})
