@@ -84,6 +84,50 @@ describe('brain cache', () => {
     vi.useRealTimers()
   })
 
+  it('keeps the tree fingerprint short however many files the project has', async () => {
+    // It used to BE the manifest — every tracked path and blob SHA joined by
+    // `|`. The client stores that and sends it back as `?treeSha=`, so on a
+    // real project the URL reached ~30KB and every sync after the first was
+    // answered with HTTP 431. A fingerprint has to survive leaving the process.
+    const git = createGit({
+      getTree: async () => Array.from({ length: 250 }, (_, i) => ({
+        path: `.contentrain/content/blog/guide-sections/section-${i}/en.md`,
+        sha: `${i}`.padStart(40, 'a'),
+        type: 'blob' as const,
+      })),
+      listDirectory: async () => [],
+    })
+    const mod = await import('../../server/utils/brain-cache')
+
+    const entry = await mod.getOrBuildBrainCache(git as never, '', 'project-long')
+
+    expect(entry.treeSha).toMatch(/^[0-9a-f]{64}$/)
+    // The per-path map is what the incremental refresh reads; the fingerprint
+    // never needed to carry the parts.
+    expect(entry.fileShas.size).toBe(250)
+  })
+
+  it('still notices a change to any tracked file', async () => {
+    // Hashing must not cost sensitivity: one differing blob SHA anywhere has to
+    // produce a different fingerprint, or a delta sync would report "no
+    // changes" over stale content.
+    const mod = await import('../../server/utils/brain-cache')
+
+    const before = await mod.getOrBuildBrainCache(createGit() as never, '', 'project-sensitive')
+    mod.dropBrainCache('project-sensitive')
+
+    const after = await mod.getOrBuildBrainCache(createGit({
+      getTree: async () => [
+        { path: '.contentrain/config.json', sha: 'sha-config', type: 'blob' },
+        { path: '.contentrain/models/posts.json', sha: 'sha-model', type: 'blob' },
+        { path: '.contentrain/content/marketing/posts/en.json', sha: 'sha-content-CHANGED', type: 'blob' },
+        { path: '.contentrain/meta/marketing/posts/en.json', sha: 'sha-meta', type: 'blob' },
+      ],
+    }) as never, '', 'project-sensitive')
+
+    expect(after.treeSha).not.toBe(before.treeSha)
+  })
+
   it('builds and reuses a project cache entry while the tree hash is unchanged', async () => {
     const git = createGit()
     const mod = await import('../../server/utils/brain-cache')

@@ -16,6 +16,7 @@
 import type { ContentrainConfig, FieldDef, ModelDefinition, ModelKind } from '@contentrain/types'
 import type { GitProvider, TreeEntry } from '../providers/git'
 import type { SchemaValidationResult } from './schema-validation'
+import { createHash } from 'node:crypto'
 import matter from 'gray-matter'
 
 /** SSOT content branch — read from this for latest content state */
@@ -150,10 +151,22 @@ function trackedFiles(tree: TreeEntry[], extraPaths?: string[]): TreeEntry[] {
 }
 
 /**
- * Compute a simple hash from tree entries for delta detection.
+ * Fingerprint the tracked file set for delta detection.
+ *
+ * This used to return the manifest itself — every tracked path and blob SHA
+ * joined by `|`. Only equality is ever asked of it, so that worked, right up
+ * until the value left the process: the client stores it and sends it back as
+ * `?treeSha=`, and on a real project that is ~30KB of query string. Proxies
+ * answer a URL that long with **431**, so every sync after the first one
+ * failed — and nothing downstream could tell that apart from "no changes".
+ *
+ * Hashing it keeps the equality semantics and makes the value 64 characters.
+ * Nothing reads the parts: the per-path map used for incremental refresh is
+ * built separately by `buildFileShaMap`.
  */
 function computeTreeHash(tree: TreeEntry[], extraPaths?: string[]): string {
-  return trackedFiles(tree, extraPaths).map(e => `${e.path}:${e.sha}`).join('|')
+  const manifest = trackedFiles(tree, extraPaths).map(e => `${e.path}:${e.sha}`).join('|')
+  return createHash('sha256').update(manifest).digest('hex')
 }
 
 /** Per-path blob SHA map over the same tracked file set as the hash. */
