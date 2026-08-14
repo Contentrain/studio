@@ -13,6 +13,7 @@
  */
 import type { H3Event } from 'h3'
 import { getHeader, getProxyRequestHeaders, proxyRequest, readRawBody, setResponseHeader, setResponseStatus } from 'h3'
+import { Agent } from 'undici'
 import { MEDIA_TOOL_NAMES, WRITE_TOOL_NAMES } from '~~/server/utils/mcp-tool-classes'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
@@ -273,7 +274,30 @@ export async function runMcpCloudProxy(
   const fetchOptions = { method: event.method, body: rawBody }
 
   if (!shouldInvalidateBrain) {
-    return await proxyRequest(event, target, { headers: proxyHeaders, fetchOptions })
+    // Streaming branch: an MCP session's GET is a long-lived SSE stream
+    // that legitimately idles far past undici's 300s default bodyTimeout —
+    // nothing pings it (neither the SDK transport nor the loopback), so
+    // every quiet session died with an unhandled UND_ERR_BODY_TIMEOUT
+    // (staging, 3× on 2026-08-13). The dispatcher disables the body
+    // timeout for this hop only; global fetches keep their safety net.
+    try {
+      return await proxyRequest(event, target, {
+        headers: proxyHeaders,
+        fetchOptions: { ...fetchOptions, dispatcher: streamingDispatcher } as RequestInit,
+      })
+    }
+    catch (err) {
+      // Once headers are flushed the response is unsalvageable — a broken
+      // pump (client hung up, upstream closed mid-stream) must end the
+      // socket quietly. Re-raising would hand a headers-sent response to
+      // Nitro's prod error handler, which throws ERR_HTTP_HEADERS_SENT
+      // into unhandledRejection.
+      if (event.node.res.headersSent) {
+        event.node.res.end()
+        return
+      }
+      throw err
+    }
   }
 
   // Write call — this one is buffered instead of streamed.
@@ -323,6 +347,13 @@ export async function runMcpCloudProxy(
 
   return payload
 }
+
+/**
+ * Dispatcher for the streaming proxy hop only: no body timeout (SSE idles
+ * indefinitely), headers timeout left at undici's default — the loopback
+ * answers headers immediately or not at all.
+ */
+const streamingDispatcher = new Agent({ bodyTimeout: 0 })
 
 /** Response headers that describe the upstream framing, not the payload. */
 const HOP_BY_HOP_HEADERS = new Set([
