@@ -231,6 +231,19 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       return rowToAsset(row, usage)
     },
 
+    async getAssetByPath(projectId: string, originalPath: string): Promise<MediaAsset | null> {
+      const row = await db.findMediaAssetByPath(projectId, originalPath)
+      if (!row) return null
+      const usageRows = await db.getMediaUsage(row.id as string)
+      const usage: MediaUsageRef[] = usageRows.map(u => ({
+        modelId: u.model_id as string,
+        entryId: u.entry_id as string,
+        fieldId: u.field_id as string,
+        locale: u.locale as string,
+      }))
+      return rowToAsset(row, usage)
+    },
+
     async listAssets(projectId: string, options?: MediaListOptions) {
       const result = await db.listMediaAssets(projectId, options)
       return {

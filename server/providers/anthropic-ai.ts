@@ -220,7 +220,7 @@ export function toAnthropicMessages(messages: AICompletionRequest['messages']): 
         case 'tool_use':
           return { type: 'tool_use' as const, id: block.id, name: block.name, input: block.input as Record<string, unknown> }
         case 'tool_result':
-          return { type: 'tool_result' as const, tool_use_id: block.toolUseId, content: block.content }
+          return { type: 'tool_result' as const, tool_use_id: block.toolUseId, content: block.content, ...(block.isError ? { is_error: true } : {}) }
         case 'image':
           return block.source.type === 'url'
             ? { type: 'image' as const, source: { type: 'url' as const, url: block.source.url } }

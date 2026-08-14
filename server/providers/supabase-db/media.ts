@@ -8,6 +8,7 @@ type MediaMethods = Pick<
   DatabaseProvider,
   | 'createMediaAsset'
   | 'getMediaAsset'
+  | 'findMediaAssetByPath'
   | 'listMediaAssets'
   | 'updateMediaAsset'
   | 'deleteMediaAsset'
@@ -37,6 +38,17 @@ export function mediaMethods(): MediaMethods {
         .select('*')
         .eq('id', assetId)
         .single()
+
+      return (data as DatabaseRow) ?? null
+    },
+
+    async findMediaAssetByPath(projectId, originalPath) {
+      const { data } = await getAdmin()
+        .from('media_assets')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('original_path', originalPath)
+        .maybeSingle()
 
       return (data as DatabaseRow) ?? null
     },

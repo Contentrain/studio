@@ -8,6 +8,12 @@ export interface WriteResult {
   commit: Commit
   diff: FileDiff[]
   validation: ValidationResult
+  /**
+   * The planned files were byte-identical to `contentrain` — no branch,
+   * commit, or merge was performed. Not a failure: the requested state was
+   * already live.
+   */
+  unchanged?: boolean
 }
 
 export interface ContentEngineContext {

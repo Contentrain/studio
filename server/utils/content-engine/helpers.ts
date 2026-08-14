@@ -101,6 +101,34 @@ export function pinReaderToContentrain(git: GitProvider): RepoReader {
 }
 
 /**
+ * Whether every planned file is byte-identical to what `contentrain`
+ * already holds — i.e. the save is a no-op. Reliable because the plan
+ * output is deterministic (`canonicalStringify` for JSON, and Studio's
+ * meta override writes no timestamps), so identical input produces
+ * identical bytes. Deletions (`content: null`) and brand-new files never
+ * count as no-ops.
+ *
+ * The two extra reads per save are far cheaper than what a no-op used to
+ * cost: a branch, an empty commit, a merge to `contentrain`, and a
+ * `contentrain`→main advance (~18s wall-clock on staging).
+ */
+export async function planMatchesCurrent(reader: RepoReader, changes: FileChange[]): Promise<boolean> {
+  if (changes.length === 0) return false
+  for (const change of changes) {
+    if (typeof change.content !== 'string') return false
+    let current: string
+    try {
+      current = await reader.readFile(change.path)
+    }
+    catch {
+      return false
+    }
+    if (current !== change.content) return false
+  }
+  return true
+}
+
+/**
  * Override the meta FileChange produced by `planContentSave` with
  * Studio's status semantics:
  *

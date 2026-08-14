@@ -18,10 +18,10 @@ describe('content route integration', () => {
       diff: [],
       validation: { valid: true, errors: [] },
     })
-    const listAssets = vi.fn().mockResolvedValue({
-      assets: [{ id: 'asset-1' }],
-      total: 1,
-    })
+    // Usage tracking resolves assets by storage path now — the filename
+    // `search` lookup never matched (the path uuid names the file, while
+    // `search` only covers filename/alt).
+    const getAssetByPath = vi.fn().mockResolvedValue({ id: 'asset-1' })
     const trackMediaUsage = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
@@ -51,7 +51,7 @@ describe('content route integration', () => {
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'auto-merge' } }))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent, mergeBranch }))
-    vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ listAssets }))
+    vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ getAssetByPath }))
     vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       trackMediaUsage,

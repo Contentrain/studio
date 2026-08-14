@@ -3,7 +3,7 @@ import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter,
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch } from './helpers'
+import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch, planMatchesCurrent } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 
 /**
@@ -146,6 +146,18 @@ export async function saveDocument(
   // here (MCP 1.5.0 model — see `branch-ops.ts`).
   const allChanges: FileChange[] = [...patchedChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
+
+  // Byte-identical plan → no-op; skip the branch/commit/merge cycle
+  // (same short-circuit as saveContent).
+  if (await planMatchesCurrent(reader, allChanges)) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+      diff: [],
+      validation,
+      unchanged: true,
+    }
+  }
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
