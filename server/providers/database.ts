@@ -471,6 +471,12 @@ export interface DatabaseProvider {
 
   createMediaAsset: (asset: MediaAssetInput) => Promise<DatabaseRow>
   getMediaAsset: (assetId: string) => Promise<DatabaseRow | null>
+  /**
+   * Look an asset up by its storage path (`media/original/<file>`). The path's
+   * uuid is the FILE name, not the row id, so a path in hand (delivery URL,
+   * content field value) cannot be resolved through `getMediaAsset`.
+   */
+  findMediaAssetByPath: (projectId: string, originalPath: string) => Promise<DatabaseRow | null>
   listMediaAssets: (projectId: string, options?: PaginationOptions & {
     search?: string
     tags?: string[]

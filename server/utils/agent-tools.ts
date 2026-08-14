@@ -234,7 +234,7 @@ Provide initial models with full field definitions using Contentrain's 27 type s
   },
   {
     name: 'brain_search',
-    description: 'Full-text search across all project content. Returns matching entries with model ID, entry ID, and preview text.',
+    description: 'Full-text search across all project content. Multi-word queries match per word across all of an entry\'s fields (best matches first) — you do not need the exact stored phrasing. Returns matching entries with model ID, entry ID, and preview text.',
     inputSchema: {
       type: 'object',
       properties: {

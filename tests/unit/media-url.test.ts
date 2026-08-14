@@ -50,4 +50,15 @@ describe('media URL helpers', () => {
     expect(out.variantUrls.thumb).toBe('https://studio.example.com/api/cdn/v1/proj-1/media/abc_thumb.webp')
     expect(out.originalPath).toBe('media/abc.webp')
   })
+
+  it('resolves own delivery URLs and bare paths to storage paths, rejecting foreign ones', async () => {
+    const { ownMediaStoragePath } = await import('../../server/utils/media-url')
+    expect(ownMediaStoragePath('proj-1', 'media/original/abc.webp')).toBe('media/original/abc.webp')
+    expect(ownMediaStoragePath('proj-1', 'https://studio.example.com/api/cdn/v1/proj-1/media/original/abc.webp?w=200')).toBe('media/original/abc.webp')
+    // Another project's delivery URL is NOT ours
+    expect(ownMediaStoragePath('proj-1', 'https://studio.example.com/api/cdn/v1/proj-2/media/original/abc.webp')).toBeNull()
+    expect(ownMediaStoragePath('proj-1', 'https://images.unsplash.com/photo-123')).toBeNull()
+    expect(ownMediaStoragePath('proj-1', 'https://studio.example.com/api/cdn/v1/proj-1/content/models.json')).toBeNull()
+    expect(ownMediaStoragePath('proj-1', 42)).toBeNull()
+  })
 })

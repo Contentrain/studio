@@ -94,6 +94,58 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Workflow: review')
   })
 
+  it('names array-item subfields at the schema depth cap instead of dropping them', () => {
+    // Regression (staging 2026-08-13): home-page's object → array →
+    // items.fields chain rendered as `cards: array (items: object)` with
+    // the subfields silently dropped — the agent concluded the card image
+    // "cannot be managed here" without querying content.
+    const prompt = buildSystemPrompt(
+      null,
+      [
+        {
+          id: 'home-page',
+          name: 'Home Page',
+          kind: 'singleton',
+          domain: 'marketing',
+          i18n: true,
+          fields: {
+            operating_model: {
+              type: 'object',
+              fields: {
+                heading: { type: 'string' },
+                cards: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    fields: {
+                      title: { type: 'string' },
+                      image: { type: 'image' },
+                      cta_label: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ] as never,
+      {
+        workspaceRole: 'owner',
+        projectRole: null,
+        specificModels: false,
+        allowedModels: [],
+        availableTools: ['save_content'],
+      } as never,
+      { initialized: true, pendingBranches: [], projectStatus: 'active', phase: 'active' },
+      { activeModelId: null, activeLocale: 'en', activeEntryId: null, panelState: 'content', activeBranch: null, contextItems: [] } as never,
+      { category: 'update_content', confidence: 'low', inferred: {} } as never,
+      null,
+      'pro',
+    )
+
+    expect(prompt).toContain('{title, image, cta_label}')
+  })
+
   it('adds initialization guidance for uninitialized projects', () => {
     const prompt = buildSystemPrompt(
       null,

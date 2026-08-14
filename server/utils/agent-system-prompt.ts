@@ -409,6 +409,14 @@ function formatFieldDef(def: FieldDef, depth: number = 0): string {
     return `${parts.join(' ')}\n${nested}`
   }
 
+  // At the depth cap, still NAME the subfields. Dropping them entirely made
+  // the schema summary claim e.g. `cards: array (items: object)` with no
+  // hint an `image` existed — and the agent answered "this content cannot
+  // be managed here" without ever querying it.
+  if (def.fields) {
+    parts.push(`{${Object.keys(def.fields).join(', ')}}`)
+  }
+
   return parts.join(' ')
 }
 

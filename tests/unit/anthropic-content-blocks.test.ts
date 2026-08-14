@@ -52,4 +52,17 @@ describe('toAnthropicMessages — attachment content blocks', () => {
     expect(blocks[0]!.type).toBe('document')
     expect(blocks[1]!.type).toBe('text')
   })
+
+  it('maps isError onto the wire is_error flag, omitting it otherwise', () => {
+    const out = toAnthropicMessages([{
+      role: 'user',
+      content: [
+        { type: 'tool_result', toolUseId: 't1', content: '{"error":"boom"}', isError: true },
+        { type: 'tool_result', toolUseId: 't2', content: '{"ok":true}' },
+      ],
+    }])
+    const blocks = out[0]!.content as Array<Record<string, unknown>>
+    expect(blocks[0]).toEqual({ type: 'tool_result', tool_use_id: 't1', content: '{"error":"boom"}', is_error: true })
+    expect(blocks[1]).toEqual({ type: 'tool_result', tool_use_id: 't2', content: '{"ok":true}' })
+  })
 })
