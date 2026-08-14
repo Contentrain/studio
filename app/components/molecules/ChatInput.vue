@@ -17,6 +17,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useContent()
+const toast = useToast()
 // "Upload to media library" is an ee/media-gated capability; hidden otherwise.
 const canUploadMedia = useFeature('media.upload')
 // The picker lives in the composer's action strip; the command palette writes
@@ -40,7 +41,10 @@ const pickerAccept = computed(() => pendingIntent.value === 'media' ? IMAGE_ACCE
 const URL_RE = /^https?:\/\/\S+$/i
 
 const hasUploading = computed(() => attachments.value.some(a => a.status === 'uploading'))
-const canSend = computed(() => !!input.value.trim() && !props.disabled && !hasUploading.value)
+// A failed attachment blocks sending until it is removed — otherwise the
+// message would silently go out without the file the user believes is attached.
+const hasErrored = computed(() => attachments.value.some(a => a.status === 'error'))
+const canSend = computed(() => !!input.value.trim() && !props.disabled && !props.streaming && !hasUploading.value && !hasErrored.value)
 
 interface ServerRef {
   id: string
@@ -77,15 +81,23 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/**
+ * Mark an attachment failed AND say so out loud. The red chip alone proved
+ * too quiet — users sent messages believing the file was attached.
+ */
+function failAttachment(att: UIAttachment, message: string) {
+  att.status = 'error'
+  att.error = message
+  toast.error(message)
+}
+
 function applyRef(att: UIAttachment, ref: ServerRef | undefined) {
   if (!ref) {
-    att.status = 'error'
-    att.error = t('chat.attachment_failed')
+    failAttachment(att, t('chat.attachment_failed'))
     return
   }
   if (ref.error) {
-    att.status = 'error'
-    att.error = ref.error
+    failAttachment(att, ref.error)
     return
   }
   att.status = 'ready'
@@ -121,8 +133,7 @@ async function uploadFile(file: File, intent: 'context' | 'media') {
     applyRef(att, res.attachments?.[0])
   }
   catch (e) {
-    att.status = 'error'
-    att.error = resolveApiError(e, t('chat.attachment_failed'))
+    failAttachment(att, resolveApiError(e, t('chat.attachment_failed')))
   }
 }
 
@@ -144,8 +155,7 @@ async function attachLink(url: string) {
     applyRef(att, res.attachments?.[0])
   }
   catch (e) {
-    att.status = 'error'
-    att.error = resolveApiError(e, t('chat.attachment_failed'))
+    failAttachment(att, resolveApiError(e, t('chat.attachment_failed')))
   }
 }
 
@@ -158,7 +168,7 @@ function handleFiles(files: FileList | File[] | null | undefined, intent: 'conte
 function addFiles(files: FileList | File[] | null) {
   handleFiles(files, 'context')
 }
-defineExpose({ addFiles })
+defineExpose({ addFiles, attachLink })
 
 function openPicker(intent: 'context' | 'media') {
   pendingIntent.value = intent
@@ -196,6 +206,17 @@ function onPaste(e: ClipboardEvent) {
     handleFiles(dt.files, 'context')
     return
   }
+  // Some clipboard sources expose the file only through `items`, never
+  // `files` — without this fallback the paste was silently discarded.
+  const itemFiles = Array.from(dt.items ?? [])
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((f): f is File => f !== null)
+  if (itemFiles.length > 0) {
+    e.preventDefault()
+    handleFiles(itemFiles, 'context')
+    return
+  }
   // A clipboard whose entire text is a single URL → attach as a link.
   const text = dt.getData('text')?.trim()
   if (text && URL_RE.test(text)) {
@@ -212,12 +233,39 @@ function attachmentIcon(att: UIAttachment): string {
 }
 
 function handleSend() {
+  // Mirrors `canSend` exactly. The streaming check matters for Enter: the
+  // send button is swapped for stop while streaming, but the keydown path
+  // used to fall through, wipe the composer + tray, and send nothing
+  // (useChat's isStreaming guard rejected it downstream).
   const text = input.value.trim()
-  if (!text || props.disabled || hasUploading.value) return
+  if (!text || props.disabled || props.streaming || hasUploading.value || hasErrored.value) return
   emit('send', text, attachments.value)
   input.value = ''
   attachments.value = []
-  nextTick(() => autoResize())
+  nextTick(() => {
+    autoResize()
+    textareaRef.value?.focus()
+  })
+}
+
+/**
+ * The card is styled as one big input, but only the inner textarea accepts
+ * typing/paste — and nothing used to focus it, so a paste after clicking the
+ * card's padding landed on <body> and vanished. Clicks on interactive
+ * children keep their own focus.
+ */
+function focusComposer(e: MouseEvent) {
+  const target = e.target as HTMLElement | null
+  if (target?.closest('button, a, input, textarea, select, [role="menuitem"]')) return
+  textareaRef.value?.focus()
+}
+
+/** Radix returns focus to the trigger on close; hand it back to the textarea. */
+function onAttachMenuToggle(open: boolean) {
+  if (open) return
+  nextTick(() => {
+    if (!showLinkInput.value) textareaRef.value?.focus()
+  })
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -248,6 +296,7 @@ function autoResize() {
          the whole card lights up as a unit. -->
     <div
       class="rounded-2xl border border-secondary-200 bg-white shadow-sm transition-colors focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/30 dark:border-secondary-700 dark:bg-secondary-900"
+      @click="focusComposer"
     >
       <!-- Attachment tray -->
       <ul v-if="attachments.length > 0" class="flex flex-wrap gap-2 px-3 pt-3">
@@ -321,7 +370,7 @@ function autoResize() {
       <!-- Action strip -->
       <div class="flex items-center gap-1 px-2 pb-2">
         <!-- Attach (+) menu -->
-        <DropdownMenuRoot>
+        <DropdownMenuRoot @update:open="onAttachMenuToggle">
           <DropdownMenuTrigger as-child>
             <button
               type="button" :disabled="disabled"

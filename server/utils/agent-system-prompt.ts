@@ -3,6 +3,7 @@ import type { AISystemBlock } from '../providers/ai'
 import type { Branch } from '../providers/git'
 import type { AgentPermissions } from './agent-permissions'
 import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-types'
+import { extractMediaStoragePath } from './media-rewrite'
 
 /**
  * Bounded Task Executor system prompt.
@@ -138,10 +139,11 @@ function buildAttachmentSection(attachments: PromptAttachment[]): string {
   ]
   for (const a of attachments) {
     if (a.kind === 'image' && a.url) {
-      lines.push(`- ${a.filename} (image — already uploaded to the media library at ${a.url}. Reuse this URL directly in image/media fields; do NOT call upload_media for it.)`)
+      const storagePath = extractMediaStoragePath(a.url)
+      lines.push(`- ${a.filename} (image — already uploaded to the media library at ${a.url}${storagePath ? `, storage path ${storagePath}` : ''}. Reuse this URL directly in image/media fields; do NOT call upload_media for it.)`)
     }
     else if (a.kind === 'image') {
-      lines.push(`- ${a.filename} (image, included in this message for you to view)`)
+      lines.push(`- ${a.filename} (image, included in this message for you to view — ephemeral, NOT in the media library; it has no URL or path to reference in content, so never invent one)`)
     }
     else if (a.kind === 'document') {
       lines.push(`- ${a.filename} (PDF document, included in this message)`)

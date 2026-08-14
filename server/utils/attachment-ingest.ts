@@ -30,6 +30,7 @@ import { fileTypeFromBuffer } from 'file-type'
 import mammoth from 'mammoth'
 import sharp from 'sharp'
 import type { AIContentBlock, AIImageMediaType } from '../providers/ai'
+import { extractMediaStoragePath } from './media-rewrite'
 import { publicMediaBase, toDeliveryUrl } from './media-url'
 import { resolveVariantConfig } from './media-variants'
 import { useMediaProvider } from './providers'
@@ -199,32 +200,74 @@ export function validateAttachmentBlocks(
   for (const raw of attachments) {
     const att = raw as { blocks?: unknown, filename?: unknown }
     const rawBlocks = Array.isArray(att?.blocks) ? att.blocks : []
-    const filename = typeof att?.filename === 'string' ? att.filename : 'attachment'
+    const filename = typeof att?.filename === 'string' ? att.filename.slice(0, 200) : 'attachment'
+    const attBlocks: AIContentBlock[] = []
     let attKind: AttachmentSummary['kind'] = 'text'
     let attUrl: string | undefined
+    let hasBase64Image = false
 
     for (const candidate of rawBlocks) {
       const block = sanitizeBlock(candidate, deliveryPrefix)
       if (!block) continue
-      blocks.push(block)
+      attBlocks.push(block)
       totalChars += JSON.stringify(block).length
       if (block.type === 'image') {
         attKind = 'image'
         if (block.source.type === 'url') attUrl = block.source.url
+        else hasBase64Image = true
       }
       else if (block.type === 'document') {
         attKind = 'document'
       }
     }
 
-    if (blocks.length > 0)
-      summary.push({ kind: attKind, filename, url: attUrl })
+    // An attachment whose blocks were all dropped gets no summary line —
+    // the prompt must not claim an image the model cannot actually see.
+    if (attBlocks.length === 0) continue
+
+    // The model perceives image blocks as pixels only; the URL inside the
+    // block is invisible to it. A server-authored reference line ahead of
+    // the image is the only way the agent can know the asset's address —
+    // or know that an ephemeral image has none.
+    const descriptor = buildImageDescriptor(filename, attUrl, hasBase64Image)
+    if (descriptor) blocks.push(descriptor)
+
+    blocks.push(...attBlocks)
+    summary.push({ kind: attKind, filename, url: attUrl })
   }
 
   if (totalChars > MAX_TOTAL_ATTACHMENT_CHARS)
     throw createError({ statusCode: 400, message: errorMessage('attachment.payload_too_large') })
 
   return { blocks, summary }
+}
+
+/**
+ * Reference line injected ahead of an image attachment's block. Image blocks
+ * reach the model as pixels — a media-library image's delivery URL is not
+ * visible to it, which historically made the agent invent URLs/UUIDs or
+ * re-ask the user for something it was already given.
+ */
+function buildImageDescriptor(filename: string, url: string | undefined, hasBase64Image: boolean): AIContentBlock | null {
+  if (url) {
+    const storagePath = extractMediaStoragePath(url)
+    return {
+      type: 'text',
+      text: `[Attached image "${filename}" — stored in the media library.`
+        + ` Delivery URL: ${url}${storagePath ? ` — storage path: ${storagePath}` : ''}.`
+        + ` Use this exact URL in image/video/file fields via save_content. Do NOT call upload_media for it.]`,
+    }
+  }
+  if (hasBase64Image) {
+    return {
+      type: 'text',
+      text: `[Attached image "${filename}" — ephemeral, NOT stored in the media library.`
+        + ` You can view it, but it has no URL or path to reference in content fields.`
+        + ` To place it in content, ask the user to re-attach it with "Add to media library",`
+        + ` or find an existing asset with search_media. Never invent media URLs or paths.]`,
+    }
+  }
+  return null
 }
 
 function sanitizeBlock(candidate: unknown, deliveryPrefix: string): AIContentBlock | null {
@@ -355,19 +398,8 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
 
   // Context (default): downscale + size-cap, emit base64 webp. Ephemeral.
   try {
-    let optimized = await sharp(input.buffer)
-      .rotate()
-      .resize({ width: IMAGE_MAX_DIM, height: IMAGE_MAX_DIM, fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer()
-    if (optimized.length > MAX_BASE64_IMAGE_BYTES) {
-      optimized = await sharp(input.buffer)
-        .rotate()
-        .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 65 })
-        .toBuffer()
-    }
-    if (optimized.length > MAX_BASE64_IMAGE_BYTES)
+    const optimized = await optimizeContextImage(input.buffer)
+    if (!optimized)
       return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.image_too_large') })
     return {
       id,
@@ -383,6 +415,26 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
   catch {
     return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.image_decode_failed') })
   }
+}
+
+/**
+ * Downscale + size-cap an image for the ephemeral context path. Returns
+ * null when even the aggressive pass cannot fit the base64 budget.
+ */
+async function optimizeContextImage(buffer: Buffer): Promise<Buffer | null> {
+  let optimized = await sharp(buffer)
+    .rotate()
+    .resize({ width: IMAGE_MAX_DIM, height: IMAGE_MAX_DIM, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toBuffer()
+  if (optimized.length > MAX_BASE64_IMAGE_BYTES) {
+    optimized = await sharp(buffer)
+      .rotate()
+      .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 65 })
+      .toBuffer()
+  }
+  return optimized.length > MAX_BASE64_IMAGE_BYTES ? null : optimized
 }
 
 /**
@@ -550,8 +602,31 @@ export async function fetchLinkContent(rawUrl: string): Promise<AttachmentRef> {
   else if (contentType.startsWith('text/') || contentType.includes('json')) {
     body = decodeText(buffer) ?? ''
   }
+  else if (contentType.startsWith('image/')) {
+    // An image URL (pasted, or dragged in from another browser tab) becomes
+    // an ephemeral context image — same treatment as a pasted file.
+    try {
+      const optimized = await optimizeContextImage(buffer)
+      if (!optimized)
+        return errorRef({ filename: url, mime: contentType, source: 'link', kind: 'image', error: errorMessage('attachment.image_too_large') })
+      const name = new URL(url).pathname.split('/').pop() || url
+      return {
+        id: makeId(),
+        source: 'link',
+        filename: name,
+        mime: 'image/webp',
+        kind: 'image',
+        destination: 'context',
+        blocks: [{ type: 'image', source: { type: 'base64', mediaType: 'image/webp', data: optimized.toString('base64') } }],
+        bytes: optimized.length,
+      }
+    }
+    catch {
+      return errorRef({ filename: url, mime: contentType, source: 'link', kind: 'image', error: errorMessage('attachment.image_decode_failed') })
+    }
+  }
   else {
-    // Binary (image/pdf/etc.) pasted as a link → not the link channel's job.
+    // Binary (pdf/zip/etc.) pasted as a link → not the link channel's job.
     return errorRef({ filename: url, mime: contentType, source: 'link', kind: 'text', error: errorMessage('attachment.link_not_text', { type: contentType }) })
   }
 
