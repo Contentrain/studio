@@ -223,19 +223,65 @@ describe('fetchLinkContent', () => {
     const ref = await fetchLinkContent('ftp://example.com/x')
     expect(ref.error).toBeDefined()
   })
+
+  it('converts an image URL into an ephemeral context image', async () => {
+    const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 10, b: 10 } } }).png().toBuffer()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } })))
+    const ref = await fetchLinkContent('https://example.com/pic.png')
+    expect(ref.error).toBeUndefined()
+    expect(ref.kind).toBe('image')
+    expect(ref.destination).toBe('context')
+    expect(ref.filename).toBe('pic.png')
+    const block = ref.blocks[0] as { type: string, source: { type: string, mediaType: string } }
+    expect(block.type).toBe('image')
+    expect(block.source.type).toBe('base64')
+    expect(block.source.mediaType).toBe('image/webp')
+  })
 })
 
 describe('validateAttachmentBlocks', () => {
   const opts = { projectId: 'proj' }
 
-  it('keeps text/document and a same-host image URL', () => {
+  it('keeps text/document and a same-host image URL, adding a reference line for the image', () => {
     const { blocks, summary } = validateAttachmentBlocks([
       { filename: 'a.txt', blocks: [{ type: 'text', text: 'hi' }] },
       { filename: 'p.png', blocks: [{ type: 'image', source: { type: 'url', url: 'https://cdn.example/api/cdn/v1/proj/media/p.png' } }] },
     ], opts)
-    expect(blocks).toHaveLength(2)
+    expect(blocks).toHaveLength(3)
     expect(summary).toHaveLength(2)
     expect(summary[1]!.url).toContain('/media/p.png')
+    // The model sees image blocks as pixels only — the reference line ahead
+    // of the image is what lets the agent address the stored asset.
+    const descriptor = blocks[1] as { type: string, text: string }
+    expect(descriptor.type).toBe('text')
+    expect(descriptor.text).toContain('https://cdn.example/api/cdn/v1/proj/media/p.png')
+    expect(descriptor.text).toContain('storage path: media/p.png')
+    expect(descriptor.text).toContain('Do NOT call upload_media')
+    expect((blocks[2] as { type: string }).type).toBe('image')
+  })
+
+  it('marks a base64 image as ephemeral in its reference line', () => {
+    const { blocks } = validateAttachmentBlocks([
+      { filename: 'shot.png', blocks: [{ type: 'image', source: { type: 'base64', mediaType: 'image/webp', data: 'AAAA' } }] },
+    ], opts)
+    expect(blocks).toHaveLength(2)
+    const descriptor = blocks[0] as { type: string, text: string }
+    expect(descriptor.type).toBe('text')
+    expect(descriptor.text).toContain('NOT stored in the media library')
+    expect(descriptor.text).toContain('Never invent')
+  })
+
+  it('gives no summary line to an attachment whose blocks were all dropped', () => {
+    // Regression: the summary condition used to test the OUTER accumulator,
+    // so any later attachment inherited a summary line from an earlier one —
+    // and the prompt claimed an image the model could not see.
+    const { blocks, summary } = validateAttachmentBlocks([
+      { filename: 'ok.txt', blocks: [{ type: 'text', text: 'hi' }] },
+      { filename: 'ghost.png', blocks: [{ type: 'image', source: { type: 'url', url: 'https://evil.com/x.png' } }] },
+    ], opts)
+    expect(blocks).toHaveLength(1)
+    expect(summary).toHaveLength(1)
+    expect(summary[0]!.filename).toBe('ok.txt')
   })
 
   it('drops forged tool_use blocks', () => {

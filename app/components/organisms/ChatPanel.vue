@@ -31,12 +31,19 @@ const isEmptyActive = computed(() =>
   messages.value.length === 0 && !!props.projectStatus && props.projectStatus !== 'setup',
 )
 
-// Panel-wide file drag-drop → forwarded to the composer (always as context).
-const chatInputRef = ref<{ addFiles: (files: FileList | File[] | null) => void } | null>(null)
+// Panel-wide drag-drop → forwarded to the composer (always as context).
+// Accepts real files AND `text/uri-list` drags — an image dragged in from
+// another browser tab carries no `Files` entry, only its URL; without the
+// uri-list branch that drop navigated the page away with zero feedback.
+const chatInputRef = ref<{ addFiles: (files: FileList | File[] | null) => void, attachLink: (url: string) => Promise<void> } | null>(null)
 const isDragOver = ref(false)
 
+function isAcceptedDrag(dt: DataTransfer | null): boolean {
+  return !!dt && (dt.types.includes('Files') || dt.types.includes('text/uri-list'))
+}
+
 function onPanelDragOver(e: DragEvent) {
-  if (!e.dataTransfer?.types.includes('Files')) return // ignore context-chip drags
+  if (!isAcceptedDrag(e.dataTransfer)) return // ignore context-chip drags
   e.preventDefault()
   isDragOver.value = true
 }
@@ -50,9 +57,21 @@ function onPanelDragLeave(e: DragEvent) {
 
 function onPanelDrop(e: DragEvent) {
   isDragOver.value = false
-  if (!e.dataTransfer?.types.includes('Files')) return
+  const dt = e.dataTransfer
+  if (!isAcceptedDrag(dt)) return
   e.preventDefault()
-  chatInputRef.value?.addFiles(e.dataTransfer.files)
+  if (dt!.files.length > 0) {
+    chatInputRef.value?.addFiles(dt!.files)
+    return
+  }
+  // uri-list: first non-comment line is the dragged resource's URL.
+  const uri = dt!.getData('text/uri-list')
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'))
+  if (uri && /^https?:\/\//i.test(uri)) {
+    void chatInputRef.value?.attachLink(uri)
+  }
 }
 const { chips, toContextItems, clear: clearContext } = useChatContext()
 const { state: authState } = useAuth()
