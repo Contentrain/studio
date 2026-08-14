@@ -4,16 +4,19 @@ import { useBranches } from '../../../app/composables/useBranches'
 
 const success = vi.fn()
 const error = vi.fn()
+const warning = vi.fn()
 
 mockNuxtImport('useToast', () => () => ({
   success,
   error,
+  warning,
 }))
 
 describe('useBranches', () => {
   beforeEach(() => {
     success.mockReset()
     error.mockReset()
+    warning.mockReset()
     useState('branches').value = []
     useState('branches-loading').value = false
     useState('branch-diff').value = null
@@ -49,8 +52,47 @@ describe('useBranches', () => {
     const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
 
     expect(merged).toBe(true)
-    expect(success).toHaveBeenCalledWith('Branch merged: cr/content/faq/en/1234567890-abcd')
+    expect(success).toHaveBeenCalledWith('Change merged')
     expect(store.branches.value.map(branch => branch.name)).toEqual(['cr/content/blog/en/1234567890-efgh'])
+  })
+
+  it('tells the truth when the merge landed but main is blocked', async () => {
+    // The collabers incident, as the editor sees it: the content reached the
+    // content branch, main could not follow. That is a merged change with a
+    // pending publish — not a failure, and not silence.
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({
+      merged: true,
+      mainAdvance: 'blocked_diverged',
+      pullRequestUrl: 'https://example.com/pr/7',
+    }))
+    useState('branches').value = [
+      { name: 'cr/content/faq/en/1234567890-abcd', sha: 'sha-1', protected: false },
+    ]
+
+    const store = useBranches()
+    const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
+
+    // Merged from the editor's point of view: the branch leaves the list.
+    expect(merged).toBe(true)
+    expect(store.branches.value).toEqual([])
+    // But the publish state is said out loud, as a warning — not a success.
+    expect(warning).toHaveBeenCalledTimes(1)
+    expect(success).not.toHaveBeenCalled()
+  })
+
+  it('reports a real conflict as an error, not a success', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({ merged: false }))
+    useState('branches').value = [
+      { name: 'cr/content/faq/en/1234567890-abcd', sha: 'sha-1', protected: false },
+    ]
+
+    const store = useBranches()
+    const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
+
+    expect(merged).toBe(false)
+    expect(error).toHaveBeenCalledTimes(1)
+    // An unmerged branch stays in the list — it still needs resolving.
+    expect(store.branches.value).toHaveLength(1)
   })
 
   it('returns false and shows an error toast when merge fails', async () => {
