@@ -79,14 +79,36 @@ export default defineEventHandler(async (event) => {
       base: CONTENT_BRANCH,
     })
 
-    const mergeResult = await engine.mergeBranch(branchName)
+    let mergeResult: { merged: boolean, pullRequestUrl?: string | null }
+    try {
+      mergeResult = await engine.mergeBranch(branchName)
+    }
+    catch (err) {
+      // GitHub's merge endpoint answers a real conflict with 409 and the
+      // provider re-throws it (only "already merged" is absorbed) — so the
+      // concurrent-writer conflict this loop exists for used to arrive as
+      // an exception, escape the loop, and reach the UI as an unhandled
+      // 500 (staging, 2026-08-13 14:04Z). Treat it as the retryable
+      // conflict it is.
+      const status = err as { status?: number, statusCode?: number }
+      if (status.status === 409 || status.statusCode === 409) {
+        await git.deleteBranch(branchName).catch(() => { /* best-effort */ })
+        continue
+      }
+      throw err
+    }
 
-    if (!mergeResult.merged) {
+    if (!mergeResult.merged && !mergeResult.pullRequestUrl) {
       // A concurrent write landed first and this one conflicts. Drop the
       // branch so it doesn't accumulate, then retry from fresh state.
       await git.deleteBranch(branchName).catch(() => { /* best-effort */ })
       continue
     }
+
+    // Merged — or landed on `contentrain` with a PR fallback toward a
+    // protected main. Either way the vocabulary IS on `contentrain`
+    // (which is exactly what the verification below reads), so a PR
+    // fallback must not loop back into another identical write.
 
     invalidateBrainCache(projectId)
 
