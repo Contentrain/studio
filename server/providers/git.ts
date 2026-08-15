@@ -290,6 +290,13 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
     mergeBranch: (branch: string, into: string) => core.mergeBranch(branch, into, { removeSourceBranch: false }),
     isMerged: (branch: string, into?: string) => core.isMerged(branch, into),
     getDefaultBranch: () => core.getDefaultBranch(),
+    // Reconcile primitives (types 1.2.0). This factory builds the provider
+    // member by member rather than spreading `core`, so a new OPTIONAL
+    // contract member has to be passed through by hand — omit these two and
+    // the capability silently reads as absent, sending every diverged advance
+    // to the PR fallback with no reconcile ever attempted.
+    getMergeBase: core.getMergeBase?.bind(core),
+    createMergeCommit: core.createMergeCommit?.bind(core),
 
     ...extensions,
 
