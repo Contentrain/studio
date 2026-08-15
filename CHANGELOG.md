@@ -1,6 +1,49 @@
 # Changelog
 
 
+## v0.3.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.2.1...v0.3.0)
+
+### 🚀 Enhancements
+
+- **chat:** Trial banner overlay, one-card composer, capped app shell ([#182](https://github.com/Contentrain/studio/pull/182))
+- **project:** Resizable, collapsible content panel ([#183](https://github.com/Contentrain/studio/pull/183))
+- **vocabulary:** Paste a glossary instead of typing it one term at a time ([#188](https://github.com/Contentrain/studio/pull/188))
+- **content:** Say what the row icons do, and what the media actually is ([#189](https://github.com/Contentrain/studio/pull/189))
+- **shell:** Let the sidebar be resized, and collapsed ([#190](https://github.com/Contentrain/studio/pull/190))
+- **content:** Read the title from the field the model declares ([#192](https://github.com/Contentrain/studio/pull/192))
+- **content:** Connect the search that was already built, and stop ([#193](https://github.com/Contentrain/studio/pull/193))
+- **content:** Filter and sort a listing by what the model actually declares ([#195](https://github.com/Contentrain/studio/pull/195))
+- **content:** Heal a diverged advance with the ecosystem's reconcile ([#201](https://github.com/Contentrain/studio/pull/201))
+
+### 🔥 Performance
+
+- **mcp-cloud:** Await only the half of the merge the caller can observe ([#176](https://github.com/Contentrain/studio/pull/176))
+- **ui:** One tooltip provider for the app, not one per tooltip ([#194](https://github.com/Contentrain/studio/pull/194))
+
+### 🩹 Fixes
+
+- **cdn:** Announce cdn.build_complete from every build trigger ([#177](https://github.com/Contentrain/studio/pull/177))
+- **cdn:** Publish build artifacts in an order a reader can trust ([#178](https://github.com/Contentrain/studio/pull/178))
+- **content:** Object field overflow, input clear button, dead layout removal ([#184](https://github.com/Contentrain/studio/pull/184))
+- **content:** Stop date fields loading empty into the edit form ([#185](https://github.com/Contentrain/studio/pull/185))
+- **vocabulary:** Stop concurrent saves from dropping each other's terms ([#186](https://github.com/Contentrain/studio/pull/186))
+- **content:** Composite field editing gaps + relation ordering ([#187](https://github.com/Contentrain/studio/pull/187))
+- **brain:** Give search an index to search ([#196](https://github.com/Contentrain/studio/pull/196))
+- **chat:** Make attached images addressable and stop silent attachment loss ([#197](https://github.com/Contentrain/studio/pull/197))
+- **agent:** Ground the tools the chat agent reasons with ([#198](https://github.com/Contentrain/studio/pull/198))
+- **server:** Survive vocabulary merge conflicts and idle MCP streams ([#199](https://github.com/Contentrain/studio/pull/199))
+- **content:** Approve tells the truth on a diverged repo ([#200](https://github.com/Contentrain/studio/pull/200))
+
+### 🏡 Chore
+
+- **content:** Declare the field that titles each model's entries ([#191](https://github.com/Contentrain/studio/pull/191))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.2.1
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.2.0...v0.2.1)
