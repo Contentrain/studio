@@ -68,21 +68,34 @@ export function useBranches() {
   }
 
   async function mergeBranch(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
+    const { t } = useContent()
     try {
-      const result = await $fetch<{ merged: boolean }>(
+      const result = await $fetch<{
+        merged: boolean
+        mainAdvance?: 'advanced' | 'blocked_diverged'
+        pullRequestUrl?: string | null
+      }>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}/merge`,
         { method: 'POST' },
       )
       if (result.merged) {
-        toast.success(`Branch merged: ${branch}`)
+        // `merged` means the content landed on the branch every reader uses.
+        // Whether main advanced with it is a separate fact — telling the
+        // editor "merge failed" for a blocked advance is how an Approve on a
+        // diverged repo used to read as a lost save.
+        if (result.mainAdvance === 'blocked_diverged') {
+          toast.warning(t('branch.merge_publish_pending'))
+        }
+        else {
+          toast.success(t('branch.merge_success'))
+        }
         branches.value = branches.value.filter(b => b.name !== branch)
         return true
       }
-      toast.error('Merge conflict — resolve manually on GitHub')
+      toast.error(t('branch.merge_conflict'))
       return false
     }
     catch (e: unknown) {
-      const { t } = useContent()
       toast.error(resolveApiError(e, t('branch.merge_error')))
       return false
     }

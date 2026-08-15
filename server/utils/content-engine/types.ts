@@ -16,6 +16,31 @@ export interface WriteResult {
   unchanged?: boolean
 }
 
+/**
+ * Outcome of the `contentrain → main` advance. The vocabulary is shared with
+ * the MCP-side R0 contract (AI-REPO-RECONCILE feedback, N3) so the two
+ * ecosystems name the same states the same way:
+ *
+ * - `advanced` — main now carries the content (includes "already up to date").
+ * - `blocked_diverged` — main has commits contentrain does not; the advance
+ *   cannot fast-forward. A PR carries the state instead: it is an attachment
+ *   (`pullRequestUrl`), not a separate status.
+ */
+export type MainAdvance = 'advanced' | 'blocked_diverged'
+
+/**
+ * What a merge actually did, told truthfully.
+ *
+ * `merged` answers the question the caller is really asking — did the content
+ * land on `contentrain`, the SSOT every reader uses. The advance to `main` is
+ * a separate fact (`mainAdvance`): reporting its failure as "the merge failed"
+ * is what made an Approve on a diverged repo read as a lost save when nothing
+ * was lost.
+ */
+export interface EngineMergeResult extends MergeResult {
+  mainAdvance?: MainAdvance
+}
+
 export interface ContentEngineContext {
   git: GitProvider
   contentRoot: string

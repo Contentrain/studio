@@ -242,13 +242,20 @@ export async function* runConversationLoop(
     if (turnMergeFlushed || turnMerge.pendingFinalize.length === 0) return
     turnMergeFlushed = true
     try {
-      await toolCtx.engine.finalizeContentrain(turnMerge.pendingFinalize)
+      const finalized = await toolCtx.engine.finalizeContentrain(turnMerge.pendingFinalize)
+      if (finalized.mainAdvance === 'blocked_diverged') {
+        // Not an error — the content is on contentrain and a PR now carries
+        // the advance. Logged because divergence never heals on its own and
+        // this may be the first place it becomes visible.
+        // eslint-disable-next-line no-console
+        console.warn(`[conversation] main advance blocked — contentrain/main diverged; PR: ${finalized.pullRequestUrl ?? 'already open'}`)
+      }
     }
     catch (e) {
-      // Best-effort, same contract as per-save regen: context.json and
-      // the main advance self-heal on the next merge.
+      // finalize turns divergence into a PR itself, so what reaches this
+      // catch is transient (network, rate limit) — the next merge retries it.
       // eslint-disable-next-line no-console
-      console.warn('[conversation] turn-end finalize failed (self-heals on next merge):', e instanceof Error ? e.message : e)
+      console.warn('[conversation] turn-end finalize failed (transient — retried on next merge):', e instanceof Error ? e.message : e)
     }
   }
 
