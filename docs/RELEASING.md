@@ -104,6 +104,23 @@ Pipeline steps:
 5. Run lint, typecheck, tests, and build
 6. Build and push the Docker image to GHCR
 7. Create or update the GitHub Release entry
+8. Advance the `production` deploy pointer (stable releases only)
+
+## Production Deploy
+
+Production (`studio.contentrain.io`) deploys from the **`production` branch**,
+which is a deploy pointer — not an integration branch:
+
+- no PR ever targets it, and no human commits to it
+- its only writer is the release pipeline's final step, which force-pushes the
+  tagged commit to it after every gate has passed
+- the Railway production service is bound to it with auto-deploy, so advancing
+  the pointer IS the production deploy
+- prereleases do not advance it (same policy as the `latest` image tag)
+
+This keeps the trunk model intact: `main` remains the only integration branch,
+staging still auto-deploys every merge, and production moves only when a
+release completes. A tag whose pipeline fails never reaches production.
 
 ## Image Tag Policy
 
@@ -136,8 +153,10 @@ Do not deploy a new image that depends on unapplied schema changes.
 
 Rollback strategy:
 
-1. identify the previous healthy image tag
-2. redeploy that exact image tag
+1. identify the previous healthy release tag
+2. re-run the release workflow via `workflow_dispatch` with that tag — the
+   final step points `production` back at it and Railway redeploys it
+3. for image-based consumers (self-hosted), redeploy that exact image tag
 3. if needed, roll forward with a fix release instead of mutating old tags
 
 Do not retag old images or reuse a published semver tag for different bits.

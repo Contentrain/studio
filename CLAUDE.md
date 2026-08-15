@@ -350,7 +350,8 @@ Studio runs a **trunk-based Git flow**. `main` is the single integration branch 
 
 | Branch    | Role                                                     | Deploy target                 |
 |-----------|----------------------------------------------------------|-------------------------------|
-| `main`    | Trunk — default, PR target, OSS face, stable-at-HEAD     | Railway staging env (`studio-staging-5610.up.railway.app`) auto; prod (`studio.contentrain.io`) on `v*` tag |
+| `main`    | Trunk — default, PR target, OSS face, stable-at-HEAD     | Railway staging env (`studio-staging-5610.up.railway.app`) auto |
+| `production` | Deploy pointer — advanced to the tagged commit by `release.yml` on every stable `v*` release; no PRs, no human commits | Railway prod (`studio.contentrain.io`) auto |
 | `feat/*`  | Per-task feature branches                                | (no auto-deploy)              |
 | `fix/*`   | Per-task bug-fix branches                                | (no auto-deploy)              |
 | `cr/*`    | Contentrain MCP auto-generated content branches          | (auto-merged by MCP)          |
@@ -361,7 +362,7 @@ Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** 
 
 - **Every PR targets `main`.** There is no `staging`, `develop`, or `next` branch in this repo.
 - **Never push directly to `main`.** All changes go through PR + CI gate.
-- **Release tags (`v*`) are cut from `main`** — they trigger the production deploy. See `docs/RELEASING.md`.
+- **Release tags (`v*`) are cut from `main`** — the release pipeline advances the `production` deploy pointer as its final step, which triggers the production deploy. See `docs/RELEASING.md`.
 - **Self-hosters deploy from tagged releases** (`v0.1.0`, `v0.2.0`), not from `main` HEAD. `main` is stable-at-HEAD for CI purposes but tags are the supported deploy contract.
 - **Staging environment ≠ staging branch.** Railway deploys every merge to `main` into the staging environment (`studio-staging-5610.up.railway.app` — `staging.contentrain.io` is NOT bound) automatically, so the pre-prod verification lives in the deploy pipeline rather than in Git topology.
 - **Commitlint is lenient for MCP auto-commits** — messages prefixed with `[contentrain]` are ignored by commitlint (see `commitlint.config.ts`). Every human commit must obey Conventional Commits.
