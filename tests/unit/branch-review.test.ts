@@ -297,7 +297,10 @@ describe('buildBranchReview — singletons, dictionaries, documents', () => {
 
     const entry = review.groups[0]!.entries[0]!
     expect(entry.entryId).toBe('site-settings')
-    expect(entry.title).toBe('Contentrain')
+    // Not 'Contentrain' — the record IS the model, so the model names it. The
+    // title inference, asked for one, returns whatever field it lands on: a
+    // real settings singleton came back titled `en`, off its `default_locale`.
+    expect(entry.title).toBe('Site Settings')
     expect(entry.fields).toEqual([
       expect.objectContaining({ fieldId: 'tagline', before: 'Old', after: 'New' }),
     ])
@@ -540,5 +543,84 @@ describe('buildBranchReview — branch identity', () => {
 
     expect(review.canMerge).toBe(false)
     expect(review.canReject).toBe(false)
+  })
+})
+
+describe('buildBranchReview — what real branches exposed', () => {
+  const branchRef = 'cr/content/plans/en/1755612345-a3f2'
+
+  it('does not report the status a new entry is simply born with', async () => {
+    const review = await run({
+      branchRef,
+      files: CONTENT_FILES,
+      read: reader({
+        [`contentrain:${CONTENT_PATH}`]: JSON.stringify({}),
+        [`${branchRef}:${CONTENT_PATH}`]: JSON.stringify({ team: { name: 'Team' } }),
+        [`${branchRef}:${META_PATH}`]: JSON.stringify({ team: { status: 'draft', updated_by: 'a@b.c' } }),
+      }),
+    })
+
+    const entry = review.groups[0]!.entries[0]!
+    expect(entry.kind).toBe('added')
+    expect(entry.statusAfter).toBeNull()
+  })
+
+  it('still reports a new entry created as published', async () => {
+    const review = await run({
+      branchRef,
+      files: CONTENT_FILES,
+      read: reader({
+        [`contentrain:${CONTENT_PATH}`]: JSON.stringify({}),
+        [`${branchRef}:${CONTENT_PATH}`]: JSON.stringify({ team: { name: 'Team' } }),
+        [`${branchRef}:${META_PATH}`]: JSON.stringify({ team: { status: 'published' } }),
+      }),
+    })
+
+    expect(review.groups[0]!.entries[0]!.statusAfter).toBe('published')
+  })
+
+  it('names a model that declares no name by its id', async () => {
+    // Models written by an older CLI have no `name`; the header showed the
+    // bare scope word instead of the model.
+    const nameless = { ...PLANS, name: '' } as ModelDefinition
+    const path = '.contentrain/models/plans.json'
+    const modelBranch = 'cr/model/plans/1755612345-a3f2'
+    const review = await run({
+      branch: modelBranch,
+      branchRef: modelBranch,
+      models: new Map([['plans', nameless]]),
+      files: [{ path, status: 'modified' }],
+      read: reader({
+        [`contentrain:${path}`]: JSON.stringify(nameless),
+        [`${modelBranch}:${path}`]: JSON.stringify({ ...nameless, fields: { name: { type: 'string' } } }),
+      }),
+    })
+
+    expect(review.info.modelName).toBe('plans')
+  })
+
+  it('titles a dictionary by the model, not by its first value', async () => {
+    const dictionary: ModelDefinition = {
+      id: 'ui-copy',
+      name: 'UI Copy',
+      kind: 'dictionary',
+      domain: 'app',
+      i18n: true,
+      title_field: 'key',
+    }
+    const path = '.contentrain/content/app/ui-copy/en.json'
+    const dictBranch = 'cr/content/ui-copy/en/1755612345-a3f2'
+    const review = await run({
+      branch: dictBranch,
+      branchRef: dictBranch,
+      models: new Map([['ui-copy', dictionary]]),
+      files: [{ path, status: 'modified' }],
+      read: reader({
+        [`contentrain:${path}`]: JSON.stringify({ 'nav.architecture': 'Architecture' }),
+        [`${dictBranch}:${path}`]: JSON.stringify({ 'nav.architecture': 'Architecture v2' }),
+      }),
+    })
+
+    expect(review.groups[0]!.entries[0]!.title).toBe('UI Copy')
   })
 })

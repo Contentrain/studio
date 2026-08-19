@@ -356,12 +356,18 @@ async function buildGroup(
     const entryAfter = after.get(entryId)
     const statusBefore = metaBefore.get(entryId)?.status ?? null
     const statusAfter = metaAfter.get(entryId)?.status ?? null
-    const statusMoved = statusBefore !== statusAfter && statusAfter !== null
+    const isNew = entryBefore === undefined && entryAfter !== undefined
+    // A new entry always acquires a status, so `— → draft` is bookkeeping
+    // rather than a decision. Anything else it was created as — published,
+    // in review — is worth saying.
+    const statusMoved = statusBefore !== statusAfter
+      && statusAfter !== null
+      && !(isNew && statusBefore === null && statusAfter === 'draft')
 
     // Both sides absent happens for a status-only write, where the meta file
     // moved and the content file did not: an update, not a creation.
     const kind: ReviewEntryChange['kind']
-      = entryBefore === undefined && entryAfter !== undefined
+      = isNew
         ? 'added'
         : entryBefore !== undefined && entryAfter === undefined
           ? 'removed'
@@ -416,11 +422,13 @@ async function buildGroup(
     entries.push({
       kind,
       entryId,
-      title: resolveEntryTitle(
-        entryAfter ?? entryBefore,
-        model,
-        model.kind === 'collection' || model.kind === 'document' ? entryId : model.name,
-      ),
+      // A collection row or a document has a title of its own. A singleton or
+      // a dictionary does not — it IS the model, and asking the title
+      // inference for one gets whatever field it lands on: a settings
+      // singleton came back titled `en`, off its `default_locale`.
+      title: model.kind === 'collection' || model.kind === 'document'
+        ? resolveEntryTitle(entryAfter ?? entryBefore, model, entryId)
+        : (model.name || model.id),
       fields: changed,
       statusBefore: statusMoved ? statusBefore : null,
       statusAfter: statusMoved ? statusAfter : null,
@@ -739,7 +747,7 @@ export async function buildBranchReview(input: BranchReviewInput): Promise<Branc
     info: {
       scope: parsed.scope,
       modelId: namesModel ? parsed.target : null,
-      modelName: namesModel ? (scopeModel?.name ?? groups[0]?.modelName ?? null) : null,
+      modelName: namesModel ? (scopeModel?.name || scopeModel?.id || groups[0]?.modelName || null) : null,
       locale: parsed.locale,
       timestamp: parsed.timestamp,
       updatedBy,
