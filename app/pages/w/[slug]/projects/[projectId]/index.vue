@@ -14,7 +14,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
-const { branchDiff, diffLoading, fetchBranchDiff, clearBranchDiff, clearBranches, fetchBranches, mergeBranch, rejectBranch } = useBranches()
+const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -98,7 +98,7 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
   activeLocale.value = config?.locales?.default ?? 'en'
 
   if (activeBranch.value) {
-    await fetchBranchDiff(ws.id, newProjectId, activeBranch.value)
+    await fetchBranchReview(ws.id, newProjectId, activeBranch.value)
   }
 
   if (activeModelId.value) {
@@ -131,12 +131,12 @@ watch(activeLocale, async (locale) => {
 watch(activeBranch, async (branch, oldBranch) => {
   if (oldBranch === undefined) return
   if (!branch) {
-    clearBranchDiff()
+    clearBranchReview()
     return
   }
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
-  await fetchBranchDiff(ws.id, projectId.value, branch)
+  await fetchBranchReview(ws.id, projectId.value, branch)
 })
 
 const chatPanelRef = ref<{ handleSend: (text: string) => void } | null>(null)
@@ -160,7 +160,7 @@ function selectModel(modelId: string) {
 
 function backToOverview() {
   router.replace({ query: {} })
-  clearBranchDiff()
+  clearBranchReview()
 }
 
 // Chat UI context — tells the agent what the user is looking at
@@ -172,6 +172,17 @@ const chatContext = computed(() => ({
   activeBranch: activeBranch.value,
 }))
 
+/**
+ * The file-level diff, fetched only when someone opens the technical view —
+ * it reads every changed file whole, which is the cost the review payload
+ * exists to avoid paying on every branch selection.
+ */
+async function handleBranchLoadRaw() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  await fetchBranchRaw(ws.id, projectId.value, activeBranch.value)
+}
+
 // Branch merge/reject handlers
 async function handleBranchMerge() {
   const ws = workspaces.value.find(w => w.slug === slug.value)
@@ -182,7 +193,7 @@ async function handleBranchMerge() {
     const query = { ...route.query }
     delete query.branch
     router.replace({ query })
-    clearBranchDiff()
+    clearBranchReview()
     await fetchBranches(ws.id, projectId.value)
     // Refresh snapshot + content since merged content changed main
     const { invalidateCache } = useSnapshot()
@@ -199,7 +210,7 @@ async function handleBranchReject() {
     const query = { ...route.query }
     delete query.branch
     router.replace({ query })
-    clearBranchDiff()
+    clearBranchReview()
     await fetchBranches(ws.id, projectId.value)
   }
 }
@@ -427,9 +438,10 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             :active-cdn="activeCDN"
             :active-assets="activeAssets"
             :active-health="activeHealth"
-            :branch-diff="branchDiff"
-            :branch-diff-loading="diffLoading"
-            :can-manage-branches="true"
+            :branch-review="branchReview"
+            :branch-review-loading="reviewLoading"
+            :branch-raw="branchRaw"
+            :branch-raw-loading="rawLoading"
             :workspace-id="activeWorkspace?.id"
             :project-id="projectId"
             editable
@@ -438,6 +450,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             @send-chat-prompt="chatPanelRef?.handleSend($event)"
             @branch-merge="handleBranchMerge"
             @branch-reject="handleBranchReject"
+            @branch-load-raw="handleBranchLoadRaw"
             @vocabulary-save="handleVocabularySave"
           />
         </SplitterPanel>

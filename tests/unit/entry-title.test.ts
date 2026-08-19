@@ -4,7 +4,7 @@ import {
   resolveEntryTitle,
   resolveTitleFieldId,
   titleFieldOptions,
-} from '../../app/utils/entry-title'
+} from '../../shared/utils/entry-title'
 
 // The three reported cases, as models.
 const integrationGroups = {

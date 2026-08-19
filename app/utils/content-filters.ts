@@ -1,6 +1,7 @@
 import type { FieldDef } from '@contentrain/types'
-import type { TitleFieldModel } from './entry-title'
-import { resolveEntryTitle } from './entry-title'
+import type { TitleFieldModel } from '~~/shared/utils/entry-title'
+import { resolveEntryTitle } from '~~/shared/utils/entry-title'
+import { fieldLabel } from '~~/shared/utils/field-label'
 
 /**
  * Filtering and sorting a collection listing.
@@ -59,12 +60,6 @@ function fieldEntries(model: DeriveAxesInput['model']): [string, FieldDef][] {
   return Object.entries(model.fields as Record<string, FieldDef>)
 }
 
-/** `is_category_hero` reads better as `Is category hero` than as itself. */
-export function humanizeFieldId(fieldId: string): string {
-  const spaced = fieldId.replace(/[_-]+/g, ' ').trim()
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
 /**
  * Build the filter axes this model can offer.
  *
@@ -99,7 +94,7 @@ export function deriveFilterAxes(input: DeriveAxesInput): FilterAxis[] {
   }
 
   for (const [fieldId, def] of fieldEntries(model)) {
-    const label = humanizeFieldId(fieldId)
+    const label = fieldLabel(fieldId, def)
 
     if (def?.type === 'select' && Array.isArray(def.options) && def.options.length > 1) {
       // Straight from the schema — the cheapest and most reliable axis there
@@ -254,7 +249,7 @@ export function deriveSortOptions(input: DeriveSortInput): SortOption[] {
 
   for (const [fieldId, def] of fieldEntries(model)) {
     if (!ORDERABLE.has(def?.type ?? '')) continue
-    const name = humanizeFieldId(fieldId)
+    const name = fieldLabel(fieldId, def)
     options.push({ value: `${fieldId}:asc`, label: t('content.sort_field_asc', { field: name }) })
     options.push({ value: `${fieldId}:desc`, label: t('content.sort_field_desc', { field: name }) })
   }

@@ -1,36 +1,33 @@
 /**
  * Branch management composable.
- * Lists contentrain/* branches, merge/reject, and branch diff.
+ * Lists cr/* branches, merge/reject, and the branch review.
  */
+import type { BranchListItem, BranchReview } from '~~/shared/utils/branch-review'
 
-interface BranchSummary {
-  name: string
-  sha: string
-  protected: boolean
-}
-
-interface FileDiff {
-  path: string
-  status: 'added' | 'modified' | 'removed'
-}
-
-interface BranchDiffData {
+/** The file-level diff behind the panel's technical view. Fetched on demand. */
+export interface BranchRawDiff {
   branch: string
-  files: FileDiff[]
+  files: Array<{ path: string, status: 'added' | 'modified' | 'removed' }>
   contents: Record<string, { before: unknown, after: unknown }>
 }
 
 export function useBranches() {
-  const branches = useState<BranchSummary[]>('branches', () => [])
+  const branches = useState<BranchListItem[]>('branches', () => [])
   const loading = useState('branches-loading', () => false)
-  const branchDiff = useState<BranchDiffData | null>('branch-diff', () => null)
-  const diffLoading = useState('branch-diff-loading', () => false)
+  const branchReview = useState<BranchReview | null>('branch-review', () => null)
+  const branchRaw = useState<BranchRawDiff | null>('branch-raw', () => null)
+  const reviewLoading = useState('branch-review-loading', () => false)
+  const rawLoading = useState('branch-raw-loading', () => false)
   const toast = useToast()
+
+  function branchUrl(workspaceId: string, projectId: string, branch: string) {
+    return `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}`
+  }
 
   async function fetchBranches(workspaceId: string, projectId: string) {
     loading.value = true
     try {
-      const result = await $fetch<{ branches: BranchSummary[] }>(
+      const result = await $fetch<{ branches: BranchListItem[] }>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/branches`,
       )
       branches.value = result.branches
@@ -43,28 +40,52 @@ export function useBranches() {
     }
   }
 
-  async function fetchBranchDiff(workspaceId: string, projectId: string, branch: string) {
-    diffLoading.value = true
+  async function fetchBranchReview(workspaceId: string, projectId: string, branch: string) {
+    reviewLoading.value = true
+    // The raw view belongs to whichever branch is open; keep it from bleeding
+    // across a selection change.
+    branchRaw.value = null
     try {
-      branchDiff.value = await $fetch<BranchDiffData>(
-        `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}/diff`,
-      )
+      branchReview.value = await $fetch<BranchReview>(`${branchUrl(workspaceId, projectId, branch)}/diff`)
     }
     catch {
-      branchDiff.value = null
+      branchReview.value = null
     }
     finally {
-      diffLoading.value = false
+      reviewLoading.value = false
     }
   }
 
-  function clearBranchDiff() {
-    branchDiff.value = null
+  /**
+   * The file-level diff, only when someone opens the technical view. It reads
+   * every changed file whole, which is exactly the cost the review payload
+   * exists to avoid paying by default.
+   */
+  async function fetchBranchRaw(workspaceId: string, projectId: string, branch: string) {
+    if (branchRaw.value?.branch === branch) return
+    rawLoading.value = true
+    try {
+      branchRaw.value = await $fetch<BranchRawDiff>(
+        `${branchUrl(workspaceId, projectId, branch)}/diff`,
+        { query: { raw: 1 } },
+      )
+    }
+    catch {
+      branchRaw.value = null
+    }
+    finally {
+      rawLoading.value = false
+    }
+  }
+
+  function clearBranchReview() {
+    branchReview.value = null
+    branchRaw.value = null
   }
 
   function clearBranches() {
     branches.value = []
-    branchDiff.value = null
+    clearBranchReview()
   }
 
   async function mergeBranch(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
@@ -74,10 +95,7 @@ export function useBranches() {
         merged: boolean
         mainAdvance?: 'advanced' | 'blocked_diverged'
         pullRequestUrl?: string | null
-      }>(
-        `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}/merge`,
-        { method: 'POST' },
-      )
+      }>(`${branchUrl(workspaceId, projectId, branch)}/merge`, { method: 'POST' })
       if (result.merged) {
         // `merged` means the content landed on the branch every reader uses.
         // Whether main advanced with it is a separate fact — telling the
@@ -102,17 +120,14 @@ export function useBranches() {
   }
 
   async function rejectBranch(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
+    const { t } = useContent()
     try {
-      await $fetch(
-        `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}/reject`,
-        { method: 'POST' },
-      )
-      toast.success(`Branch rejected: ${branch}`)
+      await $fetch(`${branchUrl(workspaceId, projectId, branch)}/reject`, { method: 'POST' })
+      toast.success(t('branch.reject_success'))
       branches.value = branches.value.filter(b => b.name !== branch)
       return true
     }
     catch (e: unknown) {
-      const { t } = useContent()
       toast.error(resolveApiError(e, t('branch.reject_error')))
       return false
     }
@@ -121,11 +136,14 @@ export function useBranches() {
   return {
     branches: readonly(branches),
     loading: readonly(loading),
-    branchDiff: readonly(branchDiff),
-    diffLoading: readonly(diffLoading),
+    branchReview: readonly(branchReview),
+    branchRaw: readonly(branchRaw),
+    reviewLoading: readonly(reviewLoading),
+    rawLoading: readonly(rawLoading),
     fetchBranches,
-    fetchBranchDiff,
-    clearBranchDiff,
+    fetchBranchReview,
+    fetchBranchRaw,
+    clearBranchReview,
     clearBranches,
     mergeBranch,
     rejectBranch,

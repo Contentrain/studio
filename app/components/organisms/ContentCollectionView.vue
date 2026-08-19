@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
 
@@ -252,6 +252,7 @@ watch([filterSelection, sortBy], () => {
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getEntryTitle = inject(getEntryTitleKey, (_e: Record<string, unknown>, f: string) => f)
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const getModelFields = inject(getModelFieldsKey, () => ({}))
 
@@ -311,7 +312,7 @@ function pinField(e: Event, entryId: string, fieldId: string, value: unknown) {
   if (!meta) return
   toggle({
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -341,7 +342,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
   if (!meta) return
   startDrag(e, {
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -447,7 +448,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
               @dragend="endDrag"
             >
               <div class="flex items-center gap-1">
-                <AtomsSectionLabel :label="fieldId" class="flex-1 px-0 py-0" />
+                <AtomsSectionLabel :label="getFieldLabel(fieldId)" class="flex-1 px-0 py-0" />
                 <!-- Pin field -->
                 <AtomsTooltip :text="pinLabel('field', String(entryId), fieldId)">
                   <button

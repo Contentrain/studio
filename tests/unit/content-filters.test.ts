@@ -11,10 +11,10 @@ import {
   applyFilters,
   deriveFilterAxes,
   deriveSortOptions,
-  humanizeFieldId,
   relationRefs,
   sortIds,
 } from '../../app/utils/content-filters'
+import { fieldLabel, humanizeFieldId } from '../../shared/utils/field-label'
 
 const t = (key: string, params?: Record<string, string | number>) =>
   params ? `${key}:${Object.values(params).join(',')}` : key
@@ -113,6 +113,12 @@ describe('deriveFilterAxes', () => {
   it('reads a field id as a label', () => {
     expect(humanizeFieldId('is_category_hero')).toBe('Is category hero')
     expect(humanizeFieldId('sort-order')).toBe('Sort order')
+  })
+
+  it('prefers a label the model declares over the humanised id', () => {
+    expect(fieldLabel('is_category_hero', { type: 'boolean', label: 'Featured' })).toBe('Featured')
+    expect(fieldLabel('is_category_hero', { type: 'boolean' })).toBe('Is category hero')
+    expect(fieldLabel('branch.reject', undefined, { humanize: false })).toBe('branch.reject')
   })
 })
 

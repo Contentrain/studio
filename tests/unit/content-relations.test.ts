@@ -7,7 +7,7 @@ import {
   relationItemKey,
   relationKeyToItem,
   toSelectableRefs,
-} from '../../app/utils/content-relations'
+} from '../../shared/utils/content-relations'
 
 describe('isPolymorphicRelation', () => {
   it('is only polymorphic when more than one target model is listed', () => {
