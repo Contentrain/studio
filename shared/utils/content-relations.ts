@@ -13,8 +13,8 @@
 
 // Imported explicitly rather than relying on Nuxt's auto-import: this module is
 // exercised by the plain node suite, which has no auto-imports.
-import type { TitleFieldModel } from '~~/shared/utils/entry-title'
-import { resolveTitleFieldId } from '~~/shared/utils/entry-title'
+import type { TitleFieldModel } from './entry-title'
+import { resolveTitleFieldId } from './entry-title'
 
 /** A relation reference as stored on disk. */
 export type RelationRef = string | { model: string, ref: string }
