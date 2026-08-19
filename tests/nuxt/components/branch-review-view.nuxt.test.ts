@@ -137,6 +137,52 @@ describe('BranchReviewView', () => {
     expect(wrapper.text()).not.toContain('updated')
   })
 
+  it('does not open a row onto nothing', async () => {
+    // A publish that touched no field leaves an empty body: no fields, no
+    // author line once it matches the header's, and no "nothing changed" note
+    // because the badge already said what happened.
+    const review = makeReview()
+    review.groups[0]!.entries[0] = {
+      kind: 'updated',
+      entryId: 'free',
+      title: 'Free',
+      fields: [],
+      statusBefore: 'draft',
+      statusAfter: 'published',
+      updatedBy: review.info.updatedBy,
+      updatedAt: review.info.updatedAt,
+    }
+
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+    expect(wrapper.text()).toContain('Draft → Published')
+    // No disclosure at all, rather than one that reveals empty space.
+    expect(wrapper.findAll('details')).toHaveLength(0)
+  })
+
+  it('still shows a headless entry whose only change is its status', async () => {
+    const review = makeReview()
+    review.groups[0] = {
+      modelId: 'site-settings',
+      modelName: 'site-settings',
+      kind: 'singleton',
+      locale: 'en',
+      entries: [{
+        kind: 'updated',
+        entryId: 'site-settings',
+        title: 'site-settings',
+        fields: [],
+        statusBefore: 'draft',
+        statusAfter: 'published',
+        updatedBy: review.info.updatedBy,
+        updatedAt: review.info.updatedAt,
+      }],
+      omittedEntries: 0,
+    }
+
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+    expect(wrapper.text()).toContain('Draft → Published')
+  })
+
   it('does not mark every field of a new entry as set', async () => {
     const review = makeReview()
     review.groups[0]!.entries[0] = {
