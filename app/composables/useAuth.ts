@@ -36,10 +36,15 @@ export function useAuth() {
     }
   }
 
-  async function signInWithOAuth(provider: 'github' | 'google') {
+  /** Post-login destinations ride through /auth/callback?redirect=… so both auth pairs land there first. */
+  function callbackTarget(redirect?: string | null): string {
+    return redirect ? `/auth/callback?redirect=${encodeURIComponent(redirect)}` : '/auth/callback'
+  }
+
+  async function signInWithOAuth(provider: 'github' | 'google', redirect?: string | null) {
     const result = await $fetch<{ url: string, state?: string }>('/api/auth/login', {
       method: 'POST',
-      body: { provider, redirectTo: '/auth/callback' },
+      body: { provider, redirectTo: callbackTarget(redirect) },
     })
     // Store state for CSRF validation on callback
     if (result.state) {
@@ -48,10 +53,10 @@ export function useAuth() {
     window.location.href = result.url
   }
 
-  async function signInWithMagicLink(email: string) {
+  async function signInWithMagicLink(email: string, redirect?: string | null) {
     await $fetch('/api/auth/magic-link', {
       method: 'POST',
-      body: { email },
+      body: { email, ...(redirect ? { redirectTo: callbackTarget(redirect) } : {}) },
     })
   }
 

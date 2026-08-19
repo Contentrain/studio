@@ -50,6 +50,8 @@ export interface McpCloudKeyData {
   workspaceId: string
   name: string
   allowedTools: string[]
+  /** Opt-in that lets an empty allowlist reach the 1.10.0 media tools. */
+  mediaEnabled: boolean
   rateLimitPerMinute: number
   monthlyCallLimit: number | null
 }
@@ -85,6 +87,7 @@ export async function validateMcpCloudKey(authHeader: string | undefined): Promi
     workspaceId: row.workspace_id as string,
     name: row.name as string,
     allowedTools: (row.allowed_tools as string[] | null) ?? [],
+    mediaEnabled: row.media_enabled === true,
     rateLimitPerMinute: (row.rate_limit_per_minute as number | null) ?? 60,
     monthlyCallLimit: (row.monthly_call_limit as number | null) ?? null,
   }

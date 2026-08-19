@@ -96,6 +96,15 @@ export interface MediaProvider {
   /** Get asset metadata from DB. */
   getAsset: (assetId: string) => Promise<MediaAsset | null>
 
+  /**
+   * Resolve an asset from its storage path (`media/original/<file>`) —
+   * the uuid in the path names the FILE, not the DB row, so a delivery
+   * URL or content-field value cannot be resolved via `getAsset`.
+   * Optional so existing provider doubles keep compiling; callers must
+   * degrade when absent.
+   */
+  getAssetByPath?: (projectId: string, originalPath: string) => Promise<MediaAsset | null>
+
   /** List assets for a project with filtering and pagination. */
   listAssets: (projectId: string, options?: MediaListOptions) => Promise<{ assets: MediaAsset[], total: number }>
 

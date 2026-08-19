@@ -119,6 +119,39 @@ describe('conversation engine regression', () => {
     expect(messages).toHaveLength(1)
   })
 
+  it('surfaces a typed error when the model is cut off at the output-token limit', async () => {
+    // Regression: a `max_tokens` stop mid-response (the model was
+    // emitting a tool call that never completed) used to fall through
+    // the generic "final iteration" check and end the turn silently,
+    // stranding the user on a "…saving now:" preamble whose save never
+    // ran. It must instead emit an `output_truncated` error and still
+    // close the turn, preserving whatever text streamed.
+    const { events } = await collectConversationEvents({
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'text', content: 'Saving now:' }
+          yield {
+            type: 'message_end',
+            stopReason: 'max_tokens',
+            usage: { inputTokens: 100, outputTokens: 4096 },
+          }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    const errorEvent = events.find(e => e.type === 'error')
+    expect(errorEvent).toBeTruthy()
+    expect(errorEvent).toMatchObject({ type: 'error', code: 'output_truncated' })
+
+    // The turn still closes cleanly and keeps the partial text.
+    const done = events[events.length - 1]!
+    expect(done).toMatchObject({
+      type: 'done',
+      lastContent: [{ type: 'text', text: 'Saving now:' }],
+    })
+  })
+
   it('streams the post-tool continuation instead of buffering it', async () => {
     // Every iteration now streams — the first turn AND the post-tool
     // continuation. The follow-up answer must arrive as streamed text
@@ -162,6 +195,35 @@ describe('conversation engine regression', () => {
     expect(events[events.length - 1]).toMatchObject({
       type: 'done',
       lastContent: [{ type: 'text', text: 'Done.' }],
+    })
+  })
+
+  it('surfaces tool input on tool_input and tool_result events', async () => {
+    // The card UI shows what a tool is doing while it's pending: the
+    // engine emits `tool_input` as soon as the model finishes the call
+    // (before execution) and repeats the input on `tool_result` as the
+    // guaranteed carrier.
+    const { events } = await collectConversationEvents({
+      maxToolIterations: 1,
+      aiProvider: {
+        streamCompletion: async function* () {
+          yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+          yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { model: 'posts', locale: 'en' } }
+          yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 5, outputTokens: 2 } }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(events).toContainEqual({
+      type: 'tool_input',
+      id: 'tool-1',
+      input: { model: 'posts', locale: 'en' },
+    })
+    const toolResult = events.find(e => e.type === 'tool_result')
+    expect(toolResult).toMatchObject({
+      id: 'tool-1',
+      input: { model: 'posts', locale: 'en' },
     })
   })
 
@@ -245,12 +307,14 @@ describe('conversation engine regression', () => {
     // model summarizes — and that summary becomes the visible answer.
     let call = 0
     const toolsPerCall: number[] = []
+    const lastMessagePerCall: AIMessage[] = []
     const { events } = await collectConversationEvents({
       maxToolIterations: 1,
       aiProvider: {
         streamCompletion(request) {
           const idx = call++
           toolsPerCall.push(request.tools.length)
+          lastMessagePerCall.push(request.messages[request.messages.length - 1]!)
           return (async function* () {
             if (idx === 0) {
               yield { type: 'text', content: 'Working on it.' }
@@ -272,12 +336,69 @@ describe('conversation engine regression', () => {
     expect(call).toBe(2)
     // The summary call runs with tools disabled.
     expect(toolsPerCall).toEqual([1, 0])
+    // The wrap call's last message keeps the tool_result blocks and
+    // appends the explicit summarize instruction after them.
+    const wrapLast = lastMessagePerCall[1]!
+    expect(wrapLast.role).toBe('user')
+    const wrapBlocks = wrapLast.content as Array<{ type: string, text?: string }>
+    expect(wrapBlocks[0]!.type).toBe('tool_result')
+    expect(wrapBlocks[wrapBlocks.length - 1]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('concise summary'),
+    })
     // The streamed summary is the final visible assistant content.
     expect(events).toContainEqual({ type: 'text', content: 'All done — fixed everything.' })
-    expect(events[events.length - 1]).toMatchObject({
+    const done = events[events.length - 1]!
+    expect(done).toMatchObject({
       type: 'done',
       lastContent: [{ type: 'text', text: 'All done — fixed everything.' }],
     })
+    // Trace purity: the synthetic instruction is never persisted.
+    expect(JSON.stringify(done.iterations)).not.toContain('concise summary')
+  })
+
+  it('synthesizes a fallback summary when the graceful-close wrap returns no text', async () => {
+    // Observed on staging: the wrap call can return zero content blocks
+    // without erroring, which used to leave the whole multi-minute turn
+    // with a tool-only trace and no visible answer.
+    let call = 0
+    const { events } = await collectConversationEvents({
+      maxToolIterations: 1,
+      aiProvider: {
+        streamCompletion() {
+          const idx = call++
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: {} }
+              yield { type: 'tool_use_start', toolId: 'tool-2', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-2', toolName: 'test_tool', toolInput: {} }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 5, outputTokens: 2 } }
+            }
+            else {
+              // Wrap returns nothing at all.
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 0 } }
+            }
+          })()
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(call).toBe(2)
+    // A deterministic fallback summary streams to the client…
+    const fallbackText = events.filter(e => e.type === 'text')
+      .map(e => e.content as string)
+      .join('')
+    expect(fallbackText).toContain('step limit')
+    // …and lands as the final trace iteration, so the transcript never
+    // ends tool-only.
+    const done = events[events.length - 1]!
+    const iterations = done.iterations as Array<{ assistantBlocks: Array<{ type: string, text?: string }> }>
+    const finalBlocks = iterations[iterations.length - 1]!.assistantBlocks
+    expect(finalBlocks).toHaveLength(1)
+    expect(finalBlocks[0]).toMatchObject({ type: 'text', text: expect.stringContaining('step limit') })
+    expect(done.lastContent).toEqual(finalBlocks)
   })
 
   it('does not truncate large tool results below the 32k cap', async () => {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'radix-vue'
+
 definePageMeta({
   layout: 'default',
 })
@@ -12,7 +14,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
-const { branchDiff, diffLoading, fetchBranchDiff, clearBranchDiff, clearBranches, fetchBranches, mergeBranch, rejectBranch } = useBranches()
+const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -96,7 +98,7 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
   activeLocale.value = config?.locales?.default ?? 'en'
 
   if (activeBranch.value) {
-    await fetchBranchDiff(ws.id, newProjectId, activeBranch.value)
+    await fetchBranchReview(ws.id, newProjectId, activeBranch.value)
   }
 
   if (activeModelId.value) {
@@ -129,12 +131,12 @@ watch(activeLocale, async (locale) => {
 watch(activeBranch, async (branch, oldBranch) => {
   if (oldBranch === undefined) return
   if (!branch) {
-    clearBranchDiff()
+    clearBranchReview()
     return
   }
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
-  await fetchBranchDiff(ws.id, projectId.value, branch)
+  await fetchBranchReview(ws.id, projectId.value, branch)
 })
 
 const chatPanelRef = ref<{ handleSend: (text: string) => void } | null>(null)
@@ -158,7 +160,7 @@ function selectModel(modelId: string) {
 
 function backToOverview() {
   router.replace({ query: {} })
-  clearBranchDiff()
+  clearBranchReview()
 }
 
 // Chat UI context — tells the agent what the user is looking at
@@ -170,6 +172,17 @@ const chatContext = computed(() => ({
   activeBranch: activeBranch.value,
 }))
 
+/**
+ * The file-level diff, fetched only when someone opens the technical view —
+ * it reads every changed file whole, which is the cost the review payload
+ * exists to avoid paying on every branch selection.
+ */
+async function handleBranchLoadRaw() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  await fetchBranchRaw(ws.id, projectId.value, activeBranch.value)
+}
+
 // Branch merge/reject handlers
 async function handleBranchMerge() {
   const ws = workspaces.value.find(w => w.slug === slug.value)
@@ -180,7 +193,7 @@ async function handleBranchMerge() {
     const query = { ...route.query }
     delete query.branch
     router.replace({ query })
-    clearBranchDiff()
+    clearBranchReview()
     await fetchBranches(ws.id, projectId.value)
     // Refresh snapshot + content since merged content changed main
     const { invalidateCache } = useSnapshot()
@@ -197,7 +210,7 @@ async function handleBranchReject() {
     const query = { ...route.query }
     delete query.branch
     router.replace({ query })
-    clearBranchDiff()
+    clearBranchReview()
     await fetchBranches(ws.id, projectId.value)
   }
 }
@@ -231,6 +244,70 @@ const toast = useToast()
 
 // Mobile tab switching (Chat vs Content) — only affects <lg viewports
 const mobileTab = ref<'chat' | 'content'>('chat')
+
+// ── Resizable panels ───────────────────────────────────────
+// Radix sizes panels in percent, but the widths worth defending are pixels, so
+// the constraints are recomputed from the measured group width (see
+// app/utils/panel-sizing.ts). Seeded from the viewport so the first paint is
+// already close — the shell is capped at 1920px, less the sidebar's default —
+// then corrected by the observer, which is what actually keeps this honest now
+// that the sidebar is resizable and the seed is only ever an opening guess.
+const SHELL_MAX_PX = 1920
+
+const panelsEl = ref<HTMLElement | null>(null)
+const groupWidth = ref(
+  import.meta.client ? Math.max(0, Math.min(window.innerWidth, SHELL_MAX_PX) - SIDEBAR_DEFAULT_PX) : 0,
+)
+const contentBounds = computed(() => contentPanelBounds(groupWidth.value))
+
+const contentPanelRef = ref<{ isCollapsed: boolean, collapse: () => void, expand: () => void } | null>(null)
+
+let panelObserver: ResizeObserver | null = null
+
+onMounted(() => {
+  if (!panelsEl.value) return
+  panelObserver = new ResizeObserver(([entry]) => {
+    const width = entry?.contentRect.width ?? 0
+    // A zero reading is the absence of a measurement, not a measurement of
+    // zero — it means the element is detached or display:none, which the
+    // observer can report during teardown. Writing it through would hand the
+    // panel a maxSize of 0, and Radix clamps a panel that exceeds its maximum
+    // *and persists the result*, so one spurious frame would leave the panel
+    // collapsed on every later visit. Keep the last real width instead.
+    if (width > 0) groupWidth.value = width
+  })
+  panelObserver.observe(panelsEl.value)
+})
+
+onBeforeUnmount(() => {
+  panelObserver?.disconnect()
+  panelObserver = null
+})
+
+/**
+ * Double-click, not click: the handle receives a click at the end of every
+ * drag, so a single-click binding would collapse the panel the user just
+ * finished sizing.
+ */
+function toggleContentPanel() {
+  const panel = contentPanelRef.value
+  if (!panel) return
+  if (panel.isCollapsed) panel.expand()
+  else panel.collapse()
+}
+
+/**
+ * Radix keys its saved layout as `radix-vue:<autoSaveId>`; this app has one
+ * splitter group, so the adapter ignores the name it is handed and keeps the
+ * repo's `contentrain-` storage convention.
+ */
+const PANEL_LAYOUT_KEY = 'contentrain-project-panel-layout'
+const panelStorage = {
+  getItem: () => (import.meta.client ? localStorage.getItem(PANEL_LAYOUT_KEY) : null),
+  setItem: (_name: string, value: string) => {
+    if (import.meta.client) localStorage.setItem(PANEL_LAYOUT_KEY, value)
+  },
+}
 async function handleVocabularySave(terms: Record<string, Record<string, string> | null>) {
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
@@ -299,57 +376,85 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
       </a>
     </div>
 
-    <div class="flex min-h-0 flex-1">
-      <!-- Chat panel: always visible on lg+, on mobile only when chat tab active -->
-      <div
-        class="min-w-0 flex-1 flex-col"
-        :class="mobileTab === 'chat' ? 'flex' : 'hidden lg:flex'"
-      >
-        <OrganismsChatPanel
-          v-if="activeWorkspace"
-          ref="chatPanelRef"
-          :workspace-id="activeWorkspace.id"
-          :project-id="projectId"
-          :project-name="project?.repo_full_name?.split('/').pop() ?? t('common.loading')"
-          :project-status="effectiveProjectStatus"
-          :context="chatContext"
-          @content-changed="handleContentChanged"
-        />
-      </div>
+    <!-- The wrapper is what gets measured; the group itself sizes to it. -->
+    <div ref="panelsEl" class="flex min-h-0 flex-1">
+      <SplitterGroup direction="horizontal" auto-save-id="project-panels" :storage="panelStorage">
+        <!-- Chat panel: always visible on lg+, on mobile only when chat tab active.
+             Explicit ids are load-bearing: without them Radix keys the saved
+             layout by the panel constraints, which change with the viewport, and
+             the layout would never be restored. -->
+        <SplitterPanel
+          id="chat"
+          class="min-w-0 flex-col"
+          :class="mobileTab === 'chat' ? 'flex' : 'hidden lg:flex'"
+        >
+          <OrganismsChatPanel
+            v-if="activeWorkspace"
+            ref="chatPanelRef"
+            :workspace-id="activeWorkspace.id"
+            :project-id="projectId"
+            :project-name="project?.repo_full_name?.split('/').pop() ?? t('common.loading')"
+            :project-status="effectiveProjectStatus"
+            :context="chatContext"
+            @content-changed="handleContentChanged"
+          />
+        </SplitterPanel>
 
-      <!-- Content panel: always visible on lg+, on mobile only when content tab active -->
-      <div
-        class="min-w-0 shrink-0 flex-col border-l border-secondary-200 dark:border-secondary-800"
-        :class="mobileTab === 'content' ? 'flex flex-1 lg:w-80 lg:flex-initial xl:w-96' : 'hidden lg:flex lg:w-80 xl:w-96'"
-      >
-        <OrganismsContentPanel
-          v-model:locale="activeLocale"
-          :snapshot="snapshot"
-          :snapshot-loading="snapshotLoading"
-          :model-content="modelContent"
-          :model-content-kind="modelContentKind"
-          :model-content-meta="modelContentMeta"
-          :model-content-loading="modelContentLoading"
-          :active-model-id="activeModelId"
-          :active-branch="activeBranch"
-          :active-vocabulary="activeVocabulary"
-          :active-cdn="activeCDN"
-          :active-assets="activeAssets"
-          :active-health="activeHealth"
-          :branch-diff="branchDiff"
-          :branch-diff-loading="diffLoading"
-          :can-manage-branches="true"
-          :workspace-id="activeWorkspace?.id"
-          :project-id="projectId"
-          editable
-          @select-model="selectModel"
-          @back="backToOverview"
-          @send-chat-prompt="chatPanelRef?.handleSend($event)"
-          @branch-merge="handleBranchMerge"
-          @branch-reject="handleBranchReject"
-          @vocabulary-save="handleVocabularySave"
+        <!-- Drag to resize, double-click to collapse. It replaces the content
+             panel's old left border, so there is only ever one divider. Hidden
+             below lg, where the bottom tab bar owns the switch instead. -->
+        <!-- 1px line, ~9px grab area: the visual weight of a divider and the
+             hit area of a control are different requirements, and a 1px drag
+             target is one the pointer keeps missing. -->
+        <SplitterResizeHandle
+          :aria-label="t('content.resize_panel')"
+          class="relative hidden w-px shrink-0 cursor-col-resize bg-secondary-200 transition-colors after:absolute after:inset-y-0 after:-left-1 after:-right-1 after:content-[''] hover:bg-primary-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 data-[resize-handle-state=drag]:bg-primary-500 lg:block dark:bg-secondary-800"
+          @dblclick="toggleContentPanel"
         />
-      </div>
+
+        <!-- Content panel: always visible on lg+, on mobile only when content tab active -->
+        <SplitterPanel
+          id="content"
+          ref="contentPanelRef"
+          collapsible
+          :collapsed-size="0"
+          :min-size="contentBounds.minSize"
+          :max-size="contentBounds.maxSize"
+          :default-size="contentBounds.defaultSize"
+          class="min-w-0 flex-col"
+          :class="mobileTab === 'content' ? 'flex' : 'hidden lg:flex'"
+        >
+          <OrganismsContentPanel
+            v-model:locale="activeLocale"
+            :snapshot="snapshot"
+            :snapshot-loading="snapshotLoading"
+            :model-content="modelContent"
+            :model-content-kind="modelContentKind"
+            :model-content-meta="modelContentMeta"
+            :model-content-loading="modelContentLoading"
+            :active-model-id="activeModelId"
+            :active-branch="activeBranch"
+            :active-vocabulary="activeVocabulary"
+            :active-cdn="activeCDN"
+            :active-assets="activeAssets"
+            :active-health="activeHealth"
+            :branch-review="branchReview"
+            :branch-review-loading="reviewLoading"
+            :branch-raw="branchRaw"
+            :branch-raw-loading="rawLoading"
+            :workspace-id="activeWorkspace?.id"
+            :project-id="projectId"
+            editable
+            @select-model="selectModel"
+            @back="backToOverview"
+            @send-chat-prompt="chatPanelRef?.handleSend($event)"
+            @branch-merge="handleBranchMerge"
+            @branch-reject="handleBranchReject"
+            @branch-load-raw="handleBranchLoadRaw"
+            @vocabulary-save="handleVocabularySave"
+          />
+        </SplitterPanel>
+      </SplitterGroup>
     </div>
 
     <!-- Mobile bottom tab bar (only visible below lg) -->

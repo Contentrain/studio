@@ -91,7 +91,7 @@ jobs:
         with:
           version: 10.26.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -100,7 +100,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate Contentrain client
-        run: npx contentrain generate
+        run: pnpm exec contentrain-query generate
 
       - name: Lint
         run: pnpm lint
@@ -166,3 +166,20 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           body_path: /tmp/release-body.md
           prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
+
+      # `production` is a deploy pointer, not an integration branch: no PR ever
+      # targets it, no human commits to it — this step is its only writer.
+      # Railway's production service is bound to it with auto-deploy, so
+      # advancing it here IS the production deploy. It runs last on purpose:
+      # a tag whose gate or image push failed never reaches production.
+      #
+      # Force-push is deliberate. Re-running this workflow via
+      # workflow_dispatch on an OLDER tag points production back at it — that
+      # is the rollback mechanism, and a rollback is never a fast-forward.
+      # Prereleases do not advance production, same policy as `latest`.
+      - name: Advance the production deploy pointer
+        if: steps.release_meta.outputs.prerelease != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --force origin "${{ steps.release_meta.outputs.full_sha }}:refs/heads/production"

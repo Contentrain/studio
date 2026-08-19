@@ -101,6 +101,34 @@ export function pinReaderToContentrain(git: GitProvider): RepoReader {
 }
 
 /**
+ * Whether every planned file is byte-identical to what `contentrain`
+ * already holds — i.e. the save is a no-op. Reliable because the plan
+ * output is deterministic (`canonicalStringify` for JSON, and Studio's
+ * meta override writes no timestamps), so identical input produces
+ * identical bytes. Deletions (`content: null`) and brand-new files never
+ * count as no-ops.
+ *
+ * The two extra reads per save are far cheaper than what a no-op used to
+ * cost: a branch, an empty commit, a merge to `contentrain`, and a
+ * `contentrain`→main advance (~18s wall-clock on staging).
+ */
+export async function planMatchesCurrent(reader: RepoReader, changes: FileChange[]): Promise<boolean> {
+  if (changes.length === 0) return false
+  for (const change of changes) {
+    if (typeof change.content !== 'string') return false
+    let current: string
+    try {
+      current = await reader.readFile(change.path)
+    }
+    catch {
+      return false
+    }
+    if (current !== change.content) return false
+  }
+  return true
+}
+
+/**
  * Override the meta FileChange produced by `planContentSave` with
  * Studio's status semantics:
  *
@@ -131,6 +159,14 @@ export async function applyStudioMetaOverrides(args: {
   }
   catch { /* no existing meta */ }
 
+  // `updated_at` describes THIS write, like `source` and `updated_by` — so it
+  // is stamped every time and shares one timestamp across the entries of a
+  // single save. MCP mints it too, but this override replaces MCP's meta
+  // wholesale; without stamping it here the field would never survive a Studio
+  // write, and "sort by recently edited" would have no data for exactly the
+  // entries Studio users create.
+  const updatedAt = new Date().toISOString()
+
   let updatedMeta: unknown
   if (model.kind === 'collection') {
     const metaMap = { ...existingMeta } as Record<string, EntryMeta>
@@ -141,6 +177,7 @@ export async function applyStudioMetaOverrides(args: {
         status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
         source: 'agent',
         updated_by: userEmail,
+        updated_at: updatedAt,
       } as EntryMeta
     }
     updatedMeta = metaMap
@@ -152,6 +189,7 @@ export async function applyStudioMetaOverrides(args: {
       status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
       source: 'agent' as const,
       updated_by: userEmail,
+      updated_at: updatedAt,
     }
   }
 

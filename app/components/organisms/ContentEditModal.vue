@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
-import { buildRelationOptions, inferFieldType, isPolymorphicRelation } from '~/utils/content-relations'
+import { buildRelationOptions, inferFieldType, isPolymorphicRelation } from '~~/shared/utils/content-relations'
+import { orderedFieldIds } from '~~/shared/utils/field-label'
+import { getFieldLabelKey } from '~/utils/injection-keys'
 
 interface FieldDef {
   type: string
@@ -16,6 +18,9 @@ interface FieldDef {
 
 const { t } = useContent()
 const brain = useContentBrain()
+// Provided by ContentPanel; the identity fallback keeps the modal renderable
+// on its own (tests, storybook-style usage).
+const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 
 const {
   modelName,
@@ -67,7 +72,9 @@ const SYSTEM_FIELDS = new Set([
 ])
 
 const editableFieldIds = computed(() => {
-  const ids = Object.keys(fields).filter(id => !SYSTEM_FIELDS.has(id))
+  // Declared order (`FieldDef.order`), not alphabetical — otherwise a 16-field
+  // article model opens with `author` first and `title` fifteenth.
+  const ids = orderedFieldIds(fields).filter(id => !SYSTEM_FIELDS.has(id))
   if (modelKind !== 'document') return ids
   // Documents store their fields as YAML frontmatter, which can carry keys
   // beyond the model schema (and the schema may be minimal). Surface every
@@ -158,7 +165,10 @@ async function loadRelationEntries() {
       if (!result?.data && defaultLocale && defaultLocale !== locale) {
         result = await brain.queryContent(targetModelId, defaultLocale)
       }
-      options.push(...buildRelationOptions(targetModelId, result?.data, polymorphic))
+      // Hand over the target model so its declared `title_field` names the
+      // option — without it a relation lists raw ids.
+      const targetModel = brain.models.value.find(m => m.id === targetModelId) ?? null
+      options.push(...buildRelationOptions(targetModelId, result?.data, polymorphic, targetModel))
     }
 
     map[fieldId] = options
@@ -234,7 +244,7 @@ function confirmDiscard() {
         <div class="flex-1 overflow-y-auto px-6 py-5 max-sm:max-h-none" style="max-height: 60vh;">
           <div v-if="batchEditData" class="space-y-5">
             <div v-for="fieldId in editableFieldIds" :key="fieldId">
-              <AtomsFormLabel :text="fieldId" size="sm" :required="mergedFields[fieldId]?.required" />
+              <AtomsFormLabel :text="getFieldLabel(fieldId)" size="sm" :required="mergedFields[fieldId]?.required" />
               <p v-if="mergedFields[fieldId]?.description" class="mb-1 text-xs text-muted">
                 {{ mergedFields[fieldId].description }}
               </p>

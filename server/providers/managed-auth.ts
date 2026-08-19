@@ -23,7 +23,6 @@ import { SignJWT, jwtVerify } from 'jose'
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, ProviderTokens } from './auth'
 import { decryptApiKey, encryptApiKey } from '../utils/encryption'
 import { getDb, getPostgresConfig } from './postgres-db/client'
-import { renderInviteEmail, renderMagicLinkEmail } from '../utils/auth-emails'
 
 const ACCESS_TOKEN_TTL_SECONDS = 3600 // GoTrue jwt_expiry parity
 const REFRESH_TOKEN_TTL_DAYS = 30
@@ -339,6 +338,19 @@ export async function createCliAuthCode(user: AuthUser, providerTokens: Provider
   })
 }
 
+/**
+ * Session for the directory-review account (POST /api/auth/review-login).
+ * The route owns ALL gating (env opt-in, single allowed address,
+ * timing-safe password check, rate limit) — this just materializes the
+ * user through the normal email bootstrap chain and issues Studio tokens.
+ */
+export async function createReviewSession(email: string): Promise<AuthSession> {
+  const row = await upsertEmailUser(email)
+  const user = toAuthUser(row)
+  const tokens = await issueTokens(user)
+  return { user, tokens }
+}
+
 /** Consume a magic-link token (GET /api/auth/magic/verify). */
 export async function consumeMagicLinkToken(raw: string): Promise<AuthSession | null> {
   if (!raw.startsWith('mlc_') && !raw.startsWith('inv_')) return null
@@ -456,19 +468,22 @@ export function createManagedAuthProvider(): AuthProvider {
     },
 
     async getOAuthRedirectUrl(provider, redirectTo) {
-      // The OAuth dance is owned by /api/auth/oauth/[provider]; flow context
-      // travels as query params and is moved into a sealed cookie by that
-      // route before redirecting to the provider. A localhost 98xx callback
-      // target marks the CLI flow (validated upstream in login.post.ts).
+      // Entry URL for /api/auth/oauth/[provider]. Carries ONLY flow context
+      // (redirect target / CLI callback). It must NOT carry a `state` param:
+      // nuxt-auth-utils' handleState() treats a present query.state as "this
+      // is the callback leg" and reads its cookie instead of setting one, so
+      // a state here breaks its CSRF cookie and every login fails with
+      // "state mismatch". CSRF state is wholly owned by the module.
+      // A localhost 98xx callback target marks the CLI flow (validated
+      // upstream in login.post.ts).
       const siteUrl = (useRuntimeConfig().public.siteUrl as string).replace(/\/+$/, '')
-      const state = randomBytes(16).toString('hex')
 
       const isCliTarget = /^http:\/\/(?:127\.0\.0\.1|localhost):98\d{2}\/callback$/.test(redirectTo)
-      const params = new URLSearchParams({ state })
+      const params = new URLSearchParams()
       if (isCliTarget) params.set('cli_redirect', redirectTo)
       else params.set('redirect', redirectTo)
 
-      return { url: `${siteUrl}/api/auth/oauth/${provider}?${params.toString()}`, state }
+      return { url: `${siteUrl}/api/auth/oauth/${provider}?${params.toString()}` }
     },
 
     async exchangeCode(code) {
@@ -512,11 +527,9 @@ export function createManagedAuthProvider(): AuthProvider {
       if (!emailProvider)
         throw createError({ statusCode: 500, message: 'Email provider is not configured (NUXT_RESEND_API_KEY)' })
 
-      await emailProvider.sendEmail({
-        to: email_,
-        subject: 'Sign in to Contentrain Studio',
-        html: renderMagicLinkEmail(url),
-      })
+      // Copy lives in the email-templates content model (auth-magic-link).
+      const tpl = emailTemplate('auth-magic-link', { url })
+      await emailProvider.sendEmail({ to: email_, subject: tpl.subject, html: tpl.body })
     },
 
     async inviteUserByEmail(email, options) {
@@ -535,11 +548,9 @@ export function createManagedAuthProvider(): AuthProvider {
       if (!emailProvider)
         throw createError({ statusCode: 500, message: 'Email provider is not configured (NUXT_RESEND_API_KEY)' })
 
-      await emailProvider.sendEmail({
-        to: row.email,
-        subject: 'You\'ve been invited to Contentrain Studio',
-        html: renderInviteEmail(url),
-      })
+      // Copy lives in the email-templates content model (auth-invite).
+      const tpl = emailTemplate('auth-invite', { url })
+      await emailProvider.sendEmail({ to: row.email, subject: tpl.subject, html: tpl.body })
 
       return { userId: row.id }
     },

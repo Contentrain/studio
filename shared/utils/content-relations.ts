@@ -11,6 +11,11 @@
  * documents).
  */
 
+// Imported explicitly rather than relying on Nuxt's auto-import: this module is
+// exercised by the plain node suite, which has no auto-imports.
+import type { TitleFieldModel } from '~~/shared/utils/entry-title'
+import { resolveTitleFieldId } from '~~/shared/utils/entry-title'
+
 /** A relation reference as stored on disk. */
 export type RelationRef = string | { model: string, ref: string }
 
@@ -86,8 +91,24 @@ export function toSelectableRefs(data: unknown): Array<{ ref: string, entry: Rec
   return out
 }
 
-/** Pick a human-readable label for a relation target entry. */
-export function findRelationLabel(entry: Record<string, unknown>): string | null {
+/**
+ * Pick a human-readable label for a relation target entry.
+ *
+ * When the target model is known, its declared `title_field` decides — the same
+ * answer the entry list uses, so a hero slide's `ARTICLE` field names the
+ * article instead of showing `f3a81c09d24e`. Without the model (the target is
+ * not loaded, or predates the field) this falls back to the old key scan.
+ */
+export function findRelationLabel(
+  entry: Record<string, unknown>,
+  targetModel?: TitleFieldModel | null,
+): string | null {
+  const declared = targetModel ? resolveTitleFieldId(targetModel) : null
+  if (declared) {
+    const value = entry[declared]
+    if (typeof value === 'string' && value) return value
+  }
+
   for (const key of ['name', 'title', 'label', 'slug']) {
     if (typeof entry[key] === 'string' && entry[key]) return entry[key] as string
   }
@@ -106,9 +127,10 @@ export function buildRelationOptions(
   targetModelId: string,
   data: unknown,
   polymorphic: boolean,
+  targetModel?: TitleFieldModel | null,
 ): RelationOption[] {
   return toSelectableRefs(data).map(({ ref, entry }) => {
-    const label = findRelationLabel(entry) ?? ref.substring(0, 8)
+    const label = findRelationLabel(entry, targetModel) ?? ref.substring(0, 8)
     return {
       value: polymorphic ? `${targetModelId}::${ref}` : ref,
       label: polymorphic ? `${targetModelId}: ${label}` : label,

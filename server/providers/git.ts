@@ -13,12 +13,15 @@
  * See `.internal/refactor/02-studio-handoff.md` — Faz S1 for context.
  */
 
+import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { GitHubProvider } from '@contentrain/mcp/providers/github'
+import { ensureContentBranch } from '~~/server/utils/ensure-content-branch'
 import type {
   ApplyPlanInput,
   Commit,
   CommitAuthor,
   FileChange,
+  MediaProvider as ContractMediaProvider,
   RepoProvider,
 } from '@contentrain/types'
 import { createGitHubExtensions, createInstallationOctokit } from './github-app'
@@ -208,6 +211,13 @@ export interface StudioGitHubInput {
   contentRoot?: string
   /** Public media delivery base for MCP Cloud writes (see GitProvider.mediaBaseUrl). */
   mediaBaseUrl?: string
+  /**
+   * Contract media facet (@contentrain/types MediaProvider). Set only for
+   * media-eligible MCP Cloud loopback sessions — its presence is what makes
+   * MCP's 5 media tools appear in tools/list. Absent for local/CLI
+   * providers and non-eligible sessions.
+   */
+  media?: ContractMediaProvider
 }
 
 /**
@@ -239,11 +249,31 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
 
   return {
     mediaBaseUrl: opts.mediaBaseUrl,
+    // Contract media facet — RepoProvider.media (types 0.8.0). Undefined
+    // for content-only providers, which keeps the 5 media tools hidden.
+    media: opts.media,
     get capabilities() { return core.capabilities },
     readFile: (path: string, ref?: string) => core.readFile(path, ref),
     listDirectory: (path: string, ref?: string) => core.listDirectory(path, ref),
     fileExists: (path: string, ref?: string) => core.fileExists(path, ref),
-    applyPlan: (input: ApplyPlanInput) => core.applyPlan(input),
+    async applyPlan(input: ApplyPlanInput) {
+      try {
+        return await core.applyPlan(input)
+      }
+      catch (error) {
+        // Projects connected before content-branch provisioning existed have
+        // no `contentrain` branch, so every write dies resolving the base ref
+        // (a PROVIDER_NOT_FOUND since MCP 2.3.0). Retry only when we had to
+        // create the branch ourselves — if it was already there the failure
+        // was something else and must surface unchanged. Deliberately keyed
+        // on `input.base` rather than the error, so provider error shapes can
+        // keep evolving without silently disabling this.
+        if (input.base !== CONTENTRAIN_BRANCH) throw error
+        const created = await ensureContentBranch(core).catch(() => false)
+        if (!created) throw error
+        return core.applyPlan(input)
+      }
+    },
     listBranches: (prefix?: string) => core.listBranches(prefix),
     createBranch: (name: string, fromRef?: string) => core.createBranch(name, fromRef),
     deleteBranch: (name: string) => core.deleteBranch(name),
@@ -260,6 +290,13 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
     mergeBranch: (branch: string, into: string) => core.mergeBranch(branch, into, { removeSourceBranch: false }),
     isMerged: (branch: string, into?: string) => core.isMerged(branch, into),
     getDefaultBranch: () => core.getDefaultBranch(),
+    // Reconcile primitives (types 1.2.0). This factory builds the provider
+    // member by member rather than spreading `core`, so a new OPTIONAL
+    // contract member has to be passed through by hand — omit these two and
+    // the capability silently reads as absent, sending every diverged advance
+    // to the PR fallback with no reconcile ever attempted.
+    getMergeBase: core.getMergeBase?.bind(core),
+    createMergeCommit: core.createMergeCommit?.bind(core),
 
     ...extensions,
 

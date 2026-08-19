@@ -73,11 +73,14 @@ export default defineEventHandler(async (event) => {
           // tracking still resolves the asset after media is normalized to URLs.
           const mediaPath = extractMediaStoragePath(value)
           if (mediaPath) {
-            // Find asset by filename
-            const { assets } = await mediaProvider.listAssets(projectId, { search: mediaPath.split('/').pop(), limit: 1 })
-            if (assets.length > 0) {
+            // Resolve by storage path. The old filename `search` never matched:
+            // the path's uuid names the FILE, while `filename`/`alt` (all
+            // `search` covers) hold the original upload name — so UI-path
+            // usage tracking silently recorded nothing.
+            const asset = await mediaProvider.getAssetByPath?.(projectId, mediaPath)
+            if (asset) {
               await db.trackMediaUsage({
-                asset_id: assets[0]!.id,
+                asset_id: asset.id,
                 project_id: projectId,
                 model_id: modelId,
                 entry_id: entryId,

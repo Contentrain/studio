@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { marked } from 'marked'
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
@@ -29,11 +29,19 @@ const { t } = useContent()
 const { sanitize } = useSanitize()
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const getModelFields = inject(getModelFieldsKey, () => ({}))
 const sendChatPrompt = inject(sendChatPromptKey, () => {})
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
+
+// A pin button is a toggle, so the label has to name the direction it will go —
+// tooltip and `aria-label` both read from here so the two can never drift.
+function pinLabel(kind: 'entry' | 'field', slug: string, fieldId?: string) {
+  if (isPinned(kind, props.modelId ?? '', slug, fieldId)) return t('content.unpin')
+  return kind === 'entry' ? t('content.pin_entry') : t('content.pin_field')
+}
 
 function renderMarkdown(md: string): string {
   return sanitize(marked.parse(md, { async: false }) as string)
@@ -61,7 +69,7 @@ function pinField(e: Event, slug: string, fieldId: string, value: unknown) {
   if (!meta) return
   toggle({
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -91,7 +99,7 @@ function onFieldDragStart(e: DragEvent, slug: string, fieldId: string, value: un
   if (!meta) return
   startDrag(e, {
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -144,37 +152,42 @@ function handleModalSaved() {
             {{ (doc.frontmatter.title as string) || doc.slug }}
           </span>
           <!-- Edit entry (modal) -->
-          <button
-            v-if="editable"
-            type="button"
-            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :aria-label="t('content.edit_entry')"
-            @click.prevent="openEditModal(doc)"
-          >
-            <span class="icon-[annon--edit-2] size-3" aria-hidden="true" />
-          </button>
+          <AtomsTooltip v-if="editable" :text="t('content.edit_entry')">
+            <button
+              type="button"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 text-muted transition-[color,opacity] hover:text-primary-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :aria-label="t('content.edit_entry')"
+              @click.prevent="openEditModal(doc)"
+            >
+              <span class="icon-[annon--edit-2] size-3" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
           <!-- Delete entry -->
-          <button
-            v-if="editable"
-            type="button"
-            :aria-label="t('content.delete_entry')"
-            class="shrink-0 rounded-md p-0.5 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            @click.prevent="deleteEntry(doc)"
-          >
-            <span class="icon-[annon--trash] size-3" aria-hidden="true" />
-          </button>
+          <AtomsTooltip v-if="editable" :text="t('content.delete_entry')">
+            <button
+              type="button"
+              :aria-label="t('content.delete_entry')"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 text-muted transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover/entry:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              @click.prevent="deleteEntry(doc)"
+            >
+              <span class="icon-[annon--trash] size-3" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
           <!-- Pin entry -->
-          <button
-            type="button"
-            aria-label="Pin to context"
-            class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :class="isPinned('entry', modelId ?? '', doc.slug)
-              ? 'text-primary-500 opacity-100'
-              : 'text-muted opacity-0 hover:opacity-100 group-hover/entry:opacity-60'"
-            @click="pinEntry($event, doc)"
-          >
-            <span class="icon-[annon--pin] size-3" aria-hidden="true" />
-          </button>
+          <AtomsTooltip :text="pinLabel('entry', doc.slug)">
+            <button
+              type="button"
+              :aria-label="pinLabel('entry', doc.slug)"
+              :aria-pressed="isPinned('entry', modelId ?? '', doc.slug)"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :class="isPinned('entry', modelId ?? '', doc.slug)
+                ? 'text-primary-500 opacity-100'
+                : 'text-muted hover:opacity-100 group-hover/entry:opacity-60'"
+              @click="pinEntry($event, doc)"
+            >
+              <span class="icon-[annon--pin] size-3" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
           <!-- Status badge + picker (shared with the collection view) -->
           <MoleculesEntryStatusPicker
             :status="getEntryStatus(doc.slug)"
@@ -194,18 +207,22 @@ function handleModalSaved() {
               @dragend="endDrag"
             >
               <div class="flex items-center gap-1">
-                <AtomsSectionLabel :label="fieldId" class="flex-1 px-0 py-0" />
+                <AtomsSectionLabel :label="getFieldLabel(fieldId)" class="flex-1 px-0 py-0" />
                 <!-- Pin field -->
-                <button
-                  type="button"
-                  class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  :class="isPinned('field', modelId ?? '', doc.slug, fieldId)
-                    ? 'text-info-500 opacity-100'
-                    : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"
-                  @click="pinField($event, doc.slug, fieldId, doc.frontmatter[fieldId])"
-                >
-                  <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
-                </button>
+                <AtomsTooltip :text="pinLabel('field', doc.slug, fieldId)">
+                  <button
+                    type="button"
+                    :aria-label="pinLabel('field', doc.slug, fieldId)"
+                    :aria-pressed="isPinned('field', modelId ?? '', doc.slug, fieldId)"
+                    class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                    :class="isPinned('field', modelId ?? '', doc.slug, fieldId)
+                      ? 'text-info-500 opacity-100'
+                      : 'text-muted hover:opacity-100 group-hover/field:opacity-60'"
+                    @click="pinField($event, doc.slug, fieldId, doc.frontmatter[fieldId])"
+                  >
+                    <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+                  </button>
+                </AtomsTooltip>
               </div>
               <div class="mt-0.5">
                 <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="doc.frontmatter[fieldId]" :field-id="fieldId" />
@@ -223,16 +240,20 @@ function handleModalSaved() {
             >
               <div class="flex items-center gap-1">
                 <AtomsSectionLabel :label="String(key)" class="flex-1 px-0 py-0" />
-                <button
-                  type="button"
-                  class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                  :class="isPinned('field', modelId ?? '', doc.slug, String(key))
-                    ? 'text-info-500 opacity-100'
-                    : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"
-                  @click="pinField($event, doc.slug, String(key), value)"
-                >
-                  <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
-                </button>
+                <AtomsTooltip :text="pinLabel('field', doc.slug, String(key))">
+                  <button
+                    type="button"
+                    :aria-label="pinLabel('field', doc.slug, String(key))"
+                    :aria-pressed="isPinned('field', modelId ?? '', doc.slug, String(key))"
+                    class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                    :class="isPinned('field', modelId ?? '', doc.slug, String(key))
+                      ? 'text-info-500 opacity-100'
+                      : 'text-muted hover:opacity-100 group-hover/field:opacity-60'"
+                    @click="pinField($event, doc.slug, String(key), value)"
+                  >
+                    <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+                  </button>
+                </AtomsTooltip>
               </div>
               <div class="mt-0.5">
                 <AtomsContentFieldDisplay type="string" :value="value" :field-id="String(key)" />
@@ -249,16 +270,20 @@ function handleModalSaved() {
           >
             <div class="flex items-center gap-1">
               <AtomsSectionLabel label="body" class="flex-1 px-0 py-0" />
-              <button
-                type="button"
-                class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                :class="isPinned('field', modelId ?? '', doc.slug, 'body')
-                  ? 'text-info-500 opacity-100'
-                  : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"
-                @click="pinField($event, doc.slug, 'body', doc.body)"
-              >
-                <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
-              </button>
+              <AtomsTooltip :text="pinLabel('field', doc.slug, 'body')">
+                <button
+                  type="button"
+                  :aria-label="pinLabel('field', doc.slug, 'body')"
+                  :aria-pressed="isPinned('field', modelId ?? '', doc.slug, 'body')"
+                  class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  :class="isPinned('field', modelId ?? '', doc.slug, 'body')
+                    ? 'text-info-500 opacity-100'
+                    : 'text-muted hover:opacity-100 group-hover/field:opacity-60'"
+                  @click="pinField($event, doc.slug, 'body', doc.body)"
+                >
+                  <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+                </button>
+              </AtomsTooltip>
             </div>
             <div
               class="prose prose-sm prose-secondary mt-1 max-w-none rounded-lg bg-secondary-50 p-4 dark:prose-invert dark:bg-secondary-900"

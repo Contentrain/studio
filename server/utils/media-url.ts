@@ -44,6 +44,21 @@ export function rewriteMediaUrl(projectId: string, value: unknown): unknown {
 }
 
 /**
+ * Resolve a value to THIS project's media storage path, when it is one.
+ * Accepts either the bare stored form (`media/...`) or the project's own
+ * absolute delivery URL; anything else — other hosts, other projects'
+ * delivery URLs — returns null. Query/hash suffixes are stripped.
+ */
+export function ownMediaStoragePath(projectId: string, value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if (/^media\//.test(value)) return value.split(/[?#]/)[0]!
+  const prefix = `${publicMediaBase(projectId)}/`
+  if (!value.startsWith(prefix)) return null
+  const rest = value.slice(prefix.length).split(/[?#]/)[0]!
+  return /^media\//.test(rest) ? rest : null
+}
+
+/**
  * Decorate an asset with ready-to-use delivery URLs for the original and
  * every variant, keeping the raw storage paths intact.
  */

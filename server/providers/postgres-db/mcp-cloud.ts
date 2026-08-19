@@ -56,7 +56,7 @@ export function mcpCloudMethods(): McpCloudMethods {
       try {
         let query = getAdmin()
           .selectFrom('mcp_cloud_keys')
-          .select(['id', 'name', 'key_prefix', 'project_id', 'allowed_tools', 'rate_limit_per_minute', 'monthly_call_limit', 'last_used_at', 'created_at', 'created_by', 'revoked_at'])
+          .select(['id', 'name', 'key_prefix', 'project_id', 'allowed_tools', 'media_enabled', 'rate_limit_per_minute', 'monthly_call_limit', 'last_used_at', 'created_at', 'created_by', 'revoked_at'])
           .where('workspace_id', '=', workspaceId)
           .where('revoked_at', 'is', null)
           .orderBy('created_at', 'desc')
@@ -82,6 +82,7 @@ export function mcpCloudMethods(): McpCloudMethods {
             key_hash: input.keyHash,
             key_prefix: input.keyPrefix,
             allowed_tools: input.allowedTools,
+            media_enabled: input.mediaEnabled ?? false,
             rate_limit_per_minute: input.rateLimitPerMinute ?? 60,
             monthly_call_limit: input.monthlyCallLimit ?? null,
             created_by: input.createdBy ?? null,
@@ -170,15 +171,18 @@ export function mcpCloudMethods(): McpCloudMethods {
     },
 
     async getWorkspaceMonthlyMcpCloudUsage(workspaceId, month) {
+      // Combined pool: API-key traffic (mcp_cloud_usage) + OAuth-grant
+      // traffic (mcp_oauth_usage) — the same total the quota RPCs enforce,
+      // so the usage screen never disagrees with the 429s.
       try {
-        const row = await getAdmin()
-          .selectFrom('mcp_cloud_usage')
-          .select(eb => eb.fn.coalesce(eb.fn.sum('call_count'), eb.lit(0)).as('total'))
-          .where('workspace_id', '=', workspaceId)
-          .where('month', '=', month)
-          .executeTakeFirst()
+        const outcome = await sql<{ total: number }>`
+          SELECT public.workspace_mcp_month_total(
+            p_workspace_id => ${workspaceId},
+            p_month => ${month}
+          ) AS total
+        `.execute(getAdmin())
 
-        return Number(row?.total ?? 0)
+        return Number(outcome.rows[0]?.total ?? 0)
       }
       catch (error) {
         throwDbError(error)

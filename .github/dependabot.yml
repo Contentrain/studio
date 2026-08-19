@@ -6,6 +6,12 @@ updates:
       interval: weekly
       day: monday
     groups:
+      # Contentrain ecosystem packages move in lockstep (mcp/query pin an exact
+      # @contentrain/types), so a bump must land as ONE reviewable PR — never
+      # split across three separate dependabot PRs that each break the type peer.
+      contentrain:
+        patterns:
+          - "@contentrain/*"
       nuxt:
         patterns:
           - nuxt

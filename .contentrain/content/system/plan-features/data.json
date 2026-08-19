@@ -124,6 +124,19 @@
     "starter_value": "false",
     "type": "feature"
   },
+  "api-mcp-cloud-oauth": {
+    "category": "api",
+    "community_value": "true",
+    "enterprise_value": "true",
+    "free_value": "false",
+    "key": "api.mcp_cloud_oauth",
+    "name": "Remote MCP (OAuth)",
+    "pro_value": "true",
+    "requires_ee": "false",
+    "sort_order": 6,
+    "starter_value": "true",
+    "type": "feature"
+  },
   "api-mcp-cloud-sso": {
     "category": "api",
     "community_value": "false",

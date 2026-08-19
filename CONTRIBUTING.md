@@ -123,7 +123,7 @@ Studio is trunk-based: `main` is the single integration branch and the PR target
 
 | Branch   | Role                                                    | Deploy target                                    |
 |----------|---------------------------------------------------------|--------------------------------------------------|
-| `main`   | Trunk — default, PR target, OSS face                    | `staging.contentrain.io` auto; prod on `v*` tag  |
+| `main`   | Trunk — default, PR target, OSS face                    | Railway staging auto; prod on `v*` tag           |
 | `feat/*` | Per-task feature branches                               | (no auto-deploy)                                 |
 | `fix/*`  | Per-task bug branches                                   | (no auto-deploy)                                 |
 
@@ -132,7 +132,7 @@ Studio is trunk-based: `main` is the single integration branch and the PR target
 1. Fork the repo (or branch off `main` if you have push access)
 2. Open your PR with `main` as the base branch (GitHub's default — no action needed)
 3. CI runs lint, typecheck, tests, RLS, E2E, and build
-4. A maintainer reviews and merges → the change auto-deploys to `staging.contentrain.io` via Railway
+4. A maintainer reviews and merges → the change auto-deploys to the Railway staging environment (`studio-staging-5610.up.railway.app`)
 5. When the maintainers cut a version tag (`v*`), that tag triggers the production deploy
 
 ### Self-hoster note

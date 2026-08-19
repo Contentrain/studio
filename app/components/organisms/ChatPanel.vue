@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ChatUIContext, AffectedResources, UIAttachment } from '~/composables/useChat'
-import { AI_MODELS } from '~/composables/useChat'
 import { PopoverArrow, PopoverClose, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 
 const props = defineProps<{
@@ -16,18 +15,35 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useContent()
-const { messages, conversationId, conversations, isStreaming, error, selectedModel, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
+const { messages, conversationId, conversations, isStreaming, error, streamTick, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
   onContentChanged: (affected) => {
     emit('contentChanged', affected)
   },
 })
 
-// Panel-wide file drag-drop → forwarded to the composer (always as context).
-const chatInputRef = ref<{ addFiles: (files: FileList | File[] | null) => void } | null>(null)
+/**
+ * The welcome state of a ready project — the one empty branch that centres
+ * itself with the composer. The loading skeleton and the setup state keep the
+ * full column: setup carries its own "initialize project" call to action and
+ * shouldn't compete with the composer for attention.
+ */
+const isEmptyActive = computed(() =>
+  messages.value.length === 0 && !!props.projectStatus && props.projectStatus !== 'setup',
+)
+
+// Panel-wide drag-drop → forwarded to the composer (always as context).
+// Accepts real files AND `text/uri-list` drags — an image dragged in from
+// another browser tab carries no `Files` entry, only its URL; without the
+// uri-list branch that drop navigated the page away with zero feedback.
+const chatInputRef = ref<{ addFiles: (files: FileList | File[] | null) => void, attachLink: (url: string) => Promise<void> } | null>(null)
 const isDragOver = ref(false)
 
+function isAcceptedDrag(dt: DataTransfer | null): boolean {
+  return !!dt && (dt.types.includes('Files') || dt.types.includes('text/uri-list'))
+}
+
 function onPanelDragOver(e: DragEvent) {
-  if (!e.dataTransfer?.types.includes('Files')) return // ignore context-chip drags
+  if (!isAcceptedDrag(e.dataTransfer)) return // ignore context-chip drags
   e.preventDefault()
   isDragOver.value = true
 }
@@ -41,16 +57,41 @@ function onPanelDragLeave(e: DragEvent) {
 
 function onPanelDrop(e: DragEvent) {
   isDragOver.value = false
-  if (!e.dataTransfer?.types.includes('Files')) return
+  const dt = e.dataTransfer
+  if (!isAcceptedDrag(dt)) return
   e.preventDefault()
-  chatInputRef.value?.addFiles(e.dataTransfer.files)
+  if (dt!.files.length > 0) {
+    chatInputRef.value?.addFiles(dt!.files)
+    return
+  }
+  // uri-list: first non-comment line is the dragged resource's URL.
+  const uri = dt!.getData('text/uri-list')
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'))
+  if (uri && /^https?:\/\//i.test(uri)) {
+    void chatInputRef.value?.attachLink(uri)
+  }
 }
 const { chips, toContextItems, clear: clearContext } = useChatContext()
 const { state: authState } = useAuth()
 const toast = useToast()
 const messagesEndRef = ref<HTMLElement | null>(null)
+const scrollContainerRef = ref<HTMLElement | null>(null)
 const historyOpen = ref(false)
 const confirmDeleteId = ref<string | null>(null)
+
+// Scroll-follow: keep the view pinned to the bottom while a turn
+// streams, but release the pin the moment the user scrolls up to read.
+// Scrolling back near the bottom re-pins.
+const PIN_THRESHOLD_PX = 96
+const isPinned = ref(true)
+
+function onMessagesScroll() {
+  const el = scrollContainerRef.value
+  if (!el) return
+  isPinned.value = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX
+}
 
 async function handleSend(text: string, attachments?: UIAttachment[]) {
   // Capture chips before clearing
@@ -88,6 +129,16 @@ watch(
     })
   },
 )
+
+// Scroll-follow during streaming: every content-bearing SSE event bumps
+// `streamTick`; while pinned, keep the anchor in view. `auto` (not
+// `smooth`) so rapid deltas don't queue competing animations.
+watch(streamTick, () => {
+  if (!isPinned.value) return
+  nextTick(() => {
+    messagesEndRef.value?.scrollIntoView({ behavior: 'auto' })
+  })
+})
 
 // Show error toast
 watch(error, (err) => {
@@ -212,14 +263,6 @@ function formatConversationDate(dateStr: string): string {
 
       <div class="flex-1" />
 
-      <!-- Model selector -->
-      <AtomsFormSelect
-        :model-value="selectedModel"
-        :options="AI_MODELS.map(m => ({ value: m.id, label: m.label }))"
-        size="sm"
-        @update:model-value="selectedModel = $event"
-      />
-
       <!-- New conversation (quick) -->
       <AtomsIconButton
         v-if="messages.length > 0"
@@ -230,111 +273,140 @@ function formatConversationDate(dateStr: string): string {
       />
     </div>
 
-    <!-- Messages -->
-    <div class="flex-1 overflow-y-auto">
-      <!-- Initial loading skeleton -->
-      <div v-if="messages.length === 0 && !projectStatus" class="flex h-full flex-col items-center justify-center gap-3 p-8">
-        <AtomsSkeleton variant="custom" class="size-12 rounded-full" />
-        <AtomsSkeleton variant="custom" class="h-4 w-40 rounded" />
-        <AtomsSkeleton variant="custom" class="h-3 w-56 rounded" />
-      </div>
+    <!-- Conversation column. On a fresh conversation the whole group — welcome
+         state, context bar and composer — centres vertically; once there are
+         messages the transcript takes the space and the composer sits at the
+         bottom. The wrapper is required: centring on the panel root would drag
+         the header down with it. -->
+    <div class="flex min-h-0 flex-1 flex-col" :class="{ 'justify-center': isEmptyActive }">
+      <!-- Messages -->
+      <div
+        ref="scrollContainerRef"
+        class="overflow-y-auto"
+        :class="isEmptyActive ? 'shrink-0' : 'min-h-0 flex-1'"
+        @scroll.passive="onMessagesScroll"
+      >
+        <!-- Initial loading skeleton -->
+        <div v-if="messages.length === 0 && !projectStatus" class="flex h-full flex-col items-center justify-center gap-3 p-8">
+          <AtomsSkeleton variant="custom" class="size-12 rounded-full" />
+          <AtomsSkeleton variant="custom" class="h-4 w-40 rounded" />
+          <AtomsSkeleton variant="custom" class="h-3 w-56 rounded" />
+        </div>
 
-      <!-- Empty state: setup project (no .contentrain/) -->
-      <div v-else-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center p-8">
-        <AtomsEmptyState
-          illustration="/illustrations/initialize-project.png"
-          :title="t('content.not_found_title')"
-          :description="t('content.not_found_description')"
-        >
-          <template #action>
-            <AtomsBaseButton
-              variant="primary"
-              size="md"
-              @click="handleSend(t('chat.init_prompt'))"
-            >
-              <template #prepend>
-                <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
-              </template>
-              <span>{{ t('chat.init_project') }}</span>
-            </AtomsBaseButton>
-          </template>
-        </AtomsEmptyState>
-      </div>
+        <!-- Empty state: setup project (no .contentrain/) -->
+        <div v-else-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center p-8">
+          <AtomsEmptyState
+            illustration="/illustrations/initialize-project.png"
+            :title="t('content.not_found_title')"
+            :description="t('content.not_found_description')"
+          >
+            <template #action>
+              <AtomsBaseButton
+                variant="primary"
+                size="md"
+                @click="handleSend(t('chat.init_prompt'))"
+              >
+                <template #prepend>
+                  <span class="icon-[annon--arrow-top] size-4" aria-hidden="true" />
+                </template>
+                <span>{{ t('chat.init_project') }}</span>
+              </AtomsBaseButton>
+            </template>
+          </AtomsEmptyState>
+        </div>
 
-      <!-- Empty state: active project -->
-      <div v-else-if="messages.length === 0" class="flex h-full items-center justify-center p-8">
-        <AtomsEmptyState
-          illustration="/illustrations/start-conversation.png"
-          :title="t('chat.empty_title')"
-          :description="t('chat.empty_description')"
-        />
-      </div>
-
-      <!-- Message list -->
-      <div v-else class="space-y-4 p-4">
-        <div v-for="msg in messages" :key="msg.id">
-          <!-- Chat bubble -->
-          <AtomsChatBubble
-            v-if="msg.text || (msg.attachments && msg.attachments.length > 0)"
-            :role="msg.role"
-            :text="msg.text"
-            :user-avatar-url="authState.user?.avatarUrl"
-            :user-name="authState.user?.email"
-            :context-items="msg.contextItems"
-            :attachments="msg.attachments"
+        <!-- Empty state: active project. No `h-full` — this branch is the one
+           that centres with the composer, so its height comes from content. -->
+        <div v-else-if="messages.length === 0" class="flex items-center justify-center p-8">
+          <AtomsEmptyState
+            illustration="/illustrations/start-conversation.png"
+            :title="t('chat.empty_title')"
+            :description="t('chat.empty_description')"
           />
+        </div>
 
-          <!-- Tool calls -->
-          <div v-if="msg.toolCalls.length > 0" class="mt-2 space-y-2" :class="msg.role === 'user' ? 'ml-10' : 'ml-10'">
-            <AtomsToolCallCard
-              v-for="tc in msg.toolCalls" :key="tc.id" :name="tc.name" :input="tc.input"
-              :result="tc.result" :status="tc.status"
+        <!-- Message list -->
+        <div v-else class="space-y-4 p-4">
+          <div v-for="msg in messages" :key="msg.id">
+            <!-- User: bubble with context chips + attachments -->
+            <AtomsChatBubble
+              v-if="msg.role === 'user' && hasVisibleContent(msg)"
+              role="user"
+              :text="messageText(msg)"
+              :user-avatar-url="authState.user?.avatarUrl"
+              :user-name="authState.user?.email"
+              :context-items="msg.contextItems"
+              :attachments="msg.attachments"
             />
+
+            <!-- Assistant: chronological narration/tool flow -->
+            <div v-else-if="msg.role === 'assistant' && hasVisibleContent(msg)" class="flex gap-3">
+              <div class="shrink-0 pt-0.5">
+                <div class="flex size-7 items-center justify-center rounded-full bg-secondary-100 dark:bg-secondary-800">
+                  <AtomsLogo variant="icon" color="auto" class="size-4" />
+                </div>
+              </div>
+              <div class="min-w-0 max-w-[85%] flex-1 space-y-2">
+                <template v-for="(seg, segIdx) in msg.segments" :key="seg.kind === 'tool' ? seg.call.id : `txt-${segIdx}`">
+                  <div
+                    v-if="seg.kind === 'text' && seg.text.trim()"
+                    class="rounded-2xl bg-secondary-50 px-4 py-2.5 text-sm text-heading dark:bg-secondary-900 dark:text-secondary-100"
+                  >
+                    <AtomsChatMarkdown :text="seg.text" />
+                  </div>
+                  <AtomsToolCallCard
+                    v-else-if="seg.kind === 'tool'"
+                    :name="seg.call.name" :input="seg.call.input"
+                    :result="seg.call.result" :status="seg.call.status"
+                  />
+                </template>
+              </div>
+            </div>
           </div>
+
+          <!-- Streaming indicator -->
+          <div v-if="isStreaming" class="ml-10 flex items-center gap-2 text-xs text-muted">
+            <div
+              class="size-3 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
+            />
+            <span>{{ t('chat.thinking') }}</span>
+          </div>
+
+          <!-- Scroll anchor -->
+          <div ref="messagesEndRef" />
         </div>
+      </div>
 
-        <!-- Streaming indicator -->
-        <div v-if="isStreaming" class="ml-10 flex items-center gap-2 text-xs text-muted">
-          <div
-            class="size-3 animate-spin rounded-full border-2 border-secondary-300 border-t-primary-500 dark:border-secondary-600 dark:border-t-primary-400"
-          />
-          <span>{{ t('chat.thinking') }}</span>
+      <!-- Limit reached banner -->
+      <div
+        v-if="error && error.includes('limit')"
+        class="flex items-center gap-3 border-t border-warning-200 bg-warning-50 px-4 py-3 dark:border-warning-500/20 dark:bg-warning-500/10"
+      >
+        <NuxtImg src="/illustrations/limit-reached.png" alt="" class="h-10 w-auto shrink-0" loading="lazy" />
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-medium text-warning-700 dark:text-warning-400">
+            {{ error }}
+          </p>
         </div>
-
-        <!-- Scroll anchor -->
-        <div ref="messagesEndRef" />
+        <AtomsBadge variant="warning" size="sm">
+          {{ t('common.upgrade') }}
+        </AtomsBadge>
       </div>
+
+      <!-- Context bar (pinned items + drop zone) -->
+      <MoleculesChatContextBar />
+
+      <!-- Input -->
+      <MoleculesChatInput
+        ref="chatInputRef"
+        :disabled="!!error && error.includes('limit')"
+        :streaming="isStreaming"
+        :workspace-id="workspaceId"
+        :project-id="projectId"
+        @send="handleSend"
+        @stop="stopStreaming"
+      />
     </div>
-
-    <!-- Limit reached banner -->
-    <div
-      v-if="error && error.includes('limit')"
-      class="flex items-center gap-3 border-t border-warning-200 bg-warning-50 px-4 py-3 dark:border-warning-500/20 dark:bg-warning-500/10"
-    >
-      <NuxtImg src="/illustrations/limit-reached.png" alt="" class="h-10 w-auto shrink-0" loading="lazy" />
-      <div class="min-w-0 flex-1">
-        <p class="text-xs font-medium text-warning-700 dark:text-warning-400">
-          {{ error }}
-        </p>
-      </div>
-      <AtomsBadge variant="warning" size="sm">
-        {{ t('common.upgrade') }}
-      </AtomsBadge>
-    </div>
-
-    <!-- Context bar (pinned items + drop zone) -->
-    <MoleculesChatContextBar />
-
-    <!-- Input -->
-    <MoleculesChatInput
-      ref="chatInputRef"
-      :disabled="!!error && error.includes('limit')"
-      :streaming="isStreaming"
-      :workspace-id="workspaceId"
-      :project-id="projectId"
-      @send="handleSend"
-      @stop="stopStreaming"
-    />
 
     <!-- Panel-wide file drop overlay -->
     <div

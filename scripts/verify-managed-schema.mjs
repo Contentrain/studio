@@ -56,6 +56,11 @@ async function main() {
       'auth.users',
       'auth.refresh_tokens',
       'auth.one_time_tokens',
+      'auth.oauth_clients',
+      'auth.oauth_grants',
+      'auth.oauth_authorization_codes',
+      'auth.oauth_access_tokens',
+      'auth.oauth_refresh_tokens',
       'public.profiles',
       'public.workspaces',
       'public.workspace_members',
@@ -64,6 +69,7 @@ async function main() {
       'public.usage_events_outbox',
       'public.audit_logs',
       'public.oauth_provider_tokens',
+      'public.mcp_oauth_usage',
     ]
     for (const table of expectedTables) {
       const { rows } = await client.query('SELECT to_regclass($1) AS reg', [table])

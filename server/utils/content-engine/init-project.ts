@@ -72,9 +72,11 @@ export async function initProject(
         })
       }
 
-      for (const locale of locales) {
+      // Seed meta on the same locales as content — a non-i18n model keeps ONE
+      // meta record pinned to the default locale, not one per supported locale.
+      for (const locale of contentLocales) {
         files.push({
-          path: resolveMetaPath(ctx.pathCtx, model, locale),
+          path: resolveMetaPath(ctx.pathCtx, model, locale, locales[0] ?? 'en'),
           content: canonicalStringify({}),
         })
       }

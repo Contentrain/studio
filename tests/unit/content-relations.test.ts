@@ -7,7 +7,7 @@ import {
   relationItemKey,
   relationKeyToItem,
   toSelectableRefs,
-} from '../../app/utils/content-relations'
+} from '../../shared/utils/content-relations'
 
 describe('isPolymorphicRelation', () => {
   it('is only polymorphic when more than one target model is listed', () => {
@@ -98,6 +98,25 @@ describe('findRelationLabel', () => {
     expect(findRelationLabel({ count: 3, active: true })).toBeNull()
     expect(findRelationLabel({ huge: 'x'.repeat(200) })).toBeNull()
   })
+
+  it('lets the target model decide, when the target model is known', () => {
+    // A hero slide's ARTICLE field showed `f3a81c09d24e` because the key scan
+    // found nothing it recognised. The model says which field is the title.
+    const article = { kind: 'collection', title_field: 'headline', fields: { headline: { type: 'string' } } }
+    expect(findRelationLabel({ headline: 'Ship it on Friday', slug: 'ship-it' }, article))
+      .toBe('Ship it on Friday')
+  })
+
+  it('still scans keys when the model has no usable declaration', () => {
+    const legacy = { kind: 'collection', fields: { name: { type: 'string' } } }
+    expect(findRelationLabel({ name: 'Ahmet' }, legacy)).toBe('Ahmet')
+    expect(findRelationLabel({ name: 'Ahmet' }, null)).toBe('Ahmet')
+  })
+
+  it('does not use the declared field when the entry leaves it empty', () => {
+    const article = { kind: 'collection', title_field: 'headline', fields: { headline: { type: 'string' } } }
+    expect(findRelationLabel({ headline: '', slug: 'ship-it' }, article)).toBe('ship-it')
+  })
 })
 
 describe('buildRelationOptions', () => {
@@ -120,6 +139,15 @@ describe('buildRelationOptions', () => {
     const data = { abcdef123456: { count: 1 } }
     expect(buildRelationOptions('m', data, false)).toEqual([
       { value: 'abcdef123456', label: 'abcdef12' },
+    ])
+  })
+
+  it('labels options from the target model\'s declared title field', () => {
+    // Without the model this listed `f3a81c09` — a ref, not a choice.
+    const data = { f3a81c09d24e: { headline: 'Ship it on Friday', kicker: 'News' } }
+    const article = { kind: 'collection', title_field: 'headline', fields: { headline: { type: 'string' } } }
+    expect(buildRelationOptions('article', data, false, article)).toEqual([
+      { value: 'f3a81c09d24e', label: 'Ship it on Friday' },
     ])
   })
 })

@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { assertLocalSupabaseDb, executeSql, queryAsUserJson, resetDatabase } from './helpers'
+import { assertDbReachable, executeSql, queryAsUserJson, resetDatabase } from './helpers'
 
 const ids = {
   owner: '00000000-0000-0000-0000-000000000001',
@@ -13,7 +13,7 @@ const ids = {
 }
 
 beforeAll(() => {
-  assertLocalSupabaseDb()
+  assertDbReachable()
 })
 
 beforeEach(() => {
@@ -21,7 +21,7 @@ beforeEach(() => {
   seedFixtures()
 })
 
-describe('local Supabase RLS contracts', () => {
+describe('rls contracts (request.jwt.claim.sub GUC — Supabase local + plain PG)', () => {
   it('allows workspace members to read only their own membership row', () => {
     const rows = queryAsUserJson<{ user_id: string, role: string }>(ids.member, `
       select user_id, role
@@ -87,28 +87,17 @@ describe('local Supabase RLS contracts', () => {
 })
 
 function seedFixtures() {
+  // auth.users INSERT sticks to the columns both schemas share (GoTrue's
+  // table on Supabase, the auth shim's on plain PG) — id, email,
+  // raw_user_meta_data. Triggers are suppressed so the fixtures below stay
+  // exact instead of racing handle_new_user's auto-bootstrap; superuser is
+  // guaranteed on both backends (supabase local + throwaway/CI postgres).
   executeSql(`
 set session_replication_role = replica;
-insert into auth.users (
-  instance_id,
-  id,
-  aud,
-  role,
-  email,
-  encrypted_password,
-  email_confirmed_at,
-  raw_app_meta_data,
-  raw_user_meta_data,
-  created_at,
-  updated_at,
-  confirmation_token,
-  email_change,
-  email_change_token_new,
-  recovery_token
-) values
-  ('00000000-0000-0000-0000-000000000000', '${ids.owner}', 'authenticated', 'authenticated', 'owner@example.com', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
-  ('00000000-0000-0000-0000-000000000000', '${ids.member}', 'authenticated', 'authenticated', 'member@example.com', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
-  ('00000000-0000-0000-0000-000000000000', '${ids.outsider}', 'authenticated', 'authenticated', 'outsider@example.com', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('${ids.owner}', 'owner@example.com', '{}'),
+  ('${ids.member}', 'member@example.com', '{}'),
+  ('${ids.outsider}', 'outsider@example.com', '{}');
 set session_replication_role = origin;
 
 insert into public.profiles (id, display_name, email) values

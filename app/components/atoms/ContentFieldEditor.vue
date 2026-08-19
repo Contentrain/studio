@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~/utils/content-relations'
+import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~~/shared/utils/content-relations'
 
 interface FieldDef {
   type: string
@@ -75,7 +75,7 @@ function removeTag(index: number) {
 // --- Relations (single + multi, with polymorphic { model, ref } support) ---
 // Per MCP validator: a relation/relations field whose `model` lists more than
 // one target stores compound `{ model, ref }` values instead of bare strings.
-// Encoding/normalization lives in ~/utils/content-relations (unit-tested).
+// Encoding/normalization lives in ~~/shared/utils/content-relations (unit-tested).
 const isPolymorphic = computed(() => isPolymorphicRelation(fieldDef?.model))
 const relItemKey = relationItemKey
 
@@ -114,6 +114,48 @@ function removeRelation(index: number) {
   const arr = Array.isArray(localValue.value) ? [...localValue.value as unknown[]] : []
   arr.splice(index, 1)
   localValue.value = arr
+}
+
+// --- Relation ordering ---
+// The array's order is the display order downstream, but it could only ever be
+// rebuilt by removing everything and re-adding in sequence. Chips reorder by
+// drag for the mouse and by arrow key for everyone else — drag alone would put
+// the feature out of reach of a keyboard.
+const relationChipRefs = ref<HTMLElement[]>([])
+const draggingRelation = ref<number | null>(null)
+
+function moveRelation(from: number, to: number) {
+  const arr = Array.isArray(localValue.value) ? [...localValue.value as unknown[]] : []
+  if (from === to || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return
+  const [moved] = arr.splice(from, 1)
+  arr.splice(to, 0, moved)
+  localValue.value = arr
+}
+
+function onRelationDragStart(index: number, event: DragEvent) {
+  draggingRelation.value = index
+  event.dataTransfer?.setData('text/plain', String(index))
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+function onRelationDrop(index: number) {
+  if (draggingRelation.value !== null) moveRelation(draggingRelation.value, index)
+  draggingRelation.value = null
+}
+
+/** Arrow keys move the focused chip; focus follows it so a run of presses works. */
+function onRelationKeydown(index: number, event: KeyboardEvent) {
+  const back = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+  const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+  if (!back && !forward) return
+
+  const target = back ? index - 1 : index + 1
+  const length = Array.isArray(localValue.value) ? (localValue.value as unknown[]).length : 0
+  if (target < 0 || target >= length) return
+
+  event.preventDefault()
+  moveRelation(index, target)
+  nextTick(() => relationChipRefs.value[target]?.focus())
 }
 
 // --- Slug auto-transform ---
@@ -171,6 +213,40 @@ const arrayItemFields = computed<Record<string, FieldDef>>(() => {
 })
 const arrayItemFieldIds = computed(() => Object.keys(arrayItemFields.value))
 const isObjectArray = computed(() => arrayItemFieldIds.value.length > 0)
+
+/**
+ * An array of plain values, whichever way the schema spells it.
+ *
+ * `items: 'string'` and `items: { type: 'string' }` mean the same thing, but
+ * only the shorthand used to reach the chip editor — the object form matched
+ * neither this branch nor the object-array repeater and fell through to the
+ * "edit via chat" placeholder, taking every nested field inside it along.
+ */
+const isPrimitiveArray = computed(() => {
+  if (type !== 'array') return false
+  const items = fieldDef?.items
+  if (!items || typeof items === 'string') return true
+  return typeof items === 'object' && items.type !== 'object'
+})
+
+/**
+ * Why the form can't edit this field, so the placeholder can say which — the
+ * three cases need different actions from the reader.
+ */
+const fallbackReason = computed<'depth' | 'no_item_fields' | 'no_fields' | null>(() => {
+  if (type === 'object') {
+    if (!fieldDef?.fields || Object.keys(fieldDef.fields).length === 0) return 'no_fields'
+    if (depth >= 2) return 'depth'
+    return null
+  }
+  if (type === 'array' && fieldDef?.items && typeof fieldDef.items === 'object') {
+    // `{ type: 'object' }` with no `fields` — the schema never said what an
+    // item looks like, so there is nothing to build a row from.
+    if (!isObjectArray.value) return 'no_item_fields'
+    if (depth >= 2) return 'depth'
+  }
+  return null
+})
 const arrayItems = computed(() => (Array.isArray(localValue.value) ? localValue.value : []) as Array<Record<string, unknown>>)
 
 function addArrayObject() {
@@ -230,7 +306,7 @@ function getRelationLabel(key: string): string {
       <input
         type="color"
         :value="String(localValue ?? '#000000')"
-        aria-label="Color picker"
+        :aria-label="t('content.color_picker')"
         class="size-9 shrink-0 cursor-pointer rounded-lg border border-secondary-200 bg-white p-0.5 dark:border-secondary-800 dark:bg-secondary-900"
         @input="localValue = ($event.target as HTMLInputElement).value"
       >
@@ -304,21 +380,24 @@ function getRelationLabel(key: string): string {
       @update:model-value="localValue = $event"
     />
 
-    <!-- ═══ Date ═══ -->
+    <!-- ═══ Date ═══
+         Converted in both directions: the input only accepts YYYY-MM-DD and
+         silently blanks anything else, and writing its raw output back would
+         drop the stored ISO shape. See app/utils/date-field.ts. -->
     <AtomsFormInput
       v-else-if="type === 'date'"
-      :model-value="String(localValue ?? '')"
+      :model-value="toDateInputValue(localValue)"
       type="date"
-      @update:model-value="localValue = $event"
+      @update:model-value="localValue = fromDateInputValue($event)"
       @keydown="handleKeydown"
     />
 
     <!-- ═══ Datetime ═══ -->
     <AtomsFormInput
       v-else-if="type === 'datetime'"
-      :model-value="String(localValue ?? '')"
+      :model-value="toDateTimeInputValue(localValue)"
       type="datetime-local"
-      @update:model-value="localValue = $event"
+      @update:model-value="localValue = fromDateTimeInputValue($event)"
       @keydown="handleKeydown"
     />
 
@@ -348,12 +427,30 @@ function getRelationLabel(key: string): string {
 
     <!-- ═══ Relations (multi-select) ═══ -->
     <div v-else-if="type === 'relations'">
+      <!-- Order is meaningful downstream, so chips are reorderable: drag with a
+           pointer, arrow keys from the keyboard. -->
       <div v-if="Array.isArray(localValue) && (localValue as unknown[]).length > 0" class="mb-2 flex flex-wrap gap-1">
         <span
           v-for="(item, idx) in (localValue as unknown[])"
           :key="relItemKey(item)"
-          class="inline-flex items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-xs font-medium text-heading dark:bg-secondary-800 dark:text-secondary-100"
+          ref="relationChipRefs"
+          tabindex="0"
+          draggable="true"
+          role="listitem"
+          :aria-label="t('content.relation_position', {
+            label: getRelationLabel(relItemKey(item)),
+            position: idx + 1,
+            total: (localValue as unknown[]).length,
+          })"
+          class="inline-flex cursor-grab items-center gap-1 rounded-full bg-secondary-100 px-2 py-0.5 text-xs font-medium text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 active:cursor-grabbing dark:bg-secondary-800 dark:text-secondary-100"
+          :class="draggingRelation === idx ? 'opacity-50' : ''"
+          @dragstart="onRelationDragStart(idx, $event)"
+          @dragover.prevent
+          @drop.prevent="onRelationDrop(idx)"
+          @dragend="draggingRelation = null"
+          @keydown="onRelationKeydown(idx, $event)"
         >
+          <span class="icon-[annon--menu] size-2.5 shrink-0 text-muted" aria-hidden="true" />
           {{ getRelationLabel(relItemKey(item)) }}
           <button
             type="button"
@@ -396,8 +493,8 @@ function getRelationLabel(key: string): string {
       @update:model-value="localValue = $event"
     />
 
-    <!-- ═══ Array (string[]) ═══ -->
-    <div v-else-if="type === 'array' && (!fieldDef?.items || typeof fieldDef.items === 'string')">
+    <!-- ═══ Array of plain values ═══ -->
+    <div v-else-if="isPrimitiveArray">
       <div v-if="Array.isArray(localValue) && (localValue as unknown[]).length > 0" class="mb-2 flex flex-wrap gap-1">
         <span
           v-for="(item, idx) in (localValue as unknown[])"
@@ -426,8 +523,12 @@ function getRelationLabel(key: string): string {
       </div>
     </div>
 
-    <!-- ═══ Object (nested fields, max depth 2) ═══ -->
-    <div v-else-if="type === 'object' && fieldDef?.fields && depth < 2" class="space-y-3 rounded-lg border border-secondary-200 p-3 dark:border-secondary-800">
+    <!-- ═══ Object (nested fields, max depth 2) ═══
+         `objectFieldIds.length` rather than `fieldDef?.fields`: an empty
+         `fields: {}` is truthy and used to render a bordered box with nothing
+         in it and no explanation. That case now falls through to the
+         placeholder, which says the schema defines no fields. -->
+    <div v-else-if="type === 'object' && objectFieldIds.length > 0 && depth < 2" class="space-y-3 rounded-lg border border-secondary-200 p-3 dark:border-secondary-800">
       <div v-for="key in objectFieldIds" :key="key">
         <AtomsFormLabel :text="key" size="xs" :required="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.required" />
         <div class="mt-1">
@@ -487,13 +588,23 @@ function getRelationLabel(key: string): string {
       </AtomsBaseButton>
     </div>
 
-    <!-- ═══ Array of objects / complex — placeholder ═══ -->
+    <!-- ═══ Not editable here — say which of the three reasons it is ═══
+         The old placeholder showed one generic hint for all of them, so a
+         fixable schema gap looked identical to a Studio limit. That silence is
+         why the field report concluded no composite field was editable. -->
     <div
-      v-else-if="(type === 'array' && fieldDef?.items && typeof fieldDef.items === 'object') || (type === 'object' && depth >= 2)"
+      v-else-if="fallbackReason"
       class="rounded-lg border border-dashed border-secondary-300 px-3 py-4 text-center dark:border-secondary-700"
     >
       <span class="icon-[annon--comment-2-plus] mx-auto mb-1 block size-5 text-muted" aria-hidden="true" />
       <p class="text-xs text-muted">
+        {{ fallbackReason === 'depth'
+          ? t('content.nesting_too_deep')
+          : fallbackReason === 'no_item_fields'
+            ? t('content.array_items_undefined')
+            : t('content.object_fields_undefined') }}
+      </p>
+      <p class="mt-1 text-xs text-disabled">
         {{ t('content.complex_hint') }}
       </p>
     </div>

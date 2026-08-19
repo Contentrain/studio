@@ -10,6 +10,7 @@ import {
   createFeatureBranch,
   shapeEntriesForSave,
   toObjectMap,
+  planMatchesCurrent,
 } from './helpers'
 import { normalizeModelContentMedia } from '../media-rewrite'
 import { saveDocument } from './save-document'
@@ -204,7 +205,7 @@ export async function saveContent(
     ? plan.result.map(r => r.id).filter((id): id is string => typeof id === 'string')
     : []
 
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale)
+  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, config.locales?.default ?? 'en')
   const patchedChanges = await applyStudioMetaOverrides({
     planChanges: plan.changes,
     metaPath,
@@ -221,6 +222,19 @@ export async function saveContent(
   // in `branch-ops.ts`.
   const allChanges: FileChange[] = [...patchedChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
+
+  // Byte-identical plan → the requested state is already live on
+  // `contentrain`. Skip the branch/commit/merge cycle entirely (a no-op
+  // used to create an empty commit and a full ~18s merge round).
+  if (await planMatchesCurrent(reader, allChanges)) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+      diff: [],
+      validation,
+      unchanged: true,
+    }
+  }
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 

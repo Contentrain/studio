@@ -10,6 +10,14 @@ const searchQuery = ref('')
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 
+// A pin button is a toggle, so the label has to name the direction it will go —
+// tooltip and `aria-label` both read from here so the two can never drift.
+function pinLabel(key: string) {
+  return isPinned('field', modelMeta.value?.id ?? '', undefined, key)
+    ? t('content.unpin')
+    : t('content.pin_field')
+}
+
 const filteredEntries = computed(() => {
   const entries = Object.entries(props.content)
   if (!searchQuery.value) return entries
@@ -53,7 +61,7 @@ function onRowDragStart(e: DragEvent, key: string, value: unknown) {
   <div class="flex h-full flex-col">
     <!-- Search -->
     <div class="shrink-0 border-b border-secondary-200 px-5 py-2 dark:border-secondary-800">
-      <AtomsFormInput v-model="searchQuery" type="search" :placeholder="t('content.filter_keys')" />
+      <AtomsFormInput v-model="searchQuery" type="search" :placeholder="t('content.filter_keys')" clearable />
     </div>
 
     <!-- Table -->
@@ -86,16 +94,20 @@ function onRowDragStart(e: DragEvent, key: string, value: unknown) {
               {{ String(value) }}
             </td>
             <td class="pr-3">
-              <button
-                type="button"
-                class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-                :class="isPinned('field', modelMeta?.id ?? '', undefined, key)
-                  ? 'text-info-500 opacity-100'
-                  : 'text-muted opacity-0 hover:opacity-100 group-hover:opacity-60'"
-                @click="pinKey($event, key, value)"
-              >
-                <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
-              </button>
+              <AtomsTooltip :text="pinLabel(key)">
+                <button
+                  type="button"
+                  :aria-label="pinLabel(key)"
+                  :aria-pressed="isPinned('field', modelMeta?.id ?? '', undefined, key)"
+                  class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                  :class="isPinned('field', modelMeta?.id ?? '', undefined, key)
+                    ? 'text-info-500 opacity-100'
+                    : 'text-muted hover:opacity-100 group-hover:opacity-60'"
+                  @click="pinKey($event, key, value)"
+                >
+                  <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+                </button>
+              </AtomsTooltip>
             </td>
           </tr>
         </tbody>

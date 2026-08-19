@@ -140,20 +140,19 @@ export function cdnMethods(): CDNMethods {
     },
 
     async createCDNBuild(input) {
-      const { data, error } = await getAdmin()
-        .from('cdn_builds')
-        .insert({
-          project_id: input.projectId,
-          trigger_type: input.triggerType,
-          commit_sha: input.commitSha ?? null,
-          branch: input.branch ?? null,
-          status: 'building',
-        })
-        .select('id')
-        .single()
+      // Atomic single-in-flight claim (per-project advisory lock + stale
+      // reclaim). Returns the new id, or NULL when a build is already running.
+      const { data, error } = await getAdmin().rpc('claim_cdn_build', {
+        p_project_id: input.projectId,
+        p_trigger_type: input.triggerType,
+        p_commit_sha: input.commitSha ?? null,
+        p_branch: input.branch ?? null,
+        p_stale_seconds: 900,
+      })
 
       if (error) throw createError({ statusCode: 500, message: error.message })
-      return data as DatabaseRow
+      const id = (data as string | null) ?? null
+      return id ? ({ id } as DatabaseRow) : null
     },
 
     async updateCDNBuild(buildId, updates) {

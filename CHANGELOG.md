@@ -1,6 +1,146 @@
 # Changelog
 
 
+## v0.3.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.2.1...v0.3.0)
+
+### 🚀 Enhancements
+
+- **chat:** Trial banner overlay, one-card composer, capped app shell ([#182](https://github.com/Contentrain/studio/pull/182))
+- **project:** Resizable, collapsible content panel ([#183](https://github.com/Contentrain/studio/pull/183))
+- **vocabulary:** Paste a glossary instead of typing it one term at a time ([#188](https://github.com/Contentrain/studio/pull/188))
+- **content:** Say what the row icons do, and what the media actually is ([#189](https://github.com/Contentrain/studio/pull/189))
+- **shell:** Let the sidebar be resized, and collapsed ([#190](https://github.com/Contentrain/studio/pull/190))
+- **content:** Read the title from the field the model declares ([#192](https://github.com/Contentrain/studio/pull/192))
+- **content:** Connect the search that was already built, and stop ([#193](https://github.com/Contentrain/studio/pull/193))
+- **content:** Filter and sort a listing by what the model actually declares ([#195](https://github.com/Contentrain/studio/pull/195))
+- **content:** Heal a diverged advance with the ecosystem's reconcile ([#201](https://github.com/Contentrain/studio/pull/201))
+
+### 🔥 Performance
+
+- **mcp-cloud:** Await only the half of the merge the caller can observe ([#176](https://github.com/Contentrain/studio/pull/176))
+- **ui:** One tooltip provider for the app, not one per tooltip ([#194](https://github.com/Contentrain/studio/pull/194))
+
+### 🩹 Fixes
+
+- **cdn:** Announce cdn.build_complete from every build trigger ([#177](https://github.com/Contentrain/studio/pull/177))
+- **cdn:** Publish build artifacts in an order a reader can trust ([#178](https://github.com/Contentrain/studio/pull/178))
+- **content:** Object field overflow, input clear button, dead layout removal ([#184](https://github.com/Contentrain/studio/pull/184))
+- **content:** Stop date fields loading empty into the edit form ([#185](https://github.com/Contentrain/studio/pull/185))
+- **vocabulary:** Stop concurrent saves from dropping each other's terms ([#186](https://github.com/Contentrain/studio/pull/186))
+- **content:** Composite field editing gaps + relation ordering ([#187](https://github.com/Contentrain/studio/pull/187))
+- **brain:** Give search an index to search ([#196](https://github.com/Contentrain/studio/pull/196))
+- **chat:** Make attached images addressable and stop silent attachment loss ([#197](https://github.com/Contentrain/studio/pull/197))
+- **agent:** Ground the tools the chat agent reasons with ([#198](https://github.com/Contentrain/studio/pull/198))
+- **server:** Survive vocabulary merge conflicts and idle MCP streams ([#199](https://github.com/Contentrain/studio/pull/199))
+- **content:** Approve tells the truth on a diverged repo ([#200](https://github.com/Contentrain/studio/pull/200))
+
+### 🏡 Chore
+
+- **content:** Declare the field that titles each model's entries ([#191](https://github.com/Contentrain/studio/pull/191))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
+## v0.2.1
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.2.0...v0.2.1)
+
+### 🩹 Fixes
+
+- **projects:** Establish the contentrain branch when a repository is connected ([#171](https://github.com/Contentrain/studio/pull/171))
+- **mcp-cloud:** Make a write durable before its response reaches the agent ([#172](https://github.com/Contentrain/studio/pull/172))
+
+### 🏡 Chore
+
+- **mcp:** Pin 2.1.1 and refresh the directory submission runbook ([#168](https://github.com/Contentrain/studio/pull/168))
+- **mcp:** Pin 2.3.0 — structured provider errors and a gated submit hint ([#173](https://github.com/Contentrain/studio/pull/173))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
+## v0.2.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.2.0-beta.1...v0.2.0)
+
+### 🩹 Fixes
+
+- **docker:** Carry the migration runner + SQL lineage in the runtime image ([#149](https://github.com/Contentrain/studio/pull/149))
+- **docker:** Un-ignore supabase/migrations so the runtime COPY resolves ([#150](https://github.com/Contentrain/studio/pull/150))
+- **chat:** Stop silent output-token truncation from stranding agent writes ([#151](https://github.com/Contentrain/studio/pull/151))
+- **cdn:** Honor default locale, locale_strategy, and singleton status in builds ([#152](https://github.com/Contentrain/studio/pull/152))
+- **cdn:** Skip content-less builds so the manifest never outruns the bundle ([#153](https://github.com/Contentrain/studio/pull/153))
+- **cdn:** Serialize builds per project to stop concurrent-build corruption ([#154](https://github.com/Contentrain/studio/pull/154))
+- **content:** Pin non-i18n meta to default locale; upgrade contentrain to 2.x ([#155](https://github.com/Contentrain/studio/pull/155))
+- **chat:** Render agent turns as chronological segments with scroll-follow ([#159](https://github.com/Contentrain/studio/pull/159))
+- **chat:** Keep the full agent trace visible in history and never end a turn without a summary ([#160](https://github.com/Contentrain/studio/pull/160))
+- **chat:** Stream updates never re-rendered — mutate the assistant message via its reactive proxy ([#161](https://github.com/Contentrain/studio/pull/161))
+
+### 💅 Refactors
+
+- **content:** Delegate content-dir resolution to MCP contentDirPath (mcp 2.1.0) ([#162](https://github.com/Contentrain/studio/pull/162))
+
+### 📖 Documentation
+
+- **mcp:** Refresh remote-MCP submission runbook ([#148](https://github.com/Contentrain/studio/pull/148))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
+## v0.2.0-beta.1
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.1.0...v0.2.0-beta.1)
+
+### 🚀 Enhancements
+
+- **ai:** Add Claude Sonnet 5 + single-source chat model catalog ([#113](https://github.com/Contentrain/studio/pull/113))
+- **durability:** Alert on swallowed R2-teardown failures + require explicit CDN bucket ([#121](https://github.com/Contentrain/studio/pull/121))
+- **cdn:** Emit per-locale content bundles for single-fetch delivery ([#125](https://github.com/Contentrain/studio/pull/125))
+- **providers:** Add auth/database provider selectors behind boot validation ([#126](https://github.com/Contentrain/studio/pull/126))
+- **db:** Portable migration lineage — plain-Postgres auth shim, runner, CI proof ([#127](https://github.com/Contentrain/studio/pull/127))
+- **db:** Postgres DatabaseProvider core — client, RLS helpers, first 4 modules, contract suite ([#128](https://github.com/Contentrain/studio/pull/128))
+- **db:** Postgres provider — projects, usage, conversations (43 methods) + conversation delete-policy fix ([#130](https://github.com/Contentrain/studio/pull/130))
+- **db:** Postgres DatabaseProvider COMPLETE — final 6 modules + delete-safe FK fixes ([#131](https://github.com/Contentrain/studio/pull/131))
+- **auth:** Managed AuthProvider — the postgres pair is now selectable ([#132](https://github.com/Contentrain/studio/pull/132))
+- **tests:** Plain-PG test matrix + managed-pair boot smoke + provider-pair docs (Faz 4) ([#138](https://github.com/Contentrain/studio/pull/138))
+- **oauth:** Studio-managed OAuth 2.1 AS for the remote MCP surface ([#141](https://github.com/Contentrain/studio/pull/141))
+- **mcp:** ProjectId-less remote MCP endpoint behind the OAuth grant ([#142](https://github.com/Contentrain/studio/pull/142))
+- **ui:** Connected apps panel — see and revoke remote MCP grants ([#143](https://github.com/Contentrain/studio/pull/143))
+- **auth:** Directory-review support — env-gated reviewer login + submission prep ([#144](https://github.com/Contentrain/studio/pull/144))
+- **mcp:** Bump @contentrain/mcp to 1.10.0 — session fingerprint + media tool classes ([#145](https://github.com/Contentrain/studio/pull/145))
+- **mcp:** Media facet — the 1.10.0 media tools over MCP Cloud ([#146](https://github.com/Contentrain/studio/pull/146))
+
+### 🔥 Performance
+
+- ~6x fewer GitHub API calls in the agent write path (W1-W4) ([#116](https://github.com/Contentrain/studio/pull/116))
+- **cdn:** Serve delivery hot path from in-process caches + conditional R2 reads ([#124](https://github.com/Contentrain/studio/pull/124))
+
+### 🩹 Fixes
+
+- **auth:** Keep user sessions off the service-role Supabase client ([#112](https://github.com/Contentrain/studio/pull/112))
+- **content:** Add 17 dictionary keys used in code but never defined ([#114](https://github.com/Contentrain/studio/pull/114))
+- **cdn:** Stop full rebuild from wiping out-of-band media binaries ([#115](https://github.com/Contentrain/studio/pull/115))
+- **git:** Never auto-delete the source branch on merge (MCP 1.8.0) ([#118](https://github.com/Contentrain/studio/pull/118))
+- **brain:** Full-rebuild off default branch when contentrain is missing ([#119](https://github.com/Contentrain/studio/pull/119))
+- **content:** Handle document per-slug meta in status, copy-locale, and UI ([#123](https://github.com/Contentrain/studio/pull/123))
+- **auth:** Pin the OAuth exchange redirect_uri to siteUrl behind proxies ([#134](https://github.com/Contentrain/studio/pull/134))
+- **auth:** Let the oauth module own both dance legs — its state, its check ([#135](https://github.com/Contentrain/studio/pull/135))
+- **auth:** Drop the state param from the oauth entry URL — it broke module CSRF ([#136](https://github.com/Contentrain/studio/pull/136))
+- **cdn:** Derive webhook build paths from the compare API, not payload commits ([#139](https://github.com/Contentrain/studio/pull/139))
+- **chat:** Refuse media-intent uploads while project CDN delivery is off ([#140](https://github.com/Contentrain/studio/pull/140))
+
+### 🏡 Chore
+
+- **gitignore:** Ignore .codex/ agent local configs ([#147](https://github.com/Contentrain/studio/pull/147))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.1.0
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.1.0-beta.8...v0.1.0)

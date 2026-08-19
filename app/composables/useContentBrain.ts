@@ -72,6 +72,9 @@ export function useContentBrain() {
   const treeSha = useState<string | null>('brain-tree-sha', () => null)
   const syncing = useState('brain-syncing', () => false)
   const ready = useState('brain-ready', () => false)
+  // `sharedWorker` is a module-scope `let`, so a component cannot react to it.
+  // Search needs to know, hence the mirror.
+  const workerAvailable = useState('brain-worker-available', () => false)
   const syncError = useState<string | null>('brain-sync-error', () => null)
   const config = useState<ContentrainConfig | null>('brain-config', () => null)
   const models = useState<ModelDefinition[]>('brain-models', () => [])
@@ -103,11 +106,13 @@ export function useContentBrain() {
       // eslint-disable-next-line no-console
       console.log('[brain] Worker created successfully, sending init for project:', projectId)
       sharedWorker.postMessage({ type: 'init', projectId })
+      workerAvailable.value = true
     }
     catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[brain] Worker creation failed, using in-memory only mode:', e)
       sharedWorker = null
+      workerAvailable.value = false
     }
   }
 
@@ -117,6 +122,7 @@ export function useContentBrain() {
       sharedWorker.terminate()
       sharedWorker = null
     }
+    workerAvailable.value = false
     sharedProjectId = null
     ready.value = false
     treeSha.value = null
@@ -288,8 +294,19 @@ export function useContentBrain() {
     return { data: null, kind: 'collection', meta: null }
   }
 
-  async function searchContent(query: string, modelId?: string, limit?: number): Promise<SearchResult[]> {
+  /**
+   * Full-text search over the brain's index.
+   *
+   * `locale` matters: the index is keyed per locale, so a search that omits it
+   * returns English hits to someone reading the Turkish list.
+   */
+  async function searchContent(
+    query: string,
+    options: { modelId?: string, locale?: string, limit?: number } = {},
+  ): Promise<SearchResult[]> {
     if (!sharedWorker) return []
+
+    const { modelId, locale, limit } = options
 
     return new Promise((resolve) => {
       const id = `search-${++requestCounter}`
@@ -297,7 +314,7 @@ export function useContentBrain() {
         resolve: data => resolve((data ?? []) as SearchResult[]),
         reject: () => resolve([]),
       })
-      sharedWorker!.postMessage({ type: 'search', id, query, modelId, limit: limit ?? 10 })
+      sharedWorker!.postMessage({ type: 'search', id, query, modelId, locale, limit: limit ?? 10 })
 
       setTimeout(() => {
         if (pendingRequests.has(id)) {
@@ -312,6 +329,15 @@ export function useContentBrain() {
 
   const modelList = computed(() => models.value)
   const hasContentrain = computed(() => config.value !== null)
+
+  /**
+   * Whether a search can currently answer.
+   *
+   * `searchContent` resolves to `[]` when there is no worker, which is
+   * indistinguishable from "nothing matched" — and telling someone their query
+   * found nothing when nothing was searched is worse than saying so.
+   */
+  const searchReady = computed(() => workerAvailable.value && ready.value)
   const projectStats = computed(() => {
     const ctx = contentContext.value as { stats?: { models?: number, entries?: number, locales?: string[] } } | null
     if (!config.value) return null
@@ -328,6 +354,7 @@ export function useContentBrain() {
     treeSha: readonly(treeSha),
     syncing: readonly(syncing),
     ready: readonly(ready),
+    searchReady,
     syncError: readonly(syncError),
     config: readonly(config),
     models: readonly(models),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey } from '~/utils/injection-keys'
 
-defineProps<{
+const props = defineProps<{
   content: Record<string, unknown>
   workspaceId?: string
   projectId?: string
@@ -16,11 +16,20 @@ const emit = defineEmits<{
 
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 const { t } = useContent()
 const getModelFields = inject(getModelFieldsKey, () => ({}))
+
+// A pin button is a toggle, so the label has to name the direction it will go —
+// tooltip and `aria-label` both read from here so the two can never drift.
+function pinLabel(fieldId: string) {
+  return isPinned('field', props.modelId ?? '', undefined, fieldId)
+    ? t('content.unpin')
+    : t('content.pin_field')
+}
 
 // Modal edit state
 const editModalOpen = ref(false)
@@ -39,7 +48,7 @@ function pinField(e: Event, fieldId: string, value: unknown) {
   if (!meta) return
   toggle({
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -53,7 +62,7 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
   if (!meta) return
   startDrag(e, {
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -84,18 +93,22 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
         @dragend="endDrag"
       >
         <div class="flex items-center gap-1">
-          <AtomsSectionLabel :label="fieldId" class="flex-1 px-0 py-0" />
+          <AtomsSectionLabel :label="getFieldLabel(fieldId)" class="flex-1 px-0 py-0" />
           <!-- Pin field -->
-          <button
-            type="button"
-            class="shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-            :class="isPinned('field', modelId ?? '', undefined, fieldId)
-              ? 'text-info-500 opacity-100'
-              : 'text-muted opacity-0 hover:opacity-100 group-hover/field:opacity-60'"
-            @click="pinField($event, fieldId, content[fieldId])"
-          >
-            <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
-          </button>
+          <AtomsTooltip :text="pinLabel(fieldId)">
+            <button
+              type="button"
+              :aria-label="pinLabel(fieldId)"
+              :aria-pressed="isPinned('field', modelId ?? '', undefined, fieldId)"
+              class="reveal-on-hover shrink-0 rounded-md p-0.5 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              :class="isPinned('field', modelId ?? '', undefined, fieldId)
+                ? 'text-info-500 opacity-100'
+                : 'text-muted hover:opacity-100 group-hover/field:opacity-60'"
+              @click="pinField($event, fieldId, content[fieldId])"
+            >
+              <span class="icon-[annon--pin] size-2.5" aria-hidden="true" />
+            </button>
+          </AtomsTooltip>
         </div>
         <div class="mt-1">
           <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" />

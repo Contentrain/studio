@@ -6,12 +6,18 @@
  * Cross-tab sync via BroadcastChannel.
  */
 
-import { createStore, del, get, keys, set } from 'idb-keyval'
+import { del, get, keys, set } from 'idb-keyval'
 import FlexSearch from 'flexsearch'
+// A worker has no Nuxt auto-imports, so these are explicit.
+import { collectSearchHits, indexFetchLimit } from '../utils/search-results'
+import { createSharedStores } from './brain-idb-store'
 
-// Custom IDB stores in 'cr-brain' database
-const metaStore = createStore('cr-brain', 'brain-meta')
-const contentStore = createStore('cr-brain', 'brain-content')
+// Both stores live in one 'cr-brain' database, opened once. idb-keyval's own
+// `createStore` cannot do that — see brain-idb-store.ts for why it matters.
+const { 'brain-meta': metaStore, 'brain-content': contentStore } = createSharedStores(
+  'cr-brain',
+  ['brain-meta', 'brain-content'],
+)
 
 // FlexSearch index (no published types — use any)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,7 +58,13 @@ self.onmessage = async (event: MessageEvent) => {
         const { payload, projectId } = msg
 
         if (payload.delta && !payload.config && !payload.models && !payload.content) {
-          // No changes — already up to date
+          // No changes on the server — but "no changes" is about the repo, not
+          // about this worker. A worker is created fresh on every page load and
+          // its FlexSearch index lives only in memory, while the content it is
+          // built from lives in IndexedDB and survives. So on the common path —
+          // reload a project nobody has edited — the index was never built and
+          // search answered nothing, forever, without an error.
+          await ensureSearchIndex(projectId)
           self.postMessage({ type: 'synced', treeSha: payload.treeSha, stats: null })
           break
         }
@@ -127,24 +139,23 @@ self.onmessage = async (event: MessageEvent) => {
       }
 
       case 'search': {
-        const { id, query, modelId: searchModelId, limit } = msg
-        const results: Array<{ modelId: string, entryId: string, locale: string, score: number }> = []
+        const { id, query, modelId: searchModelId, locale: searchLocale, limit } = msg
+        // Belt and braces: every path that can leave a worker without an index
+        // — a cross-tab sync, an invalidate, a cached load — ends up here
+        // rather than silently answering nothing.
+        await ensureSearchIndex(currentProjectId)
+        const filters = { modelId: searchModelId, locale: searchLocale, limit: limit ?? 10 }
+        let results: Array<{ modelId: string, entryId: string, locale: string, score: number }> = []
 
         if (searchIndex) {
-          const flexResults = searchIndex.search(query, { limit: limit ?? 10 })
-          for (const field of flexResults) {
-            for (const resultId of field.result) {
-              const doc = searchIndex.get(resultId as unknown as string)
-              if (doc && (!searchModelId || doc.modelId === searchModelId)) {
-                results.push({
-                  modelId: doc.modelId,
-                  entryId: doc.entryId,
-                  locale: doc.locale,
-                  score: 1,
-                })
-              }
-            }
-          }
+          const flexResults = searchIndex.search(query, { limit: indexFetchLimit(filters) })
+          // One result set per indexed field, flattened in rank order.
+          const docIds = flexResults.flatMap((field: { result: unknown[] }) => field.result.map(String))
+          results = collectSearchHits(
+            docIds,
+            (docId: string) => searchIndex.get(docId),
+            filters,
+          )
         }
 
         self.postMessage({ type: 'searchResult', id, results })
@@ -237,6 +248,17 @@ channel.onmessage = (event: MessageEvent) => {
     // Another tab synced — notify main thread to refresh state
     self.postMessage({ type: 'externalSync', treeSha: event.data.treeSha })
   }
+}
+
+/**
+ * Build the index if this worker does not have one yet.
+ *
+ * Cheap when it already does, which is what lets every entry point call it
+ * without thinking about whether some other one already has.
+ */
+async function ensureSearchIndex(projectId: string | null) {
+  if (searchIndex || !projectId) return
+  await rebuildSearchIndex(projectId)
 }
 
 async function rebuildSearchIndex(projectId: string) {

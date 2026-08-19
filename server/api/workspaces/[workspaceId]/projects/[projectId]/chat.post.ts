@@ -6,7 +6,7 @@ import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
-import { chatModelIdsFor, DEFAULT_CHAT_MODEL } from '../../../../../../shared/utils/ai-models'
+import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEdition } from '../../../../../utils/license'
@@ -258,7 +258,7 @@ export default defineEventHandler(async (event) => {
 
       try {
         for await (const evt of runConversationLoop(
-          { model, apiKey, systemPrompt, messages, tools: aiTools, abortSignal: abortController.signal },
+          { model, apiKey, systemPrompt, messages, tools: aiTools, maxOutputTokens: maxOutputTokensFor(model), abortSignal: abortController.signal },
           { engine: contentEngine, git, userEmail: session.user.email ?? '', userId: session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext, phase },
         )) {
         // Stop processing if client disconnected
@@ -330,6 +330,15 @@ export default defineEventHandler(async (event) => {
         const msg = e instanceof Error ? e.message : 'Chat error'
         // eslint-disable-next-line no-console
         console.error('[chat] Error:', msg)
+        // "Unable to download the file" (Anthropic 400) means a URL-source
+        // image block wasn't fetchable on their side — name the URLs so the
+        // failing asset is identifiable from logs (issue #137).
+        const urlBlocks = attachmentBlocks
+          .filter(b => b.type === 'image' && b.source.type === 'url')
+          .map(b => (b as { source: { url: string } }).source.url)
+        if (urlBlocks.length > 0)
+          // eslint-disable-next-line no-console
+          console.error('[chat] attachment url blocks in the failed call:', urlBlocks)
         try {
           await eventStream.push(JSON.stringify({ type: 'error', message: msg }))
         }

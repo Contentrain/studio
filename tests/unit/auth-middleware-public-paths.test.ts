@@ -47,6 +47,8 @@ describe('auth middleware public paths', () => {
     '/api/cdn/v1/project-123/img/logo.png', // CDN — Bearer key
     '/api/webhooks/github', // GitHub webhook — HMAC signature
     '/api/billing/webhook/polar', // billing webhook — provider signature
+    '/api/_auth/session', // nuxt-auth-utils module session — own sealed cookie
+    '/api/auth/review-login', // directory-review password login — env-gated, pre-session
   ])('lets self-authenticating external endpoint %s through without a session lookup', async (path) => {
     await expect(run(path)).resolves.toBeUndefined()
     expect(getServerSession).not.toHaveBeenCalled()
@@ -55,6 +57,15 @@ describe('auth middleware public paths', () => {
   it('still 401s a protected API path when there is no session', async () => {
     getServerSession.mockResolvedValue(null)
     await expect(run('/api/workspaces/w1/projects')).rejects.toMatchObject({ statusCode: 401 })
+    expect(getServerSession).toHaveBeenCalled()
+  })
+
+  // The OAuth consent API renders workspace/project data for the signed-in
+  // user — it must stay session-guarded even though the /oauth/* protocol
+  // endpoints (server/routes/, outside this middleware) are public.
+  it('keeps /api/oauth/consent session-guarded', async () => {
+    getServerSession.mockResolvedValue(null)
+    await expect(run('/api/oauth/consent')).rejects.toMatchObject({ statusCode: 401 })
     expect(getServerSession).toHaveBeenCalled()
   })
 

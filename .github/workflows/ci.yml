@@ -37,7 +37,7 @@ jobs:
         with:
           version: 10.26.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -57,6 +57,14 @@ jobs:
         env:
           CONTRACT_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+      # Same vitest RLS suite the Supabase job runs — here against the plain
+      # Postgres service, proving row isolation on the managed pair too.
+      # (psql ships preinstalled on ubuntu-latest runners.)
+      - name: RLS tests (plain Postgres)
+        run: pnpm test:rls
+        env:
+          RLS_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+
   ci:
     runs-on: ubuntu-latest
 
@@ -69,7 +77,7 @@ jobs:
         with:
           version: 10.26.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -81,7 +89,7 @@ jobs:
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
       - name: Generate Contentrain client
-        run: npx contentrain generate
+        run: pnpm exec contentrain-query generate
 
       - name: Lint
         run: pnpm lint

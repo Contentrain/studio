@@ -337,7 +337,7 @@ async function readModelBundle(
 
             // Read this slug's meta into the shared slug-keyed map.
             try {
-              const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale, slug)
+              const metaPath = resolveMetaPath(ctx, model, locale, defaultLocale, slug)
               metaBySlug[slug] = JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>
             }
             catch { /* no meta for this slug */ }
@@ -370,7 +370,7 @@ async function readModelBundle(
 
       // Meta
       try {
-        const metaPath = resolveMetaPath(ctx, model, locale === 'data' ? defaultLocale : locale)
+        const metaPath = resolveMetaPath(ctx, model, locale, defaultLocale)
         bundle.meta.push([key, JSON.parse(await git.readFile(metaPath, contentRef)) as Record<string, unknown>])
       }
       catch { /* no meta */ }

@@ -1,6 +1,7 @@
 import { createPage, url } from '@nuxt/test-utils/e2e'
 import type { Page } from 'playwright-core'
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_CHAT_MODEL } from '../../shared/utils/ai-models'
 import { fulfillJson, setupBrowserE2E, ssePayload } from './helpers'
 
 await setupBrowserE2E(4327)
@@ -81,7 +82,9 @@ describe('chat stream e2e', () => {
           { type: 'conversation', id: 'conv-1' },
           { type: 'text', content: 'I reviewed the homepage copy.' },
           { type: 'tool_use', id: 'tool-1', name: 'read_content' },
+          { type: 'tool_input', id: 'tool-1', input: { model: 'pages', locale: 'en' } },
           { type: 'tool_result', id: 'tool-1', result: { entries: 1, locale: 'en' } },
+          { type: 'text', content: 'All entries look good.' },
           {
             type: 'done',
             affected: {
@@ -102,14 +105,29 @@ describe('chat stream e2e', () => {
 
     await page.getByText('Review the homepage copy').waitFor()
     await page.getByText('I reviewed the homepage copy.').waitFor()
+    await page.getByText('All entries look good.').waitFor()
+
+    // Chronology: narration → tool card → closing text, in DOM order.
+    const bodyText = await page.evaluate(() => document.body.innerText)
+    const narrationIdx = bodyText.indexOf('I reviewed the homepage copy.')
+    const toolIdx = bodyText.indexOf('read_content')
+    const closingIdx = bodyText.indexOf('All entries look good.')
+    expect(narrationIdx).toBeGreaterThanOrEqual(0)
+    expect(toolIdx).toBeGreaterThan(narrationIdx)
+    expect(closingIdx).toBeGreaterThan(toolIdx)
+
+    // Expanded card shows the input (sent via tool_input) and the result.
     await page.getByRole('button', { name: /read_content/i }).click()
+    await page.getByText('"model": "pages"').waitFor()
     await page.getByText('"entries": 1').waitFor()
 
     expect(chatBodies).toEqual([
       {
         message: 'Review the homepage copy',
         conversationId: null,
-        model: 'claude-sonnet-4-6',
+        // Whatever the catalog default is — asserting the literal here made
+        // this test fail on a default bump rather than on a real regression.
+        model: DEFAULT_CHAT_MODEL,
         context: {
           activeModelId: null,
           activeLocale: 'en',

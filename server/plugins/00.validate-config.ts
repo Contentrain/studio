@@ -27,6 +27,16 @@ export default defineNitroPlugin(() => {
   if (!config.sessionSecret || config.sessionSecret.length < 32)
     errors.push('NUXT_SESSION_SECRET must be at least 32 characters')
 
+  // nuxt-auth-utils module session — separate from NUXT_SESSION_SECRET.
+  // Studio never stores anything in it, but the module registers
+  // /api/_auth/session and an SSR plugin that fetches it on every
+  // server-rendered page load; with an empty password every one of those
+  // fetches 500s ("Empty password") in production logs. Dev auto-generates
+  // the value, so the gap only ever surfaces in deployed builds.
+  const moduleSession = config.session as { password?: string } | undefined
+  if (!moduleSession?.password || moduleSession.password.length < 32)
+    warnings.push('NUXT_SESSION_PASSWORD is not set (min 32 chars) — nuxt-auth-utils /api/_auth/session will 500 on every SSR page load (harmless to auth, noisy in logs)')
+
   // ─── Provider selection ───
   // Auth + database providers ship as matched pairs. The Supabase DB provider
   // authorizes its user-scoped (RLS) queries with Supabase-issued JWTs, while
@@ -94,6 +104,31 @@ export default defineNitroPlugin(() => {
       errors.push('NUXT_OAUTH_GITHUB_CLIENT_ID / NUXT_OAUTH_GITHUB_CLIENT_SECRET are required when NUXT_AUTH_PROVIDER=managed')
     if (!oauth?.google?.clientId || !oauth.google.clientSecret)
       warnings.push('NUXT_OAUTH_GOOGLE_CLIENT_ID / NUXT_OAUTH_GOOGLE_CLIENT_SECRET are not set — Google sign-in disabled')
+
+    // Directory-review account — optional, but when opted in it must be
+    // opted in COMPLETELY and with a non-trivial password: this is a
+    // password login into a real account.
+    const review = config.reviewAccount as { email?: string, password?: string } | undefined
+    if (review?.email || review?.password) {
+      if (!review.email || !review.password)
+        warnings.push('NUXT_REVIEW_ACCOUNT_EMAIL / NUXT_REVIEW_ACCOUNT_PASSWORD must BOTH be set — review login stays disabled')
+      else if (review.password.length < 16)
+        errors.push('NUXT_REVIEW_ACCOUNT_PASSWORD must be at least 16 characters (it gates a password login)')
+    }
+
+    // The managed pair is also the OAuth AS for the remote MCP surface:
+    // public.siteUrl is the issuer in every discovery document and the base
+    // of every redirect the dance constructs. MCP clients require https on
+    // all AS endpoints — an http issuer fails every remote-MCP connection.
+    // Warn, don't error: NODE_ENV=production also covers local prod builds
+    // and http-only self-hosts that never use the OAuth surface.
+    const siteUrl = (config.public?.siteUrl as string | undefined) ?? ''
+    if (process.env.NODE_ENV === 'production') {
+      if (!siteUrl.startsWith('https://'))
+        warnings.push('NUXT_PUBLIC_SITE_URL is not https — the OAuth authorization server (remote MCP connections from Claude/ChatGPT) will not work over http')
+      else if (siteUrl.endsWith('/'))
+        warnings.push('NUXT_PUBLIC_SITE_URL has a trailing slash — issuer/resource identifiers are normalized, but prefer the bare origin')
+    }
   }
 
   // GitHub App — required for repo operations

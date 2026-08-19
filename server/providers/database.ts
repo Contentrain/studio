@@ -471,6 +471,12 @@ export interface DatabaseProvider {
 
   createMediaAsset: (asset: MediaAssetInput) => Promise<DatabaseRow>
   getMediaAsset: (assetId: string) => Promise<DatabaseRow | null>
+  /**
+   * Look an asset up by its storage path (`media/original/<file>`). The path's
+   * uuid is the FILE name, not the row id, so a path in hand (delivery URL,
+   * content field value) cannot be resolved through `getMediaAsset`.
+   */
+  findMediaAssetByPath: (projectId: string, originalPath: string) => Promise<DatabaseRow | null>
   listMediaAssets: (projectId: string, options?: PaginationOptions & {
     search?: string
     tags?: string[]
@@ -585,12 +591,20 @@ export interface DatabaseProvider {
   // CDN BUILDS
   // ═══════════════════════════════════════════════════
 
+  /**
+   * Atomically claim the single in-flight build slot for a project and create
+   * the build row (status 'building'). Returns the new row, or `null` when a
+   * build is already in flight for this project — callers must then skip or
+   * defer rather than start a concurrent build that would race on CDN storage.
+   * Slots held by dead builds are reclaimed after a staleness window. Backed by
+   * the `claim_cdn_build` SQL function (per-project advisory lock).
+   */
   createCDNBuild: (input: {
     projectId: string
     triggerType: string
     commitSha?: string
     branch?: string
-  }) => Promise<DatabaseRow>
+  }) => Promise<DatabaseRow | null>
   updateCDNBuild: (buildId: string, updates: Record<string, unknown>) => Promise<void>
   listCDNBuilds: (projectId: string, options?: PaginationOptions & { sort?: string }) => Promise<DatabaseRow[]>
 
@@ -630,6 +644,7 @@ export interface DatabaseProvider {
     keyHash: string
     keyPrefix: string
     allowedTools: string[]
+    mediaEnabled?: boolean
     rateLimitPerMinute?: number
     monthlyCallLimit?: number | null
     createdBy?: string | null

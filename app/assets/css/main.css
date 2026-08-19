@@ -133,6 +133,29 @@
     @apply container mx-auto px-6 lg:px-12 2xl:px-20;
   }
 
+  /*
+   * Row action icons (edit / delete / pin) that appear on row hover.
+   *
+   * They used to start at `opacity-0`, which on a touch device is permanent:
+   * there is no hover, so the `group-hover` rule that reveals them never
+   * matches. Worse than absent — an invisible button still takes taps.
+   *
+   * The base hide lives here in `components` rather than as an `opacity-0`
+   * utility so the cascade does the work without depending on how Tailwind
+   * happens to sort variants: `group-hover:opacity-60` / `hover:opacity-100` /
+   * `focus-visible:opacity-100` are all utilities and outrank this layer, while
+   * the `hover: none` override below wins inside it by source order.
+   */
+  .reveal-on-hover {
+    opacity: 0;
+  }
+
+  @media (hover: none) {
+    .reveal-on-hover {
+      opacity: 1;
+    }
+  }
+
   .sidebar-gradient {
     background: linear-gradient(to bottom, var(--color-secondary-100) 0%, white 100%);
   }
@@ -187,6 +210,16 @@
   summary,
   select:not(:disabled) {
     cursor: pointer;
+  }
+
+  /*
+   * Ground behind the app shell. The shell is capped and centred above
+   * 1920px, so past that width the body shows through on both sides — and
+   * nothing else paints it, which would leave those gutters white in dark
+   * mode. A step off the shell's own background reads as a recessed frame.
+   */
+  body {
+    @apply bg-secondary-50 dark:bg-secondary-900;
   }
 
   * {

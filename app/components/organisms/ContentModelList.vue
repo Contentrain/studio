@@ -10,8 +10,15 @@ const emit = defineEmits<{
   select: [modelId: string]
 }>()
 
+const { t } = useContent()
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 const sendChatPrompt = inject(sendChatPromptKey, () => {})
+
+// A pin button is a toggle, so the label has to name the direction it will go —
+// tooltip and `aria-label` both read from here so the two can never drift.
+function pinLabel(modelId: string) {
+  return isPinned('model', modelId) ? t('content.unpin') : t('content.pin_model')
+}
 
 function onDelete(e: Event, model: { id: string, name: string }) {
   e.stopPropagation()
@@ -65,33 +72,38 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
           <div class="flex items-center gap-2 text-xs text-muted">
             <span>{{ model.kind ?? model.type }}</span>
             <span v-if="content[model.id]?.locales">
-              · {{ content[model.id]!.locales.length }} {{ content[model.id]!.locales.length === 1 ? 'locale' : 'locales' }}
+              · {{ t('content.locale_count', { count: content[model.id]!.locales.length }) }}
             </span>
           </div>
         </div>
         <span class="icon-[annon--chevron-right] size-4 shrink-0 text-muted" aria-hidden="true" />
       </button>
       <!-- Delete model -->
-      <button
-        type="button"
-        aria-label="Delete model"
-        class="shrink-0 rounded-md p-1 text-muted opacity-0 transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-        @click="onDelete($event, model)"
-      >
-        <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
-      </button>
+      <AtomsTooltip :text="t('content.delete_model')">
+        <button
+          type="button"
+          :aria-label="t('content.delete_model')"
+          class="reveal-on-hover shrink-0 rounded-md p-1 text-muted transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+          @click="onDelete($event, model)"
+        >
+          <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
+        </button>
+      </AtomsTooltip>
       <!-- Pin to context -->
-      <button
-        type="button"
-        aria-label="Pin to context"
-        class="mr-2 shrink-0 rounded-md p-1 transition-[color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-        :class="isPinned('model', model.id)
-          ? 'text-primary-500 opacity-100'
-          : 'text-muted opacity-0 hover:opacity-100 group-hover:opacity-60'"
-        @click="onPin($event, model)"
-      >
-        <span class="icon-[annon--pin] size-3.5" aria-hidden="true" />
-      </button>
+      <AtomsTooltip :text="pinLabel(model.id)">
+        <button
+          type="button"
+          :aria-label="pinLabel(model.id)"
+          :aria-pressed="isPinned('model', model.id)"
+          class="reveal-on-hover mr-2 shrink-0 rounded-md p-1 transition-[color,opacity] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+          :class="isPinned('model', model.id)
+            ? 'text-primary-500 opacity-100'
+            : 'text-muted hover:opacity-100 group-hover:opacity-60'"
+          @click="onPin($event, model)"
+        >
+          <span class="icon-[annon--pin] size-3.5" aria-hidden="true" />
+        </button>
+      </AtomsTooltip>
     </div>
   </div>
 </template>

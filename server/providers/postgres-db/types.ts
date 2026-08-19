@@ -277,6 +277,7 @@ export interface McpCloudKeysTable {
   key_prefix: string
   name: string
   allowed_tools: Generated<string[]>
+  media_enabled: Generated<boolean>
   rate_limit_per_minute: Generated<number>
   monthly_call_limit: number | null
   last_used_at: string | null
@@ -289,6 +290,14 @@ export interface McpCloudUsageTable {
   workspace_id: string
   month: string
   mcp_key_id: string
+  call_count: Generated<number>
+  last_call_at: Generated<string>
+}
+
+export interface McpOauthUsageTable {
+  workspace_id: string
+  month: string
+  grant_id: string
   call_count: Generated<number>
   last_call_at: Generated<string>
 }
@@ -407,10 +416,80 @@ export interface AuthOneTimeTokensTable {
   consumed_at: string | null
 }
 
+// ─── OAuth AS tables (postgres/migrations/016_oauth_server.sql) ───
+// Owned by server/utils/oauth-server/store.ts; present only on the postgres pair.
+
+export interface AuthOauthClientsTable {
+  client_id: string
+  kind: 'cimd' | 'dcr'
+  client_name: string | null
+  client_uri: string | null
+  logo_uri: string | null
+  redirect_uris: Generated<unknown>
+  token_endpoint_auth_method: Generated<string>
+  metadata: Generated<unknown>
+  metadata_fetched_at: string | null
+  created_at: Generated<string>
+  last_used_at: string | null
+}
+
+export interface AuthOauthGrantsTable {
+  id: Generated<string>
+  user_id: string
+  client_id: string
+  workspace_id: string
+  project_id: string
+  scope: string
+  created_at: Generated<string>
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+export interface AuthOauthAuthorizationCodesTable {
+  id: Generated<string>
+  code_hash: string
+  client_id: string
+  user_id: string
+  workspace_id: string
+  project_id: string
+  redirect_uri: string
+  scope: string
+  code_challenge: string
+  code_challenge_method: Generated<string>
+  resource: string | null
+  created_at: Generated<string>
+  expires_at: string
+  consumed_at: string | null
+}
+
+export interface AuthOauthAccessTokensTable {
+  id: Generated<string>
+  token_hash: string
+  grant_id: string
+  created_at: Generated<string>
+  expires_at: string
+}
+
+export interface AuthOauthRefreshTokensTable {
+  id: Generated<string>
+  grant_id: string
+  token_hash: string
+  family_id: string
+  created_at: Generated<string>
+  expires_at: string
+  rotated_at: string | null
+  revoked_at: string | null
+}
+
 export interface StudioDatabase {
   'auth.users': AuthUsersTable
   'auth.refresh_tokens': AuthRefreshTokensTable
   'auth.one_time_tokens': AuthOneTimeTokensTable
+  'auth.oauth_clients': AuthOauthClientsTable
+  'auth.oauth_grants': AuthOauthGrantsTable
+  'auth.oauth_authorization_codes': AuthOauthAuthorizationCodesTable
+  'auth.oauth_access_tokens': AuthOauthAccessTokensTable
+  'auth.oauth_refresh_tokens': AuthOauthRefreshTokensTable
   'profiles': ProfilesTable
   'oauth_provider_tokens': OAuthProviderTokensTable
   'audit_logs': AuditLogsTable
@@ -431,6 +510,7 @@ export interface StudioDatabase {
   'cdn_builds': CdnBuildsTable
   'mcp_cloud_keys': McpCloudKeysTable
   'mcp_cloud_usage': McpCloudUsageTable
+  'mcp_oauth_usage': McpOauthUsageTable
   'media_usage': MediaUsageTable
   'form_submissions': FormSubmissionsTable
   'conversation_api_keys': ConversationApiKeysTable

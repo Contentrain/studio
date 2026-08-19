@@ -1,10 +1,18 @@
 import type { ModelDefinition } from '@contentrain/types'
 import { CONTENTRAIN_DIR, PATH_PATTERNS } from '@contentrain/types'
+import { contentDirPath, contentFilePath, documentFilePath, metaFilePath } from '@contentrain/mcp/core/ops'
 
 /**
  * Resolve file paths for Contentrain content operations.
- * Uses PATH_PATTERNS from @contentrain/types as the contract.
- * Handles contentRoot prefix and model-level content_path overrides.
+ *
+ * Content + meta path assembly is delegated to MCP's canonical helpers
+ * (`@contentrain/mcp/core/ops`: `contentFilePath` / `documentFilePath` /
+ * `metaFilePath`) so it can never drift from what `planContentSave` actually
+ * commits — the source of a real bug where a non-i18n model's meta fanned out
+ * across locales instead of pinning to the default locale. Studio keeps only
+ * what MCP's helpers deliberately don't cover: the `contentRoot` prefix, the
+ * `content_path` security hardening, and the "return the directory when a
+ * document has no slug" case (MCP requires a slug).
  */
 
 export interface PathContext {
@@ -23,86 +31,90 @@ export function resolveModelPath(ctx: PathContext, modelId: string): string {
   return prefixed(ctx.contentRoot, PATH_PATTERNS.model.replace('{modelId}', modelId))
 }
 
-export function resolveContentPath(
-  ctx: PathContext,
-  model: Pick<ModelDefinition, 'id' | 'kind' | 'domain' | 'i18n' | 'content_path'>,
-  locale: string,
-  slug?: string,
-): string {
-  // Custom content_path override — files live OUTSIDE .contentrain/
-  if (model.content_path) {
-    // Validate content_path — prevent path traversal and sensitive path access
-    const normalized = model.content_path.replace(/\\/g, '/')
-    if (normalized.includes('..') || normalized.startsWith('/') || normalized.includes('//')) {
-      throw new Error(`Invalid content_path: "${model.content_path}" — path traversal detected`)
-    }
-    // Block sensitive repo paths that should never be content targets
-    const sensitivePatterns = ['.github', '.git', 'node_modules', '.env', '.ci', '.contentrain/models', '.contentrain/config']
-    const lowerNorm = normalized.toLowerCase()
-    if (sensitivePatterns.some(p => lowerNorm === p || lowerNorm.startsWith(`${p}/`))) {
-      throw new Error(`Invalid content_path: "${model.content_path}" — targets a protected directory`)
-    }
-    const basePath = prefixed(ctx.contentRoot, model.content_path)
-    if (model.kind === 'document') {
-      if (model.i18n && slug) return `${basePath}/${slug}/${locale}.md`
-      if (slug) return `${basePath}/${slug}.md`
-      return basePath
-    }
-    // JSON kinds with content_path override
-    if (!model.i18n) return `${basePath}/data.json`
-    return `${basePath}/${locale}.json`
+/**
+ * Studio-only `content_path` hardening that MCP's path helpers omit: reject
+ * traversal and protected repo paths BEFORE any assembly delegates to MCP.
+ * Called at the top of every public resolver that can honour `content_path`.
+ */
+function assertSafeContentPath(model: Pick<ModelDefinition, 'content_path'>): void {
+  if (!model.content_path) return
+  const normalized = model.content_path.replace(/\\/g, '/')
+  if (normalized.includes('..') || normalized.startsWith('/') || normalized.includes('//')) {
+    throw new Error(`Invalid content_path: "${model.content_path}" — path traversal detected`)
   }
-
-  // i18n: false → uses noLocale pattern (data.json)
-  if (!model.i18n && model.kind !== 'document') {
-    const pattern = PATH_PATTERNS.content.noLocale as string
-    const resolved = pattern
-      .replace('{domain}', model.domain)
-      .replace('{modelId}', model.id)
-    return prefixed(ctx.contentRoot, resolved)
+  // Block sensitive repo paths that should never be content targets
+  const sensitivePatterns = ['.github', '.git', 'node_modules', '.env', '.ci', '.contentrain/models', '.contentrain/config']
+  const lowerNorm = normalized.toLowerCase()
+  if (sensitivePatterns.some(p => lowerNorm === p || lowerNorm.startsWith(`${p}/`))) {
+    throw new Error(`Invalid content_path: "${model.content_path}" — targets a protected directory`)
   }
-
-  // Standard documents live UNDER the model id —
-  // `.contentrain/content/{domain}/{modelId}/{slug}/{locale}.md` (i18n) or
-  // `.../{slug}.md` — matching how `@contentrain/mcp` planContentSave writes
-  // them. `PATH_PATTERNS.content.document` omits `{modelId}`, so resolving via
-  // the generic pattern below produced a path that doesn't exist on disk (a
-  // 404 on read). Build the model-id path directly.
-  if (model.kind === 'document') {
-    const base = `${CONTENTRAIN_DIR}/content/${model.domain}/${model.id}`
-    if (model.i18n && slug) return prefixed(ctx.contentRoot, `${base}/${slug}/${locale}.md`)
-    if (slug) return prefixed(ctx.contentRoot, `${base}/${slug}.md`)
-    return prefixed(ctx.contentRoot, base)
-  }
-
-  // Standard path from PATH_PATTERNS
-  const pattern = PATH_PATTERNS.content[model.kind as keyof typeof PATH_PATTERNS.content]
-    ?? PATH_PATTERNS.content.collection
-
-  const resolved = (pattern as string)
-    .replace('{domain}', model.domain)
-    .replace('{modelId}', model.id)
-    .replace('{locale}', locale)
-    .replace('{slug}', slug ?? '')
-
-  return prefixed(ctx.contentRoot, resolved)
 }
 
-export function resolveMetaPath(
+/**
+ * Content directory (content-root-relative) for a model. Delegates the dir
+ * computation to MCP's `contentDirPath` (`@contentrain/mcp/core/ops`, exported
+ * since 2.1.0) so the `content_path` override / default layout can never drift
+ * from MCP's write path. Studio adds only the `content_path` security guard and
+ * the project content-root prefix — neither of which MCP's helper covers.
+ */
+function resolveContentDirForModel(
   ctx: PathContext,
-  model: Pick<ModelDefinition, 'id' | 'kind'>,
+  model: Pick<ModelDefinition, 'id' | 'domain' | 'content_path'>,
+): string {
+  assertSafeContentPath(model)
+  return prefixed(ctx.contentRoot, contentDirPath(model))
+}
+
+/**
+ * Resolve the on-disk path for a content file.
+ *
+ * CRITICAL: honors `model.locale_strategy` — MUST stay byte-for-byte aligned
+ * with MCP's canonical `contentFilePath`/`documentFilePath`
+ * (`@contentrain/mcp/core/ops/paths`), which is what the write path (`planContentSave`)
+ * actually commits. Resolving with the wrong strategy reads a non-existent path
+ * → silent skip (missing content in the CDN build + brain cache). `i18n: false`
+ * always collapses to `data.json` / `{slug}.md` regardless of strategy.
+ *
+ * With no `slug` for a document kind, returns the model's content directory
+ * (callers use it for `listDirectory`).
+ */
+export function resolveContentPath(
+  ctx: PathContext,
+  model: Pick<ModelDefinition, 'id' | 'kind' | 'domain' | 'i18n' | 'content_path' | 'locale_strategy'>,
   locale: string,
   slug?: string,
 ): string {
-  const pattern = PATH_PATTERNS.meta[model.kind as keyof typeof PATH_PATTERNS.meta]
-    ?? PATH_PATTERNS.meta.collection
+  assertSafeContentPath(model)
 
-  const resolved = (pattern as string)
-    .replace('{modelId}', model.id)
-    .replace('{locale}', locale)
-    .replace('{slug}', slug ?? '')
+  // A document with no slug → the model's content directory (callers use it
+  // for `listDirectory`). MCP's `documentFilePath` requires a slug, so this
+  // one case stays Studio-owned.
+  if (model.kind === 'document' && !slug) {
+    return resolveContentDirForModel(ctx, model)
+  }
 
-  return prefixed(ctx.contentRoot, resolved)
+  // Delegate file-name assembly (locale_strategy + i18n collapse + content_path)
+  // to MCP so it stays byte-for-byte aligned with `planContentSave`; Studio only
+  // prepends its content-root prefix.
+  const rel = model.kind === 'document'
+    ? documentFilePath(model, locale, slug!)
+    : contentFilePath(model, locale)
+  return prefixed(ctx.contentRoot, rel)
+}
+
+/**
+ * Resolve a model's meta path. `defaultLocale` is required: MCP's `metaFilePath`
+ * pins a non-i18n model's single meta record to the default locale (one
+ * `data.json` ⇒ one meta record), instead of fanning it out per locale.
+ */
+export function resolveMetaPath(
+  ctx: PathContext,
+  model: Pick<ModelDefinition, 'id' | 'kind' | 'i18n'>,
+  locale: string,
+  defaultLocale: string,
+  slug?: string,
+): string {
+  return prefixed(ctx.contentRoot, metaFilePath(model, locale, defaultLocale, slug))
 }
 
 export function resolveVocabularyPath(ctx: PathContext): string {

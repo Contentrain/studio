@@ -30,8 +30,12 @@ useSeoMeta({
 <template>
   <NuxtRouteAnnouncer />
   <NuxtLoadingIndicator color="#3b82f6" :height="2" />
-  <NuxtLayout>
-    <NuxtPage />
-  </NuxtLayout>
+  <!-- One tooltip provider for the whole app; the atom falls back to its own
+       only when mounted outside this scope. See AtomsTooltipScope. -->
+  <AtomsTooltipScope>
+    <NuxtLayout>
+      <NuxtPage />
+    </NuxtLayout>
+  </AtomsTooltipScope>
   <OrganismsToastProvider />
 </template>

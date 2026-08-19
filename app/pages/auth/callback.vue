@@ -48,8 +48,14 @@ onMounted(async () => {
 
     // Redirect to invited workspace if query param present
     const workspaceSlug = route.query.workspace as string | undefined
+    const redirect = safeInternalRedirect(route.query.redirect)
     if (workspaceSlug) {
       await router.replace(`/w/${workspaceSlug}`)
+    }
+    else if (redirect) {
+      // May target a server route (/oauth/authorize) Vue Router can't
+      // resolve — a real navigation covers both cases.
+      window.location.replace(redirect)
     }
     else {
       await router.replace('/')

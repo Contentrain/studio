@@ -39,9 +39,13 @@ describe('postgres-db mcp-cloud (contract)', () => {
     expect(created.rate_limit_per_minute).toBe(60)
     expect(created.monthly_call_limit).toBeNull()
     expect(created.allowed_tools).toEqual(['contentrain_status'])
+    // media_enabled (migration 018) defaults to false — existing/UI keys
+    // never gain the 1.10.0 media tools implicitly.
+    expect(created.media_enabled).toBe(false)
 
     const byHash = await methods.getMcpCloudKeyByHash(keyHash)
     expect(byHash!.id).toBe(keyId)
+    expect(byHash!.media_enabled).toBe(false)
     expect(await methods.getMcpCloudKeyByHash('missing')).toBeNull()
 
     await methods.touchMcpCloudKey(keyId)
@@ -49,8 +53,23 @@ describe('postgres-db mcp-cloud (contract)', () => {
 
     const listed = await methods.listMcpCloudKeys(user.workspaceId, projectId)
     expect(listed.map(k => k.id)).toEqual([keyId])
+    expect(listed[0]!.media_enabled).toBe(false)
     expect(await methods.countActiveMcpCloudKeys(user.workspaceId)).toBe(1)
     expect(await methods.countActiveMcpCloudKeys(user.workspaceId, randomUUID())).toBe(0)
+  })
+
+  it('persists an explicit media opt-in', async () => {
+    const created = await methods.createMcpCloudKey({
+      workspaceId: user.workspaceId,
+      projectId,
+      name: 'media-key',
+      keyHash: randomUUID(),
+      keyPrefix: 'mcp_media1',
+      allowedTools: [],
+      mediaEnabled: true,
+    })
+    expect(created.media_enabled).toBe(true)
+    await methods.revokeMcpCloudKey(created.id as string, user.workspaceId)
   })
 
   it('atomic monthly quota with per-key usage rows', async () => {

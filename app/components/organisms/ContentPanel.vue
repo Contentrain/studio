@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { DeepReadonly } from 'vue'
 import type { FieldDef } from '@contentrain/types'
-import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
+import type { BranchReview } from '~~/shared/utils/branch-review'
+import type { BranchRawDiff } from '~/composables/useBranches'
+import { fieldLabel, orderedFieldIds } from '~~/shared/utils/field-label'
+import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 interface SnapshotModel {
   readonly id: string
@@ -11,6 +15,7 @@ interface SnapshotModel {
   readonly fields: Record<string, unknown> | Readonly<Record<string, unknown>>
   readonly domain: string
   readonly i18n: boolean
+  readonly title_field?: string
 }
 
 // Accept both mutable and DeepReadonly variants from useSnapshot
@@ -21,12 +26,6 @@ type SnapshotData = {
   content: Record<string, { count: number, locales: readonly string[] }>
   vocabulary?: Record<string, Record<string, string>> | null
   contentContext?: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null
-}
-
-type BranchDiffProps = {
-  branch: string
-  files: readonly { path: string, status: 'added' | 'modified' | 'removed' }[]
-  contents: Record<string, { before: unknown, after: unknown }>
 }
 
 const props = defineProps<{
@@ -42,9 +41,10 @@ const props = defineProps<{
   activeCdn?: boolean
   activeAssets?: boolean
   activeHealth?: boolean
-  branchDiff?: DeepReadonly<BranchDiffProps> | BranchDiffProps | null
-  branchDiffLoading?: boolean
-  canManageBranches?: boolean
+  branchReview?: DeepReadonly<BranchReview> | BranchReview | null
+  branchReviewLoading?: boolean
+  branchRaw?: DeepReadonly<BranchRawDiff> | BranchRawDiff | null
+  branchRawLoading?: boolean
   workspaceId?: string
   projectId?: string
   editable?: boolean
@@ -57,6 +57,7 @@ const emit = defineEmits<{
   'sendChatPrompt': [text: string]
   'branchMerge': []
   'branchReject': []
+  'branchLoadRaw': []
   'vocabularySave': [terms: Record<string, Record<string, string> | null>]
 }>()
 
@@ -108,10 +109,6 @@ const panelState = computed(() => {
   return 'overview'
 })
 
-function branchDisplayName(branch: string): string {
-  return branch.replace('contentrain/', '')
-}
-
 // Project stats from context.json or computed from snapshot
 const stats = computed(() => {
   if (!props.snapshot?.exists) return null
@@ -137,30 +134,72 @@ function getFieldType(fieldId: string): string {
   return fields[fieldId]?.type ?? 'string'
 }
 
-function getPrimaryFieldId(): string | null {
-  if (!activeModel.value?.fields) return null
-  const fields = activeModel.value.fields as Record<string, FieldDef>
-  for (const [key, def] of Object.entries(fields)) {
-    if (def.required && (def.type === 'string' || def.type === 'slug')) return key
+// ── Title field picker ─────────────────────────────────────
+// Written through a direct PATCH rather than the chat agent, unlike the other
+// actions in this header. An MCP write takes ~18s; a radio button that stays
+// unconfirmed that long reads as broken. The chat path still works — the agent
+// calls `contentrain_model_save` — so nothing is lost by not routing through it.
+const titleFieldOpen = ref(false)
+const titleFieldSaving = ref(false)
+const titleFieldError = ref('')
+
+const titleFieldChoices = computed(() => titleFieldOptions(activeModel.value))
+const currentTitleField = computed(() => resolveTitleFieldId(activeModel.value))
+
+async function setTitleField(field: string) {
+  if (!props.workspaceId || !props.projectId || !props.activeModelId) return
+  if (field === activeModel.value?.title_field) {
+    titleFieldOpen.value = false
+    return
   }
-  for (const [key, def] of Object.entries(fields)) {
-    if (def.type === 'string' || def.type === 'slug') return key
+
+  titleFieldSaving.value = true
+  titleFieldError.value = ''
+  try {
+    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/models/${props.activeModelId}`, {
+      method: 'PATCH',
+      body: { titleField: field },
+    })
+    // The list titles read from the brain, so it has to be re-synced before the
+    // change is visible. The endpoint invalidates the server cache; this drops
+    // the client's copy and pulls the new definition back down — the same pair
+    // the project page uses after a merge.
+    await brain.invalidate(props.projectId)
+    await brain.sync(props.workspaceId, props.projectId)
+    titleFieldOpen.value = false
   }
-  return Object.keys(fields)[0] ?? null
+  catch {
+    titleFieldError.value = t('content.title_field_error')
+  }
+  finally {
+    titleFieldSaving.value = false
+  }
 }
 
+// The model now declares which field titles its entries. The old guess ranked
+// `slug` alongside `string`, which is why articles listed by slug; it lives on
+// as a fallback in shared/utils/entry-title.ts, shared with relation labels so
+// one entry cannot be titled two different ways in two places.
 function getEntryTitle(entry: Record<string, unknown>, fallback: string): string {
-  const primaryField = getPrimaryFieldId()
-  if (primaryField && typeof entry[primaryField] === 'string') return entry[primaryField] as string
-  for (const value of Object.values(entry)) {
-    if (typeof value === 'string' && value.length > 0 && value.length < 100) return value
-  }
-  return fallback
+  return resolveEntryTitle(entry, activeModel.value, fallback)
 }
 
 function getUserFieldIds(): string[] {
-  if (!activeModel.value?.fields) return []
-  return Object.keys(activeModel.value.fields as Record<string, unknown>)
+  return orderedFieldIds(activeModel.value?.fields as Record<string, unknown> | undefined)
+}
+
+/**
+ * What a field is called. Models have carried `FieldDef.label` since types 1.x;
+ * until now every surface showed the raw id, which is why an editor saw
+ * `is_category_hero` on a checkbox. A dictionary's ids are keys, not names, so
+ * they are left exactly as they are.
+ */
+function getFieldLabel(fieldId: string): string {
+  const fields = (activeModel.value?.fields ?? {}) as Record<string, FieldDef>
+  return fieldLabel(fieldId, fields[fieldId], {
+    locale: currentLocale.value,
+    humanize: activeModel.value?.kind !== 'dictionary',
+  })
 }
 
 // Provide utilities to child components
@@ -204,6 +243,7 @@ function addModel() {
 provide(getFieldTypeKey, getFieldType)
 provide(getEntryTitleKey, getEntryTitle)
 provide(getUserFieldIdsKey, getUserFieldIds)
+provide(getFieldLabelKey, getFieldLabel)
 provide(activeModelMetaKey, activeModelMeta)
 provide(getModelFieldsKey, getModelFields)
 provide(sendChatPromptKey, sendChatPrompt)
@@ -218,8 +258,8 @@ provide(sendChatPromptKey, sendChatPrompt)
         @click="emit('back')"
       />
       <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
-        <template v-if="panelState === 'branch' && activeBranch">
-          {{ branchDisplayName(activeBranch) }}
+        <template v-if="panelState === 'branch'">
+          {{ branchReview?.info.modelName ?? t('review.title') }}
         </template>
         <template v-else-if="panelState === 'cdn'">
           {{ t('cdn.title') }}
@@ -286,6 +326,60 @@ provide(sendChatPromptKey, sendChatPrompt)
           size="sm"
           @click="deleteModel"
         />
+        <!-- Title field. Not behind the forms gate: which field titles an entry
+             is part of the model contract, not a forms feature. -->
+        <PopoverRoot v-if="editable && activeModel && activeModel.kind !== 'dictionary'" v-model:open="titleFieldOpen">
+          <PopoverTrigger as-child>
+            <AtomsIconButton
+              icon="icon-[annon--text]"
+              :label="t('content.title_field')"
+              size="sm"
+            />
+          </PopoverTrigger>
+          <PopoverPortal>
+            <PopoverContent
+              side="bottom"
+              align="end"
+              :side-offset="6"
+              :collision-padding="8"
+              class="z-50 w-64 rounded-lg border border-secondary-200 bg-white p-3 shadow-lg dark:border-secondary-700 dark:bg-secondary-900"
+            >
+              <p class="text-xs font-medium text-heading dark:text-secondary-100">
+                {{ t('content.title_field') }}
+              </p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-muted">
+                {{ t('content.title_field_description') }}
+              </p>
+
+              <p v-if="titleFieldChoices.length === 0" class="mt-2 text-[11px] text-muted">
+                {{ t('content.title_field_none') }}
+              </p>
+              <div v-else class="mt-2 max-h-56 space-y-0.5 overflow-y-auto">
+                <button
+                  v-for="field in titleFieldChoices"
+                  :key="field"
+                  type="button"
+                  :disabled="titleFieldSaving"
+                  :aria-pressed="field === currentTitleField"
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-800"
+                  :class="field === currentTitleField ? 'text-heading dark:text-secondary-100' : 'text-body dark:text-secondary-300'"
+                  @click="setTitleField(field)"
+                >
+                  <span
+                    class="size-3.5 shrink-0"
+                    :class="field === currentTitleField ? 'icon-[annon--check-circle] text-primary-500' : 'icon-[annon--radio] text-disabled'"
+                    aria-hidden="true"
+                  />
+                  <span class="min-w-0 flex-1 truncate font-mono">{{ field }}</span>
+                </button>
+              </div>
+
+              <p v-if="titleFieldError" class="mt-2 text-[11px] text-danger-500">
+                {{ titleFieldError }}
+              </p>
+            </PopoverContent>
+          </PopoverPortal>
+        </PopoverRoot>
         <!-- Locale switcher -->
         <AtomsFormSelect
           v-if="supportedLocales.length > 1" :model-value="currentLocale"
@@ -302,15 +396,17 @@ provide(sendChatPromptKey, sendChatPrompt)
     <div class="flex-1 overflow-y-auto">
       <!-- BRANCH DIFF -->
       <template v-if="panelState === 'branch'">
-        <div v-if="branchDiffLoading" class="space-y-3 p-5">
+        <div v-if="branchReviewLoading" class="space-y-3 p-5">
           <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
         </div>
-        <OrganismsBranchDetailView
-          v-else-if="branchDiff"
-          :diff="branchDiff"
-          :can-manage="canManageBranches ?? false"
+        <OrganismsBranchReviewView
+          v-else-if="branchReview"
+          :review="(branchReview as BranchReview)"
+          :raw="(branchRaw as BranchRawDiff | null)"
+          :raw-loading="branchRawLoading"
           @merge="emit('branchMerge')"
           @reject="emit('branchReject')"
+          @load-raw="emit('branchLoadRaw')"
         />
         <div v-else class="p-5">
           <AtomsEmptyState icon="icon-[annon--arrow-swap]" :title="t('branch.no_changes')" />

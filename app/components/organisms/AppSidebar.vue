@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatRelativeTime } from '~/utils/relative-time'
+
 const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
@@ -9,6 +11,16 @@ const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 const { toggle: openCommandPalette, pendingAction, consumeAction } = useCommandPalette()
 const { isOwnerOrAdmin } = useWorkspaceRole()
+
+/**
+ * A pending change reads as what it changed, not as the git ref that carries
+ * it. `cr/content/plans/en/1755612345-a3f2` told an editor nothing; the model
+ * name, locale and age come resolved from the branches endpoint.
+ */
+function branchLabel(branch: { modelName: string | null, scope: string, locale: string | null }): string {
+  const base = branch.modelName ?? t(`review.scope_${branch.scope || 'other'}`)
+  return branch.locale ? `${base} · ${branch.locale.toUpperCase()}` : base
+}
 
 // CDN delivery + the asset library are ee/plan features (`requires_ee`
 // in Community, plan-gated above that). `useFeature` resolves both the
@@ -165,8 +177,10 @@ function onProjectDeleted() {
 </script>
 
 <template>
+  <!-- Size comes from the caller, not from here: in the shell it is a resizable
+       splitter panel, in the mobile drawer it is the dialog's fixed width. -->
   <aside
-    class="flex h-screen w-60 flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
+    class="flex size-full flex-col border-r border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950"
   >
     <!-- Brand + Workspace -->
     <div class="shrink-0 px-3 pt-3 pb-2">
@@ -270,7 +284,8 @@ function onProjectDeleted() {
           <ul class="space-y-px">
             <li v-for="branch in branches" :key="branch.name">
               <MoleculesSidebarItem
-                icon="icon-[annon--arrow-swap]" :label="branch.name.replace('contentrain/', '')"
+                icon="icon-[annon--arrow-swap]" :label="branchLabel(branch)"
+                :count="formatRelativeTime(branch.timestamp, t) || null"
                 :active="activeBranch === branch.name" compact @click="selectBranch(branch.name)"
               />
             </li>

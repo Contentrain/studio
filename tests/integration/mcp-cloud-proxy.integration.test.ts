@@ -13,11 +13,14 @@ const state = vi.hoisted(() => ({
     workspaceId: 'ws-1',
     name: 'test key',
     allowedTools: [] as string[],
+    mediaEnabled: false,
     rateLimitPerMinute: 60,
     monthlyCallLimit: null as number | null,
   },
   rateCheck: { allowed: true, remaining: 59, retryAfterMs: 0 },
   quota: { allowed: true, used: 1 },
+  mediaProvider: null as unknown,
+  mediaFeature: true,
   db: {
     getProjectById: vi.fn(),
     getWorkspaceById: vi.fn(),
@@ -25,6 +28,9 @@ const state = vi.hoisted(() => ({
   },
   proxyRequest: vi.fn(),
   setResponseHeader: vi.fn(),
+  setResponseStatus: vi.fn(),
+  /** Write calls are buffered rather than streamed, so they hit fetch directly. */
+  upstreamFetch: vi.fn(),
   invalidateBrainCache: vi.fn(),
   reconcile: vi.fn(),
   recordMCPCallUsage: vi.fn(),
@@ -39,6 +45,8 @@ vi.mock('h3', async () => {
     readRawBody: async (event: { __body?: string }) => event.__body,
     proxyRequest: state.proxyRequest,
     setResponseHeader: state.setResponseHeader,
+    setResponseStatus: state.setResponseStatus,
+    getProxyRequestHeaders: () => ({}),
   }
 })
 
@@ -52,6 +60,7 @@ vi.mock('~~/server/utils/mcp-cloud-runtime', () => ({
 
 vi.mock('~~/server/utils/providers', () => ({
   useDatabaseProvider: vi.fn(() => state.db),
+  useMediaProvider: vi.fn(() => state.mediaProvider),
 }))
 
 vi.mock('~~/server/utils/rate-limit', () => ({
@@ -60,7 +69,7 @@ vi.mock('~~/server/utils/rate-limit', () => ({
 
 vi.mock('~~/server/utils/license', () => ({
   getWorkspacePlan: vi.fn(() => 'pro'),
-  hasFeature: vi.fn(() => true),
+  hasFeature: vi.fn((_plan: string, feature: string) => (feature === 'media.upload' ? state.mediaFeature : true)),
   getPlanLimit: vi.fn(() => 1000),
 }))
 
@@ -110,25 +119,34 @@ async function loadHandler() {
 describe('MCP Cloud proxy gating', () => {
   beforeEach(() => {
     state.keyData.allowedTools = []
+    state.keyData.mediaEnabled = false
     state.keyData.monthlyCallLimit = null
     state.rateCheck = { allowed: true, remaining: 59, retryAfterMs: 0 }
     state.quota = { allowed: true, used: 1 }
+    state.mediaProvider = null
+    state.mediaFeature = true
 
     state.db.getProjectById.mockResolvedValue({
       id: 'proj-1',
       repo_full_name: 'acme/site',
       content_root: '',
       workspace_id: 'ws-1',
+      cdn_enabled: true,
     })
     state.db.getWorkspaceById.mockResolvedValue({
       id: 'ws-1',
       github_installation_id: 42,
       plan: 'pro',
       overage_settings: {},
+      owner_id: 'owner-1',
     })
     state.db.incrementMcpCloudUsageIfAllowed.mockImplementation(async () => state.quota)
     state.proxyRequest.mockResolvedValue('proxied')
     state.reconcile.mockResolvedValue(undefined)
+    state.upstreamFetch.mockResolvedValue(
+      new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    vi.stubGlobal('fetch', state.upstreamFetch)
 
     vi.stubGlobal('recordMCPCallUsage', state.recordMCPCallUsage.mockResolvedValue(undefined))
   })
@@ -228,7 +246,10 @@ describe('MCP Cloud proxy gating', () => {
     const handler = await loadHandler()
     const event = makeEvent({ __body: toolCallBody('contentrain_model_save') })
 
-    await expect(handler(event as never)).resolves.toBe('proxied')
+    // A write tool takes the buffered branch, so the streamed sentinel does
+    // not apply — reaching the loopback at all is what "unrestricted" means.
+    await expect(handler(event as never)).resolves.toBeInstanceOf(Uint8Array)
+    expect(state.upstreamFetch).toHaveBeenCalled()
   })
 
   it('returns 429 with a Retry-After header when rate limited', async () => {
@@ -260,6 +281,53 @@ describe('MCP Cloud proxy gating', () => {
     expect(state.reconcile).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1' }))
   })
 
+  it('lands the merge before the write response is produced', async () => {
+    const order: string[] = []
+    state.upstreamFetch.mockImplementation(async () => {
+      order.push('upstream')
+      return new Response('{"ok":true}', { status: 200 })
+    })
+    state.reconcile.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      order.push('reconcile')
+    })
+
+    const handler = await loadHandler()
+    await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+    order.push('response')
+
+    // The whole point of buffering: an agent that immediately re-reads or
+    // deletes what it just wrote must not race its own merge.
+    expect(order).toEqual(['upstream', 'reconcile', 'response'])
+  })
+
+  it('answers even when the merge fails', async () => {
+    state.reconcile.mockRejectedValue(new Error('merge conflict'))
+    const handler = await loadHandler()
+
+    await expect(
+      handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never),
+    ).resolves.toBeInstanceOf(Uint8Array)
+  })
+
+  it('does not hold the response open when the merge outruns its deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      state.reconcile.mockImplementation(() => new Promise(() => {}))
+      const handler = await loadHandler()
+      const pending = handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      // Degrades to the previous fire-and-forget behaviour rather than
+      // holding the external agent open on a stuck merge.
+      await expect(pending).resolves.toBeInstanceOf(Uint8Array)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not invalidate brain cache on read tools', async () => {
     const handler = await loadHandler()
     const event = makeEvent({ __body: toolCallBody('contentrain_content_list') })
@@ -284,10 +352,13 @@ describe('MCP Cloud proxy gating', () => {
     const handler = await loadHandler()
     const event = makeEvent({ __body: toolCallBody('contentrain_content_list') })
     event.node.req.headers['x-cr-installation-id'] = '666'
+    // A forged media identity header must also be stripped, not forwarded.
+    event.node.req.headers['x-cr-project-id'] = 'attacker-project'
 
     await handler(event as never)
 
     expect(event.node.req.headers['x-cr-installation-id']).toBeUndefined()
+    expect(event.node.req.headers['x-cr-project-id']).toBeUndefined()
     expect(state.proxyRequest).toHaveBeenCalledWith(
       expect.anything(),
       'http://127.0.0.1:9999/mcp/mcp',
@@ -299,5 +370,90 @@ describe('MCP Cloud proxy gating', () => {
         }),
       }),
     )
+  })
+
+  describe('media facet eligibility headers', () => {
+    function injectedHeaders(): Record<string, unknown> {
+      return (state.proxyRequest.mock.calls.at(-1)![2] as { headers: Record<string, unknown> }).headers
+    }
+
+    it('injects the four media identity headers when fully eligible', async () => {
+      state.mediaProvider = { listAssets: vi.fn() }
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)
+
+      expect(injectedHeaders()).toMatchObject({
+        'x-cr-project-id': 'proj-1',
+        'x-cr-workspace-id': 'ws-1',
+        'x-cr-media-owner': 'owner-1',
+        'x-cr-plan': 'pro',
+      })
+    })
+
+    it.each([
+      ['media stack absent', () => {
+        state.mediaProvider = null
+      }],
+      ['media.upload feature off', () => {
+        state.mediaProvider = {}
+        state.mediaFeature = false
+      }],
+      ['project CDN disabled', () => {
+        state.mediaProvider = {}
+        state.db.getProjectById.mockResolvedValue({ id: 'proj-1', repo_full_name: 'acme/site', content_root: '', workspace_id: 'ws-1', cdn_enabled: false })
+      }],
+      ['no workspace owner', () => {
+        state.mediaProvider = {}
+        state.db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: 42, plan: 'pro', overage_settings: {}, owner_id: null })
+      }],
+    ])('omits ALL media headers when %s', async (_label, setup) => {
+      setup()
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)
+
+      const headers = injectedHeaders()
+      expect(headers['x-cr-project-id']).toBeUndefined()
+      expect(headers['x-cr-workspace-id']).toBeUndefined()
+      expect(headers['x-cr-media-owner']).toBeUndefined()
+      expect(headers['x-cr-plan']).toBeUndefined()
+    })
+  })
+
+  describe('key-surface media gate', () => {
+    it('denies a media tool for an unrestricted key (empty allowlist) without opt-in', async () => {
+      state.keyData.allowedTools = []
+      state.keyData.mediaEnabled = false
+      const handler = await loadHandler()
+      await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_ingest') }) as never))
+        .rejects.toMatchObject({ statusCode: 403 })
+      expect(state.db.incrementMcpCloudUsageIfAllowed).not.toHaveBeenCalled()
+      expect(state.proxyRequest).not.toHaveBeenCalled()
+    })
+
+    it('still treats empty allowlist as unrestricted for NON-media tools', async () => {
+      state.keyData.allowedTools = []
+      const handler = await loadHandler()
+      // Buffered branch — see the note on the allowlist test above.
+      await expect(handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)).resolves.toBeInstanceOf(Uint8Array)
+      expect(state.upstreamFetch).toHaveBeenCalled()
+    })
+
+    it('allows media tools when the key carries the media opt-in', async () => {
+      state.keyData.allowedTools = []
+      state.keyData.mediaEnabled = true
+      const handler = await loadHandler()
+      await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_ingest') }) as never)).resolves.toBe('proxied')
+    })
+
+    it('allows a media tool that is explicitly listed even without the opt-in', async () => {
+      state.keyData.allowedTools = ['contentrain_media_list']
+      state.keyData.mediaEnabled = false
+      const handler = await loadHandler()
+      await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_list') }) as never)).resolves.toBe('proxied')
+      // …but a different, unlisted media tool is still denied.
+      state.proxyRequest.mockClear()
+      await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_delete') }) as never))
+        .rejects.toMatchObject({ statusCode: 403 })
+    })
   })
 })

@@ -46,7 +46,7 @@ async function collectMigrations() {
   const files = []
 
   for (const dir of MIGRATION_DIRS) {
-    let names = []
+    let names
     try {
       names = await readdir(join(ROOT, dir))
     }

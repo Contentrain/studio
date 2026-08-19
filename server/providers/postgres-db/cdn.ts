@@ -180,22 +180,20 @@ export function cdnMethods(): CDNMethods {
 
     async createCDNBuild(input) {
       try {
-        const row = await getAdmin()
-          .insertInto('cdn_builds')
-          .values({
-            project_id: input.projectId,
-            trigger_type: input.triggerType,
-            commit_sha: (input.commitSha ?? null) as never,
-            branch: (input.branch ?? null) as never,
-            status: 'building',
-          })
-          .returning('id')
-          .executeTakeFirst()
+        // Atomic single-in-flight claim (per-project advisory lock + stale
+        // reclaim). Returns the new id, or NULL when a build is already running.
+        const outcome = await sql<{ result: string | null }>`
+          SELECT public.claim_cdn_build(
+            p_project_id => ${input.projectId}::uuid,
+            p_trigger_type => ${input.triggerType},
+            p_commit_sha => ${input.commitSha ?? null},
+            p_branch => ${input.branch ?? null},
+            p_stale_seconds => 900
+          ) AS result
+        `.execute(getAdmin())
 
-        if (!row)
-          throw createError({ statusCode: 500, message: 'Invalid database response' })
-
-        return row as DatabaseRow
+        const id = outcome.rows[0]?.result ?? null
+        return id ? ({ id } as DatabaseRow) : null
       }
       catch (error) {
         throwDbError(error)

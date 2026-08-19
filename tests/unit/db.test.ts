@@ -148,7 +148,7 @@ describe('db helpers', () => {
     expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-1')
   })
 
-  it('writes intermediate iterations as internal rows and the final as visible', async () => {
+  it('writes every assistant iteration as visible and tool_result rows as internal', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult({
       conversationId: 'conv-1',
@@ -180,7 +180,9 @@ describe('db helpers', () => {
     // 1 seed user + 2 assistant + 1 tool_result = 4 rows
     expect(rows).toHaveLength(4)
     expect(rows[0]).toMatchObject({ role: 'user', internal: false, iteration: null })
-    expect(rows[1]).toMatchObject({ role: 'assistant', internal: true, iteration: 1 })
+    // Every assistant iteration is visible — the transcript shows the
+    // full chronological trace; only tool_result payload rows stay internal.
+    expect(rows[1]).toMatchObject({ role: 'assistant', internal: false, iteration: 1 })
     expect(rows[2]).toMatchObject({ role: 'user', internal: true, iteration: 1 })
     expect(rows[3]).toMatchObject({ role: 'assistant', internal: false, iteration: 2 })
     // turnSequence is monotonically increasing within the turn so a
@@ -188,7 +190,7 @@ describe('db helpers', () => {
     expect(rows.map(r => r.turnSequence)).toEqual([0, 1, 2, 3])
     // All four rows share the single turn_id.
     expect(new Set(rows.map(r => r.turnId)).size).toBe(1)
-    // Token counts land only on the final visible assistant row.
+    // Token counts land only on the final assistant row.
     expect(rows[1]).not.toHaveProperty('tokenCountInput')
     expect(rows[3]).toMatchObject({
       tokenCountInput: 50,

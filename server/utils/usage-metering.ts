@@ -78,15 +78,17 @@ export function recordAPIUsage(input: {
 export function recordMCPCallUsage(input: {
   workspaceId: string
   count: number
+  /** Metering identity: an mcp_cloud_keys id (key surface) or an oauth grant id (remote surface). */
   keyId: string
   month: string
+  source?: 'key' | 'grant'
 }): Promise<void> {
   return recordUsage({
     workspaceId: input.workspaceId,
     meterName: USAGE_METERS.MCP_CALLS.name,
     value: input.count,
     idempotencyKey: `mcp:${input.workspaceId}:${input.keyId}:${input.month}:${Date.now()}`,
-    metadata: { key_id: input.keyId, month: input.month },
+    metadata: { key_id: input.keyId, month: input.month, source: input.source ?? 'key' },
   })
 }
 

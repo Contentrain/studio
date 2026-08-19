@@ -342,7 +342,7 @@ describe('brain cache', () => {
 
     // The suite's beforeEach stubs resolveMetaPath to a single fixed path; a
     // document needs the real per-slug shape so each slug maps to its own file.
-    vi.stubGlobal('resolveMetaPath', vi.fn((_ctx: unknown, _model: unknown, locale: string, slug?: string) =>
+    vi.stubGlobal('resolveMetaPath', vi.fn((_ctx: unknown, _model: unknown, locale: string, _defaultLocale: string, slug?: string) =>
       slug ? `.contentrain/meta/guide-sections/${slug}/${locale}.json` : `.contentrain/meta/guide-sections/${locale}.json`))
 
     const mod = await import('../../server/utils/brain-cache')

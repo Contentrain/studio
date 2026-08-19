@@ -3,6 +3,7 @@ import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
+import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -21,7 +22,7 @@ import type { ExpandModelView } from '~~/server/utils/relation-expand'
 // ─── Event Types ───
 
 export interface ConversationEvent {
-  type: 'conversation' | 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'
+  type: 'conversation' | 'text' | 'tool_use' | 'tool_input' | 'tool_result' | 'done' | 'error'
   [key: string]: unknown
 }
 
@@ -68,6 +69,15 @@ export interface ConversationConfig {
   tools: AITool[]
   maxToolIterations?: number
   maxToolResultLength?: number
+  /**
+   * Output-token ceiling (`max_tokens`) per model turn. A CAP, not a
+   * target — billed on actual output, so a generous value is
+   * cost-neutral and only prevents large tool calls (a full dictionary,
+   * many entries) from being truncated mid-generation. Callers pass the
+   * model-aware value from `maxOutputTokensFor`; defaults to
+   * `DEFAULT_MAX_OUTPUT_TOKENS` when omitted.
+   */
+  maxOutputTokens?: number
   abortSignal?: AbortSignal
 }
 
@@ -93,6 +103,28 @@ export interface ToolExecutionContext {
 const DEFAULT_MAX_TOOL_ITERATIONS = 8
 const DEFAULT_MAX_TOOL_RESULT_LENGTH = 32000
 
+/**
+ * Appended to the last tool_result message before the graceful-close
+ * wrap call. Without it the wrap just replays the conversation with
+ * tools disabled and the model can legitimately answer with empty
+ * content (observed on staging) — leaving the turn with no summary.
+ * Hardcoded English on purpose (same precedent as the output_truncated
+ * message): it instructs the model to answer in the conversation's
+ * language, and it is never persisted or shown verbatim.
+ */
+const GRACEFUL_CLOSE_INSTRUCTION
+  = 'You have reached the tool-step limit for this turn. Answer now with a concise summary of what you just did and its results, in the language of the conversation. Do not propose further actions.'
+
+/** Deterministic last-resort summary when even the instructed wrap returns no text. */
+function buildFallbackSummary(executedToolNames: string[]): string {
+  if (executedToolNames.length === 0)
+    return 'The turn reached its step limit before completing any operations. Please retry with a smaller request.'
+  const counts = new Map<string, number>()
+  for (const name of executedToolNames) counts.set(name, (counts.get(name) ?? 0) + 1)
+  const parts = [...counts.entries()].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name))
+  return `Completed ${executedToolNames.length} operation(s) before reaching the step limit for this turn: ${parts.join(', ')}. The results above reflect what was applied.`
+}
+
 // ─── Conversation Loop ───
 
 /**
@@ -117,6 +149,7 @@ export async function* runConversationLoop(
 ): AsyncGenerator<ConversationEvent> {
   const maxIterations = config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS
   const maxResultLength = config.maxToolResultLength ?? DEFAULT_MAX_TOOL_RESULT_LENGTH
+  const maxOutputTokens = config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
   const aiProvider = useAIProvider()
 
   let totalInputTokens = 0
@@ -125,6 +158,9 @@ export async function* runConversationLoop(
   let totalCacheReadInputTokens = 0
   let lastAssistantContent: AIContentBlock[] = []
   let accumulatedAffected: AffectedResources = emptyAffected()
+  // Names of tools that actually executed this turn — feeds the
+  // graceful-close fallback summary when the wrap call returns no text.
+  const executedToolNames: string[] = []
   // Full iteration-by-iteration trace surfaced on `done` so the
   // caller can persist the actual Anthropic-protocol shape Claude
   // saw — intermediate assistant turns AND tool_result blocks —
@@ -172,6 +208,10 @@ export async function* runConversationLoop(
           const input = (typeof streamEvent.toolInput === 'object' && streamEvent.toolInput !== null) ? streamEvent.toolInput : {}
           currentToolCalls.push({ id: streamEvent.toolId!, name: streamEvent.toolName!, input })
           assistantBlocks.push({ type: 'tool_use', id: streamEvent.toolId!, name: streamEvent.toolName!, input })
+          // The model has finished emitting the call but execution hasn't
+          // started — surface the input now so the client card can show
+          // what's being done during the (potentially long) pending window.
+          yield { type: 'tool_input', id: streamEvent.toolId, input }
           break
         }
         case 'message_end':
@@ -202,13 +242,20 @@ export async function* runConversationLoop(
     if (turnMergeFlushed || turnMerge.pendingFinalize.length === 0) return
     turnMergeFlushed = true
     try {
-      await toolCtx.engine.finalizeContentrain(turnMerge.pendingFinalize)
+      const finalized = await toolCtx.engine.finalizeContentrain(turnMerge.pendingFinalize)
+      if (finalized.mainAdvance === 'blocked_diverged') {
+        // Not an error — the content is on contentrain and a PR now carries
+        // the advance. Logged because divergence never heals on its own and
+        // this may be the first place it becomes visible.
+        // eslint-disable-next-line no-console
+        console.warn(`[conversation] main advance blocked — contentrain/main diverged; PR: ${finalized.pullRequestUrl ?? 'already open'}`)
+      }
     }
     catch (e) {
-      // Best-effort, same contract as per-save regen: context.json and
-      // the main advance self-heal on the next merge.
+      // finalize turns divergence into a PR itself, so what reaches this
+      // catch is transient (network, rate limit) — the next merge retries it.
       // eslint-disable-next-line no-console
-      console.warn('[conversation] turn-end finalize failed (self-heals on next merge):', e instanceof Error ? e.message : e)
+      console.warn('[conversation] turn-end finalize failed (transient — retried on next merge):', e instanceof Error ? e.message : e)
     }
   }
 
@@ -218,13 +265,32 @@ export async function* runConversationLoop(
 
       iteration++
 
-      const turn = yield* runModelStream(4096)
+      const turn = yield* runModelStream(maxOutputTokens)
       totalInputTokens += turn.usage.inputTokens
       totalOutputTokens += turn.usage.outputTokens
       totalCacheCreationInputTokens += turn.usage.cacheCreationInputTokens
       totalCacheReadInputTokens += turn.usage.cacheReadInputTokens
       lastStopReason = turn.stopReason
       lastAssistantContent = turn.assistantBlocks
+
+      // === OUTPUT-TOKEN TRUNCATION ===
+      // The model hit the `max_tokens` ceiling mid-response. If it was
+      // emitting a tool call, that call was cut off before completion —
+      // no `tool_use_end` fires, so it never lands in `currentToolCalls`
+      // and never executes. Treating this as a normal end-of-turn (the
+      // generic check below) strands the user on a "…saving now:"
+      // preamble whose action silently never ran. Instead: keep the
+      // partial (text-only) content for the transcript, surface a
+      // typed error the client localizes, and end the turn honestly.
+      if (turn.stopReason === 'max_tokens') {
+        trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
+        yield {
+          type: 'error',
+          code: 'output_truncated',
+          message: 'The response was cut off at the output-token limit before it finished. Any pending save/create did not run. Split large operations into smaller steps (e.g. one locale or a few entries per call) and retry.',
+        }
+        break
+      }
 
       if (turn.stopReason !== 'tool_use' || turn.currentToolCalls.length === 0) {
       // Final iteration — no tool execution this turn. Persist the
@@ -240,7 +306,7 @@ export async function* runConversationLoop(
       for (const tc of turn.currentToolCalls) {
       // Stop tool execution if client disconnected
         if (config.abortSignal?.aborted) {
-          toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify({ error: 'Request cancelled' }) })
+          toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify({ error: 'Request cancelled' }), isError: true })
           continue
         }
 
@@ -248,8 +314,8 @@ export async function* runConversationLoop(
         const stateCheck = checkStateTransition(toolCtx.phase, tc.name)
         if (!stateCheck.allowed) {
           const errorResult = { error: stateCheck.reason, suggestion: stateCheck.suggestion }
-          yield { type: 'tool_result', id: tc.id, name: tc.name, result: errorResult }
-          toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(errorResult) })
+          yield { type: 'tool_result', id: tc.id, name: tc.name, input: tc.input, result: errorResult }
+          toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: JSON.stringify(errorResult), isError: true })
           continue
         }
 
@@ -257,6 +323,7 @@ export async function* runConversationLoop(
         const result = await executeToolWithAutoMerge(
           tc.name, tc.input, toolCtx.engine, toolCtx.git, toolCtx.userEmail, toolCtx.userId, toolCtx.contentRoot, toolCtx.workflow, toolCtx.permissions, toolCtx.plan, toolCtx.projectId, toolCtx.workspaceId, toolCtx.uiContext, turnMerge,
         )
+        executedToolNames.push(tc.name)
 
         // Accumulate affected resources
         accumulatedAffected = mergeAffected(accumulatedAffected, result.affected)
@@ -274,8 +341,14 @@ export async function* runConversationLoop(
         // Carry this tool's affected resources on the event so the client
         // can refresh the context panel live (debounced) as each operation
         // lands, instead of only once the whole turn finishes on `done`.
-        yield { type: 'tool_result', id: tc.id, name: tc.name, result: result.result, affected: result.affected }
-        toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr })
+        yield { type: 'tool_result', id: tc.id, name: tc.name, input: tc.input, result: result.result, affected: result.affected }
+        // Executor errors come back in-band as `{ error: ... }` (never the
+        // plural `errors` array, which successful validation results carry).
+        // Flag them so Anthropic's `is_error` and any transcript-level error
+        // telemetry see the failure — previously every tool error counted
+        // as a success at the protocol layer.
+        const isToolError = typeof result.result === 'object' && result.result !== null && 'error' in result.result
+        toolResultBlocks.push({ type: 'tool_result', toolUseId: tc.id, content: resultStr, ...(isToolError ? { isError: true } : {}) })
       }
 
       config.messages.push({ role: 'assistant', content: turn.assistantBlocks })
@@ -291,14 +364,45 @@ export async function* runConversationLoop(
     // tools-disabled streaming call so the model summarizes what it did —
     // streamed live, and recorded as the final visible assistant turn.
     if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
-      const wrap = yield* runModelStream(4096, [])
+      // Nudge the wrap with an explicit summarize instruction appended
+      // after the final tool_result blocks. REPLACE the message — never
+      // mutate its content array, which `trace` still references — so
+      // the instruction lives only in this one API call and is never
+      // persisted or replayed on resume.
+      const lastMsg = config.messages[config.messages.length - 1]
+      if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content)) {
+        config.messages[config.messages.length - 1] = {
+          role: 'user',
+          content: [...lastMsg.content, { type: 'text', text: GRACEFUL_CLOSE_INSTRUCTION }],
+        }
+      }
+
+      const wrap = yield* runModelStream(maxOutputTokens, [])
       totalInputTokens += wrap.usage.inputTokens
       totalOutputTokens += wrap.usage.outputTokens
       totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
       totalCacheReadInputTokens += wrap.usage.cacheReadInputTokens
-      if (wrap.assistantBlocks.length > 0) {
+
+      const wrapText = wrap.assistantBlocks
+        .filter(b => b.type === 'text')
+        .map(b => (b as { text: string }).text)
+        .join('')
+        .trim()
+      if (wrapText) {
         lastAssistantContent = wrap.assistantBlocks
         trace.push({ iteration: iteration + 1, assistantBlocks: wrap.assistantBlocks, toolResultBlocks: [] })
+      }
+      else {
+        // Observed on staging: the wrap can return zero blocks without
+        // erroring, which used to leave the turn with no summary at all.
+        // Synthesize a deterministic one so the transcript never ends
+        // tool-only.
+        // eslint-disable-next-line no-console
+        console.warn('[conversation] graceful-close wrap returned no text; synthesizing fallback summary')
+        const fallbackText = buildFallbackSummary(executedToolNames)
+        yield { type: 'text', content: fallbackText }
+        lastAssistantContent = [{ type: 'text', text: fallbackText }]
+        trace.push({ iteration: iteration + 1, assistantBlocks: lastAssistantContent, toolResultBlocks: [] })
       }
     }
 
@@ -475,7 +579,7 @@ export async function executeToolWithAutoMerge(
           }
         }
 
-        let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }
+        let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean }
 
         // Document kind: expects { slug, frontmatter/data, body }
         if (params.slug && typeof params.slug === 'string') {
@@ -497,6 +601,13 @@ export async function executeToolWithAutoMerge(
         // copy_locale validation guard below.)
         if (!writeResult.validation.valid) {
           result = { error: `${errorMessage('content.validation_failed')}: ${writeResult.validation.errors.map(e => e.message).join('; ')}` }
+          break
+        }
+
+        // A no-op save touched nothing — don't dirty the brain cache or
+        // report a pending merge for a state that is already live.
+        if (writeResult.unchanged) {
+          result = { ...summarizeWriteResult(writeResult), merged: true, workflow }
           break
         }
 
@@ -808,59 +919,86 @@ export async function executeToolWithAutoMerge(
           result = { error: agentMessage('media.url_required') }
           break
         }
-        // SSRF guard — block internal/private/loopback targets, matching
-        // the session URL-import route. Without this an agent prompt could
-        // make the server fetch internal-only addresses.
-        if (!isAllowedWebhookUrl(url)) {
-          result = { error: agentMessage('media.url_blocked') }
-          break
-        }
-        let fetchResponse: Response
-        try {
-          fetchResponse = await fetch(url, {
-            headers: { 'User-Agent': 'Contentrain-Studio/1.0' },
-            signal: AbortSignal.timeout(30_000),
-          })
-        }
-        catch {
-          result = { error: agentMessage('media.fetch_failed') }
-          break
-        }
-        if (!fetchResponse.ok) {
-          result = { error: agentMessage('media.url_bad_status', { status: fetchResponse.status }) }
-          break
-        }
-        const mimeType = (fetchResponse.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim()
-        if (!isAllowedMimeType(mimeType)) {
-          result = { error: agentMessage('media.type_not_allowed', { type: mimeType }) }
-          break
-        }
-        const fileBuffer = Buffer.from(await fetchResponse.arrayBuffer())
-        const urlFilename = new URL(url).pathname.split('/').pop() ?? 'uploaded-file'
-        const variants = resolveVariantConfig(params.variants as string | undefined)
 
-        const asset = await mediaProvider.upload({
-          projectId,
-          workspaceId,
-          file: fileBuffer,
-          filename: urlFilename,
-          contentType: mimeType,
-          alt: params.alt as string | undefined,
-          tags: params.tags as string[] | undefined,
-          variants,
-          // uploaded_by is a uuid FK to profiles(id) — pass the user id, not the
-          // email (the UI upload routes pass session.user.id). Passing the email
-          // tripped "invalid input syntax for type uuid".
-          uploadedBy: userId,
-          source: 'agent',
-        })
-        result = {
-          id: asset.id,
-          path: asset.originalPath,
-          url: toDeliveryUrl(projectId, asset.originalPath),
-          filename: asset.filename,
-          dimensions: `${asset.width}x${asset.height}`,
-          variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
+        // Our own delivery URL (or a bare `media/...` path) means the asset
+        // is ALREADY in the library — re-ingesting it created a duplicate
+        // under a uuid filename. Resolve to the existing asset instead; if
+        // it does not resolve, the reference is stale/invented, and
+        // refetching our own CDN would only launder that mistake.
+        const ownPath = ownMediaStoragePath(projectId, url)
+        if (ownPath) {
+          const existing = await mediaProvider.getAssetByPath?.(projectId, ownPath)
+          if (!existing) {
+            result = { error: agentMessage('media.asset_not_found') }
+            break
+          }
+          result = { ...summarizeMediaAsset(projectId, existing), deduplicated: true }
+          break
+        }
+
+        try {
+          // Shared ingest path: SSRF guard + MIME whitelist + per-plan size
+          // cap live in fetchRemoteMedia (this executor previously inlined
+          // an unguarded copy with no size cap and no storage quota).
+          const maxBytes = getPlanLimit(plan, 'media.max_file_size_mb') * 1024 * 1024
+          const remote = await fetchRemoteMedia({ url, maxBytes })
+          const variants = resolveVariantConfigWithPlan(params.variants as string | undefined, {
+            hasCustomVariants: hasFeature(plan, 'media.custom_variants'),
+            variantsPerFieldLimit: getPlanLimit(plan, 'media.variants_per_field'),
+          })
+
+          const db = useDatabaseProvider()
+          const workspace = await db.getWorkspaceById(workspaceId, 'id, overage_settings')
+          const overageSettings = (workspace?.overage_settings as Record<string, boolean> | null) ?? {}
+          const baseLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
+          const storageLimit = getEffectiveLimit(baseLimit, 'media.storage_gb', overageSettings)
+
+          let storageReserved = false
+          if (storageLimit > 0) {
+            const reservation = await db.reserveStorageIfAllowed(workspaceId, remote.buffer.length, storageLimit)
+            if (!reservation.allowed) {
+              result = { error: errorMessage('storage.quota_exceeded') }
+              break
+            }
+            storageReserved = true
+          }
+
+          try {
+            const asset = await mediaProvider.upload({
+              projectId,
+              workspaceId,
+              file: remote.buffer,
+              filename: remote.filename,
+              contentType: remote.contentType,
+              alt: params.alt as string | undefined,
+              tags: params.tags as string[] | undefined,
+              variants,
+              // uploaded_by is a uuid FK to profiles(id) — pass the user id, not the
+              // email (the UI upload routes pass session.user.id). Passing the email
+              // tripped "invalid input syntax for type uuid".
+              uploadedBy: userId,
+              source: 'agent',
+              skipStorageIncrement: storageReserved,
+            })
+
+            // Reconcile the reservation to the post-optimization size.
+            if (storageReserved) {
+              const actualBytes = typeof asset.size === 'number' ? asset.size : 0
+              const delta = actualBytes - remote.buffer.length
+              if (delta !== 0)
+                await db.incrementWorkspaceStorageBytes(workspaceId, delta)
+            }
+
+            result = summarizeMediaAsset(projectId, asset)
+          }
+          catch (err) {
+            if (storageReserved)
+              await db.incrementWorkspaceStorageBytes(workspaceId, -remote.buffer.length).catch(() => {})
+            throw err
+          }
+        }
+        catch (err) {
+          result = { error: err instanceof Error ? err.message : agentMessage('media.fetch_failed') }
         }
         break
       }
@@ -1147,11 +1285,14 @@ export async function executeToolWithAutoMerge(
 
       case 'brain_search': {
         const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
-        const searchQuery = (params.query as string).toLowerCase()
         const targetModel = params.model as string | undefined
         const searchLimit = Math.min((params.limit as number) ?? 10, 50)
 
-        const searchResults: Array<{ modelId: string, entryId: string, locale: string, preview: string }> = []
+        // Token-scored matching over string VALUES (see brain-search.ts) —
+        // the old contiguous-substring match over JSON.stringify(entry)
+        // returned zero results for any query that spanned two fields.
+        const tokens = tokenizeQuery(params.query as string)
+        const scored: Array<{ modelId: string, entryId: string, locale: string, preview: string, score: number }> = []
 
         for (const [key, data] of brainData.content) {
           const [mId, loc] = key.split(':')
@@ -1159,33 +1300,26 @@ export async function executeToolWithAutoMerge(
           if (targetModel && mId !== targetModel) continue
           if (permissions.specificModels && !permissions.allowedModels.includes(mId)) continue
           if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(loc)) continue
+          if (typeof data !== 'object' || data === null) continue
 
-          const stringified = JSON.stringify(data).toLowerCase()
-          if (!stringified.includes(searchQuery)) continue
-
-          if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-            for (const [entryId, entry] of Object.entries(data as Record<string, unknown>)) {
-              const entryStr = JSON.stringify(entry).toLowerCase()
-              if (entryStr.includes(searchQuery)) {
-                const preview = JSON.stringify(entry).substring(0, 200)
-                searchResults.push({ modelId: mId, entryId, locale: loc, preview })
-                if (searchResults.length >= searchLimit) break
-              }
-            }
-          }
-          else if (Array.isArray(data)) {
-            for (const [idx, entry] of data.entries()) {
-              const entryStr = JSON.stringify(entry).toLowerCase()
-              if (entryStr.includes(searchQuery)) {
+          const entryPairs: Array<[string, unknown]> = Array.isArray(data)
+            ? data.map((entry, idx) => {
                 const slug = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>).slug as string ?? `entry-${idx}` : `entry-${idx}`
-                searchResults.push({ modelId: mId, entryId: slug, locale: loc, preview: JSON.stringify(entry).substring(0, 200) })
-                if (searchResults.length >= searchLimit) break
-              }
-            }
-          }
+                return [slug, entry] as [string, unknown]
+              })
+            : Object.entries(data as Record<string, unknown>)
 
-          if (searchResults.length >= searchLimit) break
+          for (const [entryId, entry] of entryPairs) {
+            const score = scoreEntryText(collectSearchableText(entry), tokens)
+            if (score < BRAIN_SEARCH_MIN_SCORE) continue
+            scored.push({ modelId: mId, entryId, locale: loc, preview: JSON.stringify(entry).substring(0, 200), score })
+          }
         }
+
+        // Full matches first, partials after; ranked before the cut so the
+        // best hits survive the limit regardless of model iteration order.
+        scored.sort((a, b) => b.score - a.score)
+        const searchResults = scored.slice(0, searchLimit)
 
         result = { query: params.query, results: searchResults, total: searchResults.length }
         break
@@ -1217,13 +1351,30 @@ export async function executeToolWithAutoMerge(
 
 // ─── Helpers ───
 
-function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> } }): Record<string, unknown> {
+function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean }): Record<string, unknown> {
   return {
     branch: result.branch,
     commitSha: result.commit.sha,
     filesChanged: result.diff.length,
     valid: result.validation.valid,
     errors: result.validation.errors.map(e => e.message),
+    // A save whose planned files were byte-identical to `contentrain` —
+    // no branch, no commit, no merge happened. Distinct from failure: the
+    // requested state was ALREADY live, so the agent must not retry, but it
+    // must not claim it changed anything either.
+    ...(result.unchanged ? { unchanged: true } : {}),
+  }
+}
+
+/** Tool-facing shape for a media asset (upload_media result contract). */
+function summarizeMediaAsset(projectId: string, asset: import('~~/server/providers/media').MediaAsset): Record<string, unknown> {
+  return {
+    id: asset.id,
+    path: asset.originalPath,
+    url: toDeliveryUrl(projectId, asset.originalPath),
+    filename: asset.filename,
+    dimensions: `${asset.width}x${asset.height}`,
+    variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
   }
 }
 

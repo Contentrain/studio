@@ -199,7 +199,12 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    const locales = config.locales?.supported ?? [config.locales?.default ?? 'en']
+    // Non-i18n content/meta lives under the DEFAULT locale (that's where MCP
+    // writes it), which is NOT necessarily supported[0]. Keep this distinct
+    // from `locales[0]` — mirrors brain-cache.ts's `locale === 'data' ?
+    // defaultLocale : locale` contract.
+    const defaultLocale = config.locales?.default ?? 'en'
+    const locales = config.locales?.supported ?? [defaultLocale]
 
     // 2. Load all model definitions
     progress({ phase: 'init', message: 'Loading model definitions...' })
@@ -226,33 +231,31 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
     changedModelIds.push(...targetModels.map(m => m.id))
 
-    // 4. Upload manifest
-    progress({ phase: 'upload', message: 'Uploading manifest...', current: 0, total: targetModels.length })
-    const manifest = {
-      version: '1',
-      commitSha,
-      builtAt: new Date().toISOString(),
-      branch,
-      config: {
-        stack: config.stack,
-        locales: config.locales,
-        domains: config.domains,
-      },
-      models: models.map(m => ({
-        id: m.id,
-        name: m.name,
-        kind: m.kind,
-        domain: m.domain,
-        i18n: m.i18n,
-      })),
+    // A selective build whose diff touches no content models (a pure code
+    // push: only app/, server/, etc.) must be a true no-op. Running the rest
+    // would advance `_manifest.json.commitSha` to the code commit while the
+    // bundle block is skipped (targetModels empty), leaving the manifest ahead
+    // of every `_bundle/*.json`. Consumers that key content freshness off the
+    // manifest then read stale/empty content until a full rebuild re-aligns
+    // them (#153). The manifest tracks the CONTENT version, so a content-less
+    // push must not bump it — returning here also saves a wasted build cycle.
+    // fullRebuild (manual trigger) and config/model-def changes never reach
+    // here: the former skips the `else` branch above, the latter make
+    // getAffectedModels non-empty.
+    if (!options.fullRebuild && options.changedPaths?.length && targetModels.length === 0) {
+      return {
+        projectId,
+        buildId,
+        commitSha,
+        filesUploaded: 0,
+        filesDeleted: 0,
+        totalSizeBytes: 0,
+        changedModels: [],
+        durationMs: Date.now() - start,
+      }
     }
-    const manifestData = JSON.stringify(manifest, null, 2)
-    await cdn.putObject(projectId, '_manifest.json', manifestData, 'application/json')
-    uploadedPaths.add('_manifest.json')
-    filesUploaded++
-    totalSizeBytes += Buffer.byteLength(manifestData)
 
-    // 5. Upload model index + definitions
+    // 4. Upload model index + definitions
     const modelSummaries = models.map(m => ({
       id: m.id,
       name: m.name,
@@ -276,7 +279,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       totalSizeBytes += Buffer.byteLength(modelData)
     }
 
-    // 6. Build content for each target model
+    // 5. Build content for each target model
     let modelStep = 0
     for (const model of targetModels) {
       modelStep++
@@ -288,33 +291,77 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
         try {
           if (model.kind === 'document') {
-            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, branch, uploadedPaths)
+            // Non-i18n document meta lives under the default locale (MCP's
+            // contract), so decouple the meta locale from the content locale.
+            const metaLocale = model.i18n ? locale : defaultLocale
+            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, metaLocale, branch, uploadedPaths)
             const cdnLocale = model.i18n ? locale : 'data'
             addBundleEntry(model.i18n ? locale : null, `documents/${model.id}/_index/${cdnLocale}.json`, indexEntries)
           }
           else {
             // JSON kinds: collection, singleton, dictionary
             const contentPath = resolveContentPath(ctx, model, effectiveLocale === 'data' ? 'data' : locale)
-            const raw = await git.readFile(contentPath, branch)
+            let raw: string
+            try {
+              raw = await git.readFile(contentPath, branch)
+            }
+            catch {
+              // Content file genuinely absent for this locale — expected, there
+              // is nothing to publish. This is the ONLY silently-skipped case;
+              // any error past this point is real and reaches the outer catch.
+              continue
+            }
             let content = JSON.parse(raw)
 
-            // Filter by meta (published only)
-            if (model.kind === 'collection') {
-              const metaPath = resolveMetaPath(ctx, model, effectiveLocale === 'data' ? locales[0]! : locale)
-              let meta: Record<string, EntryMeta> = {}
-              try {
-                meta = JSON.parse(await git.readFile(metaPath, branch)) as Record<string, EntryMeta>
-              }
-              catch { /* no meta */ }
+            // Read this model's meta ONCE. A missing meta *file* means "no status
+            // info" → legacy include-all (shouldIncludeEntry(undefined) === true).
+            // A meta file that fails to PARSE is corruption — let it throw to the
+            // outer catch instead of silently publishing everything unfiltered.
+            const metaPath = resolveMetaPath(ctx, model, locale, defaultLocale)
+            let metaRaw: string | null = null
+            try {
+              metaRaw = await git.readFile(metaPath, branch)
+            }
+            catch {
+              // No meta file for this model/locale — legacy content without meta.
+            }
+            const metaParsed = metaRaw === null
+              ? null
+              : JSON.parse(metaRaw) as Record<string, EntryMeta>
 
-              // Filter entries by publication status
+            // Filter by publication status. `outputMeta` is what ships alongside
+            // the content (null → the model has no meta file, nothing to upload).
+            let outputMeta: Record<string, EntryMeta> | EntryMeta | null = null
+
+            if (model.kind === 'collection') {
+              // Collection meta is an id-keyed map — filter per entry.
+              const metaMap = metaParsed ?? {}
               const filtered: Record<string, unknown> = {}
               for (const [id, entry] of Object.entries(content as Record<string, unknown>)) {
-                if (shouldIncludeEntry(meta[id])) {
-                  filtered[id] = entry
-                }
+                if (shouldIncludeEntry(metaMap[id])) filtered[id] = entry
               }
               content = filtered
+
+              if (metaParsed !== null) {
+                const filteredMeta: Record<string, EntryMeta> = {}
+                for (const [id, m] of Object.entries(metaMap)) {
+                  if (shouldIncludeEntry(m)) filteredMeta[id] = m
+                }
+                outputMeta = filteredMeta
+              }
+            }
+            else {
+              // singleton / dictionary: MCP writes meta as a SINGLE object
+              // ({ status, source, updated_by }), not an id-map. One status gates
+              // the whole artifact — a draft/scheduled/expired unit must not be
+              // served at all.
+              const single = metaParsed as EntryMeta | null
+              if (!shouldIncludeEntry(single ?? undefined)) {
+                // Not published — skip content AND meta so the stale-object sweep
+                // garbage-collects any previously-published copy.
+                continue
+              }
+              outputMeta = single
             }
 
             // Safety net: rewrite any relative media paths that reached the
@@ -329,35 +376,28 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
             totalSizeBytes += Buffer.byteLength(data)
             addBundleEntry(model.i18n ? locale : null, outputPath, content)
 
-            // Upload meta (filtered)
-            try {
-              const metaPath = resolveMetaPath(ctx, model, effectiveLocale === 'data' ? locales[0]! : locale)
-              const metaRaw = await git.readFile(metaPath, branch)
-              const metaData = JSON.parse(metaRaw) as Record<string, EntryMeta>
-
-              // Only include published entries' meta
-              const filteredMeta: Record<string, EntryMeta> = {}
-              for (const [id, m] of Object.entries(metaData)) {
-                if (shouldIncludeEntry(m)) filteredMeta[id] = m
-              }
-
+            // Upload meta alongside the content (skip when the model has no meta).
+            if (outputMeta !== null) {
               const metaOutput = `meta/${model.id}/${effectiveLocale === 'data' ? 'data' : locale}.json`
-              const metaStr = JSON.stringify(filteredMeta, null, 2)
+              const metaStr = JSON.stringify(outputMeta, null, 2)
               await cdn.putObject(projectId, metaOutput, metaStr, 'application/json')
               uploadedPaths.add(metaOutput)
               filesUploaded++
               totalSizeBytes += Buffer.byteLength(metaStr)
             }
-            catch { /* no meta to upload */ }
           }
         }
-        catch {
-          // Content file doesn't exist for this locale — skip
+        catch (e) {
+          // A content/meta parse error, media-normalize failure, or upload error
+          // for THIS model+locale. Previously swallowed → published content
+          // silently vanished from the CDN. Surface it (best-effort per model,
+          // the build continues for the rest) instead of dropping it on the floor.
+          reportDataLossRisk(e, { op: 'cdn-build.model', projectId, modelId: model.id, locale })
         }
       }
     }
 
-    // 6.5 Locale bundles — one conditional fetch replaces N per-model reads
+    // 6. Locale bundles — one conditional fetch replaces N per-model reads
     // (SDK preload mode, docs/CDN_BUNDLE.md). Emitted on every build so the
     // bundle always mirrors the standalone artifacts; skipped only when a
     // selective build touched no models (content unchanged → bundles current).
@@ -411,7 +451,89 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       }
     }
 
-    // 7. Diff-based stale object cleanup
+    // 7. Media manifest (if MediaProvider is available).
+    //
+    // Runs BEFORE the sweep on purpose. `_media_manifest.json` is written by the
+    // build, so it has to be in `uploadedPaths` by the time the full-rebuild
+    // sweep runs — otherwise the sweep deletes it and step 8 re-uploads it a
+    // moment later, leaving a window where the path 404s. The delivery SDK
+    // throws on any non-2xx and caches the media manifest for the lifetime of
+    // the instance, so a consumer that boots inside that window stays broken
+    // until it is replaced. Ordering it here also keeps the inverse correct: a
+    // project with no media assets uploads nothing, the path stays out of
+    // `uploadedPaths`, and the sweep garbage-collects a stale manifest.
+    try {
+      const mediaProvider = useMediaProvider()
+      if (mediaProvider) {
+        const { assets: mediaAssets } = await mediaProvider.listAssets(projectId, { limit: 10000 })
+        if (mediaAssets.length > 0) {
+          // Build media manifest
+          const mediaManifest: Record<string, { original: string, variants: Record<string, string>, meta: Record<string, unknown> }> = {}
+          for (const asset of mediaAssets) {
+            mediaManifest[asset.originalPath] = {
+              original: asset.originalPath,
+              variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
+              meta: {
+                width: asset.width,
+                height: asset.height,
+                format: asset.format,
+                size: asset.size,
+                blurhash: asset.blurhash,
+                alt: asset.alt,
+              },
+            }
+          }
+          const mediaManifestData = JSON.stringify({ version: '1', assets: mediaManifest }, null, 2)
+          await cdn.putObject(projectId, '_media_manifest.json', mediaManifestData, 'application/json')
+          uploadedPaths.add('_media_manifest.json')
+          filesUploaded++
+          totalSizeBytes += Buffer.byteLength(mediaManifestData)
+        }
+      }
+    }
+    catch {
+      // Media manifest generation is non-fatal
+    }
+
+    // 8. Manifest — published LAST, after every artifact it describes.
+    //
+    // `_manifest.json` is the CONTENT VERSION POINTER: consumers key freshness
+    // off its commitSha. Publishing it first (as this used to) advertised a
+    // commit whose content, bundles and media manifest were still uploading —
+    // measured at ~105s on a full rebuild, since every object goes up one at a
+    // time. A consumer reading in that window pinned the new commitSha to
+    // pre-build bodies and, if it caches per commit, never re-read them. Same
+    // invariant #153 protected (manifest must not outrun the bundle); that fix
+    // covered a build that skipped the bundle, this covers every build that
+    // simply hadn't written it yet. A build that dies midway now leaves the old
+    // manifest pointing at the old, complete content instead of a half-written
+    // snapshot.
+    progress({ phase: 'upload', message: 'Uploading manifest...', current: targetModels.length, total: targetModels.length })
+    const manifest = {
+      version: '1',
+      commitSha,
+      builtAt: new Date().toISOString(),
+      branch,
+      config: {
+        stack: config.stack,
+        locales: config.locales,
+        domains: config.domains,
+      },
+      models: models.map(m => ({
+        id: m.id,
+        name: m.name,
+        kind: m.kind,
+        domain: m.domain,
+        i18n: m.i18n,
+      })),
+    }
+    const manifestData = JSON.stringify(manifest, null, 2)
+    await cdn.putObject(projectId, '_manifest.json', manifestData, 'application/json')
+    uploadedPaths.add('_manifest.json')
+    filesUploaded++
+    totalSizeBytes += Buffer.byteLength(manifestData)
+
+    // 9. Diff-based stale object cleanup
     progress({ phase: 'cleanup', message: 'Cleaning stale objects...' })
     try {
       if (options.fullRebuild || !options.changedPaths?.length) {
@@ -454,41 +576,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       reportDataLossRisk(e, { op: 'cdn-build.cleanup', projectId, filesDeleted, fullRebuild: options.fullRebuild ?? false })
     }
 
-    // 8. Media manifest (if MediaProvider is available)
-    try {
-      const mediaProvider = useMediaProvider()
-      if (mediaProvider) {
-        const { assets: mediaAssets } = await mediaProvider.listAssets(projectId, { limit: 10000 })
-        if (mediaAssets.length > 0) {
-          // Build media manifest
-          const mediaManifest: Record<string, { original: string, variants: Record<string, string>, meta: Record<string, unknown> }> = {}
-          for (const asset of mediaAssets) {
-            mediaManifest[asset.originalPath] = {
-              original: asset.originalPath,
-              variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
-              meta: {
-                width: asset.width,
-                height: asset.height,
-                format: asset.format,
-                size: asset.size,
-                blurhash: asset.blurhash,
-                alt: asset.alt,
-              },
-            }
-          }
-          const manifestData = JSON.stringify({ version: '1', assets: mediaManifest }, null, 2)
-          await cdn.putObject(projectId, '_media_manifest.json', manifestData, 'application/json')
-          uploadedPaths.add('_media_manifest.json')
-          filesUploaded++
-          totalSizeBytes += Buffer.byteLength(manifestData)
-        }
-      }
-    }
-    catch {
-      // Media manifest generation is non-fatal
-    }
-
-    // 9. Purge edge cache
+    // 10. Purge edge cache
     progress({ phase: 'done', message: `Build complete — ${filesUploaded} uploaded, ${filesDeleted} deleted`, current: targetModels.length, total: targetModels.length })
     await cdn.purgeCache(projectId)
 
@@ -528,6 +616,14 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
  * Directory structure:
  *   i18n=true:  {contentDir}/{slug}/{locale}.md
  *   i18n=false: {contentDir}/{slug}.md (flat files, not directories)
+ *
+ * NOTE: the slug enumeration below assumes the default `file` (and the
+ * equivalent `none`) locale_strategy layout. `suffix`
+ * ({contentDir}/{slug}.{locale}.md) and `directory`
+ * ({contentDir}/{locale}/{slug}.md) documents would enumerate wrong here —
+ * only the per-file READ path (resolveContentPath) honors those strategies
+ * today. Generalizing document listing is a separate follow-up (the same
+ * limitation exists in brain-cache's document walk).
  */
 async function buildDocumentModel(
   projectId: string,
@@ -536,6 +632,7 @@ async function buildDocumentModel(
   ctx: { contentRoot: string },
   model: ModelDefinition,
   locale: string,
+  metaLocale: string,
   branch: string,
   uploadedPaths: Set<string>,
 ): Promise<Array<Record<string, unknown>>> {
@@ -546,7 +643,7 @@ async function buildDocumentModel(
   // Remove trailing slash for clean path
   const baseDir = contentDir.replace(/\/$/, '')
 
-  let entries: string[] = []
+  let entries: string[]
   try {
     entries = await git.listDirectory(baseDir, branch)
   }
@@ -576,7 +673,9 @@ async function buildDocumentModel(
 
       // Check meta
       try {
-        const metaPath = resolveMetaPath(ctx, model, locale, slug)
+        // `metaLocale` is already the effective meta locale (i18n → locale,
+        // non-i18n → defaultLocale), so it stands in for both args here.
+        const metaPath = resolveMetaPath(ctx, model, metaLocale, metaLocale, slug)
         const metaRaw = JSON.parse(await git.readFile(metaPath, branch)) as EntryMeta
         if (!shouldIncludeEntry(metaRaw)) continue
       }
