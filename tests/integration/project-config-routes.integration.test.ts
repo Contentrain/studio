@@ -226,6 +226,22 @@ describe('project config and branch route integration', () => {
     }))
     vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/vocabulary/1234567890-abcd'))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
+    // The review resolves entries against the project's own models; the branch
+    // list uses the same snapshot to name them.
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      models: new Map([['posts', {
+        id: 'posts',
+        name: 'Posts',
+        kind: 'collection',
+        domain: 'blog',
+        i18n: true,
+        title_field: 'title',
+        content_path: 'content/posts',
+        fields: { title: { type: 'string', label: 'Headline' } },
+      }]]),
+      config: { locales: { default: 'en', supported: ['en'] } },
+      content: new Map(),
+    }))
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ ensureContentBranch: vi.fn().mockResolvedValue(undefined), mergeBranch }))
 
     await withTestServer({
@@ -254,17 +270,43 @@ describe('project config and branch route integration', () => {
         cta: { en: 'Start now' },
       })
 
+      // A pending change is listed as what it changed, not as its git ref.
       const branchesResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches')
       expect(branchesResponse.status).toBe(200)
       await expect(branchesResponse.json()).resolves.toEqual({
-        branches: [{ name: 'cr/content/faq/en/1234567890-abcd', sha: 'abc', protected: false }],
+        branches: [{
+          name: 'cr/content/faq/en/1234567890-abcd',
+          sha: 'abc',
+          protected: false,
+          scope: 'content',
+          modelId: 'faq',
+          modelName: 'faq',
+          locale: 'en',
+          timestamp: 1234567890,
+        }],
       })
 
-      const diffResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches/cr/content/faq/en/1234567890-abcd/diff')
-      expect(diffResponse.status).toBe(200)
-      const diffPayload = await diffResponse.json()
-      expect(diffPayload.branch).toBe('cr/content/faq/en/1234567890-abcd')
-      expect(diffPayload.contents['content/posts/en.json']).toEqual({
+      // Default: the semantic review, resolved against the project's models.
+      const reviewResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches/cr/content/faq/en/1234567890-abcd/diff')
+      expect(reviewResponse.status).toBe(200)
+      const review = await reviewResponse.json()
+      expect(review.branch).toBe('cr/content/faq/en/1234567890-abcd')
+      expect(review.groups[0].modelName).toBe('Posts')
+      expect(review.groups[0].entries[0]).toMatchObject({
+        entryId: 'after',
+        kind: 'added',
+      })
+      // The permission gate travels with the payload, so the panel never
+      // offers an action the server would answer 403 to.
+      expect(review.canMerge).toBe(false)
+      // Whole-file bytes are not in the default response.
+      expect(review.contents).toBeUndefined()
+
+      // The technical view still gets the file-level diff, on request.
+      const rawResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches/cr/content/faq/en/1234567890-abcd/diff?raw=1')
+      expect(rawResponse.status).toBe(200)
+      const rawPayload = await rawResponse.json()
+      expect(rawPayload.contents['content/posts/en.json']).toEqual({
         before: { before: true },
         after: { after: true },
       })

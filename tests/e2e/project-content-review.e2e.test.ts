@@ -31,7 +31,7 @@ async function mockProjectShell(page: Page, options: {
   role: 'owner' | 'admin' | 'member'
   plan: string
   brainSync: Record<string, unknown>
-  branches?: Array<{ name: string, sha: string, protected: boolean }>
+  branches?: Array<{ name: string, sha: string, protected: boolean, scope?: string, modelId?: string | null, modelName?: string | null, locale?: string | null, timestamp?: number | null }>
 }) {
   await page.route('**/api/auth/me', async route => fulfillJson(route, {
     user: {
@@ -191,6 +191,8 @@ describe('project content and review e2e', () => {
   it('merges a review branch and clears the branch query from the URL', async () => {
     const mergeRequests: string[] = []
     let branchesCalls = 0
+    let reviewCalls = 0
+    let rawCalls = 0
     const page = await createPage()
 
     await mockProjectShell(page, {
@@ -200,6 +202,11 @@ describe('project content and review e2e', () => {
         name: 'cr/content/posts/en/1234567890-review',
         sha: 'abc123',
         protected: false,
+        scope: 'content',
+        modelId: 'posts',
+        modelName: 'Posts',
+        locale: 'en',
+        timestamp: 1234567890,
       }],
       brainSync: {
         treeSha: 'tree-3',
@@ -246,23 +253,70 @@ describe('project content and review e2e', () => {
               name: 'cr/content/posts/en/1234567890-review',
               sha: 'abc123',
               protected: false,
+              scope: 'content',
+              modelId: 'posts',
+              modelName: 'Posts',
+              locale: 'en',
+              timestamp: 1234567890,
             }],
       })
     })
 
-    await page.route(`**/api/workspaces/ws-1/projects/project-1/branches/${encodeURIComponent('cr/content/posts/en/1234567890-review')}/diff`, async route => fulfillJson(route, {
-      branch: 'cr/content/posts/en/1234567890-review',
-      files: [{
-        path: '.contentrain/content/marketing/posts/en.json',
-        status: 'modified',
-      }],
-      contents: {
-        '.contentrain/content/marketing/posts/en.json': {
-          before: { title: 'Old title' },
-          after: { title: 'New title' },
+    // One route for both shapes: the review by default, the file-level diff
+    // only when the technical view asks for it. Splitting them proves the
+    // expensive whole-file read is not on the branch-selection path.
+    await page.route(`**/api/workspaces/ws-1/projects/project-1/branches/${encodeURIComponent('cr/content/posts/en/1234567890-review')}/diff*`, async (route) => {
+      if (route.request().url().includes('raw=1')) {
+        rawCalls += 1
+        await fulfillJson(route, {
+          branch: 'cr/content/posts/en/1234567890-review',
+          files: [{ path: '.contentrain/content/marketing/posts/en.json', status: 'modified' }],
+          contents: {
+            '.contentrain/content/marketing/posts/en.json': {
+              before: { 'post-1': { title: 'Old title' } },
+              after: { 'post-1': { title: 'New title' } },
+            },
+          },
+        })
+        return
+      }
+      reviewCalls += 1
+      await fulfillJson(route, {
+        branch: 'cr/content/posts/en/1234567890-review',
+        info: {
+          scope: 'content',
+          modelId: 'posts',
+          modelName: 'Posts',
+          locale: 'en',
+          timestamp: 1234567890,
+          updatedBy: 'editor@contentrain.io',
+          updatedAt: new Date().toISOString(),
         },
-      },
-    }))
+        groups: [{
+          modelId: 'posts',
+          modelName: 'Posts',
+          kind: 'collection',
+          locale: 'en',
+          entries: [{
+            kind: 'updated',
+            entryId: 'post-1',
+            title: 'Old title',
+            fields: [{ fieldId: 'title', label: 'Title', type: 'string', before: 'Old title', after: 'New title' }],
+            statusBefore: null,
+            statusAfter: null,
+            updatedBy: 'editor@contentrain.io',
+            updatedAt: new Date().toISOString(),
+          }],
+          omittedEntries: 0,
+        }],
+        schema: [],
+        settings: [],
+        unclassified: [],
+        summary: { added: 0, updated: 1, removed: 0 },
+        canMerge: true,
+        canReject: true,
+      })
+    })
 
     await page.route(`**/api/workspaces/ws-1/projects/project-1/branches/${encodeURIComponent('cr/content/posts/en/1234567890-review')}/merge`, async (route) => {
       mergeRequests.push(route.request().url())
@@ -271,8 +325,22 @@ describe('project content and review e2e', () => {
 
     await page.goto(url(`/w/acme/projects/project-1?branch=${encodeURIComponent('cr/content/posts/en/1234567890-review')}`))
 
-    await page.getByRole('button', { name: 'Approve & Merge' }).waitFor()
-    await page.getByRole('button', { name: 'Approve & Merge' }).click()
+    const approve = page.getByRole('button', { name: 'Approve 1 change' })
+    await approve.waitFor()
+
+    // The change reads as the entry and field that moved, not as the file.
+    await page.getByText('Old title', { exact: false }).first().waitFor()
+    await page.getByText('Title', { exact: true }).first().waitFor()
+    expect(reviewCalls).toBe(1)
+    expect(rawCalls).toBe(0)
+
+    // The file-level diff is a deliberate second request.
+    await page.getByRole('button', { name: 'Technical view' }).click()
+    // The technical view strips the `.contentrain/content/` prefix.
+    await page.getByText('marketing/posts/en.json', { exact: false }).first().waitFor()
+    expect(rawCalls).toBe(1)
+
+    await approve.click()
 
     await page.waitForURL('**/w/acme/projects/project-1')
     expect(page.url()).not.toContain('branch=')

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~/utils/content-relations'
+import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~~/shared/utils/content-relations'
 
 interface FieldDef {
   type: string
@@ -75,7 +75,7 @@ function removeTag(index: number) {
 // --- Relations (single + multi, with polymorphic { model, ref } support) ---
 // Per MCP validator: a relation/relations field whose `model` lists more than
 // one target stores compound `{ model, ref }` values instead of bare strings.
-// Encoding/normalization lives in ~/utils/content-relations (unit-tested).
+// Encoding/normalization lives in ~~/shared/utils/content-relations (unit-tested).
 const isPolymorphic = computed(() => isPolymorphicRelation(fieldDef?.model))
 const relItemKey = relationItemKey
 

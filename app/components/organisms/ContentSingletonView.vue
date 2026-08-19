@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   content: Record<string, unknown>
@@ -16,6 +16,7 @@ const emit = defineEmits<{
 
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
@@ -47,7 +48,7 @@ function pinField(e: Event, fieldId: string, value: unknown) {
   if (!meta) return
   toggle({
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -61,7 +62,7 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
   if (!meta) return
   startDrag(e, {
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -92,7 +93,7 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
         @dragend="endDrag"
       >
         <div class="flex items-center gap-1">
-          <AtomsSectionLabel :label="fieldId" class="flex-1 px-0 py-0" />
+          <AtomsSectionLabel :label="getFieldLabel(fieldId)" class="flex-1 px-0 py-0" />
           <!-- Pin field -->
           <AtomsTooltip :text="pinLabel(fieldId)">
             <button

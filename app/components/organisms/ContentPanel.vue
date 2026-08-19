@@ -2,7 +2,10 @@
 import type { DeepReadonly } from 'vue'
 import type { FieldDef } from '@contentrain/types'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
-import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import type { BranchReview } from '~~/shared/utils/branch-review'
+import type { BranchRawDiff } from '~/composables/useBranches'
+import { fieldLabel, orderedFieldIds } from '~~/shared/utils/field-label'
+import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 interface SnapshotModel {
   readonly id: string
@@ -25,12 +28,6 @@ type SnapshotData = {
   contentContext?: { lastOperation?: { tool?: string, model?: string, locale?: string, timestamp?: string }, stats?: { models?: number, entries?: number, locales?: string[] } } | null
 }
 
-type BranchDiffProps = {
-  branch: string
-  files: readonly { path: string, status: 'added' | 'modified' | 'removed' }[]
-  contents: Record<string, { before: unknown, after: unknown }>
-}
-
 const props = defineProps<{
   snapshot: DeepReadonly<SnapshotData> | SnapshotData | null
   snapshotLoading: boolean
@@ -44,9 +41,10 @@ const props = defineProps<{
   activeCdn?: boolean
   activeAssets?: boolean
   activeHealth?: boolean
-  branchDiff?: DeepReadonly<BranchDiffProps> | BranchDiffProps | null
-  branchDiffLoading?: boolean
-  canManageBranches?: boolean
+  branchReview?: DeepReadonly<BranchReview> | BranchReview | null
+  branchReviewLoading?: boolean
+  branchRaw?: DeepReadonly<BranchRawDiff> | BranchRawDiff | null
+  branchRawLoading?: boolean
   workspaceId?: string
   projectId?: string
   editable?: boolean
@@ -59,6 +57,7 @@ const emit = defineEmits<{
   'sendChatPrompt': [text: string]
   'branchMerge': []
   'branchReject': []
+  'branchLoadRaw': []
   'vocabularySave': [terms: Record<string, Record<string, string> | null>]
 }>()
 
@@ -109,10 +108,6 @@ const panelState = computed(() => {
   if (props.activeModelId) return 'model'
   return 'overview'
 })
-
-function branchDisplayName(branch: string): string {
-  return branch.replace('contentrain/', '')
-}
 
 // Project stats from context.json or computed from snapshot
 const stats = computed(() => {
@@ -183,15 +178,28 @@ async function setTitleField(field: string) {
 
 // The model now declares which field titles its entries. The old guess ranked
 // `slug` alongside `string`, which is why articles listed by slug; it lives on
-// as a fallback in app/utils/entry-title.ts, shared with the relation labels so
+// as a fallback in shared/utils/entry-title.ts, shared with relation labels so
 // one entry cannot be titled two different ways in two places.
 function getEntryTitle(entry: Record<string, unknown>, fallback: string): string {
   return resolveEntryTitle(entry, activeModel.value, fallback)
 }
 
 function getUserFieldIds(): string[] {
-  if (!activeModel.value?.fields) return []
-  return Object.keys(activeModel.value.fields as Record<string, unknown>)
+  return orderedFieldIds(activeModel.value?.fields as Record<string, unknown> | undefined)
+}
+
+/**
+ * What a field is called. Models have carried `FieldDef.label` since types 1.x;
+ * until now every surface showed the raw id, which is why an editor saw
+ * `is_category_hero` on a checkbox. A dictionary's ids are keys, not names, so
+ * they are left exactly as they are.
+ */
+function getFieldLabel(fieldId: string): string {
+  const fields = (activeModel.value?.fields ?? {}) as Record<string, FieldDef>
+  return fieldLabel(fieldId, fields[fieldId], {
+    locale: currentLocale.value,
+    humanize: activeModel.value?.kind !== 'dictionary',
+  })
 }
 
 // Provide utilities to child components
@@ -235,6 +243,7 @@ function addModel() {
 provide(getFieldTypeKey, getFieldType)
 provide(getEntryTitleKey, getEntryTitle)
 provide(getUserFieldIdsKey, getUserFieldIds)
+provide(getFieldLabelKey, getFieldLabel)
 provide(activeModelMetaKey, activeModelMeta)
 provide(getModelFieldsKey, getModelFields)
 provide(sendChatPromptKey, sendChatPrompt)
@@ -249,8 +258,8 @@ provide(sendChatPromptKey, sendChatPrompt)
         @click="emit('back')"
       />
       <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
-        <template v-if="panelState === 'branch' && activeBranch">
-          {{ branchDisplayName(activeBranch) }}
+        <template v-if="panelState === 'branch'">
+          {{ branchReview?.info.modelName ?? t('review.title') }}
         </template>
         <template v-else-if="panelState === 'cdn'">
           {{ t('cdn.title') }}
@@ -387,15 +396,17 @@ provide(sendChatPromptKey, sendChatPrompt)
     <div class="flex-1 overflow-y-auto">
       <!-- BRANCH DIFF -->
       <template v-if="panelState === 'branch'">
-        <div v-if="branchDiffLoading" class="space-y-3 p-5">
+        <div v-if="branchReviewLoading" class="space-y-3 p-5">
           <AtomsSkeleton v-for="i in 4" :key="i" variant="custom" class="h-12 w-full rounded-lg" />
         </div>
-        <OrganismsBranchDetailView
-          v-else-if="branchDiff"
-          :diff="branchDiff"
-          :can-manage="canManageBranches ?? false"
+        <OrganismsBranchReviewView
+          v-else-if="branchReview"
+          :review="(branchReview as BranchReview)"
+          :raw="(branchRaw as BranchRawDiff | null)"
+          :raw-loading="branchRawLoading"
           @merge="emit('branchMerge')"
           @reject="emit('branchReject')"
+          @load-raw="emit('branchLoadRaw')"
         />
         <div v-else class="p-5">
           <AtomsEmptyState icon="icon-[annon--arrow-swap]" :title="t('branch.no_changes')" />

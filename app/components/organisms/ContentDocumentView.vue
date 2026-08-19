@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { marked } from 'marked'
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
@@ -29,6 +29,7 @@ const { t } = useContent()
 const { sanitize } = useSanitize()
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
+const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const getModelFields = inject(getModelFieldsKey, () => ({}))
 const sendChatPrompt = inject(sendChatPromptKey, () => {})
@@ -68,7 +69,7 @@ function pinField(e: Event, slug: string, fieldId: string, value: unknown) {
   if (!meta) return
   toggle({
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -98,7 +99,7 @@ function onFieldDragStart(e: DragEvent, slug: string, fieldId: string, value: un
   if (!meta) return
   startDrag(e, {
     type: 'field',
-    label: fieldId,
+    label: getFieldLabel(fieldId),
     sublabel: typeof value === 'string' ? value.substring(0, 40) : String(value),
     modelId: meta.id,
     modelName: meta.name,
@@ -206,7 +207,7 @@ function handleModalSaved() {
               @dragend="endDrag"
             >
               <div class="flex items-center gap-1">
-                <AtomsSectionLabel :label="fieldId" class="flex-1 px-0 py-0" />
+                <AtomsSectionLabel :label="getFieldLabel(fieldId)" class="flex-1 px-0 py-0" />
                 <!-- Pin field -->
                 <AtomsTooltip :text="pinLabel('field', doc.slug, fieldId)">
                   <button

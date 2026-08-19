@@ -114,7 +114,7 @@ export function useCommandPalette() {
     t: (key: string) => string
     /** Reactive data sources */
     models: ReadonlyArray<{ id: string, name: string, kind?: string, type?: string, domain?: string }>
-    branches: ReadonlyArray<{ name: string, sha: string }>
+    branches: ReadonlyArray<{ name: string, sha: string, modelName: string | null, locale: string | null }>
     conversations: ReadonlyArray<{ id: string, title: string | null, updated_at: string }>
     projects: ReadonlyArray<{ id: string, repo_full_name: string, detected_stack?: string | null }>
     workspaces: ReadonlyArray<{ id: string, name: string, slug: string, plan: string }>
@@ -218,11 +218,16 @@ export function useCommandPalette() {
     // ── Branches ───────────────────────────────────────────
     if ((mode === 'branch' || mode === 'global') && ctx.isInProject) {
       for (const branch of ctx.branches) {
-        if (matches(branch.name, query)) {
+        // Searchable by what it changed as well as by the ref, since the ref
+        // is not what anyone remembers a pending change by.
+        const named = branch.modelName
+          ? (branch.locale ? `${branch.modelName} · ${branch.locale.toUpperCase()}` : branch.modelName)
+          : branch.name
+        if (matches(branch.name, query) || matches(named, query)) {
           items.push({
             id: `branch:${branch.name}`,
-            label: branch.name.replace('contentrain/', ''),
-            sublabel: branch.sha.substring(0, 7),
+            label: named,
+            sublabel: branch.name,
             icon: 'icon-[annon--arrow-swap]',
             group: 'Branches',
             type: 'branch',
