@@ -52,6 +52,27 @@ const authored = computed(() => {
 
 const hasDestructiveSchema = computed(() => props.review.schema.some(s => s.destructive))
 
+/**
+ * With one group and nothing else on screen, the group's own header repeats
+ * the panel header word for word. It earns its place only when there is
+ * something to separate it from.
+ */
+const showGroupHeaders = computed(() =>
+  props.review.groups.length > 1 || props.review.schema.length > 0 || props.review.settings.length > 0,
+)
+
+/**
+ * A singleton or a dictionary holds one record that IS the model. Giving it a
+ * collapsible row titled after the model puts that name on screen a third
+ * time, above its own fields.
+ */
+const isSingleRecord = (kind: string) => kind === 'singleton' || kind === 'dictionary'
+
+/** True when an entry's author and time are the ones the header already shows. */
+function repeatsHeader(entry: { updatedBy: string | null, updatedAt: string | null }): boolean {
+  return entry.updatedBy === props.review.info.updatedBy && entry.updatedAt === props.review.info.updatedAt
+}
+
 const STATUS_ICON: Record<string, string> = {
   added: 'icon-[annon--plus-circle]',
   modified: 'icon-[annon--edit]',
@@ -166,6 +187,7 @@ function stripPrefix(path: string): string {
       <!-- Content, grouped by the model an editor opened -->
       <section v-for="group in review.groups" :key="`${group.modelId}:${group.locale ?? ''}`" class="px-4 pb-2 pt-3">
         <AtomsSectionLabel
+          v-if="showGroupHeaders"
           :label="group.locale ? `${group.modelName} · ${group.locale.toUpperCase()}` : group.modelName"
           :count="group.entries.length"
           class="mb-1 px-0"
@@ -175,6 +197,8 @@ function stripPrefix(path: string): string {
           :key="entry.entryId"
           :entry="entry"
           :default-open="expandEntries"
+          :headless="isSingleRecord(group.kind)"
+          :hide-author="repeatsHeader(entry)"
         />
         <p v-if="group.omittedEntries > 0" class="pt-1 text-[11px] italic text-muted">
           {{ t('review.entries_omitted', { count: group.omittedEntries }) }}

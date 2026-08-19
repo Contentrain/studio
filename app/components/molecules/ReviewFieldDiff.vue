@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ReviewFieldChange } from '~~/shared/utils/branch-review'
+import { lcsMerge } from '~/utils/lcs'
 import { wordDiff } from '~/utils/word-diff'
 
 /**
@@ -8,11 +9,18 @@ import { wordDiff } from '~/utils/word-diff'
  * Values render through `AtomsContentFieldDisplay` — the same component the
  * content views use — so a boolean is a switch, an image is a thumbnail and a
  * date is a date, instead of every one of them being `JSON.stringify` output.
- * Long text gets a word-level diff, because the change in a 2,000-character
- * body is not visible any other way.
+ * Long text gets a word-level diff and a list gets an item-level one, because
+ * the change in a 2,000-character body or a six-item feature list is not
+ * visible any other way: two lists printed side by side look identical, and
+ * finding the one added item is the reader's job.
  */
 const props = defineProps<{
   change: ReviewFieldChange
+  /**
+   * The whole entry is new. Every one of its fields is then "set", so saying
+   * so on each of them repeats what the entry's own badge already said.
+   */
+  entryIsNew?: boolean
 }>()
 
 const { t } = useContent()
@@ -40,6 +48,21 @@ const diff = computed(() =>
     ? wordDiff(String(props.change.before ?? ''), String(props.change.after ?? ''))
     : null,
 )
+
+const isPrimitiveList = (value: unknown): value is Array<string | number | boolean> =>
+  Array.isArray(value) && value.every(item => ['string', 'number', 'boolean'].includes(typeof item))
+
+/**
+ * An item-level diff, as one list rather than two. A list of objects is not
+ * aligned — a composite item has no single identity to align on, and guessing
+ * one produces confident nonsense.
+ */
+const listDiff = computed(() => {
+  const { before, after } = props.change
+  if (diff.value) return null
+  if (!isPrimitiveList(before) || !isPrimitiveList(after)) return null
+  return lcsMerge(before, after, String)
+})
 
 /**
  * A relation stores refs; the review shows the titles the editor knows. Falls
@@ -71,7 +94,7 @@ const afterLabel = computed(() => relationLabel(props.change.after))
   <div class="py-2">
     <div class="mb-1 flex items-center gap-2">
       <span class="text-[11px] font-medium text-label">{{ change.label }}</span>
-      <AtomsBadge v-if="isAdded" variant="success" size="sm">
+      <AtomsBadge v-if="isAdded && !entryIsNew" variant="success" size="sm">
         {{ t('review.field_set') }}
       </AtomsBadge>
       <AtomsBadge v-else-if="isCleared" variant="danger" size="sm">
@@ -104,6 +127,20 @@ const afterLabel = computed(() => relationLabel(props.change.after))
       <p v-if="diff.coarse" class="text-[11px] italic text-muted">
         {{ t('review.diff_coarse') }}
       </p>
+    </div>
+
+    <!-- Lists: one list, with the items that moved marked -->
+    <div v-else-if="listDiff" class="flex flex-wrap gap-1">
+      <span
+        v-for="(item, i) in listDiff"
+        :key="`l${i}`"
+        class="rounded px-1.5 py-0.5 text-[11px]"
+        :class="{
+          'bg-secondary-100 text-body dark:bg-secondary-800': item.kind === 'same',
+          'bg-success-100 text-success-800 dark:bg-success-900/40 dark:text-success-300': item.kind === 'added',
+          'bg-danger-100 text-danger-700 line-through dark:bg-danger-900/40 dark:text-danger-300': item.kind === 'removed',
+        }"
+      >{{ item.value }}</span>
     </div>
 
     <!-- Everything else: the two values, rendered as their type -->

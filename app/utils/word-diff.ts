@@ -6,12 +6,16 @@
  * with the old 120-character clipping it read as "unchanged" whenever the edit
  * was past the clip. This marks the words that actually moved.
  *
- * Kept dependency-free and framework-free: the whole algorithm is a common
- * prefix/suffix trim followed by an LCS over what is left, which is the shape
- * real edits have (a sentence changed inside a paragraph that did not).
+ * The alignment itself is `lcsMerge`, shared with the array-field diff so a
+ * paragraph and a list cannot disagree about what "changed" means. What lives
+ * here is what is specific to prose: tokenising while keeping whitespace, the
+ * common prefix/suffix trim that keeps the alignment small, and the decision
+ * to stop aligning when two texts share almost nothing.
  */
+import type { DiffKind } from './lcs'
+import { lcsMerge } from './lcs'
 
-export type WordDiffKind = 'same' | 'added' | 'removed'
+export type WordDiffKind = DiffKind
 
 export interface WordDiffPart {
   value: string
@@ -84,38 +88,14 @@ export function wordDiff(beforeText: string, afterText: string): WordDiffResult 
     return { before, after, coarse: true }
   }
 
-  // Classic LCS table over the differing middle.
-  const rows = midA.length + 1
-  const cols = midB.length + 1
-  const lcs = new Uint32Array(rows * cols)
-  for (let i = midA.length - 1; i >= 0; i--) {
-    for (let j = midB.length - 1; j >= 0; j--) {
-      lcs[i * cols + j] = midA[i] === midB[j]
-        ? lcs[(i + 1) * cols + (j + 1)]! + 1
-        : Math.max(lcs[(i + 1) * cols + j]!, lcs[i * cols + (j + 1)]!)
-    }
-  }
-
-  let i = 0
-  let j = 0
-  while (i < midA.length && j < midB.length) {
-    if (midA[i] === midB[j]) {
-      push(before, 'same', midA[i]!)
-      push(after, 'same', midB[j]!)
-      i++
-      j++
-    }
-    else if (lcs[(i + 1) * cols + j]! >= lcs[i * cols + (j + 1)]!) {
-      push(before, 'removed', midA[i]!)
-      i++
-    }
+  for (const part of lcsMerge(midA, midB)) {
+    if (part.kind === 'removed') push(before, 'removed', part.value)
+    else if (part.kind === 'added') push(after, 'added', part.value)
     else {
-      push(after, 'added', midB[j]!)
-      j++
+      push(before, 'same', part.value)
+      push(after, 'same', part.value)
     }
   }
-  while (i < midA.length) push(before, 'removed', midA[i++]!)
-  while (j < midB.length) push(after, 'added', midB[j++]!)
 
   push(before, 'same', suffix)
   push(after, 'same', suffix)

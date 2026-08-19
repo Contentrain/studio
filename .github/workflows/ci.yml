@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to a PR makes the run in flight irrelevant; letting it finish
+# only holds a runner. Pushes to main are never cancelled — a superseded run
+# there is still the record of what that commit did.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Proves the single migration lineage stands up on plain Postgres
   # (Supabase-free): auth shim + 001..N apply cleanly, the signup bootstrap
@@ -106,7 +113,25 @@ jobs:
       - name: Test RLS
         run: pnpm test:rls
 
+      # Two network-bound things used to happen here on every run: the
+      # Chromium download, and `--with-deps` shelling out to apt for system
+      # libraries `ubuntu-latest` already ships. Together they took 3 minutes
+      # on a good day and 45 on a bad one — a 15x swing with no code change,
+      # and the longest step in the job either way.
+      #
+      # The browser is cached against the lockfile, so it is re-downloaded
+      # only when the playwright-core version actually moves. On a hit the
+      # install is skipped outright: the binary is there, and the system
+      # libraries come from the runner image rather than from apt.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright-core install --with-deps chromium
 
       - name: Test E2E
