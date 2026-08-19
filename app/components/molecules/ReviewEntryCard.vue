@@ -61,18 +61,44 @@ const statusLabel = computed(() => {
 const showKindBadge = computed(() =>
   !(props.entry.kind === 'updated' && props.entry.fields.length === 0 && statusLabel.value),
 )
+
+/**
+ * Whether there is anything under the row at all.
+ *
+ * A publish that touched no field leaves nothing: no fields, no author line
+ * once it matches the header's, and no "nothing changed" note because the
+ * status badge already said what happened. The row still opened, onto empty
+ * space. It does not open now.
+ */
+const hasBody = computed(() =>
+  props.entry.fields.length > 0
+  || showAuthor.value
+  // A headless entry has no row of its own, so its status badge lives in the
+  // body — which therefore has to exist for it.
+  || (props.headless && !!statusLabel.value)
+  || !statusLabel.value,
+)
+
+const collapsible = computed(() => !props.headless && hasBody.value)
 </script>
 
 <template>
-  <component :is="headless ? 'div' : 'details'" :open="headless ? undefined : defaultOpen" class="group border-b border-secondary-100 last:border-b-0 dark:border-secondary-800/50">
-    <summary
+  <component :is="collapsible ? 'details' : 'div'" :open="collapsible ? defaultOpen : undefined" class="group border-b border-secondary-100 last:border-b-0 dark:border-secondary-800/50">
+    <component
+      :is="collapsible ? 'summary' : 'div'"
       v-if="!headless"
-      class="flex cursor-pointer items-center gap-2 py-2 pl-1 pr-2 text-sm transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900"
+      class="flex items-center gap-2 py-2 pl-1 pr-2 text-sm"
+      :class="collapsible
+        ? 'cursor-pointer transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900'
+        : ''"
     >
       <span
+        v-if="collapsible"
         class="icon-[annon--chevron-right] size-3 shrink-0 text-muted transition-transform group-open:rotate-90"
         aria-hidden="true"
       />
+      <!-- Keeps a non-opening row's title aligned with the ones above it. -->
+      <span v-else class="size-3 shrink-0" aria-hidden="true" />
       <span :class="KIND_ICON[entry.kind]" class="size-3.5 shrink-0 text-muted" aria-hidden="true" />
       <span class="min-w-0 flex-1 truncate text-heading dark:text-secondary-100">{{ entry.title }}</span>
 
@@ -82,9 +108,9 @@ const showKindBadge = computed(() =>
       <AtomsBadge v-if="showKindBadge" :variant="KIND_VARIANT[entry.kind]" size="sm">
         {{ t(`review.entry_${entry.kind}`) }}
       </AtomsBadge>
-    </summary>
+    </component>
 
-    <div :class="headless ? 'pb-2' : 'pb-2 pl-7 pr-2'">
+    <div v-if="hasBody" :class="headless ? 'pb-2' : 'pb-2 pl-7 pr-2'">
       <!-- Headless entries have no summary row, so the status rides here -->
       <div v-if="headless && statusLabel" class="pb-1">
         <AtomsBadge variant="info" size="sm">
