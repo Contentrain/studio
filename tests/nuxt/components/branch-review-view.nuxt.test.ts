@@ -117,6 +117,99 @@ describe('BranchReviewView', () => {
     expect(wrapper.text()).toContain('Read the structure section before approving')
   })
 
+  it('says a publish once, as a transition, not three times', async () => {
+    const review = makeReview()
+    review.groups[0]!.entries[0] = {
+      kind: 'updated',
+      entryId: 'free',
+      title: 'Free',
+      fields: [],
+      statusBefore: 'draft',
+      statusAfter: 'published',
+      updatedBy: 'editor@contentrain.io',
+      updatedAt: new Date().toISOString(),
+    }
+
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+    expect(wrapper.text()).toContain('Draft → Published')
+    // The kind badge said "updated" next to it, for an entry whose only change
+    // was the status the badge beside it already named.
+    expect(wrapper.text()).not.toContain('updated')
+  })
+
+  it('does not mark every field of a new entry as set', async () => {
+    const review = makeReview()
+    review.groups[0]!.entries[0] = {
+      kind: 'added',
+      entryId: 'team',
+      title: 'Team',
+      fields: [
+        { fieldId: 'name', label: 'Name', type: 'string', before: undefined, after: 'Team' },
+        { fieldId: 'price_monthly', label: 'Monthly price', type: 'number', before: undefined, after: 99 },
+      ],
+      statusBefore: null,
+      statusAfter: null,
+      updatedBy: null,
+      updatedAt: null,
+    }
+
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+    expect(wrapper.text()).toContain('added')
+    expect(wrapper.text()).not.toContain('set')
+  })
+
+  it('does not name a singleton three times over', async () => {
+    const review = makeReview()
+    review.info.modelId = 'site-settings'
+    review.info.modelName = 'site-settings'
+    review.groups[0] = {
+      modelId: 'site-settings',
+      modelName: 'site-settings',
+      kind: 'singleton',
+      locale: 'en',
+      entries: [{
+        kind: 'updated',
+        entryId: 'site-settings',
+        title: 'site-settings',
+        fields: [{ fieldId: 'site_name', label: 'Site name', type: 'string', before: 'Relay', after: 'Relay Control' }],
+        statusBefore: null,
+        statusAfter: null,
+        updatedBy: 'editor@contentrain.io',
+        updatedAt: review.info.updatedAt,
+      }],
+      omittedEntries: 0,
+    }
+
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+    // Once, in the panel header — not again as a group label and an entry row.
+    expect(wrapper.text().match(/site-settings/g)).toHaveLength(1)
+    expect(wrapper.text()).toContain('Site name')
+  })
+
+  it('says the author once when every entry shares the header one', async () => {
+    const review = makeReview()
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+
+    expect(wrapper.text().match(/editor@contentrain\.io/g)).toHaveLength(1)
+  })
+
+  it('marks which list items moved instead of printing two lists', async () => {
+    const review = makeReview()
+    review.groups[0]!.entries[0]!.fields = [{
+      fieldId: 'features',
+      label: 'Features',
+      type: 'array',
+      before: ['Structured UI dictionary', 'Basic approval workflow'],
+      after: ['Structured UI dictionary', 'Priority support queue'],
+    }]
+
+    const wrapper = await mountSuspended(BranchReviewView, { props: { review } })
+    // One list: the shared item once, the dropped one struck through, the new
+    // one highlighted — rather than both lists whole, for the reader to compare.
+    expect(wrapper.text().match(/Structured UI dictionary/g)).toHaveLength(1)
+    expect(wrapper.find('.line-through').text()).toBe('Basic approval workflow')
+  })
+
   it('reports a publish as a status change, with no field noise to read past', async () => {
     const review = makeReview()
     review.groups[0]!.entries[0] = {
