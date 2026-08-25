@@ -1,13 +1,37 @@
 import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
-import type { EngineInternalContext, WriteResult } from './types'
+import type { EngineInternalContext, StatusChange, StatusWriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch } from './helpers'
+
+/** Nothing to write: every listed entry already carries the requested status. */
+function unchangedStatusResult(statusChanges: StatusChange[]): StatusWriteResult {
+  return {
+    branch: '',
+    commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+    diff: [],
+    validation: { valid: true, errors: [] },
+    unchanged: true,
+    statusChanges,
+  }
+}
 
 /**
  * Update entry status (draft / published / archived). Meta-only change —
  * no MCP plan helper covers this; Studio builds the `FileChange` itself
  * and commits atomically via `applyPlan`.
+ *
+ * Reads the current status BEFORE writing and reports every transition as
+ * `statusChanges` (`{ entryId, from, to }`). Two reasons this matters:
+ *
+ * - Entries already at the requested status are left untouched — no commit,
+ *   no merge, no CDN rebuild. A `save_content` no-op is caught by the
+ *   byte-identical plan check; a status no-op is not, because the
+ *   `updated_at` / `updated_by` stamp differs on every call.
+ * - The caller learns what it actually changed. Without `from`, a status
+ *   write is indistinguishable from a status read, and an agent that ran
+ *   one to *discover* the status could report "it was already published"
+ *   about entries it had just published itself.
  */
 export async function updateEntryStatus(
   ctx: EngineInternalContext,
@@ -16,7 +40,7 @@ export async function updateEntryStatus(
   entryIds: string[],
   status: 'draft' | 'published' | 'archived',
   userEmail: string,
-): Promise<WriteResult> {
+): Promise<StatusWriteResult> {
   await ctx.ensureContentBranch()
 
   const reader = pinReaderToContentrain(ctx.git)
@@ -42,6 +66,10 @@ export async function updateEntryStatus(
   // component" — the failure that made `update_status` unusable on documents.
   const changes: FileChange[] = []
 
+  // Every listed entry's status BEFORE this call — `null` when the entry has
+  // no meta record yet. Reported back to the caller either way.
+  const statusChanges: StatusChange[] = []
+
   // A status change is a write, and gets the same stamp a content write does.
   // One timestamp for the whole call, so a bulk status change reads as the
   // single operation it was.
@@ -57,6 +85,7 @@ export async function updateEntryStatus(
           commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
           diff: [],
           validation: { valid: false, errors: [{ field: 'slug', message: slugError, severity: 'error' as const }] },
+          statusChanges: [],
         }
       }
 
@@ -66,6 +95,10 @@ export async function updateEntryStatus(
         existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
       }
       catch { /* no meta yet */ }
+
+      const from = readStatus(existingMeta)
+      statusChanges.push({ entryId: slug, from, to: status })
+      if (from === status) continue
 
       changes.push({
         path: metaPath,
@@ -81,7 +114,16 @@ export async function updateEntryStatus(
     }
     catch { /* no meta */ }
 
+    let touched = false
     for (const entryId of entryIds) {
+      const from = readStatus(existingMeta[entryId])
+      statusChanges.push({ entryId, from, to: status })
+      // Re-stamping an entry that is already at the requested status would
+      // churn its `updated_at` / `updated_by` for nothing — and, in a mixed
+      // batch, misattribute an untouched entry to this caller.
+      if (from === status) continue
+
+      touched = true
       existingMeta[entryId] = {
         ...existingMeta[entryId],
         status,
@@ -90,10 +132,11 @@ export async function updateEntryStatus(
       } as EntryMeta
     }
 
-    changes.push({ path: metaPath, content: canonicalStringify(existingMeta) })
+    if (touched) changes.push({ path: metaPath, content: canonicalStringify(existingMeta) })
   }
   else {
-    // singleton / dictionary — a single top-level EntryMeta object.
+    // singleton / dictionary — a single top-level EntryMeta object. The meta
+    // is model-level, so the transition is reported against the model id.
     const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale)
     let existingMeta: Record<string, unknown> = {}
     try {
@@ -101,28 +144,47 @@ export async function updateEntryStatus(
     }
     catch { /* no meta */ }
 
-    changes.push({
-      path: metaPath,
-      content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
-    })
+    const from = readStatus(existingMeta)
+    statusChanges.push({ entryId: modelId, from, to: status })
+
+    if (from !== status) {
+      changes.push({
+        path: metaPath,
+        content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
+      })
+    }
   }
+
+  // Nothing to write — the requested status was already live everywhere. A
+  // commit here would be an empty semantic change that still costs a branch,
+  // a ~18s merge round and a CDN rebuild.
+  if (changes.length === 0) return unchangedStatusResult(statusChanges)
 
   // context.json is regenerated on `contentrain` post-merge (MCP 1.5.0
   // model), not committed on the feature branch.
   const allChanges: FileChange[] = changes.toSorted((a, b) => a.path.localeCompare(b.path))
+
+  const changedCount = statusChanges.filter(c => c.from !== c.to).length
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
-    message: `contentrain: ${status} ${entryIds.length} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
+    message: `contentrain: ${status} ${changedCount} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
-  return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
+  return { branch: branchName, commit, diff, validation: { valid: true, errors: [] }, statusChanges }
+}
+
+/** Current `status` off a meta record — `null` when absent or malformed. */
+function readStatus(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object') return null
+  const value = (meta as Record<string, unknown>).status
+  return typeof value === 'string' ? value : null
 }
 
 /**

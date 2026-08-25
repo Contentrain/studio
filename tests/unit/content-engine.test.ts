@@ -614,6 +614,117 @@ describe('content engine', () => {
     expect(meta['new-entry']?.updated_at).toBe(meta.keep?.updated_at)
   })
 
+  it('reports every entry\'s status transition, including the ones it did not touch', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/articles.json')) {
+          return JSON.stringify({ id: 'articles', name: 'Articles', kind: 'collection', domain: 'blog', i18n: true, fields: {} })
+        }
+        if (path.endsWith('/meta/articles/tr.json')) {
+          return JSON.stringify({
+            'was-draft': { status: 'draft', source: 'agent', updated_by: 'someone@else.com', updated_at: '2026-08-24T13:19:15.949Z' },
+            'already-live': { status: 'published', source: 'agent', updated_by: 'someone@else.com', updated_at: '2026-08-24T13:19:15.949Z' },
+          })
+        }
+        if (path.endsWith('/config.json')) return JSON.stringify({ locales: { supported: ['tr'], default: 'tr' } })
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.updateEntryStatus(
+      'articles', 'tr', ['was-draft', 'already-live', 'no-meta'], 'published', 'user@example.com',
+    )
+
+    // The before/after of the whole batch — the fact that made the staging
+    // incident possible was its absence: a status write looked exactly like a
+    // status read, so "it was already published" was indistinguishable from
+    // "I just published it".
+    expect(result.statusChanges).toEqual([
+      { entryId: 'was-draft', from: 'draft', to: 'published' },
+      { entryId: 'already-live', from: 'published', to: 'published' },
+      { entryId: 'no-meta', from: null, to: 'published' },
+    ])
+
+    // Only the two that actually moved get re-stamped; the entry that was
+    // already published keeps its original author and timestamp.
+    const call = applyPlan.mock.calls[0]?.[0] as { message: string, changes: Array<{ path: string, content: string | null }> }
+    const meta = JSON.parse(call.changes[0]!.content!) as Record<string, { updated_by?: string, updated_at?: string }>
+    expect(meta['already-live']?.updated_by).toBe('someone@else.com')
+    expect(meta['already-live']?.updated_at).toBe('2026-08-24T13:19:15.949Z')
+    expect(meta['was-draft']?.updated_by).toBe('user@example.com')
+    expect(meta['no-meta']?.updated_by).toBe('user@example.com')
+    expect(call.message).toContain('published 2 entries in articles')
+  })
+
+  it('writes nothing when every entry already carries the requested status', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/articles.json')) {
+          return JSON.stringify({ id: 'articles', name: 'Articles', kind: 'collection', domain: 'blog', i18n: true, fields: {} })
+        }
+        if (path.endsWith('/meta/articles/tr.json')) {
+          return JSON.stringify({ a: { status: 'published' }, b: { status: 'published' } })
+        }
+        if (path.endsWith('/config.json')) return JSON.stringify({ locales: { supported: ['tr'], default: 'tr' } })
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.updateEntryStatus('articles', 'tr', ['a', 'b'], 'published', 'user@example.com')
+
+    // A save no-op is caught by the byte-identical plan check; a status no-op
+    // is not, because `updated_at` differs on every call. Without this guard
+    // an inert publish still cost a branch, a merge round and a CDN rebuild.
+    expect(result.unchanged).toBe(true)
+    expect(result.branch).toBe('')
+    expect(applyPlan).not.toHaveBeenCalled()
+    expect(result.statusChanges).toEqual([
+      { entryId: 'a', from: 'published', to: 'published' },
+      { entryId: 'b', from: 'published', to: 'published' },
+    ])
+  })
+
+  it('skips document slugs that already carry the requested status', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/guide-sections.json')) {
+          return JSON.stringify({ id: 'guide-sections', name: 'Guide Sections', kind: 'document', domain: 'blog', i18n: true, fields: {} })
+        }
+        if (path.endsWith('/meta/guide-sections/instagram-1/tr.json')) return JSON.stringify({ status: 'published' })
+        if (path.endsWith('/meta/guide-sections/youtube-4/tr.json')) return JSON.stringify({ status: 'draft' })
+        if (path.endsWith('/config.json')) return JSON.stringify({ locales: { supported: ['tr'], default: 'tr' } })
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.updateEntryStatus('guide-sections', 'tr', ['instagram-1', 'youtube-4'], 'published', 'user@example.com')
+
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string }> }
+    expect(call.changes.map(c => c.path)).toEqual(['.contentrain/meta/guide-sections/youtube-4/tr.json'])
+    expect(result.statusChanges).toEqual([
+      { entryId: 'instagram-1', from: 'published', to: 'published' },
+      { entryId: 'youtube-4', from: 'draft', to: 'published' },
+    ])
+  })
+
   it('updates document status via per-slug meta files (no malformed `//` path)', async () => {
     // Regression: documents store meta at `.../{modelId}/{slug}/{locale}.json`.
     // Passing no slug to resolveMetaPath produced `.../guide-sections//tr.json`,

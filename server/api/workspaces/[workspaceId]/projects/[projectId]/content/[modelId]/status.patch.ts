@@ -45,7 +45,12 @@ export default defineEventHandler(async (event) => {
     modelId, body.locale ?? 'en', body.entryIds, body.status, session.user.email ?? '',
   )
 
+  // Every named entry already carried the requested status — nothing was
+  // committed, so there is no branch to merge.
+  if (writeResult.unchanged)
+    return { merged: false, unchanged: true, status: body.status, entryIds: body.entryIds, statusChanges: writeResult.statusChanges }
+
   // Auto-merge status changes (no review needed for publish/unpublish)
   const mergeResult = await engine.mergeBranch(writeResult.branch)
-  return { merged: mergeResult.merged, status: body.status, entryIds: body.entryIds }
+  return { merged: mergeResult.merged, status: body.status, entryIds: body.entryIds, statusChanges: writeResult.statusChanges }
 })

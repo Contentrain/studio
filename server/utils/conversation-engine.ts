@@ -335,7 +335,7 @@ export async function* runConversationLoop(
         // same content it could never see in full.
         let resultStr = JSON.stringify(result.result)
         if (resultStr.length > maxResultLength) {
-          resultStr = resultStr.substring(0, maxResultLength) + '\n...(truncated — result exceeded the size limit; narrow the query, e.g. by entryId or locale, to read the rest)'
+          resultStr = resultStr.substring(0, maxResultLength) + '\n...(truncated — result exceeded the size limit. What is missing is the TAIL of this result, nothing else; narrow the query, e.g. by entryId or locale, to read the rest. Fields that appear before the cut, such as `meta`, are complete.)'
         }
 
         // Carry this tool's affected resources on the event so the client
@@ -530,7 +530,11 @@ export async function executeToolWithAutoMerge(
           result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: null, error: errorMessage('content.not_found') }
         }
         else {
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: contentData, meta: metaData }
+          // `meta` before `data`: it carries publish status, and content is
+          // what overflows the tool-result cap. Serialised last it was the
+          // first thing truncation ate, which left the agent unable to read
+          // status at all on any model big enough to hit the limit.
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', meta: metaData, data: contentData }
         }
         break
       }
@@ -1048,16 +1052,26 @@ export async function executeToolWithAutoMerge(
           result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
           break
         }
+        // `statusChanges` is the honest record of what this call did:
+        // `{ entryId, from, to }` per entry, including the ones already at
+        // the requested status. Always reported, so the agent can never
+        // present a status it just wrote as a status it merely observed.
+        const statusChanges = writeResult.statusChanges
+        if (writeResult.unchanged) {
+          // Nothing was written — no branch, no merge, no cache to drop.
+          result = { ...summarizeWriteResult(writeResult), merged: false, statusChanges }
+          break
+        }
         affected.models.push(modelId)
         affected.locales.push(locale)
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
         if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, statusChanges }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, statusChanges }
         }
         break
       }
@@ -1274,11 +1288,17 @@ export async function executeToolWithAutoMerge(
         const modelDef = brainData.models.get(modelId)
 
         if (params.entryId && contentData && typeof contentData === 'object' && !Array.isArray(contentData)) {
-          const entry = (contentData as Record<string, unknown>)[params.entryId as string]
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: entry ?? null, entryId: params.entryId }
+          const entryId = params.entryId as string
+          const entry = (contentData as Record<string, unknown>)[entryId]
+          // The entry-scoped read used to drop `meta` entirely, which made it
+          // the ONE path that could never answer "is this published?" — while
+          // the truncation notice on a large model points the caller straight
+          // at it. Narrow to an entry and its meta narrows with it.
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', entryId, meta: entryMetaFor(metaData, modelDef?.kind, entryId), data: entry ?? null }
         }
         else {
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', data: contentData, meta: metaData }
+          // `meta` before `data` — see the note in `get_content`.
+          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', meta: metaData, data: contentData }
         }
         break
       }
@@ -1292,7 +1312,7 @@ export async function executeToolWithAutoMerge(
         // the old contiguous-substring match over JSON.stringify(entry)
         // returned zero results for any query that spanned two fields.
         const tokens = tokenizeQuery(params.query as string)
-        const scored: Array<{ modelId: string, entryId: string, locale: string, preview: string, score: number }> = []
+        const scored: Array<{ modelId: string, entryId: string, locale: string, status: string | null, preview: string, score: number }> = []
 
         for (const [key, data] of brainData.content) {
           const [mId, loc] = key.split(':')
@@ -1309,10 +1329,17 @@ export async function executeToolWithAutoMerge(
               })
             : Object.entries(data as Record<string, unknown>)
 
+          const searchMeta = brainData.meta.get(key) ?? null
+          const searchKind = brainData.models.get(mId)?.kind
+
           for (const [entryId, entry] of entryPairs) {
             const score = scoreEntryText(collectSearchableText(entry), tokens)
             if (score < BRAIN_SEARCH_MIN_SCORE) continue
-            scored.push({ modelId: mId, entryId, locale: loc, preview: JSON.stringify(entry).substring(0, 200), score })
+            // Publish status rides along with every hit. Search is how the
+            // agent finds the entries a question is about; without status here
+            // it has to go somewhere else to answer "draft or published?".
+            const entryStatus = statusOf(entryMetaFor(searchMeta, searchKind, entryId))
+            scored.push({ modelId: mId, entryId, locale: loc, status: entryStatus, preview: JSON.stringify(entry).substring(0, 200), score })
           }
         }
 
@@ -1350,6 +1377,26 @@ export async function executeToolWithAutoMerge(
 }
 
 // ─── Helpers ───
+
+/**
+ * One entry's meta record out of a model's brain-cached meta.
+ *
+ * The layout is kind-dependent (`brain-cache.ts`): collections and documents
+ * keep an id- / slug-keyed map, singletons and dictionaries a single flat
+ * record that belongs to the model as a whole.
+ */
+function entryMetaFor(modelMeta: Record<string, unknown> | null, kind: string | undefined, entryId: string): unknown {
+  if (!modelMeta || typeof modelMeta !== 'object') return null
+  if (kind === 'singleton' || kind === 'dictionary') return modelMeta
+  return modelMeta[entryId] ?? null
+}
+
+/** `status` off a meta record — `null` when absent or malformed. */
+function statusOf(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object') return null
+  const value = (meta as Record<string, unknown>).status
+  return typeof value === 'string' ? value : null
+}
 
 function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean }): Record<string, unknown> {
   return {
