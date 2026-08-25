@@ -23,7 +23,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
   },
   {
     name: 'get_content',
-    description: 'Read content entries for a model and locale. Returns object-map for collections ({entryId: {fields}}), flat object for singletons ({field: value}), flat key-value for dictionaries ({key: "string value"}). Use this to look up existing entry IDs before updating, or to find valid relation targets.',
+    description: 'Read content entries for a model and locale. Returns object-map for collections ({entryId: {fields}}), flat object for singletons ({field: value}), flat key-value for dictionaries ({key: "string value"}). Use this to look up existing entry IDs before updating, or to find valid relation targets. Publish status is NOT a content field — it comes back in the `meta` block: `meta[entryId].status` for collections and documents, `meta.status` for singletons and dictionaries.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -218,7 +218,7 @@ Provide initial models with full field definitions using Contentrain's 27 type s
 
   {
     name: 'brain_query',
-    description: 'Read full content for a model and locale from the project brain cache. Faster than get_content — returns instantly from cache. Use this for reading content.',
+    description: 'Read full content for a model and locale from the project brain cache. Faster than get_content — returns instantly from cache. Use this for reading content. Publish status comes back in the `meta` block: `meta[entryId].status` for collections and documents, `meta.status` for singletons and dictionaries. Passing `entryId` narrows `meta` to that one entry — this is the cheapest way to answer "is this entry draft or published?".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -234,7 +234,7 @@ Provide initial models with full field definitions using Contentrain's 27 type s
   },
   {
     name: 'brain_search',
-    description: 'Full-text search across all project content. Multi-word queries match per word across all of an entry\'s fields (best matches first) — you do not need the exact stored phrasing. Returns matching entries with model ID, entry ID, and preview text.',
+    description: 'Full-text search across all project content. Multi-word queries match per word across all of an entry\'s fields (best matches first) — you do not need the exact stored phrasing. Returns matching entries with model ID, entry ID, publish status, and preview text.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -303,7 +303,11 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
   },
   {
     name: 'update_status',
-    description: 'Change the publish status of content entries: "published" (live), "draft" (hidden), or "archived". Use this to publish, unpublish, or archive entries — it does not change field values.',
+    description: `WRITE — changes what the public site serves. Sets the publish status of content entries: "published" (live), "draft" (hidden), or "archived". It does not change field values.
+
+Call it ONLY when the user asked for the status to change. NEVER call it to find out what the status IS — reading is what brain_query and brain_search are for, and their \`meta\`/\`status\` fields answer that question without touching anything.
+
+Returns \`statusChanges\`: [{ entryId, from, to }] for every entry named, so report the transition you actually caused ("draft → published"), never "it was already published" about an entry you just published. Entries already at the requested status are left untouched and come back with \`unchanged: true\`.`,
     inputSchema: {
       type: 'object',
       properties: {

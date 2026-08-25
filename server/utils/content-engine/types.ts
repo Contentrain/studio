@@ -16,6 +16,22 @@ export interface WriteResult {
   unchanged?: boolean
 }
 
+/** One entry's publish-status transition. `from` is `null` if it had no meta. */
+export interface StatusChange {
+  entryId: string
+  from: string | null
+  to: string
+}
+
+/**
+ * `updateEntryStatus` result. Carries the before/after status of every entry
+ * the call named — including the ones it deliberately left alone — so the
+ * caller can never mistake "already published" for "I published it".
+ */
+export interface StatusWriteResult extends WriteResult {
+  statusChanges: StatusChange[]
+}
+
 /**
  * Outcome of the `contentrain → main` advance. The vocabulary is shared with
  * the MCP-side R0 contract (AI-REPO-RECONCILE feedback, N3) so the two

@@ -182,6 +182,13 @@ function buildDynamicBody(
     if (intent.confidence === 'high') {
       inferredLines.push(agentPrompt('intent.use_defaults'))
     }
+    // A confidently read-only turn says so out loud. The classifier is
+    // keyword-based, so this stays advice rather than a hard tool gate — a
+    // false "query" on a real publish request must not brick the write path,
+    // and the user's own words override the guess either way.
+    if (intent.category === 'query' && intent.confidence === 'high') {
+      inferredLines.push(agentPrompt('intent.read_only'))
+    }
     sections.push(inferredLines.join('\n'))
   }
 
@@ -532,6 +539,16 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
 
     // Content reads — prefer brain cache
     agentPrompt('brain.tools_guide'),
+
+    // Where publish status lives. `rules.system_fields` says status is
+    // auto-managed and never goes in content data — but it never said how to
+    // READ it, and no read tool advertised `meta`. An agent asked "is this
+    // draft or published?" had nowhere to look, and reached for update_status.
+    agentPrompt('rules.status_read'),
+
+    // Reads are reads, writes are writes — never probe with a write.
+    agentPrompt('rules.no_write_probe'),
+    agentPrompt('rules.report_what_changed'),
 
     // Content updates
     agentPrompt('rules.update_existing_id'),
