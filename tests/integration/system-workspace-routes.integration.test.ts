@@ -29,12 +29,38 @@ async function loadWorkspaceMemberPatchHandler() {
 }
 
 describe('system and workspace route integration', () => {
-  it('returns a healthy timestamped status payload', async () => {
-    const handler = await loadHealthHandler()
-    const payload = await handler({} as never)
+  it('returns a healthy timestamped status payload that names the build', async () => {
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+      public: { build: { version: '0.3.0', commit: '1a2b3c4d5e6f' } },
+    }))
+    try {
+      const handler = await loadHealthHandler()
+      const payload = await handler({} as never)
 
-    expect(payload.status).toBe('ok')
-    expect(Date.parse(payload.timestamp)).not.toBeNaN()
+      expect(payload.status).toBe('ok')
+      expect(Date.parse(payload.timestamp)).not.toBeNaN()
+      // An uptime check can assert the deploy landed without asking who ran it.
+      expect(payload.version).toBe('0.3.0')
+      expect(payload.commit).toBe('1a2b3c4d5e6f')
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('still answers when the build stamp is absent', async () => {
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({ public: {} }))
+    try {
+      const handler = await loadHealthHandler()
+      const payload = await handler({} as never)
+
+      expect(payload.status).toBe('ok')
+      expect(payload.version).toBe('')
+      expect(payload.commit).toBe('')
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('lists the authenticated user workspaces', async () => {

@@ -141,6 +141,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ steps.release_meta.outputs.tags }}
+          build-args: |
+            SOURCE_COMMIT=${{ steps.release_meta.outputs.full_sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.title=Contentrain Studio

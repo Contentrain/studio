@@ -17,6 +17,7 @@
   "about.source_modified_note": "If this deployment runs a modified version, the operator is required by AGPL-3.0 §13 to make the corresponding source available to interacting users. Contact the deployment operator for details.",
   "about.source_title": "Source code (AGPL-3.0 §13)",
   "about.title": "About this deployment",
+  "about.version_label": "Version",
   "account_settings.account_tab": "Account",
   "account_settings.avatar_edit_info": "Upload a custom avatar or use your connected account's default.",
   "account_settings.avatar_label": "Avatar",

@@ -144,10 +144,10 @@ The current deployment profile:
 
 After first deploy, verify:
 
-- `/api/health` returns `200`
+- `/api/health` returns `200` and its `version` / `commit` name the build you meant to deploy
 - login page loads
 - `/about` page renders and links to the Corresponding Source (AGPL §13)
-- Deployment snapshot on `/about` shows the correct profile / edition / billing mode
+- Deployment snapshot on `/about` shows the version (tag + commit) and the correct profile / edition / billing mode
 - OAuth callback URLs are correct
 - a workspace can be created and listed
 - GitHub installation flow completes

@@ -17,6 +17,16 @@ WORKDIR /app
 
 COPY --from=deps /app ./
 
+# `.git` is not in the build context, so the build cannot ask git which commit
+# it is. The release workflow passes SOURCE_COMMIT; Railway exposes its own
+# variable to the build. Either lands in runtimeConfig.public.build.commit,
+# which /about and /api/health report. Leave both unset and the build shows
+# its version alone.
+ARG SOURCE_COMMIT=""
+ARG RAILWAY_GIT_COMMIT_SHA=""
+ENV SOURCE_COMMIT=$SOURCE_COMMIT
+ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
+
 RUN pnpm build
 
 # ── Stage 3: Production runtime ───────────────────────────────────────────────
