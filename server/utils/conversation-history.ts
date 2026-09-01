@@ -8,19 +8,39 @@
  * and divergent `tool_calls`/`toolCalls` casing — see `chat.post.ts`
  * pre-refactor and `ee/enterprise/conversation-api.ts`.
  *
- * Two pure helpers consolidate the logic:
+ * Pure helpers consolidate the logic:
  *
  *   - `selectHistoryBudget({ plan, model, source })` returns the
  *     model-aware token ceiling, scaled by plan and source. Model
  *     drives capability; plan drives Contentrain's per-message
  *     margin; source drives who pays.
- *   - `buildPromptMessages({ history, newUserMessage, budget })`
- *     converts DB rows into the `AIMessage[]` shape the provider
- *     contract expects, slicing oldest rows when the budget runs out.
+ *   - `buildPromptMessages({ history, newUserMessage, budget,
+ *     requestContext })` converts DB rows into the `AIMessage[]`
+ *     shape the provider contract expects, trims oldest turns when
+ *     the budget runs out, and assembles the prompt-cache layout.
+ *
+ * Prompt-cache layout (see CLAUDE.md "Chat Prompt Cache Layout"):
+ * the replayed history is the cacheable prefix. The last block of the
+ * newest kept history message carries `PROMPT_CACHE_CONTROL`, so a
+ * call only pays full price for what changed since the previous one.
+ * Three things keep that prefix stable:
+ *
+ *   1. Trimming uses hysteresis — once the history overflows, it is
+ *      cut to `HISTORY_TRIM_TARGET` of the budget rather than to the
+ *      budget itself. Trimming exactly to the budget every turn would
+ *      drop one old turn per call, shift the prefix, and re-write the
+ *      entire window on every request.
+ *   2. Per-request context (content index, UI state, intent, project
+ *      state) goes into the CURRENT user turn, after the prefix —
+ *      never into `system`, where it would precede every history
+ *      message and invalidate the cache whenever content changes.
+ *   3. Rows are replayed exactly as persisted; the Anthropic adapter
+ *      canonicalizes key order so jsonb round-trips stay byte-stable.
  *
  * No DB, no provider — pure functions, unit-testable.
  */
 import type { AIContentBlock, AIMessage } from '../providers/ai'
+import { PROMPT_CACHE_CONTROL } from '../providers/ai'
 import type { DatabaseRow } from '../providers/database'
 import { CHAT_MODELS } from '../../shared/utils/ai-models'
 
@@ -36,18 +56,14 @@ export interface HistoryBudget {
 }
 
 /**
- * Per-model history budgets, picked conservatively to leave headroom
- * for system prompt (5-15K with the brain content index), tools
- * (~2K), the new user message, and 2-4K of output.
+ * Per-model history budgets. The chat-picker models carry theirs on
+ * the shared catalog (`shared/utils/ai-models.ts`, with the pricing
+ * rationale); the entries below are Conversation-API / legacy models
+ * not offered in the picker.
  *
- * Sonnet/Opus values stay well below the 200K long-context boundary
- * because that tier carries premium pricing. Once prompt caching
- * (per-block `cache_control`) lands these can grow — cache reads cost
- * ~10% of base input, so the same dollar of input buys a much larger
- * effective window. Until then, conservative is right.
- *
- * Sources: claude.com/docs/en/about-claude/models/overview and
- * claude.com/docs/en/about-claude/pricing.
+ * Budgets leave headroom under the 200K long-context boundary for the
+ * system prompt, tools (~20K cached together), the current turn with
+ * its attachments, tool results and output.
  */
 const MODEL_HISTORY_BUDGETS: Record<string, number> = {
   // Chat-picker models — budgets live on the shared catalog entries.
@@ -59,7 +75,7 @@ const MODEL_HISTORY_BUDGETS: Record<string, number> = {
   'claude-opus-4-7': 48_000,
 }
 
-/** Unknown model IDs (future / preview) get the same starting point as Haiku. */
+/** Unknown model IDs (future / preview) get a conservative starting point. */
 const FALLBACK_BUDGET = 16_000
 
 /**
@@ -92,6 +108,34 @@ const PLAN_MULTIPLIER: Record<string, number> = {
 }
 const FALLBACK_PLAN_MULTIPLIER = 1
 
+/**
+ * When the history overflows `maxTokens`, keep only this share of the
+ * budget. The slack is what lets the cached prefix survive the next
+ * several turns instead of shifting on every call.
+ */
+const HISTORY_TRIM_TARGET = 0.75
+
+/**
+ * Newest history turns whose URL images are replayed as real images.
+ * Anthropic bills a URL image by pixel count exactly like an inline
+ * one (~1,600 tokens after its own downscale), so a cover image
+ * attached 40 turns ago would otherwise be re-billed on every call.
+ * The most recent turn keeps its images so a follow-up about the file
+ * just attached ("write the alt text") still sees it; older ones are
+ * replaced by a placeholder that keeps the URL as a reference.
+ */
+const RECENT_IMAGE_TURNS = 1
+
+/**
+ * Token estimate for one image block. Anthropic scales every image to
+ * at most ~1.15 megapixels and bills ~1 token per 750 pixels, so this
+ * is the ceiling regardless of the source file's size.
+ */
+const IMAGE_TOKEN_ESTIMATE = 1_600
+
+/** Per-message framing overhead (role tokens, block separators). */
+const MESSAGE_OVERHEAD_TOKENS = 4
+
 export function selectHistoryBudget(input: {
   plan: string
   model: string
@@ -119,13 +163,16 @@ export function selectHistoryBudget(input: {
  * **turn** boundary, not the row boundary:
  *
  *   1. Group rows by `turn_id` (preserving DB order).
- *   2. Walk groups newest → oldest, summing per-group token estimates.
- *   3. Drop entire turns when the budget is exceeded — never half a turn.
+ *   2. Materialize each turn (image replay policy applied per turn).
+ *   3. Walk turns newest → oldest under the budget; on overflow, cut
+ *      down to `HISTORY_TRIM_TARGET` of it (hysteresis). Drop entire
+ *      turns — never half a turn.
  *   4. If the DB row_limit truncated mid-turn (rare), drop the
  *      partial leading turn so we never feed Anthropic a turn that
  *      starts with a tool_result without its matching tool_use.
- *   5. Materialize the kept groups in chronological order and append
- *      the current user message.
+ *   5. Mark the tail of the kept history as the cache breakpoint and
+ *      append the current user turn (request context first, then the
+ *      attachments and the user text).
  *
  * Legacy rows (pre-009 migration) get distinct turn_ids via the
  * column's `gen_random_uuid()` default — each becomes a one-row
@@ -138,24 +185,33 @@ export function buildPromptMessages(input: {
    * The current turn's user content. A plain string for text-only
    * messages, or an `AIContentBlock[]` when attachments are present
    * (attachment blocks followed by the user text). Sent in full — only
-   * *historical* base64 images are stripped (see `extractContent`).
+   * *historical* images are stripped (see `stripHistoricalImages`).
    */
   newUserMessage: string | AIContentBlock[]
   budget: HistoryBudget
+  /**
+   * Per-request context assembled by `buildRequestContext` (content
+   * index, UI context, inferred intent, project state). Prepended to
+   * the current user turn as a text block so it sits AFTER the cached
+   * history prefix. It is never persisted — the seed user row keeps
+   * only the user's own content.
+   */
+  requestContext?: string | null
 }): AIMessage[] {
   const groups = groupRowsByTurn(input.history)
-  const kept = selectTurnsWithinBudget(groups, input.budget.maxTokens)
+  const turns = groups.map((group, index) => {
+    const keepUrlImages = index >= groups.length - RECENT_IMAGE_TURNS
+    return group.map((row): AIMessage => ({
+      role: row.role as 'user' | 'assistant',
+      content: extractContent(row, keepUrlImages),
+    }))
+  })
+  const kept = selectTurnsWithinBudget(turns, input.budget.maxTokens)
 
-  const messages: AIMessage[] = []
-  for (const group of kept) {
-    for (const row of group) {
-      messages.push({
-        role: row.role as 'user' | 'assistant',
-        content: extractContent(row),
-      })
-    }
-  }
-  messages.push({ role: 'user', content: input.newUserMessage })
+  const messages = kept.flat()
+  const tail = messages.length - 1
+  if (tail >= 0) messages[tail] = withCacheMarker(messages[tail]!)
+  messages.push({ role: 'user', content: withRequestContext(input.newUserMessage, input.requestContext) })
   return messages
 }
 
@@ -165,34 +221,76 @@ export function buildPromptMessages(input: {
  * `toolCalls` wrapper (only the final assistant turn ever wrote it),
  * finally plain text `content`.
  */
-function extractContent(row: DatabaseRow): string | AIContentBlock[] {
+function extractContent(row: DatabaseRow, keepUrlImages: boolean): string | AIContentBlock[] {
   const blocks
     = (row.content_blocks ?? row.contentBlocks ?? row.tool_calls ?? row.toolCalls) as AIContentBlock[] | null | undefined
-  if (blocks && Array.isArray(blocks) && blocks.length > 0) return stripHistoricalImageBytes(blocks)
+  if (blocks && Array.isArray(blocks) && blocks.length > 0) return stripHistoricalImages(blocks, { keepUrlImages })
   return row.content as string | AIContentBlock[]
 }
 
 /**
- * Replay-cost guard for attachment images. A base64 image persisted in
- * the seed user row would otherwise be re-sent — and re-billed — on
- * every subsequent turn, and (via `estimateGroupTokens`) could evict
- * real conversation history. So when replaying *historical* rows we
- * drop the inline bytes and leave a text placeholder. URL images are
- * kept verbatim: they are cheap (no payload, just a reference) and let
- * the CDN-backed path keep working across turns. The current turn's
- * content bypasses `extractContent`, so its images are always sent in
- * full — only history is stripped.
+ * Replay-cost guard for attachment images.
+ *
+ * - base64 images are always replaced by a placeholder: re-sending the
+ *   bytes would re-bill the image on every subsequent turn and, via
+ *   the token estimate, evict real conversation history.
+ * - URL images are billed exactly the same way (the provider fetches
+ *   and tokenizes them), so they get the same treatment once the turn
+ *   is older than `RECENT_IMAGE_TURNS`. The placeholder keeps the URL
+ *   so the model can still refer to the asset.
+ * - Documents (PDF) stay: the model may need them for follow-ups, and
+ *   inside the cached prefix they cost ~0.1× after the first call.
+ *
+ * The current turn's content bypasses this function, so its images
+ * are always sent in full — only history is stripped. Returns the
+ * input array untouched when nothing changed.
  */
-export function stripHistoricalImageBytes(blocks: AIContentBlock[]): AIContentBlock[] {
+export function stripHistoricalImages(blocks: AIContentBlock[], opts: { keepUrlImages: boolean }): AIContentBlock[] {
   let stripped = false
-  const out = blocks.map((block) => {
-    if (block.type === 'image' && block.source.type === 'base64') {
+  const out = blocks.map((block): AIContentBlock => {
+    if (block.type !== 'image') return block
+    if (block.source.type === 'base64') {
       stripped = true
-      return { type: 'text' as const, text: '[image attached earlier]' }
+      return { type: 'text', text: '[image attached earlier]' }
     }
-    return block
+    if (opts.keepUrlImages) return block
+    stripped = true
+    return { type: 'text', text: `[image attached earlier: ${block.source.url}]` }
   })
   return stripped ? out : blocks
+}
+
+/**
+ * Place the prompt-cache breakpoint on the tail of the replayed
+ * history: the last non-empty block of the newest kept message. A
+ * plain-string message becomes a single text block so it can carry
+ * the marker (the two shapes are equivalent on the wire).
+ */
+function withCacheMarker(message: AIMessage): AIMessage {
+  if (typeof message.content === 'string') {
+    if (!message.content.trim()) return message
+    return { role: message.role, content: [{ type: 'text', text: message.content, cacheControl: PROMPT_CACHE_CONTROL }] }
+  }
+  for (let i = message.content.length - 1; i >= 0; i--) {
+    const block = message.content[i]!
+    if (block.type === 'text' && !block.text.trim()) continue
+    const content = message.content.slice()
+    content[i] = { ...block, cacheControl: PROMPT_CACHE_CONTROL }
+    return { role: message.role, content }
+  }
+  return message
+}
+
+/** Prepend the per-request context block to the current user turn. */
+function withRequestContext(
+  newUserMessage: string | AIContentBlock[],
+  requestContext: string | null | undefined,
+): string | AIContentBlock[] {
+  if (!requestContext || !requestContext.trim()) return newUserMessage
+  const context: AIContentBlock = { type: 'text', text: requestContext }
+  return typeof newUserMessage === 'string'
+    ? [context, { type: 'text', text: newUserMessage }]
+    : [context, ...newUserMessage]
 }
 
 function groupRowsByTurn(rows: DatabaseRow[]): DatabaseRow[][] {
@@ -216,29 +314,78 @@ function groupRowsByTurn(rows: DatabaseRow[]): DatabaseRow[][] {
   return groups
 }
 
-function selectTurnsWithinBudget(groups: DatabaseRow[][], maxTokens: number): DatabaseRow[][] {
-  if (maxTokens <= 0) return []
-  if (groups.length === 0) return groups
+/**
+ * Newest-first selection under the budget with hysteresis: when the
+ * whole history fits, keep all of it; when it doesn't, keep the newest
+ * turns that fit in `HISTORY_TRIM_TARGET × maxTokens`. The newest turn
+ * alone is measured against the full budget, so one large turn (a big
+ * tool result, say) is never thrown away while it still fits.
+ */
+function selectTurnsWithinBudget(turns: AIMessage[][], maxTokens: number): AIMessage[][] {
+  if (maxTokens <= 0 || turns.length === 0) return []
+  const sizes = turns.map(estimateTurnTokens)
+  const total = sizes.reduce((sum, n) => sum + n, 0)
+  if (total <= maxTokens) return turns
+
+  const target = Math.floor(maxTokens * HISTORY_TRIM_TARGET)
   let tokens = 0
-  let cutoff = 0
-  for (let i = groups.length - 1; i >= 0; i--) {
-    const groupTokens = estimateGroupTokens(groups[i]!)
-    if (tokens + groupTokens > maxTokens) {
-      cutoff = i + 1
-      break
-    }
-    tokens += groupTokens
+  let cutoff = turns.length
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const limit = i === turns.length - 1 ? maxTokens : target
+    if (tokens + sizes[i]! > limit) break
+    tokens += sizes[i]!
+    cutoff = i
   }
-  return groups.slice(cutoff)
+  return turns.slice(cutoff)
 }
 
-function estimateGroupTokens(group: DatabaseRow[]): number {
+function estimateTurnTokens(turn: AIMessage[]): number {
   let total = 0
-  for (const row of group) {
-    const content = extractContent(row)
-    total += typeof content === 'string'
-      ? Math.ceil(content.length / 4)
-      : Math.ceil(JSON.stringify(content).length / 4)
-  }
+  for (const message of turn) total += MESSAGE_OVERHEAD_TOKENS + estimateContentTokens(message.content)
   return total
+}
+
+/**
+ * Approximate the input tokens a message body will cost. Exported for
+ * tests; the budget walker is the only production caller.
+ */
+export function estimateContentTokens(content: string | AIContentBlock[]): number {
+  if (typeof content === 'string') return estimateTextTokens(content)
+  let total = 0
+  for (const block of content) total += estimateBlockTokens(block)
+  return total
+}
+
+function estimateBlockTokens(block: AIContentBlock): number {
+  switch (block.type) {
+    case 'text':
+      return estimateTextTokens(block.text)
+    case 'image':
+      return IMAGE_TOKEN_ESTIMATE
+    case 'document':
+      // ~1.5–3K tokens per page; base64 length is the only signal here.
+      return Math.max(1_500, Math.ceil(block.source.data.length / 5))
+    case 'tool_use':
+      return 16 + estimateTextTokens(block.name) + estimateTextTokens(JSON.stringify(block.input))
+    case 'tool_result':
+      return 16 + estimateTextTokens(block.content)
+    default:
+      return 0
+  }
+}
+
+/**
+ * Characters-per-token heuristic that does not assume English. ASCII
+ * text and JSON run ~3.5 chars/token; non-ASCII text (Turkish
+ * diacritics, CJK, emoji) tokenizes far denser — treating it as 4
+ * chars/token under-counted a Turkish editorial session by ~2× and
+ * let the history grow past 150K tokens against a 48K budget.
+ */
+function estimateTextTokens(text: string): number {
+  let nonAscii = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 0x7F) nonAscii++
+  }
+  const ascii = text.length - nonAscii
+  return Math.ceil(ascii / 3.5 + nonAscii / 1.2)
 }

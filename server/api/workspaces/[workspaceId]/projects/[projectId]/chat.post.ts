@@ -1,9 +1,11 @@
 import type { AIContentBlock } from '~~/server/providers/ai'
+import { PROMPT_CACHE_CONTROL } from '~~/server/providers/ai'
 import type { ChatRequest } from '~~/server/utils/agent-types'
 import { createEventStream } from 'h3'
 import { toAITools } from '~~/server/utils/agent-types'
 import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
+import { buildRequestContext } from '~~/server/utils/agent-system-prompt'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
@@ -174,12 +176,6 @@ export default defineEventHandler(async (event) => {
       undefined,
       { includeInternal: true },
     )
-    const messages = buildPromptMessages({
-      history: historyRows ?? [],
-      newUserMessage: userContent,
-      budget,
-    })
-
     // === LOAD SCHEMA (from brain cache) ===
     const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
     const projectConfig = brain.config
@@ -209,12 +205,12 @@ export default defineEventHandler(async (event) => {
       contentContext,
     }
 
-    // Build the system prompt as cache-aware blocks: the static body
+    // Build the system prompt by volatility. Only the static body
     // (role, architecture, schema, vocab, permissions, base rules,
-    // custom instructions) and the brain content index get their own
-    // `cache_control` markers; the dynamic block (UI context, intent,
-    // state) follows uncached so request-by-request changes never
-    // invalidate the cached prefix.
+    // custom instructions) goes into `system`, behind a cache marker.
+    // The content index and the dynamic block (UI context, intent,
+    // state) change between turns, so they travel in the current user
+    // turn — after the cached history — instead of in front of it.
     const contentIndex = buildContentIndex(brain)
     const promptBlocks = buildSystemPromptBlocks(
       projectConfig, models, permissions, projectState, uiContext, intent,
@@ -224,17 +220,29 @@ export default defineEventHandler(async (event) => {
       getEdition(),
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
+    const requestContext = buildRequestContext(promptBlocks)
+
+    // === PROMPT MESSAGES ===
+    // Bounded history (cache breakpoint on its tail) + the current
+    // user turn (request context, attachments, user text).
+    const messages = buildPromptMessages({
+      history: historyRows ?? [],
+      newUserMessage: userContent,
+      budget,
+      requestContext,
+    })
 
     // === FILTER TOOLS by permissions + phase ===
     const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as StudioTool[]
     const phaseFiltered = permissionFiltered.filter(t => t.requiredPhase.includes(phase))
     const aiTools = toAITools(phaseFiltered)
 
-    // Mark the last tool with cache_control so Anthropic caches the
-    // entire tools block. Tools rarely change within a session — this
-    // is a high-hit-rate third breakpoint after the two system blocks.
+    // Mark the last tool so Anthropic caches the entire tools block.
+    // Tools come first in the prompt and rarely change within a
+    // session: breakpoint 1 of three (tools → static system → history
+    // tail), all on the same TTL as Anthropic's ordering rule requires.
     if (aiTools.length > 0) {
-      aiTools[aiTools.length - 1]!.cacheControl = { type: 'ephemeral' }
+      aiTools[aiTools.length - 1]!.cacheControl = PROMPT_CACHE_CONTROL
     }
 
     // Workflow: plans without review feature always auto-merge regardless of config

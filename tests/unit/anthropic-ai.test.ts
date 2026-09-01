@@ -229,4 +229,36 @@ describe('anthropic provider', () => {
     expect(call.tools[0]).not.toHaveProperty('cache_control')
     expect(call.tools[1]).toMatchObject({ cache_control: { type: 'ephemeral' } })
   })
+
+  it('forwards the marker TTL on system blocks, tools and message blocks', async () => {
+    anthropicState.create.mockResolvedValue({
+      content: [{ type: 'text', text: 'ok' }],
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+
+    const { createAnthropicProvider } = await import('../../server/providers/anthropic-ai')
+    const provider = createAnthropicProvider()
+    await provider.createCompletion({
+      model: 'claude-sonnet-5',
+      system: [{ type: 'text', text: 'static body', cacheControl: { type: 'ephemeral', ttl: '1h' } }],
+      messages: [
+        { role: 'user', content: 'earlier' },
+        { role: 'assistant', content: [{ type: 'text', text: 'tail', cacheControl: { type: 'ephemeral', ttl: '1h' } }] },
+        { role: 'user', content: 'now' },
+      ],
+      tools: [
+        { name: 'last', description: 'b', inputSchema: {}, cacheControl: { type: 'ephemeral', ttl: '1h' } },
+      ],
+      maxTokens: 256,
+    }, 'api-key')
+
+    const call = anthropicState.create.mock.calls[0]![0]
+    expect(call.system).toEqual([
+      { type: 'text', text: 'static body', cache_control: { type: 'ephemeral', ttl: '1h' } },
+    ])
+    expect(call.tools[0]).toMatchObject({ cache_control: { type: 'ephemeral', ttl: '1h' } })
+    expect(call.messages[1].content[0]).toEqual({ type: 'text', text: 'tail', cache_control: { type: 'ephemeral', ttl: '1h' } })
+    expect(call.messages[2]).toEqual({ role: 'user', content: 'now' })
+  })
 })

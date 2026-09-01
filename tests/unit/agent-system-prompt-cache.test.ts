@@ -3,7 +3,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { agentPrompt } from '../../server/utils/content-strings'
 import { getPlanParams, getUpgradeParams, PLAN_PRICING } from '../../shared/utils/license'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
-import { buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
+import { PROMPT_CACHE_CONTROL } from '../../server/providers/ai'
+import { buildRequestContext, buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
 import type { ChatUIContext, ClassifiedIntent } from '../../server/utils/agent-types'
 
 // `agent-system-prompt.ts` uses these via Nuxt auto-imports; for the
@@ -164,51 +165,71 @@ describe('buildSystemPromptBlocks — static/dynamic separation', () => {
   })
 })
 
-describe('toSystemBlocks — cache breakpoint assembly', () => {
-  it('places cache_control on the static and contentIndex blocks and leaves dynamic uncached', () => {
+describe('toSystemBlocks — the system parameter is the static body only', () => {
+  it('emits the static block behind the shared cache marker and nothing else', () => {
     const blocks = toSystemBlocks({
       static: 'STATIC_BODY',
       contentIndex: 'INDEX_BODY',
       dynamic: 'DYNAMIC_BODY',
     })
     expect(blocks).toEqual([
-      { type: 'text', text: 'STATIC_BODY', cacheControl: { type: 'ephemeral' } },
-      { type: 'text', text: 'INDEX_BODY', cacheControl: { type: 'ephemeral' } },
-      { type: 'text', text: 'DYNAMIC_BODY' },
+      { type: 'text', text: 'STATIC_BODY', cacheControl: PROMPT_CACHE_CONTROL },
     ])
   })
 
-  it('omits the contentIndex block when null', () => {
-    const blocks = toSystemBlocks({
-      static: 'STATIC_BODY',
-      contentIndex: null,
-      dynamic: 'DYNAMIC_BODY',
-    })
-    expect(blocks).toEqual([
-      { type: 'text', text: 'STATIC_BODY', cacheControl: { type: 'ephemeral' } },
-      { type: 'text', text: 'DYNAMIC_BODY' },
-    ])
-  })
-
-  it('omits the dynamic block when empty', () => {
+  it('never lets per-request content into system (it would sit in front of the cached history)', () => {
     const blocks = toSystemBlocks({
       static: 'STATIC_BODY',
       contentIndex: 'INDEX_BODY',
-      dynamic: '',
+      dynamic: 'DYNAMIC_BODY',
     })
-    expect(blocks).toEqual([
-      { type: 'text', text: 'STATIC_BODY', cacheControl: { type: 'ephemeral' } },
-      { type: 'text', text: 'INDEX_BODY', cacheControl: { type: 'ephemeral' } },
-    ])
+    const rendered = JSON.stringify(blocks)
+    expect(rendered).not.toContain('INDEX_BODY')
+    expect(rendered).not.toContain('DYNAMIC_BODY')
   })
 
-  it('produces at most 2 cached blocks (within Anthropic 4-breakpoint limit, leaving room for tools)', () => {
-    const blocks = toSystemBlocks({
-      static: 'a',
-      contentIndex: 'b',
-      dynamic: 'c',
+  it('uses one cache breakpoint (tools and the history tail take the other two)', () => {
+    const cached = toSystemBlocks({ static: 'a', contentIndex: 'b', dynamic: 'c' })
+      .filter(b => b.cacheControl?.type === 'ephemeral')
+    expect(cached).toHaveLength(1)
+  })
+})
+
+describe('buildRequestContext — per-request context for the user turn', () => {
+  it('wraps the content index and the dynamic body in a request_context block', () => {
+    const context = buildRequestContext({
+      static: 'STATIC_BODY',
+      contentIndex: 'INDEX_BODY',
+      dynamic: 'DYNAMIC_BODY',
     })
-    const cached = blocks.filter(b => b.cacheControl?.type === 'ephemeral')
-    expect(cached.length).toBeLessThanOrEqual(2)
+    expect(context).toBe('<request_context>\nINDEX_BODY\n\nDYNAMIC_BODY\n</request_context>')
+    expect(context).not.toContain('STATIC_BODY')
+  })
+
+  it('omits the missing part', () => {
+    expect(buildRequestContext({ static: 's', contentIndex: null, dynamic: 'DYNAMIC_BODY' }))
+      .toBe('<request_context>\nDYNAMIC_BODY\n</request_context>')
+    expect(buildRequestContext({ static: 's', contentIndex: 'INDEX_BODY', dynamic: '  ' }))
+      .toBe('<request_context>\nINDEX_BODY\n</request_context>')
+  })
+
+  it('returns null when there is nothing request-specific to say', () => {
+    expect(buildRequestContext({ static: 's', contentIndex: null, dynamic: '' })).toBeNull()
+  })
+
+  it('carries the volatile parts of the real prompt (intent, state, UI context)', () => {
+    const ui: ChatUIContext = {
+      activeModelId: 'posts',
+      activeLocale: 'en',
+      activeEntryId: null,
+      panelState: 'overview',
+      activeBranch: null,
+    }
+    const prompt = buildSystemPromptBlocks(baseConfig, baseModels, basePermissions, baseState, ui, baseIntent, 'index payload')
+    const context = buildRequestContext(prompt)!
+    expect(context).toContain('index payload')
+    expect(context).toContain('Inferred Intent')
+    expect(context).toContain('Phase:')
+    expect(toSystemBlocks(prompt)[0]!.text).not.toContain('index payload')
   })
 })

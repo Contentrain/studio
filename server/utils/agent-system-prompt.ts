@@ -1,5 +1,6 @@
 import type { ModelDefinition, ContentrainConfig, FieldDef } from '@contentrain/types'
 import type { AISystemBlock } from '../providers/ai'
+import { PROMPT_CACHE_CONTROL } from '../providers/ai'
 import type { Branch } from '../providers/git'
 import type { AgentPermissions } from './agent-permissions'
 import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-types'
@@ -15,9 +16,10 @@ import { extractMediaStoragePath } from './media-rewrite'
  *     (legacy paths, tests, alternative providers).
  *
  *   - `buildSystemPromptBlocks(...)` returns a `static` /
- *     `contentIndex` / `dynamic` split shaped for Anthropic's
- *     `cache_control` breakpoints. The caller assembles the final
- *     `AISystemBlock[]` and places markers on the first two blocks.
+ *     `contentIndex` / `dynamic` split. `toSystemBlocks` turns the
+ *     static body into the cached `system` block; `buildRequestContext`
+ *     folds the content index and the dynamic body into the current
+ *     user turn, AFTER the cached history prefix.
  *
  * Static/dynamic split rule: a section is "static" only if its
  * content is byte-identical across requests within the same project
@@ -52,6 +54,10 @@ function buildStaticBody(
 
   // ROLE
   sections.push(agentPrompt('role.definition'))
+  // Explains the <request_context> block that opens every user turn
+  // (see `buildRequestContext`) so the model treats it as operator
+  // context rather than as the user's words.
+  sections.push(agentPrompt('role.request_context'))
 
   // CONTENTRAIN ARCHITECTURE
   sections.push(buildArchitectureSection())
@@ -232,20 +238,22 @@ function buildDynamicBody(
 }
 
 /**
- * Structured system prompt split into prompt-cache friendly blocks.
+ * Structured system prompt split by volatility.
  *
- * - `static`: stable across requests; safe behind a `cache_control`
- *   marker (Block 1).
- * - `contentIndex`: brain content index, refreshes on its own TTL;
- *   gets its own cache breakpoint (Block 2) so a schema change
- *   doesn't invalidate the content cache and vice versa.
- * - `dynamic`: UI context / intent / state — must come after the
- *   cache breakpoints so request-by-request changes don't break the
- *   cached prefix.
+ * - `static`: stable across requests (role, architecture, schema,
+ *   vocabulary, permissions, base rules, custom instructions). The
+ *   only thing that goes into `system`, behind a cache marker.
+ * - `contentIndex`: brain content index — changes after every
+ *   content write.
+ * - `dynamic`: UI context / intent / project state — changes on
+ *   every request.
  *
- * Callers compose `AISystemBlock[]` and place markers on the first
- * two blocks. The `contentIndex` field is `null` when the brain
- * hasn't produced one.
+ * `contentIndex` and `dynamic` are NOT system blocks. The provider
+ * renders `system` in front of every history message, so anything
+ * volatile there would invalidate the cached conversation prefix on
+ * every change. They travel in the current user turn instead — see
+ * `buildRequestContext`. The `contentIndex` field is `null` when the
+ * brain hasn't produced one.
  */
 export interface SystemPromptBlocks {
   static: string
@@ -275,21 +283,28 @@ export function buildSystemPromptBlocks(
 }
 
 /**
- * Materialize the cache-aware blocks as an `AISystemBlock[]` ready
- * to hand to `AIProvider`. The first two blocks (static + brain
- * content index) get `cache_control` markers; the dynamic block
- * stays uncached so request-level changes don't poison the prefix.
+ * Materialize the `system` parameter: the static body alone, behind
+ * the shared cache marker. Tools precede it in the prompt and carry
+ * the same marker; the replayed history follows it and carries the
+ * third. Nothing request-specific belongs here.
  */
 export function toSystemBlocks(prompt: SystemPromptBlocks): AISystemBlock[] {
-  const blocks: AISystemBlock[] = []
-  blocks.push({ type: 'text', text: prompt.static, cacheControl: { type: 'ephemeral' } })
-  if (prompt.contentIndex) {
-    blocks.push({ type: 'text', text: prompt.contentIndex, cacheControl: { type: 'ephemeral' } })
-  }
-  if (prompt.dynamic.trim()) {
-    blocks.push({ type: 'text', text: prompt.dynamic })
-  }
-  return blocks
+  return [{ type: 'text', text: prompt.static, cacheControl: PROMPT_CACHE_CONTROL }]
+}
+
+/**
+ * Per-request context for the current user turn: the content index
+ * and the dynamic body, wrapped so the model can tell it apart from
+ * the user's own words (the static prompt explains the block — see
+ * `role.request_context`). Returns `null` when there is nothing to
+ * say. `buildPromptMessages` prepends it to the user turn, i.e. AFTER
+ * the cached history prefix; it is never persisted.
+ */
+export function buildRequestContext(prompt: SystemPromptBlocks): string | null {
+  const parts = [prompt.contentIndex, prompt.dynamic]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+  if (parts.length === 0) return null
+  return `<request_context>\n${parts.join('\n\n')}\n</request_context>`
 }
 
 /**

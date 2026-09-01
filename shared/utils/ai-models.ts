@@ -32,6 +32,15 @@ export interface ChatModelEntry {
   /**
    * Conversation-history token budget for this model — scaled by plan
    * and source in `server/utils/conversation-history.ts`.
+   *
+   * The replayed history is served from the prompt cache (1h TTL, see
+   * `PROMPT_CACHE_CONTROL`), so its steady-state cost is ~0.1× the
+   * base input price: 96K of cached Sonnet history is ~$0.02 per call.
+   * What the budget really bounds is the cost of a cache MISS (a gap
+   * over an hour, or a hysteresis trim), which re-writes the whole
+   * window at 2× — and the total context, which must stay well under
+   * the 200K long-context pricing boundary together with system prompt,
+   * tools, the current turn and tool results.
    */
   historyBudget: number
   /**
@@ -59,7 +68,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Haiku 4.5',
     description: 'Fast & economic',
     tier: 'starter',
-    historyBudget: 12_000,
+    historyBudget: 24_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--lightning]',
     paletteKeywords: ['haiku', 'fast', 'economic'],
@@ -69,7 +78,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Sonnet 4.6',
     description: 'Balanced',
     tier: 'pro',
-    historyBudget: 48_000,
+    historyBudget: 96_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--star]',
     paletteKeywords: ['sonnet', 'balanced'],
@@ -77,13 +86,13 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
   {
     // Same $3/$15 sticker as Sonnet 4.6 (intro $2/$10 through
     // 2026-08-31) but a new tokenizer that produces ~30% more tokens
-    // for the same text — the shared 48K budget therefore holds less
+    // for the same text — the shared budget therefore holds less
     // conversation text than on 4.6, which keeps cost roughly at par.
     id: 'claude-sonnet-5',
     label: 'Sonnet 5',
     description: 'Balanced, newest generation',
     tier: 'pro',
-    historyBudget: 48_000,
+    historyBudget: 96_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--star]',
     paletteKeywords: ['sonnet', 'balanced', 'newest', 'sonnet 5'],
@@ -93,7 +102,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Opus 4.8',
     description: 'Most capable',
     tier: 'pro',
-    historyBudget: 48_000,
+    historyBudget: 96_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--trophy]',
     paletteKeywords: ['opus', 'capable', 'best'],

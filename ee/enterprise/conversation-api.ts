@@ -1,13 +1,14 @@
 import { createError, getHeader, getQuery, getRouterParam, readBody, type H3Event } from 'h3'
 import { useRuntimeConfig } from '#imports'
 import type { AIContentBlock } from '../../server/providers/ai'
+import { PROMPT_CACHE_CONTROL } from '../../server/providers/ai'
 import type { DatabaseProvider } from '../../server/providers/database'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext } from '../../server/utils/agent-types'
 import { toAITools } from '../../server/utils/agent-types'
 import { classifyIntent } from '../../server/utils/agent-context'
 import { deriveProjectPhase } from '../../server/utils/agent-state-machine'
-import { buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
+import { buildRequestContext, buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
 import { STUDIO_TOOLS, filterToolsByPermissions } from '../../server/utils/agent-tools'
 import { buildContentIndex, getOrBuildBrainCache } from '../../server/utils/brain-cache'
 import { createContentEngine } from '../../server/utils/content-engine'
@@ -267,6 +268,7 @@ async function runConversationMessage(
       keyData.customInstructions,
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
+    const requestContext = buildRequestContext(promptBlocks)
 
     const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as typeof STUDIO_TOOLS
     const phaseFiltered = permissionFiltered.filter(tool => tool.requiredPhase.includes(phase))
@@ -274,7 +276,7 @@ async function runConversationMessage(
 
     // Cache the tools array — same rationale as the Studio chat path.
     if (aiTools.length > 0) {
-      aiTools[aiTools.length - 1]!.cacheControl = { type: 'ephemeral' }
+      aiTools[aiTools.length - 1]!.cacheControl = PROMPT_CACHE_CONTROL
     }
 
     const runtimeConfig = useRuntimeConfig()
@@ -311,6 +313,7 @@ async function runConversationMessage(
       history: historyRows ?? [],
       newUserMessage: body.message,
       budget,
+      requestContext,
     })
 
     const configWorkflow = projectConfig?.workflow ?? 'auto-merge'

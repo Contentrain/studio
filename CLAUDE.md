@@ -271,6 +271,35 @@ regeneration is the single point it needs to be accurate.
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
 
+## Chat Prompt Cache Layout — CRITICAL
+
+Every agent call (Studio chat `chat.post.ts` and the ee Conversation API) renders the
+prompt in this order, and the order is what makes Anthropic's prompt cache pay:
+
+```
+tools (marker on last tool) → system: static body only (marker) → messages: replayed
+history (marker on the last block of the newest kept message) → current user turn:
+[<request_context> = content index + UI context + intent + project state, attachments, user text]
+```
+
+- **Never put per-request content in `system`.** Anything that changes between turns
+  (content index, intent, project state, UI context) goes into the user turn via
+  `buildRequestContext` (`agent-system-prompt.ts`). In `system` it would sit in front of
+  every history message and invalidate the conversation cache on every content change.
+- Every marker is `PROMPT_CACHE_CONTROL` (`server/providers/ai.ts`, 1h TTL). Anthropic
+  requires longer-TTL markers to precede shorter ones — never mix TTLs per call site.
+- `buildPromptMessages` trims with hysteresis (`HISTORY_TRIM_TARGET`). Trimming exactly to
+  the budget every turn would shift the prefix and re-write the whole history each call.
+- History must replay byte-identically: the Anthropic adapter sorts `tool_use.input` keys
+  (jsonb does not preserve key order); persisted rows are never rewritten on replay.
+- Replayed images: base64 → placeholder; URL images older than `RECENT_IMAGE_TURNS` →
+  placeholder with the URL (Anthropic bills URL images by pixels like inline ones). PDFs stay.
+- The history budget estimator (`estimateContentTokens`) is language-aware and bills image
+  blocks at ~1.6K tokens — `chars/4` under-counted Turkish + images by 3× and let a 48K
+  budget send 150K tokens per call.
+- Verify on staging with `messages.cache_read_input_tokens`: on a warm conversation it should
+  track the whole history; `token_count_input` should stay near the per-turn delta.
+
 ## MCP Cloud — HTTP MCP server for external agents
 
 Studio boots a real MCP server (`@contentrain/mcp/server/http`

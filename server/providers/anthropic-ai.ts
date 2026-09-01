@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type {
+  AICacheControl,
   AICompletionRequest,
   AICompletionResponse,
   AIContentBlock,
@@ -16,10 +17,18 @@ import type {
  * Uses @anthropic-ai/sdk for streaming and tool use.
  * Normalizes Anthropic-specific formats to Studio's standard events.
  *
- * Prompt cache: `AISystemBlock.cacheControl` and `AITool.cacheControl`
- * map to Anthropic's `cache_control: { type: 'ephemeral' }`. The SDK
- * returns three input-token buckets in `usage` (input, cache_creation,
- * cache_read); all four are forwarded through `AIUsage`.
+ * Prompt cache: `cacheControl` on system blocks, tools and message
+ * content blocks maps to Anthropic's `cache_control` (with its TTL).
+ * The SDK returns three input-token buckets in `usage` (input,
+ * cache_creation, cache_read); all four are forwarded through `AIUsage`.
+ *
+ * Replay determinism: the conversation history is replayed from jsonb
+ * rows, and Postgres does not preserve object key order. A `tool_use`
+ * input that was sent live as `{ title, body }` comes back as
+ * `{ body, title }`, which would break the byte-identical prefix the
+ * prompt cache keys on. `toAnthropicMessages` therefore sorts object
+ * keys recursively on the way out — live and replayed turns serialize
+ * the same way regardless of origin.
  */
 export function createAnthropicProvider(): AIProvider {
   return {
@@ -198,8 +207,30 @@ function toAnthropicSystem(system: string | AISystemBlock[]): string | Anthropic
   return system.map(block => ({
     type: 'text' as const,
     text: block.text,
-    ...(block.cacheControl ? { cache_control: { type: 'ephemeral' as const } } : {}),
+    ...toCacheControl(block.cacheControl),
   }))
+}
+
+/** Map Studio's provider-agnostic marker to Anthropic's wire shape (TTL included). */
+function toCacheControl(marker: AICacheControl | undefined): { cache_control?: Anthropic.CacheControlEphemeral } {
+  if (!marker) return {}
+  return { cache_control: { type: 'ephemeral', ...(marker.ttl ? { ttl: marker.ttl } : {}) } }
+}
+
+/**
+ * Recursively sort object keys so a value serializes identically
+ * whether it came from the live model output or from a jsonb replay.
+ * Arrays keep their order; primitives pass through.
+ */
+export function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson)
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(source).sort()) out[key] = canonicalizeJson(source[key])
+    return out
+  }
+  return value
 }
 
 /**
@@ -212,21 +243,24 @@ export function toAnthropicMessages(messages: AICompletionRequest['messages']): 
       return { role: msg.role, content: msg.content }
     }
 
-    // Convert content blocks
+    // Convert content blocks. A `cacheControl` marker on any block maps
+    // to `cache_control` — the history builder places one on the tail
+    // of the replayed conversation.
     const blocks: Anthropic.ContentBlockParam[] = msg.content.map((block) => {
+      const cache = toCacheControl(block.cacheControl)
       switch (block.type) {
         case 'text':
-          return { type: 'text' as const, text: block.text }
+          return { type: 'text' as const, text: block.text, ...cache }
         case 'tool_use':
-          return { type: 'tool_use' as const, id: block.id, name: block.name, input: block.input as Record<string, unknown> }
+          return { type: 'tool_use' as const, id: block.id, name: block.name, input: canonicalizeJson(block.input) as Record<string, unknown>, ...cache }
         case 'tool_result':
-          return { type: 'tool_result' as const, tool_use_id: block.toolUseId, content: block.content, ...(block.isError ? { is_error: true } : {}) }
+          return { type: 'tool_result' as const, tool_use_id: block.toolUseId, content: block.content, ...(block.isError ? { is_error: true } : {}), ...cache }
         case 'image':
           return block.source.type === 'url'
-            ? { type: 'image' as const, source: { type: 'url' as const, url: block.source.url } }
-            : { type: 'image' as const, source: { type: 'base64' as const, media_type: block.source.mediaType, data: block.source.data } }
+            ? { type: 'image' as const, source: { type: 'url' as const, url: block.source.url }, ...cache }
+            : { type: 'image' as const, source: { type: 'base64' as const, media_type: block.source.mediaType, data: block.source.data }, ...cache }
         case 'document':
-          return { type: 'document' as const, source: { type: 'base64' as const, media_type: block.source.mediaType, data: block.source.data } }
+          return { type: 'document' as const, source: { type: 'base64' as const, media_type: block.source.mediaType, data: block.source.data }, ...cache }
         default:
           return { type: 'text' as const, text: '' }
       }
@@ -248,7 +282,7 @@ function toAnthropicTools(tools: AITool[]): Anthropic.Tool[] {
     name: tool.name,
     description: tool.description,
     input_schema: tool.inputSchema as Anthropic.Tool['input_schema'],
-    ...(tool.cacheControl ? { cache_control: { type: 'ephemeral' as const } } : {}),
+    ...toCacheControl(tool.cacheControl),
   }))
 }
 
