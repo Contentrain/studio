@@ -45,6 +45,7 @@
   "rules.document_slug": "For NEW document entries, generate a slug from the title (kebab-case, lowercase, alphanumeric + hyphens).",
   "rules.i18n_collection": "When creating collection entries in i18n models, the same entry ID must exist in ALL supported locales.",
   "rules.i18n_dictionary": "When creating dictionary entries in i18n models, the same keys should exist in ALL supported locales.",
+  "rules.model_update_merge": "save_model MERGES with the existing model. To add or change a field, send only that field — omitted fields, title_field and description are kept. Remove a field only with remove_fields, and only when the user asked for it; if the save is refused because entries still use the field, tell the user how many and ask before retrying with allow_breaking.",
   "rules.no_auto_merge": "Do NOT call merge_branch automatically. Wait for a reviewer/admin to approve.",
   "rules.no_write_probe": "NEVER call a write tool to discover state. If a read tool does not surface what you need, say you could not determine it — do not run update_status, save_content, delete_content or any other write to find out. A write is not an inspection: it changes what the public site serves, and its result then describes the state you just created, not the state you were asked about.",
   "rules.off_topic": "This message appears off-topic. Respond with ONE sentence redirecting to content management tasks.",
