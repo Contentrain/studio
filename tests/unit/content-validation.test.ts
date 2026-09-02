@@ -126,3 +126,32 @@ describe('content validation', () => {
     )
   })
 })
+
+describe('secret detection reaches Studio through the MCP validator', () => {
+  const fields = { body: { type: 'text' } }
+
+  it('no longer refuses prose that talks about an API key', () => {
+    // Before @contentrain/types 1.9.1 the generic `api_key = …` rule fired on
+    // any 16+ character tail, so a setup guide saved through Studio — the UI,
+    // the agent, the Conversation API all validate here — was refused.
+    for (const text of [
+      'Set api_key = your_project_api_key_here in the dashboard.',
+      'api_key: xxxxxxxxxxxxxxxxxxxx',
+      'api_key = my_project_api_key_2024',
+    ]) {
+      const result = validateContent({ body: text }, fields, 'guides', 'en')
+      expect(result.valid, text).toBe(true)
+    }
+  })
+
+  it('still refuses a value that looks like an issued credential', () => {
+    for (const text of [
+      'api_key = 8f14e45fceea167a5a36dedd4bea2543',
+      'api_key: AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBxY',
+    ]) {
+      const result = validateContent({ body: text }, fields, 'guides', 'en')
+      expect(result.valid, text).toBe(false)
+      expect(result.errors[0]?.field).toBe('body')
+    }
+  })
+})
