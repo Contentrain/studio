@@ -157,3 +157,58 @@ describe('ContentFieldDisplay media fields', () => {
     expect(wrapper.find('button[aria-label="Show preview"]').exists()).toBe(true)
   })
 })
+
+describe('ContentFieldDisplay relations', () => {
+  const labels = { '54fc50cee2b1': 'Collabers Editörü', 'b2c3d4e5f6a7': 'Platform Güncellemeleri' }
+
+  it('shows the target entry title, not its id', async () => {
+    // The edit form already resolved this; the read view printed the hex.
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: { fieldId: 'author', type: 'relation', value: '54fc50cee2b1', relationLabels: labels },
+    })
+
+    expect(wrapper.text()).toContain('Collabers Editörü')
+    expect(wrapper.text()).not.toContain('54fc50cee2b1')
+  })
+
+  it('titles every item of a relations array', async () => {
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: { fieldId: 'header_categories', type: 'relations', value: ['54fc50cee2b1', 'b2c3d4e5f6a7'], relationLabels: labels },
+    })
+
+    expect(wrapper.text()).toContain('Collabers Editörü')
+    expect(wrapper.text()).toContain('Platform Güncellemeleri')
+  })
+
+  it('falls back to the id only when the target is missing', async () => {
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: { fieldId: 'author', type: 'relation', value: 'deadbeef0000', relationLabels: labels },
+    })
+
+    const raw = wrapper.find('span.font-mono')
+    expect(raw.exists()).toBe(true)
+    expect(raw.text()).toBe('deadbeef0000')
+    expect(raw.attributes('title')).toBe('The entry this points at no longer exists')
+  })
+
+  it('resolves a polymorphic compound by its model::ref key', async () => {
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: {
+        fieldId: 'featured',
+        type: 'relation',
+        value: { model: 'articles', ref: '1e6b9d4a2c83' },
+        relationLabels: { 'articles::1e6b9d4a2c83': 'articles: Creator Economy Raporu' },
+      },
+    })
+
+    expect(wrapper.text()).toContain('articles: Creator Economy Raporu')
+  })
+
+  it('treats an empty relations array as nothing, not as a row of nothing', async () => {
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: { fieldId: 'tags', type: 'relations', value: [], relationLabels: labels },
+    })
+
+    expect(wrapper.text()).toBe('—')
+  })
+})

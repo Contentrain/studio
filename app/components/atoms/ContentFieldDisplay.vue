@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { marked } from 'marked'
+import { relationItemKey } from '~~/shared/utils/content-relations'
 
 const { sanitize } = useSanitize()
 const { t } = useContent()
@@ -14,12 +15,41 @@ const props = defineProps<{
   value: unknown
   fieldId: string
   options?: string[]
+  /**
+   * Titles for this field's relation targets, keyed like the stored value
+   * (`relationItemKey`). Supplied by the view from `useRelationLabels`; absent
+   * (a standalone mount) every ref shows as itself.
+   */
+  relationLabels?: Record<string, string>
 }>()
 
 const displayValue = computed(() => {
   if (props.value === null || props.value === undefined) return null
   return props.value
 })
+
+const isRelation = computed(() => props.type === 'relation' || props.type === 'relations')
+
+/**
+ * Each relation value with the title the picker would show for it. The read
+ * view used to print these raw while the edit form resolved them, so an
+ * editor's first sight of every record was a wall of hex; both now read from
+ * the same map. `label` is null only when the target is missing — the one
+ * case where the id is the honest answer.
+ */
+const relationItems = computed(() => {
+  const v = displayValue.value
+  if (v === null || !isRelation.value) return []
+  const items = Array.isArray(v) ? v : [v]
+  return items
+    .filter(item => item !== null && item !== undefined && item !== '')
+    .map((item) => {
+      const key = relationItemKey(item)
+      return { key, label: props.relationLabels?.[key] ?? null }
+    })
+})
+
+const isEmpty = computed(() => displayValue.value === null || (isRelation.value && relationItems.value.length === 0))
 
 // `image`, `video` and `file` used to sit in here too, which meant video and
 // file fell through to the URL branch and printed as raw text. They render as
@@ -100,7 +130,22 @@ const ratingStars = computed(() => {
 <template>
   <div class="min-w-0">
     <!-- Null / empty -->
-    <span v-if="displayValue === null" class="text-xs italic text-disabled">—</span>
+    <span v-if="isEmpty" class="text-xs italic text-disabled">—</span>
+
+    <!-- Relation(s): the target's title, as the picker shows it. A ref whose
+         target is missing is shown as itself, in mono, so it can be searched
+         for rather than mistaken for a title. -->
+    <div v-else-if="isRelation" class="flex flex-wrap items-center gap-1">
+      <template v-for="item in relationItems.slice(0, 8)" :key="item.key">
+        <AtomsBadge v-if="item.label" variant="secondary" size="sm">
+          {{ item.label }}
+        </AtomsBadge>
+        <span v-else class="font-mono text-xs text-muted" :title="t('content.relation_target_missing')">{{ item.key }}</span>
+      </template>
+      <AtomsBadge v-if="relationItems.length > 8" variant="secondary" size="sm">
+        +{{ relationItems.length - 8 }}
+      </AtomsBadge>
+    </div>
 
     <!-- Boolean -->
     <div v-else-if="isBoolean" class="flex items-center">
