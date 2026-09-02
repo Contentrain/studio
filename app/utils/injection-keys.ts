@@ -1,4 +1,5 @@
-import type { ComputedRef, InjectionKey } from 'vue'
+import type { ComputedRef, InjectionKey, Ref } from 'vue'
+import type { RelationLabelMap } from '~/composables/useRelationLabels'
 
 /**
  * Typed InjectionKeys for ContentPanel → child component communication.
@@ -12,6 +13,11 @@ export const getUserFieldIdsKey: InjectionKey<() => string[]> = Symbol('getUserF
 export const getFieldLabelKey: InjectionKey<(fieldId: string) => string> = Symbol('getFieldLabel')
 export const activeModelMetaKey: InjectionKey<ComputedRef<{ id: string, name: string, kind: string } | null>> = Symbol('activeModelMeta')
 export const getModelFieldsKey: InjectionKey<() => Record<string, unknown>> = Symbol('getModelFields')
+/**
+ * Titles for the active model's relation targets, per field — what the read
+ * view, the edit form and the filter axes all show instead of a raw ref.
+ */
+export const relationLabelsKey: InjectionKey<Ref<RelationLabelMap>> = Symbol('relationLabels')
 export const sendChatPromptKey: InjectionKey<(text: string) => void> = Symbol('sendChatPrompt')
 
 /**

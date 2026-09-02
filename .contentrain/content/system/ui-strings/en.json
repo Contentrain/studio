@@ -311,6 +311,7 @@
   "content.pin_field": "Attach field to chat context",
   "content.pin_model": "Attach model to chat context",
   "content.relation_position": "{label}, {position} of {total}. Use the arrow keys to reorder.",
+  "content.relation_target_missing": "The entry this points at no longer exists",
   "content.resize_panel": "Resize content panel",
   "content.save_all": "Save changes",
   "content.save_error": "Failed to save content. Please try again.",
