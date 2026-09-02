@@ -1397,6 +1397,46 @@ describe('content engine', () => {
       expect(applyPlan).not.toHaveBeenCalled()
     })
 
+    it('refuses a new field whose name is not snake_case', async () => {
+      const { git, applyPlan } = gitWith({})
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({
+        id: 'home-page',
+        name: 'Home Page',
+        kind: 'singleton',
+        domain: 'marketing',
+        i18n: true,
+        fields: { heroImage: { type: 'image' }, seo: { type: 'object', fields: { ogTitle: { type: 'string' } } } },
+      } as never, 'user@example.com')
+
+      expect(result.validation.valid).toBe(false)
+      expect(result.validation.errors.map(e => e.field)).toEqual(['heroImage', 'seo.ogTitle'])
+      expect(result.validation.errors[0]?.message).toContain('must be snake_case')
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
+
+    it('keeps a legacy field name the model already has, and says so', async () => {
+      // ai #116: a model carrying one pre-rule `creativeWork` relation was
+      // read-only — even a title_field correction was refused.
+      const legacyModel = { ...homePage, fields: { ...homePage.fields, creativeWork: { type: 'relation', model: 'works' } } }
+      const { git, applyPlan } = gitWith({}, {
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/home-page.json')) return JSON.stringify(legacyModel)
+          throw new Error(`Missing file: ${path}`)
+        }),
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({ id: 'home-page', name: 'Home Page', kind: 'singleton', domain: 'marketing', i18n: true, title_field: 'hero_subtitle' } as never, 'user@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(savedModel(applyPlan).fields.creativeWork).toEqual({ type: 'relation', model: 'works' })
+      expect(savedModel(applyPlan).title_field).toBe('hero_subtitle')
+      expect(result.warnings).toEqual([expect.stringContaining('Field "creativeWork": legacy name is not snake_case — kept')])
+    })
+
     it('creates a new model from the payload as sent', async () => {
       const { git, applyPlan } = gitWith({}, {
         readFile: vi.fn(async (path: string) => {
