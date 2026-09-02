@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatBuildVersion } from '~~/shared/utils/build-info'
+
 definePageMeta({
   // Public — AGPL §13 source offer must be reachable without authentication.
   auth: false,
@@ -12,6 +14,10 @@ const deployment = computed(() => {
   const d = (pub as { deployment?: { profile?: string, edition?: string, billingMode?: string } }).deployment
   return d ?? { profile: 'unknown', edition: 'unknown', billingMode: 'unknown' }
 })
+
+// Tag plus commit: the first thing a bug report asks for, and until now the
+// one fact this page could not give. Stamped at build time (nuxt.config.ts).
+const buildVersion = computed(() => formatBuildVersion((pub as { build?: { version?: string, commit?: string } }).build))
 
 const repoUrl = 'https://github.com/Contentrain/studio'
 
@@ -70,6 +76,12 @@ const linkClass = 'rounded text-primary-600 underline underline-offset-2 focus-v
         {{ t('about.deployment_title') }}
       </h2>
       <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        <dt class="text-muted">
+          {{ t('about.version_label') }}
+        </dt>
+        <dd class="font-mono text-body dark:text-secondary-300">
+          {{ buildVersion }}
+        </dd>
         <dt class="text-muted">
           {{ t('about.profile_label') }}
         </dt>

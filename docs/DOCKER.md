@@ -32,10 +32,12 @@ Self-hosters should pin to an exact `vX.Y.Z` tag rather than `:latest` so upgrad
 ## Build the Image Locally
 
 ```bash
-docker build -t contentrain-studio .
+docker build -t contentrain-studio --build-arg SOURCE_COMMIT="$(git rev-parse HEAD)" .
 ```
 
 Use this path for local iteration, forks, and patched builds. Production self-hosts should prefer the pre-built GHCR image above.
+
+`SOURCE_COMMIT` is optional. `.git` is excluded from the build context, so it is the only way the build can learn which commit it was made from; `/about` and `GET /api/health` report the version from `package.json` together with that commit (`v0.3.0 (1a2b3c4)`). Without it they show the version alone. Railway builds pick up `RAILWAY_GIT_COMMIT_SHA` on their own; the release workflow passes `SOURCE_COMMIT` for the GHCR images. Either value can also be overridden at run time with `NUXT_PUBLIC_BUILD_COMMIT` / `NUXT_PUBLIC_BUILD_VERSION`.
 
 ## Run the Image
 
@@ -49,7 +51,7 @@ docker run \
 
 Health endpoint:
 
-- `GET /api/health`
+- `GET /api/health` — `{ status, timestamp, version, commit }`; assert on `version`/`commit` to confirm a deploy landed
 
 ## Required Runtime Secrets
 
