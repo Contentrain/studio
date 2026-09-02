@@ -35,6 +35,27 @@ export function useContentEditor() {
     saveError.value = null
   }
 
+  interface SaveResponse {
+    branch: string
+    validation: { valid: boolean, errors: Array<{ message: string }> }
+    /** Locale-agnostic fields the server also wrote to the model's other locales. */
+    sharedAcrossLocales?: { fields: string[], locales: string[] }
+  }
+
+  // A media or relation value lands in every locale of an i18n model; the
+  // toast says which, so the editor is never left wondering whether the
+  // other locale's site changed.
+  function announceSave(result: SaveResponse) {
+    toast.success(`Saved to branch: ${result.branch}`)
+    if (result.sharedAcrossLocales && result.sharedAcrossLocales.locales.length > 0) {
+      const { t } = useContent()
+      toast.success(t('content.saved_shared_locales', {
+        locales: result.sharedAcrossLocales.locales.join(', '),
+        fields: result.sharedAcrossLocales.fields.join(', '),
+      }))
+    }
+  }
+
   async function saveField(
     workspaceId: string,
     projectId: string,
@@ -57,10 +78,7 @@ export function useContentEditor() {
         data = { [fieldId]: value }
       }
 
-      const result = await $fetch<{
-        branch: string
-        validation: { valid: boolean, errors: Array<{ message: string }> }
-      }>(`/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`, {
+      const result = await $fetch<SaveResponse>(`/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`, {
         method: 'POST',
         body: { locale, data },
       })
@@ -70,7 +88,7 @@ export function useContentEditor() {
         return false
       }
 
-      toast.success(`Saved to branch: ${result.branch}`)
+      announceSave(result)
       editingField.value = null
       editValue.value = null
       return true
@@ -155,10 +173,7 @@ export function useContentEditor() {
         data = dirtyData
       }
 
-      const result = await $fetch<{
-        branch: string
-        validation: { valid: boolean, errors: Array<{ message: string }> }
-      }>(`/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`, {
+      const result = await $fetch<SaveResponse>(`/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}`, {
         method: 'POST',
         body: { locale, data },
       })
@@ -168,7 +183,7 @@ export function useContentEditor() {
         return false
       }
 
-      toast.success(`Saved to branch: ${result.branch}`)
+      announceSave(result)
       cancelBatchEdit()
       return true
     }

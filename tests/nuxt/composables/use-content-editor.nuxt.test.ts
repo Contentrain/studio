@@ -41,6 +41,26 @@ describe('useContentEditor', () => {
     expect(editor.saveError.value).toBeNull()
   })
 
+  it('says which other locales a media value landed in', async () => {
+    // The silent version of this is what let an editor swap a hero image in
+    // `en` and wonder why the `tr` site had not changed.
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({
+      branch: 'cr/content/site-settings/en/1234567890-abcd',
+      validation: { valid: true, errors: [] },
+      sharedAcrossLocales: { fields: ['guides_band_background'], locales: ['tr'] },
+    }))
+
+    const editor = useContentEditor()
+    editor.startBatchEdit({ guides_band_background: 'old.webp', title: 'x' })
+    editor.updateBatchField('guides_band_background', 'new.webp')
+
+    const result = await editor.saveBatch('workspace-1', 'project-1', 'site-settings', 'en')
+
+    expect(result).toBe(true)
+    expect(success).toHaveBeenCalledWith('Saved to branch: cr/content/site-settings/en/1234567890-abcd')
+    expect(success).toHaveBeenCalledWith('Also applied to tr: guides_band_background')
+  })
+
   it('keeps inline editing open when server validation fails', async () => {
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({
       branch: '',

@@ -2,6 +2,7 @@
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
 import { buildRelationOptions, inferFieldType, isPolymorphicRelation } from '~~/shared/utils/content-relations'
 import { orderedFieldIds } from '~~/shared/utils/field-label'
+import { isLocaleAgnosticField } from '~~/shared/utils/locale-agnostic-fields'
 import { getFieldLabelKey } from '~/utils/injection-keys'
 
 interface FieldDef {
@@ -104,6 +105,23 @@ const mergedFields = computed(() => {
 
 // Relation entries for relation fields
 const relationEntriesMap = ref<Record<string, Array<{ value: string, label: string }>>>({})
+
+/**
+ * A media or relation value carries no language, so on an i18n model the
+ * server writes it to every locale (see `planLocaleFanOut`). The form says so
+ * beside the field — the silent version of this is what let an editor swap a
+ * hero image in `en` and wonder why the `tr` site had not changed.
+ */
+const sharesAcrossLocales = computed(() => {
+  const supported = (brain.config.value as { locales?: { supported?: string[] } } | null)?.locales?.supported ?? []
+  if (supported.length < 2) return false
+  const model = brain.models.value.find(m => m.id === modelId)
+  return model?.i18n === true
+})
+
+function isSharedField(fieldId: string): boolean {
+  return sharesAcrossLocales.value && isLocaleAgnosticField(mergedFields.value[fieldId])
+}
 
 // Required field validation — only after user attempts to save
 const showValidation = ref(false)
@@ -247,6 +265,10 @@ function confirmDiscard() {
               <AtomsFormLabel :text="getFieldLabel(fieldId)" size="sm" :required="mergedFields[fieldId]?.required" />
               <p v-if="mergedFields[fieldId]?.description" class="mb-1 text-xs text-muted">
                 {{ mergedFields[fieldId].description }}
+              </p>
+              <p v-if="isSharedField(fieldId)" class="mb-1 flex items-center gap-1 text-xs text-muted" data-testid="shared-locales-hint">
+                <span class="icon-[annon--globe] size-3 shrink-0" aria-hidden="true" />
+                {{ t('content.field_shared_locales') }}
               </p>
               <div class="mt-1.5">
                 <AtomsContentFieldEditor

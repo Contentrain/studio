@@ -14,6 +14,12 @@ export interface WriteResult {
    * already live.
    */
   unchanged?: boolean
+  /**
+   * Locale-agnostic fields (media, relations) this save also wrote into the
+   * model's other locales, and which locales those were. Absent when the
+   * save touched only the addressed locale.
+   */
+  sharedAcrossLocales?: { fields: string[], locales: string[] }
 }
 
 /** One entry's publish-status transition. `from` is `null` if it had no meta. */

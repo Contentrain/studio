@@ -14,6 +14,7 @@ import {
 } from './helpers'
 import { normalizeModelContentMedia } from '../media-rewrite'
 import { saveDocument } from './save-document'
+import { planLocaleFanOut } from './locale-fanout'
 
 /**
  * Save content for a model (create or update entries).
@@ -181,6 +182,12 @@ export async function saveContent(
 
   const entries = shapeEntriesForSave(modelDef, dataForWrite, locale)
 
+  // A media or relation value carries no language, so it goes to every locale
+  // of an i18n model in this same commit — otherwise the editor swaps a hero
+  // image with `en` selected, the site renders `tr`, and nothing changes.
+  const fanOut = await planLocaleFanOut({ reader, pathCtx: ctx.pathCtx, model: modelDef, config, locale, data })
+  entries.push(...fanOut.entries)
+
   let plan
   try {
     plan = await planContentSave(reader, { model: modelDef, entries, config, vocabulary })
@@ -205,16 +212,20 @@ export async function saveContent(
     ? plan.result.map(r => r.id).filter((id): id is string => typeof id === 'string')
     : []
 
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, config.locales?.default ?? 'en')
-  const patchedChanges = await applyStudioMetaOverrides({
-    planChanges: plan.changes,
-    metaPath,
-    model: modelDef,
-    touchedIds,
-    reader,
-    autoPublish: options?.autoPublish ?? false,
-    userEmail,
-  })
+  // Studio's meta semantics apply to every locale this save wrote, the
+  // addressed one and the fan-out ones alike.
+  let patchedChanges = plan.changes
+  for (const writtenLocale of [locale, ...fanOut.locales]) {
+    patchedChanges = await applyStudioMetaOverrides({
+      planChanges: patchedChanges,
+      metaPath: resolveMetaPath(ctx.pathCtx, modelDef, writtenLocale, config.locales?.default ?? 'en'),
+      model: modelDef,
+      touchedIds: writtenLocale === locale ? touchedIds : (fanOut.touchedIdsByLocale[writtenLocale] ?? []),
+      reader,
+      autoPublish: options?.autoPublish ?? false,
+      userEmail,
+    })
+  }
 
   // context.json is NOT committed on feature branches (MCP 1.5.0 model):
   // it is regenerated deterministically on `contentrain` post-merge so
@@ -238,15 +249,24 @@ export async function saveContent(
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
+  const sharedNote = fanOut.locales.length > 0
+    ? `\n\nShared across locales (${fanOut.locales.join(', ')}): ${fanOut.fields.join(', ')}`
+    : ''
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
-    message: `contentrain: save ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
+    message: `contentrain: save ${modelId} [${locale}]${sharedNote}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
 
-  return { branch: branchName, commit, diff, validation }
+  return {
+    branch: branchName,
+    commit,
+    diff,
+    validation,
+    ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
+  }
 }
