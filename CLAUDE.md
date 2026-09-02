@@ -286,6 +286,14 @@ regeneration is the single point it needs to be accurate.
   content behind it is refused with the affected count unless
   `allowBreaking` is passed. MCP's own `contentrain_model_save` (and so
   MCP Cloud) still replaces — that is MCP's contract, not Studio's.
+  Field names are snake_case for NEW fields; a legacy name the model
+  already has is kept and reported in `warnings` (MCP's `legacyFieldNames`
+  / `collectFieldPaths`, same tolerance as `contentrain_model_save`).
+- `resolveTitleFieldId` (`shared/utils/entry-title.ts`) falls back with
+  the chain MCP's `validate --fix` backfills with — name-like keys with
+  required first, then required prose, then prose, never slug/url/code —
+  plus a Studio-only last rung (first field) so a read path renders
+  something. Keep the two in step when either changes.
 - Locale-agnostic fields (`image`/`video`/`file`/`relation`/`relations`,
   `shared/utils/locale-agnostic-fields.ts`) are written to every locale of
   an i18n model in the same commit (`content-engine/locale-fanout.ts`),

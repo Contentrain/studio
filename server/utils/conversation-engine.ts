@@ -713,7 +713,10 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
 
-        const modelChange = writeResult.modelChange ? { modelChange: writeResult.modelChange } : {}
+        const modelChange = {
+          ...(writeResult.modelChange ? { modelChange: writeResult.modelChange } : {}),
+          ...(writeResult.warnings ? { warnings: writeResult.warnings } : {}),
+        }
         if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, ...modelChange }

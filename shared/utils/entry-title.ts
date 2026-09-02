@@ -38,8 +38,44 @@ export const DICTIONARY_TITLE_FIELD = 'key'
 
 const NAME_LIKE = ['title', 'name', 'label', 'heading']
 
-/** Types that store a string but never read as a title when merely inferred. */
+/**
+ * Types that store a string but never read as a title when merely inferred.
+ * Each is a legal `title_field` when an author names it; guessed, it is the
+ * failure this contract exists to prevent — a settings singleton titled by
+ * its WhatsApp URL. The same three MCP's `validate --fix` refuses to infer.
+ */
 const NOT_A_TITLE = new Set(['icon', 'color', 'slug', 'code', 'url'])
+
+/**
+ * Preference among displayable types, short scalars first — the order MCP's
+ * backfill uses, so what Studio shows for a model without `title_field` is
+ * what `validate --fix` would write into it.
+ */
+const TYPE_PRIORITY = ['string', 'email', 'text', 'markdown', 'richtext', 'slug', 'url', 'code']
+
+interface TitleCandidate {
+  field: string
+  type: string
+  required: boolean
+}
+
+/** Exact name-like key first (`title` < `name` < …), then a key carrying one as a token (`post_title`). */
+function nameRank(field: string): number {
+  const exact = NAME_LIKE.indexOf(field)
+  if (exact !== -1) return exact
+  const tokens = field.split('_')
+  const token = NAME_LIKE.findIndex(hint => tokens.includes(hint))
+  return token === -1 ? Number.POSITIVE_INFINITY : NAME_LIKE.length + token
+}
+
+function byRequired(a: TitleCandidate, b: TitleCandidate): number {
+  return Number(b.required) - Number(a.required)
+}
+
+function byTypeThenName(a: TitleCandidate, b: TitleCandidate): number {
+  const byType = TYPE_PRIORITY.indexOf(a.type) - TYPE_PRIORITY.indexOf(b.type)
+  return byType !== 0 ? byType : a.field.localeCompare(b.field, 'en')
+}
 
 export interface TitleFieldModel {
   kind?: string
@@ -64,10 +100,17 @@ export function titleFieldOptions(model: TitleFieldModel | null | undefined): st
  * Resolve which field to read an entry's title from.
  *
  * 1. what the model declares — the contract
- * 2. a name-like key
- * 3. a required text field
- * 4. any text field that is not one of the string-shaped non-titles
+ * 2. a name-like key (`title`, `name`, `label`, `heading`, or a key carrying
+ *    one as a token), required ones first — `authors` with an optional
+ *    `title` (the job title) and a required `name` is titled by `name`
+ * 3. a required prose field, short scalars first
+ * 4. any prose field; never a slug, url or code
  * 5. the first field, so something renders
+ *
+ * Rungs 2–4 are the chain MCP's `validate --fix` backfills with (required as
+ * the tiebreak on every rung), so the reader here and the writer there agree
+ * on what a fallback title is. Rung 5 is Studio's alone: a read path has to
+ * render something, where the writer can decline and ask.
  */
 export function resolveTitleFieldId(model: TitleFieldModel | null | undefined): string | null {
   const declared = model?.title_field
@@ -77,16 +120,19 @@ export function resolveTitleFieldId(model: TitleFieldModel | null | undefined): 
   const entries = fieldEntries(model)
   if (entries.length === 0) return null
 
-  for (const name of NAME_LIKE) {
-    const hit = entries.find(([key, def]) => key === name && TITLE_FIELD_TYPES.includes(def?.type ?? ''))
-    if (hit) return hit[0]
+  const candidates: TitleCandidate[] = entries
+    .filter(([, def]) => TITLE_FIELD_TYPES.includes(def?.type ?? ''))
+    .map(([field, def]) => ({ field, type: def.type, required: def.required === true }))
+
+  const named = candidates.filter(c => Number.isFinite(nameRank(c.field)))
+  if (named.length > 0) {
+    return named.toSorted((a, b) => byRequired(a, b) || nameRank(a.field) - nameRank(b.field) || byTypeThenName(a, b))[0]!.field
   }
 
-  const required = entries.find(([, def]) => def?.required && (def.type === 'string' || def.type === 'text'))
-  if (required) return required[0]
-
-  const anyText = entries.find(([, def]) => TITLE_FIELD_TYPES.includes(def?.type ?? '') && !NOT_A_TITLE.has(def?.type ?? ''))
-  if (anyText) return anyText[0]
+  const prose = candidates.filter(c => !NOT_A_TITLE.has(c.type))
+  const required = prose.filter(c => c.required)
+  if (required.length > 0) return required.toSorted(byTypeThenName)[0]!.field
+  if (prose.length > 0) return prose.toSorted(byTypeThenName)[0]!.field
 
   return entries[0]?.[0] ?? null
 }

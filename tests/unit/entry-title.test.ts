@@ -96,6 +96,41 @@ describe('resolveTitleFieldId — the fallback, for models that predate the fiel
   })
 })
 
+describe('resolveTitleFieldId — the same chain MCP backfills with', () => {
+  it('titles authors by the required name, not the optional job title', () => {
+    // The ai #120 case: name-likeness used to outrank requiredness, so the CLI
+    // backfilled `title` and every author row read as "Senior Editor".
+    expect(resolveTitleFieldId({
+      kind: 'collection',
+      fields: {
+        title: { type: 'string' },
+        name: { type: 'string', required: true },
+      },
+    })).toBe('name')
+  })
+
+  it('reads a name-like token inside a longer key', () => {
+    expect(resolveTitleFieldId({
+      kind: 'collection',
+      fields: { post_title: { type: 'string' }, body: { type: 'richtext' } },
+    })).toBe('post_title')
+  })
+
+  it('among required prose fields prefers the shorter scalar type', () => {
+    expect(resolveTitleFieldId({
+      kind: 'collection',
+      fields: { body: { type: 'text', required: true }, summary: { type: 'string', required: true } },
+    })).toBe('summary')
+  })
+
+  it('never infers a url, which is how a settings singleton was titled by WhatsApp', () => {
+    expect(resolveTitleFieldId({
+      kind: 'singleton',
+      fields: { whatsapp_url: { type: 'url' }, tagline: { type: 'text' } },
+    })).toBe('tagline')
+  })
+})
+
 describe('titleFieldOptions — what the picker may offer', () => {
   it('offers only field types that can render as text', () => {
     // `icon` and `color` store strings, which is exactly why the rule is by

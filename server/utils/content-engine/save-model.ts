@@ -1,6 +1,7 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter } from '@contentrain/types'
 import { planModelSave } from '@contentrain/mcp/core/ops'
+import { collectFieldPaths, legacyFieldNames } from '@contentrain/mcp/core/model-manager'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain, createFeatureBranch, toObjectMap } from './helpers'
@@ -20,6 +21,8 @@ export interface ModelWriteResult extends WriteResult {
   modelChange?: ModelChangeSummary
   /** Why the save was refused, when it was refused for content's sake. */
   breakingChanges?: BreakingModelChange[]
+  /** What the save tolerated — a legacy field name kept as-is — so the caller can say so. */
+  warnings?: string[]
 }
 
 function refused(errors: Array<{ field: string, message: string }>, extra: Partial<ModelWriteResult> = {}): ModelWriteResult {
@@ -154,6 +157,25 @@ export async function saveModel(
   const titleFieldError = validateTitleField(next)
   if (titleFieldError) return refused([{ field: 'title_field', message: titleFieldError }])
 
+  // Field names are snake_case. A name the model already had before the rule
+  // is kept — refusing it would make the whole model read-only, when a
+  // one-line title_field correction never touches the field — and reported,
+  // the same tolerance MCP's contentrain_model_save applies (ai #116). A NEW
+  // field is held to the rule, so Studio cannot mint the legacy names the
+  // MCP validator then lists as notices.
+  const existingPaths = existing ? collectFieldPaths(existing.fields) : new Set<string>()
+  const legacy = legacyFieldNames(next.fields)
+  const invalidNew = legacy.filter(path => !existingPaths.has(path))
+  if (invalidNew.length > 0) {
+    return refused(invalidNew.map(path => ({
+      field: path,
+      message: `Field "${path}": invalid name — must be snake_case starting with a letter`,
+    })))
+  }
+  const warnings = legacy.map(path =>
+    `Field "${path}": legacy name is not snake_case — kept because the model already has it. New fields must be snake_case. Renaming it also means renaming its content keys in every locale.`,
+  )
+
   const schemaWarnings = validateModelDefinition(next, config, existingModelIds)
   const criticalErrors = schemaWarnings.filter(w => w.severity === 'critical' || w.severity === 'error')
   if (criticalErrors.length > 0) {
@@ -202,5 +224,6 @@ export async function saveModel(
     diff,
     validation: { valid: true, errors: [] },
     modelChange: summarizeModelChange(existing, next),
+    ...(warnings.length > 0 ? { warnings } : {}),
   }
 }

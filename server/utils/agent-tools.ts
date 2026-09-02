@@ -93,6 +93,7 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
 UPDATES MERGE — never replace. Send only the fields you are adding or changing; every field you omit is KEPT, and a field you send is merged property by property into its existing definition (so adding "label" does not drop "required"). title_field, description and the other top-level keys are kept when omitted. To remove a field, list it in remove_fields — that is the only way a save drops one. A removal or type change is refused with the affected entry count while content still uses the field; pass allow_breaking: true ONLY after the user has explicitly confirmed they want that content orphaned.
 
 FIELD DEF FORMAT: { "fieldId": { type, required?, unique?, min?, max?, pattern?, options?, model?, items?, fields?, default?, description?, label?, order? } }
+  fieldId: snake_case, starting with a letter. A legacy name the model already has is kept (and reported); a new field with a non-snake_case name is refused.
   label: human-readable name shown in the editor instead of the field id — a string, or { "tr": "...", "en": "..." } per locale
   order: display position in the edit form, ascending; fields without one come last, alphabetically
 
