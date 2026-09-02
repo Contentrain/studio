@@ -100,7 +100,14 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-        
+
+      # A dictionary key with no entry does not fail lint, typecheck or any
+      # test — `t()` / `errorMessage()` fall back to returning the key, so the
+      # raw string ships. Nothing caught the two `oauth.*` keys that shipped
+      # this way; this step does.
+      - name: Check dictionary keys
+        run: pnpm check:strings
+
       - name: Typecheck
         run: pnpm typecheck
 
