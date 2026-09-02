@@ -2,7 +2,7 @@ import type { ContentrainConfig, FileChange, ModelDefinition, ValidationResult, 
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { ValidationContext } from '../content-validation'
-import type { EngineInternalContext, WriteResult } from './types'
+import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import {
   applyStudioMetaOverrides,
@@ -11,6 +11,7 @@ import {
   shapeEntriesForSave,
   toObjectMap,
   planMatchesCurrent,
+  validateSchedule,
 } from './helpers'
 import { normalizeModelContentMedia } from '../media-rewrite'
 import { saveDocument } from './save-document'
@@ -37,8 +38,18 @@ export async function saveContent(
   locale: string,
   data: Record<string, unknown>,
   userEmail: string,
-  options?: { autoPublish?: boolean },
+  options?: SaveOptions,
 ): Promise<WriteResult> {
+  const scheduleError = validateSchedule(options?.schedule)
+  if (scheduleError) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+      diff: [],
+      validation: { valid: false, errors: [{ field: 'publish_at', message: scheduleError, severity: 'error' as const }] },
+    }
+  }
+
   await ctx.ensureContentBranch()
 
   const reader = pinReaderToContentrain(ctx.git)
@@ -180,7 +191,7 @@ export async function saveContent(
   }
   catch { /* no vocabulary */ }
 
-  const entries = shapeEntriesForSave(modelDef, dataForWrite, locale)
+  const entries = shapeEntriesForSave(modelDef, dataForWrite, locale, options?.schedule)
 
   // A media or relation value carries no language, so it goes to every locale
   // of an i18n model in this same commit — otherwise the editor swaps a hero

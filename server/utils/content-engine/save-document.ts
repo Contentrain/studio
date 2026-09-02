@@ -1,9 +1,9 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, Vocabulary } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter, validateSlug } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
-import type { EngineInternalContext, WriteResult } from './types'
+import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch, planMatchesCurrent } from './helpers'
+import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 import { planDocumentLocaleFanOut } from './locale-fanout'
 
@@ -23,8 +23,18 @@ export async function saveDocument(
   frontmatter: Record<string, unknown>,
   body: string,
   userEmail: string,
-  options?: { autoPublish?: boolean },
+  options?: SaveOptions,
 ): Promise<WriteResult> {
+  const scheduleError = validateSchedule(options?.schedule)
+  if (scheduleError) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+      diff: [],
+      validation: { valid: false, errors: [{ field: 'publish_at', message: scheduleError, severity: 'error' as const }] },
+    }
+  }
+
   const safeSlug = slug.toLowerCase()
   const slugError = validateSlug(safeSlug)
   if (slugError) {
@@ -70,6 +80,11 @@ export async function saveDocument(
   }
   catch { /* new document — nothing to merge */ }
 
+  // Scheduling rides on the entry, never in the frontmatter — the leak an
+  // older content_save left behind is exactly what MCP's validator now warns
+  // about. Lifted here so the merged frontmatter never carries it.
+  const lifted = splitEntrySchedule(modelDef, frontmatter, options?.schedule)
+  frontmatter = lifted.data
   const mergedFrontmatter = { ...existingFrontmatter, ...frontmatter }
   // Preserve the existing body when the caller sends an empty one (the common
   // case for a frontmatter-only edit). An intentional clear is rare and not
@@ -115,7 +130,7 @@ export async function saveDocument(
   try {
     plan = await planContentSave(reader, {
       model: modelDef,
-      entries: [{ slug: safeSlug, locale, data: entryData }, ...fanOut.entries],
+      entries: [{ slug: safeSlug, locale, data: entryData, ...lifted.schedule }, ...fanOut.entries],
       config,
       vocabulary,
     })

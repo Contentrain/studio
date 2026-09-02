@@ -32,6 +32,15 @@ describe('STUDIO_TOOLS', () => {
     ]))
   })
 
+  it('lets save_content schedule beside data, and says it is not a publish', () => {
+    const saveContent = STUDIO_TOOLS.find(tool => tool.name === 'save_content')!
+    const properties = saveContent.inputSchema.properties as Record<string, unknown>
+
+    expect(Object.keys(properties)).toEqual(expect.arrayContaining(['publish_at', 'expire_at']))
+    expect(saveContent.description).toContain('NEVER change status')
+    expect(saveContent.description).toContain('never inside it')
+  })
+
   it('tells the agent that save_model merges, and gives it the removal and title-field handles', () => {
     // A one-field payload once replaced a 39-field model; the schema now
     // carries the contract the engine enforces.

@@ -1,7 +1,7 @@
 import { canonicalStringify, CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import type { ContentEntry } from '@contentrain/mcp/core/content-manager'
-import type { EngineInternalContext, GitProvider } from './types'
+import type { EngineInternalContext, GitProvider, EntrySchedule } from './types'
 import { checkBranchHealth, getHealthStatus } from '../branch-health'
 
 /**
@@ -129,18 +129,20 @@ export async function planMatchesCurrent(reader: RepoReader, changes: FileChange
 }
 
 /**
- * Override the meta FileChange produced by `planContentSave` with
- * Studio's status semantics:
+ * Re-own the meta FileChange produced by `planContentSave` for Studio:
  *
- * - `source: 'agent'` (same as MCP)
- * - `updated_by: userEmail` (MCP would set `'contentrain-mcp'`)
- * - `status`: existing status preserved when already set, otherwise
- *   `'published'` when `autoPublish`, else `'draft'`
+ * - `updated_by: userEmail` (MCP writes `'contentrain-mcp'`)
+ * - `status`: the record's current status kept, otherwise `'published'`
+ *   when `autoPublish`, else `'draft'`
+ * - `updated_at`, `source: 'agent'`: stamped for this write
  *
- * MCP's `defaultMeta` always resets status to `'draft'`; Studio needs to
- * honour in-progress review states and the workspace's auto-publish
- * workflow. The existing meta is read from `contentrain` (via the pinned
- * reader) so the override is applied relative to post-commit state.
+ * The base is the meta MCP just planned, not the file on `contentrain`.
+ * MCP's `mergeEntryMeta` starts from the prior record and then applies
+ * what this write carries — since 3.1.8 that includes `publish_at` /
+ * `expire_at`, meta-only. Rebuilding from the prior file, as this used to,
+ * threw away every key the plan had just set: a schedule sent with the
+ * save never reached the commit. The prior file is read only when the plan
+ * holds no change for `metaPath` (a caller that assembled its own plan).
  */
 export async function applyStudioMetaOverrides(args: {
   planChanges: FileChange[]
@@ -153,28 +155,37 @@ export async function applyStudioMetaOverrides(args: {
 }): Promise<FileChange[]> {
   const { planChanges, metaPath, model, touchedIds, reader, autoPublish, userEmail } = args
 
-  let existingMeta: Record<string, unknown> = {}
-  try {
-    existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
+  let baseMeta: Record<string, unknown> = {}
+  const planned = planChanges.find(c => c.path === metaPath)
+  if (typeof planned?.content === 'string') {
+    try {
+      baseMeta = JSON.parse(planned.content) as Record<string, unknown>
+    }
+    catch { /* not JSON — treat as absent */ }
   }
-  catch { /* no existing meta */ }
+  else {
+    try {
+      baseMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
+    }
+    catch { /* no existing meta */ }
+  }
 
   // `updated_at` describes THIS write, like `source` and `updated_by` — so it
   // is stamped every time and shares one timestamp across the entries of a
-  // single save. MCP mints it too, but this override replaces MCP's meta
-  // wholesale; without stamping it here the field would never survive a Studio
-  // write, and "sort by recently edited" would have no data for exactly the
-  // entries Studio users create.
+  // single save. "Sort by recently edited" reads it for exactly the entries
+  // Studio users create.
   const updatedAt = new Date().toISOString()
 
+  // MCP already resolved `status` to "the prior record's, else draft", which
+  // is Studio's rule too; autoPublish is the one thing Studio adds on top.
   let updatedMeta: unknown
   if (model.kind === 'collection') {
-    const metaMap = { ...existingMeta } as Record<string, EntryMeta>
+    const metaMap = { ...baseMeta } as Record<string, EntryMeta>
     for (const entryId of touchedIds) {
-      const existingStatus = metaMap[entryId]?.status
+      const currentStatus = metaMap[entryId]?.status
       metaMap[entryId] = {
         ...(metaMap[entryId] ?? {}),
-        status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
+        status: autoPublish ? 'published' : (currentStatus ?? 'draft'),
         source: 'agent',
         updated_by: userEmail,
         updated_at: updatedAt,
@@ -183,10 +194,10 @@ export async function applyStudioMetaOverrides(args: {
     updatedMeta = metaMap
   }
   else {
-    const existingStatus = (existingMeta as unknown as EntryMeta).status
+    const currentStatus = (baseMeta as unknown as EntryMeta).status
     updatedMeta = {
-      ...existingMeta,
-      status: autoPublish ? 'published' : (existingStatus ?? 'draft'),
+      ...baseMeta,
+      status: autoPublish ? 'published' : (currentStatus ?? 'draft'),
       source: 'agent' as const,
       updated_by: userEmail,
       updated_at: updatedAt,
@@ -201,6 +212,56 @@ export async function applyStudioMetaOverrides(args: {
   return planChanges.map(c => c.path === metaPath ? studioMetaChange : c)
 }
 
+const SCHEDULE_KEYS = ['publish_at', 'expire_at'] as const
+
+/**
+ * Why a schedule cannot be written, or null. `null` values are clears and
+ * always valid; a string must parse as a date, and an expiry must follow the
+ * publish date it is paired with.
+ */
+export function validateSchedule(schedule: EntrySchedule | undefined): string | null {
+  if (!schedule) return null
+  for (const key of SCHEDULE_KEYS) {
+    const value = schedule[key]
+    if (typeof value === 'string' && Number.isNaN(new Date(value).getTime()))
+      return `Invalid ${key} date: "${value}". Must be a valid ISO 8601 date string.`
+  }
+  if (typeof schedule.publish_at === 'string' && typeof schedule.expire_at === 'string'
+    && new Date(schedule.expire_at) <= new Date(schedule.publish_at))
+    return `expire_at (${schedule.expire_at}) must be after publish_at (${schedule.publish_at}).`
+  return null
+}
+
+/**
+ * Split an entry's scheduling off its data.
+ *
+ * Scheduling rides on the entry (meta), never inside `data` (the content
+ * file). An agent that still writes `publish_at` into the data — the habit
+ * MCP 3.1.7 taught it — gets the value moved rather than leaked into the
+ * content file, unless the model genuinely declares a field by that name.
+ * The save-level schedule fills what the entry did not say.
+ */
+export function splitEntrySchedule(
+  model: ModelDefinition,
+  data: Record<string, unknown>,
+  saveSchedule: EntrySchedule | undefined,
+): { data: Record<string, unknown>, schedule: EntrySchedule } {
+  const schedule: EntrySchedule = {}
+  for (const key of SCHEDULE_KEYS) {
+    if (saveSchedule && saveSchedule[key] !== undefined) schedule[key] = saveSchedule[key]
+  }
+  const declared = model.fields ?? {}
+  const lifted = new Set<string>()
+  for (const key of SCHEDULE_KEYS) {
+    if (!(key in data) || key in declared) continue
+    const value = data[key]
+    if (typeof value === 'string' || value === null) schedule[key] = value
+    lifted.add(key)
+  }
+  if (lifted.size === 0) return { data, schedule }
+  return { data: Object.fromEntries(Object.entries(data).filter(([key]) => !lifted.has(key))), schedule }
+}
+
 /**
  * Convert Studio's `data: Record<string, unknown>` input shape into
  * the `ContentEntry[]` shape that MCP's `planContentSave` consumes.
@@ -208,20 +269,27 @@ export async function applyStudioMetaOverrides(args: {
  * - Collection: each entry becomes its own `ContentEntry`
  *   (keyed by id). Array input is normalised first via `toObjectMap`.
  * - Singleton / dictionary: the data goes through as a single entry.
+ *
+ * Scheduling keys land on the entry, not in its data — see
+ * {@link splitEntrySchedule}. A dictionary has no per-entry meta to
+ * schedule and is passed through untouched.
  */
 export function shapeEntriesForSave(
   model: ModelDefinition,
   data: Record<string, unknown>,
   locale: string,
+  schedule?: EntrySchedule,
 ): ContentEntry[] {
+  if (model.kind === 'dictionary') return [{ locale, data }]
+
   if (model.kind === 'collection') {
     const map = toObjectMap(data)
-    return Object.entries(map).map(([id, fields]) => ({
-      id,
-      locale,
-      data: fields as Record<string, unknown>,
-    }))
+    return Object.entries(map).map(([id, fields]) => {
+      const split = splitEntrySchedule(model, fields as Record<string, unknown>, schedule)
+      return { id, locale, data: split.data, ...split.schedule }
+    })
   }
 
-  return [{ locale, data }]
+  const split = splitEntrySchedule(model, data, schedule)
+  return [{ locale, data: split.data, ...split.schedule }]
 }
