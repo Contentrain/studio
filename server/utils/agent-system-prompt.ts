@@ -568,6 +568,9 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // Content updates
     agentPrompt('rules.update_existing_id'),
     agentPrompt('rules.update_merge'),
+    // Model updates merge the same way — a one-field payload used to replace a
+    // 39-field model.
+    agentPrompt('rules.model_update_merge'),
 
     // Write sizing — keep tool calls under the output-token ceiling
     agentPrompt('rules.batch_writes'),

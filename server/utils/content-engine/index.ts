@@ -43,8 +43,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       deleteContent(internal, modelId, locale, entryIds, userEmail),
     saveDocument: (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: { autoPublish?: boolean }) =>
       saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options),
-    saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string) =>
-      saveModel(internal, definition, userEmail),
+    saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string, options?: Parameters<typeof saveModel>[3]) =>
+      saveModel(internal, definition, userEmail, options),
     deleteModel: (modelId: string, userEmail: string) =>
       deleteModel(internal, modelId, userEmail),
     addLocale: (locale: string, userEmail: string) =>

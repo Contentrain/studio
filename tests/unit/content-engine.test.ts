@@ -918,6 +918,196 @@ describe('content engine', () => {
     expect(call.changes.some(c => c.path.endsWith('context.json'))).toBe(false)
   })
 
+  describe('saveModel merges with the definition on contentrain', () => {
+    const homePage = {
+      id: 'home-page',
+      name: 'Home Page',
+      kind: 'singleton',
+      domain: 'marketing',
+      i18n: true,
+      title_field: 'hero_title',
+      description: 'Landing page',
+      fields: {
+        hero_title: { type: 'string', required: true },
+        hero_subtitle: { type: 'text' },
+        pricing_preview: { type: 'object', fields: { headline: { type: 'string' } } },
+      },
+    }
+    const config = { domains: ['marketing'], locales: { default: 'tr', supported: ['tr', 'en'] }, stack: 'nuxt', version: 1, workflow: 'auto-merge' }
+
+    function gitWith(content: Record<string, unknown>, overrides: Partial<GitProvider> = {}) {
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/home-page.json')) return JSON.stringify(homePage)
+          const hit = Object.entries(content).find(([suffix]) => path.endsWith(suffix))
+          if (hit) return JSON.stringify(hit[1])
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listDirectory: vi.fn().mockResolvedValue(['home-page.json']),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        applyPlan,
+        ...overrides,
+      })
+      return { git, applyPlan }
+    }
+
+    function savedModel(applyPlan: ReturnType<typeof vi.fn>) {
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string }> }
+      const change = call.changes.find(c => c.path.endsWith('/models/home-page.json'))
+      return JSON.parse(change!.content) as typeof homePage
+    }
+
+    it('keeps every field a one-field payload did not mention', async () => {
+      // Exactly the iterum payload that wiped 38 of 39 fields.
+      const { git, applyPlan } = gitWith({})
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({
+        id: 'home-page',
+        name: 'Home Page',
+        kind: 'singleton',
+        domain: 'marketing',
+        i18n: true,
+        fields: { hero_background_image: { type: 'image', description: 'Hero banner' } },
+      } as never, 'user@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      const saved = savedModel(applyPlan)
+      expect(Object.keys(saved.fields).toSorted()).toEqual(['hero_background_image', 'hero_subtitle', 'hero_title', 'pricing_preview'])
+      expect(saved.title_field).toBe('hero_title')
+      expect(saved.description).toBe('Landing page')
+      expect(result.modelChange).toEqual({
+        action: 'updated',
+        addedFields: ['hero_background_image'],
+        changedFields: [],
+        removedFields: [],
+        keptFields: 3,
+      })
+    })
+
+    it('refuses to drop a field that entries still carry, and says how many', async () => {
+      const { git, applyPlan } = gitWith({
+        '/home-page/tr.json': { hero_title: 'Merhaba', pricing_preview: { headline: 'Fiyatlar' } },
+        '/home-page/en.json': { hero_title: 'Hello', pricing_preview: { headline: 'Pricing' } },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({ id: 'home-page', name: 'Home Page', kind: 'singleton', domain: 'marketing', i18n: true } as never, 'user@example.com', {
+        removeFields: ['pricing_preview'],
+      })
+
+      expect(result.validation.valid).toBe(false)
+      expect(result.validation.errors[0]?.field).toBe('pricing_preview')
+      expect(result.validation.errors[0]?.message).toContain('still used by 1 entry')
+      expect(result.breakingChanges).toEqual([
+        { kind: 'field_removed', field: 'pricing_preview', from: 'object', affectedEntries: 1 },
+      ])
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
+
+    it('drops a field nobody uses without ceremony', async () => {
+      const { git, applyPlan } = gitWith({
+        '/home-page/tr.json': { hero_title: 'Merhaba', pricing_preview: {} },
+        '/home-page/en.json': { hero_title: 'Hello' },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({ id: 'home-page', name: 'Home Page', kind: 'singleton', domain: 'marketing', i18n: true } as never, 'user@example.com', {
+        removeFields: ['pricing_preview'],
+      })
+
+      expect(result.validation.valid).toBe(true)
+      expect(savedModel(applyPlan).fields.pricing_preview).toBeUndefined()
+      expect(result.modelChange?.removedFields).toEqual(['pricing_preview'])
+    })
+
+    it('drops a used field when the removal is confirmed', async () => {
+      const { git, applyPlan } = gitWith({
+        '/home-page/tr.json': { hero_title: 'Merhaba', pricing_preview: { headline: 'Fiyatlar' } },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({ id: 'home-page', name: 'Home Page', kind: 'singleton', domain: 'marketing', i18n: true } as never, 'user@example.com', {
+        removeFields: ['pricing_preview'],
+        allowBreaking: true,
+      })
+
+      expect(result.validation.valid).toBe(true)
+      expect(savedModel(applyPlan).fields.pricing_preview).toBeUndefined()
+    })
+
+    it('refuses a type change on a field entries still carry, counting entries once across locales', async () => {
+      const collection = { ...homePage, kind: 'collection', title_field: 'hero_title' }
+      const { git, applyPlan } = gitWith({
+        '/home-page/tr.json': { a1: { hero_title: 'Bir', hero_subtitle: 'x' }, b2: { hero_title: 'İki', hero_subtitle: 'y' } },
+        '/home-page/en.json': { a1: { hero_title: 'One', hero_subtitle: 'x' } },
+      }, {
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/home-page.json')) return JSON.stringify(collection)
+          if (path.endsWith('/home-page/tr.json')) return JSON.stringify({ a1: { hero_title: 'Bir', hero_subtitle: 'x' }, b2: { hero_title: 'İki', hero_subtitle: 'y' } })
+          if (path.endsWith('/home-page/en.json')) return JSON.stringify({ a1: { hero_title: 'One', hero_subtitle: 'x' } })
+          throw new Error(`Missing file: ${path}`)
+        }),
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({
+        id: 'home-page',
+        name: 'Home Page',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        fields: { hero_subtitle: { type: 'integer' } },
+      } as never, 'user@example.com')
+
+      expect(result.validation.valid).toBe(false)
+      expect(result.validation.errors[0]?.message).toContain('still used by 2 entries; changing its type from "text" to "integer"')
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
+
+    it('refuses a title field that cannot render as a title', async () => {
+      const { git, applyPlan } = gitWith({})
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({ id: 'home-page', name: 'Home Page', kind: 'singleton', domain: 'marketing', i18n: true, title_field: 'pricing_preview' } as never, 'user@example.com')
+
+      expect(result.validation.valid).toBe(false)
+      expect(result.validation.errors[0]?.field).toBe('title_field')
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
+
+    it('creates a new model from the payload as sent', async () => {
+      const { git, applyPlan } = gitWith({}, {
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listDirectory: vi.fn().mockResolvedValue([]),
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({
+        id: 'authors',
+        name: 'Authors',
+        kind: 'collection',
+        domain: 'marketing',
+        i18n: true,
+        title_field: 'name',
+        fields: { name: { type: 'string', required: true } },
+      } as never, 'user@example.com', { removeFields: ['name'] })
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.modelChange).toMatchObject({ action: 'created', addedFields: ['name'] })
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string }> }
+      const saved = JSON.parse(call.changes.find(c => c.path.endsWith('/models/authors.json'))!.content)
+      // removeFields means nothing for a model that does not exist yet.
+      expect(saved.fields.name).toBeDefined()
+    })
+  })
+
   it('initializes a project with config, models, content, and meta files', async () => {
     const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({

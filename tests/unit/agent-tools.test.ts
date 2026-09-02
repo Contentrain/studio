@@ -31,4 +31,17 @@ describe('STUDIO_TOOLS', () => {
       'upload_media',
     ]))
   })
+
+  it('tells the agent that save_model merges, and gives it the removal and title-field handles', () => {
+    // A one-field payload once replaced a 39-field model; the schema now
+    // carries the contract the engine enforces.
+    const saveModel = STUDIO_TOOLS.find(tool => tool.name === 'save_model')!
+    const properties = saveModel.inputSchema.properties as Record<string, unknown>
+
+    expect(saveModel.description).toContain('UPDATES MERGE')
+    expect(saveModel.description).toContain('remove_fields')
+    expect(Object.keys(properties)).toEqual(expect.arrayContaining(['title_field', 'remove_fields', 'allow_breaking']))
+    expect(saveModel.description).toContain('label')
+    expect(saveModel.description).toContain('order')
+  })
 })
