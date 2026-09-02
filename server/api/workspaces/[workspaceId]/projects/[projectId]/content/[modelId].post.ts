@@ -2,10 +2,12 @@
  * Save content for a model.
  * Uses Content Engine: validate → serialize → branch → commit → diff.
  *
- * Body: { locale, data, entryId? }
+ * Body: { locale, data, publish_at?, expire_at? }
  * - Collection: data = { entryId: { fields } } or full object-map
  * - Singleton: data = { field: value }
  * - Dictionary: data = { key: value }
+ * - publish_at / expire_at: scheduling, meta only, beside data; null clears,
+ *   absent leaves unchanged. Never changes status.
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -16,6 +18,8 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{
     locale?: string
     data: Record<string, unknown>
+    publish_at?: string | null
+    expire_at?: string | null
   }>(event)
 
   if (!workspaceId || !projectId || !modelId)
@@ -35,8 +39,14 @@ export default defineEventHandler(async (event) => {
 
   const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
 
+  const schedule: { publish_at?: string | null, expire_at?: string | null } = {}
+  if (body.publish_at !== undefined) schedule.publish_at = body.publish_at
+  if (body.expire_at !== undefined) schedule.expire_at = body.expire_at
+
   const engine = createContentEngine({ git, contentRoot, projectId })
-  const result = await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
+  const result = Object.keys(schedule).length > 0
+    ? await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '', { schedule })
+    : await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
 
   if (!result.validation.valid) {
     return result

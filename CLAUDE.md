@@ -270,6 +270,15 @@ regeneration is the single point it needs to be accurate.
 - Studio's `pinReaderToContentrain` wrapper defaults ref to
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
+- Scheduling (`publish_at` / `expire_at`) is meta-only and rides on the
+  `ContentEntry` (MCP 3.1.8), never inside `data`; `null` clears, absent
+  leaves alone, and it never changes `status` — `cdn-builder.ts` gates
+  delivery of a *published* entry by it. `shapeEntriesForSave` lifts any
+  undeclared `publish_at`/`expire_at` out of entry data so it cannot leak
+  into the content file. `applyStudioMetaOverrides` starts from the meta
+  MCP planned (which carries the schedule) and re-owns only `status`,
+  `updated_by`, `updated_at` — rebuilding from the prior file, as it once
+  did, dropped every key the plan had just set.
 - `saveModel` MERGES with the definition on `contentrain`
   (`content-engine/model-merge.ts`): omitted fields and top-level keys are
   kept, a sent field is merged property by property, removal is only via

@@ -585,14 +585,24 @@ export async function executeToolWithAutoMerge(
 
         let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean }
 
+        // Scheduling rides beside `data`, never inside it (meta only, status
+        // untouched). The engine validates the dates and lifts any the agent
+        // still put into data, so nothing leaks into the content file.
+        const schedule: { publish_at?: string | null, expire_at?: string | null } = {}
+        for (const key of ['publish_at', 'expire_at'] as const) {
+          const value = params[key]
+          if (value === null || typeof value === 'string') schedule[key] = value
+        }
+        const saveOptions = { autoPublish, ...(Object.keys(schedule).length > 0 ? { schedule } : {}) }
+
         // Document kind: expects { slug, frontmatter/data, body }
         if (params.slug && typeof params.slug === 'string') {
           const frontmatter = (params.data ?? params.frontmatter ?? {}) as Record<string, unknown>
           const body = (params.body as string) ?? ''
-          writeResult = await engine.saveDocument(modelId, locale, params.slug as string, frontmatter, body, userEmail, { autoPublish })
+          writeResult = await engine.saveDocument(modelId, locale, params.slug as string, frontmatter, body, userEmail, saveOptions)
         }
         else {
-          writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail, { autoPublish })
+          writeResult = await engine.saveContent(modelId, locale, params.data as Record<string, unknown>, userEmail, saveOptions)
         }
 
         // Surface validation failure as a HARD error. Previously a failed

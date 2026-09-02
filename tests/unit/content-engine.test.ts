@@ -1062,6 +1062,135 @@ describe('content engine', () => {
     })
   })
 
+  describe('scheduling rides on meta, never on content, and never on status', () => {
+    const config = { domains: ['editorial'], locales: { default: 'en', supported: ['en'] }, stack: 'nuxt', version: 1, workflow: 'auto-merge' }
+    const articles = {
+      id: 'articles',
+      name: 'Articles',
+      kind: 'collection',
+      domain: 'editorial',
+      i18n: true,
+      title_field: 'title',
+      fields: { title: { type: 'string', required: true } },
+    }
+
+    function gitWith(files: Record<string, unknown>) {
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/articles.json')) return JSON.stringify(articles)
+          const hit = Object.entries(files).find(([suffix]) => path.endsWith(suffix))
+          if (hit) return typeof hit[1] === 'string' ? hit[1] : JSON.stringify(hit[1])
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        applyPlan,
+      })
+      return { git, applyPlan }
+    }
+
+    function written(applyPlan: ReturnType<typeof vi.fn>, suffix: string) {
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string }> }
+      const change = call.changes.find(c => c.path.endsWith(suffix))
+      return change ? JSON.parse(change.content) : null
+    }
+
+    it('lands a schedule in meta with the status untouched', async () => {
+      const { git, applyPlan } = gitWith({
+        '/content/editorial/articles/en.json': { a1: { title: 'One' } },
+        '/meta/articles/en.json': { a1: { status: 'draft', source: 'agent', updated_by: 'someone@else.com' } },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveContent('articles', 'en', { a1: { title: 'One!' } }, 'editor@example.com', {
+        schedule: { publish_at: '2026-10-01T09:00:00.000Z' },
+      })
+
+      expect(result.validation.valid).toBe(true)
+      const meta = written(applyPlan, '/meta/articles/en.json')
+      // The date is there, the draft is still a draft, and Studio's own
+      // stamps are on top — the override used to rebuild meta from the prior
+      // file and drop what the plan had just set.
+      expect(meta.a1).toMatchObject({ status: 'draft', publish_at: '2026-10-01T09:00:00.000Z', updated_by: 'editor@example.com' })
+      expect(written(applyPlan, '/content/editorial/articles/en.json').a1).toEqual({ title: 'One!' })
+    })
+
+    it('clears a date with null and leaves it alone when omitted', async () => {
+      const { git, applyPlan } = gitWith({
+        '/content/editorial/articles/en.json': { a1: { title: 'One' } },
+        '/meta/articles/en.json': { a1: { status: 'published', publish_at: '2026-01-01T00:00:00.000Z', expire_at: '2026-12-31T00:00:00.000Z' } },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      await engine.saveContent('articles', 'en', { a1: { title: 'One!' } }, 'editor@example.com', {
+        schedule: { expire_at: null },
+      })
+
+      const meta = written(applyPlan, '/meta/articles/en.json')
+      expect(meta.a1.publish_at).toBe('2026-01-01T00:00:00.000Z')
+      expect('expire_at' in meta.a1).toBe(false)
+      expect(meta.a1.status).toBe('published')
+    })
+
+    it('lifts a schedule the caller put inside data, so it never reaches the content file', async () => {
+      const { git, applyPlan } = gitWith({
+        '/content/editorial/articles/en.json': { a1: { title: 'One' } },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      await engine.saveContent('articles', 'en', { a1: { title: 'One!', publish_at: '2026-10-01T09:00:00.000Z' } }, 'editor@example.com')
+
+      expect(written(applyPlan, '/content/editorial/articles/en.json').a1).toEqual({ title: 'One!' })
+      expect(written(applyPlan, '/meta/articles/en.json').a1.publish_at).toBe('2026-10-01T09:00:00.000Z')
+    })
+
+    it('refuses a date that is not a date, or an expiry before the publish date', async () => {
+      const { git, applyPlan } = gitWith({})
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const bad = await engine.saveContent('articles', 'en', { a1: { title: 'One' } }, 'editor@example.com', { schedule: { publish_at: 'next tuesday' } })
+      expect(bad.validation.valid).toBe(false)
+      expect(bad.validation.errors[0]?.message).toContain('Invalid publish_at date')
+
+      const inverted = await engine.saveContent('articles', 'en', { a1: { title: 'One' } }, 'editor@example.com', {
+        schedule: { publish_at: '2026-10-01T09:00:00.000Z', expire_at: '2026-09-01T09:00:00.000Z' },
+      })
+      expect(inverted.validation.valid).toBe(false)
+      expect(inverted.validation.errors[0]?.message).toContain('must be after publish_at')
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
+
+    it('schedules a document by its slug meta and keeps the frontmatter clean', async () => {
+      const guides = { ...articles, id: 'guides', kind: 'document', fields: { title: { type: 'string', required: true } } }
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/guides.json')) return JSON.stringify(guides)
+          if (path.endsWith('/guides/intro/en.md')) return '---\ntitle: Intro\npublish_at: 2026-01-01T00:00:00.000Z\n---\nBody.\n'
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        applyPlan,
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveDocument('guides', 'en', 'intro', { title: 'Intro!' }, '', 'editor@example.com', {
+        schedule: { publish_at: '2026-10-01T09:00:00.000Z' },
+      })
+
+      expect(result.validation.valid).toBe(true)
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string }> }
+      const md = call.changes.find(c => c.path.endsWith('/guides/intro/en.md'))!.content
+      // The value an older content_save leaked into the frontmatter is not
+      // re-planted by this write; meta is where the schedule lives.
+      expect(md).not.toContain('2026-10-01')
+      const meta = JSON.parse(call.changes.find(c => c.path.endsWith('/meta/guides/intro/en.json'))!.content)
+      expect(meta).toMatchObject({ publish_at: '2026-10-01T09:00:00.000Z', status: 'draft', updated_by: 'editor@example.com' })
+    })
+  })
+
   it('saves model definitions without committing context.json on the feature branch', async () => {
     const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({

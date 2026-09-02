@@ -568,6 +568,8 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // Content updates
     agentPrompt('rules.update_existing_id'),
     agentPrompt('rules.update_merge'),
+    // Scheduling is meta, not status — the two get conflated otherwise.
+    agentPrompt('rules.scheduling'),
     // Model updates merge the same way — a one-field payload used to replace a
     // 39-field model.
     agentPrompt('rules.model_update_merge'),

@@ -50,6 +50,8 @@ RELATION FIELDS:
 - relations (array): set value to string[] of IDs/slugs
 - polymorphic (model is string[]): set value to { "model": "target-model", "ref": "id-or-slug" }
 
+SCHEDULING: publish_at / expire_at go NEXT TO data, never inside it. They live in meta only and are a delivery gate on top of status — a published entry is served once publish_at has passed and until expire_at. They NEVER change status: a past publish_at does not publish a draft; publishing is update_status. null clears a date; omit to leave it unchanged.
+
 IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
     inputSchema: {
       type: 'object',
@@ -59,6 +61,8 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
         data: { type: 'object', description: 'Content data — only include fields that changed' },
         slug: { type: 'string', description: 'Document slug (required for document kind only)' },
         body: { type: 'string', description: 'Markdown body (document kind only)' },
+        publish_at: { type: ['string', 'null'], description: 'Scheduled publish date, ISO 8601. Meta only, never in data; does not change status. null clears; omit to leave unchanged.' },
+        expire_at: { type: ['string', 'null'], description: 'Scheduled expiry, ISO 8601, after publish_at. Same rules as publish_at.' },
       },
       required: ['model', 'data'],
     },

@@ -3,6 +3,28 @@ import type { Branch, Commit, CommitAuthor, FileDiff, GitProvider, MergeResult }
 
 // ── Public types (re-exported from index.ts) ────────────────────────
 
+/**
+ * Scheduling a write may carry. Three states per key: a string sets the
+ * date, `null` clears it, an absent key leaves whatever meta holds alone.
+ *
+ * Scheduling is meta and only meta (MCP 3.1.8). It never reaches the
+ * content file, and it never changes `status`: a `publish_at` in the past
+ * does not publish a draft. Delivery treats the dates as a gate on top of
+ * `status: published` — `cdn-builder.ts` serves a published entry once
+ * `publish_at` has passed and until `expire_at`. Publishing stays a
+ * deliberate `updateEntryStatus`.
+ */
+export interface EntrySchedule {
+  publish_at?: string | null
+  expire_at?: string | null
+}
+
+export interface SaveOptions {
+  autoPublish?: boolean
+  /** Applied to every entry this save touches; a date inside an entry's own data wins. */
+  schedule?: EntrySchedule
+}
+
 export interface WriteResult {
   branch: string
   commit: Commit
