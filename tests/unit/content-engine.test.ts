@@ -873,6 +873,195 @@ describe('content engine', () => {
     expect(JSON.parse(introMeta!.content as string).status).toBe('published')
   })
 
+  describe('locale-agnostic fields land in every locale of an i18n model', () => {
+    const config = { domains: ['system', 'editorial'], locales: { default: 'tr', supported: ['tr', 'en'] }, stack: 'nuxt', version: 1, workflow: 'auto-merge' }
+    const siteSettings = {
+      id: 'site-settings',
+      name: 'Site Settings',
+      kind: 'singleton',
+      domain: 'system',
+      i18n: true,
+      title_field: 'title',
+      fields: {
+        title: { type: 'string' },
+        guides_band_background: { type: 'image' },
+        featured_report: { type: 'relation', model: 'reports' },
+      },
+    }
+
+    function fileChanges(applyPlan: ReturnType<typeof vi.fn>) {
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string }>, message: string }
+      return {
+        message: call.message,
+        read: (suffix: string) => {
+          const change = call.changes.find(c => c.path.endsWith(suffix))
+          return change ? JSON.parse(change.content) : null
+        },
+      }
+    }
+
+    function singletonGit(files: Record<string, unknown>) {
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/site-settings.json')) return JSON.stringify(siteSettings)
+          const hit = Object.entries(files).find(([suffix]) => path.endsWith(suffix))
+          if (hit) return JSON.stringify(hit[1])
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        applyPlan,
+      })
+      return { git, applyPlan }
+    }
+
+    it('writes a swapped image to the other locale in the same commit, keeping its prose', async () => {
+      // The report: en got the new asset, tr kept the old one, the site rendered tr.
+      const { git, applyPlan } = singletonGit({
+        '/content/system/site-settings/en.json': { title: 'Site', guides_band_background: 'https://cdn/old.webp' },
+        '/content/system/site-settings/tr.json': { title: 'Site (TR)', guides_band_background: 'https://cdn/old.webp' },
+        '/meta/site-settings/tr.json': { status: 'published' },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveContent('site-settings', 'en', { guides_band_background: 'https://cdn/new.webp' }, 'editor@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.sharedAcrossLocales).toEqual({ fields: ['guides_band_background'], locales: ['tr'] })
+      const files = fileChanges(applyPlan)
+      expect(files.read('/content/system/site-settings/en.json').guides_band_background).toBe('https://cdn/new.webp')
+      expect(files.read('/content/system/site-settings/tr.json')).toEqual({ title: 'Site (TR)', guides_band_background: 'https://cdn/new.webp' })
+      // Studio's meta semantics reach the fan-out locale too: status kept, author stamped.
+      const trMeta = files.read('/meta/site-settings/tr.json')
+      expect(trMeta.status).toBe('published')
+      expect(trMeta.updated_by).toBe('editor@example.com')
+      expect(files.message).toContain('Shared across locales (tr): guides_band_background')
+    })
+
+    it('leaves the other locale alone for prose', async () => {
+      const { git, applyPlan } = singletonGit({
+        '/content/system/site-settings/en.json': { title: 'Site', guides_band_background: 'https://cdn/old.webp' },
+        '/content/system/site-settings/tr.json': { title: 'Site (TR)', guides_band_background: 'https://cdn/old.webp' },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveContent('site-settings', 'en', { title: 'New title' }, 'editor@example.com')
+
+      expect(result.sharedAcrossLocales).toBeUndefined()
+      expect(fileChanges(applyPlan).read('/content/system/site-settings/tr.json')).toBeNull()
+    })
+
+    it('leaves a locale alone that already holds the value, so a no-op stays a no-op', async () => {
+      const { git, applyPlan } = singletonGit({
+        '/content/system/site-settings/en.json': { title: 'Site', guides_band_background: 'https://cdn/old.webp' },
+        '/content/system/site-settings/tr.json': { title: 'Site (TR)', guides_band_background: 'https://cdn/new.webp' },
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveContent('site-settings', 'en', { guides_band_background: 'https://cdn/new.webp' }, 'editor@example.com')
+
+      expect(result.sharedAcrossLocales).toBeUndefined()
+      expect(fileChanges(applyPlan).read('/content/system/site-settings/tr.json')).toBeNull()
+    })
+
+    it('carries a relation into the other locale only for entries that exist there', async () => {
+      const articles = {
+        id: 'articles',
+        name: 'Articles',
+        kind: 'collection',
+        domain: 'editorial',
+        i18n: true,
+        title_field: 'title',
+        fields: { title: { type: 'string' }, author: { type: 'relation', model: 'authors' }, cover: { type: 'image' } },
+      }
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/articles.json')) return JSON.stringify(articles)
+          if (path.endsWith('/articles/en.json')) return JSON.stringify({ a1: { title: 'One', author: 'old' }, b2: { title: 'Two', author: 'old' } })
+          if (path.endsWith('/articles/tr.json')) return JSON.stringify({ a1: { title: 'Bir', author: 'old' } })
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        applyPlan,
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveContent('articles', 'en', {
+        a1: { author: 'new', title: 'One!' },
+        b2: { author: 'new' },
+      }, 'editor@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.sharedAcrossLocales).toEqual({ fields: ['author'], locales: ['tr'] })
+      const tr = fileChanges(applyPlan).read('/articles/tr.json')
+      // a1 exists in tr: relation carried, Turkish title untouched. b2 does not: a
+      // locale-coverage gap this save was not asked to fill.
+      expect(tr).toEqual({ a1: { title: 'Bir', author: 'new' } })
+      const trMeta = fileChanges(applyPlan).read('/meta/articles/tr.json')
+      expect(Object.keys(trMeta)).toEqual(['a1'])
+      expect(trMeta.a1.updated_by).toBe('editor@example.com')
+    })
+
+    it('does nothing extra for a model that is not i18n', async () => {
+      const { git, applyPlan } = singletonGit({
+        '/content/system/site-settings/data.json': { title: 'Site', guides_band_background: 'https://cdn/old.webp' },
+      })
+      ;(git.readFile as ReturnType<typeof vi.fn>).mockImplementation(async (path: string) => {
+        if (path.endsWith('/config.json')) return JSON.stringify(config)
+        if (path.endsWith('/models/site-settings.json')) return JSON.stringify({ ...siteSettings, i18n: false })
+        if (path.endsWith('/site-settings/data.json')) return JSON.stringify({ title: 'Site', guides_band_background: 'https://cdn/old.webp' })
+        throw new Error(`Missing file: ${path}`)
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveContent('site-settings', 'tr', { guides_band_background: 'https://cdn/new.webp' }, 'editor@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.sharedAcrossLocales).toBeUndefined()
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string }> }
+      expect(call.changes.filter(c => c.path.includes('/content/')).map(c => c.path)).toEqual(['.contentrain/content/system/site-settings/data.json'])
+    })
+
+    it('carries a document cover into the other locale, keeping that locale\'s body', async () => {
+      const guides = {
+        id: 'guides',
+        name: 'Guides',
+        kind: 'document',
+        domain: 'editorial',
+        i18n: true,
+        title_field: 'title',
+        fields: { title: { type: 'string', required: true }, cover: { type: 'image' } },
+      }
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/guides.json')) return JSON.stringify(guides)
+          if (path.endsWith('/guides/intro/en.md')) return '---\ntitle: Intro\ncover: https://cdn/old.webp\n---\nEnglish body.\n'
+          if (path.endsWith('/guides/intro/tr.md')) return '---\ntitle: Giriş\ncover: https://cdn/old.webp\n---\nTürkçe gövde.\n'
+          throw new Error(`Missing file: ${path}`)
+        }),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        applyPlan,
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveDocument('guides', 'en', 'intro', { cover: 'https://cdn/new.webp' }, '', 'editor@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.sharedAcrossLocales).toEqual({ fields: ['cover'], locales: ['tr'] })
+      const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string }> }
+      const tr = call.changes.find(c => c.path.endsWith('/guides/intro/tr.md'))!.content
+      expect(tr).toContain('https://cdn/new.webp')
+      expect(tr).not.toContain('old.webp')
+      expect(tr).toContain('Giriş')
+      expect(tr).toContain('Türkçe gövde.')
+    })
+  })
+
   it('saves model definitions without committing context.json on the feature branch', async () => {
     const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({

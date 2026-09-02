@@ -1398,13 +1398,17 @@ function statusOf(meta: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
 
-function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean }): Record<string, unknown> {
+function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] } }): Record<string, unknown> {
   return {
     branch: result.branch,
     commitSha: result.commit.sha,
     filesChanged: result.diff.length,
     valid: result.validation.valid,
     errors: result.validation.errors.map(e => e.message),
+    // Media and relation values carry no language, so the engine wrote them
+    // to the model's other locales too; the agent should say so rather than
+    // offer to "do the same for tr".
+    ...(result.sharedAcrossLocales ? { sharedAcrossLocales: result.sharedAcrossLocales } : {}),
     // A save whose planned files were byte-identical to `contentrain` —
     // no branch, no commit, no merge happened. Distinct from failure: the
     // requested state was ALREADY live, so the agent must not retry, but it

@@ -270,6 +270,12 @@ regeneration is the single point it needs to be accurate.
 - Studio's `pinReaderToContentrain` wrapper defaults ref to
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
+- Locale-agnostic fields (`image`/`video`/`file`/`relation`/`relations`,
+  `shared/utils/locale-agnostic-fields.ts`) are written to every locale of
+  an i18n model in the same commit (`content-engine/locale-fanout.ts`),
+  only into entries that already exist there. The schema has no
+  `localized` flag yet; when `@contentrain/types` grows one, it should
+  replace the type list, not sit beside it.
 
 ## Chat Prompt Cache Layout — CRITICAL
 

@@ -5,6 +5,7 @@ import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch, planMatchesCurrent } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
+import { planDocumentLocaleFanOut } from './locale-fanout'
 
 /**
  * Save a document entry (markdown with frontmatter).
@@ -106,11 +107,15 @@ export async function saveDocument(
   // fields (minus `body`) + the body content.
   const entryData = { ...mergedFrontmatter, slug: safeSlug, body: mergedBody }
 
+  // A cover image or a related entry carries no language: carry it into the
+  // other locales' documents, each keeping its own body (see save-content).
+  const fanOut = await planDocumentLocaleFanOut({ reader, pathCtx: ctx.pathCtx, model: modelDef, config, locale, slug: safeSlug, frontmatter })
+
   let plan
   try {
     plan = await planContentSave(reader, {
       model: modelDef,
-      entries: [{ slug: safeSlug, locale, data: entryData }],
+      entries: [{ slug: safeSlug, locale, data: entryData }, ...fanOut.entries],
       config,
       vocabulary,
     })
@@ -131,16 +136,18 @@ export async function saveDocument(
     }
   }
 
-  const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, config.locales?.default ?? 'en', safeSlug)
-  const patchedChanges = await applyStudioMetaOverrides({
-    planChanges: plan.changes,
-    metaPath,
-    model: modelDef,
-    touchedIds: [],
-    reader,
-    autoPublish: options?.autoPublish ?? false,
-    userEmail,
-  })
+  let patchedChanges = plan.changes
+  for (const writtenLocale of [locale, ...fanOut.locales]) {
+    patchedChanges = await applyStudioMetaOverrides({
+      planChanges: patchedChanges,
+      metaPath: resolveMetaPath(ctx.pathCtx, modelDef, writtenLocale, config.locales?.default ?? 'en', safeSlug),
+      model: modelDef,
+      touchedIds: [],
+      reader,
+      autoPublish: options?.autoPublish ?? false,
+      userEmail,
+    })
+  }
 
   // context.json is regenerated on `contentrain` post-merge, not committed
   // here (MCP 1.5.0 model — see `branch-ops.ts`).
@@ -170,5 +177,11 @@ export async function saveDocument(
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
-  return { branch: branchName, commit, diff, validation }
+  return {
+    branch: branchName,
+    commit,
+    diff,
+    validation,
+    ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
+  }
 }

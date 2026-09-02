@@ -64,7 +64,9 @@ export default defineEventHandler(async (event) => {
   try {
     const mediaProvider = useMediaProvider()
     if (mediaProvider) {
-      const locale = body.locale ?? 'en'
+      // A media value lands in every locale of an i18n model (see
+      // `planLocaleFanOut`), so usage is recorded for each locale written.
+      const writtenLocales = [body.locale ?? 'en', ...(result.sharedAcrossLocales?.locales ?? [])]
       // Scan saved data for media paths and track usage
       for (const [entryId, entry] of Object.entries(body.data)) {
         if (typeof entry !== 'object' || !entry) continue
@@ -79,14 +81,16 @@ export default defineEventHandler(async (event) => {
             // usage tracking silently recorded nothing.
             const asset = await mediaProvider.getAssetByPath?.(projectId, mediaPath)
             if (asset) {
-              await db.trackMediaUsage({
-                asset_id: asset.id,
-                project_id: projectId,
-                model_id: modelId,
-                entry_id: entryId,
-                field_id: fieldId,
-                locale,
-              })
+              for (const locale of writtenLocales) {
+                await db.trackMediaUsage({
+                  asset_id: asset.id,
+                  project_id: projectId,
+                  model_id: modelId,
+                  entry_id: entryId,
+                  field_id: fieldId,
+                  locale,
+                })
+              }
             }
           }
         }
