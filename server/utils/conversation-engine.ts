@@ -677,17 +677,39 @@ export async function executeToolWithAutoMerge(
       }
 
       case 'save_model': {
-        const writeResult = await engine.saveModel(params as unknown as ModelDefinition, userEmail)
+        // The engine merges with the definition on `contentrain`, so a payload
+        // that carries only the field being added no longer replaces the
+        // model. Removal and content-breaking changes are explicit flags,
+        // split off here so they never reach the definition itself.
+        const { remove_fields: removeFieldsParam, allow_breaking: allowBreakingParam, ...modelParams } = params as Record<string, unknown>
+        const writeResult = await engine.saveModel(modelParams as unknown as ModelDefinition, userEmail, {
+          removeFields: Array.isArray(removeFieldsParam) ? removeFieldsParam.filter((f): f is string => typeof f === 'string') : [],
+          allowBreaking: allowBreakingParam === true,
+        })
+
+        // A refused save is a hard error, as for save_content: a schema
+        // problem or a field that content still uses must be fixed (or the
+        // removal confirmed by the user) before retrying — never read as a
+        // partial success.
+        if (!writeResult.validation.valid) {
+          result = {
+            error: `${errorMessage('content.validation_failed')}: ${writeResult.validation.errors.map(e => e.message).join('; ')}`,
+            ...(writeResult.breakingChanges ? { breakingChanges: writeResult.breakingChanges } : {}),
+          }
+          break
+        }
+
         affected.snapshotChanged = true
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
 
+        const modelChange = writeResult.modelChange ? { modelChange: writeResult.modelChange } : {}
         if (shouldAutoMerge(workflow, permissions)) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, ...modelChange }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...modelChange }
         }
 
         // Emit webhook event (fire-and-forget)

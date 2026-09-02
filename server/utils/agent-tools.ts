@@ -84,9 +84,15 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
   },
   {
     name: 'save_model',
-    description: `Create or update a model definition. Field definitions use Contentrain's 27 type system.
+    description: `Create a model, or update an existing one. Field definitions use Contentrain's 27 type system.
 
-FIELD DEF FORMAT: { "fieldId": { type, required?, unique?, min?, max?, pattern?, options?, model?, items?, fields?, default?, description? } }
+UPDATES MERGE — never replace. Send only the fields you are adding or changing; every field you omit is KEPT, and a field you send is merged property by property into its existing definition (so adding "label" does not drop "required"). title_field, description and the other top-level keys are kept when omitted. To remove a field, list it in remove_fields — that is the only way a save drops one. A removal or type change is refused with the affected entry count while content still uses the field; pass allow_breaking: true ONLY after the user has explicitly confirmed they want that content orphaned.
+
+FIELD DEF FORMAT: { "fieldId": { type, required?, unique?, min?, max?, pattern?, options?, model?, items?, fields?, default?, description?, label?, order? } }
+  label: human-readable name shown in the editor instead of the field id — a string, or { "tr": "...", "en": "..." } per locale
+  order: display position in the edit form, ascending; fields without one come last, alphabetically
+
+TITLE FIELD: title_field names the field shown as an entry's title (must be string/text/slug/email/url/code/markdown/richtext; "key" for dictionaries). Declare it when creating a model; an update keeps the existing value when omitted.
 
 RELATION FIELDS: Include "model" property with target model ID(s).
   Single target: { "type": "relation", "model": "team-members" }
@@ -108,8 +114,11 @@ DICTIONARY: kind="dictionary" requires NO fields property. All content is free k
         kind: { type: 'string', enum: ['singleton', 'collection', 'document', 'dictionary'], description: 'Content kind' },
         domain: { type: 'string', description: 'Content domain (directory name)' },
         i18n: { type: 'boolean', description: 'Multi-locale support' },
+        title_field: { type: 'string', description: 'Field shown as an entry\'s title in listings, pickers and relation references ("key" for dictionaries). Required when creating; kept when omitted on update.' },
         description: { type: 'string', description: 'Model description' },
-        fields: { type: 'object', description: 'Field definitions (not needed for dictionary)' },
+        fields: { type: 'object', description: 'Field definitions to add or change (not needed for dictionary). On update, omitted fields are kept.' },
+        remove_fields: { type: 'array', items: { type: 'string' }, description: 'Field IDs to remove from an existing model. Refused while content still uses them unless allow_breaking is set.' },
+        allow_breaking: { type: 'boolean', description: 'Confirm a field removal, type change, kind or i18n change that orphans existing content. Only after the user explicitly asked for it.' },
       },
       required: ['id', 'name', 'kind', 'domain'],
     },

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import type { RelationLabelMap } from '~/composables/useRelationLabels'
+import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
 
@@ -71,41 +72,12 @@ const filterSelection = ref<FilterSelection>({})
 const sortBy = ref<string>(SORT_DEFAULT)
 
 /**
- * Human labels for relation targets, so a relation axis reads as titles rather
- * than as `f3a81c09d24e`. Loaded when the model changes, not per render.
+ * Human labels for relation targets, so a relation axis and a relation value in
+ * a row both read as titles rather than as `f3a81c09d24e`. Loaded once by
+ * ContentPanel for every view; standalone (tests) the map is empty and refs
+ * show as themselves.
  */
-const relationLabels = ref<Record<string, Record<string, string>>>({})
-
-async function loadRelationLabels() {
-  const model = modelDefinition.value
-  const fields = (model?.fields ?? {}) as Record<string, { type?: string, model?: string | string[] }>
-  const next: Record<string, Record<string, string>> = {}
-
-  for (const [fieldId, def] of Object.entries(fields)) {
-    if (def?.type !== 'relation' && def?.type !== 'relations') continue
-    const targets = Array.isArray(def.model) ? def.model : def.model ? [def.model] : []
-    const labels: Record<string, string> = {}
-
-    for (const targetId of targets) {
-      const targetModel = brain.models.value.find(m => m.id === targetId) ?? null
-      const result = await brain.queryContent(targetId, props.locale ?? 'en')
-      const data = result?.data as Record<string, Record<string, unknown>> | Array<Record<string, unknown>> | null
-      if (Array.isArray(data)) {
-        for (const doc of data) {
-          const slug = doc.slug as string
-          if (slug) labels[slug] = resolveEntryTitle(doc, targetModel, slug)
-        }
-      }
-      else if (data) {
-        for (const [ref, entry] of Object.entries(data)) labels[ref] = resolveEntryTitle(entry, targetModel, ref)
-      }
-    }
-
-    if (Object.keys(labels).length > 0) next[fieldId] = labels
-  }
-
-  relationLabels.value = next
-}
+const relationLabels = inject(relationLabelsKey, ref<RelationLabelMap>({}))
 
 const filterAxes = computed(() => deriveFilterAxes({
   model: modelDefinition.value,
@@ -239,8 +211,6 @@ watch(() => [props.modelId, props.locale], () => {
   visibleCount.value = PAGE_SIZE
   filterSelection.value = {}
   sortBy.value = SORT_DEFAULT
-  relationLabels.value = {}
-  void loadRelationLabels()
 }, { immediate: true })
 
 // Paging restarts whenever the surviving set changes, so page two of the old
@@ -465,7 +435,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
                 </AtomsTooltip>
               </div>
               <div class="mt-0.5">
-                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" />
+                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="entry[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" />
               </div>
             </div>
           </template>

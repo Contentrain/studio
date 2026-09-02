@@ -5,7 +5,7 @@ import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radi
 import type { BranchReview } from '~~/shared/utils/branch-review'
 import type { BranchRawDiff } from '~/composables/useBranches'
 import { fieldLabel, orderedFieldIds } from '~~/shared/utils/field-label'
-import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 interface SnapshotModel {
   readonly id: string
@@ -98,6 +98,12 @@ const currentLocale = defineModel<string>('locale', { default: 'en' })
 const activeModel = computed(() =>
   props.snapshot?.models.find(m => m.id === props.activeModelId) ?? null,
 )
+
+// One load per model/locale for every surface beneath: the collection rows,
+// the singleton and document views, the filter axes. Before this the
+// collection view loaded them for its filters alone and the read views
+// printed relation refs raw.
+const { relationLabels } = useRelationLabels(activeModel, currentLocale)
 
 const panelState = computed(() => {
   if (props.activeBranch) return 'branch'
@@ -246,6 +252,7 @@ provide(getUserFieldIdsKey, getUserFieldIds)
 provide(getFieldLabelKey, getFieldLabel)
 provide(activeModelMetaKey, activeModelMeta)
 provide(getModelFieldsKey, getModelFields)
+provide(relationLabelsKey, relationLabels)
 provide(sendChatPromptKey, sendChatPrompt)
 </script>
 

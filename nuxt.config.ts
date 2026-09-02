@@ -1,7 +1,33 @@
+import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 
 const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
+
+/**
+ * The commit this build was made from, stamped into `runtimeConfig.public.build`
+ * so `/about` and `/api/health` can name the running build. Every builder calls
+ * it something different: `SOURCE_COMMIT` is the explicit hand-off (the
+ * Dockerfile build arg, set by the release workflow), the rest are what CI
+ * and PaaS builders export on their own. A local build asks git. Empty when
+ * nothing knows — the page then shows the version alone rather than a made-up
+ * sha.
+ */
+function resolveBuildCommit(): string {
+  for (const key of ['SOURCE_COMMIT', 'RAILWAY_GIT_COMMIT_SHA', 'GITHUB_SHA', 'CI_COMMIT_SHA', 'VERCEL_GIT_COMMIT_SHA']) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+  try {
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  }
+  catch {
+    return ''
+  }
+}
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -92,6 +118,12 @@ export default defineNuxtConfig({
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
       billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override
       templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER
+      build: {
+        // Stamped at build time; `/about` and `/api/health` read it. Overridable
+        // per deployment via NUXT_PUBLIC_BUILD_VERSION / NUXT_PUBLIC_BUILD_COMMIT.
+        version: pkg.version,
+        commit: resolveBuildCommit(),
+      },
       deployment: {
         // Client-visible deployment snapshot. In dev, `server/plugins/
         // 00.billing-flag.ts` mutates this at boot from the auto-detected

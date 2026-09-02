@@ -270,6 +270,13 @@ regeneration is the single point it needs to be accurate.
 - Studio's `pinReaderToContentrain` wrapper defaults ref to
   `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
   `reader.readFile(path)` without a ref).
+- `saveModel` MERGES with the definition on `contentrain`
+  (`content-engine/model-merge.ts`): omitted fields and top-level keys are
+  kept, a sent field is merged property by property, removal is only via
+  `removeFields`, and a removal/type/kind/i18n change that still has
+  content behind it is refused with the affected count unless
+  `allowBreaking` is passed. MCP's own `contentrain_model_save` (and so
+  MCP Cloud) still replaces — that is MCP's contract, not Studio's.
 - Locale-agnostic fields (`image`/`video`/`file`/`relation`/`relations`,
   `shared/utils/locale-agnostic-fields.ts`) are written to every locale of
   an i18n model in the same commit (`content-engine/locale-fanout.ts`),

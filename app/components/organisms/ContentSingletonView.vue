@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey } from '~/utils/injection-keys'
+import type { RelationLabelMap } from '~/composables/useRelationLabels'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, relationLabelsKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   content: Record<string, unknown>
@@ -18,6 +19,7 @@ const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
 const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
+const relationLabels = inject(relationLabelsKey, ref<RelationLabelMap>({}))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 const { t } = useContent()
@@ -111,7 +113,7 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
           </AtomsTooltip>
         </div>
         <div class="mt-1">
-          <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" />
+          <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" />
         </div>
       </div>
     </template>

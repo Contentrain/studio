@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { RelationLabelMap } from '~/composables/useRelationLabels'
 import { marked } from 'marked'
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
@@ -33,6 +34,7 @@ const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const getModelFields = inject(getModelFieldsKey, () => ({}))
 const sendChatPrompt = inject(sendChatPromptKey, () => {})
+const relationLabels = inject(relationLabelsKey, ref<RelationLabelMap>({}))
 
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
 
@@ -225,7 +227,7 @@ function handleModalSaved() {
                 </AtomsTooltip>
               </div>
               <div class="mt-0.5">
-                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="doc.frontmatter[fieldId]" :field-id="fieldId" />
+                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="doc.frontmatter[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" />
               </div>
             </div>
           </template>
