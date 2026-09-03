@@ -163,6 +163,8 @@
   "mcp_cloud.tool_not_allowed": "This API key is not allowed to call {tool}.",
   "mcp_cloud.upgrade": "MCP Cloud endpoint is available on paid plans. Upgrade to enable external AI agents.",
   "media.asset_not_found": "Media asset not found. It may have been deleted.",
+  "media.bulk_ingest_limit": "Up to {limit} URLs per request",
+  "media.bulk_ingest_rate_limited": "Too many bulk ingest requests, try again in a minute",
   "media.bulk_limit_exceeded": "Maximum 50 assets per bulk operation.",
   "media.bulk_params_required": "Action and asset IDs are required for bulk operations.",
   "media.bulk_tags_required": "Tags are required for the tag action.",
