@@ -16,6 +16,8 @@ export interface PublicCommentContext {
   workspace: Record<string, unknown>
   modelId: string
   config: CommentsConfig
+  /** The project's default locale (`config.locales.default`), the fallback when a request names none. */
+  defaultLocale: string
 }
 
 export async function resolvePublicCommentContext(projectId: string, modelId: string): Promise<PublicCommentContext> {
@@ -68,6 +70,7 @@ export async function resolvePublicCommentContext(projectId: string, modelId: st
       throw createError({ statusCode: 403, message: errorMessage('comments.upgrade') })
   }
 
+  const configuredDefault = (brain.config as { locales?: { default?: string } } | null)?.locales?.default
   return {
     projectId,
     workspaceId: workspace.id as string,
@@ -75,6 +78,7 @@ export async function resolvePublicCommentContext(projectId: string, modelId: st
     workspace: workspace as Record<string, unknown>,
     modelId,
     config,
+    defaultLocale: normalizeLocaleParam(configuredDefault, 'en'),
   }
 }
 

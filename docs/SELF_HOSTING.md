@@ -45,6 +45,7 @@ See [DOCKER.md](DOCKER.md) for the full image-tag policy and [RELEASING.md](RELE
 - Stripe billing
 - R2 object storage
 - Redis
+- Cloudflare Turnstile (`NUXT_TURNSTILE_SECRET_KEY`, `NUXT_PUBLIC_TURNSTILE_SITE_KEY`) — only when a model's form or comments config selects `captcha: turnstile`
 
 ## Choosing a Provider Pair
 

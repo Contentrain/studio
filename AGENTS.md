@@ -228,7 +228,7 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 - **Provider interfaces in core**, implementations can be in ee/ (same pattern as AuthProvider)
 - **UI conditional rendering** based on plan — use `hasFeature()` in computed properties
 - **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in starter tier
-- **Graceful degradation** — if ee/ feature is unavailable, degrade safely (reviewer → editor, not error)
+- **Fail-closed role degradation** — if ee/ is unavailable, reject new reviewer/viewer assignments; an existing narrow role falls back to read-only viewer access, never editor
 
 ### What belongs in ee/:
 - Advanced roles (reviewer, viewer, specificModels)

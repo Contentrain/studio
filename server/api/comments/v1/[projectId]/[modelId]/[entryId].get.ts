@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   const ctx = await resolvePublicCommentContext(projectId, modelId)
 
   const query = getQuery(event)
-  const locale = normalizeLocaleParam(query.locale)
+  const locale = normalizeLocaleParam(query.locale, ctx.defaultLocale)
   const page = Math.max(1, Number(query.page ?? 1) || 1)
   const limit = Math.min(100, Math.max(1, Number(query.limit ?? 20) || 20))
   const sort = query.sort === 'newest' ? 'newest' : 'oldest'
