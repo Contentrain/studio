@@ -122,6 +122,8 @@ export interface ProjectsTable {
   content_updated_at: string | null
   cdn_enabled: Generated<boolean>
   cdn_branch: string | null
+  migration_handoff: unknown | null
+  migration_handoff_synced_at: string | null
 }
 
 export interface ProjectMembersTable {

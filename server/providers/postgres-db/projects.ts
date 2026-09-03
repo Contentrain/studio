@@ -19,6 +19,7 @@ type ProjectMethods = Pick<
   | 'checkDuplicateProject'
   | 'createProject'
   | 'updateProject'
+  | 'setProjectMigrationHandoff'
   | 'deleteProject'
   | 'getProjectMediaStorageSum'
   | 'listWorkspaceProjects'
@@ -194,6 +195,23 @@ export function projectMethods(): ProjectMethods {
           throw createError({ statusCode: 500, message: 'Invalid database response' })
 
         return pickColumns(row as DatabaseRow, fields)
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async setProjectMigrationHandoff(projectId, handoff) {
+      try {
+        await getAdmin()
+          .updateTable('projects')
+          .set({
+            // jsonb — stringify so node-pg never misreads the object
+            migration_handoff: handoff ? JSON.stringify(handoff) : null,
+            migration_handoff_synced_at: handoff ? new Date().toISOString() : null,
+          } as never)
+          .where('id', '=', projectId)
+          .execute()
       }
       catch (error) {
         throwDbError(error)

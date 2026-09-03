@@ -281,6 +281,8 @@ export interface DatabaseProvider {
   checkDuplicateProject: (workspaceId: string, repoFullName: string) => Promise<boolean>
   createProject: (accessToken: string, input: Record<string, unknown>) => Promise<DatabaseRow>
   updateProject: (projectId: string, updates: Record<string, unknown>, fields?: string) => Promise<DatabaseRow>
+  /** Store (or clear with null) the validated `MigrationHandoff` document on a project; stamps `migration_handoff_synced_at`. */
+  setProjectMigrationHandoff: (projectId: string, handoff: Record<string, unknown> | null) => Promise<void>
   deleteProject: (projectId: string, workspaceId: string) => Promise<void>
   getProjectMediaStorageSum: (projectId: string) => Promise<number>
   listWorkspaceProjects: (accessToken: string, workspaceId: string) => Promise<DatabaseRow[]>

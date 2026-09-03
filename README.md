@@ -232,6 +232,7 @@ Release-facing setup and deployment docs:
 - [Payment Providers](docs/PAYMENT_PROVIDERS.md)
 - [Forms](docs/FORMS.md)
 - [Comments](docs/COMMENTS.md)
+- [Migration Handoff](docs/MIGRATION_HANDOFF.md)
 - [Releasing Guide](docs/RELEASING.md)
 - [Repository Hygiene](docs/REPOSITORY-HYGIENE.md)
 - [Contributing Guide](CONTRIBUTING.md)
