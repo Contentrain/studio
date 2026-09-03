@@ -42,6 +42,8 @@ const AVAILABLE_EVENTS = [
   'form.submitted',
   'comment.submitted',
   'comment.approved',
+  'deploy.triggered',
+  'schedule.fired',
 ] as const
 
 const webhooks = ref<Webhook[]>([])

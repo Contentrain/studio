@@ -99,6 +99,17 @@ export interface CommentImportResult {
   threadsClosed: number
 }
 
+export interface ScheduledPublicationInput {
+  project_id: string
+  workspace_id: string
+  model_id: string
+  entry_id: string
+  locale: string
+  kind: 'publish' | 'expire'
+  /** ISO 8601 */
+  fire_at: string
+}
+
 export interface PaginationOptions {
   page?: number
   limit?: number
@@ -635,6 +646,21 @@ export interface DatabaseProvider {
   }) => Promise<CommentImportResult>
   getCommentThread: (projectId: string, key: CommentThreadKey) => Promise<DatabaseRow | null>
   setCommentThreadClosed: (projectId: string, workspaceId: string, key: CommentThreadKey, closed: boolean, userId?: string) => Promise<DatabaseRow>
+
+  // ═══════════════════════════════════════════════════
+  // DEPLOY TARGET + SCHEDULED PUBLICATIONS
+  // ═══════════════════════════════════════════════════
+
+  /** Store (or clear with null) the project's deploy target; the hook URL inside is already encrypted. */
+  setProjectDeployTarget: (projectId: string, target: Record<string, unknown> | null) => Promise<void>
+  /** Register/replace publish/expire boundaries for entries (unique per entry+locale+kind). */
+  upsertScheduledPublications: (rows: ScheduledPublicationInput[]) => Promise<void>
+  /** Drop pending boundaries for entries (a cleared schedule, a deleted entry). */
+  clearScheduledPublications: (projectId: string, modelId: string, entryIds: string[], locale?: string, kinds?: Array<'publish' | 'expire'>) => Promise<void>
+  /** Atomically claim every due, unfired boundary (safe across instances). */
+  claimDueScheduledPublications: (now: Date, limit: number) => Promise<DatabaseRow[]>
+  /** Pending (unfired) boundaries for a project — the UI's "scheduled" view. */
+  listPendingScheduledPublications: (projectId: string) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
   // WEBHOOKS

@@ -231,6 +231,7 @@ Release-facing setup and deployment docs:
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [Payment Providers](docs/PAYMENT_PROVIDERS.md)
 - [Comments](docs/COMMENTS.md)
+- [Deploy Hooks & Scheduled Publishing](docs/DEPLOY_HOOKS.md)
 - [Releasing Guide](docs/RELEASING.md)
 - [Repository Hygiene](docs/REPOSITORY-HYGIENE.md)
 - [Contributing Guide](CONTRIBUTING.md)

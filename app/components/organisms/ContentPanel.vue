@@ -443,6 +443,11 @@ provide(sendChatPromptKey, sendChatPrompt)
           :workspace-id="workspaceId"
           :project-id="projectId"
         />
+        <OrganismsDeployHookPanel
+          v-if="workspaceId && projectId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+        />
       </template>
 
       <!-- ASSETS -->

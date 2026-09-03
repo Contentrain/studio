@@ -18,6 +18,7 @@ import { cdnMethods } from './cdn'
 import { commentMethods } from './comments'
 import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
+import { schedulingMethods } from './scheduling'
 import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
@@ -48,6 +49,7 @@ export function createPostgresDatabaseProvider(): DatabaseProvider {
     ...mcpCloudMethods(),
     ...mediaMethods(),
     ...formMethods(),
+    ...schedulingMethods(),
     ...commentMethods(),
     ...webhookMethods(),
     ...paymentAccountMethods(),

@@ -122,6 +122,7 @@ export interface ProjectsTable {
   content_updated_at: string | null
   cdn_enabled: Generated<boolean>
   cdn_branch: string | null
+  deploy_target: unknown | null
 }
 
 export interface ProjectMembersTable {
@@ -372,6 +373,20 @@ export interface CommentThreadsTable {
   updated_at: Generated<string>
 }
 
+export interface ScheduledPublicationsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  model_id: string
+  entry_id: string
+  locale: Generated<string>
+  kind: string
+  fire_at: string
+  fired_at: string | null
+  created_at: Generated<string>
+  updated_at: Generated<string>
+}
+
 export interface ConversationApiKeysTable {
   id: Generated<string>
   project_id: string
@@ -555,6 +570,7 @@ export interface StudioDatabase {
   'mcp_oauth_usage': McpOauthUsageTable
   'media_usage': MediaUsageTable
   'form_submissions': FormSubmissionsTable
+  'scheduled_publications': ScheduledPublicationsTable
   'comments': CommentsTable
   'comment_threads': CommentThreadsTable
   'conversation_api_keys': ConversationApiKeysTable

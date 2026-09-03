@@ -23,12 +23,15 @@ export type WebhookEvent
     | 'form.submitted'
     | 'comment.submitted'
     | 'comment.approved'
+    | 'deploy.triggered'
+    | 'schedule.fired'
 
 export const VALID_WEBHOOK_EVENTS: ReadonlySet<string> = new Set<WebhookEvent>([
   'content.saved', 'content.deleted', 'model.saved',
   'branch.merged', 'branch.rejected', 'cdn.build_complete',
   'media.uploaded', 'form.submitted',
   'comment.submitted', 'comment.approved',
+  'deploy.triggered', 'schedule.fired',
 ])
 
 export interface WebhookPayload {
