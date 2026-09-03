@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('comments.body_required') })
 
   const ctx = await resolvePublicCommentContext(projectId, modelId)
-  const locale = normalizeLocaleParam(getQuery(event).locale)
+  const locale = normalizeLocaleParam(getQuery(event).locale, ctx.defaultLocale)
 
   // Rate limit per IP + entry (model config, default 5/min)
   const rateCheck = await checkRateLimit(`comment:${ip}:${projectId}:${modelId}:${entryId}`, ctx.config.rateLimitPerIp, 60_000)

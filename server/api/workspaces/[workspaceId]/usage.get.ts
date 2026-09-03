@@ -48,12 +48,13 @@ export default defineEventHandler(async (event) => {
   const billingPeriod = new Date().toISOString().substring(0, 7) // YYYY-MM
 
   // Fetch all usage metrics in parallel
-  const [aiUsage, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls] = await Promise.all([
+  const [aiUsage, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls, comments] = await Promise.all([
     db.getWorkspaceMonthlyAIUsage(workspaceId, billingPeriod),
     db.getWorkspaceMonthlyAPIUsage(workspaceId, billingPeriod),
     db.countMonthlySubmissions(workspaceId),
     db.getWorkspaceMonthlyCDNBandwidth(workspaceId, billingPeriod),
     db.getWorkspaceMonthlyMcpCloudUsage(workspaceId, billingPeriod),
+    db.countMonthlyComments(workspaceId),
   ])
 
   const storageBytes = (workspace.media_storage_bytes as number) ?? 0
@@ -71,6 +72,7 @@ export default defineEventHandler(async (event) => {
   }> = [
     { key: 'ai_messages', limitKey: 'ai.messages_per_month', name: 'AI Messages', current: aiUsage, unit: 'messages' },
     { key: 'form_submissions', limitKey: 'forms.submissions_per_month', name: 'Form Submissions', current: formSubmissions, unit: 'submissions' },
+    { key: 'comments', limitKey: 'comments.per_month', name: 'Comments', current: comments, unit: 'comments' },
     { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes / (1024 * 1024 * 1024), unit: 'GB' },
     { key: 'media_storage', limitKey: 'media.storage_gb', name: 'Media Storage', current: storageBytes / (1024 * 1024 * 1024), unit: 'GB' },
     { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Messages', current: apiUsage, unit: 'messages' },
@@ -123,6 +125,7 @@ export default defineEventHandler(async (event) => {
     const keyMap: Record<string, string> = {
       ai_messages: 'aiMessages',
       form_submissions: 'formSubmissions',
+      comments: 'comments',
       cdn_bandwidth: 'cdnBandwidthGb',
       media_storage: 'mediaStorageGb',
       api_messages: 'apiMessages',
