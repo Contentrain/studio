@@ -178,6 +178,21 @@ DICTIONARY: kind="dictionary" requires NO fields property. All content is free k
     workflowBehavior: 'manual',
   },
   {
+    name: 'request_changes',
+    description: 'Send a pending cr/* content branch back to its author with a comment instead of merging or rejecting it. The branch stays open; the request is visible in the review panel and cleared when the branch is merged or rejected. Only use wording the user asked you to send.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        branch: { type: 'string', description: 'Branch name' },
+        comment: { type: 'string', description: 'What should change before this can be approved' },
+      },
+      required: ['branch', 'comment'],
+    },
+    requiredPhase: ['active', 'init_pending'],
+    defaultAffects: { branchesChanged: true, snapshotChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
     name: 'init_project',
     description: `Initialize .contentrain/ structure in a new repository. Creates config.json, vocabulary.json, context.json, model definitions, and empty content files.
 

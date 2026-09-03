@@ -18,6 +18,7 @@ export type WebhookEvent
     | 'model.saved'
     | 'branch.merged'
     | 'branch.rejected'
+    | 'branch.changes_requested'
     | 'cdn.build_complete'
     | 'media.uploaded'
     | 'form.submitted'
@@ -26,7 +27,7 @@ export type WebhookEvent
 
 export const VALID_WEBHOOK_EVENTS: ReadonlySet<string> = new Set<WebhookEvent>([
   'content.saved', 'content.deleted', 'model.saved',
-  'branch.merged', 'branch.rejected', 'cdn.build_complete',
+  'branch.merged', 'branch.rejected', 'branch.changes_requested', 'cdn.build_complete',
   'media.uploaded', 'form.submitted',
   'comment.submitted', 'comment.approved',
 ])

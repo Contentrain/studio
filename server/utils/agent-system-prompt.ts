@@ -206,7 +206,8 @@ function buildDynamicBody(
   if (state.pendingBranches.length > 0) {
     stateLines.push(`- Pending branches (${state.pendingBranches.length}):`)
     for (const b of state.pendingBranches.slice(0, 5)) {
-      stateLines.push(`  - ${b.name}`)
+      const note = (b as { changesRequested?: string }).changesRequested
+      stateLines.push(note ? `  - ${b.name} — changes requested: "${note.slice(0, 200)}"` : `  - ${b.name}`)
     }
   }
 

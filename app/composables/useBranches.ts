@@ -133,6 +133,41 @@ export function useBranches() {
     }
   }
 
+  async function requestChanges(workspaceId: string, projectId: string, branch: string, comment: string): Promise<boolean> {
+    const { t } = useContent()
+    try {
+      const result = await $fetch<{ changesRequested: { comment: string, requestedBy: string | null, requestedAt: string } }>(
+        `${branchUrl(workspaceId, projectId, branch)}/request-changes`,
+        { method: 'POST', body: { comment } },
+      )
+      if (branchReview.value?.branch === branch)
+        branchReview.value = { ...branchReview.value, changesRequested: result.changesRequested }
+      branches.value = branches.value.map(b => b.name === branch ? { ...b, changesRequested: true } : b)
+      toast.success(t('review.request_sent'))
+      return true
+    }
+    catch (e: unknown) {
+      toast.error(resolveApiError(e, t('review.request_failed')))
+      return false
+    }
+  }
+
+  async function resolveChangeRequest(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
+    const { t } = useContent()
+    try {
+      await $fetch(`${branchUrl(workspaceId, projectId, branch)}/request-changes`, { method: 'DELETE' })
+      if (branchReview.value?.branch === branch)
+        branchReview.value = { ...branchReview.value, changesRequested: null }
+      branches.value = branches.value.map(b => b.name === branch ? { ...b, changesRequested: false } : b)
+      toast.success(t('review.request_resolved'))
+      return true
+    }
+    catch (e: unknown) {
+      toast.error(resolveApiError(e, t('review.request_failed')))
+      return false
+    }
+  }
+
   return {
     branches: readonly(branches),
     loading: readonly(loading),
@@ -147,5 +182,7 @@ export function useBranches() {
     clearBranches,
     mergeBranch,
     rejectBranch,
+    requestChanges,
+    resolveChangeRequest,
   }
 }

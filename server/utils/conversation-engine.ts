@@ -1,3 +1,4 @@
+import { clearBranchRequestSafe } from './branch-requests'
 import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '~~/server/providers/ai'
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
@@ -898,6 +899,34 @@ export async function executeToolWithAutoMerge(
         result = { branches: await engine.listContentBranches() }
         break
 
+      case 'request_changes': {
+        const targetBranch = params.branch as string
+        const comment = typeof params.comment === 'string' ? params.comment.trim() : ''
+        if (!targetBranch?.startsWith('cr/')) {
+          result = { error: agentMessage('branch.contentrain_only_reject') }
+          break
+        }
+        if (!comment) {
+          result = { error: errorMessage('branches.request_comment_required') }
+          break
+        }
+        const request = await useDatabaseProvider().requestBranchChanges({
+          projectId,
+          workspaceId,
+          branch: targetBranch,
+          comment: comment.slice(0, 4000),
+          requestedBy: userId,
+        })
+        affected.branchesChanged = true
+        emitWebhookEvent(projectId, workspaceId, 'branch.changes_requested', {
+          branch: targetBranch,
+          comment: request.comment,
+          source: 'conversation',
+        }).catch(() => {})
+        result = { branch: targetBranch, changesRequested: true, message: agentMessage('branch.changes_requested') }
+        break
+      }
+
       case 'merge_branch': {
         const branchToMerge = params.branch as string
         if (!branchToMerge.startsWith('cr/')) {
@@ -905,6 +934,7 @@ export async function executeToolWithAutoMerge(
           break
         }
         const mergeResult = await engine.mergeBranch(branchToMerge)
+        if (mergeResult.merged) clearBranchRequestSafe(projectId, branchToMerge)
         affected.snapshotChanged = true
         affected.branchesChanged = true
         result = mergeResult
@@ -928,6 +958,7 @@ export async function executeToolWithAutoMerge(
           break
         }
         await engine.rejectBranch(branchToReject)
+        clearBranchRequestSafe(projectId, branchToReject)
         affected.branchesChanged = true
         result = { rejected: true }
 

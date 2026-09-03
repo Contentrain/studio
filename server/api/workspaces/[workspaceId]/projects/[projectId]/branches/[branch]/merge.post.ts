@@ -2,6 +2,8 @@
  * Merge a content branch into the default branch.
  * Requires reviewer, admin, or owner role.
  */
+import { clearBranchRequestSafe } from '~~/server/utils/branch-requests'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -27,6 +29,7 @@ export default defineEventHandler(async (event) => {
 
   const engine = createContentEngine({ git, contentRoot, projectId })
   const mergeResult = await engine.mergeBranch(branch)
+  if (mergeResult.merged) clearBranchRequestSafe(projectId, branch)
 
   // Emit webhook event (fire-and-forget)
   emitWebhookEvent(projectId, workspaceId, 'branch.merged', {

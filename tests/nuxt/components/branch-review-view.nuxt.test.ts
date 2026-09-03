@@ -273,4 +273,28 @@ describe('BranchReviewView', () => {
     expect(wrapper.text()).toContain('Published')
     expect(wrapper.text()).toContain('Draft')
   })
+
+  it('shows a reviewer\'s change request and lets a reviewer send one back', async () => {
+    const wrapper = await mountSuspended(BranchReviewView, {
+      props: {
+        review: makeReview({
+          canRequestChanges: true,
+          changesRequested: { comment: 'Please shorten the intro.', requestedBy: 'user-2', requestedAt: new Date().toISOString() },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Changes requested')
+    expect(wrapper.text()).toContain('Please shorten the intro.')
+
+    await wrapper.findAll('button').find(b => b.text().includes('Request changes'))!.trigger('click')
+    const textarea = wrapper.find('textarea')
+    expect(textarea.exists()).toBe(true)
+    await textarea.setValue('Fix the date too')
+    await wrapper.findAll('button').find(b => b.text().includes('Send back'))!.trigger('click')
+    expect(wrapper.emitted('requestChanges')).toEqual([['Fix the date too']])
+
+    await wrapper.findAll('button').find(b => b.text().includes('Mark addressed'))!.trigger('click')
+    expect(wrapper.emitted('resolveRequest')).toHaveLength(1)
+  })
 })

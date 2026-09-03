@@ -32,6 +32,7 @@ const TOOL_ROLES: Record<string, string[]> = {
   list_branches: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   merge_branch: ['reviewer', 'admin', 'owner'],
   reject_branch: ['reviewer', 'admin', 'owner'],
+  request_changes: ['reviewer', 'admin', 'owner'],
   init_project: ['admin', 'owner'],
   copy_locale: ['editor', 'admin', 'owner'],
   brain_query: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
