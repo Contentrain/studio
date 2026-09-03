@@ -5,7 +5,9 @@ import { createEventStream } from 'h3'
 import { toAITools } from '~~/server/utils/agent-types'
 import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
+import type { MigrationHandoff } from '@contentrain/types'
 import { buildRequestContext } from '~~/server/utils/agent-system-prompt'
+import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/server/utils/migration-handoff'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
@@ -203,6 +205,9 @@ export default defineEventHandler(async (event) => {
       projectStatus: project.status ?? 'active',
       phase,
       contentContext,
+      migrationHandoff: project.migration_handoff
+        ? renderMigrationHandoffForAgent(summarizeMigrationHandoff(project.migration_handoff as unknown as MigrationHandoff))
+        : null,
     }
 
     // Build the system prompt by volatility. Only the static body

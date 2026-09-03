@@ -1,3 +1,5 @@
+import { syncMigrationHandoff } from '~~/server/utils/migration-handoff'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -58,7 +60,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  return db.createProject(session.accessToken, {
+  const project = await db.createProject(session.accessToken, {
     workspace_id: workspaceId,
     repo_full_name: body.repoFullName,
     default_branch: defaultBranch,
@@ -66,4 +68,20 @@ export default defineEventHandler(async (event) => {
     detected_stack: body.detectedStack || null,
     status: body.hasContentrain === false ? 'setup' : 'active',
   })
+
+  // A repository produced by Contentrain Migrate carries `contentrain-handoff.json`;
+  // pick it up now so the overview card and the agent see the migration on the
+  // very first visit. Best-effort — a missing or malformed file never blocks the
+  // connect (the project can re-sync from the overview card).
+  if (installationId && project?.id) {
+    const [owner = '', repo = ''] = body.repoFullName.split('/')
+    syncMigrationHandoff({
+      projectId: project.id as string,
+      git: useGitProvider({ installationId, owner, repo }),
+      contentRoot: normalizeContentRoot(body.contentRoot || '/'),
+      project: { repo_full_name: body.repoFullName, default_branch: defaultBranch },
+    }).catch(() => {})
+  }
+
+  return project
 })

@@ -11,6 +11,7 @@ type ProjectMethods = Pick<
   | 'checkDuplicateProject'
   | 'createProject'
   | 'updateProject'
+  | 'setProjectMigrationHandoff'
   | 'deleteProject'
   | 'getProjectMediaStorageSum'
   | 'listWorkspaceProjects'
@@ -105,6 +106,15 @@ export function projectMethods(): ProjectMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
       return data as unknown as DatabaseRow
+    },
+
+    async setProjectMigrationHandoff(projectId, handoff) {
+      const { error } = await getAdmin()
+        .from('projects')
+        .update({ migration_handoff: handoff, migration_handoff_synced_at: handoff ? new Date().toISOString() : null })
+        .eq('id', projectId)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
     },
 
     async deleteProject(projectId, workspaceId) {
