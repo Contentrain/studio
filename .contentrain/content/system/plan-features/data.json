@@ -469,7 +469,6 @@
     "name": "Submission Notifications",
     "pro_value": "true",
     "requires_ee": "false",
-    "roadmap": "true",
     "sort_order": 7,
     "starter_value": "true",
     "type": "feature"

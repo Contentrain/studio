@@ -15,7 +15,9 @@ type FormMethods = Pick<
   | 'deleteFormSubmission'
   | 'bulkUpdateSubmissions'
   | 'countMonthlySubmissions'
+  | 'countMonthlySubmissionsForModel'
   | 'createFormSubmissionIfAllowed'
+  | 'listWorkspaceNotificationRecipients'
 >
 
 export function formMethods(): FormMethods {
@@ -181,6 +183,61 @@ export function formMethods(): FormMethods {
       }
       catch {
         return 0
+      }
+    },
+
+    async countMonthlySubmissionsForModel(workspaceId, projectId, modelId) {
+      const now = new Date()
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+
+      try {
+        const row = await getAdmin()
+          .selectFrom('form_submissions')
+          .select(eb => eb.fn.countAll().as('count'))
+          .where('workspace_id', '=', workspaceId)
+          .where('project_id', '=', projectId)
+          .where('model_id', '=', modelId)
+          .where('created_at', '>=', monthStart.toISOString())
+          .executeTakeFirst()
+
+        return Number(row?.count ?? 0)
+      }
+      catch {
+        return 0
+      }
+    },
+
+    async listWorkspaceNotificationRecipients(workspaceId) {
+      try {
+        const db = getAdmin()
+        const [workspace, members] = await Promise.all([
+          db.selectFrom('workspaces').select('owner_id').where('id', '=', workspaceId).executeTakeFirst(),
+          db.selectFrom('workspace_members')
+            .select(['user_id', 'accepted_at'])
+            .where('workspace_id', '=', workspaceId)
+            .where('role', 'in', ['owner', 'admin'])
+            .execute(),
+        ])
+
+        const userIds = new Set<string>()
+        if (workspace?.owner_id) userIds.add(workspace.owner_id as string)
+        for (const m of members) {
+          if (m.user_id && m.accepted_at) userIds.add(m.user_id)
+        }
+        if (userIds.size === 0) return []
+
+        const profiles = await db
+          .selectFrom('profiles')
+          .select(['id', 'email'])
+          .where('id', 'in', [...userIds])
+          .execute()
+
+        return profiles
+          .filter(p => typeof p.email === 'string' && p.email.includes('@'))
+          .map(p => ({ userId: p.id, email: p.email as string }))
+      }
+      catch {
+        return []
       }
     },
 

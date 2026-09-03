@@ -574,6 +574,8 @@ export interface DatabaseProvider {
     modelId?: string
   }) => Promise<number>
   countMonthlySubmissions: (workspaceId: string) => Promise<number>
+  /** This calendar month's submissions for one form model (per-model `limits.maxPerMonth`). */
+  countMonthlySubmissionsForModel: (workspaceId: string, projectId: string, modelId: string) => Promise<number>
 
   /** Atomic: check monthly limit + insert submission. Prevents race conditions. */
   createFormSubmissionIfAllowed: (
@@ -581,6 +583,13 @@ export interface DatabaseProvider {
     monthlyLimit: number,
     submission: FormSubmissionInput,
   ) => Promise<{ allowed: boolean, currentCount: number, submission?: DatabaseRow }>
+
+  /**
+   * Who gets operational notifications for a workspace: the owner plus every
+   * accepted admin, with their profile emails. Admin-level read — used by
+   * public endpoints (form submit) that have no session.
+   */
+  listWorkspaceNotificationRecipients: (workspaceId: string) => Promise<Array<{ userId: string, email: string }>>
 
   // ═══════════════════════════════════════════════════
   // COMMENTS

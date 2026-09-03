@@ -58,5 +58,11 @@
     "name": "Webhook Delivery Failed",
     "slug": "webhook-dlq-alert",
     "subject": "Webhook delivery failed: {webhookName} — {workspaceName}"
+  },
+  "form-submitted": {
+    "body": "<p>Hi,</p><p>A new submission arrived on the <strong>{modelName}</strong> form of <strong>{projectName}</strong> ({workspaceName}).</p>{summaryHtml}<p><a href=\"{submissionsUrl}\">Review submissions</a></p>",
+    "name": "Form — New Submission",
+    "slug": "form-submitted",
+    "subject": "New {modelName} submission on {projectName}"
   }
 }

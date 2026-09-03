@@ -8,7 +8,7 @@
  * GET /api/forms/v1/{projectId}/{modelId}/config
  */
 
-import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
+import { getFormConfig, getClientIp, countFormEnabledModels, resolveProjectDefaultLocale } from '~~/server/utils/form-types'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -101,10 +101,16 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const captchaActive = formConfig.captcha === 'turnstile' && hasFeature(plan, 'forms.captcha')
+  const runtime = useRuntimeConfig()
+
   return {
     modelId,
     fields: publicFields,
-    captcha: formConfig.captcha ?? null,
+    locale: resolveProjectDefaultLocale(brain),
+    captcha: captchaActive ? 'turnstile' : null,
+    /** Widget key for the embedding page (NUXT_PUBLIC_TURNSTILE_SITE_KEY); null until the operator sets it. */
+    captchaSiteKey: captchaActive ? (runtime.public.turnstileSiteKey || null) : null,
     successMessage: formConfig.successMessage ?? errorMessage('forms.default_success'),
     honeypotField: formConfig.honeypot ? '_hp' : null,
   }
