@@ -330,6 +330,48 @@ export interface FormSubmissionsTable {
   created_at: Generated<string>
 }
 
+export interface CommentsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  model_id: string
+  entry_id: string
+  locale: Generated<string>
+  parent_id: string | null
+  /** Filled by the BEFORE INSERT trigger — never supplied by the app. */
+  root_id: Generated<string>
+  depth: Generated<number>
+  author_name: string
+  author_email: string | null
+  author_url: string | null
+  author_user_id: string | null
+  body: string
+  status: Generated<string>
+  type: Generated<string>
+  source: Generated<string>
+  source_id: string | null
+  source_parent_id: string | null
+  source_ip: string | null
+  user_agent: string | null
+  referrer: string | null
+  moderated_at: string | null
+  moderated_by: string | null
+  created_at: Generated<string>
+  updated_at: Generated<string>
+}
+
+export interface CommentThreadsTable {
+  project_id: string
+  workspace_id: string
+  model_id: string
+  entry_id: string
+  locale: Generated<string>
+  closed_at: string | null
+  closed_by: string | null
+  created_at: Generated<string>
+  updated_at: Generated<string>
+}
+
 export interface ConversationApiKeysTable {
   id: Generated<string>
   project_id: string
@@ -513,6 +555,8 @@ export interface StudioDatabase {
   'mcp_oauth_usage': McpOauthUsageTable
   'media_usage': MediaUsageTable
   'form_submissions': FormSubmissionsTable
+  'comments': CommentsTable
+  'comment_threads': CommentThreadsTable
   'conversation_api_keys': ConversationApiKeysTable
   'webhook_deliveries': WebhookDeliveriesTable
   'usage_events_outbox': UsageEventsOutboxTable

@@ -43,6 +43,62 @@ export interface FormSubmissionInput {
   locale?: string
 }
 
+export type CommentStatus = 'pending' | 'approved' | 'spam' | 'rejected'
+export type CommentType = 'comment' | 'pingback' | 'trackback'
+export type CommentSource = 'web' | 'import' | 'studio'
+
+export interface CommentInput {
+  project_id: string
+  workspace_id: string
+  model_id: string
+  entry_id: string
+  locale?: string
+  parent_id?: string | null
+  author_name: string
+  author_email?: string | null
+  author_url?: string | null
+  /** Set for moderator replies written from Studio. */
+  author_user_id?: string | null
+  body: string
+  status?: CommentStatus
+  source?: CommentSource
+  source_ip?: string
+  user_agent?: string
+  referrer?: string
+}
+
+/** One comment of a WordPress import, already mapped to its entry by the caller. */
+export interface CommentImportRow {
+  source_id: string
+  source_parent_id: string | null
+  model_id: string
+  entry_id: string
+  locale: string
+  author_name: string
+  author_email: string | null
+  author_url: string | null
+  body: string
+  status: CommentStatus
+  type: CommentType
+  /** ISO 8601 UTC — the source's timestamp, preserved. */
+  created_at: string
+}
+
+export interface CommentThreadKey {
+  model_id: string
+  entry_id: string
+  locale: string
+}
+
+export interface CommentImportResult {
+  inserted: number
+  skippedExisting: number
+  orphanCount: number
+  orphanParents: Array<{ source_id: string, source_parent_id: string }>
+  maxDepth: number
+  threadsClosed: number
+}
+
 export interface PaginationOptions {
   page?: number
   limit?: number
@@ -525,6 +581,60 @@ export interface DatabaseProvider {
     monthlyLimit: number,
     submission: FormSubmissionInput,
   ) => Promise<{ allowed: boolean, currentCount: number, submission?: DatabaseRow }>
+
+  // ═══════════════════════════════════════════════════
+  // COMMENTS
+  // ═══════════════════════════════════════════════════
+
+  /** Direct insert — moderator replies from Studio; chain integrity is enforced by the DB trigger. */
+  createComment: (comment: CommentInput) => Promise<DatabaseRow>
+  /**
+   * Atomic public submit: thread-closed + parent + depth + monthly quota
+   * checks and the insert under one per-workspace lock.
+   */
+  createCommentIfAllowed: (
+    workspaceId: string,
+    monthlyLimit: number,
+    comment: CommentInput & { max_depth: number },
+  ) => Promise<{
+    allowed: boolean
+    reason?: 'thread_closed' | 'parent_not_found' | 'depth_exceeded' | 'monthly_limit'
+    currentCount?: number
+    comment?: DatabaseRow
+  }>
+  /**
+   * Public read: a page of approved root comments for one entry plus every
+   * approved reply under those roots. Tree assembly is the caller's job.
+   */
+  listPublicComments: (projectId: string, key: CommentThreadKey, options?: PaginationOptions & {
+    sort?: 'newest' | 'oldest'
+  }) => Promise<{ roots: DatabaseRow[], replies: DatabaseRow[], total: number }>
+  /** Moderation listing across a project (optionally one model / entry). */
+  listComments: (workspaceId: string, projectId: string, options?: PaginationOptions & {
+    modelId?: string
+    entryId?: string
+    locale?: string
+    status?: string
+    sort?: 'newest' | 'oldest'
+  }) => Promise<{ comments: DatabaseRow[], total: number }>
+  getComment: (commentId: string) => Promise<DatabaseRow | null>
+  updateCommentStatus: (commentId: string, status: CommentStatus, moderatedBy?: string) => Promise<DatabaseRow>
+  deleteComment: (commentId: string) => Promise<void>
+  bulkUpdateComments: (commentIds: string[], status: CommentStatus, moderatedBy?: string, scope?: {
+    workspaceId?: string
+    projectId?: string
+  }) => Promise<number>
+  /** Public (`source = 'web'`) comments this calendar month — the quota meter. */
+  countMonthlyComments: (workspaceId: string) => Promise<number>
+  /** Pending/approved/spam/rejected counts for a project (optionally one model). */
+  countCommentsByStatus: (projectId: string, modelId?: string) => Promise<Record<CommentStatus, number>>
+  /** WordPress import — one transaction, idempotent on source id; see `import_comments`. */
+  importComments: (projectId: string, workspaceId: string, payload: {
+    comments: CommentImportRow[]
+    threads_closed: CommentThreadKey[]
+  }) => Promise<CommentImportResult>
+  getCommentThread: (projectId: string, key: CommentThreadKey) => Promise<DatabaseRow | null>
+  setCommentThreadClosed: (projectId: string, workspaceId: string, key: CommentThreadKey, closed: boolean, userId?: string) => Promise<DatabaseRow>
 
   // ═══════════════════════════════════════════════════
   // WEBHOOKS

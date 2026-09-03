@@ -249,6 +249,7 @@ The `ee/` boundary rules are enforced in code and contributor guidance; internal
 - Owner + Editor roles
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
+- Comments v1 (Studio DB, never Git): public read/submit under `/api/comments/v1`, moderation + moderator replies, WordPress import (`contentrain-comments@1`); model-level `comments` config on the model definition like `form`
 
 ## Planning Docs
 

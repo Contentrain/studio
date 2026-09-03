@@ -804,6 +804,96 @@ export async function executeToolWithAutoMerge(
         break
       }
 
+      // ─── Comments (Studio DB — no Git write, no snapshot change) ───
+
+      case 'list_comments': {
+        if (!hasFeature(plan, 'comments.enabled')) {
+          result = { error: errorMessage('comments.upgrade') }
+          break
+        }
+        const cStatus = typeof params.status === 'string' && params.status ? params.status : 'pending'
+        const cLimit = Math.min(Number(params.limit ?? 20), 100)
+        const listing = await useDatabaseProvider().listComments(workspaceId, projectId, {
+          status: cStatus,
+          modelId: typeof params.modelId === 'string' && params.modelId ? params.modelId : undefined,
+          entryId: typeof params.entryId === 'string' && params.entryId ? params.entryId : undefined,
+          limit: cLimit,
+        })
+        // Strip the client fingerprint — the agent needs author + body, not IPs.
+        const comments = listing.comments.map(({ source_ip: _ip, user_agent: _ua, referrer: _ref, ...rest }) => rest)
+        result = listing.total > 0
+          ? { comments, total: listing.total, message: agentMessage('comments.comment_list', { count: listing.total, status: cStatus }) }
+          : { comments: [], total: 0, message: agentMessage('comments.no_comments') }
+        break
+      }
+
+      case 'approve_comment':
+      case 'reject_comment': {
+        if (!hasFeature(plan, 'comments.enabled')) {
+          result = { error: errorMessage('comments.upgrade') }
+          break
+        }
+        const dbp = useDatabaseProvider()
+        const commentId = params.commentId as string
+        const existing = await dbp.getComment(commentId)
+        if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId) {
+          result = { error: errorMessage('comments.comment_not_found') }
+          break
+        }
+        const nextStatus = name === 'approve_comment' ? 'approved' : (params.spam === true ? 'spam' : 'rejected')
+        const updated = await dbp.updateCommentStatus(commentId, nextStatus, userId)
+        if (nextStatus === 'approved' && existing.status !== 'approved' && hasFeature(plan, 'comments.webhook_notification')) {
+          emitWebhookEvent(projectId, workspaceId, 'comment.approved', {
+            commentId,
+            modelId: updated.model_id,
+            entryId: updated.entry_id,
+            locale: updated.locale,
+            source: 'conversation',
+          }).catch(() => {})
+        }
+        const messageKey = nextStatus === 'approved' ? 'comments.approved' : nextStatus === 'spam' ? 'comments.spam' : 'comments.rejected'
+        result = { comment: updated, message: agentMessage(messageKey) }
+        break
+      }
+
+      case 'reply_comment': {
+        if (!hasFeature(plan, 'comments.enabled')) {
+          result = { error: errorMessage('comments.upgrade') }
+          break
+        }
+        const dbp = useDatabaseProvider()
+        const parentId = params.commentId as string
+        const replyText = typeof params.body === 'string' ? params.body.trim() : ''
+        if (!replyText) {
+          result = { error: errorMessage('comments.reply_body_required') }
+          break
+        }
+        const parent = await dbp.getComment(parentId)
+        if (!parent || parent.workspace_id !== workspaceId || parent.project_id !== projectId) {
+          result = { error: errorMessage('comments.comment_not_found') }
+          break
+        }
+        if (parent.status !== 'approved')
+          await dbp.updateCommentStatus(parentId, 'approved', userId)
+        const { sanitizeString } = await import('./sanitize-input')
+        const reply = await dbp.createComment({
+          project_id: projectId,
+          workspace_id: workspaceId,
+          model_id: parent.model_id as string,
+          entry_id: parent.entry_id as string,
+          locale: parent.locale as string,
+          parent_id: parentId,
+          author_name: (userEmail.split('@')[0] || 'Moderator').slice(0, 120),
+          author_email: userEmail || null,
+          author_user_id: userId,
+          body: sanitizeString(replyText).slice(0, 20000),
+          status: 'approved',
+          source: 'studio',
+        })
+        result = { comment: reply, message: agentMessage('comments.replied') }
+        break
+      }
+
       case 'list_branches':
         result = { branches: await engine.listContentBranches() }
         break

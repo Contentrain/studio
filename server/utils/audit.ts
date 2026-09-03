@@ -44,6 +44,14 @@ const AUDITABLE_ROUTES: AuditableRoute[] = [
     extractIds: m => ({ workspaceId: m[1]!, recordId: m[4]! }),
     snapshot: (db, ids) => db.getFormSubmission(ids.recordId),
   },
+  // Comment (visitor PII: name, email, IP)
+  {
+    pattern: /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/comments\/([^/]+)$/,
+    entity: 'comment',
+    action: 'delete_comment',
+    extractIds: m => ({ workspaceId: m[1]!, recordId: m[3]! }),
+    snapshot: (db, ids) => db.getComment(ids.recordId),
+  },
   // Media asset
   {
     pattern: /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/media\/([^/]+)$/,

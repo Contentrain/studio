@@ -52,6 +52,10 @@ const TOOL_ROLES: Record<string, string[]> = {
   list_submissions: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   approve_submission: ['reviewer', 'admin', 'owner'],
   reject_submission: ['reviewer', 'admin', 'owner'],
+  list_comments: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
+  approve_comment: ['reviewer', 'admin', 'owner'],
+  reject_comment: ['reviewer', 'admin', 'owner'],
+  reply_comment: ['reviewer', 'admin', 'owner'],
 }
 
 export async function resolveAgentPermissions(

@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { assertDbReachable, executeSql, queryAsUserJson, resetDatabase } from './helpers'
+import { assertDbReachable, executeSql, queryAsUserJson, queryJson, resetDatabase } from './helpers'
 
 const ids = {
   owner: '00000000-0000-0000-0000-000000000001',
@@ -10,6 +10,8 @@ const ids = {
   projectHidden: '20000000-0000-0000-0000-000000000002',
   conversationOwner: '30000000-0000-0000-0000-000000000001',
   conversationMember: '30000000-0000-0000-0000-000000000002',
+  commentAssigned: '40000000-0000-0000-0000-000000000001',
+  commentHidden: '40000000-0000-0000-0000-000000000002',
 }
 
 beforeAll(() => {
@@ -84,6 +86,44 @@ describe('rls contracts (request.jwt.claim.sub GUC — Supabase local + plain PG
     ])
     expect(outsiderMessages).toEqual([])
   })
+
+  it('lets workspace members read comments and comment threads, keeps outsiders out, and reserves moderation for owner/admin', () => {
+    const memberComments = queryAsUserJson<{ id: string }>(ids.member, `
+      select id
+      from public.comments
+      order by id
+    `)
+    const memberThreads = queryAsUserJson<{ entry_id: string }>(ids.member, `
+      select entry_id
+      from public.comment_threads
+      order by entry_id
+    `)
+    const outsiderComments = queryAsUserJson<{ id: string }>(ids.outsider, `
+      select id
+      from public.comments
+      order by id
+    `)
+    // UPDATE is policy-filtered to owner/admin: a plain member's update touches zero rows.
+    executeSql(`
+begin;
+set local role authenticated;
+set local "request.jwt.claim.role" = 'authenticated';
+set local "request.jwt.claim.sub" = '${ids.member}';
+update public.comments set status = 'approved' where id = '${ids.commentAssigned}';
+commit;
+`)
+    const afterMemberUpdate = queryJson<{ status: string }>(`
+      select status from public.comments where id = '${ids.commentAssigned}'
+    `)
+
+    expect(memberComments).toEqual([
+      { id: ids.commentAssigned },
+      { id: ids.commentHidden },
+    ])
+    expect(memberThreads).toEqual([{ entry_id: 'entry-1' }])
+    expect(outsiderComments).toEqual([])
+    expect(afterMemberUpdate).toEqual([{ status: 'pending' }])
+  })
 })
 
 function seedFixtures() {
@@ -125,5 +165,12 @@ insert into public.conversations (id, project_id, user_id, title) values
 insert into public.messages (conversation_id, role, content) values
   ('${ids.conversationOwner}', 'user', 'owner message'),
   ('${ids.conversationMember}', 'user', 'member message');
+
+insert into public.comments (id, project_id, workspace_id, model_id, entry_id, author_name, body, status) values
+  ('${ids.commentAssigned}', '${ids.projectAssigned}', '${ids.workspace}', 'posts', 'entry-1', 'Ada', 'assigned comment', 'pending'),
+  ('${ids.commentHidden}', '${ids.projectHidden}', '${ids.workspace}', 'posts', 'entry-2', 'Bob', 'hidden comment', 'approved');
+
+insert into public.comment_threads (project_id, workspace_id, model_id, entry_id, closed_at) values
+  ('${ids.projectAssigned}', '${ids.workspace}', 'posts', 'entry-1', now());
 `)
 }

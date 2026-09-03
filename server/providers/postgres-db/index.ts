@@ -15,6 +15,7 @@
 import type { DatabaseProvider } from '../database'
 import { auditMethods } from './audit'
 import { cdnMethods } from './cdn'
+import { commentMethods } from './comments'
 import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
 import { mcpCloudMethods } from './mcp-cloud'
@@ -47,6 +48,7 @@ export function createPostgresDatabaseProvider(): DatabaseProvider {
     ...mcpCloudMethods(),
     ...mediaMethods(),
     ...formMethods(),
+    ...commentMethods(),
     ...webhookMethods(),
     ...paymentAccountMethods(),
   }

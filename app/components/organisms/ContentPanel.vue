@@ -80,7 +80,23 @@ const isCollection = computed(() => {
   return activeModel.value.kind === 'collection' || activeModel.value.type === 'collection'
 })
 
-const modelSubTab = ref<'content' | 'submissions' | 'form'>('content')
+// Comments config lives next to `form` on the raw model definition
+const isCommentsEnabled = computed(() => {
+  if (!props.activeModelId) return false
+  const rawModel = brain.models.value.find(m => m.id === props.activeModelId)
+  if (!rawModel) return false
+  const comments = (rawModel as unknown as { comments?: { enabled?: boolean } }).comments
+  return comments?.enabled === true
+})
+
+// Collections and documents carry entries, so they can carry threads
+const supportsComments = computed(() => {
+  if (!activeModel.value) return false
+  const kind = activeModel.value.kind ?? activeModel.value.type
+  return kind === 'collection' || kind === 'document'
+})
+
+const modelSubTab = ref<'content' | 'submissions' | 'form' | 'comments' | 'comment-settings'>('content')
 
 // Reset sub-tab when model changes
 watch(() => props.activeModelId, () => {
@@ -512,12 +528,14 @@ provide(sendChatPromptKey, sendChatPrompt)
       <template v-else-if="panelState === 'model'">
         <!-- Tab switcher: Content + Form (collections) + Submissions (form enabled) -->
         <AtomsTabBar
-          v-if="isCollection"
+          v-if="isCollection || supportsComments"
           v-model="modelSubTab"
           :tabs="[
             { value: 'content', label: t('forms.tab_content') },
             ...(isFormEnabled ? [{ value: 'submissions' as const, label: t('forms.tab_submissions') }] : []),
-            { value: 'form', label: t('forms.tab_form_settings') },
+            ...(isCollection ? [{ value: 'form' as const, label: t('forms.tab_form_settings') }] : []),
+            ...(isCommentsEnabled ? [{ value: 'comments' as const, label: t('comments.tab_comments') }] : []),
+            ...(supportsComments ? [{ value: 'comment-settings' as const, label: t('comments.tab_settings') }] : []),
           ]"
         />
 
@@ -533,6 +551,24 @@ provide(sendChatPromptKey, sendChatPrompt)
         <!-- Form settings tab -->
         <OrganismsFormConfigSection
           v-else-if="modelSubTab === 'form' && workspaceId && projectId && activeModelId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          :model-id="activeModelId"
+          :editable="editable"
+        />
+
+        <!-- Comments moderation tab -->
+        <OrganismsCommentModerationView
+          v-else-if="isCommentsEnabled && modelSubTab === 'comments' && workspaceId && projectId && activeModelId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+          :model-id="activeModelId"
+          :editable="editable"
+        />
+
+        <!-- Comment settings tab -->
+        <OrganismsCommentsConfigSection
+          v-else-if="modelSubTab === 'comment-settings' && workspaceId && projectId && activeModelId"
           :workspace-id="workspaceId"
           :project-id="projectId"
           :model-id="activeModelId"

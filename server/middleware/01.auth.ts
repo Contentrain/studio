@@ -34,6 +34,7 @@ const PUBLIC_PATHS = [
   // are intentionally not listed.
   '/api/mcp/', // MCP Cloud — Bearer `mcp_cloud_keys`
   '/api/forms/', // public form submit/config — Turnstile captcha + rate limit + CORS
+  '/api/comments/', // public comment read/submit — Turnstile captcha + rate limit + CORS
   '/api/conversation/', // Conversation API — Bearer conversation keys (ee)
   '/api/media/', // Media management API — Bearer CDN key (media:* scope)
 ]
