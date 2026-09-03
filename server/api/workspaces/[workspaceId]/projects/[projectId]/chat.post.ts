@@ -184,10 +184,17 @@ export default defineEventHandler(async (event) => {
     const contentContext = brain.contentContext
 
     // === STATE MACHINE ===
-    let pendingBranches: Array<{ name: string, sha: string, protected: boolean }> = []
+    let pendingBranches: Array<{ name: string, sha: string, protected: boolean, changesRequested?: string }> = []
     try {
       const raw = await git.listBranches('cr/')
       pendingBranches = raw.map(b => ({ name: b.name, sha: b.sha, protected: b.protected ?? false }))
+      if (pendingBranches.length > 0) {
+        // A reviewer's open "changes requested" note rides along so the agent
+        // knows why a branch is still pending and what to fix.
+        const requests = await db.listBranchChangeRequests(projectId).catch(() => [])
+        const byBranch = new Map(requests.map(r => [String(r.branch), String(r.comment)]))
+        pendingBranches = pendingBranches.map(b => byBranch.has(b.name) ? { ...b, changesRequested: byBranch.get(b.name) } : b)
+      }
     }
     catch { /* no branches */ }
 

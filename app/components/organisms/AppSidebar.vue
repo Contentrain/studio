@@ -17,9 +17,10 @@ const { isOwnerOrAdmin } = useWorkspaceRole()
  * it. `cr/content/plans/en/1755612345-a3f2` told an editor nothing; the model
  * name, locale and age come resolved from the branches endpoint.
  */
-function branchLabel(branch: { modelName: string | null, scope: string, locale: string | null }): string {
+function branchLabel(branch: { modelName: string | null, scope: string, locale: string | null, changesRequested?: boolean }): string {
   const base = branch.modelName ?? t(`review.scope_${branch.scope || 'other'}`)
-  return branch.locale ? `${base} · ${branch.locale.toUpperCase()}` : base
+  const label = branch.locale ? `${base} · ${branch.locale.toUpperCase()}` : base
+  return branch.changesRequested ? `${label} · ${t('branch.changes_requested_badge')}` : label
 }
 
 // CDN delivery + the asset library are ee/plan features (`requires_ee`

@@ -7,6 +7,7 @@
   "analyze.seo_missing_field": "Missing {field}",
   "analyze.seo_title_long": "Title too long ({length} chars, max {max})",
   "analyze.seo_title_short": "Title too short ({length} chars, min {min})",
+  "branch.changes_requested": "Changes requested on the branch; the author sees the comment in the review panel.",
   "branch.contentrain_only_merge": "Only contentrain/ branches can be merged",
   "branch.contentrain_only_reject": "Only contentrain/ branches can be rejected",
   "branch.merged": "Branch merged successfully. Content changes are now live.",
