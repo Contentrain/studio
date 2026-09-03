@@ -233,6 +233,7 @@ Release-facing setup and deployment docs:
 - [Forms](docs/FORMS.md)
 - [Comments](docs/COMMENTS.md)
 - [Migration Handoff](docs/MIGRATION_HANDOFF.md)
+- [Media Ingest](docs/MEDIA_INGEST.md)
 - [Releasing Guide](docs/RELEASING.md)
 - [Repository Hygiene](docs/REPOSITORY-HYGIENE.md)
 - [Contributing Guide](CONTRIBUTING.md)
