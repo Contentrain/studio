@@ -159,6 +159,14 @@ onUnmounted(() => {
         />
       </div>
 
+      <!-- Import from URLs (migration: move images off the old host) -->
+      <MoleculesAssetUrlImport
+        v-if="editable"
+        :workspace-id="workspaceId"
+        :project-id="projectId"
+        @imported="fetchAssets(workspaceId, projectId)"
+      />
+
       <!-- Loading -->
       <div v-if="loading" class="grid grid-cols-2 gap-2 p-4">
         <AtomsSkeleton v-for="i in 6" :key="i" variant="custom" class="aspect-square w-full rounded-lg" />
