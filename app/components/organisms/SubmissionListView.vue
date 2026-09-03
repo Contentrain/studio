@@ -25,9 +25,13 @@ const emit = defineEmits<{
   select: [submission: FormSubmission]
 }>()
 
+const toast = useToast()
+
 // --- State ---
 const submissions = ref<FormSubmission[]>([])
 const loading = ref(false)
+const detail = ref<FormSubmission | null>(null)
+const detailOpen = ref(false)
 const activeFilter = ref<'all' | 'pending' | 'approved' | 'rejected' | 'spam'>('all')
 
 const statusFilters = computed(() => [
@@ -112,27 +116,44 @@ async function fetchSubmissions() {
 }
 
 // --- Actions ---
-async function handleApprove(id: string) {
+const base = () => `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions`
+
+async function act(run: () => Promise<unknown>, successKey: string) {
   try {
-    await $fetch(
-      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions/${id}`,
-      { method: 'PATCH', body: { status: 'approved' } },
-    )
+    await run()
+    toast.success(t(successKey))
     await fetchSubmissions()
   }
-  catch { /* fetch error bubbles to Vue error handler */ }
+  catch {
+    toast.error(t('forms.action_failed'))
+  }
 }
 
-async function handleReject(id: string) {
-  try {
-    await $fetch(
-      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions/${id}`,
-      { method: 'PATCH', body: { status: 'rejected' } },
-    )
-    await fetchSubmissions()
-  }
-  catch { /* fetch error bubbles to Vue error handler */ }
+function handleApprove(id: string) {
+  return act(() => $fetch(`${base()}/${id}`, { method: 'PATCH', body: { status: 'approved' } }), 'forms.approved_toast')
 }
+
+function handleReject(id: string) {
+  return act(() => $fetch(`${base()}/${id}`, { method: 'PATCH', body: { status: 'rejected' } }), 'forms.rejected_toast')
+}
+
+async function handleDelete(id: string) {
+  await act(() => $fetch(`${base()}/${id}`, { method: 'DELETE' }), 'forms.deleted_toast')
+  if (detail.value?.id === id) detailOpen.value = false
+}
+
+function openDetail(submission: FormSubmission) {
+  detail.value = submission
+  detailOpen.value = true
+  emit('select', submission)
+}
+
+// Keep the modal's row in step with the list after an action refetches it
+watch(submissions, (list) => {
+  if (!detail.value) return
+  const fresh = list.find(s => s.id === detail.value!.id)
+  if (fresh) detail.value = fresh
+})
 
 onMounted(() => {
   fetchSubmissions()
@@ -188,8 +209,8 @@ onMounted(() => {
           class="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary-50 dark:hover:bg-secondary-900/50"
           role="button"
           tabindex="0"
-          @click="emit('select', submission)"
-          @keydown.enter="emit('select', submission)"
+          @click="openDetail(submission)"
+          @keydown.enter="openDetail(submission)"
         >
           <!-- Left: title + subtitle -->
           <div class="min-w-0 flex-1">
@@ -233,6 +254,15 @@ onMounted(() => {
           </div>
         </div>
       </div>
+
+      <OrganismsSubmissionDetailModal
+        v-model:open="detailOpen"
+        :submission="detail"
+        :editable="editable"
+        @approve="handleApprove"
+        @reject="handleReject"
+        @delete="handleDelete"
+      />
 
       <!-- Footer count -->
       <div v-if="submissions.length > 0" class="border-t border-secondary-100 px-4 py-2 dark:border-secondary-800">

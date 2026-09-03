@@ -16,6 +16,8 @@ export interface FormConfig {
   successMessage?: string
   limits?: { rateLimitPerIp?: number, maxPerMonth?: number }
   autoApprove?: boolean
+  /** Email the workspace owner/admins on every submission (default true; needs `forms.notifications`). */
+  notifications?: boolean
 }
 
 /**
@@ -39,6 +41,77 @@ export function getClientIp(event: H3Event): string {
   return getHeader(event, 'x-real-ip')
     ?? getHeader(event, 'cf-connecting-ip')
     ?? 'unknown'
+}
+
+/**
+ * The project's default locale from `.contentrain/config.json` — the locale a
+ * form submission is validated against and, on approve, written to.
+ */
+export function resolveProjectDefaultLocale(brain: { config?: { locales?: { default?: string } } | null } | null | undefined): string {
+  const value = brain?.config?.locales?.default
+  return typeof value === 'string' && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value) ? value : 'en'
+}
+
+/** Short, escaped field summary for a notification email (first few string values). */
+export function summarizeSubmissionData(data: Record<string, unknown>, max = 6): Array<{ field: string, value: string }> {
+  const rows: Array<{ field: string, value: string }> = []
+  for (const [field, raw] of Object.entries(data)) {
+    if (rows.length >= max) break
+    let value: string
+    if (raw === null || raw === undefined || raw === '') continue
+    else if (typeof raw === 'string') value = raw
+    else if (typeof raw === 'number' || typeof raw === 'boolean') value = String(raw)
+    else value = JSON.stringify(raw)
+    value = value.replace(/\s+/g, ' ').trim()
+    if (value.length > 160) value = `${value.slice(0, 160)}…`
+    rows.push({ field, value })
+  }
+  return rows
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/**
+ * Email the workspace owner + admins about a new submission. Best-effort and
+ * fire-and-forget: a mail failure never affects the public submit response.
+ * Gated by the `forms.notifications` plan feature and the model's
+ * `form.notifications` flag (default on) by the caller.
+ */
+export async function notifyFormSubmission(input: {
+  workspaceId: string
+  workspaceName: string
+  workspaceSlug: string
+  projectId: string
+  projectName: string
+  modelId: string
+  modelName: string
+  data: Record<string, unknown>
+}): Promise<void> {
+  const email = useEmailProvider()
+  if (!email) return
+
+  const db = useDatabaseProvider()
+  const recipients = await db.listWorkspaceNotificationRecipients(input.workspaceId)
+  if (recipients.length === 0) return
+
+  const config = useRuntimeConfig()
+  const submissionsUrl = `${config.public.siteUrl}/w/${input.workspaceSlug}/projects/${input.projectId}`
+  const rows = summarizeSubmissionData(input.data)
+  const summaryHtml = rows.length > 0
+    ? `<table>${rows.map(r => `<tr><td><strong>${escapeHtml(r.field)}</strong></td><td>${escapeHtml(r.value)}</td></tr>`).join('')}</table>`
+    : ''
+
+  const tpl = emailTemplate('form-submitted', {
+    workspaceName: input.workspaceName,
+    projectName: input.projectName,
+    modelName: input.modelName,
+    summaryHtml,
+    submissionsUrl,
+  })
+
+  await Promise.all(recipients.map(r => email.sendEmail({ to: r.email, subject: tpl.subject, html: tpl.body }).catch(() => {})))
 }
 
 /**
@@ -81,9 +154,12 @@ export async function approveSubmissionAsContent(
   const entryId = generateEntryId()
   const entryData = { [entryId]: data }
 
+  // The submission carries the locale it was validated against (the project
+  // default at submit time); a legacy row without one falls back to `en`.
+  const locale = typeof submission.locale === 'string' && submission.locale ? submission.locale : 'en'
   const writeResult = await engine.saveContent(
     modelId,
-    'en',
+    locale,
     entryData,
     'form-submission@contentrain.io',
     { autoPublish: false },

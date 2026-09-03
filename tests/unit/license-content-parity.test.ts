@@ -105,7 +105,6 @@ const ROADMAP_FEATURES = [
   'cdn.custom_domain',
   'cdn.preview_branch',
   'forms.file_upload',
-  'forms.notifications',
   'forms.spam_filter',
   'sso.saml',
   'sso.oidc',

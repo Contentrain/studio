@@ -10,7 +10,7 @@
  * POST /api/forms/v1/{projectId}/{modelId}/submit
  */
 
-import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
+import { getFormConfig, getClientIp, countFormEnabledModels, notifyFormSubmission, resolveProjectDefaultLocale } from '~~/server/utils/form-types'
 import { sanitizeData } from '~~/server/utils/sanitize-input'
 import { verifyTurnstileToken } from '~~/server/utils/turnstile'
 import { getEffectiveLimit } from '~~/server/utils/overage'
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id, overage_settings')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, name, slug, plan, github_installation_id, overage_settings')
 
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
@@ -150,8 +150,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Validate using content validation (exposed fields only)
-  const validation = validateContent(filteredData, exposedFields, modelId, 'en')
+  // Validate against the project's default locale — the locale an approved
+  // submission is written to, so validation and the eventual write agree.
+  const locale = resolveProjectDefaultLocale(brain)
+  const validation = validateContent(filteredData, exposedFields, modelId, locale)
   if (!validation.valid) {
     return {
       success: false,
@@ -173,6 +175,14 @@ export default defineEventHandler(async (event) => {
   const overageSettings = workspace.overage_settings as Record<string, boolean> | null
   const monthlyLimit = getEffectiveLimit(basePlanLimit, 'forms.submissions_per_month', overageSettings)
 
+  // Per-model cap from the form config (below the workspace plan limit).
+  const modelCap = formConfig.limits?.maxPerMonth
+  if (typeof modelCap === 'number' && modelCap > 0) {
+    const used = await db.countMonthlySubmissionsForModel(workspace.id as string, projectId, modelId)
+    if (used >= modelCap)
+      throw createError({ statusCode: 429, message: errorMessage('forms.model_monthly_limit') })
+  }
+
   const { allowed, submission } = await db.createFormSubmissionIfAllowed(
     workspace.id as string,
     monthlyLimit,
@@ -184,6 +194,7 @@ export default defineEventHandler(async (event) => {
       source_ip: ip !== 'unknown' ? ip : undefined,
       user_agent: userAgent ?? undefined,
       referrer: referrer ?? undefined,
+      locale,
     },
   )
 
@@ -207,7 +218,7 @@ export default defineEventHandler(async (event) => {
       const engine = createContentEngine({ git, contentRoot, projectId })
       const entryId = generateEntryId()
       const entryData = { [entryId]: filteredData }
-      const writeResult = await engine.saveContent(modelId, 'en', entryData, 'form-auto-approve@contentrain.io', { autoPublish: false })
+      const writeResult = await engine.saveContent(modelId, locale, entryData, 'form-auto-approve@contentrain.io', { autoPublish: false })
 
       // Auto-merge the content branch (form submissions go straight through)
       if (writeResult.branch) {
@@ -221,6 +232,21 @@ export default defineEventHandler(async (event) => {
     catch {
       // Auto-approve failed — submission stays pending, no user-facing error
     }
+  }
+
+  // Notify the workspace owner/admins (fire-and-forget) — the model's
+  // `form.notifications` flag defaults on; the plan feature gates it.
+  if (formConfig.notifications !== false && hasFeature(plan, 'forms.notifications')) {
+    notifyFormSubmission({
+      workspaceId: workspace.id as string,
+      workspaceName: String(workspace.name ?? ''),
+      workspaceSlug: String(workspace.slug ?? workspace.id),
+      projectId,
+      projectName: repoFullName,
+      modelId,
+      modelName: String((model as { name?: string }).name ?? modelId),
+      data: filteredData,
+    }).catch(() => {})
   }
 
   // Emit webhook event (fire-and-forget) — gated by the
