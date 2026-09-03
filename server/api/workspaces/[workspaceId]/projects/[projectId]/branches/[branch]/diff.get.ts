@@ -64,7 +64,9 @@ export default defineEventHandler(async (event) => {
   // the panel can hide an action instead of offering one that answers 403.
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
 
-  return await buildBranchReview({
+  const request = await useDatabaseProvider().getBranchChangeRequest(projectId, branch)
+
+  const review = await buildBranchReview({
     branch,
     files,
     read,
@@ -77,6 +79,14 @@ export default defineEventHandler(async (event) => {
     canMerge: permissions.availableTools.includes('merge_branch'),
     canReject: permissions.availableTools.includes('reject_branch'),
   })
+
+  return {
+    ...review,
+    canRequestChanges: permissions.availableTools.includes('request_changes'),
+    changesRequested: request
+      ? { comment: String(request.comment), requestedBy: (request.requested_by as string | null) ?? null, requestedAt: String(request.requested_at) }
+      : null,
+  }
 })
 
 function safeJson(raw: string): unknown {

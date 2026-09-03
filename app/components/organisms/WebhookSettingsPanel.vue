@@ -37,6 +37,7 @@ const AVAILABLE_EVENTS = [
   'model.saved',
   'branch.merged',
   'branch.rejected',
+  'branch.changes_requested',
   'cdn.build_complete',
   'media.uploaded',
   'form.submitted',

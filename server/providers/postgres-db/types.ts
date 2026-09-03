@@ -389,6 +389,19 @@ export interface ScheduledPublicationsTable {
   updated_at: Generated<string>
 }
 
+export interface BranchReviewsTable {
+  project_id: string
+  workspace_id: string
+  branch: string
+  status: Generated<string>
+  comment: string
+  requested_by: string | null
+  requested_at: Generated<string>
+  resolved_at: string | null
+  resolved_by: string | null
+  updated_at: Generated<string>
+}
+
 export interface ConversationApiKeysTable {
   id: Generated<string>
   project_id: string
@@ -573,6 +586,7 @@ export interface StudioDatabase {
   'media_usage': MediaUsageTable
   'form_submissions': FormSubmissionsTable
   'scheduled_publications': ScheduledPublicationsTable
+  'branch_reviews': BranchReviewsTable
   'comments': CommentsTable
   'comment_threads': CommentThreadsTable
   'conversation_api_keys': ConversationApiKeysTable

@@ -33,6 +33,8 @@ export default defineEventHandler(async (event) => {
     models = null
   }
 
+  const requested = new Set((await useDatabaseProvider().listBranchChangeRequests(projectId).catch(() => [])).map(r => String(r.branch)))
+
   return {
     branches: branches.map((branch) => {
       const parsed = parseBranchName(branch.name)
@@ -47,6 +49,7 @@ export default defineEventHandler(async (event) => {
         modelName: modelId ? (models?.get(modelId)?.name ?? modelId) : null,
         locale: parsed.locale,
         timestamp: parsed.timestamp,
+        changesRequested: requested.has(branch.name),
       }
     }),
   }

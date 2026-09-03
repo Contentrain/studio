@@ -2,6 +2,8 @@
  * Reject (delete) a content branch.
  * Requires reviewer, admin, or owner role.
  */
+import { clearBranchRequestSafe } from '~~/server/utils/branch-requests'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -29,6 +31,7 @@ export default defineEventHandler(async (event) => {
 
   const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.rejectBranch(branch)
+  clearBranchRequestSafe(projectId, branch)
 
   // Emit webhook event (fire-and-forget)
   emitWebhookEvent(projectId, workspaceId, 'branch.rejected', {
