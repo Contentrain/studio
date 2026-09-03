@@ -8,6 +8,27 @@ import { saveModel } from './save-model'
 import { deleteModel } from './delete-model'
 import { addLocale, saveVocabulary } from './config-ops'
 import { copyLocale, updateEntryStatus } from './update-status'
+import { triggerProjectDeploy } from '../deploy-hooks'
+import { clearEntrySchedules, registerEntrySchedules } from '../schedule-registry'
+
+/**
+ * Side effects that ride on a successful write but must never fail it:
+ * scheduled-boundary registration (S-03) and the deploy hook after content
+ * lands on `contentrain` (S-02). Both are best-effort and fire-and-forget.
+ */
+function afterSave(projectId: string | undefined, modelId: string, locale: string, entryIds: string[], options?: SaveOptions): void {
+  if (!projectId || !options?.schedule || entryIds.length === 0) return
+  Promise.resolve()
+    .then(() => registerEntrySchedules({ projectId, modelId, locale, entryIds, schedule: options.schedule! }))
+    .catch(() => {})
+}
+
+function afterMerge(projectId: string | undefined): void {
+  if (!projectId) return
+  Promise.resolve()
+    .then(() => triggerProjectDeploy({ projectId, reason: 'content_published' }))
+    .catch(() => {})
+}
 
 /**
  * Content Engine — Studio's write path for content operations.
@@ -37,12 +58,21 @@ export function createContentEngine(ctx: ContentEngineContext) {
 
   return {
     ensureContentBranch: internal.ensureContentBranch,
-    saveContent: (modelId: string, locale: string, data: Record<string, unknown>, userEmail: string, options?: SaveOptions) =>
-      saveContent(internal, modelId, locale, data, userEmail, options),
-    deleteContent: (modelId: string, locale: string, entryIds: string[], userEmail: string) =>
-      deleteContent(internal, modelId, locale, entryIds, userEmail),
-    saveDocument: (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: SaveOptions) =>
-      saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options),
+    saveContent: async (modelId: string, locale: string, data: Record<string, unknown>, userEmail: string, options?: SaveOptions) => {
+      const result = await saveContent(internal, modelId, locale, data, userEmail, options)
+      if (result.validation.valid) afterSave(projectId, modelId, locale, Object.keys(data), options)
+      return result
+    },
+    deleteContent: async (modelId: string, locale: string, entryIds: string[], userEmail: string) => {
+      const result = await deleteContent(internal, modelId, locale, entryIds, userEmail)
+      if (projectId) clearEntrySchedules(projectId, modelId, entryIds, locale).catch(() => {})
+      return result
+    },
+    saveDocument: async (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: SaveOptions) => {
+      const result = await saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options)
+      if (result.validation.valid) afterSave(projectId, modelId, locale, [slug], options)
+      return result
+    },
     saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string, options?: Parameters<typeof saveModel>[3]) =>
       saveModel(internal, definition, userEmail, options),
     deleteModel: (modelId: string, userEmail: string) =>
@@ -54,12 +84,20 @@ export function createContentEngine(ctx: ContentEngineContext) {
     updateEntryStatus: (modelId: string, locale: string, entryIds: string[], status: 'draft' | 'published' | 'archived', userEmail: string) =>
       updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail),
     listContentBranches: () => listContentBranches(internal),
-    mergeBranch: (branch: string) => mergeBranch(internal, branch),
+    mergeBranch: async (branch: string) => {
+      const result = await mergeBranch(internal, branch)
+      if (result.merged) afterMerge(projectId)
+      return result
+    },
     // Split halves of mergeBranch — the agent tool loop lands each write
     // on contentrain immediately and finalizes (context regen + main
     // advance) once per turn.
     mergeToContentrain: (branch: string) => mergeToContentrain(internal, branch),
-    finalizeContentrain: (mergedBranches: string[]) => finalizeContentrain(internal, mergedBranches),
+    finalizeContentrain: async (mergedBranches: string[]) => {
+      const result = await finalizeContentrain(internal, mergedBranches)
+      if (mergedBranches.length > 0) afterMerge(projectId)
+      return result
+    },
     rejectBranch: (branch: string) => rejectBranch(internal, branch),
     copyLocale: (modelId: string, fromLocale: string, toLocale: string, userEmail: string) =>
       copyLocale(internal, modelId, fromLocale, toLocale, userEmail),
