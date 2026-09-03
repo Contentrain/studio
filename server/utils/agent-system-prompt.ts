@@ -596,6 +596,9 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // Form submissions lifecycle
     agentPrompt('forms.lifecycle'),
 
+    // Comments lifecycle (Studio DB, never Git)
+    agentPrompt('comments.lifecycle'),
+
     // Serialization
     agentPrompt('rules.serialization_keys'),
     agentPrompt('rules.system_fields'),

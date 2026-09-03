@@ -11,82 +11,11 @@
  */
 
 import { getFormConfig, getClientIp, countFormEnabledModels } from '~~/server/utils/form-types'
+import { sanitizeData } from '~~/server/utils/sanitize-input'
+import { verifyTurnstileToken } from '~~/server/utils/turnstile'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { createContentEngine } from '~~/server/utils/content-engine'
 import { generateEntryId } from '@contentrain/types'
-
-/**
- * Verify Cloudflare Turnstile captcha token.
- * https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
- */
-async function verifyCaptcha(token: string, secret: string): Promise<boolean> {
-  if (!secret) return false
-
-  try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ secret, response: token }),
-    })
-    const result = await response.json() as { success: boolean }
-    return result.success === true
-  }
-  catch {
-    return false
-  }
-}
-
-/**
- * Sanitize string — strip HTML tags and decode common entities.
- * Prevents stored XSS even though data is JSON-stored.
- */
-function sanitizeString(value: string): string {
-  let s = value
-  // 1. Strip HTML tags first (before any entity decoding)
-  s = s.replace(/<[^>]*>/g, '')
-  // 2. Remove dangerous patterns
-  s = s.replace(/javascript:/gi, '')
-  s = s.replace(/on\w+\s*=/gi, '')
-  // 3. Decode entities that might hide tags, then strip again
-  s = s.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-  s = s.replace(/&#x3[cC];/g, '<').replace(/&#x3[eE];/g, '>')
-  s = s.replace(/&#60;/g, '<').replace(/&#62;/g, '>')
-  s = s.replace(/<[^>]*>/g, '')
-  // 4. Final pass for any remaining dangerous patterns
-  s = s.replace(/javascript:/gi, '')
-  s = s.replace(/on\w+\s*=/gi, '')
-  return s
-}
-
-/**
- * Recursively sanitize all string values in an object.
- */
-function sanitizeData(data: Record<string, unknown>): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {}
-
-  for (const [key, value] of Object.entries(data)) {
-    if (typeof value === 'string') {
-      sanitized[key] = sanitizeString(value)
-    }
-    else if (Array.isArray(value)) {
-      sanitized[key] = value.map(item =>
-        typeof item === 'string'
-          ? sanitizeString(item)
-          : (item && typeof item === 'object' && !Array.isArray(item))
-              ? sanitizeData(item as Record<string, unknown>)
-              : item,
-      )
-    }
-    else if (value && typeof value === 'object') {
-      sanitized[key] = sanitizeData(value as Record<string, unknown>)
-    }
-    else {
-      sanitized[key] = value
-    }
-  }
-
-  return sanitized
-}
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -94,12 +23,6 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
   setResponseHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   setResponseHeader(event, 'Access-Control-Allow-Headers', 'Content-Type')
-
-  // Handle OPTIONS preflight
-  if (getMethod(event) === 'OPTIONS') {
-    setResponseStatus(event, 204)
-    return ''
-  }
 
   const projectId = getRouterParam(event, 'projectId')
   const modelId = getRouterParam(event, 'modelId')
@@ -190,9 +113,7 @@ export default defineEventHandler(async (event) => {
       return { success: false, errors: [{ field: 'captcha', message: errorMessage('forms.captcha_failed') }] }
     }
 
-    const config = useRuntimeConfig()
-    const captchaSecret = (config as unknown as { turnstile?: { secretKey?: string } }).turnstile?.secretKey ?? ''
-    const captchaValid = await verifyCaptcha(body.captchaToken, captchaSecret)
+    const captchaValid = await verifyTurnstileToken(body.captchaToken, ip)
     if (!captchaValid) {
       return { success: false, errors: [{ field: 'captcha', message: errorMessage('forms.captcha_failed') }] }
     }

@@ -488,6 +488,7 @@ Under `ee/LICENSE` scope. Requires an active Contentrain subscription or separat
 - Spam filter (`forms.spam_filter`)
 - Form file upload (`forms.file_upload` — depends on media stack)
 - Form webhook notifications (`forms.webhook_notification` — depends on outbound webhooks)
+- Comment webhook notifications (`comments.webhook_notification`) and comment spam filter (`comments.spam_filter`, roadmap)
 - SSO (`sso.saml`, `sso.oidc`) — roadmap
 - White-label branding (`branding.white_label`) — roadmap
 - MCP Cloud custom domain + SSO — roadmap
@@ -507,6 +508,7 @@ Always available, in every edition. Plan-independent.
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
 - Forms core (submission storage, captcha via Turnstile, auto-approve, notifications via Resend)
+- Comments v1 (`comments` + `comment_threads` in the Studio DB — never Git; public read/submit under `/api/comments/v1`, moderation + moderator replies, WordPress import of `contentrain-comments@1` exports from `@contentrain/wp-import`; model-level `comments` config lives on the model definition like `form`)
 - AI chat with operator-provided `NUXT_ANTHROPIC_API_KEY`
 
 ### Deployment profiles

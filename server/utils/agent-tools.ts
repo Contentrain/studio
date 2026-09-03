@@ -507,6 +507,70 @@ Returns \`statusChanges\`: [{ entryId, from, to }] for every entry named, so rep
     defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
     workflowBehavior: 'none',
   },
+
+  // ─── Comments (Studio-managed, moderation queue lives in the Studio DB) ───
+
+  {
+    name: 'list_comments',
+    description: 'List comments awaiting moderation (or by status) for this project. Optionally narrow to one model or one entry. Comments live in the Studio database, not in Git; only models with comments enabled receive them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter by status: pending, approved, rejected, spam. Default: pending' },
+        modelId: { type: 'string', description: 'Only comments on entries of this model' },
+        entryId: { type: 'string', description: 'Only comments on this entry (requires modelId)' },
+        limit: { type: 'number', description: 'Max results (default 20, max 100)' },
+      },
+      required: [],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'approve_comment',
+    description: 'Approve a comment so it is shown publicly on the entry. No Git write — comments are Studio-managed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commentId: { type: 'string', description: 'Comment UUID to approve' },
+      },
+      required: ['commentId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'reject_comment',
+    description: 'Reject a comment or mark it as spam. Rejected/spam comments are hidden from the public entry and stay in the moderation log.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commentId: { type: 'string', description: 'Comment UUID to reject' },
+        spam: { type: 'boolean', description: 'true = mark as spam instead of rejected' },
+      },
+      required: ['commentId'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
+  {
+    name: 'reply_comment',
+    description: 'Post a public reply to a comment on behalf of the current user (as a moderator). The reply is published immediately; replying to a pending comment approves it first. Only use text the user asked you to post.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commentId: { type: 'string', description: 'Comment UUID to reply to' },
+        body: { type: 'string', description: 'Reply text (plain text)' },
+      },
+      required: ['commentId', 'body'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { models: [], locales: [], snapshotChanged: false, branchesChanged: false },
+    workflowBehavior: 'none',
+  },
 ]
 
 /**

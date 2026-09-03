@@ -1,5 +1,5 @@
 /**
- * Update a model definition — form config and/or the field that titles entries.
+ * Update a model definition — form config, comments config and/or the field that titles entries.
  * Uses content engine saveModel() for Git branching + auto-merge.
  *
  * Auth: owner/admin only
@@ -9,6 +9,8 @@
 import type { FieldDef, ModelDefinition } from '@contentrain/types'
 import type { FormConfig } from '~~/server/utils/form-types'
 import { countFormEnabledModels, getFormConfig } from '~~/server/utils/form-types'
+import type { CommentsConfig } from '~~/server/utils/comment-types'
+import { countCommentEnabledModels, getCommentsConfig, modelSupportsComments, normalizeCommentsConfig } from '~~/server/utils/comment-types'
 
 /**
  * Mirrors the `title_field` rule in `@contentrain/mcp`'s validator so a bad
@@ -32,10 +34,11 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody<{
     form?: Partial<FormConfig>
+    comments?: Partial<CommentsConfig>
     titleField?: string
   }>(event)
 
-  if (!body?.form && body?.titleField === undefined)
+  if (!body?.form && !body?.comments && body?.titleField === undefined)
     throw createError({ statusCode: 400, message: errorMessage('validation.data_required') })
 
   const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
@@ -47,7 +50,7 @@ export default defineEventHandler(async (event) => {
   if (!existingModel)
     throw createError({ statusCode: 404, message: errorMessage('model.not_found') })
 
-  let updatedModel = { ...existingModel } as ModelDefinition & { form?: FormConfig }
+  let updatedModel = { ...existingModel } as ModelDefinition & { form?: FormConfig, comments?: CommentsConfig }
 
   // ── Title field ────────────────────────────────────────────
   // Deliberately outside the forms gate: which field titles an entry is part of
@@ -124,6 +127,39 @@ export default defineEventHandler(async (event) => {
     updatedModel = { ...updatedModel, form: mergedForm }
   }
 
+  // ── Comments config ────────────────────────────────────────
+  let mergedComments: CommentsConfig | undefined
+
+  if (body.comments) {
+    if (!hasFeature(plan, 'comments.enabled'))
+      throw createError({ statusCode: 403, message: errorMessage('comments.upgrade') })
+
+    if (!modelSupportsComments(existingModel))
+      throw createError({ statusCode: 400, message: errorMessage('comments.not_collection') })
+
+    // Enforce comments.models plan limit when enabling comments on a new model
+    const isEnabling = body.comments.enabled === true
+    const wasEnabled = getCommentsConfig(existingModel)?.enabled === true
+    if (isEnabling && !wasEnabled) {
+      const enabledCount = countCommentEnabledModels(brain.models)
+      const limit = getPlanLimit(plan, 'comments.models')
+      if (enabledCount >= limit)
+        throw createError({ statusCode: 403, message: errorMessage('comments.upgrade') })
+    }
+
+    const current = getCommentsConfig(existingModel) ?? {}
+    const merged: Partial<CommentsConfig> = { ...current, ...body.comments }
+
+    // Plan gates: captcha and publish-without-approval need the feature
+    if (merged.captcha && !hasFeature(plan, 'comments.captcha'))
+      merged.captcha = null
+    if (merged.requireApproval === false && !hasFeature(plan, 'comments.auto_approve'))
+      merged.requireApproval = true
+
+    mergedComments = normalizeCommentsConfig(merged)
+    updatedModel = { ...updatedModel, comments: mergedComments }
+  }
+
   // Save via content engine (branch → commit → merge)
   const engine = createContentEngine({ git, contentRoot, projectId })
   const writeResult = await engine.saveModel(updatedModel as unknown as ModelDefinition, session.user.email ?? '')
@@ -148,5 +184,5 @@ export default defineEventHandler(async (event) => {
     merged,
   }).catch(() => {})
 
-  return { saved: true, merged, form: mergedForm, titleField: updatedModel.title_field }
+  return { saved: true, merged, form: mergedForm, comments: mergedComments, titleField: updatedModel.title_field }
 })

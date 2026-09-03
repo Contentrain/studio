@@ -100,6 +100,9 @@ export default defineNuxtConfig({
     resend: {
       apiKey: '', // NUXT_RESEND_API_KEY
     },
+    turnstile: {
+      secretKey: '', // NUXT_TURNSTILE_SECRET_KEY — Cloudflare Turnstile server-side verification (public forms + comments)
+    },
     polar: {
       accessToken: '', // NUXT_POLAR_ACCESS_TOKEN
       webhookSecret: '', // NUXT_POLAR_WEBHOOK_SECRET
@@ -115,6 +118,7 @@ export default defineNuxtConfig({
     },
     public: {
       siteUrl: 'http://localhost:3000',
+      turnstileSiteKey: '', // NUXT_PUBLIC_TURNSTILE_SITE_KEY — widget key handed to external form/comment embeds
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
       billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override
       templateOwner: 'Contentrain', // NUXT_PUBLIC_TEMPLATE_OWNER

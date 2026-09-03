@@ -29,6 +29,7 @@ The AGPL core is intended to be a **functional deployment**, not a teaser. The f
 - Multi-locale content (single and multi-locale both supported)
 - Chat agent + all deterministic agent tools (content CRUD, validation, merge, brain, search)
 - Forms (core): submission storage, captcha (Turnstile when configured), auto-approve, notifications, webhook notification
+- Comments (core): Studio-stored comment threads on entries, public read/submit API, moderation, moderator replies, WordPress import (`comments.enabled`, `comments.captcha`, `comments.auto_approve`, `comments.import`)
 - AI chat with operator-provided `NUXT_ANTHROPIC_API_KEY`
 
 ### Not available in Community Edition
@@ -46,6 +47,8 @@ The following features require `ee/` and are **disabled** in Community Edition r
 - Spam filter (`forms.spam_filter`)
 - Form file uploads (`forms.file_upload`) — depends on media stack
 - Form webhook notifications (`forms.webhook_notification`) — depends on outbound webhooks
+- Comment webhook notifications (`comments.webhook_notification`) — depends on outbound webhooks
+- Comment spam filter (`comments.spam_filter`) — roadmap
 - Media custom variants (`media.custom_variants`), per-field variant limit enforcement (`media.variants_per_field`)
 - SSO (`sso.saml`, `sso.oidc`) — roadmap
 - White-label branding (`branding.white_label`) — roadmap

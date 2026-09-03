@@ -21,11 +21,14 @@ export type WebhookEvent
     | 'cdn.build_complete'
     | 'media.uploaded'
     | 'form.submitted'
+    | 'comment.submitted'
+    | 'comment.approved'
 
 export const VALID_WEBHOOK_EVENTS: ReadonlySet<string> = new Set<WebhookEvent>([
   'content.saved', 'content.deleted', 'model.saved',
   'branch.merged', 'branch.rejected', 'cdn.build_complete',
   'media.uploaded', 'form.submitted',
+  'comment.submitted', 'comment.approved',
 ])
 
 export interface WebhookPayload {

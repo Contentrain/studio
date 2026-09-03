@@ -40,6 +40,8 @@ const AVAILABLE_EVENTS = [
   'cdn.build_complete',
   'media.uploaded',
   'form.submitted',
+  'comment.submitted',
+  'comment.approved',
 ] as const
 
 const webhooks = ref<Webhook[]>([])
