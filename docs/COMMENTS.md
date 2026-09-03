@@ -121,8 +121,9 @@ comment becomes public.
 
 ## WordPress import (`contentrain-comments@1`)
 
-`@contentrain/wp-import` (and `contentrain import wordpress`) produces a
-`CommentsExport` next to the `.contentrain` content it writes. The type lives in
+`@contentrain/wp-import` (and the CLI: `npx contentrain import <export.xml | https://site> --out <dir>`,
+optional `--auth user:app-password`) produces a `CommentsExport` as `comments-export.json` next to the
+`.contentrain` store it writes, together with `entry-source-map.json` and `import-report.json`. The type lives in
 `@contentrain/types`:
 
 ```jsonc
