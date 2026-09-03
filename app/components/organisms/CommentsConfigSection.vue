@@ -97,6 +97,69 @@ async function save() {
 }
 
 const publicEndpoint = computed(() => `/api/comments/v1/${props.projectId}/${props.modelId}/{entryId}`)
+
+// ── WordPress import (contentrain-comments@1 from `contentrain import`) ──
+
+interface ImportSummary {
+  received: number
+  mapped: number
+  inserted: number
+  skippedExisting: number
+  unmapped: Array<{ comment_id: number, post: number }>
+  orphanCount: number
+  threadsClosed: number
+}
+
+const IMPORT_CHUNK = 5000
+const importing = ref(false)
+const importResult = ref<ImportSummary | null>(null)
+const importError = ref<string | null>(null)
+const importInput = ref<HTMLInputElement | null>(null)
+
+async function onImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  importing.value = true
+  importResult.value = null
+  importError.value = null
+  try {
+    const payload = JSON.parse(await file.text()) as { format?: string, comments?: unknown[] }
+    if (payload?.format !== 'contentrain-comments@1' || !Array.isArray(payload.comments))
+      throw new Error('format')
+
+    // Larger exports go up in chunks that share the entries map; the server keys rows on
+    // the source id, so a retried chunk is a no-op and parents link across chunks.
+    const total = payload.comments.length
+    const summary: ImportSummary = { received: 0, mapped: 0, inserted: 0, skippedExisting: 0, unmapped: [], orphanCount: 0, threadsClosed: 0 }
+    for (let offset = 0; offset < Math.max(total, 1); offset += IMPORT_CHUNK) {
+      const chunk = { ...payload, comments: payload.comments.slice(offset, offset + IMPORT_CHUNK) }
+      const part = await $fetch<ImportSummary>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/comments/import`, {
+        method: 'POST',
+        body: chunk,
+      })
+      summary.received += part.received
+      summary.mapped += part.mapped
+      summary.inserted += part.inserted
+      summary.skippedExisting += part.skippedExisting
+      summary.unmapped.push(...part.unmapped)
+      summary.orphanCount = part.orphanCount
+      summary.threadsClosed += part.threadsClosed
+    }
+    importResult.value = summary
+    toast.success(t('comments.import_success'))
+  }
+  catch (error) {
+    importError.value = error instanceof Error && error.message === 'format'
+      ? t('comments.import_format_error')
+      : t('comments.import_error')
+    toast.error(importError.value)
+  }
+  finally {
+    importing.value = false
+    input.value = ''
+  }
+}
 </script>
 
 <template>
@@ -105,7 +168,7 @@ const publicEndpoint = computed(() => `/api/comments/v1/${props.projectId}/${pro
     <section>
       <div class="flex items-start gap-3">
         <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 dark:bg-primary-900/20">
-          <span class="icon-[annon--message-text] size-4 text-primary-600 dark:text-primary-400" aria-hidden="true" />
+          <span class="icon-[annon--comments] size-4 text-primary-600 dark:text-primary-400" aria-hidden="true" />
         </div>
         <div class="flex-1">
           <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
@@ -255,6 +318,54 @@ const publicEndpoint = computed(() => `/api/comments/v1/${props.projectId}/${pro
             :disabled="!editable"
             @update:model-value="rateLimitPerIp = Math.max(1, Math.min(60, Number($event) || 5))"
           />
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: WordPress import -->
+    <section v-if="enabled && editable">
+      <div class="flex items-start gap-3">
+        <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-50 dark:bg-info-900/20">
+          <span class="icon-[annon--import] size-4 text-info-600 dark:text-info-400" aria-hidden="true" />
+        </div>
+        <div class="flex-1">
+          <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
+            {{ t('comments.import_title') }}
+          </h4>
+          <p class="mt-0.5 text-xs text-muted">
+            {{ t('comments.import_description') }}
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-3 space-y-3 pl-11">
+        <input
+          ref="importInput"
+          type="file"
+          accept="application/json,.json"
+          class="sr-only"
+          :aria-label="t('comments.import_button')"
+          @change="onImportFile"
+        >
+        <AtomsBaseButton type="button" variant="secondary" size="sm" :disabled="importing" @click="importInput?.click()">
+          <template #prepend>
+            <span class="icon-[annon--import] size-3.5" aria-hidden="true" />
+          </template>
+          {{ importing ? t('common.loading') : t('comments.import_button') }}
+        </AtomsBaseButton>
+
+        <p v-if="importError" class="text-xs text-danger-500" role="alert">
+          {{ importError }}
+        </p>
+
+        <div v-if="importResult" class="rounded-lg border border-secondary-200 bg-secondary-50 px-3 py-2 text-xs text-body dark:border-secondary-800 dark:bg-secondary-900 dark:text-secondary-300">
+          <p>{{ t('comments.import_result', { received: importResult.received, inserted: importResult.inserted, skipped: importResult.skippedExisting, threads: importResult.threadsClosed }) }}</p>
+          <p v-if="importResult.unmapped.length > 0" class="mt-1 text-warning-600 dark:text-warning-400">
+            {{ t('comments.import_unmapped', { count: importResult.unmapped.length }) }}
+          </p>
+          <p v-if="importResult.orphanCount > 0" class="mt-1 text-warning-600 dark:text-warning-400">
+            {{ t('comments.import_orphans', { count: importResult.orphanCount }) }}
+          </p>
         </div>
       </div>
     </section>

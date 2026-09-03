@@ -211,7 +211,7 @@ watch(comments, (list) => {
 
       <div v-else-if="comments.length === 0" class="p-5">
         <AtomsEmptyState
-          icon="icon-[annon--message-text]"
+          icon="icon-[annon--comments]"
           :title="t('comments.empty_title')"
           :description="t('comments.empty_description')"
         />

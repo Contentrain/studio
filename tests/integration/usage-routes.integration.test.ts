@@ -28,6 +28,7 @@ describe('usage API', () => {
         getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(45),
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(10),
         countMonthlySubmissions: vi.fn().mockResolvedValue(80),
+        countMonthlyComments: vi.fn().mockResolvedValue(12),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(500 * 1024 * 1024), // 500 MB
         getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
@@ -36,7 +37,10 @@ describe('usage API', () => {
       const result = await handler({} as never)
 
       expect(result.billingPeriod).toMatch(/^\d{4}-\d{2}$/)
-      expect(result.categories).toHaveLength(6)
+      expect(result.categories).toHaveLength(7)
+
+      const comments = result.categories.find((c: { key: string }) => c.key === 'comments')
+      expect(comments).toMatchObject({ key: 'comments', limitKey: 'comments.per_month', current: 12, unit: 'comments', overageEnabled: false, overageUnitPrice: 0 })
 
       // AI Messages: 45/1500 = 3%
       const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
@@ -81,6 +85,7 @@ describe('usage API', () => {
         getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(175), // 175 > 150 starter limit
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
+        countMonthlyComments: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
@@ -113,6 +118,7 @@ describe('usage API', () => {
         getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(1000),
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
+        countMonthlyComments: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))
@@ -139,6 +145,7 @@ describe('usage API', () => {
         getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
+        countMonthlyComments: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
       }))

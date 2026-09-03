@@ -332,6 +332,8 @@ export function getPlanParams(plan: StudioPlan | string | null | undefined): Rec
     mediaVariants: limitOrUnlimited('media.variants_per_field'),
     formModels: limitOrUnlimited('forms.models'),
     formSubmissions: formatLimit(limit('forms.submissions_per_month')),
+    commentModels: limitOrUnlimited('comments.models'),
+    commentsPerMonth: formatLimit(limit('comments.per_month')),
     conversationKeys: limitOrUnlimited('api.conversation_keys'),
     apiMessages: formatLimit(limit('api.messages_per_month')),
     webhookEndpoints: limitOrUnlimited('api.webhooks'),

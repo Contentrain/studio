@@ -45,6 +45,7 @@ function categoryIcon(key: string): string {
   switch (key) {
     case 'ai_messages': return 'icon-[annon--comment-dots]'
     case 'form_submissions': return 'icon-[annon--file-text]'
+    case 'comments': return 'icon-[annon--comments]'
     case 'cdn_bandwidth': return 'icon-[annon--globe]'
     case 'media_storage': return 'icon-[annon--image]'
     case 'api_messages': return 'icon-[annon--code]'
