@@ -122,6 +122,7 @@
   "forms.invalid_action": "Invalid bulk action: {action}",
   "forms.invalid_status": "Status must be approved, rejected, or spam.",
   "forms.list_failed": "Failed to list form submissions: {detail}",
+  "forms.model_monthly_limit": "This form has reached its monthly submission limit",
   "forms.model_not_found": "Form model not found.",
   "forms.monthly_limit": "Monthly submission limit reached. Please try again next month.",
   "forms.not_collection": "Forms can only be enabled on collection models.",

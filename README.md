@@ -230,6 +230,7 @@ Release-facing setup and deployment docs:
 - [Docker Guide](docs/DOCKER.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [Payment Providers](docs/PAYMENT_PROVIDERS.md)
+- [Forms](docs/FORMS.md)
 - [Comments](docs/COMMENTS.md)
 - [Releasing Guide](docs/RELEASING.md)
 - [Repository Hygiene](docs/REPOSITORY-HYGIENE.md)

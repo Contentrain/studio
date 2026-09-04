@@ -118,6 +118,7 @@ export default defineEventHandler(async (event) => {
       successMessage: body.form.successMessage !== undefined ? body.form.successMessage : currentForm.successMessage,
       limits: body.form.limits ?? currentForm.limits,
       autoApprove: body.form.autoApprove ?? currentForm.autoApprove,
+      notifications: body.form.notifications ?? currentForm.notifications,
     }
 
     // Validate: enabled form must have at least one exposed field

@@ -13,7 +13,9 @@ type FormMethods = Pick<
   | 'deleteFormSubmission'
   | 'bulkUpdateSubmissions'
   | 'countMonthlySubmissions'
+  | 'countMonthlySubmissionsForModel'
   | 'createFormSubmissionIfAllowed'
+  | 'listWorkspaceNotificationRecipients'
 >
 
 export function formMethods(): FormMethods {
@@ -132,6 +134,45 @@ export function formMethods(): FormMethods {
         .gte('created_at', monthStart.toISOString())
 
       return count ?? 0
+    },
+
+    async countMonthlySubmissionsForModel(workspaceId, projectId, modelId) {
+      const now = new Date()
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+
+      const { count } = await getAdmin()
+        .from('form_submissions')
+        .select('*', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId)
+        .eq('project_id', projectId)
+        .eq('model_id', modelId)
+        .gte('created_at', monthStart.toISOString())
+
+      return count ?? 0
+    },
+
+    async listWorkspaceNotificationRecipients(workspaceId) {
+      const admin = getAdmin()
+      const [{ data: workspace }, { data: members }] = await Promise.all([
+        admin.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle(),
+        admin.from('workspace_members').select('user_id, role, accepted_at').eq('workspace_id', workspaceId).in('role', ['owner', 'admin']),
+      ])
+
+      const userIds = new Set<string>()
+      if (workspace?.owner_id) userIds.add(workspace.owner_id as string)
+      for (const m of (members ?? []) as Array<{ user_id: string | null, accepted_at: string | null }>) {
+        if (m.user_id && m.accepted_at) userIds.add(m.user_id)
+      }
+      if (userIds.size === 0) return []
+
+      const { data: profiles } = await admin
+        .from('profiles')
+        .select('id, email')
+        .in('id', [...userIds])
+
+      return ((profiles ?? []) as Array<{ id: string, email: string | null }>)
+        .filter(p => typeof p.email === 'string' && p.email.includes('@'))
+        .map(p => ({ userId: p.id, email: p.email as string }))
     },
 
     async createFormSubmissionIfAllowed(workspaceId, monthlyLimit, submission) {

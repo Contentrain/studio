@@ -37,6 +37,8 @@ const captcha = ref<'turnstile' | ''>('')
 const autoApprove = ref(false)
 const successMessage = ref('')
 const rateLimitPerIp = ref(10)
+const maxPerMonth = ref<number | null>(null)
+const notifications = ref(true)
 
 // Sync from brain when model/config changes
 function syncFromBrain() {
@@ -49,6 +51,9 @@ function syncFromBrain() {
   autoApprove.value = (cfg?.autoApprove as boolean) ?? false
   successMessage.value = (cfg?.successMessage as string) ?? ''
   rateLimitPerIp.value = ((cfg?.limits as Record<string, unknown>)?.rateLimitPerIp as number) ?? 10
+  const cap = (cfg?.limits as Record<string, unknown>)?.maxPerMonth
+  maxPerMonth.value = typeof cap === 'number' && cap > 0 ? cap : null
+  notifications.value = (cfg?.notifications as boolean | undefined) !== false
 }
 
 watch(() => props.modelId, syncFromBrain, { immediate: true })
@@ -89,6 +94,8 @@ const hasChanges = computed(() => {
     || autoApprove.value !== ((cfg.autoApprove as boolean) ?? false)
     || successMessage.value !== ((cfg.successMessage as string) ?? '')
     || rateLimitPerIp.value !== (((cfg.limits as Record<string, unknown>)?.rateLimitPerIp as number) ?? 10)
+    || (maxPerMonth.value ?? null) !== ((((cfg.limits as Record<string, unknown>)?.maxPerMonth as number | undefined) ?? null))
+    || notifications.value !== ((cfg.notifications as boolean | undefined) !== false)
 })
 
 // Validation
@@ -117,9 +124,10 @@ async function save() {
           captcha: captcha.value || null,
           autoApprove: autoApprove.value,
           successMessage: successMessage.value || undefined,
-          limits: rateLimitPerIp.value !== 10
-            ? { rateLimitPerIp: rateLimitPerIp.value }
+          limits: (rateLimitPerIp.value !== 10 || maxPerMonth.value)
+            ? { rateLimitPerIp: rateLimitPerIp.value, ...(maxPerMonth.value ? { maxPerMonth: maxPerMonth.value } : {}) }
             : undefined,
+          notifications: notifications.value,
         },
       },
     })
@@ -350,6 +358,34 @@ function getFieldTypeBadge(type: string): string {
             </p>
           </div>
           <AtomsFormSwitch :model-value="autoApprove" :disabled="!editable" @update:model-value="autoApprove = $event" />
+        </div>
+
+        <!-- Owner/admin email notifications -->
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-sm text-heading dark:text-secondary-100">{{ t('forms.notifications') }}</span>
+            <p class="text-xs text-muted">
+              {{ t('forms.notifications_description') }}
+            </p>
+          </div>
+          <AtomsFormSwitch :model-value="notifications" :disabled="!editable" @update:model-value="notifications = $event" />
+        </div>
+
+        <!-- Monthly cap for this form -->
+        <div>
+          <AtomsFormLabel :for="'max-per-month'">
+            {{ t('forms.max_per_month') }}
+          </AtomsFormLabel>
+          <p class="mb-1.5 text-xs text-muted">
+            {{ t('forms.max_per_month_description') }}
+          </p>
+          <AtomsFormInput
+            id="max-per-month"
+            type="number"
+            :model-value="maxPerMonth === null ? '' : String(maxPerMonth)"
+            :disabled="!editable"
+            @update:model-value="maxPerMonth = Number($event) > 0 ? Math.floor(Number($event)) : null"
+          />
         </div>
 
         <!-- Success message -->

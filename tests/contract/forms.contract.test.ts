@@ -109,4 +109,34 @@ describe('postgres-db forms (contract)', () => {
     expect(denied.allowed).toBe(false)
     expect(denied.currentCount).toBe(current + 1)
   })
+
+  it('per-model monthly count and notification recipients (owner + accepted admins with emails)', async () => {
+    const before = await methods.countMonthlySubmissionsForModel(user.workspaceId, projectId, 'newsletter-signup')
+    await methods.createFormSubmission({
+      project_id: projectId,
+      workspace_id: user.workspaceId,
+      model_id: 'newsletter-signup',
+      data: { email: 'sub@example.com' },
+    })
+    expect(await methods.countMonthlySubmissionsForModel(user.workspaceId, projectId, 'newsletter-signup')).toBe(before + 1)
+    // Other models on the same workspace are not counted.
+    expect(await methods.countMonthlySubmissionsForModel(user.workspaceId, projectId, 'no-such-model')).toBe(0)
+
+    // Seeded owner comes back via workspaces.owner_id even without an explicit member row.
+    const recipients = await methods.listWorkspaceNotificationRecipients(user.workspaceId)
+    expect(recipients.map(r => r.userId)).toContain(user.userId)
+    expect(recipients.find(r => r.userId === user.userId)?.email).toBe(user.email)
+
+    // A pending (not accepted) admin invite is not a recipient.
+    const invitee = await seedUser('forms-admin')
+    await sql`
+      INSERT INTO public.workspace_members (workspace_id, user_id, role, invited_email)
+      VALUES (${user.workspaceId}, ${invitee.userId}, 'admin', ${invitee.email})
+    `.execute(getDb())
+    expect((await methods.listWorkspaceNotificationRecipients(user.workspaceId)).map(r => r.userId)).not.toContain(invitee.userId)
+
+    await sql`UPDATE public.workspace_members SET accepted_at = now() WHERE workspace_id = ${user.workspaceId} AND user_id = ${invitee.userId}`.execute(getDb())
+    expect((await methods.listWorkspaceNotificationRecipients(user.workspaceId)).map(r => r.userId)).toContain(invitee.userId)
+    await deleteSeededUser(invitee.userId)
+  })
 })
