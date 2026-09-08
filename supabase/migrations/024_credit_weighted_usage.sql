@@ -8,8 +8,16 @@
 -- counters, so a `_v3` generation adds `p_message_count_delta` to the
 -- `_v2` signatures from 008. `_v2` stays registered for
 -- rolling-deploy safety (same posture 008 took toward `_v1`).
+--
+-- OR REPLACE, deliberately: this file first shipped as 023_..., was
+-- renamed to 024_... (#244) after a version collision with
+-- 023_branch_reviews, and the plain-Postgres runner keys
+-- schema_migrations by FILENAME - environments that already ran the
+-- 023-named copy re-run this file under its new name. Plain CREATE
+-- made that re-run fail with "function already exists" and blocked
+-- the staging deploy.
 
-CREATE FUNCTION public.increment_agent_usage_tokens_v3(
+CREATE OR REPLACE FUNCTION public.increment_agent_usage_tokens_v3(
   p_workspace_id uuid,
   p_user_id uuid,
   p_month text,
@@ -39,7 +47,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.increment_api_usage_tokens_v3(
+CREATE OR REPLACE FUNCTION public.increment_api_usage_tokens_v3(
   p_workspace_id uuid,
   p_api_key_id uuid,
   p_month text,
