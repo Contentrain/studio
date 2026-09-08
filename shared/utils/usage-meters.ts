@@ -26,13 +26,13 @@ export const USAGE_METERS = {
     name: 'ai_messages',
     limitKey: 'ai.messages_per_month',
     settingsKey: 'ai_messages',
-    unitLabel: 'message',
+    unitLabel: 'credit',
   },
   API_MESSAGES: {
     name: 'api_messages',
     limitKey: 'api.messages_per_month',
     settingsKey: 'api_messages',
-    unitLabel: 'message',
+    unitLabel: 'credit',
   },
   MCP_CALLS: {
     name: 'mcp_calls',

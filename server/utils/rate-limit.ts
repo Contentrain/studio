@@ -133,7 +133,8 @@ export function checkRateLimit(
 }
 
 /**
- * Plan-based monthly message limits.
+ * Plan-based monthly AI credit limits (credit-weighted messages —
+ * see `shared/utils/ai-credits.ts`).
  * Delegates to the single source of truth in shared/utils/license.ts.
  */
 export function getMonthlyMessageLimit(plan: string): number {

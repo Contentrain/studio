@@ -70,12 +70,12 @@ export default defineEventHandler(async (event) => {
     unit: string
     transform?: (v: number) => number
   }> = [
-    { key: 'ai_messages', limitKey: 'ai.messages_per_month', name: 'AI Messages', current: aiUsage, unit: 'messages' },
+    { key: 'ai_messages', limitKey: 'ai.messages_per_month', name: 'AI Credits', current: aiUsage, unit: 'credits' },
     { key: 'form_submissions', limitKey: 'forms.submissions_per_month', name: 'Form Submissions', current: formSubmissions, unit: 'submissions' },
     { key: 'comments', limitKey: 'comments.per_month', name: 'Comments', current: comments, unit: 'comments' },
     { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes / (1024 * 1024 * 1024), unit: 'GB' },
     { key: 'media_storage', limitKey: 'media.storage_gb', name: 'Media Storage', current: storageBytes / (1024 * 1024 * 1024), unit: 'GB' },
-    { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Messages', current: apiUsage, unit: 'messages' },
+    { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Credits', current: apiUsage, unit: 'credits' },
     { key: 'mcp_calls', limitKey: 'api.mcp_calls_per_month', name: 'MCP Cloud Calls', current: mcpCloudCalls, unit: 'calls' },
   ]
 

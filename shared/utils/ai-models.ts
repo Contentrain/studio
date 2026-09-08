@@ -17,6 +17,11 @@
  * them, changing unit economics without review.
  */
 
+export interface ModelPricing {
+  inputPerMTok: number
+  outputPerMTok: number
+}
+
 export interface ChatModelEntry {
   /** Exact Anthropic model ID sent to the API. */
   id: string
@@ -25,10 +30,20 @@ export interface ChatModelEntry {
   /** One-line description shown in the picker. */
   description: string
   /**
-   * Plan gate: `starter` models are available on every paid plan;
-   * `pro` models additionally require the `ai.studio_key` feature.
+   * Plan gate: `starter` models are available on every plan that can
+   * chat; `pro` models additionally require the `ai.pro_models`
+   * feature (pro/enterprise, and Community Edition where the operator
+   * pays with their own key). The gate exists for unit economics: a
+   * Sonnet/Opus message costs 3-10x a Haiku message.
    */
   tier: 'starter' | 'pro'
+  /**
+   * Anthropic list price for this model, used by
+   * `shared/utils/ai-credits.ts` to weigh a message's credit cost.
+   * Cache write/read multipliers live in the credits helper — these
+   * are the base per-MTok rates.
+   */
+  pricing: ModelPricing
   /**
    * Conversation-history token budget for this model — scaled by plan
    * and source in `server/utils/conversation-history.ts`.
@@ -68,6 +83,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Haiku 4.5',
     description: 'Fast & economic',
     tier: 'starter',
+    pricing: { inputPerMTok: 1, outputPerMTok: 5 },
     historyBudget: 24_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--lightning]',
@@ -78,6 +94,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Sonnet 4.6',
     description: 'Balanced',
     tier: 'pro',
+    pricing: { inputPerMTok: 3, outputPerMTok: 15 },
     historyBudget: 96_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--star]',
@@ -92,6 +109,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Sonnet 5',
     description: 'Balanced, newest generation',
     tier: 'pro',
+    pricing: { inputPerMTok: 2, outputPerMTok: 10 },
     historyBudget: 96_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--star]',
@@ -102,6 +120,7 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     label: 'Opus 4.8',
     description: 'Most capable',
     tier: 'pro',
+    pricing: { inputPerMTok: 5, outputPerMTok: 25 },
     historyBudget: 96_000,
     maxOutputTokens: 16_000,
     paletteIcon: 'icon-[annon--trophy]',
@@ -117,10 +136,12 @@ export const DEFAULT_CHAT_MODEL = 'claude-sonnet-5'
 
 /**
  * Model IDs available to a plan, given whether it has the
- * `ai.studio_key` feature (resolved via `hasFeature` by the caller).
+ * `ai.pro_models` feature (resolved via `hasFeature` by the caller).
+ * Starter-tier models are always included — every plan that can chat
+ * at all can use them.
  */
-export function chatModelIdsFor(hasStudioKey: boolean): string[] {
-  return CHAT_MODELS.filter(m => hasStudioKey || m.tier === 'starter').map(m => m.id)
+export function chatModelIdsFor(hasProModels: boolean): string[] {
+  return CHAT_MODELS.filter(m => hasProModels || m.tier === 'starter').map(m => m.id)
 }
 
 /**

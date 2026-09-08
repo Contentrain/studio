@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { UIAttachment } from '~/composables/useChat'
-import { AI_MODELS } from '~/composables/useChat'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 
 const props = defineProps<{
@@ -22,8 +21,8 @@ const toast = useToast()
 const canUploadMedia = useFeature('media.upload')
 // The picker lives in the composer's action strip; the command palette writes
 // to the same state, so both stay in sync without prop drilling.
-const { selectedModel } = useChat()
-const modelOptions = computed(() => AI_MODELS.map(m => ({ value: m.id, label: m.label })))
+const { selectedModel, allowedModels } = useChat()
+const modelOptions = computed(() => allowedModels.value.map(m => ({ value: m.id, label: m.label })))
 
 const input = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)

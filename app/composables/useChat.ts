@@ -268,6 +268,14 @@ export function useChat(options?: {
   const error = useState<string | null>('chat-error', () => null)
   const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
   useModelPersistence(selectedModel)
+  // Plan-gated model list. Pro-tier models (Sonnet/Opus) need the
+  // `ai.pro_models` feature — a Sonnet message costs 3-10x a Haiku one,
+  // so the starter tier only funds the starter-tier models. The server
+  // enforces the same gate in chat.post.ts (a locked model silently
+  // falls back to an allowed one); this list keeps the picker and the
+  // command palette honest.
+  const hasProModels = useFeature('ai.pro_models')
+  const allowedModels = computed(() => CHAT_MODELS.filter(m => m.tier === 'starter' || hasProModels.value))
   // Monotonic counter bumped on every content-bearing SSE event. The
   // panel watches it for scroll-follow — cheaper than deep-watching the
   // whole message tree.
@@ -640,6 +648,7 @@ export function useChat(options?: {
     error: readonly(error),
     streamTick: readonly(streamTick),
     selectedModel,
+    allowedModels,
     sendMessage,
     stopStreaming,
     clearChat,

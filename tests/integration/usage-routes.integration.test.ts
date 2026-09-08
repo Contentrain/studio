@@ -98,13 +98,13 @@ describe('usage API', () => {
         current: 175,
         limit: 150,
         overageUnits: 25,
-        overageUnitPrice: 0.03,
-        overageAmount: 0.75, // 25 * $0.03
+        overageUnitPrice: 0.05,
+        overageAmount: 1.25, // 25 credits x $0.05 // 25 * $0.03
       })
       expect(ai.percentage).toBeGreaterThanOrEqual(116)
       expect(ai.percentage).toBeLessThanOrEqual(117)
 
-      expect(result.totalOverageAmount).toBe(0.75)
+      expect(result.totalOverageAmount).toBe(1.25)
     })
 
     it('returns -1 for unlimited limits (enterprise)', async () => {

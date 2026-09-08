@@ -95,6 +95,13 @@ describe('license utilities', () => {
     expect(hasFeature('enterprise', 'ai.byoa')).toBe(true)
   })
 
+  it('ai.pro_models gates Sonnet/Opus off the starter tier (unit economics)', () => {
+    expect(hasFeature('free', 'ai.pro_models')).toBe(false)
+    expect(hasFeature('starter', 'ai.pro_models')).toBe(false)
+    expect(hasFeature('pro', 'ai.pro_models')).toBe(true)
+    expect(hasFeature('enterprise', 'ai.pro_models')).toBe(true)
+  })
+
   it('api.conversation is Pro+ and requires_ee', () => {
     expect(hasFeature('starter', 'api.conversation')).toBe(false)
     expect(hasFeature('pro', 'api.conversation')).toBe(true)

@@ -22,6 +22,7 @@ import {
   PLAN_LIMITS,
   PLAN_PRICING,
 } from '../../shared/utils/license'
+import { AI_CREDIT_UNIT_USD } from '../../shared/utils/ai-credits'
 
 // Feature keys that must be in the matrix. Note: `ai.agent`,
 // `git.connect`, and `projects.create` were removed intentionally
@@ -29,6 +30,7 @@ import {
 // on — plan differentiation made no business sense.
 const REQUIRED_FEATURES = [
   'ai.byoa',
+  'ai.pro_models',
   'ai.studio_key',
   'cdn.delivery',
   'cdn.preview_branch',
@@ -282,7 +284,7 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins canonical unit prices', () => {
-      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.03)
+      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.05)
       expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.05)
       expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.price).toBe(0.005)
       expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price).toBe(0.10)
@@ -304,5 +306,26 @@ describe('license ↔ content parity', () => {
       const exported = [...OVERAGE_SETTINGS_KEYS].sort()
       expect(exported).toEqual(fromPricing)
     })
+  })
+})
+
+describe('AI credit economics (content-pinned)', () => {
+  it('ai.pro_models is granted to community/pro/enterprise — never starter or free', () => {
+    const plans = [...FEATURE_MATRIX['ai.pro_models']!.plans].sort()
+    expect(plans).toEqual(['community', 'enterprise', 'pro'])
+  })
+
+  it('ai.pro_models must not require the ee bridge (Community pays with its own key)', () => {
+    expect(FEATURE_MATRIX['ai.pro_models']!.requires_ee).toBe(false)
+  })
+
+  it('credit overage is priced above the per-credit target cost', () => {
+    // A credit targets ~AI_CREDIT_UNIT_USD of Anthropic spend
+    // (shared/utils/ai-credits.ts). Selling overage below that was the
+    // Sep 2026 loss-maker; this pin keeps the margin from regressing.
+    expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBeGreaterThan(AI_CREDIT_UNIT_USD)
+    expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBeGreaterThan(AI_CREDIT_UNIT_USD)
+    expect(OVERAGE_PRICING['ai.messages_per_month']!.unit).toBe('per credit')
+    expect(OVERAGE_PRICING['api.messages_per_month']!.unit).toBe('per credit')
   })
 })

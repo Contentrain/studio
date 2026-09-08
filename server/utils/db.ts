@@ -375,6 +375,12 @@ export async function saveChatResult(input: {
   userId: string
   usageSource: 'byoa' | 'studio'
   usageMonth: string
+  /**
+   * Credit-settle delta (`estimateMessageCredits(...) - 1`). The chat
+   * route computes it from the turn totals; 0 or absent for BYOA and
+   * for turns that never produced a billable event.
+   */
+  extraMessageCount?: number
 }) {
   const db = useDatabaseProvider()
 
@@ -409,6 +415,7 @@ export async function saveChatResult(input: {
     outputTokens: input.outputTokens,
     cacheCreationInputTokens: input.cacheCreationInputTokens,
     cacheReadInputTokens: input.cacheReadInputTokens,
+    messageCountDelta: input.extraMessageCount ?? 0,
   })
 
   await db.updateConversationTimestamp(input.conversationId)
@@ -432,6 +439,8 @@ export async function saveApiChatResult(input: {
   workspaceId: string
   apiKeyId: string
   usageMonth: string
+  /** Credit-settle delta — same contract as `saveChatResult`. */
+  extraMessageCount?: number
 }) {
   const db = useDatabaseProvider()
 
@@ -464,6 +473,7 @@ export async function saveApiChatResult(input: {
     outputTokens: input.outputTokens,
     cacheCreationInputTokens: input.cacheCreationInputTokens,
     cacheReadInputTokens: input.cacheReadInputTokens,
+    messageCountDelta: input.extraMessageCount ?? 0,
   })
 
   await db.updateConversationTimestamp(input.conversationId)

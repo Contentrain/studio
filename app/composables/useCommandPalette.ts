@@ -110,6 +110,7 @@ export function useCommandPalette() {
     isInProject: boolean
     isDark: boolean
     currentModelId: string
+    allowedModelIds: string[]
     /** Translation function */
     t: (key: string) => string
     /** Reactive data sources */
@@ -154,6 +155,7 @@ export function useCommandPalette() {
         isDark: ctx.isDark,
         isInProject: ctx.isInProject,
         currentModelId: ctx.currentModelId,
+        allowedModelIds: ctx.allowedModelIds,
       })
 
       for (const cmd of commands) {
