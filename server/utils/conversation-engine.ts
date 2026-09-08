@@ -774,7 +774,8 @@ export async function executeToolWithAutoMerge(
         const subModelId = sub.model_id as string
         const subData = sub.data as Record<string, unknown>
         const entryId = generateEntryId()
-        const writeResult = await engine.saveContent(subModelId, 'en', { [entryId]: subData }, userEmail, { autoPublish })
+        const subLocale = typeof sub.locale === 'string' && sub.locale ? sub.locale : 'en'
+        const writeResult = await engine.saveContent(subModelId, subLocale, { [entryId]: subData }, userEmail, { autoPublish })
 
         if (writeResult.branch) {
           if (shouldAutoMerge(workflow, permissions)) {
