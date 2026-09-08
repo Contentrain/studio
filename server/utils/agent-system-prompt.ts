@@ -35,6 +35,8 @@ export interface ProjectState {
   phase: ProjectPhase
   /** .contentrain/context.json — last operation, stats */
   contentContext?: Record<string, unknown> | null
+  /** Rendered `## Migration` block when the project came from Contentrain Migrate (see migration-handoff.ts). */
+  migrationHandoff?: string | null
 }
 
 /**
@@ -229,6 +231,11 @@ function buildDynamicBody(
   }
 
   sections.push(stateLines.join('\n'))
+
+  // MIGRATION HANDOFF — what the source WordPress site used and what is still open
+  if (state.migrationHandoff) {
+    sections.push(`${state.migrationHandoff}\n${agentPrompt('migration.handoff')}`)
+  }
 
   // INTENT-SPECIFIC RULES (out-of-scope, etc.)
   const intentRules = buildIntentRulesSection(intent)
