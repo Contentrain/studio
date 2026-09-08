@@ -663,6 +663,12 @@ export async function executeToolWithAutoMerge(
           break
         }
         const writeResult = await engine.deleteContent(modelId, locale, params.entryIds as string[], userEmail)
+        // A refused delete (bad slug, nothing matched) has no branch to merge —
+        // report the validation errors and stop, like save_content does.
+        if (!writeResult.branch) {
+          result = { ...summarizeWriteResult(writeResult), merged: false }
+          break
+        }
         affected.models.push(modelId)
         affected.locales.push(locale)
         affected.branchesChanged = true
