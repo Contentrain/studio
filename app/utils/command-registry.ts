@@ -34,6 +34,8 @@ export interface CommandContext {
   isDark: boolean
   isInProject: boolean
   currentModelId: string
+  /** Plan-gated model ids — pro-tier models are absent on the starter tier. */
+  allowedModelIds: string[]
 }
 
 /**
@@ -228,7 +230,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     })
 
     // ─── AI Model Selection (from the shared catalog) ────────
-    for (const model of CHAT_MODELS) {
+    for (const model of CHAT_MODELS.filter(m => ctx.allowedModelIds.includes(m.id))) {
       commands.push({
         id: `cmd:model-${model.id}`,
         label: `Switch to ${model.label}`,

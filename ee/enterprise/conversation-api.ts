@@ -16,6 +16,7 @@ import { errorMessage } from '../../server/utils/content-strings'
 import { normalizeContentRoot } from '../../server/utils/content-paths'
 import { runConversationLoop } from '../../server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '../../server/utils/conversation-history'
+import { estimateMessageCredits } from '../../shared/utils/ai-credits'
 import { maxOutputTokensFor } from '../../shared/utils/ai-models'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
@@ -374,6 +375,23 @@ async function runConversationMessage(
       }
     }
 
+    // Credit settle — same contract as the Studio chat path: 1 credit
+    // was reserved atomically, the remainder is derived from the
+    // turn's token totals. The Conversation API always runs on the
+    // Studio key, so every turn is weighted.
+    const credits = committed
+      ? estimateMessageCredits({
+          model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cacheCreationInputTokens: totalCacheCreationInputTokens,
+          cacheReadInputTokens: totalCacheReadInputTokens,
+        })
+      : 1
+    const extraCredits = credits - 1
+    if (extraCredits > 0)
+      recordAPIUsage({ workspaceId: keyData.workspaceId, count: extraCredits, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+
     await saveApiChatResult({
       conversationId,
       userMessage: body.message,
@@ -387,6 +405,7 @@ async function runConversationMessage(
       workspaceId: keyData.workspaceId,
       apiKeyId: keyData.keyId,
       usageMonth,
+      extraMessageCount: extraCredits,
     })
 
     return {

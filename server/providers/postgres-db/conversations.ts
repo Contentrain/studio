@@ -330,11 +330,12 @@ export function conversationMethods(): ConversationMethods {
     },
 
     async updateAgentUsageTokens(input) {
-      // _v2 carries the cache token counters; failures are swallowed like the
-      // Supabase impl (token bookkeeping must not break the turn).
+      // _v3 adds the credit-settle delta to _v2's cache token counters;
+      // failures are swallowed like the Supabase impl (usage
+      // bookkeeping must not break the turn).
       try {
         await sql`
-          SELECT public.increment_agent_usage_tokens_v2(
+          SELECT public.increment_agent_usage_tokens_v3(
             p_workspace_id => ${input.workspaceId},
             p_user_id => ${input.userId},
             p_month => ${input.month},
@@ -342,7 +343,8 @@ export function conversationMethods(): ConversationMethods {
             p_input_tokens => ${input.inputTokens},
             p_output_tokens => ${input.outputTokens},
             p_cache_creation_input_tokens => ${input.cacheCreationInputTokens},
-            p_cache_read_input_tokens => ${input.cacheReadInputTokens}
+            p_cache_read_input_tokens => ${input.cacheReadInputTokens},
+            p_message_count_delta => ${input.messageCountDelta ?? 0}
           )
         `.execute(getAdmin())
       }
@@ -397,14 +399,15 @@ export function conversationMethods(): ConversationMethods {
     async updateAPIUsageTokens(input) {
       try {
         await sql`
-          SELECT public.increment_api_usage_tokens_v2(
+          SELECT public.increment_api_usage_tokens_v3(
             p_workspace_id => ${input.workspaceId},
             p_api_key_id => ${input.apiKeyId},
             p_month => ${input.month},
             p_input_tokens => ${input.inputTokens},
             p_output_tokens => ${input.outputTokens},
             p_cache_creation_input_tokens => ${input.cacheCreationInputTokens},
-            p_cache_read_input_tokens => ${input.cacheReadInputTokens}
+            p_cache_read_input_tokens => ${input.cacheReadInputTokens},
+            p_message_count_delta => ${input.messageCountDelta ?? 0}
           )
         `.execute(getAdmin())
       }

@@ -469,6 +469,13 @@ export interface DatabaseProvider {
     outputTokens: number
     cacheCreationInputTokens: number
     cacheReadInputTokens: number
+    /**
+     * Credit-settle delta: `estimateMessageCredits(...) - 1` for the
+     * turn (the initial 1 was reserved atomically before the model
+     * call). Optional so lighter call sites keep their shape; omitted
+     * means 0.
+     */
+    messageCountDelta?: number
   }) => Promise<void>
 
   /**
@@ -522,6 +529,8 @@ export interface DatabaseProvider {
     outputTokens: number
     cacheCreationInputTokens: number
     cacheReadInputTokens: number
+    /** Credit-settle delta — same contract as `updateAgentUsageTokens`. */
+    messageCountDelta?: number
   }) => Promise<void>
 
   /**

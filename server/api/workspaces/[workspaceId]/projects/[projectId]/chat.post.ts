@@ -11,6 +11,7 @@ import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/se
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
+import { estimateMessageCredits } from '../../../../../../shared/utils/ai-credits'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEdition } from '../../../../../utils/license'
@@ -160,8 +161,11 @@ export default defineEventHandler(async (event) => {
 
     // Model: plan-gated selection from the shared catalog. Picked here
     // (before history) because `selectHistoryBudget` is model-aware —
-    // Haiku gets a smaller window than Sonnet/Opus.
-    const availableModels = chatModelIdsFor(hasFeature(plan, 'ai.studio_key'))
+    // Haiku gets a smaller window than Sonnet/Opus. `ai.pro_models`
+    // keeps Sonnet/Opus off the starter tier: a Sonnet message costs
+    // 3-10x a Haiku one, and the $9 plan's unit economics only close
+    // on the starter-tier models.
+    const availableModels = chatModelIdsFor(hasFeature(plan, 'ai.pro_models'))
     const requestedModel = body.model as string | undefined
     const model = (requestedModel && availableModels.includes(requestedModel))
       ? requestedModel
@@ -313,6 +317,26 @@ export default defineEventHandler(async (event) => {
           }
         }
 
+        // === CREDIT SETTLE ===
+        // Quota and metering count credits, not flat messages: the
+        // reservation took 1 up front, the difference settles here
+        // from the turn's real token totals (`shared/utils/ai-credits.ts`).
+        // BYOA stays at 1 credit — the token cost is on the user's own
+        // Anthropic key. Uncommitted turns (no billable provider
+        // event) settle nothing; `tryRevert` refunds their reservation.
+        const credits = (committed && usageSource === 'studio')
+          ? estimateMessageCredits({
+              model,
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+              cacheCreationInputTokens: totalCacheCreationInputTokens,
+              cacheReadInputTokens: totalCacheReadInputTokens,
+            })
+          : 1
+        const extraCredits = credits - 1
+        if (extraCredits > 0)
+          recordAIUsage({ workspaceId, count: extraCredits, userId: session.user.id, month: usageMonth }).catch(() => {})
+
         // === SAVE TO DB ===
         // `saveChatResult` writes the full iteration trace as a
         // single batched INSERT — seed user row, every assistant
@@ -335,6 +359,7 @@ export default defineEventHandler(async (event) => {
           userId: session.user.id,
           usageSource,
           usageMonth,
+          extraMessageCount: extraCredits,
         })
 
       // Webhook events are now emitted from conversation-engine.ts per tool execution

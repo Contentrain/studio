@@ -21,6 +21,15 @@ code writes rows via `server/utils/usage-metering.ts`; the
 `server/plugins/usage-drain.ts` Nitro plugin picks them up every 30s
 and dispatches to the active provider's `ingestUsageEvent`.
 
+**AI/API messages are credit-weighted.** The `ai_messages` and
+`api_messages` meters count credits, not flat messages: the chat routes
+reserve 1 credit atomically before the model call and settle the
+remainder (`estimateMessageCredits(...) - 1`, derived from the turn's
+real token spend — `shared/utils/ai-credits.ts`) as a top-up meter
+event once the turn finishes. A light message stays 1 credit; a heavy
+editorial turn consumes proportionally more. BYOA turns always meter 1
+credit (the token cost is on the customer's own Anthropic key).
+
 ## Polar setup
 
 Polar is the default provider. New deployments point at Polar unless

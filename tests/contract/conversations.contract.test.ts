@@ -132,6 +132,8 @@ describe('postgres-db conversations (contract)', () => {
     expect(denied.allowed).toBe(false)
     expect(denied.currentCount).toBe(2)
 
+    // Credit settle: the turn weighed in at 4 credits — 1 reserved by
+    // the increment above, 3 settled with the token counters.
     await methods.updateAgentUsageTokens({
       workspaceId: user.workspaceId,
       userId: user.userId,
@@ -141,18 +143,19 @@ describe('postgres-db conversations (contract)', () => {
       outputTokens: 40,
       cacheCreationInputTokens: 30,
       cacheReadInputTokens: 20,
+      messageCountDelta: 3,
     })
 
     const usage = await methods.getAgentUsage(user.workspaceId, MONTH, 'studio', { userId: user.userId })
-    expect(usage!.message_count).toBe(2)
+    expect(usage!.message_count).toBe(5) // 2 reserved + 3 credit-settle
     expect(usage!.input_tokens).toBe(100)
     expect(usage!.output_tokens).toBe(40)
 
     await methods.decrementAgentUsage({ workspaceId: user.workspaceId, userId: user.userId, month: MONTH, source: 'studio' })
     const afterRevert = await methods.getAgentUsage(user.workspaceId, MONTH, 'studio', { userId: user.userId })
-    expect(afterRevert!.message_count).toBe(1)
+    expect(afterRevert!.message_count).toBe(4)
 
-    expect(await methods.getMonthlyUsageSummary(user.workspaceId, user.userId, MONTH)).toBe(1)
+    expect(await methods.getMonthlyUsageSummary(user.workspaceId, user.userId, MONTH)).toBe(4)
     expect(await methods.getAgentUsage(user.workspaceId, '2026-01', 'studio', { userId: user.userId })).toBeNull()
   })
 
@@ -214,12 +217,13 @@ describe('postgres-db conversations (contract)', () => {
       outputTokens: 25,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 0,
+      messageCountDelta: 2,
     })
     const row = await sql<{ message_count: number, input_tokens: number }>`
       SELECT message_count, input_tokens FROM public.api_message_usage
       WHERE workspace_id = ${user.workspaceId} AND api_key_id = ${apiKeyId} AND month = ${MONTH}
     `.execute(getDb())
-    expect(row.rows[0]!.message_count).toBe(1)
+    expect(row.rows[0]!.message_count).toBe(3) // 1 reserved + 2 credit-settle
     expect(row.rows[0]!.input_tokens).toBe(50)
 
     await methods.decrementAPIUsage({ workspaceId: user.workspaceId, apiKeyId, month: MONTH })
@@ -227,7 +231,7 @@ describe('postgres-db conversations (contract)', () => {
       SELECT message_count FROM public.api_message_usage
       WHERE workspace_id = ${user.workspaceId} AND api_key_id = ${apiKeyId} AND month = ${MONTH}
     `.execute(getDb())
-    expect(reverted.rows[0]!.message_count).toBe(0)
+    expect(reverted.rows[0]!.message_count).toBe(2)
   })
 
   it('getBYOAKey returns the caller\'s anthropic key ciphertext under RLS', async () => {

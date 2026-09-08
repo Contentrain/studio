@@ -148,6 +148,31 @@ describe('db helpers', () => {
     expect(mockDb.updateConversationTimestamp).toHaveBeenCalledWith('conv-1')
   })
 
+  it('forwards the credit-settle delta to the usage RPC', async () => {
+    const { saveChatResult } = await loadDbModule()
+    await saveChatResult({
+      conversationId: 'conv-1',
+      userMessage: 'Heavy editorial turn',
+      iterations: [
+        { iteration: 1, assistantBlocks: [{ type: 'text', text: 'Done' }], toolResultBlocks: [] },
+      ],
+      lastAssistantContent: [{ type: 'text', text: 'Done' }],
+      model: 'claude-sonnet-5',
+      inputTokens: 20_000,
+      outputTokens: 9_000,
+      cacheCreationInputTokens: 5_000,
+      cacheReadInputTokens: 150_000,
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      usageSource: 'studio',
+      usageMonth: '2026-04',
+      extraMessageCount: 4,
+    })
+    expect(mockDb.updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
+      messageCountDelta: 4,
+    }))
+  })
+
   it('writes every assistant iteration as visible and tool_result rows as internal', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult({
@@ -228,6 +253,7 @@ describe('db helpers', () => {
       outputTokens: 12,
       cacheCreationInputTokens: 150,
       cacheReadInputTokens: 9000,
+      messageCountDelta: 0,
     })
     const rows = mockDb.insertMessages.mock.calls[0]![0] as Array<Record<string, unknown>>
     expect(rows.at(-1)).toMatchObject({
@@ -268,6 +294,7 @@ describe('db helpers', () => {
       outputTokens: 5,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 0,
+      messageCountDelta: 0,
     })
     // Critical: must NOT touch the user-keyed agent_usage path.
     expect(mockDb.updateAgentUsageTokens).not.toHaveBeenCalled()

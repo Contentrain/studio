@@ -276,11 +276,10 @@ export function conversationMethods(): ConversationMethods {
 
     async updateAgentUsageTokens(input) {
       const admin = getAdmin()
-      // _v2 RPC carries the cache token columns alongside the base
-      // input/output counters; the legacy _v1 entry point stays
-      // registered for rolling-deploy safety but is no longer called
-      // from app code.
-      await admin.rpc('increment_agent_usage_tokens_v2', {
+      // _v3 RPC adds the credit-settle delta to _v2's cache token
+      // columns; the older generations stay registered for
+      // rolling-deploy safety but are no longer called from app code.
+      await admin.rpc('increment_agent_usage_tokens_v3', {
         p_workspace_id: input.workspaceId,
         p_user_id: input.userId,
         p_month: input.month,
@@ -289,6 +288,7 @@ export function conversationMethods(): ConversationMethods {
         p_output_tokens: input.outputTokens,
         p_cache_creation_input_tokens: input.cacheCreationInputTokens,
         p_cache_read_input_tokens: input.cacheReadInputTokens,
+        p_message_count_delta: input.messageCountDelta ?? 0,
       })
     },
 
@@ -327,7 +327,7 @@ export function conversationMethods(): ConversationMethods {
 
     async updateAPIUsageTokens(input) {
       const admin = getAdmin()
-      await admin.rpc('increment_api_usage_tokens_v2', {
+      await admin.rpc('increment_api_usage_tokens_v3', {
         p_workspace_id: input.workspaceId,
         p_api_key_id: input.apiKeyId,
         p_month: input.month,
@@ -335,6 +335,7 @@ export function conversationMethods(): ConversationMethods {
         p_output_tokens: input.outputTokens,
         p_cache_creation_input_tokens: input.cacheCreationInputTokens,
         p_cache_read_input_tokens: input.cacheReadInputTokens,
+        p_message_count_delta: input.messageCountDelta ?? 0,
       })
     },
 

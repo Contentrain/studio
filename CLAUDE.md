@@ -60,6 +60,7 @@ events flow through `usage_events_outbox` and a drain cron.
   `DatabaseProvider` methods
 - To add a provider: new plugin file + one line in `bootstrapPaymentPlugins()`. No other core changes.
 - To record a usage event: call the typed helper in `server/utils/usage-metering.ts`. Don't write to the outbox directly.
+- AI/API message quotas count **credit-weighted** units (`shared/utils/ai-credits.ts`): the routes reserve 1 credit atomically, then settle `credits - 1` through the `_v3` usage RPCs and a top-up meter event. Never meter a studio-funded turn as a flat message, and never sell overage below `AI_CREDIT_UNIT_USD`.
 - See `docs/PAYMENT_PROVIDERS.md` for the full setup + extension guide.
 
 ### Auth
