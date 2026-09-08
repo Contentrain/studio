@@ -1,4 +1,4 @@
--- 023: credit-weighted usage settle.
+-- 024: credit-weighted usage settle.
 --
 -- AI/API message quotas now count credits: the chat routes still
 -- reserve 1 unit atomically before the model call, then settle the
