@@ -679,6 +679,8 @@ export interface DatabaseProvider {
   clearScheduledPublications: (projectId: string, modelId: string, entryIds: string[], locale?: string, kinds?: Array<'publish' | 'expire'>) => Promise<void>
   /** Atomically claim every due, unfired boundary (safe across instances). */
   claimDueScheduledPublications: (now: Date, limit: number) => Promise<DatabaseRow[]>
+  /** Acknowledge delivery or release for retry; stale claim tokens cannot settle a newer schedule. */
+  settleScheduledPublication: (id: string, token: string, success: boolean, now: Date) => Promise<boolean>
   /** Pending (unfired) boundaries for a project — the UI's "scheduled" view. */
   listPendingScheduledPublications: (projectId: string) => Promise<DatabaseRow[]>
   // BRANCH REVIEWS (request changes)

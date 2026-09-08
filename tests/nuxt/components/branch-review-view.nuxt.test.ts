@@ -7,6 +7,7 @@ mockNuxtImport('useRoute', () => () => ({ query: {}, params: {} }))
 mockNuxtImport('useSanitize', () => () => ({ sanitize: (html: string) => html }))
 
 function makeReview(overrides: Partial<BranchReview> = {}): BranchReview {
+  const updatedAt = new Date().toISOString()
   return {
     branch: 'cr/content/plans/en/1755612345-a3f2',
     info: {
@@ -16,7 +17,7 @@ function makeReview(overrides: Partial<BranchReview> = {}): BranchReview {
       locale: 'en',
       timestamp: 1755612345,
       updatedBy: 'editor@contentrain.io',
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     },
     groups: [{
       modelId: 'plans',
@@ -31,7 +32,7 @@ function makeReview(overrides: Partial<BranchReview> = {}): BranchReview {
         statusBefore: null,
         statusAfter: null,
         updatedBy: 'editor@contentrain.io',
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       }],
       omittedEntries: 0,
     }],

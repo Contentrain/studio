@@ -10,6 +10,7 @@ type SchedulingMethods = Pick<
   | 'upsertScheduledPublications'
   | 'clearScheduledPublications'
   | 'claimDueScheduledPublications'
+  | 'settleScheduledPublication'
   | 'listPendingScheduledPublications'
 >
 
@@ -28,7 +29,7 @@ export function schedulingMethods(): SchedulingMethods {
       const now = new Date().toISOString()
       const { error } = await getAdmin()
         .from('scheduled_publications')
-        .upsert(rows.map(r => ({ ...r, fired_at: null, updated_at: now })), { onConflict: 'project_id,model_id,entry_id,locale,kind' })
+        .upsert(rows.map(r => ({ ...r, fired_at: null, claim_token: null, lease_until: null, updated_at: now })), { onConflict: 'project_id,model_id,entry_id,locale,kind' })
       if (error) throw createError({ statusCode: 500, message: error.message })
     },
 
@@ -54,6 +55,14 @@ export function schedulingMethods(): SchedulingMethods {
       })
       if (error) throw createError({ statusCode: 500, message: error.message })
       return (data ?? []) as DatabaseRow[]
+    },
+
+    async settleScheduledPublication(id, token, success, now) {
+      const { data, error } = await getAdmin().rpc('settle_scheduled_publication', {
+        p_id: id, p_token: token, p_success: success, p_now: now.toISOString(),
+      })
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return data === true
     },
 
     async listPendingScheduledPublications(projectId) {

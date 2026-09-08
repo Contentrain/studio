@@ -385,6 +385,8 @@ export interface ScheduledPublicationsTable {
   kind: string
   fire_at: string
   fired_at: string | null
+  claim_token: string | null
+  lease_until: string | null
   created_at: Generated<string>
   updated_at: Generated<string>
 }
