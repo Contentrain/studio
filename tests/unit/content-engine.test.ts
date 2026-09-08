@@ -558,6 +558,130 @@ describe('content engine', () => {
     expect(contentChange?.content).not.toMatch(/"drop"/)
   })
 
+  it('deletes a document by slug across every locale, content and per-slug meta', async () => {
+    // Regression: the engine handed MCP an `id` for every kind, so a document
+    // delete threw "Document delete requires a slug" whatever the caller sent.
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const modelJson = JSON.stringify({
+      id: 'guides',
+      name: 'Guides',
+      domain: 'docs',
+      kind: 'document',
+      i18n: true,
+      fields: {},
+    })
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/guides.json')) return modelJson
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['en', 'tr'], default: 'en' } })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listDirectory: vi.fn(async (path: string) => {
+        if (path === '.contentrain/content/docs/guides/Youtube-Intro') return ['en.md', 'tr.md']
+        if (path === '.contentrain/meta/guides/Youtube-Intro') return ['en.json', 'tr.json']
+        // The slug is lowercased before it reaches MCP.
+        if (path === '.contentrain/content/docs/guides/youtube-intro') return ['en.md', 'tr.md']
+        if (path === '.contentrain/meta/guides/youtube-intro') return ['en.json', 'tr.json']
+        return []
+      }),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.deleteContent('guides', 'en', ['Youtube-Intro'], 'user@example.com')
+
+    expect(result.validation.valid).toBe(true)
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    expect(call.changes.map(c => c.path)).toEqual([
+      '.contentrain/content/docs/guides/youtube-intro/en.md',
+      '.contentrain/content/docs/guides/youtube-intro/tr.md',
+      '.contentrain/meta/guides/youtube-intro/en.json',
+      '.contentrain/meta/guides/youtube-intro/tr.json',
+    ])
+    expect(call.changes.every(c => c.content === null)).toBe(true)
+  })
+
+  it('refuses a document delete for a slug that does not exist instead of committing nothing', async () => {
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const modelJson = JSON.stringify({
+      id: 'guides',
+      name: 'Guides',
+      domain: 'docs',
+      kind: 'document',
+      i18n: true,
+      fields: {},
+    })
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/guides.json')) return modelJson
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      // GitHub returns [] for a missing directory.
+      listDirectory: vi.fn().mockResolvedValue([]),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.deleteContent('guides', 'en', ['missing'], 'user@example.com')
+
+    expect(result.validation.valid).toBe(false)
+    expect(result.validation.errors[0]?.message).toContain('missing')
+    expect(result.branch).toBe('')
+    expect(applyPlan).not.toHaveBeenCalled()
+  })
+
+  it('deletes dictionary keys in place and never drops the locale file', async () => {
+    // Regression: with `id` instead of `keys`, MCP took the "no keys" branch
+    // and deleted the whole `en.json` + its meta.
+    const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+    const modelJson = JSON.stringify({
+      id: 'ui-strings',
+      name: 'UI strings',
+      domain: 'system',
+      kind: 'dictionary',
+      i18n: true,
+      fields: {},
+    })
+    const git = createGitProvider({
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('/ui-strings.json')) return modelJson
+        if (path.endsWith('/system/ui-strings/en.json')) {
+          return JSON.stringify({ 'a.keep': 'Keep', 'b.drop': 'Drop', 'c.drop': 'Drop too' })
+        }
+        if (path.endsWith('/config.json')) {
+          return JSON.stringify({ locales: { supported: ['en'], default: 'en' } })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      }),
+      listDirectory: vi.fn().mockResolvedValue([]),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      applyPlan,
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.deleteContent('ui-strings', 'en', ['b.drop', 'c.drop'], 'user@example.com')
+
+    expect(result.validation.valid).toBe(true)
+    const call = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+    const contentChange = call.changes.find(c => c.path === '.contentrain/content/system/ui-strings/en.json')
+    expect(contentChange?.content).not.toBeNull()
+    expect(JSON.parse(contentChange!.content!)).toEqual({ 'a.keep': 'Keep' })
+    expect(call.changes.some(c => c.path.startsWith('.contentrain/meta/ui-strings/') && c.content === null)).toBe(false)
+  })
+
   it('updates entry status in meta without touching content files', async () => {
     const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({

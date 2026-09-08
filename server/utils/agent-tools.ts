@@ -72,13 +72,13 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
   },
   {
     name: 'delete_content',
-    description: 'Delete entries from a collection by their IDs, or keys from a dictionary. For collections: pass entry IDs. For dictionaries: pass keys as entryIds.',
+    description: 'Delete entries from a model. For collections: pass entry IDs. For documents: pass slugs (the whole document is removed across all locales). For dictionaries: pass keys as entryIds.',
     inputSchema: {
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
         locale: { type: 'string', description: 'Locale code' },
-        entryIds: { type: 'array', items: { type: 'string' }, description: 'Entry IDs (collection) or keys (dictionary) to delete' },
+        entryIds: { type: 'array', items: { type: 'string' }, description: 'Entry IDs (collection), slugs (document) or keys (dictionary) to delete' },
       },
       required: ['model', 'entryIds'],
     },
