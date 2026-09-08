@@ -672,6 +672,19 @@ export interface DatabaseProvider {
   claimDueScheduledPublications: (now: Date, limit: number) => Promise<DatabaseRow[]>
   /** Pending (unfired) boundaries for a project — the UI's "scheduled" view. */
   listPendingScheduledPublications: (projectId: string) => Promise<DatabaseRow[]>
+  // BRANCH REVIEWS (request changes)
+  // ═══════════════════════════════════════════════════
+
+  /** Open (or replace) a changes-requested state for a pending branch. */
+  requestBranchChanges: (input: { projectId: string, workspaceId: string, branch: string, comment: string, requestedBy: string }) => Promise<DatabaseRow>
+  /** The open request for a branch, or null. */
+  getBranchChangeRequest: (projectId: string, branch: string) => Promise<DatabaseRow | null>
+  /** Open requests across a project (sidebar flags, agent state). */
+  listBranchChangeRequests: (projectId: string) => Promise<DatabaseRow[]>
+  /** Mark resolved (author addressed it) — keeps the row for history. */
+  resolveBranchChangeRequest: (projectId: string, branch: string, resolvedBy?: string) => Promise<void>
+  /** Drop the row when the branch is merged or rejected. */
+  clearBranchChangeRequest: (projectId: string, branch: string) => Promise<void>
 
   // ═══════════════════════════════════════════════════
   // WEBHOOKS

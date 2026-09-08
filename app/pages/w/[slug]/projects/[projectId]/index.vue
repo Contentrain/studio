@@ -14,7 +14,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
-const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch } = useBranches()
+const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -200,6 +200,20 @@ async function handleBranchMerge() {
     await invalidateCache(projectId.value)
     await fetchSnapshot(ws.id, projectId.value)
   }
+}
+
+async function handleBranchRequestChanges(comment: string) {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  const sent = await requestChanges(ws.id, projectId.value, activeBranch.value, comment)
+  if (sent) await fetchBranches(ws.id, projectId.value)
+}
+
+async function handleBranchResolveRequest() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  const done = await resolveChangeRequest(ws.id, projectId.value, activeBranch.value)
+  if (done) await fetchBranches(ws.id, projectId.value)
 }
 
 async function handleBranchReject() {
@@ -450,6 +464,8 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             @send-chat-prompt="chatPanelRef?.handleSend($event)"
             @branch-merge="handleBranchMerge"
             @branch-reject="handleBranchReject"
+            @branch-request-changes="handleBranchRequestChanges"
+            @branch-resolve-request="handleBranchResolveRequest"
             @branch-load-raw="handleBranchLoadRaw"
             @vocabulary-save="handleVocabularySave"
           />

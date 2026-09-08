@@ -26,12 +26,26 @@ const emit = defineEmits<{
   merge: []
   reject: []
   loadRaw: []
+  requestChanges: [comment: string]
+  resolveRequest: []
 }>()
 
 const { t } = useContent()
 
 const confirmReject = ref(false)
 const technicalOpen = ref(false)
+const requesting = ref(false)
+const requestComment = ref('')
+
+function sendRequest() {
+  const comment = requestComment.value.trim()
+  if (!comment) return
+  emit('requestChanges', comment)
+  requestComment.value = ''
+  requesting.value = false
+}
+
+const requestedWhen = computed(() => props.review.changesRequested ? formatRelativeTime(props.review.changesRequested.requestedAt, t) : '')
 
 const totalChanges = computed(() => {
   const { added, updated, removed } = props.review.summary
@@ -125,6 +139,31 @@ function stripPrefix(path: string): string {
             -{{ review.summary.removed }}
           </AtomsBadge>
         </div>
+      </div>
+    </div>
+
+    <!-- Changes requested by a reviewer: the author reads why the branch is still open -->
+    <div
+      v-if="review.changesRequested"
+      class="shrink-0 border-b border-warning-200 bg-warning-50 px-4 py-3 dark:border-warning-900/40 dark:bg-warning-900/20"
+      role="status"
+    >
+      <div class="flex items-start gap-2">
+        <span class="icon-[annon--comment-text] mt-0.5 size-4 shrink-0 text-warning-600 dark:text-warning-400" aria-hidden="true" />
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-semibold text-warning-700 dark:text-warning-400">
+            {{ t('review.changes_requested_title') }}
+          </p>
+          <p class="mt-0.5 whitespace-pre-wrap text-sm text-body dark:text-secondary-300">
+            {{ review.changesRequested.comment }}
+          </p>
+          <p v-if="requestedWhen" class="mt-1 text-[11px] text-muted">
+            {{ requestedWhen }}
+          </p>
+        </div>
+        <AtomsBaseButton type="button" variant="ghost" size="sm" @click="emit('resolveRequest')">
+          {{ t('review.resolve_request') }}
+        </AtomsBaseButton>
       </div>
     </div>
 
@@ -264,12 +303,42 @@ function stripPrefix(path: string): string {
     </div>
 
     <!-- Actions say what they will do, not just what they are called -->
-    <div v-if="review.canMerge || review.canReject" class="shrink-0 border-t border-secondary-200 p-4 dark:border-secondary-800">
+    <div v-if="review.canMerge || review.canReject || review.canRequestChanges" class="shrink-0 border-t border-secondary-200 p-4 dark:border-secondary-800">
       <p v-if="hasDestructiveSchema" class="mb-2 flex items-start gap-1 text-[11px] text-warning-700 dark:text-warning-400">
         <span class="icon-[annon--alert-triangle] mt-px size-3 shrink-0" aria-hidden="true" />
         {{ t('review.approve_destructive_hint') }}
       </p>
+      <div v-if="requesting" class="mb-3 space-y-2">
+        <AtomsFormLabel for="review-request-comment">
+          {{ t('review.request_changes') }}
+        </AtomsFormLabel>
+        <AtomsFormTextarea
+          id="review-request-comment"
+          :model-value="requestComment"
+          :rows="3"
+          :placeholder="t('review.request_changes_placeholder')"
+          @update:model-value="requestComment = $event"
+        />
+        <div class="flex items-center justify-end gap-2">
+          <AtomsBaseButton type="button" variant="ghost" size="sm" @click="requesting = false; requestComment = ''">
+            {{ t('review.request_changes_cancel') }}
+          </AtomsBaseButton>
+          <AtomsBaseButton type="button" variant="primary" size="sm" :disabled="!requestComment.trim()" @click="sendRequest">
+            {{ t('review.request_changes_send') }}
+          </AtomsBaseButton>
+        </div>
+      </div>
       <div class="flex items-center gap-2">
+        <AtomsBaseButton
+          v-if="review.canRequestChanges && !requesting"
+          type="button"
+          variant="secondary"
+          :disabled="isEmpty"
+          @click="requesting = true"
+        >
+          <span class="icon-[annon--comment-text] size-4" aria-hidden="true" />
+          {{ t('review.request_changes') }}
+        </AtomsBaseButton>
         <AtomsBaseButton v-if="review.canMerge" variant="primary" class="flex-1" :disabled="isEmpty" @click="emit('merge')">
           <span class="icon-[annon--check] size-4" aria-hidden="true" />
           {{ totalChanges === 1 ? t('review.approve_action_one') : t('review.approve_action_many', { count: totalChanges }) }}

@@ -17,6 +17,7 @@ import { auditMethods } from './audit'
 import { cdnMethods } from './cdn'
 import { commentMethods } from './comments'
 import { conversationMethods } from './conversations'
+import { branchReviewMethods } from './branch-reviews'
 import { formMethods } from './forms'
 import { schedulingMethods } from './scheduling'
 import { mcpCloudMethods } from './mcp-cloud'
@@ -43,6 +44,7 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...mediaMethods(),
     ...formMethods(),
     ...schedulingMethods(),
+    ...branchReviewMethods(),
     ...commentMethods(),
     ...projectMethods(),
     ...cdnMethods(),

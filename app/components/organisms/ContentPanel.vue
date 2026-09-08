@@ -57,6 +57,8 @@ const emit = defineEmits<{
   'sendChatPrompt': [text: string]
   'branchMerge': []
   'branchReject': []
+  'branchRequestChanges': [comment: string]
+  'branchResolveRequest': []
   'branchLoadRaw': []
   'vocabularySave': [terms: Record<string, Record<string, string> | null>]
 }>()
@@ -429,6 +431,8 @@ provide(sendChatPromptKey, sendChatPrompt)
           :raw-loading="branchRawLoading"
           @merge="emit('branchMerge')"
           @reject="emit('branchReject')"
+          @request-changes="emit('branchRequestChanges', $event)"
+          @resolve-request="emit('branchResolveRequest')"
           @load-raw="emit('branchLoadRaw')"
         />
         <div v-else class="p-5">

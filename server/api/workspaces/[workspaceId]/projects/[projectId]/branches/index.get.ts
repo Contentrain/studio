@@ -1,4 +1,5 @@
 import { parseBranchName } from '../../../../../../../shared/utils/branch-review'
+import { listBranchRequestsSafe } from '../../../../../../utils/branch-requests'
 
 /**
  * List cr/* branches (pending content changes).
@@ -33,6 +34,8 @@ export default defineEventHandler(async (event) => {
     models = null
   }
 
+  const requested = new Set((await listBranchRequestsSafe(projectId)).map(r => String(r.branch)))
+
   return {
     branches: branches.map((branch) => {
       const parsed = parseBranchName(branch.name)
@@ -47,6 +50,7 @@ export default defineEventHandler(async (event) => {
         modelName: modelId ? (models?.get(modelId)?.name ?? modelId) : null,
         locale: parsed.locale,
         timestamp: parsed.timestamp,
+        changesRequested: requested.has(branch.name),
       }
     }),
   }

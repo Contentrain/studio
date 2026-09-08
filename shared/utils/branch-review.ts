@@ -153,6 +153,16 @@ export interface BranchReview {
   /** Resolved from the caller's role, so the panel never offers a 403. */
   canMerge: boolean
   canReject: boolean
+  canRequestChanges?: boolean
+  /** Open "changes requested" state on this branch, when a reviewer sent it back. */
+  changesRequested?: BranchChangeRequest | null
+}
+
+/** A reviewer's open request on a pending branch (S-04). */
+export interface BranchChangeRequest {
+  comment: string
+  requestedBy: string | null
+  requestedAt: string
 }
 
 /** One row of the pending-changes list, already humanised. */
@@ -165,6 +175,8 @@ export interface BranchListItem {
   modelName: string | null
   locale: string | null
   timestamp: number | null
+  /** True when a reviewer has sent this branch back for changes. */
+  changesRequested?: boolean
 }
 
 /**
