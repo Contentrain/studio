@@ -1,4 +1,5 @@
 import { buildBranchReview } from '../../../../../../../../server/utils/branch-review'
+import { getBranchRequestSafe } from '../../../../../../../../server/utils/branch-requests'
 
 /**
  * What a pending content branch changes, as an editor reads it.
@@ -64,7 +65,7 @@ export default defineEventHandler(async (event) => {
   // the panel can hide an action instead of offering one that answers 403.
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
 
-  const request = await useDatabaseProvider().getBranchChangeRequest(projectId, branch)
+  const request = await getBranchRequestSafe(projectId, branch)
 
   const review = await buildBranchReview({
     branch,

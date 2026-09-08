@@ -283,6 +283,7 @@ describe('project config and branch route integration', () => {
           modelName: 'faq',
           locale: 'en',
           timestamp: 1234567890,
+          changesRequested: false,
         }],
       })
 
