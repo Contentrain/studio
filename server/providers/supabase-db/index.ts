@@ -18,6 +18,7 @@ import { cdnMethods } from './cdn'
 import { commentMethods } from './comments'
 import { conversationMethods } from './conversations'
 import { formMethods } from './forms'
+import { schedulingMethods } from './scheduling'
 import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
@@ -41,6 +42,7 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...conversationMethods(),
     ...mediaMethods(),
     ...formMethods(),
+    ...schedulingMethods(),
     ...commentMethods(),
     ...projectMethods(),
     ...cdnMethods(),
