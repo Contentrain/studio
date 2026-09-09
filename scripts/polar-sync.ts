@@ -339,7 +339,10 @@ async function syncProduct(
       continue
     }
     const currentUnit = getMeteredPriceUnitAmount(current)
-    if (currentUnit !== blueprint.unitAmountCents) {
+    // Polar echoes unit_amount back as a 12-decimal string
+    // ("10.000000000000"); compare numerically or every in-sync price
+    // reads as drift and the sync exits 1 forever.
+    if (currentUnit === undefined || Number(currentUnit) !== Number(blueprint.unitAmountCents)) {
       summary.warnings.push(
         `Metered price drift on "${pricing.name}" (meter "${blueprint.meterName}"): `
         + `Polar has unit_amount=${currentUnit ?? 'unknown'} cents, content wants ${blueprint.unitAmountCents} cents.`,
