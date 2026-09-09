@@ -182,21 +182,17 @@ export function selectHistoryBudget(input: {
 export function buildPromptMessages(input: {
   history: DatabaseRow[]
   /**
-   * The current turn's user content. A plain string for text-only
-   * messages, or an `AIContentBlock[]` when attachments are present
-   * (attachment blocks followed by the user text). Sent in full — only
-   * *historical* images are stripped (see `stripHistoricalImages`).
+   * The current turn's user content, already composed by
+   * `composeUserTurn` (request context first, then attachments, then
+   * the user text). The SAME composed value must be persisted as the
+   * seed row's `content_blocks` — replaying different bytes than the
+   * live call sent would shift the cached prefix at this message on
+   * every following turn and re-bill the whole turn (with its tool
+   * results) at the 2x write rate. Only *historical* images are
+   * stripped on replay (see `stripHistoricalImages`).
    */
   newUserMessage: string | AIContentBlock[]
   budget: HistoryBudget
-  /**
-   * Per-request context assembled by `buildRequestContext` (content
-   * index, UI context, inferred intent, project state). Prepended to
-   * the current user turn as a text block so it sits AFTER the cached
-   * history prefix. It is never persisted — the seed user row keeps
-   * only the user's own content.
-   */
-  requestContext?: string | null
 }): AIMessage[] {
   const groups = groupRowsByTurn(input.history)
   const turns = groups.map((group, index) => {
@@ -210,8 +206,8 @@ export function buildPromptMessages(input: {
 
   const messages = kept.flat()
   const tail = messages.length - 1
-  if (tail >= 0) messages[tail] = withCacheMarker(messages[tail]!)
-  messages.push({ role: 'user', content: withRequestContext(input.newUserMessage, input.requestContext) })
+  if (tail >= 0) messages[tail] = markMessageTail(messages[tail]!)
+  messages.push({ role: 'user', content: input.newUserMessage })
   return messages
 }
 
@@ -261,12 +257,17 @@ export function stripHistoricalImages(blocks: AIContentBlock[], opts: { keepUrlI
 }
 
 /**
- * Place the prompt-cache breakpoint on the tail of the replayed
- * history: the last non-empty block of the newest kept message. A
- * plain-string message becomes a single text block so it can carry
- * the marker (the two shapes are equivalent on the wire).
+ * Place a prompt-cache breakpoint on the tail of a message: the last
+ * non-empty block, copied — never mutated, because the engine's trace
+ * and the persisted rows share these arrays and markers must never be
+ * stored. A plain-string message becomes a single text block so it can
+ * carry the marker (the two shapes are equivalent on the wire).
+ *
+ * Used in two places: `buildPromptMessages` marks the replayed
+ * history's tail (breakpoint 3), and the conversation engine marks the
+ * in-turn tail between tool iterations (breakpoint 4).
  */
-function withCacheMarker(message: AIMessage): AIMessage {
+export function markMessageTail(message: AIMessage): AIMessage {
   if (typeof message.content === 'string') {
     if (!message.content.trim()) return message
     return { role: message.role, content: [{ type: 'text', text: message.content, cacheControl: PROMPT_CACHE_CONTROL }] }
@@ -281,8 +282,13 @@ function withCacheMarker(message: AIMessage): AIMessage {
   return message
 }
 
-/** Prepend the per-request context block to the current user turn. */
-function withRequestContext(
+/**
+ * Compose the current user turn: request context first, then the
+ * attachments and the user's text. The result is BOTH what the model
+ * receives and what `saveChatResult` persists as the seed row — the
+ * two must stay byte-identical (see `buildPromptMessages`).
+ */
+export function composeUserTurn(
   newUserMessage: string | AIContentBlock[],
   requestContext: string | null | undefined,
 ): string | AIContentBlock[] {
@@ -291,6 +297,56 @@ function withRequestContext(
   return typeof newUserMessage === 'string'
     ? [context, { type: 'text', text: newUserMessage }]
     : [context, ...newUserMessage]
+}
+
+/**
+ * How many turns a persisted content index stays fresh before the
+ * route re-sends it even without a change — bounds both staleness for
+ * the model and the chance the only copy gets trimmed out of the
+ * window.
+ */
+const CONTENT_INDEX_REFRESH_TURNS = 15
+
+const CONTENT_INDEX_RE = /<content_index>\n([\s\S]*?)\n<\/content_index>/
+
+/**
+ * Decide whether this turn's request context should carry the brain
+ * content index. Persisting the index with EVERY turn would be
+ * byte-stable but would fill the history window with ~1.5K tokens of
+ * stale index per turn; sending it only in `system` invalidated the
+ * whole conversation cache on every content write. The middle path:
+ * the index rides in the user turn, but only when it changed since the
+ * last persisted copy (or the last copy is older than
+ * `CONTENT_INDEX_REFRESH_TURNS` turns / absent). Older copies remain
+ * in history untouched — the static prompt tells the model the most
+ * recent one supersedes them.
+ */
+export function shouldIncludeContentIndex(
+  history: DatabaseRow[],
+  contentIndex: string | null | undefined,
+): boolean {
+  if (!contentIndex || !contentIndex.trim()) return false
+
+  let turnsBack = 0
+  let lastTurn: string | null | undefined
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i]!
+    const turn = (row.turn_id ?? row.turnId) as string | null | undefined
+    if (turn !== lastTurn) {
+      turnsBack++
+      lastTurn = turn
+      if (turnsBack > CONTENT_INDEX_REFRESH_TURNS) return true
+    }
+    if (row.role !== 'user') continue
+    const blocks = (row.content_blocks ?? row.contentBlocks) as AIContentBlock[] | null | undefined
+    if (!blocks || !Array.isArray(blocks)) continue
+    for (const block of blocks) {
+      if (block.type !== 'text') continue
+      const match = CONTENT_INDEX_RE.exec(block.text)
+      if (match) return match[1] !== contentIndex.trim()
+    }
+  }
+  return true
 }
 
 function groupRowsByTurn(rows: DatabaseRow[]): DatabaseRow[][] {

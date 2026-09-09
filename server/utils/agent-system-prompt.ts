@@ -301,16 +301,29 @@ export function toSystemBlocks(prompt: SystemPromptBlocks): AISystemBlock[] {
 }
 
 /**
- * Per-request context for the current user turn: the content index
- * and the dynamic body, wrapped so the model can tell it apart from
- * the user's own words (the static prompt explains the block — see
- * `role.request_context`). Returns `null` when there is nothing to
- * say. `buildPromptMessages` prepends it to the user turn, i.e. AFTER
- * the cached history prefix; it is never persisted.
+ * Per-request context for the current user turn: the dynamic body and
+ * — when the caller opts in via `includeContentIndex` — the brain
+ * content index inside `<content_index>` tags, wrapped so the model
+ * can tell it apart from the user's own words (the static prompt
+ * explains the block — see `role.request_context`). Returns `null`
+ * when there is nothing to say.
+ *
+ * `composeUserTurn` prepends the result to the user turn, i.e. AFTER
+ * the cached history prefix, and the composed turn is persisted with
+ * the seed row so the replay is byte-identical to the live call. The
+ * index is therefore included only when it changed (or went stale) —
+ * `shouldIncludeContentIndex` makes that call — so the history window
+ * doesn't fill with repeated copies.
  */
-export function buildRequestContext(prompt: SystemPromptBlocks): string | null {
-  const parts = [prompt.contentIndex, prompt.dynamic]
-    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+export function buildRequestContext(
+  prompt: SystemPromptBlocks,
+  options: { includeContentIndex?: boolean } = {},
+): string | null {
+  const index = (options.includeContentIndex ?? true) ? prompt.contentIndex : null
+  const parts = [
+    index && index.trim() ? `<content_index>\n${index.trim()}\n</content_index>` : null,
+    prompt.dynamic,
+  ].filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
   if (parts.length === 0) return null
   return `<request_context>\n${parts.join('\n\n')}\n</request_context>`
 }

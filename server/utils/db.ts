@@ -429,6 +429,12 @@ export async function saveChatResult(input: {
 export async function saveApiChatResult(input: {
   conversationId: string
   userMessage: string
+  /**
+   * Composed prompt turn (request context + user text) — must be
+   * persisted byte-identical to what the model received so the next
+   * turn's replay keeps the cached prefix intact.
+   */
+  userContentBlocks?: AIContentBlock[]
   iterations: IterationTrace[]
   lastAssistantContent: AIContentBlock[]
   model: string
@@ -447,6 +453,7 @@ export async function saveApiChatResult(input: {
   const rows = buildTraceRows({
     conversationId: input.conversationId,
     userMessage: input.userMessage,
+    userContentBlocks: input.userContentBlocks,
     trace: input.iterations,
     lastAssistantContent: input.lastAssistantContent,
     model: input.model,

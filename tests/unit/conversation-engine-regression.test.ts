@@ -809,4 +809,75 @@ describe('turn-end merge coalescing (W4)', () => {
     const toolResult = events.find(e => e.type === 'tool_result') as { result: { reviewBranch?: string } }
     expect(toolResult.result.reviewBranch).toBe('cr/content/posts/en/1-test')
   })
+
+  it('marks the in-turn request tail with the fourth cache breakpoint once the segment is large', async () => {
+    const captured: AIMessage[][] = []
+    let call = 0
+    // ~60K chars ≈ 17K estimated tokens — over ITERATION_CACHE_MIN_TOKENS.
+    const bigUserText = `context:${'a'.repeat(60_000)}`
+    const { messages } = await collectConversationEvents({
+      messages: [{ role: 'user', content: bigUserText } as AIMessage],
+      aiProvider: {
+        streamCompletion(request: { messages: AIMessage[] }) {
+          captured.push(request.messages)
+          const idx = call++
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'tool_use_start', toolId: 't1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 't1', toolName: 'test_tool', toolInput: {} }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 10, outputTokens: 5 } }
+            }
+            else {
+              yield { type: 'text', content: 'Done.' }
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 4, outputTokens: 2 } }
+            }
+          })()
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(captured).toHaveLength(2)
+    // Call 1: only the user turn — nothing in-turn yet, no marker.
+    expect(JSON.stringify(captured[0])).not.toContain('cacheControl')
+    // Call 2: the request's LAST message carries the marker on its
+    // last block; everything before it stays unmarked.
+    const second = captured[1]!
+    const tail = second[second.length - 1]!
+    const tailBlocks = tail.content as Array<Record<string, unknown>>
+    expect(tailBlocks[tailBlocks.length - 1]).toMatchObject({ cacheControl: { type: 'ephemeral' } })
+    expect(JSON.stringify(second.slice(0, -1))).not.toContain('cacheControl')
+    // The engine's own message array (what gets persisted/replayed)
+    // must never carry the marker — a stored marker would blow the
+    // 4-breakpoint limit on replay.
+    expect(JSON.stringify(messages)).not.toContain('cacheControl')
+  })
+
+  it('leaves small in-turn segments unmarked — a write there costs more than it saves', async () => {
+    const captured: AIMessage[][] = []
+    let call = 0
+    await collectConversationEvents({
+      aiProvider: {
+        streamCompletion(request: { messages: AIMessage[] }) {
+          captured.push(request.messages)
+          const idx = call++
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'tool_use_start', toolId: 't1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 't1', toolName: 'test_tool', toolInput: {} }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 10, outputTokens: 5 } }
+            }
+            else {
+              yield { type: 'text', content: 'Done.' }
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 4, outputTokens: 2 } }
+            }
+          })()
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(captured).toHaveLength(2)
+    expect(JSON.stringify(captured[1])).not.toContain('cacheControl')
+  })
 })

@@ -202,7 +202,7 @@ describe('buildRequestContext — per-request context for the user turn', () => 
       contentIndex: 'INDEX_BODY',
       dynamic: 'DYNAMIC_BODY',
     })
-    expect(context).toBe('<request_context>\nINDEX_BODY\n\nDYNAMIC_BODY\n</request_context>')
+    expect(context).toBe('<request_context>\n<content_index>\nINDEX_BODY\n</content_index>\n\nDYNAMIC_BODY\n</request_context>')
     expect(context).not.toContain('STATIC_BODY')
   })
 
@@ -210,7 +210,9 @@ describe('buildRequestContext — per-request context for the user turn', () => 
     expect(buildRequestContext({ static: 's', contentIndex: null, dynamic: 'DYNAMIC_BODY' }))
       .toBe('<request_context>\nDYNAMIC_BODY\n</request_context>')
     expect(buildRequestContext({ static: 's', contentIndex: 'INDEX_BODY', dynamic: '  ' }))
-      .toBe('<request_context>\nINDEX_BODY\n</request_context>')
+      .toBe('<request_context>\n<content_index>\nINDEX_BODY\n</content_index>\n</request_context>')
+    expect(buildRequestContext({ static: 's', contentIndex: 'INDEX_BODY', dynamic: 'DYNAMIC_BODY' }, { includeContentIndex: false }))
+      .toBe('<request_context>\nDYNAMIC_BODY\n</request_context>')
   })
 
   it('returns null when there is nothing request-specific to say', () => {
