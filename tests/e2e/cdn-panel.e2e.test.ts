@@ -77,7 +77,7 @@ describe('cdn panel e2e', () => {
 
     await page.goto(url('/w/acme/projects/project-1?cdn=true'))
 
-    const toggle = page.locator('button[role="switch"]')
+    const toggle = page.getByRole('switch', { name: /Enable CDN|Disable CDN/ })
     await toggle.waitFor()
     expect(await toggle.isDisabled()).toBe(true)
     expect(await page.getByRole('button', { name: 'Create key' }).count()).toBe(0)
@@ -162,7 +162,10 @@ describe('cdn panel e2e', () => {
 
     await page.goto(url('/w/acme/projects/project-1?cdn=true'))
 
-    const toggle = page.locator('button[role="switch"]')
+    // The project page now renders more switches alongside the CDN
+    // panel (deploy hook / schedule toggles), so address this one by
+    // its accessible name instead of the bare role.
+    const toggle = page.getByRole('switch', { name: /Enable CDN|Disable CDN/ })
     await toggle.waitFor()
     await toggle.click()
 
