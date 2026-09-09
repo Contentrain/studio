@@ -6,7 +6,7 @@
  */
 
 import type { MigrationHandoff } from '@contentrain/types'
-import { summarizeMigrationHandoff } from '~~/server/utils/migration-handoff'
+import { summarizeMigrationHandoff, syncMigrationHandoff } from '~~/server/utils/migration-handoff'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -26,14 +26,40 @@ export default defineEventHandler(async (event) => {
   }
 
   const row = await db.getProjectById(projectId, 'id, migration_handoff, migration_handoff_synced_at')
-  const handoff = (row?.migration_handoff ?? null) as MigrationHandoff | null
+  let handoff = (row?.migration_handoff ?? null) as MigrationHandoff | null
+  let syncedAt = (row?.migration_handoff_synced_at ?? null) as string | null
+
+  // Nothing stored yet: the repository may have received the handoff after
+  // the project was connected (Migrate pushes once the project exists), so
+  // look for the file now instead of waiting for someone to find a sync
+  // button. Owners/admins only — it persists on the project row. Best-effort:
+  // no installation, a malformed file or a Git error all read as "absent".
+  if (!handoff && role !== 'member') {
+    try {
+      const ctx = await resolveProjectContext(workspaceId, projectId)
+      const result = await syncMigrationHandoff({
+        projectId,
+        git: ctx.git,
+        contentRoot: ctx.contentRoot,
+        project: { repo_full_name: ctx.project.repo_full_name, default_branch: ctx.project.default_branch ?? 'main' },
+      })
+      if (result.found && result.handoff) {
+        handoff = result.handoff
+        syncedAt = new Date().toISOString()
+      }
+    }
+    catch {
+      // absent
+    }
+  }
+
   if (!handoff)
     return { present: false, syncedAt: null, summary: null, commentsImported: 0 }
 
   const counts = await db.countCommentsByStatus(projectId)
   return {
     present: true,
-    syncedAt: row?.migration_handoff_synced_at ?? null,
+    syncedAt,
     summary: summarizeMigrationHandoff(handoff),
     commentsImported: counts.pending + counts.approved + counts.spam + counts.rejected,
   }

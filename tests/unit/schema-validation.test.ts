@@ -357,3 +357,28 @@ describe('validateProjectSchema', () => {
     ]))
   })
 })
+
+describe('detectBreakingChanges — store replaced', () => {
+  it('collapses a wholesale replacement into one warning instead of a critical per vanished model', () => {
+    const prev = makeBrain({
+      models: new Map([['blog', makeModel({ id: 'blog' })], ['hero', makeModel({ id: 'hero' })]]),
+      contentSummary: { blog: { count: 10, locales: ['en'], kind: 'collection' }, hero: { count: 1, locales: ['en'], kind: 'collection' } },
+    })
+    const curr = makeBrain({ models: new Map([['posts', makeModel({ id: 'posts' })], ['pages', makeModel({ id: 'pages' })]]) })
+    const warnings = detectBreakingChanges(prev, curr)
+    expect(warnings).toEqual([
+      expect.objectContaining({ type: 'store_replaced', severity: 'warning', modelId: '*', affectedEntries: 11, previous: '2 models', current: '2 models' }),
+    ])
+    expect(warnings.some(w => w.type === 'model_removed')).toBe(false)
+  })
+
+  it('still flags a partial removal per model', () => {
+    const prev = makeBrain({
+      models: new Map([['blog', makeModel({ id: 'blog' })], ['hero', makeModel({ id: 'hero' })]]),
+      contentSummary: { blog: { count: 10, locales: ['en'], kind: 'collection' } },
+    })
+    const curr = makeBrain({ models: new Map([['hero', makeModel({ id: 'hero' })], ['posts', makeModel({ id: 'posts' })]]) })
+    const warnings = detectBreakingChanges(prev, curr)
+    expect(warnings).toEqual([expect.objectContaining({ type: 'model_removed', severity: 'critical', modelId: 'blog', affectedEntries: 10 })])
+  })
+})

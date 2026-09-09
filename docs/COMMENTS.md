@@ -175,7 +175,7 @@ Fidelity rules (the S-08 acceptance criterion is *zero record and zero parent lo
   no-op for rows already present, so retries and chunked uploads are safe.
 - `threads_closed` opens those entries' threads closed, matching WordPress
   `comment_status`.
-- HTML bodies become plain text (paragraphs → newlines, tags stripped).
+- HTML bodies become plain text (paragraphs → newlines, tags stripped, character references such as `&#8217;` and `&rsquo;` decoded).
 
 ## Data model
 

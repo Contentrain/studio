@@ -172,3 +172,63 @@ describe('migration handoff routes', () => {
     })
   })
 })
+
+describe('migration handoff — pushed after the project was connected', () => {
+  it('GET reads the file from the repository for an owner when nothing is stored yet, and persists it', async () => {
+    const base = stubSession('owner')
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, migration_handoff: null, migration_handoff_synced_at: null })
+    const setProjectMigrationHandoff = vi.fn().mockResolvedValue(undefined)
+    const countCommentsByStatus = vi.fn().mockResolvedValue({ pending: 0, approved: 0, spam: 0, rejected: 0 })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, getProjectById, setProjectMigrationHandoff, countCommentsByStatus }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: { readFile: vi.fn(async (path: string, ref: string) => {
+        if (path === 'contentrain-handoff.json' && ref === 'contentrain') return JSON.stringify(handoff)
+        throw new Error('404')
+      }) },
+      contentRoot: '',
+      project: { repo_full_name: 'acme/site', default_branch: 'main' },
+      workspace: { id: WORKSPACE },
+    }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
+    }, async ({ request }) => {
+      const body = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as Record<string, unknown>
+      expect(body.present).toBe(true)
+      expect(body.syncedAt).toEqual(expect.any(String))
+      expect(body.summary).toMatchObject({ siteUrl: 'https://carriedils.com', needsRuntime: ['comments'] })
+      expect(setProjectMigrationHandoff).toHaveBeenCalledWith(PROJECT, expect.objectContaining({ site_url: 'https://carriedils.com' }))
+    })
+  })
+
+  it('GET stays "absent" for a member (no persisting on their behalf) and when the repository has no file', async () => {
+    const member = stubSession('member')
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, migration_handoff: null, migration_handoff_synced_at: null })
+    const setProjectMigrationHandoff = vi.fn()
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...member, getProjectById, setProjectMigrationHandoff }))
+    const resolveProjectContext = vi.fn().mockResolvedValue({
+      git: { readFile: vi.fn().mockRejectedValue(new Error('404')) },
+      contentRoot: '',
+      project: { repo_full_name: 'acme/site', default_branch: 'main' },
+      workspace: { id: WORKSPACE },
+    })
+    vi.stubGlobal('resolveProjectContext', resolveProjectContext)
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
+    }, async ({ request }) => {
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0 })
+      expect(resolveProjectContext).not.toHaveBeenCalled()
+    })
+
+    const owner = stubSession('owner')
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...owner, getProjectById, setProjectMigrationHandoff }))
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
+    }, async ({ request }) => {
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0 })
+      expect(resolveProjectContext).toHaveBeenCalledTimes(1)
+      expect(setProjectMigrationHandoff).not.toHaveBeenCalled()
+    })
+  })
+})
