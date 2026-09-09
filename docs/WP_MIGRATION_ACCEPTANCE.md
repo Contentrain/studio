@@ -1,8 +1,29 @@
 # WordPress migration acceptance — 2026-09-09
 
-Status: **contract probe passes with the local parent-relation fix; not
+Status: **contract probe passes with published importer 0.2.1; not
 end-to-end accepted**. This is not a browser journey or a fidelity measurement.
 The original lossless-import gate remains unchanged.
+
+## Published-package acceptance
+
+2026-09-09: AI release PR #159 merged and Release run `34343985042` succeeded.
+The probe passed on Studio main base `6aeb851` (#247), using packages downloaded
+from npm into a clean temporary directory, not sibling-repository builds:
+
+- `@contentrain/wp-import@0.2.1`
+- `@contentrain/emitter-astro@0.7.0`
+- resolved `@contentrain/types@1.10.0`
+
+PostgreSQL 16 applied migrations 000–025. The actual opt-in test ran (1 passed,
+not skipped); local lint/typecheck also passed. The WXR SHA-256 was
+`557de6c66f9008a0df8f8892baab4cfa545af96592d942f16f939d8137efd717`.
+Importer npm integrity:
+`sha512-EjK3qUdn85y9xKMaLsMZD5R9CFdzlXv86p8tyrI1V8GrqV+A6wKRZGPFpISxgrAI5bLQi3gPXO6aobpLA/TVuQ==`.
+
+Migrate's production intake does **not yet consume this importer**. Merely
+installing a package is not that integration. Its separate session owns wiring
+the actual content/entry map/comments export into the existing pipeline and
+handoff. See [session ownership](WP_RUNTIME_WORK_SPLIT.md).
 
 ## Follow-up: parent-relation fix
 
@@ -49,7 +70,7 @@ claim to reimplement ACF behavior in the destination runtime.
 
 ## Required next gates
 
-1. Land/release the parent-relation fix and consume that version in Migrate.
+1. Consume the now-published parent-relation fix in Migrate's real intake path.
    Plugin configuration remains archived data, not automatically recreated
    plugin behavior; route discovery must distinguish it from public pages.
 2. Use the actual extraction/pipeline ProjectIR and generated handoff, build the
