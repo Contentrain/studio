@@ -5,6 +5,7 @@ import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/u
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
+import { estimateContentTokens, markMessageTail } from './conversation-history'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -144,6 +145,39 @@ function buildFallbackSummary(executedToolNames: string[]): string {
  *
  * The final event is always { type: 'done' } with usage, affected, and lastContent.
  */
+/**
+ * In-turn segment size (estimated tokens) above which the engine
+ * places the fourth prompt-cache breakpoint on the request tail.
+ * Below it, marking loses money: a marked segment is written at the
+ * 1h-TTL 2x rate and only pays off if at least one more iteration
+ * reads it back — most turns stop after two calls, so small segments
+ * ride uncached. Above it (multi-iteration turns carrying large tool
+ * results — the 100-200K "monster" turns), each further iteration
+ * re-reads the segment at 0.1x instead of re-sending it at 1x.
+ */
+const ITERATION_CACHE_MIN_TOKENS = 12_000
+
+/**
+ * Breakpoint 4 of 4 (after tools, static system, history tail): mark
+ * the request's last block when the in-turn segment has grown past
+ * `ITERATION_CACHE_MIN_TOKENS`. Copies — never mutates — the tail
+ * message: `trace` and the persisted rows share these arrays, and a
+ * stored marker would exceed Anthropic's 4-breakpoint limit on
+ * replay. The segment is measured from the current user turn (the
+ * last message `buildPromptMessages` produced) because everything
+ * after the history-tail breakpoint is re-sent on every iteration.
+ */
+function withInTurnCacheMarker(messages: AIMessage[], historyCount: number): AIMessage[] {
+  if (messages.length <= historyCount) return messages
+  let tokens = 0
+  for (let i = Math.max(0, historyCount - 1); i < messages.length; i++) {
+    tokens += estimateContentTokens(messages[i]!.content)
+    if (tokens >= ITERATION_CACHE_MIN_TOKENS) break
+  }
+  if (tokens < ITERATION_CACHE_MIN_TOKENS) return messages
+  return [...messages.slice(0, -1), markMessageTail(messages[messages.length - 1]!)]
+}
+
 export async function* runConversationLoop(
   config: ConversationConfig,
   toolCtx: ToolExecutionContext,
@@ -152,6 +186,12 @@ export async function* runConversationLoop(
   const maxResultLength = config.maxToolResultLength ?? DEFAULT_MAX_TOOL_RESULT_LENGTH
   const maxOutputTokens = config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
   const aiProvider = useAIProvider()
+
+  // Rows before this point came from `buildPromptMessages` (replayed
+  // history + the current user turn; the history tail already carries
+  // cache breakpoint 3). Rows the loop appends after it are the
+  // in-turn segment `withInTurnCacheMarker` may cache.
+  const historyMessageCount = config.messages.length
 
   let totalInputTokens = 0
   let totalOutputTokens = 0
@@ -193,7 +233,7 @@ export async function* runConversationLoop(
     }
 
     for await (const streamEvent of aiProvider.streamCompletion(
-      { model: config.model, system: config.systemPrompt, messages: config.messages, tools: toolsOverride ?? config.tools, maxTokens, abortSignal: config.abortSignal },
+      { model: config.model, system: config.systemPrompt, messages: withInTurnCacheMarker(config.messages, historyMessageCount), tools: toolsOverride ?? config.tools, maxTokens, abortSignal: config.abortSignal },
       config.apiKey,
     )) {
       switch (streamEvent.type) {

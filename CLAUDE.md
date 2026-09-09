@@ -317,6 +317,17 @@ history (marker on the last block of the newest kept message) → current user t
   (content index, intent, project state, UI context) goes into the user turn via
   `buildRequestContext` (`agent-system-prompt.ts`). In `system` it would sit in front of
   every history message and invalidate the conversation cache on every content change.
+- **The composed user turn is persisted byte-identical** (`composeUserTurn` output =
+  seed row `content_blocks`). Replaying different bytes than the live call shifts the
+  prefix at that message every turn and re-bills the whole previous turn at 2x. The
+  content index rides in the turn only when changed or stale (`shouldIncludeContentIndex`,
+  refresh every 15 turns) so history doesn't fill with repeated copies.
+- Breakpoint 4 is the engine's in-turn moving marker (`withInTurnCacheMarker`,
+  `ITERATION_CACHE_MIN_TOKENS`): multi-iteration turns with large tool results re-read
+  their segment at 0.1x instead of re-sending it per iteration.
+- To hunt a future invalidator, use Anthropic's cache-diagnosis beta
+  (`cache-diagnosis-2026-04-07`, `diagnostics.previous_message_id` -> `cache_miss_reason`)
+  rather than guessing from `cache_creation_input_tokens`.
 - Every marker is `PROMPT_CACHE_CONTROL` (`server/providers/ai.ts`, 1h TTL). Anthropic
   requires longer-TTL markers to precede shorter ones — never mix TTLs per call site.
 - `buildPromptMessages` trims with hysteresis (`HISTORY_TRIM_TARGET`). Trimming exactly to

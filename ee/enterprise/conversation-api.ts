@@ -15,7 +15,7 @@ import { createContentEngine } from '../../server/utils/content-engine'
 import { errorMessage } from '../../server/utils/content-strings'
 import { normalizeContentRoot } from '../../server/utils/content-paths'
 import { runConversationLoop } from '../../server/utils/conversation-engine'
-import { buildPromptMessages, selectHistoryBudget } from '../../server/utils/conversation-history'
+import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '../../server/utils/conversation-history'
 import { estimateMessageCredits } from '../../shared/utils/ai-credits'
 import { maxOutputTokensFor } from '../../shared/utils/ai-models'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
@@ -269,7 +269,6 @@ async function runConversationMessage(
       keyData.customInstructions,
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
-    const requestContext = buildRequestContext(promptBlocks)
 
     const permissionFiltered = filterToolsByPermissions(STUDIO_TOOLS, permissions.availableTools) as typeof STUDIO_TOOLS
     const phaseFiltered = permissionFiltered.filter(tool => tool.requiredPhase.includes(phase))
@@ -310,11 +309,16 @@ async function runConversationMessage(
       undefined,
       { includeInternal: true },
     )
+    // Same cache contract as the Studio chat path: compose the turn
+    // once, send it, persist it byte-identical.
+    const requestContext = buildRequestContext(promptBlocks, {
+      includeContentIndex: shouldIncludeContentIndex(historyRows ?? [], promptBlocks.contentIndex),
+    })
+    const promptUserContent = composeUserTurn(body.message, requestContext)
     const messages = buildPromptMessages({
       history: historyRows ?? [],
-      newUserMessage: body.message,
+      newUserMessage: promptUserContent,
       budget,
-      requestContext,
     })
 
     const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
@@ -395,6 +399,7 @@ async function runConversationMessage(
     await saveApiChatResult({
       conversationId,
       userMessage: body.message,
+      userContentBlocks: Array.isArray(promptUserContent) ? promptUserContent : undefined,
       iterations,
       lastAssistantContent,
       model,

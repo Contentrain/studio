@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PROMPT_CACHE_CONTROL } from '../../server/providers/ai'
-import { buildPromptMessages, estimateContentTokens, selectHistoryBudget, stripHistoricalImages } from '../../server/utils/conversation-history'
+import { buildPromptMessages, composeUserTurn, estimateContentTokens, markMessageTail, selectHistoryBudget, shouldIncludeContentIndex, stripHistoricalImages } from '../../server/utils/conversation-history'
 
 /**
  * Text of a message regardless of shape — the cache marker turns the
@@ -258,35 +258,32 @@ describe('buildPromptMessages — prompt cache layout', () => {
     expect(JSON.stringify(messages[0])).toContain('cacheControl')
   })
 
-  it('prepends the request context to a plain-string user message', () => {
+  it('composeUserTurn prepends the request context to a plain-string user message', () => {
     const context = '<request_context>\nctx\n</request_context>'
-    const messages = buildPromptMessages({ history: [], newUserMessage: 'hello', budget, requestContext: context })
-    expect(messages).toEqual([{
-      role: 'user',
-      content: [{ type: 'text', text: context }, { type: 'text', text: 'hello' }],
-    }])
+    expect(composeUserTurn('hello', context)).toEqual([
+      { type: 'text', text: context },
+      { type: 'text', text: 'hello' },
+    ])
   })
 
-  it('prepends the request context before attachment blocks', () => {
+  it('composeUserTurn puts the request context before attachment blocks', () => {
     const image = { type: 'image', source: { type: 'url', url: 'https://cdn.example/media/x.png' } }
-    const messages = buildPromptMessages({
-      history: [],
-      newUserMessage: [image, { type: 'text', text: 'set this as cover' }],
-      budget,
-      requestContext: 'CTX',
-    })
-    expect(messages[0]!.content).toEqual([
+    expect(composeUserTurn([image as never, { type: 'text', text: 'set this as cover' }], 'CTX')).toEqual([
       { type: 'text', text: 'CTX' },
       image,
       { type: 'text', text: 'set this as cover' },
     ])
   })
 
-  it('ignores an empty request context', () => {
-    expect(buildPromptMessages({ history: [], newUserMessage: 'hi', budget, requestContext: '  \n' }))
-      .toEqual([{ role: 'user', content: 'hi' }])
-    expect(buildPromptMessages({ history: [], newUserMessage: 'hi', budget, requestContext: null }))
-      .toEqual([{ role: 'user', content: 'hi' }])
+  it('composeUserTurn ignores an empty request context', () => {
+    expect(composeUserTurn('hi', '  \n')).toBe('hi')
+    expect(composeUserTurn('hi', null)).toBe('hi')
+  })
+
+  it('passes the composed turn through untouched — live bytes are what gets persisted and replayed', () => {
+    const composed = composeUserTurn('hello', '<request_context>\nctx\n</request_context>')
+    const messages = buildPromptMessages({ history: [], newUserMessage: composed, budget })
+    expect(messages).toEqual([{ role: 'user', content: composed }])
   })
 
   it('trims with hysteresis: an overflow cuts well under the budget, not just under it', () => {
@@ -494,5 +491,69 @@ describe('buildPromptMessages — turn-safe Anthropic protocol invariant', () =>
     expect(messages).toHaveLength(3)
     expect(messages[0]!.content).toBe('NEW')
     expect(textOf(messages[1]!)).toBe('OK')
+  })
+})
+
+describe('markMessageTail', () => {
+  it('marks the last non-empty block on a copy, never mutating the original', () => {
+    const original = {
+      role: 'assistant' as const,
+      content: [
+        { type: 'text' as const, text: 'body' },
+        { type: 'text' as const, text: '  ' },
+      ],
+    }
+    const marked = markMessageTail(original)
+    expect((marked.content as Array<Record<string, unknown>>)[0]).toMatchObject({ cacheControl: PROMPT_CACHE_CONTROL })
+    expect(JSON.stringify(original)).not.toContain('cacheControl')
+  })
+
+  it('turns a plain-string message into a marked text block', () => {
+    expect(markMessageTail({ role: 'user' as const, content: 'hello' })).toEqual({
+      role: 'user',
+      content: [{ type: 'text', text: 'hello', cacheControl: PROMPT_CACHE_CONTROL }],
+    })
+  })
+})
+
+describe('shouldIncludeContentIndex', () => {
+  const INDEX = '## Content Index\n42 entries, 3 models'
+  const ctxRow = (turn: string, index: string) => ({
+    role: 'user',
+    content: 'msg',
+    content_blocks: [
+      { type: 'text', text: `<request_context>\n<content_index>\n${index}\n</content_index>\n\nDYNAMIC\n</request_context>` },
+      { type: 'text', text: 'msg' },
+    ],
+    turn_id: turn,
+    turn_sequence: 0,
+  })
+  const plainTurn = (turn: string) => [
+    { role: 'user', content: 'q', turn_id: turn, turn_sequence: 0 },
+    { role: 'assistant', content: 'a', turn_id: turn, turn_sequence: 1 },
+  ]
+
+  it('includes the index when the history has no persisted copy', () => {
+    expect(shouldIncludeContentIndex([], INDEX)).toBe(true)
+    expect(shouldIncludeContentIndex(plainTurn('T1'), INDEX)).toBe(true)
+  })
+
+  it('skips the index when the latest persisted copy is identical', () => {
+    expect(shouldIncludeContentIndex([ctxRow('T1', INDEX), ...plainTurn('T2')], INDEX)).toBe(false)
+  })
+
+  it('re-sends the index when it changed since the persisted copy', () => {
+    expect(shouldIncludeContentIndex([ctxRow('T1', INDEX)], `${INDEX}, updated`)).toBe(true)
+  })
+
+  it('re-sends the index when the persisted copy is older than the refresh window', () => {
+    const history = [ctxRow('T0', INDEX)]
+    for (let i = 1; i <= 16; i++) history.push(...plainTurn(`T${i}`))
+    expect(shouldIncludeContentIndex(history, INDEX)).toBe(true)
+  })
+
+  it('never includes an empty index', () => {
+    expect(shouldIncludeContentIndex([], null)).toBe(false)
+    expect(shouldIncludeContentIndex([], '  ')).toBe(false)
   })
 })

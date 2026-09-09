@@ -9,7 +9,7 @@ import type { MigrationHandoff } from '@contentrain/types'
 import { buildRequestContext } from '~~/server/utils/agent-system-prompt'
 import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/server/utils/migration-handoff'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
-import { buildPromptMessages, selectHistoryBudget } from '~~/server/utils/conversation-history'
+import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
 import { estimateMessageCredits } from '../../../../../../shared/utils/ai-credits'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
@@ -236,16 +236,26 @@ export default defineEventHandler(async (event) => {
       getEdition(),
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
-    const requestContext = buildRequestContext(promptBlocks)
+    // The content index rides in the request context only when it
+    // changed since the last persisted copy (or went stale) — every
+    // turn would bloat the history window, and `system` placement
+    // would invalidate the conversation cache on every content write.
+    const requestContext = buildRequestContext(promptBlocks, {
+      includeContentIndex: shouldIncludeContentIndex(historyRows ?? [], promptBlocks.contentIndex),
+    })
 
     // === PROMPT MESSAGES ===
     // Bounded history (cache breakpoint on its tail) + the current
-    // user turn (request context, attachments, user text).
+    // user turn (request context, attachments, user text). The
+    // composed turn is ALSO what gets persisted below — live call and
+    // replay must stay byte-identical or the cached prefix shifts at
+    // this message on every following turn and the whole turn (tool
+    // results included) is re-billed at the 2x write rate.
+    const promptUserContent = composeUserTurn(userContent, requestContext)
     const messages = buildPromptMessages({
       history: historyRows ?? [],
-      newUserMessage: userContent,
+      newUserMessage: promptUserContent,
       budget,
-      requestContext,
     })
 
     // === FILTER TOOLS by permissions + phase ===
@@ -354,7 +364,7 @@ export default defineEventHandler(async (event) => {
         await saveChatResult({
           conversationId,
           userMessage: body.message,
-          userContentBlocks: attachmentBlocks.length > 0 ? (userContent as AIContentBlock[]) : undefined,
+          userContentBlocks: Array.isArray(promptUserContent) ? promptUserContent : undefined,
           iterations,
           lastAssistantContent,
           model,
