@@ -12,6 +12,7 @@ type SchedulingMethods = Pick<
   | 'upsertScheduledPublications'
   | 'clearScheduledPublications'
   | 'claimDueScheduledPublications'
+  | 'settleScheduledPublication'
   | 'listPendingScheduledPublications'
 >
 
@@ -47,6 +48,8 @@ export function schedulingMethods(): SchedulingMethods {
               fire_at: sql`excluded.fire_at`,
               workspace_id: sql`excluded.workspace_id`,
               fired_at: null,
+              claim_token: null,
+              lease_until: null,
               updated_at: now,
             } as never))
           .execute()
@@ -84,6 +87,13 @@ export function schedulingMethods(): SchedulingMethods {
       catch (error) {
         throw createError({ statusCode: 500, message: detail(error) })
       }
+    },
+
+    async settleScheduledPublication(id, token, success, now) {
+      const result = await sql<{ settled: boolean }>`
+        SELECT public.settle_scheduled_publication(${id}::uuid, ${token}::uuid, ${success}, ${now.toISOString()}::timestamptz) AS settled
+      `.execute(getAdmin())
+      return result.rows[0]?.settled === true
     },
 
     async listPendingScheduledPublications(projectId) {

@@ -55,8 +55,10 @@ describe('postgres-db scheduling + deploy target (contract)', () => {
     // Claim: only the due one, and only once
     const claimed = await methods.claimDueScheduledPublications(new Date(), 50)
     expect(claimed.map(c => `${c.entry_id}:${c.kind}`)).toEqual(['b:publish'])
-    expect(claimed[0]!.fired_at).not.toBeNull()
+    expect(claimed[0]!.fired_at).toBeNull()
     expect(await methods.claimDueScheduledPublications(new Date(), 50)).toEqual([])
+
+    await methods.settleScheduledPublication(String(claimed[0]!.id), String(claimed[0]!.claim_token), true, new Date())
 
     // A fired row is no longer pending, and clearing does not touch it
     expect((await methods.listPendingScheduledPublications(projectId)).map(p => p.entry_id)).toEqual(['a'])
