@@ -1,0 +1,39 @@
+{
+  "entry": { "modelId": "posts", "entryId": "hello-world", "locale": "en" },
+  "config": {
+    "closed": false,
+    "requireApproval": true,
+    "requireEmail": true,
+    "maxDepth": 4,
+    "maxBodyLength": 5000,
+    "captcha": "turnstile",
+    "captchaSiteKey": "0x4AAAAAAA-fixture-site-key",
+    "honeypotField": "_hp"
+  },
+  "comments": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "parentId": null,
+      "depth": 0,
+      "author": { "name": "Ada", "url": "https://ada.dev/", "isModerator": false },
+      "body": "First!",
+      "type": "comment",
+      "createdAt": "2026-09-01T10:00:00.000Z",
+      "replies": [
+        {
+          "id": "22222222-2222-4222-8222-222222222222",
+          "parentId": "11111111-1111-4111-8111-111111111111",
+          "depth": 1,
+          "author": { "name": "Site editor", "url": null, "isModerator": true },
+          "body": "Welcome aboard.",
+          "type": "comment",
+          "createdAt": "2026-09-01T11:00:00.000Z",
+          "replies": []
+        }
+      ]
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
