@@ -438,3 +438,110 @@ describe('comment moderation routes', () => {
     })
   })
 })
+
+describe('public comment routes — validation, captcha and query hygiene', () => {
+  function publicDb(extra: Record<string, unknown> = {}) {
+    return {
+      getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', content_root: '.contentrain' }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, plan: 'pro', github_installation_id: 42, overage_settings: null }),
+      ...extra,
+    }
+  }
+  const post = (request: (path: string, init?: RequestInit) => Promise<Response>, body: unknown, path = '/api/comments/v1/project-1/posts/entry-1') =>
+    request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  it('POST maps every field error before touching the database', async () => {
+    stubPublicGlobals({ config: { maxBodyLength: 100 } })
+    const createCommentIfAllowed = vi.fn()
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(publicDb({ createCommentIfAllowed })))
+
+    await withTestServer({
+      routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicPost() }],
+    }, async ({ request }) => {
+      const cases: Array<[unknown, string, string]> = [
+        [{ author: { name: 'Ada' }, body: 'hi' }, 'author.email', 'comments.email_required'],
+        [{ author: { name: 'Ada', email: 'not-an-email' }, body: 'hi' }, 'author.email', 'comments.email_invalid'],
+        [{ author: { name: 'Ada', email: 'a@b.co', url: 'javascript:alert(1)' }, body: 'hi' }, 'author.url', 'comments.url_invalid'],
+        [{ author: { name: 'Ada', email: 'a@b.co' }, body: '<b></b>' }, 'body', 'comments.body_required'],
+        [{ author: { name: 'Ada', email: 'a@b.co' }, body: 'x'.repeat(101) }, 'body', 'comments.body_too_long'],
+        [{ author: { name: 'Ada', email: 'a@b.co' }, body: 'hi', parentId: 'not-a-uuid' }, 'parentId', 'comments.parent_not_found'],
+      ]
+      for (const [body, field, message] of cases) {
+        const response = await post(request, body)
+        expect(response.status).toBe(200)
+        expect(await response.json(), field).toEqual({ success: false, errors: [{ field, message }] })
+      }
+      expect(createCommentIfAllowed).not.toHaveBeenCalled()
+
+      // A string body is not a comment envelope at all.
+      const raw = await request('/api/comments/v1/project-1/posts/entry-1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '"just text"' })
+      expect(raw.status).toBe(400)
+    })
+  })
+
+  it('POST with requireEmail=false accepts an anonymous author and maps depth_exceeded to a parentId error', async () => {
+    stubPublicGlobals({ config: { requireEmail: false } })
+    const createCommentIfAllowed = vi.fn().mockResolvedValue({ allowed: false, reason: 'depth_exceeded' })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(publicDb({ createCommentIfAllowed })))
+
+    await withTestServer({
+      routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicPost() }],
+    }, async ({ request }) => {
+      const response = await post(request, { author: { name: 'Anon' }, body: 'deep reply', parentId: approvedRoot.id })
+      expect(await response.json()).toEqual({ success: false, errors: [{ field: 'parentId', message: 'comments.depth_exceeded' }] })
+      expect(createCommentIfAllowed).toHaveBeenCalledWith(WORKSPACE, 1000, expect.objectContaining({ author_email: null, parent_id: approvedRoot.id }))
+    })
+  })
+
+  it('captcha fails closed without a Turnstile secret and succeeds only on a verified token', async () => {
+    stubPublicGlobals({ config: { captcha: 'turnstile' } })
+    const realFetch = globalThis.fetch
+    let verdict = true
+    const siteverify = vi.fn(async () => new Response(JSON.stringify({ success: verdict })))
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).startsWith('https://challenges.cloudflare.com/') ? siteverify() : realFetch(input, init))
+    const createCommentIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1, comment: { ...approvedRoot, status: 'pending' } })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(publicDb({ createCommentIfAllowed })))
+    const good = { author: { name: 'Ada', email: 'a@b.co' }, body: 'hi', captchaToken: 'tok' }
+
+    // No secret configured (integration default runtime config) → rejected without an outbound call.
+    await withTestServer({
+      routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicPost() }],
+    }, async ({ request }) => {
+      expect(await (await post(request, good)).json()).toEqual({ success: false, errors: [{ field: 'captcha', message: 'comments.captcha_failed' }] })
+      expect(siteverify).not.toHaveBeenCalled()
+    })
+
+    vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://studio.test', turnstileSiteKey: '0xSITE' }, turnstile: { secretKey: 'secret' } }))
+    await withTestServer({
+      routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicPost() }],
+    }, async ({ request }) => {
+      expect(await (await post(request, { ...good, captchaToken: undefined })).json()).toEqual({ success: false, errors: [{ field: 'captcha', message: 'comments.captcha_failed' }] })
+      verdict = false
+      expect(await (await post(request, good)).json()).toEqual({ success: false, errors: [{ field: 'captcha', message: 'comments.captcha_failed' }] })
+      expect(createCommentIfAllowed).not.toHaveBeenCalled()
+      verdict = true
+      expect(await (await post(request, good)).json()).toMatchObject({ success: true, status: 'pending' })
+      expect(createCommentIfAllowed).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('GET falls back to the project locale on a bad ?locale, clamps page/limit and ignores unknown sort', async () => {
+    stubPublicGlobals()
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: { locales: { default: 'tr', supported: ['tr', 'en'] } },
+      models: new Map([['posts', { id: 'posts', kind: 'collection', comments: { enabled: true } }]]),
+    }))
+    const listPublicComments = vi.fn().mockResolvedValue({ roots: [], replies: [], total: 0 })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(publicDb({ getCommentThread: vi.fn().mockResolvedValue(null), listPublicComments })))
+
+    await withTestServer({
+      routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicGet() }],
+    }, async ({ request }) => {
+      const response = await request('/api/comments/v1/project-1/posts/entry-1?locale=../etc&page=-3&limit=9999&sort=random')
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ entry: { locale: 'tr' }, page: 1, limit: 100, comments: [], total: 0 })
+      expect(listPublicComments).toHaveBeenCalledWith(PROJECT, { model_id: 'posts', entry_id: 'entry-1', locale: 'tr' }, { page: 1, limit: 100, sort: 'oldest' })
+    })
+  })
+})

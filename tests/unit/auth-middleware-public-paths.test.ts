@@ -43,6 +43,7 @@ describe('auth middleware public paths', () => {
     '/api/mcp/v1/project-123/mcp', // MCP Cloud — Bearer key
     '/api/forms/v1/project-123/contact/submit', // public form submit — captcha
     '/api/forms/v1/project-123/contact/config', // public form config
+    '/api/comments/v1/project-123/posts/entry-1', // public comment read + submit — captcha + rate limit
     '/api/conversation/v1/project-123/message', // Conversation API — Bearer key
     '/api/cdn/v1/project-123/img/logo.png', // CDN — Bearer key
     '/api/webhooks/github', // GitHub webhook — HMAC signature

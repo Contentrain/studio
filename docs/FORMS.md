@@ -38,6 +38,17 @@ cap). Collection models only. The same block is editable from the model's
 Both routes are exempt from the session middleware; the `00.public-cors`
 middleware answers the `OPTIONS` preflight. Rate limits are per IP.
 
+The wire contract is pinned by the JSON files in `tests/fixtures/public-api/`
+(`forms.*`), verified byte-for-byte by
+`tests/integration/public-api-fixtures.integration.test.ts` — build a client
+against those, and update fixture + doc together when the shape changes.
+Three rules the fixtures encode: field values travel under `data` (a flat
+body is a `400`; `cf-turnstile-response` is never read — the token goes in
+`captchaToken`); the preflight allows only `Content-Type`, so a page must not
+send `Authorization` — the surface is public and reads no credential; and a
+validation or captcha failure is a `200 { success: false, errors }`, never a
+4xx.
+
 ### Read the form config
 
 ```

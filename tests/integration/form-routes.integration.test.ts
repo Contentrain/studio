@@ -154,3 +154,75 @@ describe('public form routes', () => {
     })
   })
 })
+
+describe('public form routes — abuse controls', () => {
+  it('captcha fails closed without NUXT_TURNSTILE_SECRET_KEY: no siteverify call, no write', async () => {
+    stubFormGlobals({ form: { captcha: 'turnstile' } })
+    const realFetch = globalThis.fetch
+    const outbound = vi.fn()
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('https://challenges.cloudflare.com/')) {
+        outbound()
+        return Promise.resolve(new Response(JSON.stringify({ success: true })))
+      }
+      return realFetch(input, init)
+    })
+    const createFormSubmissionIfAllowed = vi.fn()
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub({ createFormSubmissionIfAllowed })))
+
+    await withTestServer({
+      routes: [{ path: '/api/forms/v1/project-1/contact/submit', handler: await loadSubmit() }],
+    }, async ({ request }) => {
+      const response = await request('/api/forms/v1/project-1/contact/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ data: { name: 'Ada', email: 'ada@example.com' }, captchaToken: 'a-token' }),
+      })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ success: false, errors: [{ field: 'captcha', message: 'forms.captcha_failed' }] })
+      expect(outbound).not.toHaveBeenCalled()
+      expect(createFormSubmissionIfAllowed).not.toHaveBeenCalled()
+    })
+  })
+
+  it('a filled honeypot is a silent 200 that never reaches the database or the notifier', async () => {
+    stubFormGlobals()
+    const createFormSubmissionIfAllowed = vi.fn()
+    const listWorkspaceNotificationRecipients = vi.fn()
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub({ createFormSubmissionIfAllowed, listWorkspaceNotificationRecipients })))
+
+    await withTestServer({
+      routes: [{ path: '/api/forms/v1/project-1/contact/submit', handler: await loadSubmit() }],
+    }, async ({ request }) => {
+      const response = await request('/api/forms/v1/project-1/contact/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ data: { name: 'Bot', email: 'bot@example.com' }, _hp: 'http://spam.example' }),
+      })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ success: true, message: 'forms.default_success' })
+      await new Promise(resolve => setTimeout(resolve, 10))
+      expect(createFormSubmissionIfAllowed).not.toHaveBeenCalled()
+      expect(listWorkspaceNotificationRecipients).not.toHaveBeenCalled()
+    })
+  })
+
+  it('a stray Authorization header is ignored — the surface is public and never reads credentials', async () => {
+    stubFormGlobals()
+    const createFormSubmissionIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1, submission: { id: 'sub-3', status: 'pending' } })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub({ createFormSubmissionIfAllowed })))
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue(null))
+
+    await withTestServer({
+      routes: [{ path: '/api/forms/v1/project-1/contact/submit', handler: await loadSubmit() }],
+    }, async ({ request }) => {
+      const response = await request('/api/forms/v1/project-1/contact/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'authorization': 'Bearer cr_should_never_be_here' },
+        body: JSON.stringify({ data: { name: 'Ada', email: 'ada@example.com' } }),
+      })
+      expect(response.status).toBe(200)
+      expect(createFormSubmissionIfAllowed).toHaveBeenCalledTimes(1)
+    })
+  })
+})

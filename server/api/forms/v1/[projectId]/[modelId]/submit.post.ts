@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     _hp?: string
   }>(event)
 
-  if (!body?.data || typeof body.data !== 'object')
+  if (!body?.data || typeof body.data !== 'object' || Array.isArray(body.data))
     throw createError({ statusCode: 400, message: errorMessage('forms.data_required') })
 
   // Lookup project → workspace → plan (admin-level — public endpoint, no session)

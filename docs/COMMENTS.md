@@ -36,6 +36,17 @@ The same block is editable from the model's **Comments Settings** tab in Studio.
 Both routes are exempt from the session middleware and answered by the
 `00.public-cors` middleware for `OPTIONS` preflight. Rate limits are per IP.
 
+The wire contract is pinned by the JSON files in `tests/fixtures/public-api/`
+(`comments.*`, `cors.preflight.*`, `errors.json`), verified byte-for-byte by
+`tests/integration/public-api-fixtures.integration.test.ts` — build a client
+against those, and update fixture + doc together when the shape changes. The
+preflight allows only `Content-Type`: a page must not send `Authorization`,
+the surface is public and reads no credential. An invalid `?locale` falls back
+to the project default (echoed under `entry.locale`); `page` is clamped to
+≥ 1, `limit` to 1–100, and an unknown `sort` means `oldest`. Tenant isolation
+and moderation-driven visibility are proven on a real database by
+`tests/contract/public-surface-isolation.contract.test.ts`.
+
 ### Read a thread
 
 ```
