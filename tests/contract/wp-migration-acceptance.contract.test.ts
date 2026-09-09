@@ -39,6 +39,23 @@ describe.skipIf(!fixture || !importerPath || !emitterPath)('real WordPress expor
     expect(raw.posts.length).toBeGreaterThan(0)
     expect(commentExport.comments.length).toBeGreaterThan(0)
     expect.soft(content.report.dropped_relations, 'Lossless import gate: unresolved relations must be explained or repaired').toBe(0)
+    let parentsVerified = 0
+    for (const post of raw.posts) {
+      if (!post.parent) continue
+      const address = content.entry_source_map[String(post.id)]
+      if (!address) continue // Explicitly excluded source types have no exported entry.
+      const parentAddress = content.entry_source_map[String(post.parent)]
+      expect(parentAddress, `parent of WP record ${post.id}`).toBeDefined()
+      const model = JSON.parse(content.files[`.contentrain/models/${address.model_id}.json`])
+      const entries = JSON.parse(content.files[`.contentrain/content/${model.domain}/${address.model_id}/data.json`])
+      const targets = model.fields.parent.model
+      const polymorphic = Array.isArray(targets) && targets.length > 1
+      expect(Array.isArray(targets) ? targets : [targets]).toContain(parentAddress.model_id)
+      expect(entries[address.entry_id].parent).toEqual(polymorphic
+        ? { model: parentAddress.model_id, ref: parentAddress.entry_id }
+        : parentAddress.entry_id)
+      parentsVerified++
+    }
     const handoff: MigrationHandoff = {
       version: 1, site_url: raw.site.url, generated_at: new Date().toISOString(),
       capabilities: [{ key: 'comments', disposition: 'needs_runtime' }],
@@ -78,7 +95,7 @@ describe.skipIf(!fixture || !importerPath || !emitterPath)('real WordPress expor
     // does not prove provider-bound form/comment rendering in the emitter.
     // eslint-disable-next-line no-console -- opt-in acceptance evidence, no credentials or content
     console.log(JSON.stringify({ acceptance: 'contract-only', posts: raw.posts.length,
-      mappedEntries: Object.keys(content.entry_source_map).length, droppedRelations: content.report.dropped_relations, commentsImported: first?.inserted,
+      mappedEntries: Object.keys(content.entry_source_map).length, droppedRelations: content.report.dropped_relations, parentsVerified, commentsImported: first?.inserted,
       commentsRetriedWithoutDuplicates: second?.skippedExisting, assetsDeclared: raw.attachments.length,
       astroFiles: Object.keys(emitted.files).length, formApproved: true, scheduleAcknowledged: true }))
   })
