@@ -39,6 +39,7 @@ export type SchemaWarningType
     | 'content_validation_error'
     | 'relation_integrity_broken'
     | 'model_removed'
+    | 'store_replaced'
     | 'kind_changed'
     | 'i18n_changed'
     | 'field_removed'
@@ -465,12 +466,30 @@ export function detectBreakingChanges(
 ): SchemaWarning[] {
   const warnings: SchemaWarning[] = []
 
+  // Whole store replaced (a migration landed, a template was force-pushed
+  // over): none of the previous models survived and a new set is in place.
+  // That is not N accidental deletions — one informational warning, not N
+  // criticals that sink the health score until the next rebuild.
+  const removed = [...previous.models.keys()].filter(modelId => !current.models.has(modelId))
+  if (removed.length > 0 && removed.length === previous.models.size && current.models.size > 0) {
+    const entryCount = removed.reduce((sum, modelId) => sum + countEntries(previous, modelId), 0)
+    warnings.push({
+      modelId: '*',
+      type: 'store_replaced',
+      severity: 'warning',
+      affectedEntries: entryCount,
+      previous: `${removed.length} models`,
+      current: `${current.models.size} models`,
+      message: `Content store replaced: none of the ${removed.length} previous models (${entryCount} entries) exist in the new set of ${current.models.size} models — expected after a migration or a force-push`,
+    })
+    return warnings
+  }
+
   // Model removed
-  for (const [modelId, prevModel] of previous.models) {
-    if (!current.models.has(modelId)) {
-      const entryCount = countEntries(previous, modelId)
-      warnings.push({ modelId, type: 'model_removed', severity: 'critical', affectedEntries: entryCount, previous: prevModel.kind, message: `Model removed (had ${entryCount} entries)` })
-    }
+  for (const modelId of removed) {
+    const prevModel = previous.models.get(modelId)!
+    const entryCount = countEntries(previous, modelId)
+    warnings.push({ modelId, type: 'model_removed', severity: 'critical', affectedEntries: entryCount, previous: prevModel.kind, message: `Model removed (had ${entryCount} entries)` })
   }
 
   // Per-model changes

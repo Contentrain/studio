@@ -6,7 +6,7 @@ import {
   modelSupportsComments,
   normalizeCommentsConfig,
 } from '../../server/utils/comment-types'
-import { htmlToPlainText, sanitizeString } from '../../server/utils/sanitize-input'
+import { decodeHtmlEntities, htmlToPlainText, sanitizeString } from '../../server/utils/sanitize-input'
 
 describe('normalizeCommentsConfig', () => {
   it('fills defaults for an empty block', () => {
@@ -65,5 +65,18 @@ describe('sanitize-input', () => {
   it('turns comment HTML into readable plain text', () => {
     expect(htmlToPlainText('<p>One &amp; two</p><p>Three<br>four</p>')).toBe('One & two\nThree\nfour')
     expect(htmlToPlainText('<img src=x onerror=alert(1)>')).toBe('')
+  })
+})
+
+describe('sanitize-input — character references', () => {
+  it('decodes the numeric and named references WordPress emits', () => {
+    expect(decodeHtmlEntities('I&#8217;m here &amp; there&hellip; &#x2019;quoted&rsquo; 5&nbsp;km')).toBe('I’m here & there… ’quoted’ 5 km')
+    expect(decodeHtmlEntities('&unknown; &#0; &#xD800; &#1114112;')).toBe('&unknown; &#0; &#xD800; &#1114112;')
+  })
+
+  it('imported bodies read as text: entities decoded, nbsp normalised, entity-encoded tags still stripped', () => {
+    expect(htmlToPlainText('<p>I&#8217;m &ldquo;here&rdquo;&nbsp;&mdash; you?</p>')).toBe('I’m “here” — you?')
+    expect(htmlToPlainText('&lt;script&gt;alert(1)&lt;/script&gt;stay')).toBe('alert(1)stay')
+    expect(htmlToPlainText('<p>a &lt; b &amp;&amp; c &gt; d</p>')).toBe('a  d')
   })
 })
