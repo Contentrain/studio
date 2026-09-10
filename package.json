@@ -31,6 +31,7 @@
     "test:coverage:full": "pnpm test:coverage && pnpm test:coverage:nuxt",
     "test:ci": "pnpm test:unit && pnpm test:integration && pnpm test:nuxt",
     "test:contract": "vitest run --config vitest.contract.config.ts",
+    "test:runtime": "vitest run --config vitest.wp-runtime.config.ts",
     "db:start": "set -a && . ./.env && set +a && pnpm dlx supabase start --workdir .",
     "db:stop": "pnpm dlx supabase stop --workdir .",
     "db:reset": "set -a && . ./.env && set +a && pnpm dlx supabase db reset --workdir .",

@@ -1,49 +1,39 @@
-# WordPress migration acceptance — 2026-09-09
+# WordPress migration acceptance — 2026-09-10
 
-Status: **contract probe passes with published importer 0.2.1; not
-end-to-end accepted**. This is not a browser journey or a fidelity measurement.
-The original lossless-import gate remains unchanged.
+Status: local code and contract checks pass; complete hosted release acceptance
+remains open. Customer pilots are not a prelaunch prerequisite.
 
-## Published-package acceptance
+## Current implementation and evidence
 
-2026-09-09: AI release PR #159 merged and Release run `34343985042` succeeded.
-The probe passed on Studio main base `6aeb851` (#247), using packages downloaded
-from npm into a clean temporary directory, not sibling-repository builds:
+- Published baseline: importer 0.4.0 and emitter 0.9.1; Migrate's inspected lock
+  still selected 0.3.0 / 0.9.0 on September 10. Intake and portable runtime clients
+  are implemented; the older placeholder and “not consumed” descriptions below
+  are historical, not current blockers.
+- This correction adds deterministic form approval identities, an approved-entry
+  guard, retryable validation/merge failures, and disabled moderation buttons
+  while the request is pending. Existing duplicated entries are not auto-deleted.
+- AI corrections cover multilingual identity collisions, parameterless content
+  routes, asset typechecking, and opt-in public build publication windows.
+- Local test evidence: Studio unit/integration/Nuxt suites and production build;
+  PostgreSQL contract suite; generated Astro static-route build; HTTP → PostgreSQL
+  comments acceptance with model/entry/locale isolation and private-field checks.
+  Git config, licensing and rate limits are explicit seams in the HTTP/DB test.
+- Internal staging records separately establish comment import/submit/moderation,
+  form submit/approval and media delivery. These hosted journeys were not rerun
+  as part of the local correction and do not establish mobile or complete media acceptance.
 
-- `@contentrain/wp-import@0.2.1`
-- `@contentrain/emitter-astro@0.7.0`
-- resolved `@contentrain/types@1.10.0`
+## Repeating HTTP/database acceptance
 
-PostgreSQL 16 applied migrations 000–025. The actual opt-in test ran (1 passed,
-not skipped); local lint/typecheck also passed. The WXR SHA-256 was
-`557de6c66f9008a0df8f8892baab4cfa545af96592d942f16f939d8137efd717`.
-Importer npm integrity:
-`sha512-EjK3qUdn85y9xKMaLsMZD5R9CFdzlXv86p8tyrI1V8GrqV+A6wKRZGPFpISxgrAI5bLQi3gPXO6aobpLA/TVuQ==`.
+`CONTRACT_PG_URL=<disposable PostgreSQL URL> pnpm test:runtime` runs the persisted
+comments journey. It runs in the Postgres CI job after provider contract tests.
+It deliberately uses provider-level moderation; it is not an authenticated UI test.
 
-Migrate's production intake does **not yet consume this importer**. Merely
-installing a package is not that integration. Its separate session owns wiring
-the actual content/entry map/comments export into the existing pipeline and
-handoff. See [session ownership](WP_RUNTIME_WORK_SPLIT.md).
+## Historical published-package probe (September 9)
 
-## Follow-up: parent-relation fix
-
-The `codex/wp-parent-relations` AI branch ([PR #158](https://github.com/Contentrain/ai/pull/158), commit `2d43942`) preserves parent targets using the
-existing single-target ID / multi-target `{ model, ref }` contract. The local
-fixture rerun passed with zero dropped relations. All **71 exported parent
-links** were checked against the original WP parent IDs, including the 52 ACF
-field → field-group links and same-type nested links. Studio comments import,
-idempotency, form approval and schedule acknowledgement continued to pass.
-
-The source still has 130 records; the corrected source map has **129** addresses.
-The old map included an address for skipped `wp_navigation` record 148 that had no emitted
-content entry. The fix removes such dangling addresses instead of counting them
-as migrated content. This does not make plugin configuration executable in Astro.
-
-Importer verification: 36 test executions passed, package typecheck/build and
-targeted lint passed. Four new regression cases cover mixed-target ACF parents,
-single-target same/cross-model parents, and missing/excluded parents. The opt-in
-Studio acceptance run used the freshly built importer in `ai-parent-relations`,
-not the previously published package. Release/consumer adoption remains separate.
+The initial probe used wp-import 0.2.1, emitter-astro 0.7.0 and types 1.10.0.
+Parent-relation fixes subsequently preserved all 71 exported fixture parent links,
+removed the dangling skipped wp_navigation address, and reduced dropped relations
+to zero. Historical baseline failures below remain as evidence of that correction.
 
 ## Original baseline evidence (before the fix)
 
@@ -68,20 +58,18 @@ model (`packages/wp-import/src/contentrain.ts`). Cross-type links increment
 cross-model relationships and adds ACF parent regression coverage; it does not
 claim to reimplement ACF behavior in the destination runtime.
 
-## Required next gates
+## Remaining deployment gates
 
-1. Consume the now-published parent-relation fix in Migrate's real intake path.
-   Plugin configuration remains archived data, not automatically recreated
-   plugin behavior; route discovery must distinguish it from public pages.
-2. Use the actual extraction/pipeline ProjectIR and generated handoff, build the
-   Astro project, and verify content routes in a browser.
-3. Bind emitted runtime components to Studio: existing emitter components are
-   placeholders that state a live provider is required. Prove comment reading,
-   writing/moderation and form submission/approval on the generated site.
-4. Transfer media to a test storage provider; verify byte integrity and that
-   generated pages no longer depend on the old WP URLs.
-5. Schedule a real entry and verify it is hidden before, visible after the
-   deadline, with failed delivery/retry and public-cache behavior covered.
+- Adopt the corrected published packages in Migrate and regenerate entry maps,
+  comment exports and static pages together. Source-checkout tests do not prove npm adoption.
+- Repeat mobile generated-site journeys against the deployed Studio version.
+- Verify complete media coverage, source-to-output provenance and zero unexpected
+  old-origin references. A transformed WebP is not byte-identical to the source:
+  check dimensions/decodability and visual equivalence; use source/output hashes
+  to identify each side of the transformation. Explain every untransferred URL.
+- Exercise scheduled rebuild/deploy, retries, public-cache visibility and rollback
+  on a generated project. Unit boundaries and DB leases do not prove hosted delivery.
+- Complete Migrate route/editability/family gates and blind acceptance separately.
 
 ## Reproduction
 

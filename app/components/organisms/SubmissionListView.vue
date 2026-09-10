@@ -30,6 +30,7 @@ const toast = useToast()
 // --- State ---
 const submissions = ref<FormSubmission[]>([])
 const loading = ref(false)
+const acting = ref(false)
 const detail = ref<FormSubmission | null>(null)
 const detailOpen = ref(false)
 const activeFilter = ref<'all' | 'pending' | 'approved' | 'rejected' | 'spam'>('all')
@@ -119,6 +120,8 @@ async function fetchSubmissions() {
 const base = () => `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/forms/${props.modelId}/submissions`
 
 async function act(run: () => Promise<unknown>, successKey: string) {
+  if (acting.value) return
+  acting.value = true
   try {
     await run()
     toast.success(t(successKey))
@@ -126,6 +129,9 @@ async function act(run: () => Promise<unknown>, successKey: string) {
   }
   catch {
     toast.error(t('forms.action_failed'))
+  }
+  finally {
+    acting.value = false
   }
 }
 
@@ -241,12 +247,14 @@ onMounted(() => {
               <AtomsIconButton
                 icon="icon-[annon--check]"
                 :label="t('forms.approve')"
+                :disabled="acting"
                 size="sm"
                 @click.stop="handleApprove(submission.id)"
               />
               <AtomsIconButton
                 icon="icon-[annon--cross]"
                 :label="t('forms.reject')"
+                :disabled="acting"
                 size="sm"
                 @click.stop="handleReject(submission.id)"
               />
@@ -258,6 +266,7 @@ onMounted(() => {
       <OrganismsSubmissionDetailModal
         v-model:open="detailOpen"
         :submission="detail"
+        :busy="acting"
         :editable="editable"
         @approve="handleApprove"
         @reject="handleReject"

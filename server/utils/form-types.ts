@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto'
 import type { H3Event } from 'h3'
 import type { DatabaseRow } from '~~/server/providers/database'
 import type { GitProvider } from '~~/server/providers/git'
+import { createContentEngine } from '~~/server/utils/content-engine'
 
 /**
  * Shared form configuration type — used by public endpoints and internal utilities.
@@ -143,15 +145,24 @@ export async function approveSubmissionAsContent(
   projectId: string,
   approvedBy?: string,
 ): Promise<string | null> {
-  const { createContentEngine } = await import('~~/server/utils/content-engine')
-  const { generateEntryId } = await import('@contentrain/types')
-
   const db = useDatabaseProvider()
+  // Re-read persisted state: callers may carry an old pending row. An already
+  // approved entry may have been edited since approval; never overwrite it.
+  const current = await db.getFormSubmission(submission.id as string)
+  if (!current || current.project_id !== projectId || current.model_id !== submission.model_id)
+    throw new Error('Form submission no longer exists in this project/model')
+  if (current.status === 'approved' && typeof current.entry_id === 'string' && current.entry_id)
+    return current.entry_id
+  submission = current
   const modelId = submission.model_id as string
   const data = submission.data as Record<string, unknown>
 
   const engine = createContentEngine({ git, contentRoot, projectId })
-  const entryId = generateEntryId()
+  // Stable across workers, retries and a crash between Git and DB writes.
+  // Reuse legacy persisted identities when present.
+  const entryId = typeof submission.entry_id === 'string' && submission.entry_id
+    ? submission.entry_id
+    : createHash('sha256').update(JSON.stringify(['form-submission', projectId, modelId, submission.id])).digest('hex').slice(0, 24)
   const entryData = { [entryId]: data }
 
   // The submission carries the locale it was validated against (the project
@@ -165,9 +176,14 @@ export async function approveSubmissionAsContent(
     { autoPublish: false },
   )
 
-  // Auto-merge the content branch
+  if (!writeResult.validation.valid)
+    throw new Error('Form submission failed content validation')
+
+  // A failed merge must remain retryable, never appear approved in the DB.
   if (writeResult.branch) {
-    await engine.mergeBranch(writeResult.branch).catch(() => {})
+    const merged = await engine.mergeBranch(writeResult.branch)
+    if (!merged.merged)
+      throw new Error('Form submission content could not be merged')
     invalidateBrainCache(projectId)
   }
 
