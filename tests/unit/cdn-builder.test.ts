@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelDefinition } from '@contentrain/types'
 import type { GitProvider } from '../../server/providers/git'
 import type { CDNObject, CDNProvider } from '../../server/providers/cdn'
-import { executeCDNBuild, getAffectedModels } from '../../server/utils/cdn-builder'
+import { executeCDNBuild, getAffectedModels, shouldIncludeEntry } from '../../server/utils/cdn-builder'
 import { reportDataLossRisk } from '../../server/utils/alert'
 import {
   resolveConfigPath,
@@ -928,5 +928,24 @@ describe('cdn builder', () => {
     // ...while the non-i18n body ships in every bundle under its real path.
     expect(en.paths['content/settings/data.json']).toEqual({ title: 'Shared' })
     expect(tr.paths['content/settings/data.json']).toEqual({ title: 'Shared' })
+  })
+})
+
+describe('CDN publication window parity with local public builds', () => {
+  const start = '2026-10-01T12:00:00Z'
+  const end = '2026-10-01T13:00:00Z'
+  const meta = { status: 'published', publish_at: start, expire_at: end }
+  it('includes at the publish boundary and excludes at the expiry boundary', () => {
+    expect(shouldIncludeEntry(meta, Date.parse(start) - 1)).toBe(false)
+    expect(shouldIncludeEntry(meta, Date.parse(start))).toBe(true)
+    expect(shouldIncludeEntry(meta, Date.parse(end) - 1)).toBe(true)
+    expect(shouldIncludeEntry(meta, Date.parse(end))).toBe(false)
+  })
+  it('excludes invalid windows and unpublished content, preserving legacy no-meta content', () => {
+    expect(shouldIncludeEntry({ status: 'draft' })).toBe(false)
+    expect(shouldIncludeEntry({ status: 'published', publish_at: 'invalid' })).toBe(false)
+    expect(shouldIncludeEntry({ status: 'published', expire_at: 'invalid' })).toBe(false)
+    expect(shouldIncludeEntry(undefined)).toBe(true)
+    expect(shouldIncludeEntry(JSON.parse('null'))).toBe(false)
   })
 })

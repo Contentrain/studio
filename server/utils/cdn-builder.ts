@@ -80,16 +80,17 @@ interface EntryMeta {
  * - expire_at must be in the future (or not set)
  * - No meta = include (backward compat for legacy content without meta)
  */
-function shouldIncludeEntry(meta: EntryMeta | undefined): boolean {
-  if (!meta) return true // No meta = include (legacy content)
-
-  // Status filter — only published content
+export function shouldIncludeEntry(meta: EntryMeta | undefined, at = Date.now()): boolean {
+  if (meta === undefined) return true // No meta = include (legacy content)
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return false
   if (meta.status && meta.status !== 'published') return false
-
-  const now = new Date()
-  if (meta.publish_at && new Date(meta.publish_at) > now) return false
-  if (meta.expire_at && new Date(meta.expire_at) < now) return false
-
+  for (const key of ['publish_at', 'expire_at'] as const) {
+    const value = meta[key]
+    if (value === undefined || value === null) continue
+    const time = typeof value === 'string' ? Date.parse(value) : NaN
+    if (!Number.isFinite(time)) return false
+    if (key === 'publish_at' ? time > at : time <= at) return false
+  }
   return true
 }
 

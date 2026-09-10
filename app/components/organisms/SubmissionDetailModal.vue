@@ -21,6 +21,7 @@ const open = defineModel<boolean>('open', { default: false })
 defineProps<{
   submission: FormSubmission | null
   editable?: boolean
+  busy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -167,17 +168,17 @@ function formatValue(value: unknown): string {
           v-if="submission && editable && submission.status === 'pending'"
           class="flex shrink-0 items-center justify-between border-t border-secondary-200 px-5 py-3 dark:border-secondary-800"
         >
-          <AtomsBaseButton type="button" variant="danger" size="sm" @click="emit('delete', submission.id)">
+          <AtomsBaseButton type="button" variant="danger" size="sm" :disabled="busy" @click="emit('delete', submission.id)">
             <template #prepend>
               <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
             </template>
             {{ t('common.delete') }}
           </AtomsBaseButton>
           <div class="flex items-center gap-2">
-            <AtomsBaseButton type="button" variant="ghost" size="sm" @click="emit('reject', submission.id)">
+            <AtomsBaseButton type="button" variant="ghost" size="sm" :disabled="busy" @click="emit('reject', submission.id)">
               {{ t('forms.reject') }}
             </AtomsBaseButton>
-            <AtomsBaseButton type="button" variant="primary" size="sm" @click="emit('approve', submission.id)">
+            <AtomsBaseButton type="button" variant="primary" size="sm" :disabled="busy" @click="emit('approve', submission.id)">
               {{ t('forms.approve') }}
             </AtomsBaseButton>
           </div>

@@ -60,7 +60,7 @@ jobs:
         run: node scripts/verify-managed-schema.mjs
 
       - name: Contract tests (postgres DatabaseProvider)
-        run: pnpm test:contract
+        run: pnpm test:contract && pnpm test:runtime
         env:
           CONTRACT_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
 
