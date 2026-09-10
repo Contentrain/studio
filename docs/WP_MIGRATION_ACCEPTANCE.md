@@ -5,10 +5,24 @@ remains open. Customer pilots are not a prelaunch prerequisite.
 
 ## Current implementation and evidence
 
-- Published baseline: importer 0.4.0 and emitter 0.9.1; Migrate's inspected lock
-  still selected 0.3.0 / 0.9.0 on September 10. Intake and portable runtime clients
-  are implemented; the older placeholder and “not consumed” descriptions below
-  are historical, not current blockers.
+- Published baseline, verified against the registry on 2026-09-11:
+
+  | package | npm |
+  | --- | --- |
+  | `@contentrain/wp-import` | 0.4.1 |
+  | `@contentrain/emitter-astro` | 0.9.2 |
+  | `@contentrain/types` | 1.13.0 |
+  | `@contentrain/query` | 7.3.0 |
+  | `@contentrain/mcp` | 3.3.3 |
+  | `@contentrain/skills` | 0.9.3 |
+  | `contentrain` (CLI) | 0.13.0 |
+
+  Studio itself still resolves `@contentrain/mcp` 3.2.0, `@contentrain/types` 1.10.0
+  and `@contentrain/query` 7.0.15; that bump is a separate change with its own
+  write-path verification, and nothing in this document depends on it. Migrate's
+  lock selected 0.3.0 / 0.9.0 when last inspected. Intake and portable runtime
+  clients are implemented; the older placeholder and “not consumed” descriptions
+  below are historical, not current blockers.
 - This correction adds deterministic form approval identities, an approved-entry
   guard, retryable validation/merge failures, and disabled moderation buttons
   while the request is pending. Existing duplicated entries are not auto-deleted.

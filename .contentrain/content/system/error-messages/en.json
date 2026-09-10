@@ -119,6 +119,8 @@
   "deploy.not_configured": "This project has no deploy hook",
   "deploy.provider_invalid": "Unknown deploy provider",
   "deploy.trigger_failed": "The deploy hook did not accept the request ({status})",
+  "forms.approve_merge_failed": "The submission's content branch could not be merged, so nothing was approved. Try approving again.",
+  "forms.approve_validation_failed": "This submission no longer passes the model's validation, so it was not approved. Fix the model or the submission data, then try again.",
   "forms.bulk_limit": "Maximum 50 submissions per bulk operation.",
   "forms.captcha_failed": "Captcha verification failed. Please try again.",
   "forms.create_failed": "Failed to save form submission: {detail}",

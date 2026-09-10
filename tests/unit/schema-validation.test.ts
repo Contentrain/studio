@@ -4,6 +4,7 @@ import type { ContentrainConfig, ModelDefinition } from '@contentrain/types'
 import type { BrainCacheEntry } from '../../server/utils/brain-cache'
 import {
   detectBreakingChanges,
+  validateEntrySchedules,
   validateConfig,
   validateContentAgainstSchema,
   validateModelDefinition,
@@ -380,5 +381,46 @@ describe('detectBreakingChanges — store replaced', () => {
     const curr = makeBrain({ models: new Map([['hero', makeModel({ id: 'hero' })], ['posts', makeModel({ id: 'posts' })]]) })
     const warnings = detectBreakingChanges(prev, curr)
     expect(warnings).toEqual([expect.objectContaining({ type: 'model_removed', severity: 'critical', modelId: 'blog', affectedEntries: 10 })])
+  })
+})
+
+describe('validateEntrySchedules', () => {
+  it('reports an unreadable schedule per entry, naming both keys when both are broken', () => {
+    const brain = makeBrain({
+      models: new Map([['posts', makeModel({ id: 'posts', kind: 'collection' })]]),
+      meta: new Map([['posts:en', {
+        good: { status: 'published', publish_at: '2026-06-01T00:00:00.000Z' },
+        broken: { status: 'published', publish_at: 'soon' },
+        veryBroken: { status: 'published', publish_at: 'soon', expire_at: 'never' },
+        empty: { status: 'published' },
+      }]]),
+    })
+    const warnings = validateEntrySchedules(brain)
+    expect(warnings.map(w => w.field)).toEqual(['publish_at', 'publish_at'])
+    expect(warnings[0]).toMatchObject({ modelId: 'posts', type: 'invalid_schedule', severity: 'error', current: 'soon' })
+    expect(warnings[0]!.message).toContain('entry "broken"')
+    expect(warnings[1]!.message).toContain('publish_at and expire_at')
+  })
+
+  it('reads a singleton meta as one object rather than a map of entries', () => {
+    const brain = makeBrain({
+      models: new Map([['hero', makeModel({ id: 'hero', kind: 'singleton' })]]),
+      meta: new Map([['hero:en', { status: 'published', expire_at: 'whenever' }]]),
+    })
+    const warnings = validateEntrySchedules(brain)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatchObject({ modelId: 'hero', field: 'expire_at' })
+    expect(warnings[0]!.message).toContain('locale "en"')
+  })
+
+  it('stays silent for readable schedules, for meta without one, and for an unknown model', () => {
+    const brain = makeBrain({
+      models: new Map([['posts', makeModel({ id: 'posts', kind: 'collection' })]]),
+      meta: new Map([
+        ['posts:en', { a: { status: 'draft' }, b: { publish_at: '2026-06-01T00:00:00.000Z', expire_at: '2026-07-01T00:00:00.000Z' } }],
+        ['ghost:en', { a: { publish_at: 'soon' } }],
+      ]),
+    })
+    expect(validateEntrySchedules(brain)).toEqual([])
   })
 })
