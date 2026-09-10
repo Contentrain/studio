@@ -68,7 +68,7 @@
     "@contentrain/types": "1.10.0",
     "@gitbeaker/rest": "^43.8.0",
     "@nuxt/eslint": "1.16.0",
-    "@nuxt/image": "2.0.0",
+    "@nuxt/image": "2.1.0",
     "@octokit/auth-app": "^8.2.0",
     "@octokit/plugin-retry": "^8.1.0",
     "@octokit/plugin-throttling": "^11.0.3",
