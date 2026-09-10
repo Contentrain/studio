@@ -12,6 +12,7 @@ import {
   resolveModelsDir,
 } from '../../server/utils/content-paths'
 import { rewriteMediaUrl, toDeliveryUrl } from '../../server/utils/media-url'
+import { invalidScheduleKeys, isWithinSchedule } from '../../shared/utils/entry-schedule'
 
 // Spy on the data-loss reporter so we can assert per-model build failures are
 // surfaced (not silently swallowed) without pulling in Sentry.
@@ -947,5 +948,22 @@ describe('CDN publication window parity with local public builds', () => {
     expect(shouldIncludeEntry({ status: 'published', expire_at: 'invalid' })).toBe(false)
     expect(shouldIncludeEntry(undefined)).toBe(true)
     expect(shouldIncludeEntry(JSON.parse('null'))).toBe(false)
+  })
+})
+
+describe('CDN publication window — shared reading', () => {
+  it('is the same window the shared helper defines, so delivery and health cannot disagree', () => {
+    const start = '2026-06-15T12:00:00.000Z'
+    const end = '2026-06-20T12:00:00.000Z'
+    const meta = { status: 'published', publish_at: start, expire_at: end }
+    for (const at of [Date.parse(start) - 1, Date.parse(start), Date.parse(end) - 1, Date.parse(end)])
+      expect(shouldIncludeEntry(meta, at), String(at)).toBe(isWithinSchedule(meta, at))
+  })
+
+  it('excludes an entry whose schedule the health check flags as unreadable', () => {
+    for (const meta of [{ status: 'published', publish_at: 'soon' }, { status: 'published', expire_at: 'never' }]) {
+      expect(invalidScheduleKeys(meta).length).toBeGreaterThan(0)
+      expect(shouldIncludeEntry(meta)).toBe(false)
+    }
   })
 })
