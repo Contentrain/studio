@@ -9,6 +9,7 @@ type MediaMethods = Pick<
   | 'createMediaAsset'
   | 'getMediaAsset'
   | 'findMediaAssetByPath'
+  | 'findMediaAssetByContentHash'
   | 'listMediaAssets'
   | 'updateMediaAsset'
   | 'deleteMediaAsset'
@@ -48,6 +49,19 @@ export function mediaMethods(): MediaMethods {
         .select('*')
         .eq('project_id', projectId)
         .eq('original_path', originalPath)
+        .maybeSingle()
+
+      return (data as DatabaseRow) ?? null
+    },
+
+    async findMediaAssetByContentHash(projectId, contentHash) {
+      const { data } = await getAdmin()
+        .from('media_assets')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('content_hash', contentHash)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle()
 
       return (data as DatabaseRow) ?? null

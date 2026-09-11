@@ -555,6 +555,15 @@ export interface DatabaseProvider {
    * content field value) cannot be resolved through `getMediaAsset`.
    */
   findMediaAssetByPath: (projectId: string, originalPath: string) => Promise<DatabaseRow | null>
+  /**
+   * The project's asset for these exact bytes, if it already has one.
+   *
+   * `content_hash` has been written on every upload since the column existed,
+   * under a comment calling it duplicate detection, and nothing ever read it.
+   * Ingest does: re-sending a URL after a failed batch, or a WordPress site
+   * serving the same image under two paths, must not buy the same bytes twice.
+   */
+  findMediaAssetByContentHash: (projectId: string, contentHash: string) => Promise<DatabaseRow | null>
   listMediaAssets: (projectId: string, options?: PaginationOptions & {
     search?: string
     tags?: string[]
