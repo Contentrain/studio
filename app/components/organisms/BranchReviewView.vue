@@ -2,6 +2,7 @@
 import type { BranchReview } from '~~/shared/utils/branch-review'
 import type { BranchRawDiff } from '~/composables/useBranches'
 import { formatRelativeTime } from '~/utils/relative-time'
+import { shortPlanHash } from '~~/shared/utils/approval'
 
 /**
  * A pending content branch, as the person approving it needs to read it.
@@ -28,9 +29,12 @@ const emit = defineEmits<{
   loadRaw: []
   requestChanges: [comment: string]
   resolveRequest: []
+  approve: []
+  withdrawApproval: []
 }>()
 
 const { t } = useContent()
+const { state: authState } = useAuth()
 
 const confirmReject = ref(false)
 const technicalOpen = ref(false)
@@ -65,6 +69,23 @@ const authored = computed(() => {
 })
 
 const hasDestructiveSchema = computed(() => props.review.schema.some(s => s.destructive))
+
+/**
+ * The plan card shows only where there is a decision to show: a project that
+ * merges without approvals has no policy weighing on this branch, and a card
+ * saying so would be a permanent empty box.
+ */
+const approval = computed(() => props.review.approval ?? null)
+const signatures = computed(() => props.review.approvedBy ?? [])
+const signedBy = computed(() => signatures.value.map(s => s.approver).join(', '))
+const myEmail = computed(() => (authState.value.user?.email ?? '').toLowerCase())
+const iApproved = computed(() => myEmail.value !== '' && signatures.value.some(s => s.approver.toLowerCase() === myEmail.value))
+/** Merging past a held plan only earns a 403 — say so on the button instead. */
+const mergeBlocked = computed(() => approval.value ? !approval.value.allowed : false)
+
+function humanReason(reason: string): string {
+  return reason.replace(/_/g, ' ')
+}
 
 /**
  * With one group and nothing else on screen, the group's own header repeats
@@ -139,6 +160,67 @@ function stripPrefix(path: string): string {
             -{{ review.summary.removed }}
           </AtomsBadge>
         </div>
+      </div>
+    </div>
+
+    <!-- What the policy makes of this change, and what it is still waiting for.
+         Shown beside the change rather than discovered when Merge answers 403. -->
+    <div
+      v-if="approval"
+      class="shrink-0 border-b px-4 py-3"
+      :class="approval.allowed
+        ? 'border-success-200 bg-success-50 dark:border-success-900/40 dark:bg-success-900/20'
+        : 'border-secondary-200 bg-secondary-50 dark:border-secondary-800 dark:bg-secondary-900'"
+    >
+      <div class="flex items-start gap-2">
+        <span
+          class="mt-0.5 size-4 shrink-0"
+          :class="approval.allowed
+            ? 'icon-[annon--check-circle] text-success-600 dark:text-success-400'
+            : 'icon-[annon--shield-check] text-muted'"
+          aria-hidden="true"
+        />
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <p class="text-xs font-semibold text-heading dark:text-secondary-100">
+              {{ t('review.approval_title') }}
+            </p>
+            <AtomsBadge :variant="approval.risk === 'low_risk_content' ? 'secondary' : 'warning'" size="sm">
+              {{ t(`review.risk_${approval.risk}`) }}
+            </AtomsBadge>
+            <span class="font-mono text-[11px] text-muted">{{ t('review.approval_plan', { hash: shortPlanHash(approval.planHash) }) }}</span>
+          </div>
+
+          <p v-if="approval.allowed" class="mt-1 text-sm text-success-700 dark:text-success-400">
+            {{ t('review.approval_ready') }}
+          </p>
+          <ul v-else class="mt-1 space-y-0.5 text-sm text-body dark:text-secondary-300">
+            <li v-for="(reason, i) in approval.reasons" :key="i">
+              {{ reason }}
+            </li>
+          </ul>
+
+          <p v-if="signatures.length > 0" class="mt-1 text-[11px] text-muted">
+            {{ t('review.approval_signed_by', { names: signedBy }) }}
+          </p>
+          <p
+            v-for="rejected in approval.rejectedGrants"
+            :key="rejected.approver + rejected.reason"
+            class="mt-1 text-[11px] text-warning-700 dark:text-warning-400"
+          >
+            {{ t('review.approval_not_counted', { approver: rejected.approver, reason: humanReason(rejected.reason) }) }}
+          </p>
+        </div>
+        <AtomsBaseButton
+          v-if="review.canMerge"
+          type="button"
+          :variant="iApproved ? 'ghost' : 'secondary'"
+          size="sm"
+          :disabled="isEmpty"
+          @click="iApproved ? emit('withdrawApproval') : emit('approve')"
+        >
+          {{ iApproved ? t('review.approval_withdraw') : t('review.approve') }}
+        </AtomsBaseButton>
       </div>
     </div>
 
@@ -339,9 +421,14 @@ function stripPrefix(path: string): string {
           <span class="icon-[annon--comment-text] size-4" aria-hidden="true" />
           {{ t('review.request_changes') }}
         </AtomsBaseButton>
-        <AtomsBaseButton v-if="review.canMerge" variant="primary" class="flex-1" :disabled="isEmpty" @click="emit('merge')">
+        <AtomsBaseButton v-if="review.canMerge" variant="primary" class="flex-1" :disabled="isEmpty || mergeBlocked" @click="emit('merge')">
           <span class="icon-[annon--check] size-4" aria-hidden="true" />
-          {{ totalChanges === 1 ? t('review.approve_action_one') : t('review.approve_action_many', { count: totalChanges }) }}
+          <template v-if="mergeBlocked">
+            {{ t('review.approval_blocked_merge') }}
+          </template>
+          <template v-else>
+            {{ totalChanges === 1 ? t('review.approve_action_one') : t('review.approve_action_many', { count: totalChanges }) }}
+          </template>
         </AtomsBaseButton>
         <AtomsBaseButton
           v-if="review.canReject"

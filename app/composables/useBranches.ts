@@ -1,3 +1,4 @@
+import type { PlanDecision } from '~~/shared/utils/approval'
 /**
  * Branch management composable.
  * Lists cr/* branches, merge/reject, and the branch review.
@@ -168,6 +169,34 @@ export function useBranches() {
     }
   }
 
+  /**
+   * Record or withdraw this reviewer's decision.
+   *
+   * The response is the decision as it stands afterwards, not a bare ok: the
+   * panel has to show whether that signature was enough, and re-deriving it on
+   * the client would be a second implementation of the policy.
+   */
+  async function setApproval(workspaceId: string, projectId: string, branch: string, approve: boolean): Promise<boolean> {
+    const { t } = useContent()
+    try {
+      const result = await $fetch<{ approval: PlanDecision }>(
+        `${branchUrl(workspaceId, projectId, branch)}/approve`,
+        { method: approve ? 'POST' : 'DELETE' },
+      )
+      if (branchReview.value?.branch === branch) {
+        await fetchBranchReview(workspaceId, projectId, branch)
+        if (branchReview.value?.branch === branch)
+          branchReview.value = { ...branchReview.value, approval: result.approval }
+      }
+      toast.success(approve ? t('review.approval_recorded') : t('review.approval_withdrawn'))
+      return true
+    }
+    catch (e: unknown) {
+      toast.error(resolveApiError(e, t('review.approval_failed')))
+      return false
+    }
+  }
+
   return {
     branches: readonly(branches),
     loading: readonly(loading),
@@ -184,5 +213,6 @@ export function useBranches() {
     rejectBranch,
     requestChanges,
     resolveChangeRequest,
+    setApproval,
   }
 }

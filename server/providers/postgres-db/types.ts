@@ -404,6 +404,31 @@ export interface BranchReviewsTable {
   updated_at: Generated<string>
 }
 
+export interface ExecutionApprovalsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  target: string
+  gate: string
+  plan_hash: string
+  commit_sha: string | null
+  approver_id: string | null
+  approver_email: string
+  approver_role: string | null
+  note: string | null
+  approved_at: Generated<string>
+}
+
+export interface ExecutionReceiptsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  target: string
+  plan_hash: string
+  receipt: unknown
+  created_at: Generated<string>
+}
+
 export interface ConversationApiKeysTable {
   id: Generated<string>
   project_id: string
@@ -589,6 +614,8 @@ export interface StudioDatabase {
   'form_submissions': FormSubmissionsTable
   'scheduled_publications': ScheduledPublicationsTable
   'branch_reviews': BranchReviewsTable
+  'execution_approvals': ExecutionApprovalsTable
+  'execution_receipts': ExecutionReceiptsTable
   'comments': CommentsTable
   'comment_threads': CommentThreadsTable
   'conversation_api_keys': ConversationApiKeysTable

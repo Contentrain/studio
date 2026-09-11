@@ -23,17 +23,41 @@
  *   agent does unattended, which is the only thing that was ever automatic.
  *
  * With no grants to weigh — approving a plan is S-10's surface, not this one —
- * a project with no policy file falls to `DEFAULT_APPROVAL_POLICY`, which holds
- * every write above `read_only` for one review. That is the intended meaning of
+ * a project with no policy file falls to {@link STUDIO_DEFAULT_POLICY}, which
+ * holds every write above `read_only` for one review. That is the intended meaning of
  * the review workflow; a project that wants the old behaviour writes a rule
  * with `mode: 'auto'` for the classes it trusts.
  */
 
-import type { ActorRef, ApprovalPolicyFile, ExecutionPlan, ExecutionScope, RiskClass } from '@contentrain/types'
+import type { ActorRef, ApprovalGrant, ApprovalPolicyFile, ExecutionPlan, ExecutionScope, RiskClass } from '@contentrain/types'
+import type { PlanDecision } from '../../shared/utils/approval'
 import { APPROVAL_GATES, APPROVAL_MODES, computePlanHash, DEFAULT_APPROVAL_POLICY, evaluateApproval, RISK_CLASSES } from '@contentrain/types'
 
 /** The plan contract version this file builds against. */
 const PLAN_VERSION = 1
+
+/**
+ * What applies when a project has written no policy of its own.
+ *
+ * The ecosystem default asks for one decision on the diff and, like any
+ * four-eyes rule, does not let the author be that decision. That is right for a
+ * team and wrong for the projects most likely to switch the review workflow on
+ * without writing a policy file: on a one-person project it produces a Merge
+ * button that can never be pressed and an approval that reports
+ * `self_approval`, which reads as a broken product rather than as a rule.
+ *
+ * So the unconfigured default relaxes exactly one thing — who may be the
+ * approver — and keeps everything else. An approval is still required, still
+ * recorded, and still tied to the diff it was given for; that is already
+ * strictly more than the nothing that used to happen. A project that means
+ * four-eyes writes `"allow_self_approval": false` in
+ * `.contentrain/approval-policies.json` and gets it, which is the right way
+ * round: the stricter rule is the one someone states on purpose.
+ */
+export const STUDIO_DEFAULT_POLICY: ApprovalPolicyFile = {
+  ...DEFAULT_APPROVAL_POLICY,
+  allow_self_approval: true,
+}
 
 /**
  * Risk floor per write tool.
@@ -89,7 +113,7 @@ export function toolRisk(tool: string, scope: ToolScope = {}): RiskClass {
  * evaluator would misread.
  *
  * Fail closed and say so: a malformed policy falls back to
- * `DEFAULT_APPROVAL_POLICY` (stricter than most hand-written policies) and
+ * {@link STUDIO_DEFAULT_POLICY} (stricter than most hand-written policies) and
  * raises a project-health warning, rather than being quietly ignored — a policy
  * that silently does not apply is worse than no policy, because someone
  * believes it is protecting them.
@@ -215,7 +239,7 @@ export async function decideMerge(input: MergeDecisionInput): Promise<MergeDecis
   const plan = await buildToolPlan({ tool: input.tool, scope: input.scope })
   const decision = evaluateApproval({
     plan,
-    policy: input.policy ?? DEFAULT_APPROVAL_POLICY,
+    policy: input.policy ?? STUDIO_DEFAULT_POLICY,
     grants: [],
     ...(input.commitSha ? { commit_sha: input.commitSha } : {}),
     ...(input.now ? { now: input.now } : {}),
@@ -233,4 +257,74 @@ export async function decideMerge(input: MergeDecisionInput): Promise<MergeDecis
       },
     },
   }
+}
+
+// ─── Deciding a plan that has collected grants ───
+
+/**
+ * Decide a plan against the grants it has collected.
+ *
+ * `workflow` gates this the same way it gates {@link decideMerge}: an
+ * `auto-merge` project is not asking anyone's permission, and turning its merge
+ * button into an approval queue because a policy file happens to exist would be
+ * a setting changing meaning behind the operator's back.
+ */
+export function evaluatePlan(input: {
+  workflow: string
+  plan: ExecutionPlan
+  policy?: ApprovalPolicyFile | null
+  grants: readonly ApprovalGrant[]
+  commitSha?: string
+  now?: string
+}): PlanDecision {
+  const base = {
+    risk: input.plan.risk,
+    planHash: input.plan.plan_hash,
+    intent: input.plan.intent,
+    scope: input.plan.scope,
+  }
+  if (input.workflow !== 'review')
+    return { ...base, allowed: true, reasons: [], requirements: [], rejectedGrants: [] }
+
+  const decision = evaluateApproval({
+    plan: input.plan,
+    policy: input.policy ?? STUDIO_DEFAULT_POLICY,
+    grants: input.grants,
+    ...(input.commitSha ? { commit_sha: input.commitSha } : {}),
+    ...(input.now ? { now: input.now } : {}),
+  })
+
+  return {
+    ...base,
+    risk: decision.risk,
+    allowed: decision.allowed,
+    reasons: decision.reasons,
+    requirements: decision.requirements.map(r => ({
+      gate: r.gate,
+      mode: r.mode,
+      minApprovals: r.min_approvals,
+      remaining: r.remaining,
+      because: r.because,
+      ...(r.roles?.length ? { roles: r.roles } : {}),
+      approvers: r.approvers.map(a => a.name ?? a.id),
+    })),
+    rejectedGrants: decision.rejected_grants.map(r => ({
+      approver: r.grant.approver.name ?? r.grant.approver.id,
+      reason: r.reason,
+    })),
+  }
+}
+
+/**
+ * The gate a plan's requirements land on, for routing an approval.
+ *
+ * A person pressing Approve is answering whatever the policy asked of them, so
+ * the grant has to name that gate — a `release` decision recorded at the
+ * `change` gate satisfies nothing and reads, to whoever gave it, like the
+ * button did not work.
+ */
+export function gateForPlan(decision: PlanDecision): 'plan' | 'change' | 'release' {
+  const outstanding = decision.requirements.find(r => r.remaining > 0)
+  const gate = outstanding?.gate ?? decision.requirements[0]?.gate ?? 'change'
+  return gate as 'plan' | 'change' | 'release'
 }

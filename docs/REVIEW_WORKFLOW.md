@@ -33,9 +33,20 @@ The policy is `.contentrain/approval-policies.json`, read from the
 lived only in the database could be changed after a change was made and before
 it was approved.
 
-With no policy file the ecosystem default applies — one review on the diff for
-anything above `read_only`. A project that wants agent content edits to land by
-themselves writes that down:
+With no policy file, one review on the diff is required for anything above
+`read_only`, and the author may be the one who gives it. That last part is a
+deliberate relaxation of the ecosystem default: on a one-person project a strict
+four-eyes rule produces a Merge button that can never be pressed. The approval
+is still required and still recorded — to require a *second* person, say so:
+
+```json
+{ "version": 1, "allow_self_approval": false, "rules": [{ "risk": "low_risk_content", "gate": "change", "mode": "single" }] }
+```
+
+An agent can never approve, with or without that setting.
+
+A project that wants agent content edits to land by themselves writes that down
+instead:
 
 ```json
 {
@@ -68,6 +79,37 @@ way everywhere.
 A policy file Studio cannot read is not silently ignored: the stricter default
 applies and project health reports `invalid_approval_policy` with what is wrong
 with the file.
+
+## Approving, and what it is an approval of
+
+A decision is given for one **plan**, not for a branch name. A pending branch's
+plan is derived from the branch — the same review the panel renders — so its
+hash covers what the change touches and how risky it is. Push another commit
+and the hash moves with it, and every decision collected for the old shape stops
+counting. Nothing has to remember to invalidate anything.
+
+| action | route | effect |
+|---|---|---|
+| **Approve** | `POST …/branches/{branch}/approve` `{ note? }` | records your decision for the branch's current plan hash and tip; returns the decision as it now stands |
+| **Withdraw** | `DELETE …/branches/{branch}/approve` | removes your own decision — only your own |
+| **Approve a release** | `POST …/deploy/approve` | records a decision on the next deploy, at `deployment` risk |
+| **Receipts** | `GET …/receipts` | what has run under an approval, newest first |
+
+A decision that does not count comes back with a machine-readable reason
+(`plan_hash_mismatch`, `commit_mismatch`, `self_approval`, `role_not_permitted`,
+`expired`, …), because the question people actually ask is not "is it blocked"
+but "I approved this, why is it still blocked". The panel shows that line.
+
+**A release is not content.** Approving a branch answers "are these words
+right"; approving a release answers "is now the moment to publish". They carry
+separate plans and separate grants, and neither satisfies the other. A manual
+deploy on a review project is refused with the same decision shape until its own
+gate is met.
+
+**Receipts.** When a merge or a release goes through, what ran is recorded with
+the decisions that permitted it — the grants are cleared with the branch, so the
+receipt keeps its own copy. Project overview → *Approvals & releases* on a review
+project; each row exports as the `ExecutionReceipt` it is.
 
 ## Reviewer actions
 
