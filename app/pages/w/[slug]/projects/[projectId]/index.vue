@@ -14,7 +14,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
-const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest } = useBranches()
+const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -48,6 +48,7 @@ const activeVocabulary = computed(() => (route.query as Record<string, string | 
 const activeCDN = computed(() => (route.query as Record<string, string | undefined>).cdn === 'true')
 const activeAssets = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
 const activeHealth = computed(() => (route.query as Record<string, string | undefined>).health === 'true')
+const activeReceipts = computed(() => (route.query as Record<string, string | undefined>).receipts === 'true')
 const activeLocale = ref('en')
 
 // Persist current path — only after confirming project/workspace exist
@@ -155,6 +156,10 @@ function selectModel(modelId: string) {
     router.replace({ query: { health: 'true' } })
     return
   }
+  if (modelId === '__receipts__') {
+    router.replace({ query: { receipts: 'true' } })
+    return
+  }
   router.replace({ query: { ...route.query, model: modelId } })
 }
 
@@ -200,6 +205,18 @@ async function handleBranchMerge() {
     await invalidateCache(projectId.value)
     await fetchSnapshot(ws.id, projectId.value)
   }
+}
+
+async function handleBranchApprove() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  await setApproval(ws.id, projectId.value, activeBranch.value, true)
+}
+
+async function handleBranchWithdrawApproval() {
+  const ws = workspaces.value.find(w => w.slug === slug.value)
+  if (!ws || !activeBranch.value) return
+  await setApproval(ws.id, projectId.value, activeBranch.value, false)
 }
 
 async function handleBranchRequestChanges(comment: string) {
@@ -452,6 +469,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             :active-cdn="activeCDN"
             :active-assets="activeAssets"
             :active-health="activeHealth"
+            :active-receipts="activeReceipts"
             :branch-review="branchReview"
             :branch-review-loading="reviewLoading"
             :branch-raw="branchRaw"
@@ -466,6 +484,8 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             @branch-reject="handleBranchReject"
             @branch-request-changes="handleBranchRequestChanges"
             @branch-resolve-request="handleBranchResolveRequest"
+            @branch-approve="handleBranchApprove"
+            @branch-withdraw-approval="handleBranchWithdrawApproval"
             @branch-load-raw="handleBranchLoadRaw"
             @vocabulary-save="handleVocabularySave"
           />

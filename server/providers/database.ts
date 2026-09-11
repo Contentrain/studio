@@ -698,6 +698,45 @@ export interface DatabaseProvider {
   clearBranchChangeRequest: (projectId: string, branch: string) => Promise<void>
 
   // ═══════════════════════════════════════════════════
+  // EXECUTION APPROVALS + RECEIPTS
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Record one person's decision on one plan. Approving again after the plan
+   * moved replaces their standing grant rather than stacking beside it — one
+   * person's opinion is one opinion, however many times they press the button.
+   */
+  recordApproval: (input: {
+    projectId: string
+    workspaceId: string
+    /** The `cr/*` branch, or `release`. */
+    target: string
+    gate: 'plan' | 'change' | 'release'
+    planHash: string
+    commitSha?: string | null
+    approverId: string
+    approverEmail: string
+    approverRole?: string | null
+    note?: string | null
+  }) => Promise<DatabaseRow>
+  /** Every standing grant on a target — what the evaluator weighs. */
+  listApprovals: (projectId: string, target: string) => Promise<DatabaseRow[]>
+  /** Withdraw one person's grant (their own, or a stale one after a rejection). */
+  deleteApproval: (projectId: string, target: string, approverEmail: string) => Promise<void>
+  /** Drop every grant on a target once it has landed or been rejected. */
+  clearApprovals: (projectId: string, target: string) => Promise<void>
+  /** Record what ran, with the approvals that permitted it. */
+  recordReceipt: (input: {
+    projectId: string
+    workspaceId: string
+    target: string
+    planHash: string
+    receipt: Record<string, unknown>
+  }) => Promise<DatabaseRow>
+  /** Receipts newest first — the audit answer to "who let this in". */
+  listReceipts: (projectId: string, limit?: number) => Promise<DatabaseRow[]>
+
+  // ═══════════════════════════════════════════════════
   // WEBHOOKS
   // ═══════════════════════════════════════════════════
 

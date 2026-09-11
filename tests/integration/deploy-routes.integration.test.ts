@@ -32,8 +32,18 @@ function stubGlobals(deployTarget: unknown = null) {
     getProjectById: vi.fn().mockResolvedValue({ id: 'project-1', workspace_id: 'workspace-1', deploy_target: deployTarget }),
     setProjectDeployTarget: vi.fn().mockResolvedValue(undefined),
     listPendingScheduledPublications: vi.fn().mockResolvedValue([{ id: 's1', model_id: 'posts', entry_id: 'e1', locale: 'en', kind: 'publish', fire_at: '2026-09-04T09:00:00.000Z' }]),
+    listApprovals: vi.fn().mockResolvedValue([]),
+    clearApprovals: vi.fn().mockResolvedValue(undefined),
+    recordApproval: vi.fn().mockResolvedValue({}),
+    recordReceipt: vi.fn().mockResolvedValue({}),
   }
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(db))
+  // The release gate runs before the hook fires: a project not on the review
+  // workflow deploys as it always did, which is what these cases exercise.
+  vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git: {}, contentRoot: '', workspace: { plan: 'starter' } }))
+  vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
+  vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+  vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'auto-merge' }, approvalPolicy: null }))
   return db
 }
 
