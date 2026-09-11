@@ -560,7 +560,6 @@ function buildContextSection(
 function buildBaseRulesSection(config: ContentrainConfig | null, permissions: AgentPermissions, plan?: import('./license').Plan, edition?: 'agpl' | 'ee'): string {
   const effectivePlan = plan ?? 'starter'
   const workflow = config?.workflow ?? 'auto-merge'
-  const isPrivileged = permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
 
   const rules = [
     // Context inference
@@ -625,12 +624,12 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     agentPrompt('rules.system_fields'),
   ]
 
-  // Workflow + role rules
+  // Workflow rules. Deliberately not role-branched any more: on a review
+  // project the approval policy decides whether a write merges itself, so an
+  // owner's save can be held exactly like an editor's. A prompt that promised
+  // the owner an auto-merge made the agent report one that never happened.
   if (workflow === 'auto-merge') {
     rules.push(agentPrompt('rules.auto_merge_owner'))
-  }
-  else if (isPrivileged) {
-    rules.push(agentPrompt('rules.auto_merge_admin'))
   }
   else {
     rules.push(agentPrompt('rules.review_branch'))

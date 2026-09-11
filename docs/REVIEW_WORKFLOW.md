@@ -17,9 +17,57 @@ The project's `workflow` (`.contentrain/config.json`) decides:
 
 - `auto-merge` (default): a write lands on `contentrain` immediately. The
   agent, the content editor, forms, comments and MCP Cloud all follow this.
-- `review` (plan feature `workflow.review`): writes stay on their `cr/*`
-  branch until a reviewer acts. Owners/admins still auto-merge their own
-  writes unless the review policy says otherwise.
+- `review` (plan feature `workflow.review`): an agent write stays on its `cr/*`
+  branch unless the project's approval policy permits that class of change.
+  **What is being changed decides — not who asked.** An owner's write is held
+  by the same policy as an editor's; the role gate lives on the reviewer
+  actions below, where it belongs.
+
+The tool result says which happened: `merged: true`, or a `reviewBranch` plus
+an `approval` object carrying the risk class and one line per reason.
+
+## Approval policy
+
+The policy is `.contentrain/approval-policies.json`, read from the
+`contentrain` branch. It lives in the repository on purpose: a policy that
+lived only in the database could be changed after a change was made and before
+it was approved.
+
+With no policy file the ecosystem default applies — one review on the diff for
+anything above `read_only`. A project that wants agent content edits to land by
+themselves writes that down:
+
+```json
+{
+  "version": 1,
+  "default_mode": "single",
+  "rules": [
+    { "risk": "low_risk_content", "gate": "change", "mode": "auto" }
+  ]
+}
+```
+
+Risk classes are a ladder: `read_only` · `low_risk_content` · `bulk_content` ·
+`destructive_schema` · `external_effect` · `financially_material` ·
+`deployment`. A rule written at a rung also covers the rungs above it —
+**except `mode: "auto"`, which covers only its own rung**, so trusting small
+content edits cannot silently exempt a schema change.
+
+That exception has a consequence worth knowing before you write a file: with
+only the `auto` rule above and **no `default_mode`**, a schema change matches no
+rule at all, and the evaluator takes a policy's silence literally — it merges.
+Write `default_mode` unless you mean that.
+
+Studio classifies each agent write by the tool it used: content edits are
+`low_risk_content` (lifted to `bulk_content` when one call touches more than one
+entry), deletes and locale fan-out are `bulk_content`, and model writes are
+`destructive_schema`. The evaluator itself is `@contentrain/types`
+(`evaluateApproval`), shared with the CLI, so the same policy answers the same
+way everywhere.
+
+A policy file Studio cannot read is not silently ignored: the stricter default
+applies and project health reports `invalid_approval_policy` with what is wrong
+with the file.
 
 ## Reviewer actions
 

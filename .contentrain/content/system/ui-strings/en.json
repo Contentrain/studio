@@ -393,6 +393,7 @@
   "content.save_all": "Save changes",
   "content.save_error": "Failed to save content. Please try again.",
   "content.saved_shared_locales": "Also applied to {locales}: {fields}",
+  "content.saved_pending_review": "Saved to branch {branch} — it needs review before it goes live",
   "content.search_entries": "Search entries...",
   "content.search_entries_group": "Entries",
   "content.search_unavailable_description": "The content index is still loading. Try again in a moment.",

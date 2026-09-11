@@ -1,4 +1,7 @@
 import { clearBranchRequestSafe } from './branch-requests'
+import type { MergeDecision, ToolScope } from './approval-gate'
+import { decideMerge, savedEntryIds } from './approval-gate'
+import { getBrainCache } from './brain-cache'
 import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '~~/server/providers/ai'
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
@@ -528,6 +531,27 @@ export async function executeToolWithAutoMerge(
   // Plans without review workflow support always auto-publish on save.
   const autoPublish = !hasFeature(plan, 'workflow.review')
 
+  /**
+   * May the write this tool just made merge itself?
+   *
+   * The policy comes off the brain cache rather than a fresh read: every write
+   * site invalidates the cache just before asking, and a refresh here would
+   * re-read the whole project to answer a question about a file the agent
+   * cannot write. The cached entry is the one the turn was built from, which is
+   * the policy that was in force when the user asked.
+   */
+  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string } = {}): Promise<MergeDecision> => {
+    if (workflow !== 'review') return { allowed: true, review: {} }
+    const cached = getBrainCache(projectId) ?? await getOrBuildBrainCache(git, contentRoot, projectId)
+    return decideMerge({
+      workflow,
+      tool: name,
+      ...(opts.scope ? { scope: opts.scope } : {}),
+      policy: cached.approvalPolicy,
+      ...(opts.commitSha ? { commitSha: opts.commitSha } : {}),
+    })
+  }
+
   // Execution-time authorization backstop. chat.post.ts already filters
   // the tool list handed to the model, but a hallucinated/forged tool
   // name — or any future caller that reuses this engine without
@@ -672,12 +696,13 @@ export async function executeToolWithAutoMerge(
         invalidateBrainCache(projectId)
 
         // Role-aware auto-merge
-        if (shouldAutoMerge(workflow, permissions) && writeResult.branch) {
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params) }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed && writeResult.branch) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, workflow }
         }
         else if (writeResult.branch) {
-          result = { ...summarizeWriteResult(writeResult), merged: false, workflow, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, workflow, reviewBranch: writeResult.branch, ...gate.review }
         }
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, workflow }
@@ -715,12 +740,13 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
 
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
         }
 
         // Emit webhook event (fire-and-forget)
@@ -764,12 +790,13 @@ export async function executeToolWithAutoMerge(
           ...(writeResult.modelChange ? { modelChange: writeResult.modelChange } : {}),
           ...(writeResult.warnings ? { warnings: writeResult.warnings } : {}),
         }
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ scope: { models: [params.id as string] }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, ...modelChange }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...modelChange }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...modelChange, ...gate.review }
         }
 
         // Emit webhook event (fire-and-forget)
@@ -824,9 +851,17 @@ export async function executeToolWithAutoMerge(
         const subLocale = typeof sub.locale === 'string' && sub.locale ? sub.locale : 'en'
         const writeResult = await engine.saveContent(subModelId, subLocale, { [entryId]: subData }, userEmail, { autoPublish })
 
+        // The submission is approved either way; whether the entry it produced
+        // is live or waiting on a branch is a separate fact, and the agent has
+        // to be able to say which — "approved" alone reads as published.
+        let held: { reviewBranch?: string } & MergeDecision['review'] = {}
         if (writeResult.branch) {
-          if (shouldAutoMerge(workflow, permissions)) {
+          const gate = await gateMerge({ scope: { models: [subModelId], locales: [subLocale], entries: [entryId] }, commitSha: writeResult.commit?.sha })
+          if (gate.allowed) {
             await mergeForTool(engine, writeResult.branch, turnMerge)
+          }
+          else {
+            held = { reviewBranch: writeResult.branch, ...gate.review }
           }
           invalidateBrainCache(projectId)
         }
@@ -835,7 +870,7 @@ export async function executeToolWithAutoMerge(
         affected.snapshotChanged = true
         affected.branchesChanged = true
         affected.models.push(subModelId)
-        result = { entryId, submission: { ...sub, status: 'approved', entry_id: entryId }, message: agentMessage('forms.approved') }
+        result = { entryId, submission: { ...sub, status: 'approved', entry_id: entryId }, message: agentMessage('forms.approved'), ...held }
         break
       }
 
@@ -1047,12 +1082,13 @@ export async function executeToolWithAutoMerge(
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
 
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ scope: { models: [copyModelId], locales: [fromLocale, toLocale] }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
         }
         break
       }
@@ -1269,12 +1305,13 @@ export async function executeToolWithAutoMerge(
         affected.locales.push(locale)
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: entryIds }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, statusChanges }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, statusChanges }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, statusChanges, ...gate.review }
         }
         break
       }
@@ -1387,12 +1424,13 @@ export async function executeToolWithAutoMerge(
         affected.snapshotChanged = true
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
         }
         break
       }
@@ -1411,12 +1449,13 @@ export async function executeToolWithAutoMerge(
         affected.snapshotChanged = true
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ scope: { locales: [newLocale] }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
         }
         break
       }
@@ -1463,12 +1502,13 @@ export async function executeToolWithAutoMerge(
         affected.snapshotChanged = true
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
-        if (shouldAutoMerge(workflow, permissions)) {
+        const gate = await gateMerge({ scope: { models: [modelId] }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch }
+          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
         }
         break
       }
@@ -1630,16 +1670,4 @@ function summarizeMediaAsset(projectId: string, asset: import('~~/server/provide
     dimensions: `${asset.width}x${asset.height}`,
     variants: Object.fromEntries(Object.entries(asset.variants).map(([k, v]) => [k, v.path])),
   }
-}
-
-/**
- * Determine whether to auto-merge based on workflow config + user role.
- *
- * auto-merge workflow → always auto-merge
- * review workflow → Owner/Admin auto-merge (they're authorized), Editor → no merge (needs review)
- */
-function shouldAutoMerge(workflow: string, permissions: AgentPermissions): boolean {
-  if (workflow === 'auto-merge') return true
-  // In review workflow, only Owner/Admin can auto-merge
-  return permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
 }

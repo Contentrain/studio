@@ -42,6 +42,7 @@ export type SchemaWarningType
     | 'model_removed'
     | 'store_replaced'
     | 'invalid_schedule'
+    | 'invalid_approval_policy'
     | 'kind_changed'
     | 'i18n_changed'
     | 'field_removed'
@@ -505,6 +506,26 @@ export function validateEntrySchedules(brain: BrainCacheEntry): SchemaWarning[] 
   return warnings
 }
 
+/**
+ * A policy file the merge gate cannot read.
+ *
+ * The gate falls back to the ecosystem default, which is stricter — so nothing
+ * is let through that the policy meant to hold. What it does mean is that a
+ * project believing its own rules are in force is wrong about that, and only
+ * project health can tell them.
+ */
+export function validateApprovalPolicy(brain: BrainCacheEntry): SchemaWarning[] {
+  if (!brain.approvalPolicyError) return []
+  return [{
+    modelId: '',
+    type: 'invalid_approval_policy',
+    severity: 'error',
+    affectedEntries: 0,
+    current: brain.approvalPolicyError,
+    message: `.contentrain/approval-policies.json is not usable (${brain.approvalPolicyError}) — the default approval policy applies until it is fixed`,
+  }]
+}
+
 // ─── 5. Breaking Change Detector ───
 
 export function detectBreakingChanges(
@@ -610,6 +631,9 @@ export function validateProjectSchema(
 
   // Schedules a CDN build cannot read
   allWarnings.push(...validateEntrySchedules(brain))
+
+  // An approval policy the merge gate cannot read
+  allWarnings.push(...validateApprovalPolicy(brain))
 
   // Breaking change detection
   if (previousBrain) {
