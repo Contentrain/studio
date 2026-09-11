@@ -1,7 +1,15 @@
 /**
- * Get branch health status for a project.
- * Returns cached status or performs a fresh check.
+ * Branch health for a project: how many `cr/*` branches are pending, and where
+ * the content branch stands against the repository's own.
+ *
+ * The two are cached separately and on purpose. The branch count moves slowly
+ * (six hours is fine); the sync state moves on every merge and every push by
+ * anyone, and a stale "in sync" is the reading that costs someone an
+ * afternoon — see `content-sync.ts`.
  */
+
+import { readContentSync } from '~~/server/utils/content-sync'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -12,9 +20,11 @@ export default defineEventHandler(async (event) => {
 
   await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
 
-  const cached = await getHealthStatus(projectId)
-  if (cached) return cached
-
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
-  return checkBranchHealth(git, projectId, contentRoot)
+  const sync = await readContentSync(git, projectId).catch(() => null)
+
+  const cached = await getHealthStatus(projectId)
+  if (cached) return { ...cached, sync }
+
+  return { ...(await checkBranchHealth(git, projectId, contentRoot)), sync }
 })

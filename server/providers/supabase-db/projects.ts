@@ -202,10 +202,12 @@ export function projectMethods(): ProjectMethods {
 
     async updateProjectContentTimestamp(repoFullName) {
       const admin = getAdmin()
-      await admin
+      const { data } = await admin
         .from('projects')
         .update({ content_updated_at: new Date().toISOString() })
         .eq('repo_full_name', repoFullName)
+        .select('id')
+      return (data ?? []).map(row => String((row as { id: unknown }).id))
     },
 
     async updateProjectAccessStatus(target, status) {

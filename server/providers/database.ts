@@ -301,7 +301,14 @@ export interface DatabaseProvider {
   listUserAssignedProjectIds: (userId: string) => Promise<string[]>
   listWorkspaceProjectsByIds: (workspaceId: string, projectIds: string[]) => Promise<DatabaseRow[]>
   listUserAssignedProjects: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
-  updateProjectContentTimestamp: (repoFullName: string) => Promise<void>
+  /**
+   * Stamp `content_updated_at` for every project backed by this repo, and
+   * return their ids. The push webhook needs exactly that set — to drop the
+   * cached content-sync reading for each — and this UPDATE has already
+   * resolved it, so asking for it again would be a second query for an answer
+   * we just had.
+   */
+  updateProjectContentTimestamp: (repoFullName: string) => Promise<string[]>
   /**
    * Flip a project's repo-level access state. Scoped to projects owned
    * by a workspace bound to `installationId` (joined via workspaces),
