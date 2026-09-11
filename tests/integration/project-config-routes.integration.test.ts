@@ -273,19 +273,22 @@ describe('project config and branch route integration', () => {
       // A pending change is listed as what it changed, not as its git ref.
       const branchesResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches')
       expect(branchesResponse.status).toBe(200)
-      await expect(branchesResponse.json()).resolves.toEqual({
-        branches: [{
-          name: 'cr/content/faq/en/1234567890-abcd',
-          sha: 'abc',
-          protected: false,
-          scope: 'content',
-          modelId: 'faq',
-          modelName: 'faq',
-          locale: 'en',
-          timestamp: 1234567890,
-          changesRequested: false,
-        }],
-      })
+      const branchesPayload = await branchesResponse.json()
+      expect(branchesPayload.branches).toEqual([{
+        name: 'cr/content/faq/en/1234567890-abcd',
+        sha: 'abc',
+        protected: false,
+        scope: 'content',
+        modelId: 'faq',
+        modelName: 'faq',
+        locale: 'en',
+        timestamp: 1234567890,
+        changesRequested: false,
+      }])
+      // The sidebar reads the branch-sync state off this same response; this
+      // fixture has no `contentrain` branch, which is `unknown` rather than a
+      // claim that the branches agree.
+      expect(branchesPayload.sync.state).toBe('unknown')
 
       // Default: the semantic review, resolved against the project's models.
       const reviewResponse = await request('/api/workspaces/workspace-1/projects/project-1/branches/cr/content/faq/en/1234567890-abcd/diff')

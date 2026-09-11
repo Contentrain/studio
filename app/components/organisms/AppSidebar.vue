@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isSyncNoteworthy } from '~~/shared/utils/content-sync'
 import { formatRelativeTime } from '~/utils/relative-time'
 
 const { t } = useContent()
@@ -6,7 +7,7 @@ const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
 const { projects } = useProjects()
 const { models, hasContentrain, snapshot, loading: snapshotLoading, fetchSnapshot, invalidateCache } = useSnapshot()
-const { branches, fetchBranches } = useBranches()
+const { branches, contentSync, fetchBranches } = useBranches()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 const { toggle: openCommandPalette, pendingAction, consumeAction } = useCommandPalette()
@@ -125,6 +126,17 @@ function selectModel(modelId: string) {
   const query: Record<string, string> = { model: modelId }
   router.replace({ query })
 }
+
+/**
+ * One line, or nothing. The base branch is named because "main" and "master"
+ * are both real and a message that guesses is a message someone has to
+ * double-check.
+ */
+const syncNote = computed(() => {
+  const report = contentSync.value
+  if (!isSyncNoteworthy(report) || !report) return null
+  return t(`sync.${report.state}`, { base: report.baseBranch })
+})
 
 function selectBranch(branchName: string) {
   const query: Record<string, string> = { branch: encodeURIComponent(branchName) }
@@ -277,6 +289,25 @@ function onProjectDeleted() {
             :locked="!mediaAvailable" compact
             @click="selectAssets"
           />
+        </div>
+
+        <!-- Where the content branch stands against the repository's own.
+             Silent when they agree: a row that always says "in sync" is a row
+             nobody reads on the day it says something else. -->
+        <div
+          v-if="syncNote"
+          class="mt-3 flex items-start gap-1.5 rounded-lg border px-2 py-1.5 text-[11px]"
+          :class="contentSync?.state === 'diverged'
+            ? 'border-warning-300 bg-warning-50 text-warning-700 dark:border-warning-800 dark:bg-warning-900/20 dark:text-warning-400'
+            : 'border-secondary-200 text-muted dark:border-secondary-800'"
+          role="status"
+        >
+          <span
+            class="mt-px size-3 shrink-0"
+            :class="contentSync?.state === 'diverged' ? 'icon-[annon--alert-triangle]' : 'icon-[annon--arrow-swap]'"
+            aria-hidden="true"
+          />
+          <span class="min-w-0">{{ syncNote }}</span>
         </div>
 
         <!-- Pending branches -->

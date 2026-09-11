@@ -11,6 +11,37 @@ write ──► cr/<scope>/<target>/<locale>/<ts>  ──► review ──► me
                                                   └── request changes (branch stays; author fixes; merge later)
 ```
 
+## Branch sync
+
+`contentrain` is the content SSOT; the repository's own branch (`main` /
+`master`) is where the site builds from. A merge lands content on `contentrain`
+and then advances the base branch — two separate facts, and the second one can
+fail without the first being in doubt.
+
+Studio reports where the two stand as a standing reading
+(`GET …/branches/health` and `GET …/branches`, `sync`):
+
+| state | what it means | what resolves it |
+|---|---|---|
+| `in_sync` | same commit | nothing |
+| `content_ahead` | content has landed that the base branch does not carry | the advance, which runs at the end of a turn |
+| `base_ahead` | someone pushed to the base branch; content has nothing of its own | **fast-forward** — mechanical, nothing to decide |
+| `diverged` | both sides carry commits the other does not | the reconcile, or the pull request Studio opens |
+| `unknown` | Studio could not tell — no `contentrain` branch yet, no common history, or a provider without `getMergeBase` | — |
+
+`unknown` is reported rather than guessed: answering `in_sync` for any of those
+would be a lie in the reassuring direction.
+
+The reading is derived from branch tips and a merge base — primitives every
+provider has — rather than a host's compare endpoint, and cached for two
+minutes. The TTL is the floor, not the mechanism: a merge drops it, and so does
+a GitHub push webhook, because a push from outside Studio is exactly when it
+becomes wrong.
+
+The sidebar shows a line whenever the state is anything but `in_sync`. It stays
+silent on `in_sync` on purpose — a row that always says "in sync" is a row
+nobody reads on the day it says something else.
+
 ## Auto-merge vs review
 
 The project's `workflow` (`.contentrain/config.json`) decides:

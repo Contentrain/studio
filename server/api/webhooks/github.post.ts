@@ -7,6 +7,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { PushDiffDecision } from '../../utils/cdn-push-diff'
+import { invalidateContentSync } from '../../utils/content-sync'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -40,7 +41,12 @@ export default defineEventHandler(async (event) => {
     const repoFullName = (body.repository as { full_name?: string })?.full_name
     if (!repoFullName) return { ok: true }
 
-    await db.updateProjectContentTimestamp(repoFullName)
+    // A push moves a branch from outside Studio, which is exactly when the
+    // cached content-sync reading becomes a lie — and the state it turns into,
+    // `base_ahead`, is the one Studio can resolve by fast-forward. The TTL
+    // would get there eventually; "eventually" is not when someone is looking.
+    const touched = (await db.updateProjectContentTimestamp(repoFullName)) ?? []
+    await Promise.all(touched.map(id => invalidateContentSync(id).catch(() => {})))
 
     // CDN build trigger — check if any project has CDN enabled
     const cdnProjects = await db.listCDNEnabledProjects(repoFullName)
