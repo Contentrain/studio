@@ -326,14 +326,17 @@ export function projectMethods(): ProjectMethods {
     async updateProjectContentTimestamp(repoFullName) {
       // Fire-and-forget in the Supabase impl (no error handling) — mirror it.
       try {
-        await getAdmin()
+        const rows = await getAdmin()
           .updateTable('projects')
           .set({ content_updated_at: new Date().toISOString() })
           .where('repo_full_name', '=', repoFullName)
+          .returning('id')
           .execute()
+        return rows.map(row => String(row.id))
       }
       catch {
         // parity: swallowed
+        return []
       }
     },
 

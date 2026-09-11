@@ -1,4 +1,5 @@
 import type { PlanDecision } from '~~/shared/utils/approval'
+import type { ContentSyncReport } from '~~/shared/utils/content-sync'
 /**
  * Branch management composable.
  * Lists cr/* branches, merge/reject, and the branch review.
@@ -19,6 +20,7 @@ export function useBranches() {
   const branchRaw = useState<BranchRawDiff | null>('branch-raw', () => null)
   const reviewLoading = useState('branch-review-loading', () => false)
   const rawLoading = useState('branch-raw-loading', () => false)
+  const contentSync = useState<ContentSyncReport | null>('branch-sync', () => null)
   const toast = useToast()
 
   function branchUrl(workspaceId: string, projectId: string, branch: string) {
@@ -28,13 +30,15 @@ export function useBranches() {
   async function fetchBranches(workspaceId: string, projectId: string) {
     loading.value = true
     try {
-      const result = await $fetch<{ branches: BranchListItem[] }>(
+      const result = await $fetch<{ branches: BranchListItem[], sync?: ContentSyncReport | null }>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/branches`,
       )
       branches.value = result.branches
+      contentSync.value = result.sync ?? null
     }
     catch {
       branches.value = []
+      contentSync.value = null
     }
     finally {
       loading.value = false
@@ -86,6 +90,7 @@ export function useBranches() {
 
   function clearBranches() {
     branches.value = []
+    contentSync.value = null
     clearBranchReview()
   }
 
@@ -199,6 +204,7 @@ export function useBranches() {
 
   return {
     branches: readonly(branches),
+    contentSync: readonly(contentSync),
     loading: readonly(loading),
     branchReview: readonly(branchReview),
     branchRaw: readonly(branchRaw),
