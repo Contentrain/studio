@@ -17,9 +17,10 @@ remains open. Customer pilots are not a prelaunch prerequisite.
   | `@contentrain/skills` | 0.9.3 |
   | `contentrain` (CLI) | 0.13.0 |
 
-  Studio itself still resolves `@contentrain/mcp` 3.2.0, `@contentrain/types` 1.10.0
-  and `@contentrain/query` 7.0.15; that bump is a separate change with its own
-  write-path verification, and nothing in this document depends on it. Migrate's
+  Studio now resolves `@contentrain/mcp` 3.4.0, `@contentrain/types` 1.14.0 and
+  `@contentrain/query` 7.3.2 — one matched set, all three pinning types 1.14.0.
+  The bump carries the shared frontmatter reader, so a document's hosted
+  write-path verification belongs to that change rather than to this one. Migrate's
   lock selected 0.3.0 / 0.9.0 when last inspected. Intake and portable runtime
   clients are implemented; the older placeholder and “not consumed” descriptions
   below are historical, not current blockers.
