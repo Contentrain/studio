@@ -40,15 +40,27 @@ export function useContentEditor() {
     validation: { valid: boolean, errors: Array<{ message: string }> }
     /** Locale-agnostic fields the server also wrote to the model's other locales. */
     sharedAcrossLocales?: { fields: string[], locales: string[] }
+    /** False when the project's approval policy held the write on its branch. */
+    merged?: boolean
+    /** Why it was held — present only when it was. */
+    approval?: { risk: string, reasons: string[] }
   }
 
   // A media or relation value lands in every locale of an i18n model; the
   // toast says which, so the editor is never left wondering whether the
   // other locale's site changed.
   function announceSave(result: SaveResponse) {
-    toast.success(`Saved to branch: ${result.branch}`)
+    const { t } = useContent()
+    // "Saved" and "live" are not the same event on a review project, and a
+    // toast that names only the branch leaves the editor to guess which one
+    // just happened.
+    if (result.merged === false) {
+      toast.success(t('content.saved_pending_review', { branch: result.branch }))
+    }
+    else {
+      toast.success(`Saved to branch: ${result.branch}`)
+    }
     if (result.sharedAcrossLocales && result.sharedAcrossLocales.locales.length > 0) {
-      const { t } = useContent()
       toast.success(t('content.saved_shared_locales', {
         locales: result.sharedAcrossLocales.locales.join(', '),
         fields: result.sharedAcrossLocales.fields.join(', '),

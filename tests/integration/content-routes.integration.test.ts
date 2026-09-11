@@ -99,6 +99,73 @@ describe('content route integration', () => {
     })
   })
 
+  it('holds an owner\'s editor save on a review project and says what it is waiting for', async () => {
+    // Same gate as the chat handler: the role of whoever saved is not the
+    // question any more, so an owner is held by the policy like anyone else.
+    const mergeBranch = vi.fn().mockResolvedValue({ merged: true, sha: 'merge-sha', pullRequestUrl: null })
+    const saveContent = vi.fn().mockResolvedValue({
+      branch: 'cr/content/posts/en/1234567890-abcd',
+      commit: { sha: 'abc' },
+      diff: [],
+      validation: { valid: true, errors: [] },
+    })
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      if (key === 'modelId') return 'posts'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'owner-1', email: 'owner@example.com' },
+      accessToken: 'token-1',
+    }))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      workspaceRole: 'owner',
+      availableTools: ['save_content'],
+      specificModels: false,
+      allowedModels: [],
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: {},
+      contentRoot: '',
+      workspace: { plan: 'pro' },
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    // No policy file — the ecosystem default asks for one review.
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: { workflow: 'review' },
+      approvalPolicy: null,
+    }))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent, mergeBranch }))
+    vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue(null))
+    vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ trackMediaUsage: vi.fn() }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/content/posts', handler: await loadContentPostHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/content/posts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ locale: 'en', data: { entry1: { title: 'Hello world' } } }),
+      })
+
+      expect(response.status).toBe(200)
+      const payload = await response.json()
+      expect(payload.merged).toBe(false)
+      expect(payload.workflow).toBe('review')
+      expect(payload.approval.risk).toBe('low_risk_content')
+      expect(payload.approval.reasons.length).toBeGreaterThan(0)
+      expect(mergeBranch).not.toHaveBeenCalled()
+    })
+  })
+
   it('only allows workspace owner/admin to publish content statuses', async () => {
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
