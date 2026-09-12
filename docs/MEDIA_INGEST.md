@@ -36,7 +36,7 @@ Content-Type: application/json
 
 ```jsonc
 {
-  "requested": 3, "unique": 2, "succeeded": 1, "failed": 1,
+  "requested": 3, "unique": 2, "succeeded": 1, "failed": 1, "deduped": 0,
   "results": [
     { "url": "https://old.example/…/hero.jpg", "ok": true,
       "assetId": "…", "path": "media/original/….jpg",
@@ -52,8 +52,25 @@ Content-Type: application/json
 `path` is what a media field stores (`media/original/…`); `deliveryUrl` is the
 absolute URL a static site embeds.
 
-Idempotency is per request only. Keep the returned map; re-sending a URL in a
-later request creates a second asset. Retry exactly the `ok: false` items.
+## Idempotency
+
+Both directions. Within a request, duplicate URLs collapse to one fetch. Across
+requests, a fetched file whose bytes the project already holds resolves to the
+existing asset — `ok: true`, `deduped: true`, and the map still points at the
+asset your content already references. Retry the `ok: false` items freely: a
+retried batch does not double your storage.
+
+The key is the **content hash**, not the URL, and that buys two things a URL key
+would not:
+
+- a source site serving one image under two paths (WordPress does this
+  constantly) lands one asset, not two;
+- a URL whose content has actually *changed* still produces a new asset, which
+  a URL key would have quietly refused to do.
+
+The fetch still happens — the bytes are what is being identified — so this saves
+storage, quota and library clutter, not bandwidth. Pass `"dedupe": false` if you
+genuinely want a second copy.
 
 The Assets panel has an **Import from URLs** box (one URL per line) that
 calls this endpoint and keeps the failed URLs in the box for a retry.

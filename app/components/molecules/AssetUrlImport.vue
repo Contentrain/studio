@@ -23,12 +23,16 @@ async function run() {
   busy.value = true
   failures.value = []
   try {
-    const report = await $fetch<{ succeeded: number, failed: number, results: Array<{ url: string, ok: boolean, error?: string }> }>(
+    const report = await $fetch<{ succeeded: number, failed: number, deduped?: number, results: Array<{ url: string, ok: boolean, error?: string }> }>(
       `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/media/bulk-ingest`,
       { method: 'POST', body: { items: urls.value.slice(0, 100).map(url => ({ url })) } },
     )
     failures.value = report.results.filter(r => !r.ok).map(r => ({ url: r.url, error: r.error }))
-    toast.success(t('media.url_import_done', { succeeded: report.succeeded, failed: report.failed }))
+    // "12 imported" after re-running the same list reads as 12 new files, and
+    // the person then goes looking for duplicates that are not there.
+    toast.success(report.deduped
+      ? t('media.url_import_done_deduped', { succeeded: report.succeeded, deduped: report.deduped, failed: report.failed })
+      : t('media.url_import_done', { succeeded: report.succeeded, failed: report.failed }))
     emit('imported', { succeeded: report.succeeded, failed: report.failed })
     if (report.failed === 0) {
       text.value = ''

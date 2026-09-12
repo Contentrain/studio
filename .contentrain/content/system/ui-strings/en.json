@@ -700,6 +700,7 @@
   "media.url_import_count": "{count} URLs",
   "media.url_import_description": "One URL per line, up to 100 per run. Each file is fetched, optimized and stored here; failed URLs stay in the box so you can retry them.",
   "media.url_import_done": "{succeeded} imported, {failed} failed.",
+  "media.url_import_done_deduped": "{succeeded} imported ({deduped} already in your library), {failed} failed.",
   "media.url_import_failed": "URL import failed.",
   "media.url_import_label": "Image URLs",
   "media.url_import_open": "Import from URLs",

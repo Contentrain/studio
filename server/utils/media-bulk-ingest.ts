@@ -9,11 +9,24 @@
  * reported with its new delivery URL. One failing URL never fails the batch;
  * it is reported per item so the caller can retry exactly what is missing.
  *
- * Idempotency is by URL within one request only (duplicates collapse to one
- * fetch). Across requests the caller keeps the returned map; re-sending a
- * URL creates a second asset.
+ * Idempotent in both directions. Within a request, duplicate URLs collapse to
+ * one fetch. Across requests, a fetched file whose bytes the project already
+ * holds resolves to the existing asset instead of a second one — keyed on the
+ * content hash rather than the URL, which is the difference between two useful
+ * properties and one misleading one:
+ *
+ * - a retried batch does not double the project's storage, and the URL map it
+ *   gets back still points at the asset its content already references;
+ * - a source site serving one image under two paths (WordPress does this
+ *   constantly) lands one asset, not two;
+ * - and a URL whose content has actually changed still produces a new asset,
+ *   which keying on the URL would have quietly refused to do.
+ *
+ * The fetch still happens — the bytes are what is being identified — so this
+ * saves storage, quota and library clutter, not bandwidth.
  */
 
+import { createHash } from 'node:crypto'
 import type { MediaProvider } from '~~/server/providers/media'
 import type { Plan } from './license'
 import type { RemoteMedia } from './media-ingest'
@@ -44,6 +57,8 @@ export interface BulkIngestItemResult {
   variantUrls?: Record<string, string>
   error?: string
   statusCode?: number
+  /** True when the project already held these bytes and no new asset was created. */
+  deduped?: boolean
 }
 
 export interface BulkIngestReport {
@@ -51,6 +66,8 @@ export interface BulkIngestReport {
   unique: number
   succeeded: number
   failed: number
+  /** Of the successes, how many resolved to an asset the project already had. */
+  deduped: number
   results: BulkIngestItemResult[]
   /** source URL → delivery URL, successful items only. */
   map: Record<string, string>
@@ -66,6 +83,12 @@ export interface BulkIngestInput {
   source?: 'url' | 'agent'
   /** Test seam — defaults to the SSRF/MIME/size-hardened fetch. */
   fetchMedia?: (input: { url: string, maxBytes: number }) => Promise<RemoteMedia>
+  /**
+   * Reuse an asset the project already holds for the same bytes. On by
+   * default: an ingest is machine-driven and a retry must not cost twice.
+   * A caller that genuinely wants a second copy passes false.
+   */
+  dedupe?: boolean
   media?: MediaProvider
 }
 
@@ -125,6 +148,21 @@ export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkInges
     queue.push({ ...item, url })
   }
 
+  const dedupe = input.dedupe !== false && typeof media.getAssetByContentHash === 'function'
+
+  /** What a caller gets back for an asset, whether it was just made or already there. */
+  function describe(url: string, asset: { id: string, originalPath: string, variants?: Record<string, { path: string }> }, deduped: boolean): BulkIngestItemResult {
+    return {
+      url,
+      ok: true,
+      assetId: asset.id,
+      path: asset.originalPath,
+      deliveryUrl: toDeliveryUrl(input.projectId, asset.originalPath),
+      variantUrls: Object.fromEntries(Object.entries(asset.variants ?? {}).map(([key, v]) => [key, toDeliveryUrl(input.projectId, v.path)])),
+      ...(deduped ? { deduped: true } : {}),
+    }
+  }
+
   async function ingestOne(item: BulkIngestItem & { url: string }): Promise<BulkIngestItemResult> {
     let remote: RemoteMedia
     try {
@@ -133,6 +171,16 @@ export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkInges
     catch (error) {
       const { message, statusCode } = errorDetails(error)
       return { url: item.url, ok: false, error: message, statusCode }
+    }
+
+    // Hashed before the storage reservation, so an asset the project already
+    // holds costs neither quota nor an upload. The hash is of the bytes as
+    // fetched — the same thing the provider hashes on the way in, before it
+    // optimises anything — so the two can never disagree about identity.
+    if (dedupe) {
+      const contentHash = createHash('sha256').update(remote.buffer).digest('hex')
+      const existing = await media.getAssetByContentHash!(input.projectId, contentHash).catch(() => null)
+      if (existing) return describe(item.url, existing, true)
     }
 
     let storageReserved = false
@@ -172,14 +220,7 @@ export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkInges
         sourceUrl: item.url,
       }).catch(() => {})
 
-      return {
-        url: item.url,
-        ok: true,
-        assetId: asset.id,
-        path: asset.originalPath,
-        deliveryUrl: toDeliveryUrl(input.projectId, asset.originalPath),
-        variantUrls: Object.fromEntries(Object.entries(asset.variants ?? {}).map(([key, v]) => [key, toDeliveryUrl(input.projectId, v.path)])),
-      }
+      return describe(item.url, asset, false)
     }
     catch (error) {
       if (storageReserved)
@@ -209,6 +250,7 @@ export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkInges
     unique: queue.length,
     succeeded: results.filter(r => r.ok).length,
     failed: results.filter(r => !r.ok).length,
+    deduped: results.filter(r => r.deduped).length,
     results,
     map,
   }

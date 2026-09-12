@@ -105,6 +105,17 @@ export interface MediaProvider {
    */
   getAssetByPath?: (projectId: string, originalPath: string) => Promise<MediaAsset | null>
 
+  /**
+   * The project's asset for these exact bytes, if it already has one.
+   *
+   * Used by bulk ingest to stay idempotent across requests: a retried batch,
+   * or a source site serving one image under two URLs, must not buy the same
+   * bytes twice. Optional for the same reason as `getAssetByPath` — provider
+   * doubles keep compiling, and a caller that cannot ask simply does not
+   * dedupe.
+   */
+  getAssetByContentHash?: (projectId: string, contentHash: string) => Promise<MediaAsset | null>
+
   /** List assets for a project with filtering and pagination. */
   listAssets: (projectId: string, options?: MediaListOptions) => Promise<{ assets: MediaAsset[], total: number }>
 
