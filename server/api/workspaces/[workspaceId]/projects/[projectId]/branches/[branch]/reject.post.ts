@@ -32,6 +32,8 @@ export default defineEventHandler(async (event) => {
   const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.rejectBranch(branch)
   clearBranchRequestSafe(projectId, branch)
+  // The branch is gone; standing approvals of it are approvals of nothing.
+  await useDatabaseProvider().clearApprovals(projectId, branch).catch(() => {})
 
   // Emit webhook event (fire-and-forget)
   emitWebhookEvent(projectId, workspaceId, 'branch.rejected', {

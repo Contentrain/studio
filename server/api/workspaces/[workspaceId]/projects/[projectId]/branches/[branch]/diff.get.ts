@@ -1,5 +1,6 @@
 import { buildBranchReview } from '../../../../../../../../server/utils/branch-review'
 import { getBranchRequestSafe } from '../../../../../../../../server/utils/branch-requests'
+import { branchTip, effectiveWorkflow, resolveBranchApproval } from '../../../../../../../../server/utils/branch-approval'
 
 /**
  * What a pending content branch changes, as an editor reads it.
@@ -30,7 +31,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('branches.contentrain_only') })
 
   await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
-  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+  const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
 
   // Diff against contentrain branch (cr/* branches are created from contentrain)
   const baseBranch = 'contentrain'
@@ -81,12 +82,33 @@ export default defineEventHandler(async (event) => {
     canReject: permissions.availableTools.includes('reject_branch'),
   })
 
+  // What the policy makes of this branch, and who has signed — the panel shows
+  // it beside the change rather than discovering it when Merge answers 403.
+  //
+  // Best-effort on purpose: this route's job is to render the change, and a
+  // reviewer who cannot see the approval state is better served by the diff
+  // than by an error page. The merge route asks the same question again and
+  // does not swallow the answer, so nothing is let through by this catch.
+  const approval = await (async () => {
+    const workspacePlan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
+    const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(workspacePlan, 'workflow.review'))
+    return resolveBranchApproval({
+      projectId,
+      review,
+      workflow,
+      policy: brain.approvalPolicy,
+      commitSha: await branchTip(git, branch),
+    })
+  })().catch(() => null)
+
   return {
     ...review,
     canRequestChanges: permissions.availableTools.includes('request_changes'),
     changesRequested: request
       ? { comment: String(request.comment), requestedBy: (request.requested_by as string | null) ?? null, requestedAt: String(request.requested_at) }
       : null,
+    approval: approval?.decision ?? null,
+    approvedBy: approval?.grants.map(g => ({ approver: g.approver.name ?? g.approver.id, at: g.approved_at, note: g.note ?? null })) ?? [],
   }
 })
 

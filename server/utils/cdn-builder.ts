@@ -16,6 +16,7 @@ import type { CDNProvider } from '../providers/cdn'
 import { Marked } from 'marked'
 import { normalizeModelContentMedia, rewriteEntryMedia, rewriteMarkdownMedia } from './media-rewrite'
 import { reportDataLossRisk } from './alert'
+import { isWithinSchedule } from '~~/shared/utils/entry-schedule'
 
 // Configure marked for safe HTML output — escape user HTML input
 const safeMarked = new Marked({
@@ -76,22 +77,20 @@ interface EntryMeta {
  *
  * Only published content is served via CDN:
  * - status must be 'published' (draft, in_review, rejected, archived excluded)
- * - publish_at must be in the past (or not set)
- * - expire_at must be in the future (or not set)
+ * - the entry must be inside its publication window (`isWithinSchedule`:
+ *   inclusive at `publish_at`, exclusive at `expire_at`, an unreadable value
+ *   excludes). `schema-validation.ts` reports unreadable values as project
+ *   health warnings so an excluded entry is diagnosable rather than silent.
  * - No meta = include (backward compat for legacy content without meta)
+ *
+ * `at` is the build's single timestamp: one build must make one decision per
+ * entry, or a boundary crossing mid-build separates an entry from its meta.
  */
 export function shouldIncludeEntry(meta: EntryMeta | undefined, at = Date.now()): boolean {
   if (meta === undefined) return true // No meta = include (legacy content)
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return false
   if (meta.status && meta.status !== 'published') return false
-  for (const key of ['publish_at', 'expire_at'] as const) {
-    const value = meta[key]
-    if (value === undefined || value === null) continue
-    const time = typeof value === 'string' ? Date.parse(value) : NaN
-    if (!Number.isFinite(time)) return false
-    if (key === 'publish_at' ? time > at : time <= at) return false
-  }
-  return true
+  return isWithinSchedule(meta, at)
 }
 
 /**
@@ -155,6 +154,10 @@ function getModelContentDir(ctx: { contentRoot: string }, model: ModelDefinition
  */
 export async function executeCDNBuild(options: BuildOptions): Promise<BuildResult> {
   const start = Date.now()
+  // One timestamp for the whole build. Reading the clock per entry lets a
+  // publish/expire boundary fall between an entry's content check and its meta
+  // check, which ships an entry without its meta (or the reverse).
+  const buildAt = start
   const { projectId, buildId, git, cdn, contentRoot, commitSha, branch } = options
   const ctx = { contentRoot }
   const progress = options.onProgress ?? (() => {})
@@ -295,7 +298,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
             // Non-i18n document meta lives under the default locale (MCP's
             // contract), so decouple the meta locale from the content locale.
             const metaLocale = model.i18n ? locale : defaultLocale
-            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, metaLocale, branch, uploadedPaths)
+            const indexEntries = await buildDocumentModel(projectId, git, cdn, ctx, model, locale, metaLocale, branch, buildAt, uploadedPaths)
             const cdnLocale = model.i18n ? locale : 'data'
             addBundleEntry(model.i18n ? locale : null, `documents/${model.id}/_index/${cdnLocale}.json`, indexEntries)
           }
@@ -339,14 +342,14 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
               const metaMap = metaParsed ?? {}
               const filtered: Record<string, unknown> = {}
               for (const [id, entry] of Object.entries(content as Record<string, unknown>)) {
-                if (shouldIncludeEntry(metaMap[id])) filtered[id] = entry
+                if (shouldIncludeEntry(metaMap[id], buildAt)) filtered[id] = entry
               }
               content = filtered
 
               if (metaParsed !== null) {
                 const filteredMeta: Record<string, EntryMeta> = {}
                 for (const [id, m] of Object.entries(metaMap)) {
-                  if (shouldIncludeEntry(m)) filteredMeta[id] = m
+                  if (shouldIncludeEntry(m, buildAt)) filteredMeta[id] = m
                 }
                 outputMeta = filteredMeta
               }
@@ -357,7 +360,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
               // the whole artifact — a draft/scheduled/expired unit must not be
               // served at all.
               const single = metaParsed as EntryMeta | null
-              if (!shouldIncludeEntry(single ?? undefined)) {
+              if (!shouldIncludeEntry(single ?? undefined, buildAt)) {
                 // Not published — skip content AND meta so the stale-object sweep
                 // garbage-collects any previously-published copy.
                 continue
@@ -635,6 +638,8 @@ async function buildDocumentModel(
   locale: string,
   metaLocale: string,
   branch: string,
+  /** The build's single timestamp — see `shouldIncludeEntry`. */
+  buildAt: number,
   uploadedPaths: Set<string>,
 ): Promise<Array<Record<string, unknown>>> {
   // Get the content directory — handles content_path override
@@ -678,7 +683,7 @@ async function buildDocumentModel(
         // non-i18n → defaultLocale), so it stands in for both args here.
         const metaPath = resolveMetaPath(ctx, model, metaLocale, metaLocale, slug)
         const metaRaw = JSON.parse(await git.readFile(metaPath, branch)) as EntryMeta
-        if (!shouldIncludeEntry(metaRaw)) continue
+        if (!shouldIncludeEntry(metaRaw, buildAt)) continue
       }
       catch { /* no meta = include */ }
 

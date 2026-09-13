@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ingestMediaUrls } from '../../server/utils/media-bulk-ingest'
 
@@ -117,5 +118,105 @@ describe('ingestMediaUrls', () => {
   it('refuses when no media stack is configured', async () => {
     await expect(ingestMediaUrls({ projectId: 'p-1', workspaceId: 'ws-1', plan: 'pro', uploadedBy: 'u-1', items: [{ url: 'https://x/y.jpg' }] }))
       .rejects.toMatchObject({ statusCode: 503 })
+  })
+
+  it('reuses the asset a project already holds for the same bytes', async () => {
+    // The cross-request half of idempotency. A retried batch must not buy the
+    // same bytes twice, and the map it gets back has to keep pointing at the
+    // asset the project's content already references.
+    const existing = makeAsset('already-here', 80)
+    const upload = vi.fn(async () => makeAsset('new-one', 80))
+    const getAssetByContentHash = vi.fn(async () => existing)
+    const media = { upload, getAssetByContentHash }
+
+    const report = await ingestMediaUrls({
+      projectId: 'p-1',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      uploadedBy: 'u-1',
+      items: [{ url: 'https://old.example/a.jpg' }],
+      fetchMedia: vi.fn(async () => ({ buffer: Buffer.alloc(100), filename: 'a.jpg', contentType: 'image/jpeg' })),
+      media: media as never,
+    })
+
+    expect(report.succeeded).toBe(1)
+    expect(report.deduped).toBe(1)
+    expect(report.results[0]).toMatchObject({ ok: true, assetId: 'already-here', deduped: true })
+    expect(report.map['https://old.example/a.jpg']).toContain('media/original/already-here.jpg')
+    expect(upload).not.toHaveBeenCalled()
+    // Neither quota nor storage moves for bytes the project already paid for.
+    expect(db.reserveStorageIfAllowed).not.toHaveBeenCalled()
+    expect(db.incrementWorkspaceStorageBytes).not.toHaveBeenCalled()
+  })
+
+  it('asks with the hash of the bytes as fetched, not of anything optimised', async () => {
+    // The provider hashes the original on the way in, before it touches the
+    // file. Hashing anything else here would make the two disagree about
+    // identity and the dedupe would silently never fire.
+    const buffer = Buffer.from('the exact bytes')
+    const expected = createHash('sha256').update(buffer).digest('hex')
+    const getAssetByContentHash = vi.fn(async () => null)
+
+    await ingestMediaUrls({
+      projectId: 'p-1',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      uploadedBy: 'u-1',
+      items: [{ url: 'https://old.example/a.jpg' }],
+      fetchMedia: vi.fn(async () => ({ buffer, filename: 'a.jpg', contentType: 'image/jpeg' })),
+      media: { upload: vi.fn(async () => makeAsset('a1', 80)), getAssetByContentHash } as never,
+    })
+
+    expect(getAssetByContentHash).toHaveBeenCalledWith('p-1', expected)
+  })
+
+  it('uploads anyway when the caller opts out, or the provider cannot be asked', async () => {
+    const fetchMedia = vi.fn(async () => ({ buffer: Buffer.alloc(100), filename: 'a.jpg', contentType: 'image/jpeg' }))
+    const getAssetByContentHash = vi.fn(async () => makeAsset('already-here', 80))
+
+    const optedOut = await ingestMediaUrls({
+      projectId: 'p-1',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      uploadedBy: 'u-1',
+      items: [{ url: 'https://old.example/a.jpg' }],
+      fetchMedia,
+      dedupe: false,
+      media: { upload: vi.fn(async () => makeAsset('new-one', 80)), getAssetByContentHash } as never,
+    })
+    expect(optedOut.deduped).toBe(0)
+    expect(optedOut.results[0]?.assetId).toBe('new-one')
+    expect(getAssetByContentHash).not.toHaveBeenCalled()
+
+    // A provider double without the optional method degrades to the old
+    // behaviour rather than throwing.
+    const noCapability = await ingestMediaUrls({
+      projectId: 'p-1',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      uploadedBy: 'u-1',
+      items: [{ url: 'https://old.example/a.jpg' }],
+      fetchMedia,
+      media: { upload: vi.fn(async () => makeAsset('new-two', 80)) } as never,
+    })
+    expect(noCapability.deduped).toBe(0)
+    expect(noCapability.results[0]?.assetId).toBe('new-two')
+  })
+
+  it('still creates a new asset when a URL now serves different bytes', async () => {
+    // Keying on the URL would have refused to. Keying on the bytes gets both
+    // properties: a retry is free, a changed image is a new asset.
+    const getAssetByContentHash = vi.fn(async () => null)
+    const report = await ingestMediaUrls({
+      projectId: 'p-1',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      uploadedBy: 'u-1',
+      items: [{ url: 'https://old.example/a.jpg' }],
+      fetchMedia: vi.fn(async () => ({ buffer: Buffer.from('different now'), filename: 'a.jpg', contentType: 'image/jpeg' })),
+      media: { upload: vi.fn(async () => makeAsset('a-second', 80)), getAssetByContentHash } as never,
+    })
+    expect(report.deduped).toBe(0)
+    expect(report.results[0]?.assetId).toBe('a-second')
   })
 })

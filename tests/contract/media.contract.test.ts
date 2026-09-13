@@ -62,6 +62,32 @@ describe('postgres-db media (contract)', () => {
     expect(await methods.deleteMediaAsset(created.id as string)).toBeNull()
   })
 
+  it('findMediaAssetByContentHash: the project\'s asset for these bytes, oldest first, never another project\'s', async () => {
+    // What makes bulk ingest idempotent across requests. The column has been
+    // written since the baseline under a comment calling it duplicate
+    // detection; this is the read that finally uses it.
+    const hash = randomUUID()
+    const first = await methods.createMediaAsset(baseAsset({ content_hash: hash, filename: 'first.webp' }))
+    const second = await methods.createMediaAsset(baseAsset({
+      content_hash: hash,
+      filename: 'second.webp',
+      created_at: new Date(Date.now() + 1000).toISOString(),
+    }))
+
+    // Oldest wins: if a project somehow holds two rows for the same bytes, the
+    // one its content already references is the earlier one.
+    const found = await methods.findMediaAssetByContentHash(projectId, hash)
+    expect(found?.id).toBe(first.id)
+
+    expect(await methods.findMediaAssetByContentHash(projectId, randomUUID())).toBeNull()
+    // Tenant isolation: identical bytes in another project are not this
+    // project's asset, and handing them over would leak a file across tenants.
+    expect(await methods.findMediaAssetByContentHash(randomUUID(), hash)).toBeNull()
+
+    await methods.deleteMediaAsset(first.id as string)
+    await methods.deleteMediaAsset(second.id as string)
+  })
+
   it('listMediaAssets: search, tag overlap, content-type prefix, sorts, pagination', async () => {
     const a = await methods.createMediaAsset(baseAsset({ filename: 'alpha.webp', alt: 'sunrise', tags: ['nature'], size_bytes: 100 }))
     const b = await methods.createMediaAsset(baseAsset({ filename: 'beta.mp4', content_type: 'video/mp4', format: 'mp4', tags: ['nature', 'clip'], size_bytes: 900, created_at: new Date(Date.now() + 1000).toISOString() }))
