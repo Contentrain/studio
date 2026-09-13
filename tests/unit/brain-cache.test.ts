@@ -76,6 +76,7 @@ describe('brain cache', () => {
     vi.stubGlobal('resolveContentPath', vi.fn().mockReturnValue('.contentrain/content/marketing/posts/en.json'))
     vi.stubGlobal('resolveMetaPath', vi.fn().mockReturnValue('.contentrain/meta/marketing/posts/en.json'))
     vi.stubGlobal('resolveVocabularyPath', vi.fn().mockReturnValue('.contentrain/vocabulary.json'))
+    vi.stubGlobal('resolveApprovalPolicyPath', vi.fn().mockReturnValue('.contentrain/approval-policies.json'))
     vi.stubGlobal('resolveContextPath', vi.fn().mockReturnValue('.contentrain/context.json'))
   })
 

@@ -1,3 +1,5 @@
+import type { ApprovalSignature, PlanDecision } from './approval'
+
 /**
  * The contract between the review endpoint and the review panel.
  *
@@ -156,6 +158,14 @@ export interface BranchReview {
   canRequestChanges?: boolean
   /** Open "changes requested" state on this branch, when a reviewer sent it back. */
   changesRequested?: BranchChangeRequest | null
+  /**
+   * What the project's approval policy makes of this branch, on a review
+   * project. Null when the project merges without approvals — the panel then
+   * shows no plan card, because there is no decision to show.
+   */
+  approval?: PlanDecision | null
+  /** Decisions recorded on this branch's current plan. */
+  approvedBy?: ApprovalSignature[]
 }
 
 /** A reviewer's open request on a pending branch (S-04). */

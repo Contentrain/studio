@@ -1,6 +1,7 @@
 import type { FileChange } from '@contentrain/types'
 import { buildContextChange } from '@contentrain/mcp/core/context'
 import { bindRef, planReconcile } from '@contentrain/mcp/core/ops'
+import { invalidateContentSync } from '../content-sync'
 import type { Branch, EngineInternalContext, EngineMergeResult } from './types'
 import { STUDIO_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain } from './helpers'
@@ -143,6 +144,12 @@ export async function finalizeContentrain(
   ctx: EngineInternalContext,
   mergedBranches: string[],
 ): Promise<EngineMergeResult> {
+  // Whatever the advance does next — succeed, reconcile, or fall back to a
+  // PR — the standing content-sync reading is about to be wrong. Dropped
+  // before rather than after, so a read that races the advance re-derives
+  // instead of serving the answer from before the merge.
+  if (ctx.projectId) await invalidateContentSync(ctx.projectId).catch(() => {})
+
   const lastBranch = mergedBranches.at(-1)
   if (lastBranch) {
     // Regenerate context.json on contentrain now that the content has

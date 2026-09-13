@@ -41,6 +41,7 @@ const props = defineProps<{
   activeCdn?: boolean
   activeAssets?: boolean
   activeHealth?: boolean
+  activeReceipts?: boolean
   branchReview?: DeepReadonly<BranchReview> | BranchReview | null
   branchReviewLoading?: boolean
   branchRaw?: DeepReadonly<BranchRawDiff> | BranchRawDiff | null
@@ -59,6 +60,8 @@ const emit = defineEmits<{
   'branchReject': []
   'branchRequestChanges': [comment: string]
   'branchResolveRequest': []
+  'branchApprove': []
+  'branchWithdrawApproval': []
   'branchLoadRaw': []
   'vocabularySave': [terms: Record<string, Record<string, string> | null>]
 }>()
@@ -123,12 +126,16 @@ const activeModel = computed(() =>
 // printed relation refs raw.
 const { relationLabels } = useRelationLabels(activeModel, currentLocale)
 
+/** Approvals only exist on a review project; so does anything that records them. */
+const reviewWorkflow = computed(() => (props.snapshot?.config as { workflow?: string } | null)?.workflow === 'review')
+
 const panelState = computed(() => {
   if (props.activeBranch) return 'branch'
   if (props.activeVocabulary) return 'vocabulary'
   if (props.activeCdn) return 'cdn'
   if (props.activeAssets) return 'assets'
   if (props.activeHealth) return 'health'
+  if (props.activeReceipts) return 'receipts'
   if (props.activeModelId) return 'model'
   return 'overview'
 })
@@ -279,7 +286,7 @@ provide(sendChatPromptKey, sendChatPrompt)
     <!-- Header -->
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-secondary-200 px-5 dark:border-secondary-800">
       <AtomsIconButton
-        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary' || panelState === 'cdn' || panelState === 'assets' || panelState === 'health'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
+        v-if="panelState === 'model' || panelState === 'branch' || panelState === 'vocabulary' || panelState === 'cdn' || panelState === 'assets' || panelState === 'health' || panelState === 'receipts'" icon="icon-[annon--arrow-left]" :label="t('common.back')"
         @click="emit('back')"
       />
       <AtomsHeadingText :level="3" size="xs" truncate class="flex-1">
@@ -294,6 +301,9 @@ provide(sendChatPromptKey, sendChatPrompt)
         </template>
         <template v-else-if="panelState === 'health'">
           {{ t('health.title') }}
+        </template>
+        <template v-else-if="panelState === 'receipts'">
+          {{ t('receipts.title') }}
         </template>
         <template v-else-if="panelState === 'vocabulary'">
           {{ t('content.vocabulary') }}
@@ -433,6 +443,8 @@ provide(sendChatPromptKey, sendChatPrompt)
           @reject="emit('branchReject')"
           @request-changes="emit('branchRequestChanges', $event)"
           @resolve-request="emit('branchResolveRequest')"
+          @approve="emit('branchApprove')"
+          @withdraw-approval="emit('branchWithdrawApproval')"
           @load-raw="emit('branchLoadRaw')"
         />
         <div v-else class="p-5">
@@ -475,6 +487,14 @@ provide(sendChatPromptKey, sendChatPrompt)
       </template>
 
       <!-- HEALTH DASHBOARD -->
+      <template v-else-if="panelState === 'receipts'">
+        <OrganismsExecutionReceiptsPanel
+          v-if="workspaceId && projectId"
+          :workspace-id="workspaceId"
+          :project-id="projectId"
+        />
+      </template>
+
       <template v-else-if="panelState === 'health'">
         <OrganismsProjectHealthDashboard
           v-if="workspaceId && projectId"
@@ -525,6 +545,20 @@ provide(sendChatPromptKey, sendChatPrompt)
             @view-details="emit('selectModel', '__health__')"
             @dismiss="() => {}"
           />
+
+          <!-- What has been run under an approval. Only where approvals exist:
+               an auto-merge project records nothing and would read an empty
+               list as a broken feature. -->
+          <button
+            v-if="reviewWorkflow"
+            type="button"
+            class="mx-4 mb-2 flex w-[calc(100%-2rem)] items-center gap-2 rounded-lg border border-secondary-200 px-3 py-2 text-left text-sm text-body transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-secondary-800 dark:text-secondary-300 dark:hover:bg-secondary-900"
+            @click="emit('selectModel', '__receipts__')"
+          >
+            <span class="icon-[annon--file-text] size-4 shrink-0 text-muted" aria-hidden="true" />
+            {{ t('receipts.view') }}
+            <span class="icon-[annon--chevron-right] ml-auto size-4 shrink-0 text-muted" aria-hidden="true" />
+          </button>
 
           <!-- Model list -->
           <OrganismsContentModelList

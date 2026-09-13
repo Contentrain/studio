@@ -150,7 +150,7 @@ export async function approveSubmissionAsContent(
   // approved entry may have been edited since approval; never overwrite it.
   const current = await db.getFormSubmission(submission.id as string)
   if (!current || current.project_id !== projectId || current.model_id !== submission.model_id)
-    throw new Error('Form submission no longer exists in this project/model')
+    throw createError({ statusCode: 404, message: errorMessage('forms.submission_not_found') })
   if (current.status === 'approved' && typeof current.entry_id === 'string' && current.entry_id)
     return current.entry_id
   submission = current
@@ -177,13 +177,13 @@ export async function approveSubmissionAsContent(
   )
 
   if (!writeResult.validation.valid)
-    throw new Error('Form submission failed content validation')
+    throw createError({ statusCode: 422, message: errorMessage('forms.approve_validation_failed') })
 
   // A failed merge must remain retryable, never appear approved in the DB.
   if (writeResult.branch) {
     const merged = await engine.mergeBranch(writeResult.branch)
     if (!merged.merged)
-      throw new Error('Form submission content could not be merged')
+      throw createError({ statusCode: 409, message: errorMessage('forms.approve_merge_failed') })
     invalidateBrainCache(projectId)
   }
 

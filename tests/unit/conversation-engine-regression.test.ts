@@ -810,6 +810,69 @@ describe('turn-end merge coalescing (W4)', () => {
     expect(toolResult.result.reviewBranch).toBe('cr/content/posts/en/1-test')
   })
 
+  it('holds an owner\'s write under review too, and says what it is waiting for', async () => {
+    // The rule used to be the author's role: an owner merged their own work
+    // under the review workflow and only an editor was held. What is being
+    // changed decides now, so the owner is held by the same policy — and the
+    // result carries the evaluator's reason, because "not merged" on its own
+    // is indistinguishable from a failure.
+    const engine = makeWriteEngine()
+    const provider = twoPhaseProvider(1)
+    stubWriteGlobals(provider)
+    const { runConversationLoop } = await loadConversationEngineModule()
+
+    const events = []
+    for await (const evt of runConversationLoop(
+      {
+        model: 'claude-test',
+        apiKey: 'sk-test',
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'update posts' } as AIMessage],
+        tools: [{ name: 'save_content', description: 'save', inputSchema: { type: 'object' } }],
+      },
+      writeToolContext(engine, { workflow: 'review', workspaceRole: 'owner' }),
+    )) {
+      events.push(evt)
+    }
+
+    expect(engine.mergeToContentrain).not.toHaveBeenCalled()
+    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    const toolResult = events.find(e => e.type === 'tool_result') as {
+      result: { reviewBranch?: string, approval?: { risk: string, reasons: string[] } }
+    }
+    expect(toolResult.result.reviewBranch).toBe('cr/content/posts/en/1-test')
+    expect(toolResult.result.approval?.risk).toBe('low_risk_content')
+    expect(toolResult.result.approval?.reasons.length).toBeGreaterThan(0)
+  })
+
+  it('merges under review when the project policy auto-approves that class', async () => {
+    // The opt-out, and the reason holding an owner is not a one-way door: a
+    // project that wants agent content edits to land writes it down.
+    const engine = makeWriteEngine()
+    const provider = twoPhaseProvider(1)
+    stubWriteGlobals(provider)
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      models: new Map([['posts', { id: 'posts', kind: 'collection' }]]),
+      content: new Map(),
+      config: null,
+      approvalPolicy: { version: 1, rules: [{ risk: 'low_risk_content', gate: 'change', mode: 'auto' }] },
+    }))
+    const { runConversationLoop } = await loadConversationEngineModule()
+
+    for await (const _evt of runConversationLoop(
+      {
+        model: 'claude-test',
+        apiKey: 'sk-test',
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'update posts' } as AIMessage],
+        tools: [{ name: 'save_content', description: 'save', inputSchema: { type: 'object' } }],
+      },
+      writeToolContext(engine, { workflow: 'review', workspaceRole: 'owner' }),
+    )) { /* drain */ }
+
+    expect(engine.mergeToContentrain).toHaveBeenCalledTimes(1)
+  })
+
   it('marks the in-turn request tail with the fourth cache breakpoint once the segment is large', async () => {
     const captured: AIMessage[][] = []
     let call = 0

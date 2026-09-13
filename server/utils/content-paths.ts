@@ -125,6 +125,15 @@ export function resolveContextPath(ctx: PathContext): string {
   return prefixed(ctx.contentRoot, PATH_PATTERNS.context)
 }
 
+/**
+ * `.contentrain/approval-policies.json` — a path the ecosystem reserves
+ * (`RESERVED_PATHS`) and Studio reads. MCP's validator and doctor ignore it,
+ * and reconcile treats it as one opaque file, so nothing else assembles it.
+ */
+export function resolveApprovalPolicyPath(ctx: PathContext): string {
+  return prefixed(ctx.contentRoot, PATH_PATTERNS.approvalPolicies)
+}
+
 export function resolveModelsDir(ctx: PathContext): string {
   return prefixed(ctx.contentRoot, `${CONTENTRAIN_DIR}/models`)
 }

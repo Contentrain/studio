@@ -1,5 +1,6 @@
 import { parseBranchName } from '../../../../../../../shared/utils/branch-review'
 import { listBranchRequestsSafe } from '../../../../../../utils/branch-requests'
+import { readContentSync } from '../../../../../../utils/content-sync'
 
 /**
  * List cr/* branches (pending content changes).
@@ -21,8 +22,12 @@ export default defineEventHandler(async (event) => {
   await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
 
+  // Ships with the list because the sidebar renders both and asking for it
+  // separately would be a second round-trip for two numbers.
+  const sync = await readContentSync(git, projectId).catch(() => null)
+
   const branches = await git.listBranches('cr/')
-  if (branches.length === 0) return { branches: [] }
+  if (branches.length === 0) return { branches: [], sync }
 
   // Best-effort: a project whose content branch is not readable yet still gets
   // its pending list, just without model names.
@@ -37,6 +42,7 @@ export default defineEventHandler(async (event) => {
   const requested = new Set((await listBranchRequestsSafe(projectId)).map(r => String(r.branch)))
 
   return {
+    sync,
     branches: branches.map((branch) => {
       const parsed = parseBranchName(branch.name)
       const namesModel = parsed.scope === 'content' || parsed.scope === 'model'
