@@ -50,7 +50,10 @@ export default defineEventHandler(async (event) => {
   if (!existingModel)
     throw createError({ statusCode: 404, message: errorMessage('model.not_found') })
 
-  let updatedModel = { ...existingModel } as ModelDefinition & { form?: FormConfig, comments?: CommentsConfig }
+  // `ModelDefinition` types the extension blocks as opaque `Record<string, unknown>`
+  // (the engine carries them verbatim); Studio knows their shape, so it replaces
+  // both keys rather than intersecting with the open record.
+  let updatedModel = { ...existingModel } as Omit<ModelDefinition, 'form' | 'comments'> & { form?: FormConfig, comments?: CommentsConfig }
 
   // ── Title field ────────────────────────────────────────────
   // Deliberately outside the forms gate: which field titles an entry is part of

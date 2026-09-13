@@ -16,6 +16,7 @@
 import type { ContentrainConfig, FieldDef, FieldType, ModelDefinition, ModelKind } from '@contentrain/types'
 import type { BrainCacheEntry } from './brain-cache'
 import { validateContent } from './content-validation'
+import { invalidScheduleKeys } from '~~/shared/utils/entry-schedule'
 
 // ─── Types ───
 
@@ -40,6 +41,8 @@ export type SchemaWarningType
     | 'relation_integrity_broken'
     | 'model_removed'
     | 'store_replaced'
+    | 'invalid_schedule'
+    | 'invalid_approval_policy'
     | 'kind_changed'
     | 'i18n_changed'
     | 'field_removed'
@@ -458,6 +461,71 @@ function checkSingleRelation(
   return null
 }
 
+/**
+ * Entries whose `publish_at` / `expire_at` cannot be read.
+ *
+ * A CDN build excludes them (`shouldIncludeEntry`), which is the safe call for
+ * delivery but invisible on its own: a published entry simply stops appearing
+ * on the site. Reporting it here is what makes it diagnosable. Studio's own
+ * write path rejects an unreadable schedule, so these arrive by hand-edited
+ * Git or an external write.
+ *
+ * Meta shape follows the brain cache: collections and documents hold an
+ * id/slug-keyed map of metas, singletons and dictionaries a single meta object.
+ */
+export function validateEntrySchedules(brain: BrainCacheEntry): SchemaWarning[] {
+  const warnings: SchemaWarning[] = []
+
+  for (const [key, value] of brain.meta) {
+    const [modelId = '', locale = ''] = key.split(':')
+    const model = brain.models.get(modelId)
+    if (!model || !value || typeof value !== 'object') continue
+
+    const perEntry = model.kind === 'collection' || model.kind === 'document'
+    const entries: Array<[string | null, Record<string, unknown>]> = perEntry
+      ? Object.entries(value as Record<string, unknown>)
+          .filter((pair): pair is [string, Record<string, unknown>] => Boolean(pair[1]) && typeof pair[1] === 'object')
+      : [[null, value as Record<string, unknown>]]
+
+    for (const [entryId, meta] of entries) {
+      const invalid = invalidScheduleKeys(meta)
+      if (invalid.length === 0) continue
+      const where = entryId ? `entry "${entryId}"` : `locale "${locale}"`
+      warnings.push({
+        modelId,
+        type: 'invalid_schedule',
+        field: invalid[0],
+        severity: 'error',
+        affectedEntries: 1,
+        current: String(meta[invalid[0]!] ?? ''),
+        message: `Unreadable ${invalid.join(' and ')} on ${where} — the entry is excluded from CDN delivery until the value is a valid date`,
+      })
+    }
+  }
+
+  return warnings
+}
+
+/**
+ * A policy file the merge gate cannot read.
+ *
+ * The gate falls back to the ecosystem default, which is stricter — so nothing
+ * is let through that the policy meant to hold. What it does mean is that a
+ * project believing its own rules are in force is wrong about that, and only
+ * project health can tell them.
+ */
+export function validateApprovalPolicy(brain: BrainCacheEntry): SchemaWarning[] {
+  if (!brain.approvalPolicyError) return []
+  return [{
+    modelId: '',
+    type: 'invalid_approval_policy',
+    severity: 'error',
+    affectedEntries: 0,
+    current: brain.approvalPolicyError,
+    message: `.contentrain/approval-policies.json is not usable (${brain.approvalPolicyError}) — the default approval policy applies until it is fixed`,
+  }]
+}
+
 // ─── 5. Breaking Change Detector ───
 
 export function detectBreakingChanges(
@@ -560,6 +628,12 @@ export function validateProjectSchema(
 
   // Relation integrity
   allWarnings.push(...validateRelationIntegrity(brain))
+
+  // Schedules a CDN build cannot read
+  allWarnings.push(...validateEntrySchedules(brain))
+
+  // An approval policy the merge gate cannot read
+  allWarnings.push(...validateApprovalPolicy(brain))
 
   // Breaking change detection
   if (previousBrain) {

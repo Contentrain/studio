@@ -10,6 +10,7 @@ type MediaMethods = Pick<
   | 'createMediaAsset'
   | 'getMediaAsset'
   | 'findMediaAssetByPath'
+  | 'findMediaAssetByContentHash'
   | 'listMediaAssets'
   | 'updateMediaAsset'
   | 'deleteMediaAsset'
@@ -72,6 +73,26 @@ export function mediaMethods(): MediaMethods {
           .selectAll()
           .where('project_id', '=', projectId)
           .where('original_path', '=', originalPath)
+          .executeTakeFirst()
+
+        return (row as DatabaseRow | undefined) ?? null
+      }
+      catch {
+        return null
+      }
+    },
+
+    async findMediaAssetByContentHash(projectId, contentHash) {
+      try {
+        // Oldest wins: if a project somehow holds two rows for the same bytes,
+        // the one content already references is the earlier one.
+        const row = await getAdmin()
+          .selectFrom('media_assets')
+          .selectAll()
+          .where('project_id', '=', projectId)
+          .where('content_hash', '=', contentHash)
+          .orderBy('created_at', 'asc')
+          .limit(1)
           .executeTakeFirst()
 
         return (row as DatabaseRow | undefined) ?? null

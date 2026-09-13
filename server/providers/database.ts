@@ -301,7 +301,14 @@ export interface DatabaseProvider {
   listUserAssignedProjectIds: (userId: string) => Promise<string[]>
   listWorkspaceProjectsByIds: (workspaceId: string, projectIds: string[]) => Promise<DatabaseRow[]>
   listUserAssignedProjects: (accessToken: string, userId: string) => Promise<DatabaseRow[]>
-  updateProjectContentTimestamp: (repoFullName: string) => Promise<void>
+  /**
+   * Stamp `content_updated_at` for every project backed by this repo, and
+   * return their ids. The push webhook needs exactly that set — to drop the
+   * cached content-sync reading for each — and this UPDATE has already
+   * resolved it, so asking for it again would be a second query for an answer
+   * we just had.
+   */
+  updateProjectContentTimestamp: (repoFullName: string) => Promise<string[]>
   /**
    * Flip a project's repo-level access state. Scoped to projects owned
    * by a workspace bound to `installationId` (joined via workspaces),
@@ -555,6 +562,15 @@ export interface DatabaseProvider {
    * content field value) cannot be resolved through `getMediaAsset`.
    */
   findMediaAssetByPath: (projectId: string, originalPath: string) => Promise<DatabaseRow | null>
+  /**
+   * The project's asset for these exact bytes, if it already has one.
+   *
+   * `content_hash` has been written on every upload since the column existed,
+   * under a comment calling it duplicate detection, and nothing ever read it.
+   * Ingest does: re-sending a URL after a failed batch, or a WordPress site
+   * serving the same image under two paths, must not buy the same bytes twice.
+   */
+  findMediaAssetByContentHash: (projectId: string, contentHash: string) => Promise<DatabaseRow | null>
   listMediaAssets: (projectId: string, options?: PaginationOptions & {
     search?: string
     tags?: string[]
@@ -696,6 +712,45 @@ export interface DatabaseProvider {
   resolveBranchChangeRequest: (projectId: string, branch: string, resolvedBy?: string) => Promise<void>
   /** Drop the row when the branch is merged or rejected. */
   clearBranchChangeRequest: (projectId: string, branch: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // EXECUTION APPROVALS + RECEIPTS
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Record one person's decision on one plan. Approving again after the plan
+   * moved replaces their standing grant rather than stacking beside it — one
+   * person's opinion is one opinion, however many times they press the button.
+   */
+  recordApproval: (input: {
+    projectId: string
+    workspaceId: string
+    /** The `cr/*` branch, or `release`. */
+    target: string
+    gate: 'plan' | 'change' | 'release'
+    planHash: string
+    commitSha?: string | null
+    approverId: string
+    approverEmail: string
+    approverRole?: string | null
+    note?: string | null
+  }) => Promise<DatabaseRow>
+  /** Every standing grant on a target — what the evaluator weighs. */
+  listApprovals: (projectId: string, target: string) => Promise<DatabaseRow[]>
+  /** Withdraw one person's grant (their own, or a stale one after a rejection). */
+  deleteApproval: (projectId: string, target: string, approverEmail: string) => Promise<void>
+  /** Drop every grant on a target once it has landed or been rejected. */
+  clearApprovals: (projectId: string, target: string) => Promise<void>
+  /** Record what ran, with the approvals that permitted it. */
+  recordReceipt: (input: {
+    projectId: string
+    workspaceId: string
+    target: string
+    planHash: string
+    receipt: Record<string, unknown>
+  }) => Promise<DatabaseRow>
+  /** Receipts newest first — the audit answer to "who let this in". */
+  listReceipts: (projectId: string, limit?: number) => Promise<DatabaseRow[]>
 
   // ═══════════════════════════════════════════════════
   // WEBHOOKS

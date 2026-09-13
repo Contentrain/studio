@@ -9,6 +9,9 @@
  * - publish_at / expire_at: scheduling, meta only, beside data; null clears,
  *   absent leaves unchanged. Never changes status.
  */
+
+import { decideMerge } from '~~/server/utils/approval-gate'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const db = useDatabaseProvider()
@@ -52,18 +55,24 @@ export default defineEventHandler(async (event) => {
     return result
   }
 
-  // Workflow-aware auto-merge (same logic as chat handler)
+  // Workflow-aware auto-merge — the same gate the chat handler uses, and it has
+  // to be: an owner whose editor save merged while the same save asked for
+  // through the agent was held would be reading two different products.
   const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
   const configWorkflow = brain.config?.workflow ?? 'auto-merge'
   const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
-  const shouldMerge = workflow === 'auto-merge'
-    || permissions.workspaceRole === 'owner'
-    || permissions.workspaceRole === 'admin'
+  const gate = await decideMerge({
+    workflow,
+    tool: 'save_content',
+    scope: { models: [modelId], locales: [body.locale ?? 'en'], entries: Object.keys(body.data ?? {}) },
+    policy: brain.approvalPolicy,
+    commitSha: result.commit?.sha,
+  })
 
   let merged = false
   let pullRequestUrl: string | null = null
-  if (shouldMerge && result.branch) {
+  if (gate.allowed && result.branch) {
     const mergeResult = await engine.mergeBranch(result.branch)
     merged = mergeResult.merged
     pullRequestUrl = mergeResult.pullRequestUrl
@@ -119,5 +128,7 @@ export default defineEventHandler(async (event) => {
     merged,
   }).catch(() => {})
 
-  return { ...result, merged, workflow, pullRequestUrl }
+  // A held save reports why, in the same shape the chat tool result uses, so
+  // the editor can say "waiting for review" instead of just naming a branch.
+  return { ...result, merged, workflow, pullRequestUrl, ...(merged ? {} : gate.review) }
 })

@@ -244,6 +244,26 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       return rowToAsset(row, usage)
     },
 
+    /**
+     * The asset for these exact bytes, if the project already has one.
+     *
+     * `content_hash` is the sha256 of the ORIGINAL upload, taken before
+     * optimisation — so a caller that has the source bytes can hash them and
+     * ask, without having to reproduce whatever the optimiser did to them.
+     */
+    async getAssetByContentHash(projectId: string, contentHash: string): Promise<MediaAsset | null> {
+      const row = await db.findMediaAssetByContentHash(projectId, contentHash)
+      if (!row) return null
+      const usageRows = await db.getMediaUsage(row.id as string)
+      const usage: MediaUsageRef[] = usageRows.map(u => ({
+        modelId: u.model_id as string,
+        entryId: u.entry_id as string,
+        fieldId: u.field_id as string,
+        locale: u.locale as string,
+      }))
+      return rowToAsset(row, usage)
+    },
+
     async listAssets(projectId: string, options?: MediaListOptions) {
       const result = await db.listMediaAssets(projectId, options)
       return {

@@ -13,7 +13,7 @@
  * Self-hosted product = single Node.js process = no distributed cache needed.
  */
 
-import type { ContentrainConfig, FieldDef, ModelDefinition, ModelKind } from '@contentrain/types'
+import type { ApprovalPolicyFile, ContentrainConfig, FieldDef, ModelDefinition, ModelKind } from '@contentrain/types'
 import type { GitProvider, TreeEntry } from '../providers/git'
 import type { SchemaValidationResult } from './schema-validation'
 import matter from 'gray-matter'
@@ -42,6 +42,19 @@ export interface BrainCacheEntry {
   /** Meta data keyed by `${modelId}:${locale}` */
   meta: Map<string, Record<string, unknown>>
   vocabulary: Record<string, Record<string, string>> | null
+  /**
+   * `.contentrain/approval-policies.json`, parsed — what the merge gate
+   * evaluates against. `null` means the project has no policy and the
+   * ecosystem default applies.
+   */
+  approvalPolicy: ApprovalPolicyFile | null
+  /**
+   * Why the policy file was not used, when one exists but cannot be read. The
+   * gate falls back to the default (which is stricter) and project health
+   * reports this, because a policy that silently does not apply is worse than
+   * no policy at all.
+   */
+  approvalPolicyError: string | null
   contentContext: Record<string, unknown> | null
   /** Content summary per model (entry count + locales) */
   contentSummary: Record<string, { count: number, locales: string[], kind: ModelKind }>
@@ -54,6 +67,29 @@ export interface BrainCacheEntry {
 const brainCache = new Map<string, BrainCacheEntry>()
 const BRAIN_TTL_MS = 10 * 60 * 1000 // 10 minutes safety net
 const MAX_CACHE_ENTRIES = 100
+
+/**
+ * Read and validate `.contentrain/approval-policies.json`.
+ *
+ * Absent is the ordinary case and reports nothing: most projects have no
+ * policy, and the ecosystem default covers them. Present-but-unreadable is the
+ * case worth naming — the gate falls back to the stricter default and health
+ * says why, instead of the project believing a policy is in force.
+ */
+async function readApprovalPolicy(
+  git: GitProvider,
+  ctx: { contentRoot: string },
+  contentRef: string | undefined,
+): Promise<{ policy: ApprovalPolicyFile | null, error: string | null }> {
+  let raw: string
+  try {
+    raw = await git.readFile(resolveApprovalPolicyPath(ctx), contentRef)
+  }
+  catch {
+    return { policy: null, error: null }
+  }
+  return parseApprovalPolicy(raw)
+}
 
 /**
  * Get cached brain entry if valid.
@@ -457,6 +493,8 @@ export async function buildBrainSnapshot(
       content: new Map(),
       meta: new Map(),
       vocabulary: null,
+      approvalPolicy: null,
+      approvalPolicyError: null,
       contentContext: null,
       contentSummary: {},
       schemaValidation: null,
@@ -536,6 +574,9 @@ export async function buildBrainSnapshot(
   }
   catch { /* no vocabulary */ }
 
+  // 5.5 Read the approval policy
+  const approval = await readApprovalPolicy(git, ctx, contentRef)
+
   // 6. Read context.json
   let contentContext: Record<string, unknown> | null = null
   try {
@@ -554,6 +595,8 @@ export async function buildBrainSnapshot(
     content,
     meta: metaMap,
     vocabulary,
+    approvalPolicy: approval.policy,
+    approvalPolicyError: approval.error,
     contentContext,
     contentSummary,
     schemaValidation: null,
@@ -583,6 +626,7 @@ type PathClass
   = | { type: 'structural' }
     | { type: 'model', modelId: string }
     | { type: 'vocabulary' }
+    | { type: 'approvalPolicy' }
     | { type: 'context' }
 
 function buildPathClassifier(
@@ -592,6 +636,7 @@ function buildPathClassifier(
 ): (path: string) => PathClass {
   const configPath = resolveConfigPath(ctx)
   const vocabularyPath = resolveVocabularyPath(ctx)
+  const approvalPolicyPath = resolveApprovalPolicyPath(ctx)
   const contextPath = resolveContextPath(ctx)
   const modelsDirPrefix = `${resolveModelsDir(ctx)}/`
 
@@ -609,6 +654,7 @@ function buildPathClassifier(
   return (path: string): PathClass => {
     if (path === configPath || path.startsWith(modelsDirPrefix)) return { type: 'structural' }
     if (path === vocabularyPath) return { type: 'vocabulary' }
+    if (path === approvalPolicyPath) return { type: 'approvalPolicy' }
     if (path === contextPath) return { type: 'context' }
     for (const [prefix, modelId] of modelPrefixes) {
       if (path.startsWith(prefix)) return { type: 'model', modelId }
@@ -677,6 +723,7 @@ export async function refreshBrainSnapshot(
   const classify = buildPathClassifier(ctx, contentRoot, cached)
   const affectedModels = new Set<string>()
   let vocabularyChanged = false
+  let approvalPolicyChanged = false
   let contextChanged = false
 
   for (const path of changedPaths) {
@@ -684,6 +731,7 @@ export async function refreshBrainSnapshot(
     if (cls.type === 'structural') return null
     if (cls.type === 'model') affectedModels.add(cls.modelId)
     if (cls.type === 'vocabulary') vocabularyChanged = true
+    if (cls.type === 'approvalPolicy') approvalPolicyChanged = true
     if (cls.type === 'context') contextChanged = true
   }
 
@@ -721,6 +769,14 @@ export async function refreshBrainSnapshot(
     catch { /* no vocabulary */ }
   }
 
+  let approvalPolicy = cached.approvalPolicy
+  let approvalPolicyError = cached.approvalPolicyError
+  if (approvalPolicyChanged) {
+    const approval = await readApprovalPolicy(git, ctx, contentRef)
+    approvalPolicy = approval.policy
+    approvalPolicyError = approval.error
+  }
+
   let contentContext = cached.contentContext
   if (contextChanged) {
     contentContext = null
@@ -739,6 +795,8 @@ export async function refreshBrainSnapshot(
     content,
     meta: metaMap,
     vocabulary,
+    approvalPolicy,
+    approvalPolicyError,
     contentContext,
     contentSummary: computeContentSummary(cached.models, content, defaultLocale),
     schemaValidation: null,

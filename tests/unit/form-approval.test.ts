@@ -39,7 +39,7 @@ describe('form approval delivery', () => {
 
   it('does not acknowledge validation failure', async () => {
     engine.saveContent.mockResolvedValue({ branch: '', validation: { valid: false } })
-    await expect(approve()).rejects.toThrow('validation')
+    await expect(approve()).rejects.toMatchObject({ statusCode: 422, message: 'forms.approve_validation_failed' })
     expect(engine.mergeBranch).not.toHaveBeenCalled()
     expect(db.updateFormSubmissionStatus).not.toHaveBeenCalled()
   })
@@ -54,7 +54,7 @@ describe('form approval delivery', () => {
 
   it('does not acknowledge a merge conflict returned without an exception', async () => {
     engine.mergeBranch.mockResolvedValue({ merged: false })
-    await expect(approve()).rejects.toThrow('could not be merged')
+    await expect(approve()).rejects.toMatchObject({ statusCode: 409, message: 'forms.approve_merge_failed' })
     expect(db.updateFormSubmissionStatus).not.toHaveBeenCalled()
   })
 
@@ -67,7 +67,7 @@ describe('form approval delivery', () => {
 
   it('rejects missing or differently scoped persisted submissions before writing', async () => {
     db.getFormSubmission.mockResolvedValue({ ...pending, project_id: 'other' })
-    await expect(approve()).rejects.toThrow('project/model')
+    await expect(approve()).rejects.toMatchObject({ statusCode: 404, message: 'forms.submission_not_found' })
     expect(engine.saveContent).not.toHaveBeenCalled()
   })
 })

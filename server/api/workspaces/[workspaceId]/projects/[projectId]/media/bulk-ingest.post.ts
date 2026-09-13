@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(plan, 'media.upload'))
     throw createError({ statusCode: 403, message: errorMessage('media.upload_upgrade', getUpgradeParams(plan)) })
 
-  const body = await readBody<{ items?: unknown, concurrency?: unknown }>(event)
+  const body = await readBody<{ items?: unknown, concurrency?: unknown, dedupe?: unknown }>(event)
   const items = Array.isArray(body?.items)
     ? body.items.filter((i): i is { url: string, alt?: string, tags?: string[], filename?: string } => !!i && typeof i === 'object' && typeof (i as { url?: unknown }).url === 'string')
     : []
@@ -62,6 +62,9 @@ export default defineEventHandler(async (event) => {
       filename: typeof i.filename === 'string' ? i.filename.slice(0, 200) : undefined,
     })),
     concurrency: typeof body?.concurrency === 'number' ? body.concurrency : undefined,
+    // Opt-out only: an ingest is machine-driven and a retried batch must not
+    // cost twice, so a caller has to ask for a second copy explicitly.
+    ...(body?.dedupe === false ? { dedupe: false } : {}),
     source: 'url',
   })
 })
