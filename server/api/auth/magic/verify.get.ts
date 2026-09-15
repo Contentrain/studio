@@ -37,6 +37,26 @@ export default defineEventHandler(async (event) => {
     expiresAt: session.tokens.expiresAt,
   })
 
-  const redirect = query.redirect && query.redirect.startsWith('/') ? query.redirect : '/'
-  return sendRedirect(event, redirect)
+  return sendRedirect(event, internalRedirect(query.redirect))
 })
+
+/**
+ * Invite links carry an absolute `{siteUrl}/auth/callback?workspace=…`
+ * target (the Supabase pair's GoTrue needs one), magic links a path. Keep
+ * both, but only ever redirect within this site — same-origin URLs collapse
+ * to their path, anything else (other origins, `//host`) falls back to `/`.
+ */
+function internalRedirect(target: string | undefined): string {
+  if (!target) return '/'
+  if (target.startsWith('/'))
+    return target.startsWith('//') || target.startsWith('/\\') ? '/' : target
+
+  try {
+    const siteOrigin = new URL(useRuntimeConfig().public.siteUrl as string).origin
+    const url = new URL(target)
+    return url.origin === siteOrigin ? `${url.pathname}${url.search}${url.hash}` : '/'
+  }
+  catch {
+    return '/'
+  }
+}
