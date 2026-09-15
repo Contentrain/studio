@@ -62,7 +62,7 @@ Managed + postgres pair (plain PostgreSQL, no Supabase):
 - Set `NUXT_AUTH_PROVIDER=managed` and `NUXT_DATABASE_PROVIDER=postgres`
 - Provide `NUXT_POSTGRES_URL`
 - Provide `NUXT_AUTH_JWT_SECRET` (≥32 chars) and `NUXT_SESSION_PASSWORD` (≥32 chars)
-- Provide the login OAuth app: `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` (Google optional). OAuth apps support a single callback URL — one app per environment.
+- Provide GitHub login: `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` must be the **GitHub App's** client credentials (the same values as `NUXT_GITHUB_CLIENT_ID` / `NUXT_GITHUB_CLIENT_SECRET`), with `https://<your-domain>/api/auth/oauth/github` added to the App's callback URLs and the App granted the "Email addresses: read" account permission. Do not use a separate OAuth App: installing or connecting the GitHub App verifies ownership through GitHub's `/user/installations` API, which rejects OAuth App tokens with 403. Google optional.
 - Provide `NUXT_RESEND_API_KEY` (magic link + invites — required for this pair)
 - Apply migrations with the plain-PG runner before first production traffic:
   `pnpm db:migrate:pg` (single lineage: `postgres/migrations/000_auth_shim.sql` + `supabase/migrations/*`), then verify with `pnpm db:verify:pg`
