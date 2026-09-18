@@ -87,7 +87,7 @@ const collapsible = computed(() => !props.headless && hasBody.value)
     <component
       :is="collapsible ? 'summary' : 'div'"
       v-if="!headless"
-      class="flex items-center gap-2 py-2 pl-1 pr-2 text-sm"
+      class="flex flex-wrap items-center gap-2 py-2 pl-1 pr-2 text-sm"
       :class="collapsible
         ? 'cursor-pointer transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:bg-secondary-900'
         : ''"
@@ -100,7 +100,7 @@ const collapsible = computed(() => !props.headless && hasBody.value)
       <!-- Keeps a non-opening row's title aligned with the ones above it. -->
       <span v-else class="size-3 shrink-0" aria-hidden="true" />
       <span :class="KIND_ICON[entry.kind]" class="size-3.5 shrink-0 text-muted" aria-hidden="true" />
-      <span :title="entry.title" class="min-w-48 flex-1 truncate text-heading dark:text-secondary-100">{{ entry.title }}</span>
+      <span :title="entry.title" class="min-w-0 grow basis-24 truncate text-heading dark:text-secondary-100">{{ entry.title }}</span>
 
       <AtomsBadge v-if="statusLabel" variant="info" size="sm" class="shrink-0">
         {{ statusLabel }}
