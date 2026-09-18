@@ -61,7 +61,7 @@ Auth and database providers ship as **matched pairs** — mixing them is rejecte
 - `NUXT_POSTGRES_URL` — the connection string
 - `NUXT_AUTH_JWT_SECRET` — ≥32 chars, signs access/refresh tokens
 - `NUXT_RESEND_API_KEY` — magic-link + invite emails
-- `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` — a GitHub **OAuth App** for login (one callback per app: `https://<your-domain>/api/auth/oauth/github`); Google optional
+- `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` — the **GitHub App's** client credentials, reused for login (add `https://<your-domain>/api/auth/oauth/github` to the App's callback URLs and grant "Email addresses: read"). A separate OAuth App breaks installing/connecting the App: GitHub's `/user/installations` API only accepts tokens issued by the App. Google optional
 - `NUXT_SESSION_PASSWORD` — ≥32 chars for the OAuth module session endpoint (dev auto-generates it; deployed builds must set it)
 
 Migrations run through the bundled plain-PG runner (one lineage: `postgres/migrations/000_auth_shim.sql` + `supabase/migrations/*.sql`):
