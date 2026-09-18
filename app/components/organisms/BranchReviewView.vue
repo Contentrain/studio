@@ -410,18 +410,19 @@ function stripPrefix(path: string): string {
           </AtomsBaseButton>
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <AtomsBaseButton
           v-if="review.canRequestChanges && !requesting"
           type="button"
           variant="secondary"
+          class="shrink-0"
           :disabled="isEmpty"
           @click="requesting = true"
         >
           <span class="icon-[annon--comment-text] size-4" aria-hidden="true" />
           {{ t('review.request_changes') }}
         </AtomsBaseButton>
-        <AtomsBaseButton v-if="review.canMerge" variant="primary" class="flex-1" :disabled="isEmpty || mergeBlocked" @click="emit('merge')">
+        <AtomsBaseButton v-if="review.canMerge" variant="primary" class="flex-1 shrink-0" :disabled="isEmpty || mergeBlocked" @click="emit('merge')">
           <span class="icon-[annon--check] size-4" aria-hidden="true" />
           <template v-if="mergeBlocked">
             {{ t('review.approval_blocked_merge') }}
@@ -433,6 +434,7 @@ function stripPrefix(path: string): string {
         <AtomsBaseButton
           v-if="review.canReject"
           :variant="confirmReject ? 'danger' : 'ghost'"
+          class="shrink-0"
           @click="handleReject"
         >
           <span class="icon-[annon--cross] size-4" aria-hidden="true" />

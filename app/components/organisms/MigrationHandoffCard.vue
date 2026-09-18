@@ -187,7 +187,7 @@ async function importComments() {
 
     <div v-if="state.summary.comments" class="mt-3 flex flex-wrap items-center gap-2 border-t border-secondary-200 pt-3 dark:border-secondary-800">
       <span class="text-xs text-body dark:text-secondary-300">
-        {{ t('migration.comments_at_source', { total: state.summary.comments.total }) }}
+        {{ state.summary.comments.total === 1 ? t('migration.comments_at_source_one') : t('migration.comments_at_source_many', { total: state.summary.comments.total }) }}
         · {{ t('migration.comments_imported', { count: state.commentsImported }) }}
       </span>
       <AtomsBaseButton
