@@ -68,7 +68,7 @@ Managed + postgres pair (plain PostgreSQL — set `NUXT_AUTH_PROVIDER=managed`, 
 - `NUXT_POSTGRES_URL`
 - `NUXT_AUTH_JWT_SECRET`
 - `NUXT_SESSION_PASSWORD`
-- `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET`
+- `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` — the GitHub App's client credentials (not a separate OAuth App)
 - `NUXT_RESEND_API_KEY`
 
 Depending on enabled surfaces, you may also need:

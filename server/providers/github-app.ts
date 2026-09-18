@@ -467,6 +467,14 @@ export function createGitAppService(config: { appId: string, privateKey: string 
         // exist for them). 403 = installation exists but user is not
         // an admin of the account. Both = "cannot bind", returned as
         // false; non-404/403 errors propagate as 5xx.
+        // A 403 also comes back when the token was not issued by a GitHub
+        // App at all (classic OAuth App login): GitHub refuses the endpoint
+        // for every user. That is a deployment misconfiguration, not an
+        // ownership answer — still fail closed, but say why.
+        if (status === 403 && /authorized to a GitHub App/i.test((err as { message?: string }).message ?? '')) {
+          // eslint-disable-next-line no-console
+          console.error('[github-app] installation ownership cannot be verified: the GitHub login client is not the Studio GitHub App. Set NUXT_OAUTH_GITHUB_CLIENT_ID/SECRET to the client credentials of the app behind NUXT_GITHUB_APP_ID, then sign in with GitHub again.')
+        }
         if (status === 404 || status === 403) return false
         // App JWT not silently used as fallback; this method is
         // intentionally user-scoped. Spurious 401 should bubble up to
