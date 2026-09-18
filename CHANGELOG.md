@@ -1,6 +1,37 @@
 # Changelog
 
 
+## v0.4.1
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.0...v0.4.1)
+
+### ⚠️ Upgrade notes
+
+**1. GitHub login must use the GitHub App's own client (managed pair).**
+Set `NUXT_OAUTH_GITHUB_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_SECRET` to the same values as `NUXT_GITHUB_CLIENT_ID` / `NUXT_GITHUB_CLIENT_SECRET`, not to a separate OAuth App. Add `https://<your-host>/api/auth/oauth/github` to the App's callback URLs and grant it "Email addresses: read". With a separate OAuth App, GitHub rejects the installation ownership check with a 403, so installing or configuring the App fails for GitHub-signed-in users. Boot now logs a warning when the two client ids differ. After switching, **users who signed in with GitHub must sign in once more**: their stored tokens belong to the old OAuth App and are only replaced on a new login.
+
+**2. The AI credit quota now applies to the whole workspace.**
+Migration `027_ai_quota_workspace_wide` replaces `increment_agent_usage_if_allowed` in place (same signature). Chat reservations used to sum only the calling member's usage, so every member of a workspace got the full `ai.messages_per_month` on their own. They now sum every member. Workspaces with several members reach the limit sooner; with overage off, chat returns 429 at the limit. Apply it before the new image serves (managed+postgres: the Railway pre-deploy runs it; plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`). It adds nothing and drops nothing, so rolling back the image alone is safe.
+
+**3. Turnstile (reminder from v0.4.0).**
+Forms and comments models with `captcha: turnstile` reject every submission while `NUXT_TURNSTILE_SECRET_KEY` is unset. Embeds also need `NUXT_PUBLIC_TURNSTILE_SITE_KEY` to render the widget.
+
+### 🩹 Fixes
+
+- **github:** Stop denying installs when login is not the GitHub App ([#266](https://github.com/Contentrain/studio/pull/266))
+- **billing:** Enforce the AI credit quota per workspace, not per member ([#271](https://github.com/Contentrain/studio/pull/271))
+- **review:** Stop entry titles and the merge button clipping in narrow panels ([#272](https://github.com/Contentrain/studio/pull/272))
+
+### 🏡 Chore
+
+- **deps-dev:** Bump tsx from 4.23.1 to 4.23.13 ([#265](https://github.com/Contentrain/studio/pull/265))
+- **deps-dev:** Bump the testing group across 1 directory with 5 updates ([#263](https://github.com/Contentrain/studio/pull/263))
+- **deps-dev:** Bump the linting group across 1 directory with 4 updates ([#264](https://github.com/Contentrain/studio/pull/264))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.0
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.3.0...v0.4.0)
