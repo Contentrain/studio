@@ -30,6 +30,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // redirect target. Server-route targets (/oauth/authorize) need a real
   // navigation; Vue Router has no matching route for them.
   if (isPublic && isAuthenticated.value) {
+    // Invite emails land on /auth/callback?workspace=<slug>. On the managed
+    // pair the session cookie is already set by then, so this bounce runs
+    // before the callback page could read the param — honor it here or the
+    // invitee ends up in their own empty personal workspace.
+    const workspaceSlug = to.query.workspace
+    if (typeof workspaceSlug === 'string' && /^[\w-]+$/.test(workspaceSlug))
+      return navigateTo(`/w/${workspaceSlug}`)
+
     const redirect = safeInternalRedirect(to.query.redirect)
     if (redirect) {
       return redirect.startsWith('/oauth/')

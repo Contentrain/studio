@@ -5,7 +5,7 @@
  * GET /api/workspaces/{workspaceId}/projects/{projectId}/migration
  */
 
-import type { MigrationHandoff } from '@contentrain/types'
+import type { StoredMigrationHandoff } from '~~/server/utils/migration-handoff'
 import { summarizeMigrationHandoff, syncMigrationHandoff } from '~~/server/utils/migration-handoff'
 
 export default defineEventHandler(async (event) => {
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const row = await db.getProjectById(projectId, 'id, migration_handoff, migration_handoff_synced_at')
-  let handoff = (row?.migration_handoff ?? null) as MigrationHandoff | null
+  let handoff = (row?.migration_handoff ?? null) as StoredMigrationHandoff | null
   let syncedAt = (row?.migration_handoff_synced_at ?? null) as string | null
 
   // Nothing stored yet: the repository may have received the handoff after
@@ -34,7 +34,9 @@ export default defineEventHandler(async (event) => {
   // look for the file now instead of waiting for someone to find a sync
   // button. Owners/admins only — it persists on the project row. Best-effort:
   // no installation, a malformed file or a Git error all read as "absent".
-  if (!handoff && role !== 'member') {
+  // A row stored before the manifest/comments split (no `studio_intake`)
+  // is re-read once too, so the export stops riding on every project read.
+  if ((!handoff || !handoff.studio_intake) && role !== 'member') {
     try {
       const ctx = await resolveProjectContext(workspaceId, projectId)
       const result = await syncMigrationHandoff({
@@ -49,7 +51,7 @@ export default defineEventHandler(async (event) => {
       }
     }
     catch {
-      // absent
+      // absent — a legacy row stays as stored
     }
   }
 

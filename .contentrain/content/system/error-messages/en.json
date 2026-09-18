@@ -217,7 +217,7 @@
   "migration.export_url_blocked": "The comments export URL points to a blocked address",
   "migration.handoff_invalid": "contentrain-handoff.json is not a valid MigrationHandoff ({detail})",
   "migration.handoff_missing": "This project has no migration handoff",
-  "migration.handoff_too_large": "contentrain-handoff.json is too large",
+  "migration.handoff_too_large": "contentrain-handoff.json is too large ({detail})",
   "migration.no_comments_export": "The migration handoff carries no comments export",
   "model.access_denied": "You don't have access to this model. Your role is restricted to specific models.",
   "model.not_found": "Content model not found. It may have been deleted or renamed.",

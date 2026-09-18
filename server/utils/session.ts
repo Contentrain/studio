@@ -41,6 +41,12 @@ export async function setServerSession(event: H3Event, data: ServerSessionData):
     password: getSessionPassword(),
     name: SESSION_NAME,
     maxAge: SESSION_MAX_AGE,
+    // h3 dates the cookie from the session's createdAt, which survives every
+    // update — without this override a session died exactly 7 days after
+    // sign-in no matter how active it was. Max-Age restarts the window on
+    // each write (sign-in and every hourly token refresh), so only 7 idle
+    // days sign a user out.
+    cookie: { expires: undefined, maxAge: SESSION_MAX_AGE },
   })
 
   await session.update(data)

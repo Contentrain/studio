@@ -14,11 +14,17 @@ interface HandoffSummary {
   content?: { models: number, entries: number, locales: string[] }
   capabilities: Array<{ key: string, disposition: string, detail?: string }>
   needsRuntime: string[]
-  offers: Array<{ capability: string, provider: string, warning?: string }>
-  comments?: { total: number, hasExport: boolean, unresolved: number }
+  offers: Array<{ capability: string, provider: string, supported: boolean, warning?: string }>
+  comments?: { total: number, hasExport: boolean, source: 'url' | 'inline' | 'none', unresolved: number }
   notes: string[]
   previewUrl?: string
+  issues: HandoffIssue[]
 }
+
+type HandoffIssue
+  = | { code: 'offer_unsupported' | 'runtime_unbound', capabilities: string[] }
+    | { code: 'preview_url_missing' }
+    | { code: 'comments_export_too_large', detail: string }
 
 interface HandoffState {
   present: boolean
@@ -60,6 +66,16 @@ const dispositionVariant: Record<string, 'warning' | 'success' | 'info' | 'secon
   kept_on_wordpress: 'secondary',
   archived: 'secondary',
   dropped: 'danger',
+}
+
+const openOffers = computed(() => state.value?.summary?.offers.filter(o => o.supported) ?? [])
+
+function issueText(issue: HandoffIssue): string {
+  if (issue.code === 'offer_unsupported' || issue.code === 'runtime_unbound')
+    return t(`migration.issue_${issue.code}`, { capabilities: issue.capabilities.join(', ') })
+  if (issue.code === 'comments_export_too_large')
+    return t('migration.issue_comments_export_too_large', { detail: issue.detail })
+  return t(`migration.issue_${issue.code}`)
 }
 
 function dispositionLabel(disposition: string): string {
@@ -145,17 +161,29 @@ async function importComments() {
           </AtomsBadge>
         </dd>
       </div>
-      <div v-if="state.summary.offers.length" class="flex items-start gap-2">
+      <div v-if="openOffers.length" class="flex items-start gap-2">
         <dt class="w-36 shrink-0 pt-0.5 text-xs text-label">
           {{ t('migration.offers') }}
         </dt>
         <dd class="text-xs text-body dark:text-secondary-300">
-          <span v-for="(offer, i) in state.summary.offers" :key="`${offer.capability}-${offer.provider}`">
-            {{ offer.capability }} → {{ offer.provider }}<span v-if="i < state.summary.offers.length - 1">; </span>
+          <span v-for="(offer, i) in openOffers" :key="`${offer.capability}-${offer.provider}`">
+            {{ offer.capability }} → {{ offer.provider }}<span v-if="i < openOffers.length - 1">; </span>
           </span>
         </dd>
       </div>
     </dl>
+
+    <div v-if="state.summary.issues?.length" class="mt-3 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 dark:border-warning-800 dark:bg-warning-900/20">
+      <p class="flex items-center gap-1.5 text-xs font-medium text-warning-700 dark:text-warning-300">
+        <span class="icon-[annon--alert-triangle] size-3.5" aria-hidden="true" />
+        {{ t('migration.issues') }}
+      </p>
+      <ul class="mt-1 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300">
+        <li v-for="issue in state.summary.issues" :key="issue.code">
+          {{ issueText(issue) }}
+        </li>
+      </ul>
+    </div>
 
     <div v-if="state.summary.comments" class="mt-3 flex flex-wrap items-center gap-2 border-t border-secondary-200 pt-3 dark:border-secondary-800">
       <span class="text-xs text-body dark:text-secondary-300">
