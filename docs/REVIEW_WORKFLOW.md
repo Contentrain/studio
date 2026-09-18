@@ -103,7 +103,15 @@ Write `default_mode` unless you mean that.
 Studio classifies each agent write by the tool it used: content edits are
 `low_risk_content` (lifted to `bulk_content` when one call touches more than one
 entry), deletes and locale fan-out are `bulk_content`, and model writes are
-`destructive_schema`. The evaluator itself is `@contentrain/types`
+`destructive_schema`. A one-entry content edit is also lifted to `bulk_content` when
+its payload shows it is not a small edit:
+- it moves the entry to `published` or `archived`;
+- it empties a field (`''`, `null` or `[]`);
+- it writes 4,000 or more characters of text.
+
+These checks read the payload's shape, never its meaning, so the same write always
+lands on the same class. A held write names the check in its first reason. The
+evaluator itself is `@contentrain/types`
 (`evaluateApproval`), shared with the CLI, so the same policy answers the same
 way everywhere.
 

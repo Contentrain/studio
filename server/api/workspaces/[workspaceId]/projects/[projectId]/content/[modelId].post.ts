@@ -10,7 +10,7 @@
  *   absent leaves unchanged. Never changes status.
  */
 
-import { decideMerge } from '~~/server/utils/approval-gate'
+import { decideMerge, writeSignals } from '~~/server/utils/approval-gate'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -66,6 +66,7 @@ export default defineEventHandler(async (event) => {
     workflow,
     tool: 'save_content',
     scope: { models: [modelId], locales: [body.locale ?? 'en'], entries: Object.keys(body.data ?? {}) },
+    signals: writeSignals('save_content', { data: body.data }),
     policy: brain.approvalPolicy,
     commitSha: result.commit?.sha,
   })

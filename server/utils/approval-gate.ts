@@ -98,14 +98,85 @@ export interface ToolScope {
 }
 
 /**
- * The class this call is evaluated at: the tool's floor, lifted to
- * `bulk_content` when one call touches more than one entry.
+ * What a single-entry content write does, read from its payload.
+ *
+ * The tool's rung says what kind of thing changes; these say how much of it a
+ * reader would notice. Three shapes of a one-entry write are not low risk even
+ * though the tool is: it changes whether the entry is visible, it empties a
+ * field, or it rewrites a large body of text. All three are read from the
+ * payload alone — never from the content's meaning — so the same write always
+ * lands on the same rung.
  */
-export function toolRisk(tool: string, scope: ToolScope = {}): RiskClass {
+export interface WriteSignals {
+  /** The status the write moves entries to, for `update_status`. */
+  targetStatus?: string
+  /** Fields the write sets to an empty value (`''`, `null`, `[]`). */
+  emptiedFields?: number
+  /** Total characters of the string values written. */
+  textChars?: number
+}
+
+/** A text write at or above this size is a rewrite a reviewer should see. */
+export const LARGE_TEXT_CHANGE_CHARS = 4000
+
+/** Statuses that change whether an entry is public: going live, or coming down. */
+const VISIBILITY_STATUSES = new Set(['published', 'archived'])
+
+/** Why a write the tool calls low risk was lifted a rung, or `null` when it was not. */
+export function contentSignalReason(signals: WriteSignals = {}): string | null {
+  if (signals.targetStatus && VISIBILITY_STATUSES.has(signals.targetStatus))
+    return `it moves content to \`${signals.targetStatus}\``
+  if ((signals.emptiedFields ?? 0) > 0)
+    return `it empties ${signals.emptiedFields} field${signals.emptiedFields === 1 ? '' : 's'}`
+  if ((signals.textChars ?? 0) >= LARGE_TEXT_CHANGE_CHARS)
+    return `it writes ${signals.textChars} characters of text`
+  return null
+}
+
+/**
+ * The class this call is evaluated at: the tool's floor, lifted to
+ * `bulk_content` when one call touches more than one entry, or when its
+ * {@link WriteSignals} show a visibility change, an emptied field or a large
+ * rewrite. A lift only ever raises the rung — a signal never lowers a class.
+ */
+export function toolRisk(tool: string, scope: ToolScope = {}, signals?: WriteSignals): RiskClass {
   const floor = TOOL_RISK[tool]
   if (!floor) return 'read_only'
   if (floor === 'low_risk_content' && (scope.entries?.length ?? 0) > 1) return 'bulk_content'
+  if (floor === 'low_risk_content' && contentSignalReason(signals)) return 'bulk_content'
   return floor
+}
+
+function isEmptyValue(value: unknown): boolean {
+  return value === '' || value === null || (Array.isArray(value) && value.length === 0)
+}
+
+/**
+ * The {@link WriteSignals} of a tool call, from the same params the tool ran with.
+ *
+ * `save_content` carries either one entry's fields (`slug` + `data`, or a
+ * singleton/dictionary `data`) or a map of entry id → fields; both are walked
+ * one level down so a field of an entry counts, not the entry itself.
+ */
+export function writeSignals(tool: string, params: Record<string, unknown>): WriteSignals {
+  if (tool === 'update_status' && typeof params.status === 'string')
+    return { targetStatus: params.status }
+  if (tool !== 'save_content') return {}
+
+  const data = params.data
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+  const values: unknown[] = []
+  for (const value of Object.values(data as Record<string, unknown>)) {
+    if (!params.slug && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
+    else values.push(value)
+  }
+  let emptiedFields = 0
+  let textChars = 0
+  for (const value of values) {
+    if (isEmptyValue(value)) emptiedFields++
+    else if (typeof value === 'string') textChars += value.length
+  }
+  return { emptiedFields, textChars }
 }
 
 /**
@@ -171,6 +242,8 @@ export interface MergeDecisionInput {
   workflow: string
   tool: string
   scope?: ToolScope
+  /** What the write does, from its payload — see {@link writeSignals}. */
+  signals?: WriteSignals
   /** The project's parsed policy, or `null` to fall back to the default. */
   policy?: ApprovalPolicyFile | null
   /** The branch tip being presented — a `change` grant must name it. */
@@ -204,8 +277,8 @@ const AGENT: ActorRef = { kind: 'agent', id: 'contentrain-agent', name: 'Content
  * the hash that pins an approval is computed the one way `computePlanHash`
  * computes it.
  */
-export async function buildToolPlan(input: { tool: string, scope?: ToolScope, intent?: string }): Promise<ExecutionPlan> {
-  const risk = toolRisk(input.tool, input.scope)
+export async function buildToolPlan(input: { tool: string, scope?: ToolScope, signals?: WriteSignals, intent?: string }): Promise<ExecutionPlan> {
+  const risk = toolRisk(input.tool, input.scope, input.signals)
   const scope: ExecutionScope = {
     ...(input.scope?.models?.length ? { models: [...new Set(input.scope.models)] } : {}),
     ...(input.scope?.locales?.length ? { locales: [...new Set(input.scope.locales)] } : {}),
@@ -236,7 +309,7 @@ export async function buildToolPlan(input: { tool: string, scope?: ToolScope, in
 export async function decideMerge(input: MergeDecisionInput): Promise<MergeDecision> {
   if (input.workflow !== 'review') return { allowed: true, review: {} }
 
-  const plan = await buildToolPlan({ tool: input.tool, scope: input.scope })
+  const plan = await buildToolPlan({ tool: input.tool, scope: input.scope, signals: input.signals })
   const decision = evaluateApproval({
     plan,
     policy: input.policy ?? STUDIO_DEFAULT_POLICY,
@@ -247,12 +320,18 @@ export async function decideMerge(input: MergeDecisionInput): Promise<MergeDecis
 
   if (decision.allowed) return { allowed: true, review: {} }
 
+  // Say why a one-entry edit is not on the content rung, so a held write
+  // does not read as the policy misclassifying a typo fix.
+  const lift = TOOL_RISK[input.tool] === 'low_risk_content' && (input.scope?.entries?.length ?? 0) <= 1
+    ? contentSignalReason(input.signals)
+    : null
+
   return {
     allowed: false,
     review: {
       approval: {
         risk: decision.risk,
-        reasons: decision.reasons,
+        reasons: lift ? [`Treated as ${decision.risk} because ${lift}.`, ...decision.reasons] : decision.reasons,
         outstanding: decision.outstanding.map(o => ({ gate: o.gate, mode: o.mode, min_approvals: o.min_approvals, remaining: o.remaining })),
       },
     },
