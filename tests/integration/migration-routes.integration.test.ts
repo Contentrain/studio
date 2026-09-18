@@ -1,5 +1,6 @@
 import { COMMENTS_EXPORT_FORMAT } from '@contentrain/types'
 import { describe, expect, it, vi } from 'vitest'
+import type { MigrationHandoffSummary, StoredMigrationHandoff } from '../../server/utils/migration-handoff'
 import { withTestServer } from '../helpers/http'
 
 async function loadGet() {
@@ -108,6 +109,38 @@ describe('migration handoff routes', () => {
         site_url: 'https://carriedils.com',
         repository: { provider: 'github', owner: 'acme', name: 'site', default_branch: 'main' },
       }))
+      // The comments export stays in the repository; the row keeps where to find it.
+      const stored = setProjectMigrationHandoff.mock.calls[0]![1] as StoredMigrationHandoff
+      expect(stored.comments).toEqual({ total: 2, export: { format: COMMENTS_EXPORT_FORMAT } })
+      expect(stored.studio_intake).toMatchObject({
+        source: { path: 'contentrain-handoff.json', ref: 'contentrain' },
+        comments: { kind: 'inline', bytes: expect.any(Number) },
+      })
+    })
+  })
+
+  it('sync refuses an oversized manifest with 413 naming the field, and stores nothing', async () => {
+    const base = stubSession()
+    const setProjectMigrationHandoff = vi.fn()
+    const errorMessage = vi.fn((key: string) => key)
+    vi.stubGlobal('errorMessage', errorMessage)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, setProjectMigrationHandoff }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: { readFile: vi.fn().mockResolvedValue(JSON.stringify({ ...handoff, notes: ['n'.repeat(2 * 1024 * 1024)] })) },
+      contentRoot: '',
+      project: { repo_full_name: 'acme/site', default_branch: 'main' },
+      workspace: { id: WORKSPACE },
+    }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration/sync', handler: await loadSync() }],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/migration/sync', { method: 'POST' })
+      expect(response.status).toBe(413)
+      expect(errorMessage).toHaveBeenCalledWith('migration.handoff_too_large', {
+        detail: expect.stringMatching(/^manifest 2\.0 MB > 1\.0 MB; largest field: notes \(2\.0 MB\)$/),
+      })
+      expect(setProjectMigrationHandoff).not.toHaveBeenCalled()
     })
   })
 
@@ -157,6 +190,66 @@ describe('migration handoff routes', () => {
     })
   })
 
+  it('import-comments re-reads an inline export from the repository when the row holds only the manifest', async () => {
+    const base = stubSession()
+    const importComments = vi.fn().mockResolvedValue({ inserted: 2, skippedExisting: 0, orphanCount: 0, orphanParents: [], maxDepth: 1, threadsClosed: 0 })
+    const stored = {
+      ...handoff,
+      comments: { total: 2, export: { format: COMMENTS_EXPORT_FORMAT } },
+      studio_intake: { source: { path: 'site/contentrain-handoff.json', ref: 'main' }, fileBytes: 1, manifestBytes: 1, comments: { kind: 'inline', bytes: 1 }, unresolvedTotal: 0 },
+    }
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      ...base,
+      getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, migration_handoff: stored }),
+      importComments,
+    }))
+    const readFile = vi.fn(async (path: string, ref: string) => {
+      if (path === 'site/contentrain-handoff.json' && ref === 'main') return JSON.stringify(handoff)
+      throw new Error('404')
+    })
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git: { readFile }, contentRoot: 'site', project: {}, workspace: {} }))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { locales: { default: 'en' } }, models: new Map() }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration/import-comments', handler: await loadImportComments() }],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({ received: 2, inserted: 2 })
+      expect(readFile).toHaveBeenCalledWith('site/contentrain-handoff.json', 'main')
+      expect(importComments).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('import-comments is 404 when the handoff file no longer carries the inline export', async () => {
+    const base = stubSession()
+    const importComments = vi.fn()
+    const stored = {
+      ...handoff,
+      comments: { total: 2, export: { format: COMMENTS_EXPORT_FORMAT } },
+      studio_intake: { source: { path: 'contentrain-handoff.json', ref: 'contentrain' }, fileBytes: 1, manifestBytes: 1, comments: { kind: 'inline', bytes: 1 }, unresolvedTotal: 0 },
+    }
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      ...base,
+      getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, migration_handoff: stored }),
+      importComments,
+    }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: { readFile: vi.fn().mockResolvedValue(JSON.stringify({ ...handoff, comments: { total: 2 } })) },
+      contentRoot: '',
+      project: {},
+      workspace: {},
+    }))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { locales: { default: 'en' } }, models: new Map() }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration/import-comments', handler: await loadImportComments() }],
+    }, async ({ request }) => {
+      expect((await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })).status).toBe(404)
+      expect(importComments).not.toHaveBeenCalled()
+    })
+  })
+
   it('import-comments is 404 when the handoff has no export', async () => {
     const base = stubSession()
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
@@ -198,6 +291,33 @@ describe('migration handoff — pushed after the project was connected', () => {
       expect(body.syncedAt).toEqual(expect.any(String))
       expect(body.summary).toMatchObject({ siteUrl: 'https://carriedils.com', needsRuntime: ['comments'] })
       expect(setProjectMigrationHandoff).toHaveBeenCalledWith(PROJECT, expect.objectContaining({ site_url: 'https://carriedils.com' }))
+    })
+  })
+
+  it('GET re-reads a row stored before the manifest/comments split, for an owner', async () => {
+    const base = stubSession('owner')
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, migration_handoff: handoff, migration_handoff_synced_at: '2026-09-03T11:00:00.000Z' })
+    const setProjectMigrationHandoff = vi.fn().mockResolvedValue(undefined)
+    const countCommentsByStatus = vi.fn().mockResolvedValue({ pending: 0, approved: 0, spam: 0, rejected: 0 })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, getProjectById, setProjectMigrationHandoff, countCommentsByStatus }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: { readFile: vi.fn(async (path: string, ref: string) => {
+        if (path === 'contentrain-handoff.json' && ref === 'contentrain') return JSON.stringify(handoff)
+        throw new Error('404')
+      }) },
+      contentRoot: '',
+      project: { repo_full_name: 'acme/site', default_branch: 'main' },
+      workspace: { id: WORKSPACE },
+    }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
+    }, async ({ request }) => {
+      const body = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as { summary: MigrationHandoffSummary }
+      expect(body.summary.comments).toMatchObject({ hasExport: true, source: 'inline' })
+      const stored = setProjectMigrationHandoff.mock.calls[0]![1] as StoredMigrationHandoff
+      expect(stored.comments?.export).toEqual({ format: COMMENTS_EXPORT_FORMAT })
+      expect(stored.studio_intake?.comments.kind).toBe('inline')
     })
   })
 
