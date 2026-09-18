@@ -54,6 +54,13 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !workspaceSlug)
     throw createError({ statusCode: 500, message: errorMessage('workspace.not_found') })
 
+  // GitHub sends `setup_action=update` back here every time the App's
+  // configuration is saved (repository selection, permissions). When the
+  // workspace already holds this installation there is nothing to bind —
+  // no write happens, so there is nothing to verify either.
+  if (Number(workspace.github_installation_id) === installationId)
+    return sendRedirect(event, `/w/${workspaceSlug}`)
+
   // GitHub-side ownership verification (PostHog pattern). If we have a
   // GitHub user OAuth token (sign-in went through GitHub), confirm the
   // user actually has access to the installation_id they supplied.

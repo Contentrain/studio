@@ -177,6 +177,30 @@ describe('00.validate-config boot validation', () => {
     expect(error?.message).toMatch(/NUXT_GITHUB_PRIVATE_KEY is required/)
   })
 
+  it('warns when managed GitHub login is not the GitHub App', async () => {
+    const managed = {
+      authProvider: 'managed',
+      databaseProvider: 'postgres',
+      postgres: { url: 'postgres://user:pw@host:5432/db' },
+      authJwtSecret: 'j'.repeat(32),
+      resend: { apiKey: 're_key' },
+      supabase: { url: '', serviceRoleKey: '', anonKey: '' },
+      github: { appId: '123', clientId: 'Iv23liAPP', clientSecret: 'app-secret', privateKey: 'cGVt', webhookSecret: 'whsec' },
+    }
+    const warnSpy = vi.spyOn(console, 'warn')
+    const loginWarned = () => warnSpy.mock.calls.some(call => String(call[0]).includes('NUXT_OAUTH_GITHUB_CLIENT_ID differs'))
+
+    const mismatched = await loadPlugin(baseConfig({ ...managed, oauth: { github: { clientId: 'Ov23liOAUTH', clientSecret: 'oauth-secret' } } }))
+    expect(runAndCapture(mismatched)).toBeNull()
+    expect(loginWarned()).toBe(true)
+
+    warnSpy.mockClear()
+    vi.resetModules()
+    const matched = await loadPlugin(baseConfig({ ...managed, oauth: { github: { clientId: 'Iv23liAPP', clientSecret: 'app-secret' } } }))
+    expect(runAndCapture(matched)).toBeNull()
+    expect(loginWarned()).toBe(false)
+  })
+
   it('warns (not errors) when the nuxt-auth-utils session password is missing', async () => {
     const warnSpy = vi.spyOn(console, 'warn')
     const plugin = await loadPlugin(baseConfig())
