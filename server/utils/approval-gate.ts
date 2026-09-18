@@ -110,7 +110,7 @@ export interface ToolScope {
 export interface WriteSignals {
   /** The status the write moves entries to, for `update_status`. */
   targetStatus?: string
-  /** Fields the write sets to an empty value (`''`, `null`, `[]`). */
+  /** Fields the write sets to an empty value (`''`, `null`, `[]`, `{}`). */
   emptiedFields?: number
   /** Total characters of the string values written. */
   textChars?: number
@@ -148,7 +148,9 @@ export function toolRisk(tool: string, scope: ToolScope = {}, signals?: WriteSig
 }
 
 function isEmptyValue(value: unknown): boolean {
-  return value === '' || value === null || (Array.isArray(value) && value.length === 0)
+  if (value === '' || value === null) return true
+  if (Array.isArray(value)) return value.length === 0
+  return typeof value === 'object' && Object.keys(value as object).length === 0
 }
 
 /**

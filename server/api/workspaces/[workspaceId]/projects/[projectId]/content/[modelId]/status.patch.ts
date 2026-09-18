@@ -2,7 +2,14 @@
  * Update entry status (publish/unpublish/archive).
  * Only modifies meta, not content data.
  * Owner/Admin can publish, Editor can only draft.
+ *
+ * The merge goes through the same approval gate as every other write: a status
+ * change is the most visible edit there is, and a route that merged it
+ * unconditionally let an editor archive — or an owner publish — past a review
+ * workflow the project had switched on.
  */
+import { decideMerge, writeSignals } from '~~/server/utils/approval-gate'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -38,7 +45,7 @@ export default defineEventHandler(async (event) => {
   if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
     throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
 
-  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+  const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
 
   const engine = createContentEngine({ git, contentRoot, projectId })
   const writeResult = await engine.updateEntryStatus(
@@ -50,7 +57,25 @@ export default defineEventHandler(async (event) => {
   if (writeResult.unchanged)
     return { merged: false, unchanged: true, status: body.status, entryIds: body.entryIds, statusChanges: writeResult.statusChanges }
 
-  // Auto-merge status changes (no review needed for publish/unpublish)
+  const locale = body.locale ?? 'en'
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
+  const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+  const workflow = hasFeature(plan, 'workflow.review') ? (brain.config?.workflow ?? 'auto-merge') : 'auto-merge'
+  const gate = await decideMerge({
+    workflow,
+    tool: 'update_status',
+    scope: { models: [modelId], locales: [locale], entries: body.entryIds },
+    signals: writeSignals('update_status', { status: body.status }),
+    policy: brain.approvalPolicy,
+    commitSha: writeResult.commit?.sha,
+  })
+
+  if (!gate.allowed) {
+    // Held on its branch: report why, in the shape the save route uses.
+    return { merged: false, branch: writeResult.branch, workflow, status: body.status, entryIds: body.entryIds, statusChanges: writeResult.statusChanges, ...gate.review }
+  }
+
   const mergeResult = await engine.mergeBranch(writeResult.branch)
-  return { merged: mergeResult.merged, status: body.status, entryIds: body.entryIds, statusChanges: writeResult.statusChanges }
+  invalidateBrainCache(projectId)
+  return { merged: mergeResult.merged, workflow, status: body.status, entryIds: body.entryIds, statusChanges: writeResult.statusChanges }
 })

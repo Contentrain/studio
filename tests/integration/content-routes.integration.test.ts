@@ -231,7 +231,12 @@ describe('content route integration', () => {
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},
       contentRoot: '',
+      workspace: { plan: 'starter' },
     }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'auto-merge' } }))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({
       updateEntryStatus,
       mergeBranch,
@@ -255,11 +260,83 @@ describe('content route integration', () => {
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({
         merged: true,
+        workflow: 'auto-merge',
         status: 'published',
         entryIds: ['entry1'],
       })
       expect(updateEntryStatus).toHaveBeenCalledWith('posts', 'en', ['entry1'], 'published', 'owner@example.com')
       expect(mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1234567890-efgh')
     })
+  })
+  it('holds a status change on a review project instead of merging it past the policy', async () => {
+    // A project that trusts one-entry content edits: before the gate, the picker
+    // merged every status change whatever the policy said.
+    const policy = {
+      version: 1,
+      default_mode: 'single',
+      rules: [{ risk: 'low_risk_content', gate: 'change', mode: 'auto' }],
+    }
+    const mergeBranch = vi.fn().mockResolvedValue({ merged: true })
+    const updateEntryStatus = vi.fn().mockResolvedValue({
+      branch: 'cr/content/posts/en/1234567890-ijkl',
+      commit: { sha: 'status-sha' },
+    })
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      if (key === 'modelId') return 'posts'
+      return undefined
+    }))
+    vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git: {}, contentRoot: '', workspace: { plan: 'pro' } }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'review' }, approvalPolicy: policy }))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ updateEntryStatus, mergeBranch }))
+
+    const cases = [
+      { role: 'editor', status: 'archived', held: true },
+      { role: 'owner', status: 'published', held: true },
+      { role: 'editor', status: 'draft', held: false },
+    ] as const
+
+    for (const c of cases) {
+      mergeBranch.mockClear()
+      vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: `${c.role}-1`, email: `${c.role}@example.com` }, accessToken: 'token-1' }))
+      vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+        workspaceRole: c.role,
+        availableTools: ['save_content'],
+        specificModels: false,
+        allowedModels: [],
+      }))
+
+      await withTestServer({
+        routes: [
+          { path: '/api/workspaces/workspace-1/projects/project-1/content/posts/status', handler: await loadContentStatusHandler() },
+        ],
+      }, async ({ request }) => {
+        const response = await request('/api/workspaces/workspace-1/projects/project-1/content/posts/status', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ locale: 'en', entryIds: ['entry1'], status: c.status }),
+        })
+
+        expect(response.status).toBe(200)
+        const payload = await response.json()
+        if (c.held) {
+          expect(payload.merged).toBe(false)
+          expect(payload.branch).toBe('cr/content/posts/en/1234567890-ijkl')
+          expect(payload.approval.risk).toBe('bulk_content')
+          expect(payload.approval.reasons[0]).toContain(`\`${c.status}\``)
+          expect(mergeBranch).not.toHaveBeenCalled()
+        }
+        else {
+          expect(payload.merged).toBe(true)
+          expect(mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1234567890-ijkl')
+        }
+      })
+    }
   })
 })

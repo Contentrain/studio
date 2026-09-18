@@ -24,6 +24,9 @@ describe('write signals', () => {
       .toEqual({ emptiedFields: 1, textChars: 10 })
     expect(writeSignals('save_content', { data: { site_name: 'Acme', count: 3 } }))
       .toEqual({ emptiedFields: 0, textChars: 4 })
+    // An object field cleared to `{}` is as empty as a blanked string.
+    expect(writeSignals('save_content', { data: { a: { seo: {}, title: 'x' } } }))
+      .toEqual({ emptiedFields: 1, textChars: 1 })
   })
 
   it('reads nothing from other tools', () => {
