@@ -150,6 +150,14 @@ export default defineNitroPlugin(() => {
     }
     if (!config.github.webhookSecret)
       warnings.push('NUXT_GITHUB_WEBHOOK_SECRET is not set — webhook signature verification disabled')
+
+    // Installation ownership checks (install callback, connect-existing)
+    // call GitHub's /user/installations endpoints, which only accept user
+    // tokens issued by the App itself. A separate login OAuth App makes
+    // every one of them fail with 403.
+    const loginClientId = (config.oauth as { github?: { clientId?: string } } | undefined)?.github?.clientId
+    if (authProvider === 'managed' && loginClientId && config.github.clientId && loginClientId !== config.github.clientId)
+      warnings.push('NUXT_OAUTH_GITHUB_CLIENT_ID differs from NUXT_GITHUB_CLIENT_ID — GitHub login must use the GitHub App\'s client credentials, otherwise installing or connecting the App fails with 403')
   }
 
   // Anthropic — optional (BYOA fallback available)

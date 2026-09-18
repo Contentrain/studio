@@ -145,6 +145,76 @@ describe('GitHub route integration', () => {
     })
   })
 
+  it('treats a setup callback for the already-bound installation as a no-op redirect', async () => {
+    providerState.databaseProvider.getWorkspaceForUser.mockResolvedValue({
+      id: 'workspace-primary',
+      slug: 'studio-team',
+      github_installation_id: 123,
+    })
+    // A stored token whose ownership check would fail — it must not be consulted.
+    providerState.databaseProvider.getOAuthProviderToken.mockResolvedValue({
+      accessToken: 'gho_login_oauth_app',
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    })
+    providerState.gitAppService.verifyUserHasAccessToInstallation.mockResolvedValue(false)
+
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1' },
+      accessToken: 'token-1',
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/github/setup', handler: await loadSetupHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/github/setup?installation_id=123&setup_action=update&state=workspace-primary', {
+        redirect: 'manual',
+      })
+
+      expect(response.status).toBe(302)
+      expect(response.headers.get('location')).toBe('/w/studio-team')
+      expect(providerState.gitAppService.verifyUserHasAccessToInstallation).not.toHaveBeenCalled()
+      expect(providerState.databaseProvider.updateWorkspaceGithubInstallation).not.toHaveBeenCalled()
+    })
+  })
+
+  it('still verifies ownership before binding a different installation', async () => {
+    providerState.databaseProvider.getWorkspaceForUser.mockResolvedValue({
+      id: 'workspace-primary',
+      slug: 'studio-team',
+      github_installation_id: 999,
+    })
+    providerState.databaseProvider.getOAuthProviderToken.mockResolvedValue({
+      accessToken: 'ghu_app_token',
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    })
+    providerState.gitAppService.verifyUserHasAccessToInstallation.mockResolvedValue(false)
+
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
+      user: { id: 'user-1' },
+      accessToken: 'token-1',
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/github/setup', handler: await loadSetupHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/github/setup?installation_id=123&setup_action=update&state=workspace-primary', {
+        redirect: 'manual',
+      })
+
+      expect(response.status).toBe(403)
+      expect(providerState.gitAppService.verifyUserHasAccessToInstallation).toHaveBeenCalledWith('ghu_app_token', 123)
+      expect(providerState.databaseProvider.updateWorkspaceGithubInstallation).not.toHaveBeenCalled()
+    })
+  })
+
   it('blocks repository enumeration for non-admin members', async () => {
     providerState.databaseProvider.getWorkspaceForUser.mockRejectedValue(Object.assign(new Error('Requires owner or admin role'), {
       statusCode: 403,
