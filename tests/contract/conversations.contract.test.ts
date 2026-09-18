@@ -159,6 +159,37 @@ describe('postgres-db conversations (contract)', () => {
     expect(await methods.getAgentUsage(user.workspaceId, '2026-01', 'studio', { userId: user.userId })).toBeNull()
   })
 
+  it('agent usage: the quota is shared by every member of the workspace', async () => {
+    // A second member of the same workspace. Before 027 the reservation
+    // summed only the caller's rows, so each member got the full limit.
+    const member = await seedUser('conv-member')
+    try {
+      const month = '2026-07'
+      const reserve = (userId: string) => methods.incrementAgentUsageIfAllowed({
+        workspaceId: user.workspaceId,
+        userId,
+        month,
+        source: 'studio',
+        limit: 3,
+      })
+
+      expect(await reserve(user.userId)).toEqual({ allowed: true, currentCount: 1 })
+      expect(await reserve(user.userId)).toEqual({ allowed: true, currentCount: 2 })
+      expect(await reserve(member.userId)).toEqual({ allowed: true, currentCount: 3 })
+
+      const denied = await reserve(member.userId)
+      expect(denied.allowed).toBe(false)
+      expect(denied.currentCount).toBe(3)
+
+      // Rows stay booked per user, so per-user reporting is unchanged.
+      expect((await methods.getAgentUsage(user.workspaceId, month, 'studio', { userId: user.userId }))!.message_count).toBe(2)
+      expect((await methods.getAgentUsage(user.workspaceId, month, 'studio', { userId: member.userId }))!.message_count).toBe(1)
+    }
+    finally {
+      await deleteSeededUser(member.userId)
+    }
+  })
+
   it('upsertAgentUsage accumulates and never throws', async () => {
     const input = {
       workspaceId: user.workspaceId,
