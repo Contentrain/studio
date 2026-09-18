@@ -100,12 +100,12 @@ const collapsible = computed(() => !props.headless && hasBody.value)
       <!-- Keeps a non-opening row's title aligned with the ones above it. -->
       <span v-else class="size-3 shrink-0" aria-hidden="true" />
       <span :class="KIND_ICON[entry.kind]" class="size-3.5 shrink-0 text-muted" aria-hidden="true" />
-      <span class="min-w-0 flex-1 truncate text-heading dark:text-secondary-100">{{ entry.title }}</span>
+      <span :title="entry.title" class="min-w-48 flex-1 truncate text-heading dark:text-secondary-100">{{ entry.title }}</span>
 
-      <AtomsBadge v-if="statusLabel" variant="info" size="sm">
+      <AtomsBadge v-if="statusLabel" variant="info" size="sm" class="shrink-0">
         {{ statusLabel }}
       </AtomsBadge>
-      <AtomsBadge v-if="showKindBadge" :variant="KIND_VARIANT[entry.kind]" size="sm">
+      <AtomsBadge v-if="showKindBadge" :variant="KIND_VARIANT[entry.kind]" size="sm" class="shrink-0">
         {{ t(`review.entry_${entry.kind}`) }}
       </AtomsBadge>
     </component>
