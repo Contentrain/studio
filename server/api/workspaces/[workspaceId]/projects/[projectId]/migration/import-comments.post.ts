@@ -1,12 +1,14 @@
 /**
- * Land the comments export referenced by the stored handoff (inline or by
- * URL) into this project's comments — the one-click path from the overview
- * card. Same fidelity contract and plan gate as the manual upload.
+ * Land the comments export referenced by the stored handoff into this
+ * project's comments — the one-click path from the overview card. The row
+ * holds only where the export is: a URL is fetched, an inline export is
+ * re-read from the handoff file in the repository. Same fidelity contract
+ * and plan gate as the manual upload.
  *
  * POST /api/workspaces/{workspaceId}/projects/{projectId}/migration/import-comments
  */
 
-import type { MigrationHandoff } from '@contentrain/types'
+import type { StoredMigrationHandoff } from '~~/server/utils/migration-handoff'
 import { importCommentsFromHandoff } from '~~/server/utils/migration-handoff'
 import { normalizeLocaleParam } from '~~/server/utils/comment-public-context'
 
@@ -26,7 +28,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('comments.upgrade') })
 
   const row = await db.getProjectById(projectId, 'id, workspace_id, migration_handoff')
-  const handoff = (row?.migration_handoff ?? null) as MigrationHandoff | null
+  const handoff = (row?.migration_handoff ?? null) as StoredMigrationHandoff | null
   if (!handoff)
     throw createError({ statusCode: 404, message: errorMessage('migration.handoff_missing') })
   if (!handoff.comments?.export)
@@ -35,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
   const defaultLocale = normalizeLocaleParam((brain.config as { locales?: { default?: string } } | null)?.locales?.default, 'en')
-  const report = await importCommentsFromHandoff(projectId, workspaceId, handoff, defaultLocale)
+  const report = await importCommentsFromHandoff(projectId, workspaceId, handoff, defaultLocale, git)
   if (!report)
     throw createError({ statusCode: 404, message: errorMessage('migration.no_comments_export') })
   return report

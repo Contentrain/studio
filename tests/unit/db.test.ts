@@ -63,13 +63,17 @@ describe('db helpers', () => {
 
   it('resolves project context and normalizes the content root', async () => {
     const git = { provider: 'git' }
-    vi.stubGlobal('useGitProvider', vi.fn().mockReturnValue(git))
+    const useGitProvider = vi.fn().mockReturnValue(git)
+    vi.stubGlobal('useGitProvider', useGitProvider)
 
     const { resolveProjectContext } = await loadDbModule()
     const result = await resolveProjectContext('workspace-1', 'project-1')
 
     expect(result.contentRoot).toBe('apps/web')
     expect(result.git).toBe(git)
+    // Un-rooted on purpose: callers prefix `contentRoot` themselves, so a
+    // rooted provider would resolve `apps/web/apps/web/…`.
+    expect(useGitProvider).toHaveBeenCalledWith({ installationId: 123, owner: 'contentrain', repo: 'studio' })
     expect(result.workspace.id).toBe('workspace-1')
     expect(mockDb.getProjectById).toHaveBeenCalledWith('project-1', expect.any(String))
   })
