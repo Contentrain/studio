@@ -48,11 +48,16 @@ async function setStatus(newStatus: string) {
 
   saving.value = true
   try {
-    await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/content/${props.modelId}/status`, {
+    const res = await $fetch<{ merged: boolean, branch?: string, approval?: unknown }>(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/content/${props.modelId}/status`, {
       method: 'PATCH',
       body: { entryIds: [props.entryId], status: newStatus, locale: props.locale ?? 'en' },
     })
-    toast.success(t('content.status_updated'))
+    // A review workflow can hold the change on its branch; say so rather than
+    // reporting a status the entry does not have yet.
+    if (res.approval && res.branch)
+      toast.success(t('content.saved_pending_review', { branch: res.branch }))
+    else
+      toast.success(t('content.status_updated'))
     emit('saved')
   }
   catch (e: unknown) {
