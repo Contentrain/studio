@@ -1,6 +1,97 @@
 # Changelog
 
 
+## v0.4.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.3.0...v0.4.0)
+
+### ⚠️ Upgrade notes
+
+Read these before deploying v0.4.0. The first two need an operator action.
+
+**1. Billing: re-sync the Polar `ai_messages` price (required on Polar deployments).**
+AI and API usage is now credit-weighted: a light message is 1 credit, a heavy editorial turn costs more, in proportion to the tokens it actually uses. AI overage moves from $0.03 per message to **$0.05 per credit**. The existing `ai_messages` metered price no longer matches. `pnpm polar:sync` detects the drift and exits 1 instead of changing a live price. In the deploy window:
+- archive the old `ai_messages` metered price in the Polar dashboard;
+- run `pnpm polar:sync` to create the new price;
+- make the new price the product default.
+
+`api_messages` keeps its $0.05 amount (now counted per credit). Until the re-sync is done, AI overage keeps billing at the old price. New plan feature `ai.pro_models`: Starter chats on Haiku; Sonnet and Opus need Pro.
+
+**2. Captcha: Turnstile environment variables.**
+Set `NUXT_TURNSTILE_SECRET_KEY` (server-side verification; same name as before) and the new `NUXT_PUBLIC_TURNSTILE_SITE_KEY` (the widget key handed to form and comment embeds). Captcha fails closed: any form or comments model with `captcha: turnstile` rejects every submission while the secret is unset.
+
+**3. Review workflow: merges are decided by what changed, not by who asked.**
+On projects using the `review` workflow, every write above `read_only` now needs one recorded approval. That includes an owner's or admin's own agent writes, which used to merge straight away. With no `.contentrain/approval-policies.json` the Studio default applies and self-approval is allowed. For four-eyes review, set `"allow_self_approval": false` in that file. Manual deploys have their own release approval gate. Projects on `auto-merge` are unchanged.
+
+**4. Database: 7 new migrations, all additive.**
+`020_comments`, `021_migration_handoff`, `022_deploy_and_schedule`, `023_branch_reviews`, `024_credit_weighted_usage`, `025_schedule_delivery_lease`, `026_execution_approvals`. Apply them before the new image serves:
+- managed+postgres: the Railway pre-deploy command runs `node scripts/migrate-postgres.mjs`;
+- plain PostgreSQL: `pnpm db:migrate:pg`, then `pnpm db:verify:pg`;
+- Supabase pair: `supabase db push`.
+
+Nothing is dropped or renamed, and the `_v2` usage RPCs stay registered next to `_v3`. That means the v0.3.0 image still runs against the new schema, so rolling back the image alone is safe.
+
+**Runs on its own after upgrade (no action):**
+- A per-minute scheduler (`schedule-trigger`) fires `publish_at`/`expire_at` boundaries. It is safe with several instances (lease + `SKIP LOCKED`).
+- Sessions now expire after 7 idle days, not 7 days after sign-in.
+- Migration handoffs already stored are re-read once, without their comments export, the first time an owner opens the project.
+
+### 🚀 Enhancements
+
+- **review:** Review a pending change as content, not as a git diff ([#208](https://github.com/Contentrain/studio/pull/208))
+- **about:** Name the running build on /about and /api/health ([#224](https://github.com/Contentrain/studio/pull/224))
+- **content:** Schedule an entry from Studio, and keep what MCP plans in meta ([#229](https://github.com/Contentrain/studio/pull/229))
+- **comments:** Ship comments v1 — read/submit API, moderation, agent tools, WordPress import ([#231](https://github.com/Contentrain/studio/pull/231))
+- **comments:** Finish the Studio surface — import upload, usage meter row, project default locale ([#232](https://github.com/Contentrain/studio/pull/232))
+- **forms:** Close the WordPress parity gaps — notifications, locale, per-form cap, detail modal ([#233](https://github.com/Contentrain/studio/pull/233))
+- **migration:** Take in the Migrate handoff — sync, overview card, agent context, comments ([#234](https://github.com/Contentrain/studio/pull/234))
+- **media:** Bulk ingest from URLs with an old → new URL map ([#235](https://github.com/Contentrain/studio/pull/235))
+- **review:** Request changes on a pending branch, visible to author and agent ([#237](https://github.com/Contentrain/studio/pull/237))
+- **billing:** Credit-weighted AI usage and plan-tier model gating ([#243](https://github.com/Contentrain/studio/pull/243))
+- **chat:** Keep the conversation cache warm across turns and tool iterations ([#251](https://github.com/Contentrain/studio/pull/251))
+- **review:** Decide an auto-merge from what changed, not from who asked ([#257](https://github.com/Contentrain/studio/pull/257))
+- **review:** Approve a plan, gate a release, and keep the receipt ([#258](https://github.com/Contentrain/studio/pull/258))
+- **branches:** Report where the content branch stands, in four states ([#259](https://github.com/Contentrain/studio/pull/259))
+- **media:** Stop buying the same bytes twice on a repeated ingest ([#260](https://github.com/Contentrain/studio/pull/260))
+
+### 🩹 Fixes
+
+- **review:** Three things real branches showed the review getting wrong ([#209](https://github.com/Contentrain/studio/pull/209))
+- **review:** Stop the panel saying the same thing three times ([#210](https://github.com/Contentrain/studio/pull/210))
+- **review:** Do not open a row onto nothing ([#211](https://github.com/Contentrain/studio/pull/211))
+- **agent:** Let the agent read publish status instead of writing to find it ([#219](https://github.com/Contentrain/studio/pull/219))
+- **chat:** Cache the conversation prefix and stop the history budget from lying ([#222](https://github.com/Contentrain/studio/pull/222))
+- **i18n:** Define the two missing oauth error strings, and gate the rest in CI ([#223](https://github.com/Contentrain/studio/pull/223))
+- **content:** Show a relation's title in the read view, not its id ([#225](https://github.com/Contentrain/studio/pull/225))
+- **agent:** Merge a model save into the definition it updates ([#226](https://github.com/Contentrain/studio/pull/226))
+- **content:** Write a media or relation value to every locale at once ([#227](https://github.com/Contentrain/studio/pull/227))
+- **content:** Hold new field names to snake_case, and title models the way MCP backfills them ([#230](https://github.com/Contentrain/studio/pull/230))
+- **content:** Address deletes per kind so documents delete by slug and dictionaries by key ([#242](https://github.com/Contentrain/studio/pull/242))
+- **db:** Renumber credit-weighted usage migration to 024 ([#244](https://github.com/Contentrain/studio/pull/244))
+- **db:** Make migration 024 idempotent so renamed-file re-runs deploy cleanly ([#245](https://github.com/Contentrain/studio/pull/245))
+- **billing:** Compare Polar metered price amounts numerically in the sync ([#246](https://github.com/Contentrain/studio/pull/246))
+- **scheduling:** Retry delivery with leased claims and acknowledgements ([#247](https://github.com/Contentrain/studio/pull/247))
+- **migration:** Late handoff read, entity decoding in imported comments, replaced-store warning ([#252](https://github.com/Contentrain/studio/pull/252))
+- **forms:** Make approval retry-safe and verify migration runtime ([#253](https://github.com/Contentrain/studio/pull/253))
+- **content:** Read the publication window in one place and surface an unreadable one ([#255](https://github.com/Contentrain/studio/pull/255))
+- **auth:** Keep active sessions alive and land invitees in their workspace ([#267](https://github.com/Contentrain/studio/pull/267))
+- **migration:** Store the handoff manifest without its comments export ([#270](https://github.com/Contentrain/studio/pull/270))
+
+### ✅ Tests
+
+- **migration:** Record real WordPress acceptance gaps ([#248](https://github.com/Contentrain/studio/pull/248))
+- **public-api:** Pin the forms and comments wire contract with fixtures and isolation coverage ([#249](https://github.com/Contentrain/studio/pull/249))
+- **migration:** Add read-only generated-site browser gate ([#250](https://github.com/Contentrain/studio/pull/250))
+
+### 🤖 CI
+
+- **release:** Production deploys from a pointer branch the pipeline advances ([#202](https://github.com/Contentrain/studio/pull/202))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+- Contentrain <mcp@contentrain.io>
+
 ## v0.3.0
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.2.1...v0.3.0)
