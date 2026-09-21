@@ -78,6 +78,25 @@ export function addMonthsClamped(date: Date, months: number): Date {
   return shifted
 }
 
+/**
+ * Where the slice starting at `start` closes.
+ *
+ * A quota is monthly even when the invoice is not. An annual subscription
+ * has one twelve-month billing period, and keying the quota to it would
+ * mean the counter never resets for a year — the customer would get a
+ * twelfth of what they paid for. So the window advances by monthly
+ * anniversaries of the period start, and the last slice is cut short at
+ * the billing end rather than running past it.
+ *
+ * Once `start` has reached the billing end the period is over (a renewal
+ * we have not been told about yet), so the slices keep going monthly.
+ */
+function sliceEnd(start: Date, billingEnd: Date | null): Date {
+  const monthly = addMonthsClamped(start, 1)
+  if (billingEnd && billingEnd > start && billingEnd < monthly) return billingEnd
+  return monthly
+}
+
 function calendarPeriod(now: Date): UsagePeriod {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
@@ -112,13 +131,15 @@ export function usagePeriodFrom(account: UsagePeriodAccount | null | undefined, 
   let start = toDate(account.current_period_start) ?? (end ? addMonthsClamped(end, -1) : null)
   if (!start) return calendarPeriod(now)
 
-  let periodEnd = end && end > start ? end : addMonthsClamped(start, 1)
+  const billingEnd = end && end > start ? end : null
 
-  // Roll forward past a period that has already closed.
+  let periodEnd = sliceEnd(start, billingEnd)
+
+  // Roll forward past a slice that has already closed.
   let guard = 0
   while (periodEnd.getTime() <= now.getTime() && guard < 240) {
     start = periodEnd
-    periodEnd = addMonthsClamped(start, 1)
+    periodEnd = sliceEnd(start, billingEnd)
     guard += 1
   }
 

@@ -64,6 +64,46 @@ describe('usage period', () => {
       expect(new Date(stale.resetsAt).getTime()).toBeGreaterThan(at('2026-12-27T00:00:00Z').getTime())
     })
 
+    it('slices a yearly subscription into monthly windows', () => {
+      // One twelve-month key would mean the counter never resets for a
+      // year — the customer would get a twelfth of the quota they paid for.
+      const yearly = {
+        subscription_status: 'active',
+        current_period_start: '2026-07-27T00:00:00Z',
+        current_period_end: '2027-07-27T00:00:00Z',
+      }
+      const period = usagePeriodFrom(yearly, at('2026-09-21T00:00:00Z'))
+      expect(period.key).toBe('2026-08-27')
+      expect(period.resetsAt).toBe('2026-09-27T00:00:00.000Z')
+
+      // And it keeps advancing with the anniversary, inside the same period.
+      expect(usagePeriodFrom(yearly, at('2026-09-28T00:00:00Z')).key).toBe('2026-09-27')
+    })
+
+    it('cuts the last slice short at the billing end', () => {
+      const endsMidMonth = {
+        subscription_status: 'active',
+        current_period_start: '2026-07-27T00:00:00Z',
+        current_period_end: '2026-10-10T00:00:00Z',
+      }
+      const period = usagePeriodFrom(endsMidMonth, at('2026-10-01T00:00:00Z'))
+      expect(period.key).toBe('2026-09-27')
+      // Not 27 October — the subscription period ends first.
+      expect(period.resetsAt).toBe('2026-10-10T00:00:00.000Z')
+    })
+
+    it('keeps slicing monthly past an ended period', () => {
+      // Renewal not yet observed: the slices must not stall on the old end.
+      const expired = {
+        subscription_status: 'active',
+        current_period_start: '2026-07-27T00:00:00Z',
+        current_period_end: '2026-08-27T00:00:00Z',
+      }
+      const period = usagePeriodFrom(expired, at('2026-09-21T00:00:00Z'))
+      expect(period.key).toBe('2026-08-27')
+      expect(period.resetsAt).toBe('2026-09-27T00:00:00.000Z')
+    })
+
     it('counts a trialing and a past_due subscription in its period', () => {
       expect(usagePeriodFrom({ ...account, subscription_status: 'trialing' }, at('2026-09-25T00:00:00Z')).source).toBe('billing')
       expect(usagePeriodFrom({ ...account, subscription_status: 'past_due' }, at('2026-09-25T00:00:00Z')).source).toBe('billing')
