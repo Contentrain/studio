@@ -509,6 +509,20 @@ async function mergeForTool(
 }
 
 /**
+ * A low-cardinality cause code for Sentry tags — not the raw message. A
+ * `result.error` string is almost always formatted "Label: detail" (the
+ * detail can echo a field value or an id), so keeping only the label
+ * bounds what travels; a flat `errorClass: 'tool_result_error'` gave every
+ * cause the same bucket, defeating the per-tool-error-rate dashboard #294
+ * asked for. The length cap is a second bound for the rare message with no
+ * colon at all.
+ */
+function errorResultClass(message: string): string {
+  const label = message.split(':')[0]?.trim()
+  return label ? label.slice(0, 60) : 'tool_result_error'
+}
+
+/**
  * Execute tool with workflow-aware auto-merge and affected resources.
  */
 export async function executeToolWithAutoMerge(
@@ -1614,12 +1628,13 @@ export async function executeToolWithAutoMerge(
     }
 
     if (result && typeof result === 'object' && 'error' in result) {
-      reportAgentToolError(String((result as { error: unknown }).error), {
+      const message = String((result as { error: unknown }).error)
+      reportAgentToolError(message, {
         tool: name,
         projectId,
         workspaceId,
         modelId: params.model as string | undefined,
-        errorClass: 'tool_result_error',
+        errorClass: errorResultClass(message),
       })
     }
 

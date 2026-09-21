@@ -12,15 +12,30 @@ function escapeRegExp(text: string): string {
 }
 
 /**
+ * Short, generic keywords that collide with unrelated words at either end —
+ * `al` inside `hale`, `kur` as a prefix of `kural` ("rule"). These need a
+ * boundary on BOTH sides. Everything else is a Turkish verb root (`ekle`,
+ * `sil`, `değiştir`, `güncelle`, `yayınla`...), and Turkish is agglutinative:
+ * a root almost never stands bare — "ekler misin", "silebilir misin",
+ * "değiştirelim", "güncelleyelim" all attach the conjugation directly with
+ * no space. Requiring a trailing boundary on those roots too matched only
+ * the bare infinitive and missed the conjugated forms editors actually type.
+ */
+const EXACT_MATCH_KEYWORDS = new Set(['al', 'ne', 'kur', 'how', 'get', 'add', 'yaz', 'kaç'])
+
+/**
  * Whether `phrase` occurs in `text` as a standalone word/phrase — not as a
  * substring of a longer word. A plain `.includes()` matched short keywords
  * like `al` or `ne` inside unrelated Turkish words (`hale` contains `al`),
  * misclassifying "draft hale getir" as a query. `\b` doesn't help here:
  * it's ASCII-only, so it doesn't treat Turkish letters (ğ, ı, ş, ç, ö, ü)
- * as word characters — the Unicode property lookaround below does.
+ * as word characters — the Unicode property lookaround below does. The
+ * leading boundary always applies; the trailing one only for keywords in
+ * `EXACT_MATCH_KEYWORDS` — see its comment.
  */
 function hasWord(text: string, phrase: string): boolean {
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(phrase)}(?![\\p{L}\\p{N}])`, 'u')
+  const trailingBoundary = EXACT_MATCH_KEYWORDS.has(phrase) ? '(?![\\p{L}\\p{N}])' : ''
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(phrase)}${trailingBoundary}`, 'u')
   return pattern.test(text)
 }
 

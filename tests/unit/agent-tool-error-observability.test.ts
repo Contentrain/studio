@@ -65,7 +65,7 @@ describe('agent tool error observability (#294)', () => {
     reportAgentToolError.mockClear()
   })
 
-  it('reports a { error } tool result with the tool name, ids and a fixed error class', async () => {
+  it('reports a { error } tool result with the tool name, ids and a cause code derived from the message', async () => {
     const { result } = await runTool('not_a_real_tool', { model: 'articles' }, {
       content: new Map(),
       meta: new Map(),
@@ -81,7 +81,10 @@ describe('agent tool error observability (#294)', () => {
         projectId: 'project-42',
         workspaceId: 'workspace-7',
         modelId: 'articles',
-        errorClass: 'tool_result_error',
+        // "Unknown tool: not_a_real_tool" — the label before the colon,
+        // not the tool name (which would make every distinct tool name a
+        // distinct Sentry tag value instead of grouping by cause).
+        errorClass: 'Unknown tool',
       }),
     )
   })
@@ -100,6 +103,26 @@ describe('agent tool error observability (#294)', () => {
         modelId: 'articles',
         errorClass: 'Error',
       }),
+    )
+  })
+
+  it('falls back to the whole message as the cause code when there is no colon to split on', async () => {
+    const restrictedPermissions: AgentPermissions = { ...PERMISSIONS, allowedLocales: ['tr'] }
+    vi.stubGlobal('emptyAffected', (await import('../../server/utils/agent-types')).emptyAffected)
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ content: new Map(), meta: new Map(), models: new Map() }))
+
+    const { executeToolWithAutoMerge } = await import('../../server/utils/conversation-engine')
+    const { result } = await executeToolWithAutoMerge(
+      'brain_query', { model: 'articles', locale: 'en' }, {} as never, {} as GitProvider,
+      'owner@example.com', 'user-1', 'content', 'auto-merge', restrictedPermissions, 'pro',
+      'project-42', 'workspace-7', UI_CONTEXT,
+    )
+
+    expect(result).toMatchObject({ error: expect.stringContaining('not allowed') })
+    expect(reportAgentToolError).toHaveBeenCalledWith(
+      expect.stringContaining('not allowed'),
+      expect.objectContaining({ errorClass: expect.stringContaining('not allowed') }),
     )
   })
 
