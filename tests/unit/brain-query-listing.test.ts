@@ -29,10 +29,13 @@ const UI_CONTEXT: ChatUIContext = {
   activeBranch: null,
 }
 
+interface TestFieldDef { type: string, fields?: Record<string, TestFieldDef> }
+interface TestModelDef { id: string, kind: string, fields?: Record<string, TestFieldDef> }
+
 function stubBrain(brain: {
   content: Map<string, unknown>
   meta: Map<string, Record<string, unknown>>
-  models: Map<string, { id: string, kind: string }>
+  models: Map<string, TestModelDef>
 }) {
   vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue(brain))
 }
@@ -61,14 +64,22 @@ async function query(params: Record<string, unknown>) {
   return result as Record<string, unknown>
 }
 
+const ARTICLES_FIELDS: Record<string, TestFieldDef> = {
+  title: { type: 'string' },
+  category: { type: 'string' },
+  publish_at: { type: 'string' },
+  summary: { type: 'markdown' },
+  tags: { type: 'relations' },
+}
+
 /** A `tr`-locale articles collection: 3 entries, two categories. */
 function articlesBrain() {
   return {
     content: new Map<string, unknown>([
       ['articles:tr', {
-        a1: { title: 'Creator Economy', category: 'business', publish_at: '2026-01-01' },
-        a2: { title: 'TikTok Rewards', category: 'social', publish_at: '2026-03-01' },
-        a3: { title: 'Startup Funding', category: 'business', publish_at: '2026-02-01' },
+        a1: { title: 'Creator Economy', category: 'business', publish_at: '2026-01-01', summary: '# Long body', tags: ['tech', 'business'] },
+        a2: { title: 'TikTok Rewards', category: 'social', publish_at: '2026-03-01', summary: '# Long body', tags: ['social'] },
+        a3: { title: 'Startup Funding', category: 'business', publish_at: '2026-02-01', summary: '# Long body', tags: ['business', 'funding'] },
       }],
     ]),
     meta: new Map<string, Record<string, unknown>>([
@@ -78,8 +89,13 @@ function articlesBrain() {
         a3: { status: 'published' },
       }],
     ]),
-    models: new Map([['articles', { id: 'articles', kind: 'collection' }]]),
+    models: new Map([['articles', { id: 'articles', kind: 'collection', fields: ARTICLES_FIELDS }]]),
   }
+}
+
+const GUIDES_FIELDS: Record<string, TestFieldDef> = {
+  title: { type: 'string' },
+  order: { type: 'number' },
 }
 
 /** A `tr`-locale guides document model: 2 slugs. */
@@ -97,7 +113,7 @@ function guidesBrain() {
         'advanced': { status: 'draft' },
       }],
     ]),
-    models: new Map([['guides', { id: 'guides', kind: 'document' }]]),
+    models: new Map([['guides', { id: 'guides', kind: 'document', fields: GUIDES_FIELDS }]]),
   }
 }
 
@@ -205,7 +221,7 @@ describe('brain_query listing: where / sort / fields (#287)', () => {
         a2: { title: 'No date' },
       }]]),
       meta: new Map(),
-      models: new Map([['articles', { id: 'articles', kind: 'collection' }]]),
+      models: new Map([['articles', { id: 'articles', kind: 'collection', fields: { title: { type: 'string' }, publish_at: { type: 'string' } } }]]),
     })
 
     for (const direction of ['asc', 'desc'] as const) {
@@ -249,6 +265,90 @@ describe('brain_query listing: where / sort / fields (#287)', () => {
       { id: 'a3', title: 'Startup Funding' },
       { id: 'a1', title: 'Creator Economy' },
     ])
+  })
+
+  it('matches a relations array field by containment, not identity (#287 review)', async () => {
+    stubBrain(articlesBrain())
+
+    // The tool's own documented example — "all articles in category X" — on
+    // a field whose stored value is an array. A bare `===` never matches an
+    // array against a scalar, which would have made the example return zero
+    // results for every `relations`-typed field.
+    const result = await query({ model: 'articles', locale: 'tr', where: { tags: 'business' } })
+
+    expect((result.data as Array<{ id: string }>).map(e => e.id).sort()).toEqual(['a1', 'a3'])
+  })
+
+  it('matches a polymorphic { model, ref } relation value by ref (#287 review)', async () => {
+    stubBrain({
+      content: new Map<string, unknown>([['articles:tr', {
+        a1: { title: 'Has author', author: { model: 'authors', ref: 'jane' } },
+        a2: { title: 'Different author', author: { model: 'authors', ref: 'joe' } },
+      }]]),
+      meta: new Map(),
+      models: new Map([['articles', { id: 'articles', kind: 'collection', fields: { title: { type: 'string' }, author: { type: 'relation' } } }]]),
+    })
+
+    const result = await query({ model: 'articles', locale: 'tr', where: { author: 'jane' } })
+
+    expect((result.data as Array<{ id: string }>).map(e => e.id)).toEqual(['a1'])
+  })
+
+  it('refuses an unknown field name in where, sort or fields, with the valid list', async () => {
+    stubBrain(articlesBrain())
+
+    for (const params of [
+      { where: { nope: 'x' } },
+      { sort: { field: 'nope' } },
+      { fields: ['nope'] },
+    ]) {
+      const result = await query({ model: 'articles', locale: 'tr', ...params })
+      expect((result as { error: string }).error).toContain('Unknown field')
+      expect((result as { error: string }).error).toContain('"nope"')
+      expect((result as { error: string }).error).toContain('title')
+    }
+  })
+})
+
+describe('brain_query listing: large text fields are left out by default (#287 review)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  it('omits markdown fields and a document body by default, and reports omittedFields', async () => {
+    stubBrain(articlesBrain())
+    const result = await query({ model: 'articles', locale: 'tr' })
+
+    expect(result.omittedFields).toEqual(['summary'])
+    for (const entry of result.data as Array<Record<string, unknown>>) {
+      expect(entry).not.toHaveProperty('summary')
+      expect(entry).toHaveProperty('title')
+    }
+
+    stubBrain(guidesBrain())
+    const guides = await query({ model: 'guides', locale: 'tr' })
+    expect(guides.omittedFields).toEqual(['body'])
+    for (const entry of guides.data as Array<Record<string, unknown>>) {
+      expect(entry).not.toHaveProperty('body')
+    }
+  })
+
+  it('returns the omitted field when named explicitly in fields', async () => {
+    stubBrain(articlesBrain())
+
+    const result = await query({ model: 'articles', locale: 'tr', fields: ['summary'] })
+
+    expect(result.omittedFields).toBeUndefined()
+    expect((result.data as Array<Record<string, unknown>>)[0]).toHaveProperty('summary')
+  })
+
+  it('does not omit anything for an entryId read — the single-entry path stays full', async () => {
+    stubBrain(articlesBrain())
+
+    const result = await query({ model: 'articles', locale: 'tr', entryId: 'a1' })
+
+    expect(result.data).toMatchObject({ summary: '# Long body' })
   })
 })
 
@@ -315,5 +415,23 @@ describe('brain_query listing: pagination replaces silent truncation (#287)', ()
     const result = await query({ model: 'articles', locale: 'tr', limit: 5 })
 
     expect(Object.keys(result.meta as Record<string, unknown>).length).toBeLessThanOrEqual(5)
+  })
+
+  it('falls back to default offset/limit for a non-finite value instead of propagating NaN', async () => {
+    stubBrain(bigCollection(10))
+
+    // Number.isFinite(NaN) is false — a garbage offset must not make it
+    // through Math.max/Math.trunc into the slice bounds. Before the fix
+    // this silently returned an empty page with `truncated: false`,
+    // indistinguishable from "nothing more to read".
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = await query({ model: 'articles', locale: 'tr', offset: bad })
+      expect(result.offset).toBe(0)
+      expect(result.returned).toBe(10)
+      expect(result.truncated).toBe(false)
+    }
+
+    const badLimit = await query({ model: 'articles', locale: 'tr', limit: Number.NaN })
+    expect(badLimit.returned).toBe(10)
   })
 })

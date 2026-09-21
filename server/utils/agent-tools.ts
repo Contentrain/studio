@@ -259,14 +259,14 @@ Provide initial models with full field definitions using Contentrain's 27 type s
 
 Publish status comes back in the \`meta\` block: \`meta[entryId].status\` for collections and documents, \`meta.status\` for singletons and dictionaries. Passing \`entryId\` (an id for a collection, a slug for a document) narrows \`meta\` to that one entry — this is the cheapest way to answer "is this entry draft or published?". \`entryId\` does not apply to singletons or dictionaries — there is only the one record, returned in \`data\` either way.
 
-Without \`entryId\`, a collection or document model comes back as a PAGE, not everything at once: \`data\` is an array of entries, alongside \`total\` (how many matched), \`returned\` (this page's size), \`offset\`, and \`truncated\` (true when more pages remain — raise \`offset\` by \`returned\` to get the rest). Narrow with \`where\`/\`sort\`/\`fields\` rather than paging through everything: "all articles in category X" is \`where: { category: "x" }\`; "the latest 10 articles" is \`sort: { field: "publish_at", direction: "desc" }, limit: 10\`.`,
+Without \`entryId\`, a collection or document model comes back as a PAGE, not everything at once: \`data\` is an array of entries, alongside \`total\` (how many matched), \`returned\` (this page's size), \`offset\`, and \`truncated\` (true when more pages remain — raise \`offset\` by \`returned\` to get the rest). Without \`fields\`, markdown/richtext fields and a document's \`body\` are left out of the page by default (listed in \`omittedFields\`) — ask for them by name in \`fields\`, or use \`entryId\` for one entry's full content. Narrow with \`where\`/\`sort\`/\`fields\` rather than paging through everything: "all articles in category X" is \`where: { category: "x" }\` (matches a \`relations\` array too, by containing "x"); "the latest 10 articles" is \`sort: { field: "publish_at", direction: "desc" }, limit: 10\`. A field name not on the model (in \`where\`, \`sort\`, or \`fields\`) is refused with the valid list, rather than silently matching nothing.`,
     inputSchema: {
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
         locale: { type: 'string', description: 'Locale code (default: context locale)' },
         entryId: { type: 'string', description: 'Specific entry id (collection) or slug (document). Not applicable to singletons/dictionaries.' },
-        where: { type: 'object', description: 'Equality filter, field name -> exact value. Only entries matching every given field are returned. No operators — exact match only.' },
+        where: { type: 'object', description: 'Equality filter, field name -> exact value. Only entries matching every given field are returned. No operators — exact match only. Against a `relations` field, matches if the value is in the array; against a relation field storing a polymorphic { model, ref }, matches the ref.' },
         sort: {
           type: 'object',
           description: 'Order results by one field.',
@@ -275,7 +275,7 @@ Without \`entryId\`, a collection or document model comes back as a PAGE, not ev
             direction: { type: 'string', enum: ['asc', 'desc'], description: 'Default: asc' },
           },
         },
-        fields: { type: 'array', items: { type: 'string' }, description: 'Only return these fields per entry (plus the id/slug). Omit to get every field — use this to keep a wide model\'s page small.' },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Only return these fields per entry (plus the id/slug) — overrides the default omission of large text fields. Omit to get every field except markdown/richtext/body (see omittedFields on the result).' },
         limit: { type: 'number', description: 'Entries per page (default 20, max 100). Ignored with entryId.' },
         offset: { type: 'number', description: 'Entries to skip, for the next page (default 0). Ignored with entryId.' },
       },
