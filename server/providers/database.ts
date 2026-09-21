@@ -975,6 +975,16 @@ export interface DatabaseProvider {
   /** Mark an outbox row ingested (error=null) or record a failed attempt. */
   markUsageEventIngested: (id: string, error?: string | null) => Promise<void>
 
+  /**
+   * Retire an outbox row that will never be delivered, keeping `reason`
+   * for forensics. Distinct from `markUsageEventIngested(id, error)`,
+   * which records a *retryable* attempt and deliberately leaves
+   * `ingested_at` null — a give-up path must set it, or the row stays
+   * pending forever and, since the queue is ordered oldest-first, keeps
+   * displacing deliverable events.
+   */
+  markUsageEventDropped: (id: string, reason: string) => Promise<void>
+
   // ═══════════════════════════════════════════════════
   // AUDIT LOGS
   // ═══════════════════════════════════════════════════
