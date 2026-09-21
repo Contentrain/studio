@@ -12,6 +12,8 @@ export interface UsageCategory {
   current: number
   limit: number
   overageEnabled: boolean
+  /** False → hard cap; extra usage is not sold for this category. */
+  overageSellable?: boolean
   overageUnits: number
   overageUnitPrice: number
   overageAmount: number

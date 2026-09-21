@@ -50,6 +50,24 @@ const activeAssets = computed(() => (route.query as Record<string, string | unde
 const activeHealth = computed(() => (route.query as Record<string, string | undefined>).health === 'true')
 const activeReceipts = computed(() => (route.query as Record<string, string | undefined>).receipts === 'true')
 const activeLocale = ref('en')
+// Whether `activeLocale` is real — the project's default, or a locale the user
+// picked — rather than the `en` it starts as. Until then the agent is told no
+// locale, so its writes resolve the project default server-side instead of
+// landing in `en` on a `tr` project (#281).
+const localeKnown = ref(false)
+
+function applyProjectDefaultLocale(): void {
+  const config = snapshot.value?.config as { locales?: { default?: string } } | null
+  const projectDefault = config?.locales?.default
+  activeLocale.value = projectDefault ?? 'en'
+  localeKnown.value = Boolean(projectDefault)
+}
+
+// The content brain can become ready after the project watcher ran; apply the
+// real default then, instead of staying on the placeholder for the session.
+watch(() => (snapshot.value?.config as { locales?: { default?: string } } | null)?.locales?.default, (projectDefault) => {
+  if (projectDefault && !localeKnown.value) applyProjectDefaultLocale()
+})
 
 // Persist current path — only after confirming project/workspace exist
 watch(() => route.fullPath, (path) => {
@@ -95,8 +113,7 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
   await fetchSnapshot(ws.id, newProjectId)
 
   // Set default locale from config
-  const config = snapshot.value?.config as { locales?: { default?: string } } | null
-  activeLocale.value = config?.locales?.default ?? 'en'
+  applyProjectDefaultLocale()
 
   if (activeBranch.value) {
     await fetchBranchReview(ws.id, newProjectId, activeBranch.value)
@@ -171,7 +188,7 @@ function backToOverview() {
 // Chat UI context — tells the agent what the user is looking at
 const chatContext = computed(() => ({
   activeModelId: activeModelId.value,
-  activeLocale: activeLocale.value,
+  activeLocale: localeKnown.value ? activeLocale.value : null,
   activeEntryId: null as string | null,
   panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeCDN.value ? 'overview' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch' | 'vocabulary',
   activeBranch: activeBranch.value,
@@ -477,6 +494,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             :workspace-id="activeWorkspace?.id"
             :project-id="projectId"
             editable
+            @update:locale="localeKnown = true"
             @select-model="selectModel"
             @back="backToOverview"
             @send-chat-prompt="chatPanelRef?.handleSend($event)"

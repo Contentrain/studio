@@ -36,6 +36,19 @@ export interface UsageMeterDefinition {
    * expensive — it sets both the included allowance and the unit price.
    */
   readonly unitsPerLimitUnit: number
+  /**
+   * Whether usage past the plan limit may be sold.
+   *
+   * False means the limit is hard: no metered price, no included
+   * allowance, and the app refuses to raise the cap even if the workspace
+   * has the overage toggle on. The two byte meters are false because they
+   * cannot carry an allowance — Polar caps a meter credit at int32 and a
+   * gigabyte in bytes exceeds it — and billing overage against an
+   * allowance that cannot be expressed would charge from the first byte.
+   * Events still flow, so the usage is measured and shown; it just is not
+   * sold until the meter counts the unit the plan sells.
+   */
+  readonly overageBillable: boolean
 }
 
 export const USAGE_METERS = {
@@ -53,6 +66,7 @@ export const USAGE_METERS = {
     unitLabel: 'credit',
     aggregation: 'sum',
     unitsPerLimitUnit: 1,
+    overageBillable: true,
   },
   API_MESSAGES: {
     name: 'api_credits',
@@ -61,6 +75,7 @@ export const USAGE_METERS = {
     unitLabel: 'credit',
     aggregation: 'sum',
     unitsPerLimitUnit: 1,
+    overageBillable: true,
   },
   MCP_CALLS: {
     name: 'mcp_calls',
@@ -70,6 +85,7 @@ export const USAGE_METERS = {
     // Every MCP event carries value 1, so counting and summing agree.
     aggregation: 'count',
     unitsPerLimitUnit: 1,
+    overageBillable: true,
   },
   CDN_BANDWIDTH_BYTES: {
     name: 'cdn_bandwidth_bytes',
@@ -78,6 +94,7 @@ export const USAGE_METERS = {
     unitLabel: 'byte',
     aggregation: 'sum',
     unitsPerLimitUnit: 1024 ** 3,
+    overageBillable: false,
   },
   FORM_SUBMISSIONS: {
     name: 'form_submissions',
@@ -86,6 +103,7 @@ export const USAGE_METERS = {
     unitLabel: 'submission',
     aggregation: 'count',
     unitsPerLimitUnit: 1,
+    overageBillable: true,
   },
   MEDIA_STORAGE_BYTE_HOURS: {
     name: 'media_storage_byte_hours',
@@ -94,6 +112,7 @@ export const USAGE_METERS = {
     unitLabel: 'byte·hour',
     aggregation: 'sum',
     unitsPerLimitUnit: 1024 ** 3,
+    overageBillable: false,
   },
 } as const satisfies Record<string, UsageMeterDefinition>
 

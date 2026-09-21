@@ -7,7 +7,7 @@
  */
 
 import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../../shared/utils/license'
-import { calculateOverageUnits } from '../../../../server/utils/overage'
+import { calculateOverageUnits, isOverageSellable } from '../../../../server/utils/overage'
 import { resolveUsagePeriod } from '../../../../server/utils/usage-period'
 
 interface UsageCategory {
@@ -17,6 +17,8 @@ interface UsageCategory {
   current: number
   limit: number
   overageEnabled: boolean
+  /** False when usage past the limit is not sold at all — a hard cap. */
+  overageSellable: boolean
   overageUnits: number
   overageUnitPrice: number
   overageAmount: number
@@ -96,9 +98,12 @@ export default defineEventHandler(async (event) => {
   for (const m of metricsConfig) {
     const planLimit = getPlanLimitForPlan(plan, m.limitKey)
     const pricing = OVERAGE_PRICING[m.limitKey]
-    const overageEnabled = pricing ? (overageSettings[pricing.settingsKey] === true) : false
-    const overageUnits = calculateOverageUnits(m.current, planLimit)
-    const overageUnitPrice = pricing?.price ?? 0
+    // A limit that is not sellable is a hard cap: the toggle is ignored
+    // and no amount is quoted, whatever `overage_settings` still holds.
+    const sellable = isOverageSellable(m.limitKey)
+    const overageEnabled = sellable && pricing ? (overageSettings[pricing.settingsKey] === true) : false
+    const overageUnits = sellable ? calculateOverageUnits(m.current, planLimit) : 0
+    const overageUnitPrice = sellable ? pricing?.price ?? 0 : 0
     const overageAmount = overageUnits * overageUnitPrice
 
     categories.push({
@@ -108,6 +113,7 @@ export default defineEventHandler(async (event) => {
       current: Math.round(m.current * 100) / 100,
       limit: planLimit === Infinity ? -1 : planLimit, // -1 signals unlimited to the client
       overageEnabled,
+      overageSellable: sellable,
       overageUnits: Math.round(overageUnits * 100) / 100,
       overageUnitPrice,
       overageAmount: Math.round(overageAmount * 100) / 100,

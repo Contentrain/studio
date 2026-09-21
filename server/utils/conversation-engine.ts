@@ -1,4 +1,5 @@
 import { clearBranchRequestSafe } from './branch-requests'
+import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
 import { decideMerge, savedEntryIds, writeSignals } from './approval-gate'
 import { getBrainCache } from './brain-cache'
@@ -9,6 +10,8 @@ import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
+import type { LocatedValidationError } from './validation-format'
+import { formatValidationError, formatValidationErrors } from './validation-format'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -508,6 +511,20 @@ async function mergeForTool(
 }
 
 /**
+ * A low-cardinality cause code for Sentry tags — not the raw message. A
+ * `result.error` string is almost always formatted "Label: detail" (the
+ * detail can echo a field value or an id), so keeping only the label
+ * bounds what travels; a flat `errorClass: 'tool_result_error'` gave every
+ * cause the same bucket, defeating the per-tool-error-rate dashboard #294
+ * asked for. The length cap is a second bound for the rare message with no
+ * colon at all.
+ */
+function errorResultClass(message: string): string {
+  const label = message.split(':')[0]?.trim()
+  return label ? label.slice(0, 60) : 'tool_result_error'
+}
+
+/**
  * Execute tool with workflow-aware auto-merge and affected resources.
  */
 export async function executeToolWithAutoMerge(
@@ -553,6 +570,17 @@ export async function executeToolWithAutoMerge(
     })
   }
 
+  // The locale a call acts on when the agent names none: the one the user is
+  // looking at, else the project's default. Never a hard-coded `en` — on a
+  // `tr`-default project reads resolved to `tr` while save/delete/status wrote
+  // to `en`, so edits landed in the wrong language and deletes missed (#281).
+  const resolveLocale = async (): Promise<string> => {
+    if (typeof params.locale === 'string' && params.locale) return params.locale
+    if (uiContext.activeLocale) return uiContext.activeLocale
+    const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+    return (brain.config as { locales?: { default?: string } } | null)?.locales?.default ?? 'en'
+  }
+
   // Execution-time authorization backstop. chat.post.ts already filters
   // the tool list handed to the model, but a hallucinated/forged tool
   // name — or any future caller that reuses this engine without
@@ -583,7 +611,7 @@ export async function executeToolWithAutoMerge(
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
-        const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
@@ -611,7 +639,7 @@ export async function executeToolWithAutoMerge(
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
-        const locale = (params.locale as string) ?? 'en'
+        const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
@@ -649,7 +677,7 @@ export async function executeToolWithAutoMerge(
           }
         }
 
-        let writeResult: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean }
+        let writeResult: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean }
 
         // Scheduling rides beside `data`, never inside it (meta only, status
         // untouched). The engine validates the dates and lifts any the agent
@@ -680,14 +708,14 @@ export async function executeToolWithAutoMerge(
         // error the agent must fix before retrying. (Mirrors the
         // copy_locale validation guard below.)
         if (!writeResult.validation.valid) {
-          result = { error: `${errorMessage('content.validation_failed')}: ${writeResult.validation.errors.map(e => e.message).join('; ')}` }
+          result = { error: `${errorMessage('content.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors)}` }
           break
         }
 
         // A no-op save touched nothing — don't dirty the brain cache or
         // report a pending merge for a state that is already live.
         if (writeResult.unchanged) {
-          result = { ...summarizeWriteResult(writeResult), merged: true, workflow }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: true, workflow }
           break
         }
 
@@ -700,13 +728,13 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params) }, commitSha: writeResult.commit?.sha })
         if (gate.allowed && writeResult.branch) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, workflow }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: mergeResult.merged, workflow }
         }
         else if (writeResult.branch) {
-          result = { ...summarizeWriteResult(writeResult), merged: false, workflow, reviewBranch: writeResult.branch, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, workflow, reviewBranch: writeResult.branch, ...gate.review }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, workflow }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, workflow }
         }
 
         // Emit webhook event (fire-and-forget)
@@ -724,7 +752,7 @@ export async function executeToolWithAutoMerge(
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
-        const locale = (params.locale as string) ?? 'en'
+        const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
@@ -733,7 +761,7 @@ export async function executeToolWithAutoMerge(
         // A refused delete (bad slug, nothing matched) has no branch to merge —
         // report the validation errors and stop, like save_content does.
         if (!writeResult.branch) {
-          result = { ...summarizeWriteResult(writeResult), merged: false }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false }
           break
         }
         affected.models.push(modelId)
@@ -744,10 +772,10 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: mergeResult.merged }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review }
         }
 
         // Emit webhook event (fire-and-forget)
@@ -777,7 +805,7 @@ export async function executeToolWithAutoMerge(
         // partial success.
         if (!writeResult.validation.valid) {
           result = {
-            error: `${errorMessage('content.validation_failed')}: ${writeResult.validation.errors.map(e => e.message).join('; ')}`,
+            error: `${errorMessage('content.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors)}`,
             ...(writeResult.breakingChanges ? { breakingChanges: writeResult.breakingChanges } : {}),
           }
           break
@@ -1075,7 +1103,7 @@ export async function executeToolWithAutoMerge(
           copyModelId, fromLocale, toLocale, userEmail,
         )
         if (!writeResult.validation.valid) {
-          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
           break
         }
         affected.models.push(params.model as string)
@@ -1272,7 +1300,7 @@ export async function executeToolWithAutoMerge(
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
-        const locale = (params.locale as string) ?? 'en'
+        const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
@@ -1289,7 +1317,7 @@ export async function executeToolWithAutoMerge(
         }
         const writeResult = await engine.updateEntryStatus(modelId, locale, entryIds, status, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
           break
         }
         // `statusChanges` is the honest record of what this call did:
@@ -1299,7 +1327,7 @@ export async function executeToolWithAutoMerge(
         const statusChanges = writeResult.statusChanges
         if (writeResult.unchanged) {
           // Nothing was written — no branch, no merge, no cache to drop.
-          result = { ...summarizeWriteResult(writeResult), merged: false, statusChanges }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, statusChanges }
           break
         }
         affected.models.push(modelId)
@@ -1309,10 +1337,10 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: entryIds }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, statusChanges }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: mergeResult.merged, statusChanges }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, statusChanges, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, statusChanges, ...gate.review }
         }
         break
       }
@@ -1380,7 +1408,7 @@ export async function executeToolWithAutoMerge(
           break
         }
         const brainData = await getOrBuildBrainCache(git, contentRoot, projectId)
-        const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        const locale = await resolveLocale()
         const entryRef = params.entryId as string
         const direction = (params.direction as string) === 'reverse' ? 'reverse' : 'forward'
         const expDefaultLocale = (brainData.config as { locales?: { default?: string } } | null)?.locales?.default ?? 'en'
@@ -1419,7 +1447,7 @@ export async function executeToolWithAutoMerge(
         }
         const writeResult = await engine.saveVocabulary(terms as Record<string, Record<string, string>>, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
           break
         }
         affected.snapshotChanged = true
@@ -1444,7 +1472,7 @@ export async function executeToolWithAutoMerge(
         }
         const writeResult = await engine.addLocale(newLocale, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
           break
         }
         affected.snapshotChanged = true
@@ -1496,7 +1524,7 @@ export async function executeToolWithAutoMerge(
 
         const writeResult = await engine.deleteModel(modelId, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: writeResult.validation.errors.map(e => e.message).join(', ') }
+          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
           break
         }
         affected.models.push(modelId)
@@ -1521,7 +1549,7 @@ export async function executeToolWithAutoMerge(
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
           break
         }
-        const locale = (params.locale as string) ?? uiContext.activeLocale ?? 'en'
+        const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
@@ -1612,10 +1640,28 @@ export async function executeToolWithAutoMerge(
       invalidateBrainCache(projectId)
     }
 
+    if (result && typeof result === 'object' && 'error' in result) {
+      const message = String((result as { error: unknown }).error)
+      reportAgentToolError(message, {
+        tool: name,
+        projectId,
+        workspaceId,
+        modelId: params.model as string | undefined,
+        errorClass: errorResultClass(message),
+      })
+    }
+
     return { result, affected }
   }
   catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Tool execution failed'
+    reportAgentToolError(msg, {
+      tool: name,
+      projectId,
+      workspaceId,
+      modelId: params.model as string | undefined,
+      errorClass: e instanceof Error ? e.constructor.name : 'UnknownError',
+    })
     return { result: { error: msg }, affected }
   }
 }
@@ -1642,13 +1688,22 @@ function statusOf(meta: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
 
-function summarizeWriteResult(result: { branch: string, commit: { sha: string }, diff: unknown[], validation: { valid: boolean, errors: Array<{ message: string }> }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] } }): Record<string, unknown> {
+function summarizeWriteResult(
+  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] } },
+  // The locale the write targeted. Echoed so the agent can see — and report —
+  // which language it changed; before, it was only inside the branch name (#284).
+  locale?: string,
+): Record<string, unknown> {
   return {
     branch: result.branch,
     commitSha: result.commit.sha,
+    ...(locale ? { locale } : {}),
     filesChanged: result.diff.length,
+    // The paths, not just a count: a document delete removes every locale's
+    // file, a collection write touches one locale — the paths say which.
+    files: result.diff.map(d => d.path),
     valid: result.validation.valid,
-    errors: result.validation.errors.map(e => e.message),
+    errors: result.validation.errors.map(e => formatValidationError(e)),
     // Media and relation values carry no language, so the engine wrote them
     // to the model's other locales too; the agent should say so rather than
     // offer to "do the same for tr".

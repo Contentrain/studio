@@ -6,6 +6,7 @@
  */
 
 import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../../shared/utils/license'
+import { isOverageSellable } from '../../../../server/utils/overage'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -39,7 +40,9 @@ export default defineEventHandler(async (event) => {
     unit: pricing.unit,
     unitPrice: pricing.price,
     planLimit: getPlanLimitForPlan(plan, limitKey),
-    enabled: overageSettings[pricing.settingsKey] === true,
+    enabled: isOverageSellable(limitKey) && overageSettings[pricing.settingsKey] === true,
+    /** False → hard cap; the client hides or disables the toggle. */
+    sellable: isOverageSellable(limitKey),
   }))
 
   return {

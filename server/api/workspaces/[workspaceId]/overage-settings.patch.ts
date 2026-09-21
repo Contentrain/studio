@@ -8,7 +8,13 @@
  *         form_submissions?: boolean, media_storage?: boolean }
  */
 
-import { OVERAGE_SETTINGS_KEYS } from '../../../../shared/utils/license'
+import { OVERAGE_SETTINGS_KEYS, OVERAGE_PRICING } from '../../../../shared/utils/license'
+import { isOverageSellable } from '../../../../server/utils/overage'
+
+/** settingsKey → limitKey, so a toggle can be checked against its limit. */
+const LIMIT_KEY_BY_SETTINGS_KEY: Record<string, string> = Object.fromEntries(
+  Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => [pricing.settingsKey, limitKey]),
+)
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -50,6 +56,11 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, message: errorMessage('validation.invalid_field', { field: key }) })
     if (typeof value !== 'boolean')
       throw createError({ statusCode: 400, message: errorMessage('validation.invalid_field', { field: key }) })
+    // Refuse to record a `true` the billing side cannot honour. Storing it
+    // would show the customer an overage they are not actually being sold.
+    const limitKey = LIMIT_KEY_BY_SETTINGS_KEY[key]
+    if (value && limitKey && !isOverageSellable(limitKey))
+      throw createError({ statusCode: 409, message: errorMessage('billing.overage_not_available') })
     validUpdates[key] = value
   }
 
