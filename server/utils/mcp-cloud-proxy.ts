@@ -47,6 +47,28 @@ export const STUDIO_HEADERS = [
 ] as const
 
 /**
+ * Request headers that describe the client's framing rather than the
+ * payload, and so must not ride along to the loopback.
+ *
+ * The body is consumed here (`readRawBody`) and handed to `fetch` as a
+ * fresh string; `fetch` computes its own framing. A forwarded
+ * `content-length` is therefore a header the caller set for a request
+ * that no longer exists — and undici refuses it outright with
+ * `UND_ERR_INVALID_ARG`, whether or not the number happens to be right.
+ * Every request with a body died at the hop, which is every `tools/call`
+ * and every `initialize` (issue #279).
+ *
+ * `getProxyRequestHeaders` ignores eight headers: the framing ones
+ * (`transfer-encoding`, `connection`, `keep-alive`, `upgrade`, `expect`,
+ * `host`) plus `accept` and `accept-encoding`, which are content
+ * negotiation and are re-injected below. Of the framing class it keeps
+ * `content-length` alone, which is why this list has one entry and not
+ * six. The response side of this file has carried the same rule since it
+ * was written — see `HOP_BY_HOP_HEADERS`.
+ */
+const REQUEST_FRAMING_HEADERS = ['content-length'] as const
+
+/**
  * Best-effort extraction of `tools/call` tool names from a JSON-RPC
  * request body. Handles legacy batch arrays defensively even though the
  * current MCP spec sends one message per POST.
@@ -233,6 +255,15 @@ export async function runMcpCloudProxy(
   const reqHeaders = event.node.req.headers as Record<string, string | string[] | undefined>
   for (const name of STUDIO_HEADERS) {
     reqHeaders[name] = undefined
+  }
+  // Dropped here rather than at either call site: both the streaming and
+  // the buffered branch build their headers from this object, so one
+  // removal covers both and cannot drift apart later.
+  // Removed, not set to `undefined`: h3 copies keys, not values, so an
+  // `undefined` entry still reaches `fetch`, where it stringifies to the
+  // literal "undefined" — a worse header than the one we started with.
+  for (const name of REQUEST_FRAMING_HEADERS) {
+    Reflect.deleteProperty(reqHeaders, name)
   }
 
   const target = slug.length > 0 ? `${mcpUrl}/${slug}` : mcpUrl

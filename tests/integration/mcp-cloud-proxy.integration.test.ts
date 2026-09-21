@@ -46,7 +46,28 @@ vi.mock('h3', async () => {
     proxyRequest: state.proxyRequest,
     setResponseHeader: state.setResponseHeader,
     setResponseStatus: state.setResponseStatus,
-    getProxyRequestHeaders: () => ({}),
+    // Faithful to h3, not an empty stub. The real helper copies the
+    // request headers through minus its own ignore set — which is how a
+    // client's `content-length` reached undici and killed every request
+    // with a body (#279). Stubbing this to `{}` is precisely what let
+    // that ship, so the fake carries h3's actual ignore list.
+    getProxyRequestHeaders: (event: { node: { req: { headers: Record<string, string | undefined> } } }) => {
+      const ignored = new Set([
+        'transfer-encoding',
+        'accept-encoding',
+        'connection',
+        'keep-alive',
+        'upgrade',
+        'expect',
+        'host',
+        'accept',
+      ])
+      const out: Record<string, string | undefined> = {}
+      for (const [name, value] of Object.entries(event.node.req.headers)) {
+        if (!ignored.has(name)) out[name] = value
+      }
+      return out
+    },
   }
 })
 
@@ -180,6 +201,44 @@ describe('MCP Cloud proxy gating', () => {
         headers: expect.objectContaining({ accept: 'application/json, text/event-stream' }),
       }),
     )
+  })
+
+  it('does not forward the client content-length on a write (undici rejects one outright)', async () => {
+    // The body is re-read here and re-sent by `fetch`, which frames it
+    // itself. undici refuses a manually supplied `content-length` with
+    // UND_ERR_INVALID_ARG whether or not the number is correct, so
+    // forwarding one failed every bodied request — every tools/call and
+    // every initialize — with an opaque 502 (#279).
+    const handler = await loadHandler()
+    const body = toolCallBody('contentrain_content_save')
+    const event = makeEvent({
+      __body: body,
+      node: { req: { headers: { 'content-length': String(body.length), 'content-type': 'application/json' } } },
+    })
+
+    await handler(event as never)
+
+    const [, init] = state.upstreamFetch.mock.calls.at(-1)!
+    expect(Object.keys(init.headers)).not.toContain('content-length')
+    // The payload headers still ride along — this strips framing, not content.
+    expect(init.headers).toMatchObject({ 'content-type': 'application/json' })
+  })
+
+  it('does not leave a content-length for the streaming branch to pick up', async () => {
+    // The streamed hop builds its headers inside h3's own `proxyRequest`,
+    // which reads `node.req.headers` directly. Removing the header at the
+    // source is what covers both branches with one deletion.
+    const handler = await loadHandler()
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} })
+    const event = makeEvent({
+      __body: body,
+      node: { req: { headers: { 'content-length': String(body.length) } } },
+    })
+
+    await handler(event as never)
+
+    expect(state.proxyRequest).toHaveBeenCalled()
+    expect(event.node.req.headers).not.toHaveProperty('content-length')
   })
 
   it('injects a streamable-HTTP-compatible Accept when the client sends none', async () => {
