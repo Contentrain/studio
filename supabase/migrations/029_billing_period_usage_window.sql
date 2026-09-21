@@ -28,13 +28,29 @@ ALTER TABLE public.payment_accounts
 COMMENT ON COLUMN public.payment_accounts.current_period_start IS
   'Start of the provider billing period. Keys the usage quota window; see server/utils/usage-period.ts.';
 
--- Backfill from the end boundary. `interval '1 month'` clamps the day to
--- the target month (2026-03-31 - 1 month = 2026-02-28), which is the
--- same rule `addMonthsClamped` applies in application code.
+-- Backfill from the end boundary, but only where that derivation can be
+-- trusted. `interval '1 month'` clamps the day to the target month
+-- (2026-03-31 - 1 month = 2026-02-28), the same rule `addMonthsClamped`
+-- applies in application code — but a month is only the right interval
+-- for a monthly subscription that is mid-cycle. Two cases break it, and
+-- production has one of each:
+--
+--   * A trial. Polar reports `current_period_end` as the trial end, and
+--     the trial is 14 days, so subtracting a month lands before the
+--     subscription existed. `created_at` is the real floor.
+--   * An annual subscription. Subtracting a month from an end date a year
+--     out lands in the future, describing a window that has not opened.
+--
+-- So: clamp to `created_at`, and only write a value when the result
+-- actually contains `now()`. Anything else is left NULL, which reads as
+-- the calendar month until the provider sends the real start on its next
+-- webhook — a correct fallback beats a confidently wrong date.
 UPDATE public.payment_accounts
-SET current_period_start = current_period_end - interval '1 month'
+SET current_period_start = GREATEST(current_period_end - interval '1 month', created_at)
 WHERE current_period_start IS NULL
-  AND current_period_end IS NOT NULL;
+  AND current_period_end IS NOT NULL
+  AND current_period_end > now()
+  AND GREATEST(current_period_end - interval '1 month', created_at) <= now();
 
 -- Seed the new window from what the calendar month has already counted,
 -- for accounts whose period is open right now.
