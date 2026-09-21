@@ -171,7 +171,9 @@ function backToOverview() {
 // Chat UI context — tells the agent what the user is looking at
 const chatContext = computed(() => ({
   activeModelId: activeModelId.value,
-  activeLocale: activeLocale.value,
+  // `activeLocale` starts as a placeholder `en` until the snapshot's config
+  // sets the project default; don't let the agent write into that placeholder.
+  activeLocale: snapshot.value ? activeLocale.value : null,
   activeEntryId: null as string | null,
   panelState: (activeBranch.value ? 'branch' : activeVocabulary.value ? 'vocabulary' : activeCDN.value ? 'overview' : activeModelId.value ? 'model' : 'overview') as 'overview' | 'model' | 'branch' | 'vocabulary',
   activeBranch: activeBranch.value,

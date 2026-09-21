@@ -494,14 +494,14 @@ function buildRelationGraph(models: ModelDefinition[]): string | null {
 function buildContextSection(
   uiContext: ChatUIContext,
   models: ModelDefinition[],
-  _config: ContentrainConfig | null,
+  config: ContentrainConfig | null,
 ): string {
   const lines: string[] = ['## UI Context']
 
   if (uiContext.activeModelId) {
     const model = models.find(m => m.id === uiContext.activeModelId)
     if (model) {
-      lines.push(agentPrompt('context.viewing_model', { name: model.name, kind: model.kind, locale: uiContext.activeLocale }))
+      lines.push(agentPrompt('context.viewing_model', { name: model.name, kind: model.kind, locale: uiContext.activeLocale ?? config?.locales?.default ?? '' }))
       if (uiContext.activeEntryId) {
         lines.push(agentPrompt('context.selected_entry', { entryId: uiContext.activeEntryId }))
       }

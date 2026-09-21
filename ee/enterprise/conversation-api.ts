@@ -76,7 +76,7 @@ interface ConversationApiContext {
 function parseConversationContext(context: Partial<ChatUIContext> | undefined): ChatUIContext {
   return {
     activeModelId: context?.activeModelId ?? null,
-    activeLocale: context?.activeLocale ?? 'en',
+    activeLocale: context?.activeLocale ?? null,
     activeEntryId: context?.activeEntryId ?? null,
     panelState: context?.panelState ?? 'overview',
     activeBranch: context?.activeBranch ?? null,

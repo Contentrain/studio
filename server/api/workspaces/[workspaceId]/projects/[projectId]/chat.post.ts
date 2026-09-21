@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   // Default context if not provided (backward compat)
   const uiContext = body.context ?? {
     activeModelId: null,
-    activeLocale: 'en',
+    activeLocale: null,
     activeEntryId: null,
     panelState: 'overview' as const,
     activeBranch: null,

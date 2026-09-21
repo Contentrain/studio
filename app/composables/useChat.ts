@@ -100,7 +100,7 @@ export function hasVisibleContent(msg: MessageView): boolean {
 /** UI context sent with each message */
 export interface ChatUIContext {
   activeModelId: string | null
-  activeLocale: string
+  activeLocale: string | null
   activeEntryId: string | null
   panelState: 'overview' | 'model' | 'branch' | 'vocabulary'
   activeBranch: string | null
@@ -466,7 +466,7 @@ export function useChat(options?: {
             model: selectedModel.value,
             context: context ?? {
               activeModelId: null,
-              activeLocale: 'en',
+              activeLocale: null,
               activeEntryId: null,
               panelState: 'overview',
               activeBranch: null,
