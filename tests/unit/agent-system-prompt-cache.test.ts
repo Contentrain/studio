@@ -136,6 +136,37 @@ describe('buildSystemPromptBlocks — static/dynamic separation', () => {
     expect(blocks.static).toContain('## Rules')
   })
 
+  it('includes the #290 prompt-behavior rules in the cached static body', () => {
+    const ui: ChatUIContext = {
+      activeModelId: null,
+      activeLocale: 'en',
+      activeEntryId: null,
+      panelState: 'overview',
+      activeBranch: null,
+    }
+    const blocks = buildSystemPromptBlocks(baseConfig, baseModels, basePermissions, baseState, ui, baseIntent, null)
+    expect(blocks.static).toContain(agentPrompt('rules.verbatim_text'))
+    expect(blocks.static).toContain(agentPrompt('rules.no_invented_dates'))
+    expect(blocks.static).toContain(agentPrompt('rules.no_ask_and_act'))
+    expect(blocks.static).toContain(agentPrompt('rules.no_needless_confirmation'))
+    expect(blocks.static).toContain(agentPrompt('rules.check_before_blaming_cache'))
+    expect(blocks.static).toContain(agentPrompt('rules.professional_tone'))
+    expect(blocks.static).toContain(agentPrompt('rules.check_near_duplicate'))
+  })
+
+  it('puts the current server time in the dynamic body, not the cached static body (#290)', () => {
+    const ui: ChatUIContext = {
+      activeModelId: null,
+      activeLocale: 'en',
+      activeEntryId: null,
+      panelState: 'overview',
+      activeBranch: null,
+    }
+    const blocks = buildSystemPromptBlocks(baseConfig, baseModels, basePermissions, baseState, ui, baseIntent, null)
+    expect(blocks.dynamic).toMatch(/Current server time: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \(UTC\)/)
+    expect(blocks.static).not.toContain('Current server time')
+  })
+
   it('returns contentIndex separately and is preserved when non-empty', () => {
     const ui: ChatUIContext = {
       activeModelId: null,

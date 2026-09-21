@@ -49,4 +49,23 @@ describe('agent context classification', () => {
       },
     })
   })
+
+  it('classifies Turkish status/publish verbs as content operations, not queries (regression for #291)', () => {
+    const cases = ['yayınla', 'yayından kaldır', 'taslağa al', 'draft hale getir', 'arşivle']
+    for (const message of cases) {
+      expect(classifyIntent(message, uiContext, 'active')).toMatchObject({
+        category: 'content_operation',
+        confidence: 'high',
+      })
+    }
+  })
+
+  it('does not match a short keyword embedded inside an unrelated Turkish word (regression for #291)', () => {
+    // "hale" contains the substring "al" — a `query` keyword — but is not
+    // the word "al". Before the word-boundary fix, `lower.includes('al')`
+    // matched here and misclassified "draft hale getir" as a read.
+    const noModelContext = { ...uiContext, activeModelId: null }
+    const result = classifyIntent('Böyle bir hale geldi işte açıklayayım sana', noModelContext, 'active')
+    expect(result.category).not.toBe('query')
+  })
 })

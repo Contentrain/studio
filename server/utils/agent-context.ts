@@ -7,6 +7,23 @@ import type { ChatUIContext, ClassifiedIntent, IntentCategory, ProjectPhase } fr
  * to keep all prompt logic in one file.
  */
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Whether `phrase` occurs in `text` as a standalone word/phrase — not as a
+ * substring of a longer word. A plain `.includes()` matched short keywords
+ * like `al` or `ne` inside unrelated Turkish words (`hale` contains `al`),
+ * misclassifying "draft hale getir" as a query. `\b` doesn't help here:
+ * it's ASCII-only, so it doesn't treat Turkish letters (ğ, ı, ş, ç, ö, ü)
+ * as word characters — the Unicode property lookaround below does.
+ */
+function hasWord(text: string, phrase: string): boolean {
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(phrase)}(?![\\p{L}\\p{N}])`, 'u')
+  return pattern.test(text)
+}
+
 /** Classify intent from message text + UI context */
 export function classifyIntent(
   message: string,
@@ -20,7 +37,16 @@ export function classifyIntent(
     { category: 'project_operation', keywords: ['init', 'initialize', 'başlat', 'kur', 'setup', 'configure', 'yapılandır'] },
     { category: 'branch_operation', keywords: ['merge', 'approve', 'reject', 'onayla', 'reddet', 'branch', 'birleştir'] },
     { category: 'model_operation', keywords: ['model oluştur', 'create model', 'add model', 'new model', 'field ekle', 'add field', 'alan ekle', 'model tanımla', 'yeni model', 'schema'] },
-    { category: 'content_operation', keywords: ['ekle', 'add', 'create', 'oluştur', 'edit', 'update', 'düzenle', 'güncelle', 'delete', 'sil', 'remove', 'kaldır', 'translate', 'çevir', 'entry', 'içerik', 'yaz', 'değiştir', 'kaydet'] },
+    {
+      category: 'content_operation',
+      keywords: [
+        'ekle', 'add', 'create', 'oluştur', 'edit', 'update', 'düzenle', 'güncelle', 'delete', 'sil', 'remove', 'kaldır', 'translate', 'çevir', 'entry', 'içerik', 'yaz', 'değiştir', 'kaydet',
+        // Status/publish verbs — previously fell through to `query` because
+        // nothing here matched them, and `al` (from `query`) matched inside
+        // `hale` before the word-boundary fix above.
+        'yayınla', 'yayından kaldır', 'taslağa al', 'draft hale getir', 'arşivle',
+      ],
+    },
     { category: 'query', keywords: ['list', 'show', 'göster', 'what', 'how', 'ne', 'nasıl', 'kaç', 'how many', 'get', 'al', 'listele', 'neler var'] },
   ]
 
@@ -28,7 +54,7 @@ export function classifyIntent(
   let confidence: 'high' | 'medium' | 'low' = 'low'
 
   for (const pattern of patterns) {
-    if (pattern.keywords.some(kw => lower.includes(kw))) {
+    if (pattern.keywords.some(kw => hasWord(lower, kw))) {
       category = pattern.category
       confidence = 'high'
       break

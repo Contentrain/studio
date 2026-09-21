@@ -1,4 +1,5 @@
 import { clearBranchRequestSafe } from './branch-requests'
+import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
 import { decideMerge, savedEntryIds, writeSignals } from './approval-gate'
 import { getBrainCache } from './brain-cache'
@@ -1612,10 +1613,27 @@ export async function executeToolWithAutoMerge(
       invalidateBrainCache(projectId)
     }
 
+    if (result && typeof result === 'object' && 'error' in result) {
+      reportAgentToolError(String((result as { error: unknown }).error), {
+        tool: name,
+        projectId,
+        workspaceId,
+        modelId: params.model as string | undefined,
+        errorClass: 'tool_result_error',
+      })
+    }
+
     return { result, affected }
   }
   catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Tool execution failed'
+    reportAgentToolError(msg, {
+      tool: name,
+      projectId,
+      workspaceId,
+      modelId: params.model as string | undefined,
+      errorClass: e instanceof Error ? e.constructor.name : 'UnknownError',
+    })
     return { result: { error: msg }, affected }
   }
 }
