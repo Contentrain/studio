@@ -19,9 +19,9 @@ import { normalizeLocaleParam, resolvePublicCommentContext } from '~~/server/uti
 import { sanitizeString } from '~~/server/utils/sanitize-input'
 import { verifyTurnstileToken } from '~~/server/utils/turnstile'
 import { getEffectiveLimit } from '~~/server/utils/overage'
+import { isUuid } from '~~/shared/utils/uuid'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 interface SubmitBody {
   author?: { name?: unknown, email?: unknown, url?: unknown }
@@ -114,7 +114,7 @@ export default defineEventHandler(async (event) => {
   // Parent
   let parentId: string | null = null
   if (body.parentId !== undefined && body.parentId !== null && body.parentId !== '') {
-    if (typeof body.parentId !== 'string' || !UUID_RE.test(body.parentId))
+    if (!isUuid(body.parentId))
       return fieldError('parentId', 'comments.parent_not_found')
     parentId = body.parentId
   }
