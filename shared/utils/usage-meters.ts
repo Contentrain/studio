@@ -19,44 +19,81 @@ export interface UsageMeterDefinition {
   readonly settingsKey: string
   /** Human-readable unit label (for logs / Polar display). */
   readonly unitLabel: string
+  /**
+   * How the provider must aggregate the ingested events.
+   *
+   * `count` bills one per event and is only correct when every event
+   * carries a value of 1. `sum` adds up `metadata.value`, which is what a
+   * meter whose events carry a quantity — credits, bytes — needs.
+   */
+  readonly aggregation: 'count' | 'sum'
+  /**
+   * Meter units in one unit of `limitKey`.
+   *
+   * Usually 1: a credit is a credit, a submission is a submission. Not for
+   * the two byte meters, where the plan limit is in gigabytes and the
+   * meter sums raw bytes. Getting this wrong in either direction is
+   * expensive — it sets both the included allowance and the unit price.
+   */
+  readonly unitsPerLimitUnit: number
 }
 
 export const USAGE_METERS = {
+  // `ai_credits` / `api_credits`, not the older `ai_messages` /
+  // `api_messages`: those were created counting events, which was right
+  // while a turn was worth exactly one message. Credit weighting made a
+  // turn emit a base event plus a top-up event carrying N extra credits,
+  // so counting bills 2 where the ledger says N+1. A meter's aggregation
+  // cannot be changed once it holds events without restating history, so
+  // the corrected meters are new ones.
   AI_MESSAGES: {
-    name: 'ai_messages',
+    name: 'ai_credits',
     limitKey: 'ai.messages_per_month',
     settingsKey: 'ai_messages',
     unitLabel: 'credit',
+    aggregation: 'sum',
+    unitsPerLimitUnit: 1,
   },
   API_MESSAGES: {
-    name: 'api_messages',
+    name: 'api_credits',
     limitKey: 'api.messages_per_month',
     settingsKey: 'api_messages',
     unitLabel: 'credit',
+    aggregation: 'sum',
+    unitsPerLimitUnit: 1,
   },
   MCP_CALLS: {
     name: 'mcp_calls',
     limitKey: 'api.mcp_calls_per_month',
     settingsKey: 'mcp_calls',
     unitLabel: 'call',
+    // Every MCP event carries value 1, so counting and summing agree.
+    aggregation: 'count',
+    unitsPerLimitUnit: 1,
   },
   CDN_BANDWIDTH_BYTES: {
     name: 'cdn_bandwidth_bytes',
     limitKey: 'cdn.bandwidth_gb',
     settingsKey: 'cdn_bandwidth',
     unitLabel: 'byte',
+    aggregation: 'sum',
+    unitsPerLimitUnit: 1024 ** 3,
   },
   FORM_SUBMISSIONS: {
     name: 'form_submissions',
     limitKey: 'forms.submissions_per_month',
     settingsKey: 'form_submissions',
     unitLabel: 'submission',
+    aggregation: 'count',
+    unitsPerLimitUnit: 1,
   },
   MEDIA_STORAGE_BYTE_HOURS: {
     name: 'media_storage_byte_hours',
     limitKey: 'media.storage_gb',
     settingsKey: 'media_storage',
     unitLabel: 'byte·hour',
+    aggregation: 'sum',
+    unitsPerLimitUnit: 1024 ** 3,
   },
 } as const satisfies Record<string, UsageMeterDefinition>
 
