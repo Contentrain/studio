@@ -20,7 +20,7 @@ const PERMISSIONS: AgentPermissions = {
   specificModels: false,
   allowedModels: [],
   allowedLocales: [],
-  availableTools: ['brain_query', 'not_a_real_tool'],
+  availableTools: ['brain_query', 'not_a_real_tool', 'update_status'],
 }
 
 const UI_CONTEXT: ChatUIContext = {
@@ -31,7 +31,7 @@ const UI_CONTEXT: ChatUIContext = {
   activeBranch: null,
 }
 
-async function runTool(toolName: string, params: Record<string, unknown>, brainCache: unknown) {
+async function runTool(toolName: string, params: Record<string, unknown>, brainCache: unknown, engine: unknown = {}) {
   const { emptyAffected } = await import('../../server/utils/agent-types')
   vi.stubGlobal('emptyAffected', emptyAffected)
   vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
@@ -44,7 +44,7 @@ async function runTool(toolName: string, params: Record<string, unknown>, brainC
   return executeToolWithAutoMerge(
     toolName,
     params,
-    {} as never,
+    engine as never,
     {} as GitProvider,
     'owner@example.com',
     'user-1',
@@ -124,6 +124,34 @@ describe('agent tool error observability (#294)', () => {
       expect.stringContaining('not allowed'),
       expect.objectContaining({ errorClass: expect.stringContaining('not allowed') }),
     )
+  })
+
+  it('buckets every validation failure under one cause code, whatever entries it names', async () => {
+    // Validation errors name their entry, field and locale (#286). Without a
+    // fixed prefix, the cause code — the text before the first ':' — was that
+    // location, so each entry opened its own Sentry bucket.
+    vi.stubGlobal('errorMessage', vi.fn((key: string) => key === 'write.validation_failed'
+      ? 'The change was not applied because it failed validation'
+      : key))
+    const failing = (entry: string) => ({
+      updateEntryStatus: vi.fn().mockResolvedValue({
+        branch: '',
+        commit: { sha: '' },
+        diff: [],
+        validation: { valid: false, errors: [{ severity: 'error', entry, field: 'status', locale: 'tr', message: 'Invalid status' }] },
+      }),
+    })
+
+    for (const entry of ['a1', 'b2']) {
+      const { result } = await runTool('update_status', { model: 'articles', locale: 'tr', entryIds: [entry], status: 'draft' }, {}, failing(entry))
+      expect((result as { error: string }).error).toBe(`The change was not applied because it failed validation: ${entry}.status (tr): Invalid status`)
+    }
+
+    const classes = reportAgentToolError.mock.calls.map(call => (call[1] as { errorClass: string }).errorClass)
+    expect(classes).toEqual([
+      'The change was not applied because it failed validation',
+      'The change was not applied because it failed validation',
+    ])
   })
 
   it('does not report a successful tool result', async () => {

@@ -289,5 +289,6 @@
   "workspace.slug_taken": "This workspace slug is already taken. Please choose a different one.",
   "workspace.slug_too_short": "Workspace slug must be at least 2 characters.",
   "workspace.transfer_member_required": "A target member ID is required for ownership transfer.",
-  "workspace.transfer_requires_admin": "Ownership can only be transferred to a member with admin role."
+  "workspace.transfer_requires_admin": "Ownership can only be transferred to a member with admin role.",
+  "write.validation_failed": "The change was not applied because it failed validation"
 }
