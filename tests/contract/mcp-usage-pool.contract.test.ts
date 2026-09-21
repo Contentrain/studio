@@ -90,4 +90,39 @@ describe('combined MCP usage pool (contract)', () => {
     expect(await keyIncrement(null)).toMatchObject({ allowed: true })
     expect(await oauthIncrement(null)).toMatchObject({ allowed: true })
   })
+
+  // SS-14: 017's RPCs originally checked the limit with a plain SELECT
+  // then upserted — no lock, so concurrent callers near the cap could
+  // all read the same under-limit count and all get `allowed: true`,
+  // overshooting the pool. Migration 028 adds a per-workspace-month
+  // advisory lock (same fix `increment_agent_usage_if_allowed` got in
+  // 027). A fresh month keeps this isolated from the sequential tests
+  // above, which share cumulative state on `month`.
+  it('serializes concurrent calls at the limit — never overshoots', async () => {
+    const raceMonth = '2099-02'
+    const limit = 5
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        sql<{ result: { allowed: boolean, used: number } }>`
+          SELECT public.increment_mcp_cloud_usage_if_allowed(
+            p_workspace_id => ${user.workspaceId},
+            p_month => ${raceMonth},
+            p_key_id => ${keyId},
+            p_limit => ${limit}
+          ) AS result
+        `.execute(getDb()).then(r => r.rows[0]!.result)),
+    )
+
+    const allowedCount = results.filter(r => r.allowed).length
+    expect(allowedCount).toBe(limit)
+
+    const total = await sql<{ total: number }>`
+      SELECT public.workspace_mcp_month_total(
+        p_workspace_id => ${user.workspaceId},
+        p_month => ${raceMonth}
+      ) AS total
+    `.execute(getDb())
+    expect(Number(total.rows[0]!.total)).toBe(limit)
+  })
 })
