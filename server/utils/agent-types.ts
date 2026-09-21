@@ -28,8 +28,11 @@ export interface ContextItem {
 export interface ChatUIContext {
   /** Selected model in context panel (null = overview) */
   activeModelId: string | null
-  /** Selected locale in context panel */
-  activeLocale: string
+  /**
+   * Selected locale in context panel. `null` = the UI named none; tools then
+   * fall back to the project's default locale, never to a hard-coded `en`.
+   */
+  activeLocale: string | null
   /** Expanded entry ID in context panel (null = no entry focused) */
   activeEntryId: string | null
   /** What the context panel is showing */

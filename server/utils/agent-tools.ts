@@ -341,7 +341,7 @@ Returns \`statusChanges\`: [{ entryId, from, to }] for every entry named, so rep
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
-        locale: { type: 'string', description: 'Locale code (default: en)' },
+        locale: { type: 'string', description: 'Locale code (defaults to context locale)' },
         entryIds: { type: 'array', items: { type: 'string' }, description: 'Entry IDs (collection) or slugs (document) to update' },
         status: { type: 'string', enum: ['published', 'draft', 'archived'], description: 'New status' },
       },
@@ -398,7 +398,7 @@ Returns \`statusChanges\`: [{ entryId, from, to }] for every entry named, so rep
       properties: {
         model: { type: 'string', description: 'Model ID of the entry' },
         entryId: { type: 'string', description: 'Entry ID (collection) or slug (document)' },
-        locale: { type: 'string', description: 'Locale code (default: en)' },
+        locale: { type: 'string', description: 'Locale code (defaults to context locale)' },
         direction: { type: 'string', enum: ['forward', 'reverse'], description: 'forward (default) or reverse' },
       },
       required: ['model', 'entryId'],
