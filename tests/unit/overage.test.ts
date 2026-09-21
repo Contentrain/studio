@@ -62,12 +62,23 @@ describe('getEffectiveLimit', () => {
   })
 
   it('handles each overage category independently', () => {
-    const settings = { ai_messages: true, form_submissions: false, cdn_bandwidth: true }
+    const settings = { ai_messages: true, form_submissions: false, api_messages: true }
 
     expect(getEffectiveLimit(50, 'ai.messages_per_month', settings)).toBe(2_147_483_647)
     expect(getEffectiveLimit(100, 'forms.submissions_per_month', settings)).toBe(100)
-    expect(getEffectiveLimit(2, 'cdn.bandwidth_gb', settings)).toBe(2_147_483_647)
-    expect(getEffectiveLimit(1, 'media.storage_gb', settings)).toBe(1) // not in settings
+    expect(getEffectiveLimit(30, 'api.messages_per_month', settings)).toBe(2_147_483_647)
+    expect(getEffectiveLimit(5000, 'api.mcp_calls_per_month', settings)).toBe(5000) // not in settings
+  })
+
+  it('keeps the byte limits hard even with the toggle on', () => {
+    // These two are not sold past the plan allowance — the meter counts
+    // bytes and Polar cannot express a gigabyte allowance against it, so
+    // selling overage would bill the included gigabytes too. A stale
+    // `true` from before the limit became hard must not raise the cap.
+    const settings = { cdn_bandwidth: true, media_storage: true }
+
+    expect(getEffectiveLimit(2, 'cdn.bandwidth_gb', settings)).toBe(2)
+    expect(getEffectiveLimit(1, 'media.storage_gb', settings)).toBe(1)
   })
 
   it('returns plan limit for zero limits (free plan)', () => {
@@ -104,9 +115,13 @@ describe('isOverageEnabled', () => {
   it('checks correct settings key for each limit', () => {
     expect(isOverageEnabled('ai.messages_per_month', { ai_messages: true })).toBe(true)
     expect(isOverageEnabled('api.messages_per_month', { api_messages: true })).toBe(true)
-    expect(isOverageEnabled('cdn.bandwidth_gb', { cdn_bandwidth: true })).toBe(true)
+    expect(isOverageEnabled('api.mcp_calls_per_month', { mcp_calls: true })).toBe(true)
     expect(isOverageEnabled('forms.submissions_per_month', { form_submissions: true })).toBe(true)
-    expect(isOverageEnabled('media.storage_gb', { media_storage: true })).toBe(true)
+  })
+
+  it('stays false for the limits that are not sold', () => {
+    expect(isOverageEnabled('cdn.bandwidth_gb', { cdn_bandwidth: true })).toBe(false)
+    expect(isOverageEnabled('media.storage_gb', { media_storage: true })).toBe(false)
   })
 })
 

@@ -130,7 +130,10 @@ describe('chat stream e2e', () => {
         model: DEFAULT_CHAT_MODEL,
         context: {
           activeModelId: null,
-          activeLocale: 'en',
+          // The content brain never becomes ready in this shell, so the page
+          // knows no project locale yet — it sends none rather than the `en`
+          // placeholder, and the server resolves the project default (#281).
+          activeLocale: null,
           activeEntryId: null,
           panelState: 'overview',
           activeBranch: null,

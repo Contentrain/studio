@@ -104,6 +104,8 @@
   "billing.on_premise_description": "You're running Contentrain Studio on-premise with the Enterprise Edition. Plan tier is managed by the deployment operator.",
   "billing.on_premise_title": "On-premise deployment",
   "billing.overage_disabled": "Hard limit",
+  "billing.overage_hard_limit": "Fixed limit",
+  "billing.overage_not_available": "This limit is a hard cap — extra usage is not sold on this plan.",
   "billing.overage_requires_subscription": "Overage billing requires an active subscription with a payment method on file.",
   "billing.payment_failed": "Payment failed. Please update your payment method.",
   "billing.payment_failed_detail": "Your last payment attempt failed. Update your payment method to avoid service interruption.",
