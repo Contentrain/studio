@@ -12,10 +12,14 @@
 -- fix here. The lock key is workspace+month (not per mcp_key_id/grant_id)
 -- because the pool it guards is combined across both surfaces.
 --
--- Bodies are otherwise byte-identical to 017.
+-- Bodies are otherwise byte-identical to 017, plus `SET search_path TO ''`
+-- (matching 027) — both bodies already schema-qualify every reference, so
+-- this closes off the SECURITY DEFINER + mutable-search_path hardening gap
+-- without changing behavior.
 
 CREATE OR REPLACE FUNCTION public.increment_mcp_cloud_usage_if_allowed(p_workspace_id uuid, p_month text, p_key_id uuid, p_limit integer) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
     AS $$
 DECLARE
   v_current INTEGER;
@@ -43,6 +47,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.increment_mcp_oauth_usage_if_allowed(p_workspace_id uuid, p_month text, p_grant_id uuid, p_limit integer) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
     AS $$
 DECLARE
   v_current INTEGER;
