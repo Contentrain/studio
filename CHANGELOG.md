@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.4.2
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.1...v0.4.2)
+
+### 🚀 Enhancements
+
+- **review:** Lift a one-entry edit that publishes, empties or rewrites ([#273](https://github.com/Contentrain/studio/pull/273))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.1
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.0...v0.4.1)
