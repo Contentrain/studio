@@ -6,7 +6,7 @@ import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import {
   applyStudioMetaOverrides,
-  pinReaderToContentrain,
+  openWriteSnapshot,
   createFeatureBranch,
   shapeEntriesForSave,
   toObjectMap,
@@ -54,7 +54,8 @@ export async function saveContent(
 
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
@@ -268,7 +269,7 @@ export async function saveContent(
     }
   }
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
 
   const sharedNote = fanOut.locales.length > 0
     ? `\n\nShared across locales (${fanOut.locales.join(', ')}): ${fanOut.fields.join(', ')}`

@@ -2,7 +2,7 @@ import type { ContentrainConfig, FileChange, Vocabulary } from '@contentrain/typ
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, LOCALE_PATTERN } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { pinReaderToContentrain, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch } from './helpers'
 
 function errResult(message: string): WriteResult {
   return {
@@ -31,7 +31,8 @@ export async function addLocale(
   if (!LOCALE_PATTERN.test(locale))
     return errResult(`Invalid locale code "${locale}". Use a BCP-47 code like "en" or "en-US".`)
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   let config: ContentrainConfig
   try {
@@ -50,7 +51,7 @@ export async function addLocale(
   }
 
   const change: FileChange = { path: resolveConfigPath(ctx.pathCtx), content: canonicalStringify(updated) }
-  const { branchName } = await createFeatureBranch(ctx, 'config', 'locales')
+  const { branchName } = await createFeatureBranch(ctx, 'config', 'locales', undefined, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
@@ -82,7 +83,8 @@ export async function saveVocabulary(
   if (!terms || typeof terms !== 'object' || Array.isArray(terms))
     return errResult('Vocabulary terms must be an object mapping term → { locale: value }.')
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   let existing: Vocabulary = { version: 0, terms: {} }
   try {
@@ -96,7 +98,7 @@ export async function saveVocabulary(
   const merged: Vocabulary = { version: existing.version + 1, terms: mergedTerms }
 
   const change: FileChange = { path: resolveVocabularyPath(ctx.pathCtx), content: canonicalStringify(merged) }
-  const { branchName } = await createFeatureBranch(ctx, 'config', 'vocabulary')
+  const { branchName } = await createFeatureBranch(ctx, 'config', 'vocabulary', undefined, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
