@@ -89,7 +89,7 @@ export function createBranchGuard(ctx: EngineInternalContext) {
  * API speaks in status codes and message prefixes; both are checked because
  * the error may arrive as a raw Octokit HttpError or wrapped.
  */
-function classifyMergeFailure(e: unknown): 'conflict' | 'missing_head' | 'blocked' | 'unknown' {
+export function classifyMergeFailure(e: unknown): 'conflict' | 'missing_head' | 'blocked' | 'unknown' {
   const status = (e as { status?: number }).status ?? (e as { statusCode?: number }).statusCode
   const msg = e instanceof Error ? e.message : String(e)
   if (status === 409 || msg.includes('Merge conflict')) return 'conflict'
@@ -421,7 +421,7 @@ export async function mergeBranch(ctx: EngineInternalContext, branch: string): P
         // A real cr/* vs contentrain conflict — contentrain moved against
         // this branch since it forked. The one case where "resolve manually"
         // is the honest answer.
-        return { merged: false, sha: null, pullRequestUrl: null }
+        return { merged: false, sha: null, pullRequestUrl: null, conflict: true }
       default:
         throw e
     }

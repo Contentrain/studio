@@ -87,6 +87,12 @@ export type MainAdvance = 'advanced' | 'blocked_diverged'
  */
 export interface EngineMergeResult extends MergeResult {
   mainAdvance?: MainAdvance
+  /**
+   * The branch could not be merged because `contentrain` changed the same
+   * lines since the branch forked from it. Nothing was overwritten; the
+   * branch is left unmerged.
+   */
+  conflict?: boolean
 }
 
 export interface ContentEngineContext {

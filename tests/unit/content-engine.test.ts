@@ -432,6 +432,7 @@ describe('content engine', () => {
       sha: 'merge-sha',
       pullRequestUrl: null,
       mainAdvance: 'advanced',
+      branch: 'cr/content/faq/en/1234567890-abcd',
     })
   })
 
@@ -492,6 +493,7 @@ describe('content engine', () => {
       sha: null,
       pullRequestUrl: 'https://example.com/pr/1',
       mainAdvance: 'blocked_diverged',
+      branch: 'cr/content/faq/en/1234567890-abcd',
     })
   })
 
@@ -1660,7 +1662,7 @@ describe('mergeBranch split halves (W4)', () => {
 
     const result = await engine.mergeToContentrain('cr/content/faq/en/1234567890-abcd')
 
-    expect(result).toEqual({ merged: true, sha: 'step1-sha' })
+    expect(result).toEqual({ merged: true, sha: 'step1-sha', branch: 'cr/content/faq/en/1234567890-abcd' })
     expect(git.mergeBranch).toHaveBeenCalledTimes(1)
     expect(git.mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd', 'contentrain')
     expect(git.deleteBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
@@ -1781,7 +1783,7 @@ describe('mergeBranch split halves (W4)', () => {
 
     const result = await engine.mergeBranch('cr/content/faq/en/1234567890-abcd')
 
-    expect(result).toEqual({ merged: false, sha: null, pullRequestUrl: null })
+    expect(result).toEqual({ merged: false, sha: null, pullRequestUrl: null, conflict: true, branch: 'cr/content/faq/en/1234567890-abcd' })
     expect(git.mergeBranch).toHaveBeenCalledTimes(1)
     expect(git.createPR).not.toHaveBeenCalled()
   })

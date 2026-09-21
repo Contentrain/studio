@@ -4,7 +4,7 @@ import { planModelSave } from '@contentrain/mcp/core/ops'
 import { collectFieldPaths, legacyFieldNames } from '@contentrain/mcp/core/model-manager'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { pinReaderToContentrain, createFeatureBranch, toObjectMap } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, toObjectMap } from './helpers'
 import type { BreakingModelChange, FieldUsage, ModelChangeSummary, ModelSaveOptions } from './model-merge'
 import {
   breakingCandidates,
@@ -123,7 +123,8 @@ export async function saveModel(
 ): Promise<ModelWriteResult> {
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   const { validateModelDefinition } = await import('../schema-validation')
 
@@ -207,7 +208,7 @@ export async function saveModel(
   const allChanges: FileChange[] = [...plan.changes]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'model', next.id)
+  const { branchName } = await createFeatureBranch(ctx, 'model', next.id, undefined, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,

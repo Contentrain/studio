@@ -3,7 +3,7 @@ import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types
 import { planModelDelete } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { pinReaderToContentrain, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch } from './helpers'
 
 /**
  * Delete a model definition and all of its content + meta files.
@@ -22,7 +22,8 @@ export async function deleteModel(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   let modelDef: ModelDefinition
   try {
@@ -41,7 +42,7 @@ export async function deleteModel(
   const allChanges: FileChange[] = [...plan.changes]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'model', modelId)
+  const { branchName } = await createFeatureBranch(ctx, 'model', modelId, undefined, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
