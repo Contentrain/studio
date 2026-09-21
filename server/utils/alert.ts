@@ -86,3 +86,41 @@ export function reportBillingRisk(error: unknown, context: BillingRiskContext): 
     })
     .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
 }
+
+export interface AgentToolErrorContext {
+  /** Tool name as sent to the model, e.g. 'save_content', 'delete_content'. */
+  tool: string
+  projectId: string
+  workspaceId: string
+  modelId?: string
+  /** `Error.constructor.name` for a thrown error, or a fixed label for a `{ error }` tool result. */
+  errorClass: string
+}
+
+/**
+ * Report that an agent tool call returned or threw an error.
+ *
+ * Tool errors were previously returned to the model as data only — never
+ * reported anywhere — so the most user-visible failures (delete_content,
+ * save_content) were invisible to monitoring. Unlike `reportDataLossRisk` /
+ * `reportBillingRisk`, the error message itself is NOT sent to Sentry: tool
+ * errors run through content-validation paths that can echo a field value
+ * the editor typed, so only ids, the tool name and the error class travel
+ * — the full message stays in the server log only.
+ */
+export function reportAgentToolError(message: string, context: AgentToolErrorContext): void {
+  const { tool, errorClass, modelId, projectId, workspaceId } = context
+
+  // eslint-disable-next-line no-console
+  console.error(`[agent-tool-error] ${tool}: ${message}`, { projectId, workspaceId, modelId, errorClass })
+
+  void import('@sentry/nuxt')
+    .then((Sentry) => {
+      Sentry.captureMessage(`agent tool error: ${tool}`, {
+        level: 'warning',
+        tags: { agent_tool_error: 'true', tool, error_class: errorClass },
+        extra: { projectId, workspaceId, modelId },
+      })
+    })
+    .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
+}
