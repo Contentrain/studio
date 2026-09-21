@@ -6,6 +6,7 @@
 // ssr is disabled, so this instruments the Nitro API routes, server plugins and
 // cron jobs (webhooks, usage drain, trial reminders, branch cleanup, etc.).
 import * as Sentry from '@sentry/nuxt'
+import { isExpectedHttpError } from './server/utils/sentry-filters'
 
 // Nuxt maps NUXT_PUBLIC_SENTRY_* env vars onto runtimeConfig, but those are read
 // straight from the environment here since runtimeConfig isn't ready yet.
@@ -20,5 +21,11 @@ if (dsn) {
     tracesSampleRate: Number(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? 0.1),
     // Never attach PII (request bodies, headers, user identifiers).
     sendDefaultPii: false,
+    // Expected 4xx (unauthenticated requests, scanner probes on unmatched
+    // routes) buried real errors under 644 "You are not signed in" events —
+    // see isExpectedHttpError. 5xx always goes through.
+    beforeSend(event, hint) {
+      return isExpectedHttpError(hint.originalException) ? null : event
+    },
   })
 }
