@@ -150,6 +150,52 @@ function getModelContentDir(ctx: { contentRoot: string }, model: ModelDefinition
 }
 
 /**
+ * Why a selective build cannot be trusted on this store, or null when it can.
+ *
+ * A selective build writes only the models the push touched, and then writes
+ * a `_manifest.json` listing *every* model at the pushed commit. On a store
+ * that already holds a complete build that is correct — the untouched models
+ * are still there from last time. On a store that does not, it advertises
+ * content that was never uploaded: consumers read "complete at commit X" and
+ * get 404s for every model the push happened to miss (#278).
+ *
+ * `resolvePushDiff` cannot catch this. It degrades to a full rebuild when the
+ * *diff* is unreliable — zero SHA, truncated compare, API failure — but a
+ * project connected to an existing repo gets an ordinary `before` on its very
+ * first push and takes the selective path with an empty store underneath.
+ * The question is about the store, not the diff, so it has to be asked here.
+ *
+ * `complete` is the marker. It is written by every build that leaves the
+ * store whole, which after this change is every build that writes a manifest
+ * at all. Its real job is the one-time migration: manifests written before
+ * this existed have no such field, read as unknown, and earn one promoted
+ * full rebuild that heals whatever they were hiding. Each store heals on its
+ * own next push, so nothing needs a backfill or a concurrency limit.
+ */
+async function selectiveBuildUnsafeReason(
+  cdn: CDNProvider,
+  projectId: string,
+  branch: string,
+): Promise<string | null> {
+  let manifest: { complete?: unknown, branch?: unknown }
+  try {
+    const object = await cdn.getObject(projectId, '_manifest.json')
+    if (!object || 'notModified' in object) return 'the store has no manifest'
+    manifest = JSON.parse(object.data.toString('utf-8')) as typeof manifest
+  }
+  catch {
+    // A read failure is not proof the store is whole, and over-building is
+    // the safe direction — the same rule cdn-push-diff.ts applies to a
+    // failed compare.
+    return 'the store manifest could not be read'
+  }
+
+  if (manifest.complete !== true) return 'the store manifest predates completeness tracking'
+  if (manifest.branch !== branch) return `the store was built from "${String(manifest.branch)}", not "${branch}"`
+  return null
+}
+
+/**
  * Execute a CDN build.
  */
 export async function executeCDNBuild(options: BuildOptions): Promise<BuildResult> {
@@ -224,8 +270,21 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     }
 
     // 3. Determine affected models (selective or full)
+    //
+    // Asked before the diff is applied, and before the content-less no-op
+    // below, so an incomplete store heals on whatever push comes next —
+    // even one that touches no content at all.
+    let fullRebuild = options.fullRebuild ?? false
+    if (!fullRebuild && options.changedPaths?.length) {
+      const unsafe = await selectiveBuildUnsafeReason(cdn, projectId, branch)
+      if (unsafe) {
+        fullRebuild = true
+        progress({ phase: 'init', message: `Full rebuild — ${unsafe}` })
+      }
+    }
+
     let targetModels: ModelDefinition[]
-    if (options.fullRebuild || !options.changedPaths?.length) {
+    if (fullRebuild || !options.changedPaths?.length) {
       targetModels = models
     }
     else {
@@ -246,7 +305,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     // fullRebuild (manual trigger) and config/model-def changes never reach
     // here: the former skips the `else` branch above, the latter make
     // getAffectedModels non-empty.
-    if (!options.fullRebuild && options.changedPaths?.length && targetModels.length === 0) {
+    if (!fullRebuild && options.changedPaths?.length && targetModels.length === 0) {
       return {
         projectId,
         buildId,
@@ -405,7 +464,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     // (SDK preload mode, docs/CDN_BUNDLE.md). Emitted on every build so the
     // bundle always mirrors the standalone artifacts; skipped only when a
     // selective build touched no models (content unchanged → bundles current).
-    const isSelective = !options.fullRebuild && !!options.changedPaths?.length
+    const isSelective = !fullRebuild && !!options.changedPaths?.length
     if (!isSelective || targetModels.length > 0) {
       if (isSelective) {
         // Selective builds only re-read changed models from git; fill the
@@ -518,6 +577,13 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       commitSha,
       builtAt: new Date().toISOString(),
       branch,
+      // The store holds every model listed below, not just the ones this
+      // build touched. Only written once the content upload has finished,
+      // so a build that dies midway leaves the previous manifest — and its
+      // previous claim — in place. A manifest without this field is one
+      // written before the claim was tracked, and buys a single promoted
+      // full rebuild the next time a push arrives.
+      complete: true,
       config: {
         stack: config.stack,
         locales: config.locales,
@@ -540,7 +606,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     // 9. Diff-based stale object cleanup
     progress({ phase: 'cleanup', message: 'Cleaning stale objects...' })
     try {
-      if (options.fullRebuild || !options.changedPaths?.length) {
+      if (fullRebuild || !options.changedPaths?.length) {
         // Full rebuild: delete every build-owned object not in the new build.
         // The `media/` prefix is out-of-band, owned by the MediaProvider
         // (binaries are uploaded directly on asset upload and are never part
@@ -577,7 +643,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       // Uploaded content is still correct, but a partial sweep can leave stale
       // or inconsistent objects behind — surface it instead of silently
       // reporting the build as a success.
-      reportDataLossRisk(e, { op: 'cdn-build.cleanup', projectId, filesDeleted, fullRebuild: options.fullRebuild ?? false })
+      reportDataLossRisk(e, { op: 'cdn-build.cleanup', projectId, filesDeleted, fullRebuild })
     }
 
     // 10. Purge edge cache
