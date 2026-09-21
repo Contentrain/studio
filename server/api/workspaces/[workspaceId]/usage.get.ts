@@ -8,6 +8,7 @@
 
 import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../../shared/utils/license'
 import { calculateOverageUnits } from '../../../../server/utils/overage'
+import { resolveUsagePeriod } from '../../../../server/utils/usage-period'
 
 interface UsageCategory {
   key: string
@@ -49,15 +50,24 @@ export default defineEventHandler(async (event) => {
   // every gate resolves through `effectivePlan`, so this screen must too.
   const plan = event.context?.billing?.effectivePlan ?? normalizePlan(workspace.plan as string | null)
   const overageSettings = (workspace.overage_settings as Record<string, boolean>) ?? {}
-  const billingPeriod = new Date().toISOString().substring(0, 7) // YYYY-MM
+
+  // The three credit pools are counted in the workspace's billing period.
+  const period = await resolveUsagePeriod(workspaceId)
+  // CDN bandwidth is not: `cdn_usage` rows are written by a date-range
+  // aggregator keyed `YYYY-MM`, and the reader expands the key into a
+  // month window — handing it a `YYYY-MM-DD` key would build a nonsense
+  // range and report zero. Form submissions and comments are counted the
+  // same calendar way, from `created_at`. Aligning those three is a
+  // separate change; they keep the old key here so the numbers stay real.
+  const calendarMonth = new Date().toISOString().substring(0, 7)
 
   // Fetch all usage metrics in parallel
   const [aiUsage, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls, comments] = await Promise.all([
-    db.getWorkspaceMonthlyAIUsage(workspaceId, billingPeriod),
-    db.getWorkspaceMonthlyAPIUsage(workspaceId, billingPeriod),
+    db.getWorkspaceMonthlyAIUsage(workspaceId, period.key),
+    db.getWorkspaceMonthlyAPIUsage(workspaceId, period.key),
     db.countMonthlySubmissions(workspaceId),
-    db.getWorkspaceMonthlyCDNBandwidth(workspaceId, billingPeriod),
-    db.getWorkspaceMonthlyMcpCloudUsage(workspaceId, billingPeriod),
+    db.getWorkspaceMonthlyCDNBandwidth(workspaceId, calendarMonth),
+    db.getWorkspaceMonthlyMcpCloudUsage(workspaceId, period.key),
     db.countMonthlyComments(workspaceId),
   ])
 
@@ -108,11 +118,16 @@ export default defineEventHandler(async (event) => {
 
   const totalOverageAmount = categories.reduce((sum, c) => sum + c.overageAmount, 0)
 
-  // Project to end of month based on current usage rate
+  // Project to the end of the period based on the rate so far. This has to
+  // use the same window the counters use — projecting a billing-period
+  // count against a calendar month would rescale it by whatever offset
+  // sits between the two.
   const now = new Date()
-  const dayOfMonth = now.getDate()
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const projectionMultiplier = dayOfMonth > 0 ? daysInMonth / dayOfMonth : 1
+  const periodStart = new Date(period.startsAt).getTime()
+  const periodEnd = new Date(period.resetsAt).getTime()
+  const elapsedMs = Math.max(now.getTime() - periodStart, 1)
+  const totalMs = Math.max(periodEnd - periodStart, 1)
+  const projectionMultiplier = totalMs / elapsedMs
 
   const projectedOverageAmount = categories.reduce((sum, c) => {
     if (c.limit === -1 || c.limit === 0) return sum
@@ -144,7 +159,16 @@ export default defineEventHandler(async (event) => {
   }
 
   return {
-    billingPeriod,
+    // Kept as the period key for compatibility with existing clients.
+    billingPeriod: period.key,
+    // What the screen tells the user: when this window opened, when the
+    // counters reset, and whether that date follows their subscription or
+    // the calendar. Without it "45 / 500" does not say how long 45 took.
+    period: {
+      startsAt: period.startsAt,
+      resetsAt: period.resetsAt,
+      source: period.source,
+    },
     categories,
     totalOverageAmount: Math.round(totalOverageAmount * 100) / 100,
     projectedOverageAmount: Math.round(projectedOverageAmount * 100) / 100,

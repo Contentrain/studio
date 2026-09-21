@@ -19,8 +19,19 @@ export interface UsageCategory {
   percentage: number
 }
 
+export interface UsagePeriodInfo {
+  /** ISO instant the window opened. */
+  startsAt: string
+  /** ISO instant the counters reset. */
+  resetsAt: string
+  /** `billing` follows the subscription anniversary, `calendar` the 1st. */
+  source: 'billing' | 'calendar'
+}
+
 export interface UsageData {
   billingPeriod: string
+  /** Optional: absent from an older server response. */
+  period?: UsagePeriodInfo
   categories: UsageCategory[]
   totalOverageAmount: number
   projectedOverageAmount: number

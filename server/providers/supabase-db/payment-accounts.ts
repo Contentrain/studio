@@ -60,6 +60,7 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         customer_id: input.customerId,
         subscription_id: input.subscriptionId ?? null,
         subscription_status: input.subscriptionStatus ?? null,
+        current_period_start: input.currentPeriodStart ?? null,
         current_period_end: input.currentPeriodEnd ?? null,
         trial_ends_at: input.trialEndsAt ?? null,
         cancel_at_period_end: input.cancelAtPeriodEnd ?? false,

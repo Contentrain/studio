@@ -940,6 +940,7 @@ export interface DatabaseProvider {
     customerId: string
     subscriptionId?: string | null
     subscriptionStatus?: string | null
+    currentPeriodStart?: string | null
     currentPeriodEnd?: string | null
     trialEndsAt?: string | null
     cancelAtPeriodEnd?: boolean

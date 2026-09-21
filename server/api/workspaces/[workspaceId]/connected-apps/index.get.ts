@@ -11,6 +11,7 @@
  */
 import { getRouterParam } from 'h3'
 import { requireAuth } from '~~/server/utils/auth'
+import { resolveUsagePeriod } from '~~/server/utils/usage-period'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 import { getWorkspaceOauthMonthUsage, listWorkspaceGrants } from '~~/server/utils/oauth-server/store'
@@ -46,7 +47,8 @@ export default defineEventHandler(async (event) => {
     ? all.filter(grant => grant.userId === session.user.id)
     : all
 
-  const month = new Date().toISOString().slice(0, 7)
+  // Same window the quota is counted in (see usage-period.ts).
+  const month = (await resolveUsagePeriod(workspaceId)).key
   const usage = await getWorkspaceOauthMonthUsage(workspaceId, month)
 
   return {

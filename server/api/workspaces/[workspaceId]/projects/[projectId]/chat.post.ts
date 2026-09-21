@@ -3,6 +3,7 @@ import { PROMPT_CACHE_CONTROL } from '~~/server/providers/ai'
 import type { ChatRequest } from '~~/server/utils/agent-types'
 import { createEventStream } from 'h3'
 import { toAITools } from '~~/server/utils/agent-types'
+import { resolveUsagePeriod } from '~~/server/utils/usage-period'
 import { deriveProjectPhase } from '~~/server/utils/agent-state-machine'
 import { classifyIntent } from '~~/server/utils/agent-context'
 import type { MigrationHandoff } from '@contentrain/types'
@@ -103,7 +104,10 @@ export default defineEventHandler(async (event) => {
   const basePlanLimit = getMonthlyMessageLimit(plan)
   const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
   const monthlyLimit = getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
-  const usageMonth = new Date().toISOString().substring(0, 7)
+  // Counted in the workspace's billing period, not the calendar month —
+  // otherwise the quota resets on the 1st while the invoice runs from the
+  // subscription anniversary (`server/utils/usage-period.ts`).
+  const usageMonth = (await resolveUsagePeriod(workspaceId)).key
 
   // Billing semantic: a message is billable only once Anthropic streams
   // its first real provider event (text or tool_use). Pre-AI failures

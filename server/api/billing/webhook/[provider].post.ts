@@ -135,6 +135,7 @@ export default defineEventHandler(async (event) => {
         customerId: result.customerId,
         subscriptionId: result.subscriptionId ?? null,
         subscriptionStatus: result.subscriptionStatus ?? 'trialing',
+        currentPeriodStart: result.currentPeriodStart ?? null,
         currentPeriodEnd: result.currentPeriodEnd ?? null,
         // Only the provider's real trial_end — never the billing period end.
         trialEndsAt: result.trialEndsAt ?? null,
@@ -178,6 +179,7 @@ export default defineEventHandler(async (event) => {
         customerId: result.customerId,
         subscriptionId: result.subscriptionId ?? null,
         subscriptionStatus: result.subscriptionStatus ?? null,
+        currentPeriodStart: result.currentPeriodStart ?? null,
         currentPeriodEnd: result.currentPeriodEnd ?? null,
         // Clear trial_ends_at when transitioning to active. While still
         // trialing (e.g. a portal plan change mid-trial), keep the real
@@ -241,6 +243,7 @@ export default defineEventHandler(async (event) => {
         customerId,
         subscriptionId: (account.subscription_id as string | null) ?? null,
         subscriptionStatus: 'past_due',
+        currentPeriodStart: (account.current_period_start as string | null) ?? null,
         currentPeriodEnd: (account.current_period_end as string | null) ?? null,
         trialEndsAt: (account.trial_ends_at as string | null) ?? null,
         cancelAtPeriodEnd: Boolean(account.cancel_at_period_end),
@@ -281,6 +284,7 @@ export default defineEventHandler(async (event) => {
         customerId,
         subscriptionId: (account.subscription_id as string | null) ?? null,
         subscriptionStatus: nextStatus,
+        currentPeriodStart: (account.current_period_start as string | null) ?? null,
         currentPeriodEnd: (account.current_period_end as string | null) ?? null,
         trialEndsAt: null,
         cancelAtPeriodEnd: Boolean(account.cancel_at_period_end),
