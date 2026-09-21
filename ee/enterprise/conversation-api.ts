@@ -7,6 +7,7 @@ import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext } from '../../server/utils/agent-types'
 import { toAITools } from '../../server/utils/agent-types'
 import { classifyIntent } from '../../server/utils/agent-context'
+import { resolveUsagePeriod } from '../../server/utils/usage-period'
 import { deriveProjectPhase } from '../../server/utils/agent-state-machine'
 import { buildRequestContext, buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
 import { STUDIO_TOOLS, filterToolsByPermissions } from '../../server/utils/agent-tools'
@@ -179,7 +180,8 @@ async function runConversationMessage(
   // SOFT_CAP_MAX when overage is enabled or the plan is Infinity, so
   // the RPC stays integer-typed and overage requests fall through to
   // the meter outbox below.
-  const usageMonth = new Date().toISOString().substring(0, 7)
+  // Billing-period keyed, same rule as the chat route (`server/utils/usage-period.ts`).
+  const usageMonth = (await resolveUsagePeriod(keyData.workspaceId)).key
   const overageSettings = (event.context as { billing?: { overageSettings?: Record<string, boolean> } }).billing?.overageSettings
   const workspacePlanLimit = getPlanLimit(plan, 'api.messages_per_month')
   const workspaceLimit = getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)

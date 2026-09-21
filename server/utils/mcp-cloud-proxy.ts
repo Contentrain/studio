@@ -15,6 +15,7 @@ import type { H3Event } from 'h3'
 import { getHeader, getProxyRequestHeaders, proxyRequest, readRawBody, setResponseHeader, setResponseStatus } from 'h3'
 import { Agent } from 'undici'
 import { MEDIA_TOOL_NAMES, WRITE_TOOL_NAMES } from '~~/server/utils/mcp-tool-classes'
+import { resolveUsagePeriod } from '~~/server/utils/usage-period'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
 import { publicMediaBase } from '~~/server/utils/media-url'
@@ -182,7 +183,8 @@ export async function runMcpCloudProxy(
       ctx.monthlyCallLimit,
     )
 
-    const month = new Date().toISOString().slice(0, 7)
+    // Billing-period keyed, same rule as the AI credit pools.
+    const month = (await resolveUsagePeriod(ctx.workspaceId)).key
     const quota = ctx.meter.kind === 'key'
       ? await useDatabaseProvider().incrementMcpCloudUsageIfAllowed({
           workspaceId: ctx.workspaceId,

@@ -4,6 +4,7 @@ import { errorMessage } from '../../server/utils/content-strings'
 import { getWorkspacePlan, hasFeature, getPlanLimit } from '../../server/utils/license'
 import { generateConversationKey } from '../../server/utils/conversation-keys'
 import { useDatabaseProvider } from '../../server/utils/providers'
+import { resolveUsagePeriod } from '../../server/utils/usage-period'
 
 export function createConversationKeysBridge() {
   return {
@@ -19,7 +20,8 @@ export function createConversationKeysBridge() {
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
       const data = await db.listConversationKeys(projectId, workspaceId)
 
-      const month = new Date().toISOString().substring(0, 7)
+      // Same window the API credit quota is counted in (see usage-period.ts).
+      const month = (await resolveUsagePeriod(workspaceId)).key
       const keyIds = (data ?? []).filter(k => !k.revoked_at).map(k => String(k.id))
 
       let usageMap: Record<string, number> = {}

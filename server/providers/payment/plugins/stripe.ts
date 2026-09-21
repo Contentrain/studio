@@ -74,7 +74,9 @@ function mapSubscriptionToResult(
   subscription: Stripe.Subscription,
   priceMap: Record<string, string>,
 ): WebhookResult {
-  const itemPeriodEnd = subscription.items?.data?.[0]?.current_period_end
+  const item = subscription.items?.data?.[0]
+  const itemPeriodStart = item?.current_period_start
+  const itemPeriodEnd = item?.current_period_end
   return {
     event,
     workspaceId: subscription.metadata?.workspace_id,
@@ -82,6 +84,7 @@ function mapSubscriptionToResult(
     subscriptionId: subscription.id,
     customerId: subscription.customer as string,
     subscriptionStatus: subscription.status,
+    currentPeriodStart: secondsToIso(itemPeriodStart),
     currentPeriodEnd: secondsToIso(itemPeriodEnd),
     // Trial end must come from the provider's actual trial_end — never the
     // billing period end. A 1-month / 1-year cycle boundary is not a trial

@@ -62,6 +62,7 @@ export interface WebhookResult {
   /** Provider-normalised status: trialing, active, past_due, canceled, unpaid, incomplete. */
   subscriptionStatus?: string
   /** ISO timestamp: when current billing period ends. */
+  currentPeriodStart?: string
   currentPeriodEnd?: string
   /** ISO timestamp: when trial ends (trialing subscriptions only). */
   trialEndsAt?: string

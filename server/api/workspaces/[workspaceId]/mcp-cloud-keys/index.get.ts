@@ -10,6 +10,7 @@
 
 import { getQuery, getRouterParam } from 'h3'
 import { requireAuth } from '~~/server/utils/auth'
+import { resolveUsagePeriod } from '~~/server/utils/usage-period'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 
@@ -31,7 +32,9 @@ export default defineEventHandler(async (event) => {
   // Attach the current month's call count per key so the panel can show
   // usage without a second round trip. Best-effort: a usage read failure
   // must not break key management.
-  const month = new Date().toISOString().slice(0, 7)
+  // Same window the quota is counted in, or this panel reads an empty
+  // bucket and reports zero calls for a subscribed workspace.
+  const month = (await resolveUsagePeriod(workspaceId)).key
   const usageByKey = new Map<string, number>()
   try {
     const usage = await db.getMcpCloudKeyUsage(keys.map(k => k.id as string), month)

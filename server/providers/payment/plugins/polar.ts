@@ -75,6 +75,7 @@ interface PolarSubscriptionLike {
   status: string
   customerId: string
   productId: string
+  currentPeriodStart: Date | string | null
   currentPeriodEnd: Date | string | null
   trialEnd: Date | string | null
   cancelAtPeriodEnd: boolean
@@ -96,6 +97,7 @@ function subscriptionToResult(
     subscriptionId: sub.id,
     customerId: sub.customerId,
     subscriptionStatus: sub.status,
+    currentPeriodStart: isoOrUndefined(sub.currentPeriodStart),
     currentPeriodEnd: isoOrUndefined(sub.currentPeriodEnd),
     trialEndsAt: sub.status === 'trialing' ? isoOrUndefined(sub.trialEnd) : undefined,
     cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),

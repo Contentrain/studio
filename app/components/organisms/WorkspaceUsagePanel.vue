@@ -40,6 +40,27 @@ function formatMonth(period: string): string {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+/**
+ * When the counters go back to zero. On a subscription that is the
+ * billing anniversary, not the 1st — without the date, "45 / 500" does
+ * not tell anyone how long 45 took or how long 455 has to last.
+ */
+const periodResetLabel = computed(() => {
+  const resetsAt = usage.value?.period?.resetsAt
+  if (!resetsAt) return null
+  const date = new Date(resetsAt)
+  if (Number.isNaN(date.getTime())) return null
+  return t('billing.usage_period_resets', {
+    date: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+  })
+})
+
+const periodSourceLabel = computed(() =>
+  usage.value?.period?.source === 'billing'
+    ? t('billing.usage_period_billing')
+    : t('billing.usage_period_calendar'),
+)
+
 /** Icon per category */
 function categoryIcon(key: string): string {
   switch (key) {
@@ -61,8 +82,9 @@ function categoryIcon(key: string): string {
       <h3 class="text-sm font-medium text-heading dark:text-secondary-100">
         {{ t('billing.usage_title') }}
       </h3>
-      <span v-if="usage" class="text-xs text-muted">
-        {{ formatMonth(usage.billingPeriod) }}
+      <span v-if="usage" class="text-right text-xs text-muted">
+        <span :title="periodSourceLabel">{{ formatMonth(usage.billingPeriod) }}</span>
+        <span v-if="periodResetLabel" class="ml-2 text-label">{{ periodResetLabel }}</span>
       </span>
     </div>
 
