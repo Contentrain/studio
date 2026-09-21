@@ -20,6 +20,12 @@
  * guards, and would otherwise be the thing that 500s). The `02b` prefix
  * buys that ordering without renaming 02.accept-invite.
  *
+ * That ordering is filename-derived: Nitro sorts middleware with
+ * `a.path.localeCompare(b.path)`, not by byte value. Both agree here —
+ * `02.accept-invite` < `02b.path-ids` < `03.billing` either way — but the
+ * comparison is collation-based, so renaming these files is a behavioural
+ * change, not a cosmetic one.
+ *
  * Answers 404, not 400. A 400 would separate "malformed" from
  * "well-formed but absent", which on the public trees hands an
  * unauthenticated caller an existence oracle. 404 says the same thing to
