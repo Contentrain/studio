@@ -16,7 +16,14 @@ import { useDatabaseProvider, usePaymentProvider } from '../utils/providers'
 
 const INTERVAL_MS = 30 * 1000 // 30 seconds
 const BATCH_SIZE = 100
-const MAX_ATTEMPTS = 8
+/**
+ * Give-up threshold. At one tick per 30s this is ~20 minutes, which has to
+ * cover the worst case that is *not* a bug: usage recorded between checkout
+ * and the `subscription.created` webhook, when the workspace has no payment
+ * account to ingest against yet. The old value of 8 gave that window four
+ * minutes and billed nothing for what fell outside it.
+ */
+const MAX_ATTEMPTS = 40
 
 export default defineNitroPlugin((nitroApp) => {
   // Short boot delay so the DB pool finishes initialising before the first tick.
@@ -38,7 +45,7 @@ function logFailure(err: unknown) {
   console.error('[usage-drain] Run failed:', err)
 }
 
-async function drainUsageOutbox(): Promise<void> {
+export async function drainUsageOutbox(): Promise<void> {
   const provider = usePaymentProvider()
   if (!provider) return
 
@@ -61,15 +68,22 @@ async function drainUsageOutbox(): Promise<void> {
     const attemptCount = (row.attempt_count as number | undefined) ?? 0
 
     if (attemptCount >= MAX_ATTEMPTS) {
-      await db.markUsageEventIngested(id, `Dropped after ${MAX_ATTEMPTS} attempts`)
+      // Retire it. Recording this as a failed *attempt* would leave
+      // `ingested_at` null, so the row would come back every tick — and
+      // because the queue is ordered oldest-first, a handful of such rows
+      // permanently occupy the head of every batch and starve deliverable
+      // events until metering stops entirely.
+      await db.markUsageEventDropped(id, `Dropped after ${MAX_ATTEMPTS} attempts`)
+      // eslint-disable-next-line no-console -- a dropped meter event is unbilled revenue; it must be visible
+      console.error(`[usage-drain] Dropped usage event ${id} (${row.meter_name}) after ${MAX_ATTEMPTS} attempts:`, row.last_error)
       continue
     }
 
     const customerId = accountMap.get(workspaceId)
     if (!customerId) {
-      // Workspace has no active payment account — skip silently.
-      // The row stays pending and will be retried if/when the workspace
-      // subscribes. Very old rows are eventually dropped via MAX_ATTEMPTS.
+      // Workspace has no active payment account yet — the checkout webhook
+      // may still be in flight. Keep the row pending so it lands once the
+      // subscription exists; MAX_ATTEMPTS bounds how long we wait.
       await db.markUsageEventIngested(id, 'No active payment account')
       continue
     }

@@ -17,6 +17,7 @@ type PaymentAccountMethods = Pick<
   | 'enqueueUsageEvent'
   | 'listPendingUsageEvents'
   | 'markUsageEventIngested'
+  | 'markUsageEventDropped'
 >
 
 export function paymentAccountMethods(): PaymentAccountMethods {
@@ -168,6 +169,34 @@ export function paymentAccountMethods(): PaymentAccountMethods {
 
       if (error) {
         throw createError({ statusCode: 500, message: `Failed to mark usage event ingested: ${error.message}` })
+      }
+    },
+
+    async markUsageEventDropped(id, reason) {
+      const admin = getAdmin()
+
+      const { data, error } = await admin
+        .from('usage_events_outbox')
+        .select('attempt_count')
+        .eq('id', id)
+        .single()
+
+      if (error) {
+        throw createError({ statusCode: 500, message: `Failed to read usage event: ${error.message}` })
+      }
+
+      const prev = (data?.attempt_count as number | undefined) ?? 0
+      const { error: updateError } = await admin
+        .from('usage_events_outbox')
+        .update({
+          ingested_at: new Date().toISOString(),
+          attempt_count: prev + 1,
+          last_error: reason,
+        })
+        .eq('id', id)
+
+      if (updateError) {
+        throw createError({ statusCode: 500, message: `Failed to drop usage event: ${updateError.message}` })
       }
     },
   }
