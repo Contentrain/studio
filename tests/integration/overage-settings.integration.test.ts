@@ -99,15 +99,39 @@ describe('overage settings API', () => {
   describe('PATCH /overage-settings', () => {
     it('merges new settings with existing', async () => {
       mockDb({ workspace: { overage_settings: { ai_messages: true } } })
-      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: true }))
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ form_submissions: true }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
       const result = await handler({} as never)
 
-      expect(result.overageSettings).toEqual({ ai_messages: true, cdn_bandwidth: true })
+      expect(result.overageSettings).toEqual({ ai_messages: true, form_submissions: true })
       expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', {
-        overage_settings: { ai_messages: true, cdn_bandwidth: true },
+        overage_settings: { ai_messages: true, form_submissions: true },
       })
+    })
+
+    it('refuses to enable a limit that is not sold', async () => {
+      // CDN bandwidth and media storage are hard limits: the meter counts
+      // bytes, so Polar cannot carry the plan's gigabyte allowance and
+      // overage would bill the included gigabytes as well.
+      mockDb()
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 409 })
+      expect(updateWorkspace).not.toHaveBeenCalled()
+    })
+
+    it('still lets a stale hard-limit toggle be turned off', async () => {
+      // Refusing `false` too would trap a workspace that has a stale
+      // `true` stored from before the limit became hard.
+      mockDb({ workspace: { overage_settings: { cdn_bandwidth: true } } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: false }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      const result = await handler({} as never)
+
+      expect(result.overageSettings).toEqual({ cdn_bandwidth: false })
     })
 
     it('can disable an existing overage category', async () => {
