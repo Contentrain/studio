@@ -675,7 +675,12 @@ export async function executeToolWithAutoMerge(
             relBrain.content.get(`${m}:${locale}`) ?? relBrain.content.get(`${m}:${relDefaultLocale}`),
           )
           const relEntries: Record<string, unknown>[] = []
-          if (params.slug && typeof params.slug === 'string') {
+          if (Array.isArray(params.documents)) {
+            for (const d of params.documents as Array<{ data?: unknown }>) {
+              if (d?.data && typeof d.data === 'object') relEntries.push(d.data as Record<string, unknown>)
+            }
+          }
+          else if (params.slug && typeof params.slug === 'string') {
             relEntries.push((params.data ?? params.frontmatter ?? {}) as Record<string, unknown>)
           }
           else if (relKind === 'collection') {
@@ -693,7 +698,7 @@ export async function executeToolWithAutoMerge(
           }
         }
 
-        let writeResult: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, entries?: { created: string[], updated: string[] } }
+        let writeResult: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, entries?: { created: string[], updated: string[] }, statuses?: Record<string, string> }
 
         // Scheduling rides beside `data`, never inside it (meta only, status
         // untouched). The engine validates the dates and lifts any the agent
@@ -709,10 +714,22 @@ export async function executeToolWithAutoMerge(
           // create vs update is stated, not inferred — an id that exists can't
           // be "created" over, a missing one can't be "updated" into being (#298).
           ...(isEntryWriteMode(params.mode) ? { mode: params.mode } : {}),
+          // "Create and publish" in the same commit — no second update_status
+          // turn, and no "published" claim for a draft (#297).
+          ...(params.status === 'published' || params.status === 'draft' ? { status: params.status as 'published' | 'draft' } : {}),
         }
 
+        // Several documents of one model: one commit, one merge (#292).
+        if (Array.isArray(params.documents)) {
+          const documents = (params.documents as Array<{ slug?: unknown, data?: unknown, body?: unknown }>).map(d => ({
+            slug: String(d?.slug ?? ''),
+            frontmatter: (d?.data && typeof d.data === 'object' ? d.data : {}) as Record<string, unknown>,
+            body: typeof d?.body === 'string' ? d.body : '',
+          }))
+          writeResult = await engine.saveDocuments(modelId, locale, documents, userEmail, saveOptions)
+        }
         // Document kind: expects { slug, frontmatter/data, body }
-        if (params.slug && typeof params.slug === 'string') {
+        else if (params.slug && typeof params.slug === 'string') {
           const frontmatter = (params.data ?? params.frontmatter ?? {}) as Record<string, unknown>
           const body = (params.body as string) ?? ''
           writeResult = await engine.saveDocument(modelId, locale, params.slug as string, frontmatter, body, userEmail, saveOptions)
@@ -1711,7 +1728,7 @@ function statusOf(meta: unknown): string | null {
 }
 
 function summarizeWriteResult(
-  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] }, entries?: { created: string[], updated: string[] } },
+  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] }, entries?: { created: string[], updated: string[] }, statuses?: Record<string, string> },
   // The locale the write targeted. Echoed so the agent can see — and report —
   // which language it changed; before, it was only inside the branch name (#284).
   locale?: string,
@@ -1720,6 +1737,8 @@ function summarizeWriteResult(
     // Which entries this save created and which it changed — so "added a new
     // article" can't be reported for a write that overwrote an existing one.
     ...(result.entries ? { created: result.entries.created, updated: result.entries.updated } : {}),
+    // The status each entry will have once merged — "merged" alone is not "published".
+    ...(result.statuses ? { statuses: result.statuses } : {}),
     branch: result.branch,
     commitSha: result.commit.sha,
     ...(locale ? { locale } : {}),
