@@ -12,6 +12,7 @@ import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
 import type { LocatedValidationError } from './validation-format'
 import { formatValidationError, formatValidationErrors } from './validation-format'
+import { isEntryWriteMode } from './content-engine/entry-mode'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -677,7 +678,7 @@ export async function executeToolWithAutoMerge(
           }
         }
 
-        let writeResult: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean }
+        let writeResult: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, entries?: { created: string[], updated: string[] } }
 
         // Scheduling rides beside `data`, never inside it (meta only, status
         // untouched). The engine validates the dates and lifts any the agent
@@ -687,7 +688,13 @@ export async function executeToolWithAutoMerge(
           const value = params[key]
           if (value === null || typeof value === 'string') schedule[key] = value
         }
-        const saveOptions = { autoPublish, ...(Object.keys(schedule).length > 0 ? { schedule } : {}) }
+        const saveOptions = {
+          autoPublish,
+          ...(Object.keys(schedule).length > 0 ? { schedule } : {}),
+          // create vs update is stated, not inferred — an id that exists can't
+          // be "created" over, a missing one can't be "updated" into being (#298).
+          ...(isEntryWriteMode(params.mode) ? { mode: params.mode } : {}),
+        }
 
         // Document kind: expects { slug, frontmatter/data, body }
         if (params.slug && typeof params.slug === 'string') {
@@ -1689,12 +1696,15 @@ function statusOf(meta: unknown): string | null {
 }
 
 function summarizeWriteResult(
-  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] } },
+  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] }, entries?: { created: string[], updated: string[] } },
   // The locale the write targeted. Echoed so the agent can see — and report —
   // which language it changed; before, it was only inside the branch name (#284).
   locale?: string,
 ): Record<string, unknown> {
   return {
+    // Which entries this save created and which it changed — so "added a new
+    // article" can't be reported for a write that overwrote an existing one.
+    ...(result.entries ? { created: result.entries.created, updated: result.entries.updated } : {}),
     branch: result.branch,
     commitSha: result.commit.sha,
     ...(locale ? { locale } : {}),

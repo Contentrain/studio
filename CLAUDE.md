@@ -90,11 +90,15 @@ This repository is the AGPL core product surface — no marketing pages. All rou
 /auth/callback ............ Auth callback (public)
 / ......................... Workspace list (or redirect to default)
 /w/:slug .................. Workspace dashboard — project list
-/w/:slug/projects/new ..... Connect repository
 /w/:slug/projects/:id ..... Project workspace (three-panel)
 /w/:slug/settings ......... Workspace settings (overview, members, github, ai-keys)
 /settings ................. User account settings (profile, account deletion)
 ```
+
+> Connecting a repository is a dialog (`ConnectRepoDialog.vue`), opened from the
+> sidebar, the command palette and the workspace dashboard — not a page. The old
+> `/w/:slug/projects/new` route was removed in `68345ed`; anything still linking
+> to it now falls through to `/w/:slug/projects/:id` with `id = "new"`.
 
 ### Profile / Account Settings
 - `/settings` page with tabs: Profile, Account

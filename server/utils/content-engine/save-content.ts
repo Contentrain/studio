@@ -15,6 +15,8 @@ import {
 } from './helpers'
 import { normalizeModelContentMedia } from '../media-rewrite'
 import { saveDocument } from './save-document'
+import { entryModeErrors, partitionEntries } from './entry-mode'
+import { mergeEntryFields } from './field-merge'
 import { planLocaleFanOut } from './locale-fanout'
 
 /**
@@ -91,6 +93,7 @@ export async function saveContent(
 
   const fields = modelDef.fields ?? {}
   let validation: ValidationResult = { valid: true, errors: [] }
+  let entryPartition: { created: string[], updated: string[] } | undefined
 
   // The save_content contract (and the agent-facing tool description) is
   // "MERGES with existing data — only send changed fields." Studio's
@@ -112,12 +115,18 @@ export async function saveContent(
     catch { /* no existing content */ }
 
     const normalizedData = toObjectMap(data)
+    const entryIds = Object.keys(normalizedData)
+    const exists = (entryId: string) => entryId in existingForValidation
+    validation.errors.push(...entryModeErrors(options?.mode, entryIds, exists, { model: modelId, locale }))
+    entryPartition = partitionEntries(entryIds, exists)
+
     const mergedEntries = { ...existingForValidation }
     for (const [eid, edata] of Object.entries(normalizedData)) {
-      mergedEntries[eid] = {
-        ...(mergedEntries[eid] as Record<string, unknown> ?? {}),
-        ...(edata as Record<string, unknown>),
-      }
+      mergedEntries[eid] = mergeEntryFields(
+        (mergedEntries[eid] as Record<string, unknown> | undefined) ?? {},
+        edata as Record<string, unknown>,
+        fields,
+      )
     }
 
     for (const entryId of Object.keys(normalizedData)) {
@@ -136,6 +145,7 @@ export async function saveContent(
       validation.errors.push(...entryValidation.errors)
       if (!entryValidation.valid) validation.valid = false
     }
+    if (validation.errors.some(e => e.severity === 'error')) validation.valid = false
 
     // Persist the merged entries for only the touched IDs — never the
     // untouched siblings (that would needlessly rewrite + re-stamp them).
@@ -151,7 +161,7 @@ export async function saveContent(
       existingSingleton = JSON.parse(await reader.readFile(resolveContentPath(ctx.pathCtx, modelDef, locale))) as Record<string, unknown>
     }
     catch { /* no existing */ }
-    const mergedSingleton = { ...existingSingleton, ...data }
+    const mergedSingleton = mergeEntryFields(existingSingleton, data, fields)
     validation = validateContent(mergedSingleton, fields, modelId, locale)
     dataForWrite = mergedSingleton
   }
@@ -279,5 +289,6 @@ export async function saveContent(
     diff,
     validation,
     ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
+    ...(entryPartition ? { entries: entryPartition } : {}),
   }
 }

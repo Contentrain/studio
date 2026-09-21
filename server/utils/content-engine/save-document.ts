@@ -5,6 +5,8 @@ import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
+import { entryModeErrors } from './entry-mode'
+import { mergeEntryFields } from './field-merge'
 import { planDocumentLocaleFanOut } from './locale-fanout'
 
 /**
@@ -72,11 +74,13 @@ export async function saveDocument(
   // required", and a manual field edit hit "Required field is missing".
   let existingFrontmatter: Record<string, unknown> = {}
   let existingBody = ''
+  let documentExists = false
   try {
     const raw = await reader.readFile(resolveContentPath(ctx.pathCtx, modelDef, locale, safeSlug))
     const parsed = parseMarkdownFrontmatter(raw)
     existingFrontmatter = (parsed.frontmatter ?? {}) as Record<string, unknown>
     existingBody = parsed.body ?? ''
+    documentExists = true
   }
   catch { /* new document — nothing to merge */ }
 
@@ -85,7 +89,7 @@ export async function saveDocument(
   // about. Lifted here so the merged frontmatter never carries it.
   const lifted = splitEntrySchedule(modelDef, frontmatter, options?.schedule)
   frontmatter = lifted.data
-  const mergedFrontmatter = { ...existingFrontmatter, ...frontmatter }
+  const mergedFrontmatter = mergeEntryFields(existingFrontmatter, frontmatter, fields)
   // Preserve the existing body when the caller sends an empty one (the common
   // case for a frontmatter-only edit). An intentional clear is rare and not
   // worth the risk of silent content loss.
@@ -100,6 +104,13 @@ export async function saveDocument(
   // slug are validated untouched.
   const dataToValidate = 'slug' in fields ? { ...mergedFrontmatter, slug: safeSlug } : mergedFrontmatter
   const validation = validateContent(dataToValidate, fields, modelId, locale, safeSlug)
+  // Same gate as slug uniqueness: a create that names an existing slug, or an
+  // update of a slug that isn't there, is refused rather than merged (#298).
+  const modeErrors = entryModeErrors(options?.mode, [safeSlug], () => documentExists, { model: modelId, locale })
+  if (modeErrors.length > 0) {
+    validation.errors.push(...modeErrors)
+    validation.valid = false
+  }
   if (!validation.valid) {
     return {
       branch: '',
@@ -198,5 +209,6 @@ export async function saveDocument(
     diff,
     validation,
     ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
+    entries: documentExists ? { created: [], updated: [safeSlug] } : { created: [safeSlug], updated: [] },
   }
 }

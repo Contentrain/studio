@@ -38,12 +38,19 @@ export const STUDIO_TOOLS: StudioTool[] = [
   },
   {
     name: 'save_content',
-    description: `Create or update content. MERGES with existing data — only send changed fields.
+    description: `Create or update content. State which with \`mode\`:
+- "update": change entries that already exist in this locale. Use the EXISTING id (collection) or slug (document) from brain_query / get_content. Refused if the entry does not exist in this locale.
+- "create": add NEW entries. For a collection, pick a fresh 12-char lowercase hex id that no entry uses yet (check the content index / brain_query); for a document, a new slug. Refused if that id or slug already exists in this locale — never reuse an id to "create" over another entry. An i18n entry keeps ONE id across locales: create it in the first locale, then create it in the next locale with that same id.
+
+Updates MERGE with existing data — only send changed fields. Inside an object field, only the sub-keys you send change; set a sub-key to null to remove it. Arrays are replaced as sent.
 
 FORMAT BY KIND:
-- collection: { "existingOrNewEntryId": { field: value, ... } } — use EXISTING entry ID for updates, generate 12-char hex for NEW entries
-- singleton: { field: value, ... } — merges with existing fields
-- dictionary: { "key": "string value", ... } — ALL values must be strings
+- collection: { "entryId": { field: value, ... } }
+- document: slug + data (frontmatter) + body
+- singleton: { field: value, ... } — always mode "update"
+- dictionary: { "key": "string value", ... } — ALL values must be strings; mode "update"
+
+The result lists which entries were \`created\` and which \`updated\` — report exactly that.
 
 RELATION FIELDS:
 - relation (single): set value to target entry ID (collection) or slug (document)
@@ -57,6 +64,7 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
+        mode: { type: 'string', enum: ['create', 'update'], description: '"create" = new entries only (refused if the id/slug exists); "update" = existing entries only (refused if missing)' },
         locale: { type: 'string', description: 'Locale code (defaults to context locale)' },
         data: { type: 'object', description: 'Content data — only include fields that changed' },
         slug: { type: 'string', description: 'Document slug (required for document kind only)' },
@@ -64,7 +72,7 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
         publish_at: { type: ['string', 'null'], description: 'Scheduled publish date, ISO 8601. Meta only, never in data; does not change status. null clears; omit to leave unchanged.' },
         expire_at: { type: ['string', 'null'], description: 'Scheduled expiry, ISO 8601, after publish_at. Same rules as publish_at.' },
       },
-      required: ['model', 'data'],
+      required: ['model', 'mode', 'data'],
     },
     requiredPhase: ['active'],
     defaultAffects: { snapshotChanged: false, branchesChanged: true },
