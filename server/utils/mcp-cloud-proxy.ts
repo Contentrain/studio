@@ -58,11 +58,13 @@ export const STUDIO_HEADERS = [
  * Every request with a body died at the hop, which is every `tools/call`
  * and every `initialize` (issue #279).
  *
- * h3 already drops the rest of this class (`transfer-encoding`,
- * `connection`, `keep-alive`, `upgrade`, `expect`, `host`) in
- * `getProxyRequestHeaders`; `content-length` is the one it keeps. The
- * response side has carried the same rule since it was written —
- * see `HOP_BY_HOP_HEADERS`.
+ * `getProxyRequestHeaders` ignores eight headers: the framing ones
+ * (`transfer-encoding`, `connection`, `keep-alive`, `upgrade`, `expect`,
+ * `host`) plus `accept` and `accept-encoding`, which are content
+ * negotiation and are re-injected below. Of the framing class it keeps
+ * `content-length` alone, which is why this list has one entry and not
+ * six. The response side of this file has carried the same rule since it
+ * was written — see `HOP_BY_HOP_HEADERS`.
  */
 const REQUEST_FRAMING_HEADERS = ['content-length'] as const
 
