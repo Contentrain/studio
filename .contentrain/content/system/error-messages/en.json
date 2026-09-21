@@ -105,6 +105,7 @@
   "comments.update_failed": "Failed to update comment: {detail}",
   "comments.upgrade": "Comments are not included in your plan",
   "comments.url_invalid": "Enter a valid http(s) URL",
+  "content.entry_in_use": "This entry is still referenced by other content, so it was not deleted. Change or clear these references first, or ask the user how to proceed",
   "content.insufficient_permissions": "You do not have sufficient permissions for this content operation.",
   "content.model_in_use": "Cannot delete this model — other content still references it via relations. Remove those references first",
   "content.model_no_access": "No access to model: {model}",
