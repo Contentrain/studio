@@ -32,7 +32,7 @@ import { CHAT_MODELS } from './ai-models'
 /**
  * One credit ≈ this much Anthropic spend. Chosen so a typical light
  * message (short question, warm cache) rounds to 1 credit and plan
- * quotas keep their advertised magnitude (starter 150, pro 1500).
+ * quotas keep their advertised magnitude (starter 60, pro 350).
  */
 export const AI_CREDIT_UNIT_USD = 0.03
 
