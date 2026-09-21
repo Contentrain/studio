@@ -85,6 +85,11 @@ Managed + postgres pair (plain PostgreSQL, no Supabase):
 - Set `NUXT_EMAIL_SENDER_NAME`
 - If local Supabase auth SMTP is in use, also set `RESEND_API_KEY`
 
+### AI
+
+- Set `NUXT_ANTHROPIC_API_KEY` for the operator-managed (studio-hosted) AI surface. Without it, chat still works via user-supplied BYOA keys only.
+- **Use a distinct key per deployment environment (staging vs. production, and any preview/dev environments).** Anthropic's Console cannot attribute spend by workspace or environment — only by key. Studio's own cost attribution (usage dashboards, per-workspace credit quotas) is *entirely* database-scoped: each environment's Postgres tracks its own `agent_usage`/`api_message_usage` rows, with no awareness of any other environment. If two environments share one key, real Anthropic spend from one (e.g. staging load-testing) is invisible to the other's quota displays and cost dashboards, and the only way to reconcile total spend is a manual Anthropic Console export. There is no way for either running instance to detect a shared key at boot — this cannot be enforced automatically, only avoided operationally.
+
 ### Billing
 
 Managed profile (Polar or Stripe):
