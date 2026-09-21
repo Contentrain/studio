@@ -1,6 +1,6 @@
 import { clearBranchRequestSafe } from './branch-requests'
 import type { MergeDecision, ToolScope } from './approval-gate'
-import { decideMerge, savedEntryIds } from './approval-gate'
+import { decideMerge, savedEntryIds, writeSignals } from './approval-gate'
 import { getBrainCache } from './brain-cache'
 import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '~~/server/providers/ai'
@@ -547,6 +547,7 @@ export async function executeToolWithAutoMerge(
       workflow,
       tool: name,
       ...(opts.scope ? { scope: opts.scope } : {}),
+      signals: writeSignals(name, params),
       policy: cached.approvalPolicy,
       ...(opts.commitSha ? { commitSha: opts.commitSha } : {}),
     })
