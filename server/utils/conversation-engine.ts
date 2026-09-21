@@ -112,6 +112,10 @@ export interface ToolExecutionContext {
 const DEFAULT_MAX_TOOL_ITERATIONS = 8
 const DEFAULT_MAX_TOOL_RESULT_LENGTH = 32000
 
+/** brain_query listing page size — see the `truncated` field on its result. */
+const DEFAULT_BRAIN_QUERY_LIMIT = 20
+const MAX_BRAIN_QUERY_LIMIT = 100
+
 /**
  * Appended to the last tool_result message before the graceful-close
  * wrap call. Without it the wrap just replays the conversation with
@@ -1565,19 +1569,58 @@ export async function executeToolWithAutoMerge(
         const contentData = brainData.content.get(key) ?? null
         const metaData = brainData.meta.get(key) ?? null
         const modelDef = brainData.models.get(modelId)
+        const kind = modelDef?.kind ?? 'collection'
 
-        if (params.entryId && contentData && typeof contentData === 'object' && !Array.isArray(contentData)) {
+        // A singleton/dictionary is one record, not a list — `entryId`
+        // has nothing to select there (it used to be looked up as a FIELD
+        // NAME on that record, which is almost never a hit, and silently
+        // read back `data: null`).
+        if ((kind === 'collection' || kind === 'document') && params.entryId) {
           const entryId = params.entryId as string
-          const entry = (contentData as Record<string, unknown>)[entryId]
+          const entries = normalizeQueryEntries(contentData, kind)
+          const entry = entries.find(e => queryEntryKey(e, kind) === entryId) ?? null
           // The entry-scoped read used to drop `meta` entirely, which made it
           // the ONE path that could never answer "is this published?" — while
           // the truncation notice on a large model points the caller straight
           // at it. Narrow to an entry and its meta narrows with it.
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', entryId, meta: entryMetaFor(metaData, modelDef?.kind, entryId), data: entry ?? null }
+          result = { modelId, locale, kind, entryId, meta: entryMetaFor(metaData, kind, entryId), data: entry }
+          break
         }
-        else {
+
+        if (kind === 'singleton' || kind === 'dictionary') {
           // `meta` before `data` — see the note in `get_content`.
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', meta: metaData, data: contentData }
+          result = { modelId, locale, kind, meta: metaData, data: contentData }
+          break
+        }
+
+        // Listing: filter, sort, paginate. Always shaped this way (never a
+        // bare object/array of everything) so a large model can never again
+        // reach the generic tool-result cutoff and come back as broken JSON
+        // — `truncated` says so instead, and `offset`/`limit` page through it.
+        const entries = normalizeQueryEntries(contentData, kind)
+        const filtered = applyQueryWhere(entries, params.where as Record<string, unknown> | undefined)
+        const sorted = applyQuerySort(filtered, params.sort as { field?: string, direction?: string } | undefined)
+        const total = sorted.length
+        const offset = Math.max(0, Math.trunc((params.offset as number) || 0))
+        const limit = Math.min(MAX_BRAIN_QUERY_LIMIT, Math.max(1, Math.trunc((params.limit as number) || DEFAULT_BRAIN_QUERY_LIMIT)))
+        const page = sorted.slice(offset, offset + limit)
+        const fields = params.fields as string[] | undefined
+        const pageMeta: Record<string, unknown> = {}
+        for (const entry of page) {
+          const entryId = queryEntryKey(entry, kind)
+          const meta = entryMetaFor(metaData, kind, entryId)
+          if (meta !== null) pageMeta[entryId] = meta
+        }
+        result = {
+          modelId,
+          locale,
+          kind,
+          meta: pageMeta,
+          data: page.map(entry => applyQueryFields(entry, kind, fields)),
+          total,
+          returned: page.length,
+          offset,
+          truncated: offset + page.length < total,
         }
         break
       }
@@ -1693,6 +1736,90 @@ function statusOf(meta: unknown): string | null {
   if (!meta || typeof meta !== 'object') return null
   const value = (meta as Record<string, unknown>).status
   return typeof value === 'string' ? value : null
+}
+
+/**
+ * brain_query listing support — collection and document are the only two
+ * kinds with more than one entry, and they store that list in two different
+ * shapes (`brain-cache.ts`): a collection is an id-keyed object, a document
+ * an array of `{slug, frontmatter, body}`. Both normalize here into a flat
+ * record per entry — `id` for a collection, `slug` for a document, exactly
+ * the field name each kind's own tools already use — so `where`/`sort`/
+ * `fields` can work the same way regardless of kind.
+ */
+function normalizeQueryEntries(contentData: unknown, kind: string): Array<Record<string, unknown>> {
+  if (kind === 'document') {
+    if (!Array.isArray(contentData)) return []
+    return contentData.map((raw) => {
+      const entry = raw as { slug: string, frontmatter: Record<string, unknown>, body: string }
+      return { slug: entry.slug, ...entry.frontmatter, body: entry.body }
+    })
+  }
+  if (!contentData || typeof contentData !== 'object' || Array.isArray(contentData)) return []
+  return Object.entries(contentData as Record<string, Record<string, unknown>>)
+    .map(([id, data]) => ({ id, ...data }))
+}
+
+/** The field a normalized entry's identity lives under, by kind. */
+function queryEntryKey(entry: Record<string, unknown>, kind: string): string {
+  return String(kind === 'document' ? entry.slug : entry.id)
+}
+
+/**
+ * Equality-only, named-field filtering — deliberately not a query
+ * language. `where` values come straight from the model, so an arbitrary
+ * expression syntax would need its own parser and its own failure modes;
+ * exact match on a field the agent already saw in brain_search or
+ * get_content output does not.
+ */
+function applyQueryWhere(
+  entries: Array<Record<string, unknown>>,
+  where: Record<string, unknown> | undefined,
+): Array<Record<string, unknown>> {
+  if (!where || typeof where !== 'object') return entries
+  const conditions = Object.entries(where)
+  if (conditions.length === 0) return entries
+  return entries.filter(entry => conditions.every(([field, value]) => entry[field] === value))
+}
+
+/**
+ * Sort by one named field. Entries missing that field sort after every
+ * entry that has it, in both directions — "missing" is not a value on
+ * either end of an order, so a direction flip must not move it there.
+ */
+function applyQuerySort(
+  entries: Array<Record<string, unknown>>,
+  sort: { field?: string, direction?: string } | undefined,
+): Array<Record<string, unknown>> {
+  if (!sort?.field) return entries
+  const { field } = sort
+  const desc = sort.direction === 'desc'
+  const present = entries.filter(e => e[field] !== undefined && e[field] !== null)
+  const missing = entries.filter(e => e[field] === undefined || e[field] === null)
+  present.sort((a, b) => {
+    const av = a[field]
+    const bv = b[field]
+    const cmp = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : String(av).localeCompare(String(bv))
+    return desc ? -cmp : cmp
+  })
+  return [...present, ...missing]
+}
+
+/** Keep only the named fields (plus the entry's own identity field). */
+function applyQueryFields(
+  entry: Record<string, unknown>,
+  kind: string,
+  fields: string[] | undefined,
+): Record<string, unknown> {
+  if (!fields || fields.length === 0) return entry
+  const idField = kind === 'document' ? 'slug' : 'id'
+  const projected: Record<string, unknown> = { [idField]: entry[idField] }
+  for (const field of fields) {
+    if (field in entry) projected[field] = entry[field]
+  }
+  return projected
 }
 
 function summarizeWriteResult(
