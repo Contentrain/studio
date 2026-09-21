@@ -1103,7 +1103,7 @@ export async function executeToolWithAutoMerge(
           copyModelId, fromLocale, toLocale, userEmail,
         )
         if (!writeResult.validation.valid) {
-          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
+          result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors, ', ')}` }
           break
         }
         affected.models.push(params.model as string)
@@ -1317,7 +1317,7 @@ export async function executeToolWithAutoMerge(
         }
         const writeResult = await engine.updateEntryStatus(modelId, locale, entryIds, status, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
+          result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors, ', ')}` }
           break
         }
         // `statusChanges` is the honest record of what this call did:
@@ -1447,7 +1447,7 @@ export async function executeToolWithAutoMerge(
         }
         const writeResult = await engine.saveVocabulary(terms as Record<string, Record<string, string>>, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
+          result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors, ', ')}` }
           break
         }
         affected.snapshotChanged = true
@@ -1472,7 +1472,7 @@ export async function executeToolWithAutoMerge(
         }
         const writeResult = await engine.addLocale(newLocale, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
+          result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors, ', ')}` }
           break
         }
         affected.snapshotChanged = true
@@ -1524,7 +1524,7 @@ export async function executeToolWithAutoMerge(
 
         const writeResult = await engine.deleteModel(modelId, userEmail)
         if (!writeResult.validation.valid) {
-          result = { error: formatValidationErrors(writeResult.validation.errors, ', ') }
+          result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors, ', ')}` }
           break
         }
         affected.models.push(modelId)
