@@ -392,7 +392,7 @@ async function runConversationMessage(
           outputTokens: totalOutputTokens,
           cacheCreationInputTokens: totalCacheCreationInputTokens,
           cacheReadInputTokens: totalCacheReadInputTokens,
-        })
+        }, plan)
       : 1
     const extraCredits = credits - 1
     if (extraCredits > 0)

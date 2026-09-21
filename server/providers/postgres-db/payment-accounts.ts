@@ -20,6 +20,7 @@ type PaymentAccountMethods = Pick<
   | 'enqueueUsageEvent'
   | 'listPendingUsageEvents'
   | 'markUsageEventIngested'
+  | 'markUsageEventDropped'
 >
 
 export function paymentAccountMethods(): PaymentAccountMethods {
@@ -202,6 +203,26 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         throw createError({
           statusCode: 500,
           message: `Failed to mark usage event ingested: ${error instanceof Error ? error.message : 'unknown'}`,
+        })
+      }
+    },
+
+    async markUsageEventDropped(id, reason) {
+      try {
+        await getAdmin()
+          .updateTable('usage_events_outbox')
+          .set({
+            ingested_at: new Date().toISOString(),
+            attempt_count: sql`attempt_count + 1`,
+            last_error: reason,
+          })
+          .where('id', '=', id)
+          .execute()
+      }
+      catch (error) {
+        throw createError({
+          statusCode: 500,
+          message: `Failed to drop usage event: ${error instanceof Error ? error.message : 'unknown'}`,
         })
       }
     },

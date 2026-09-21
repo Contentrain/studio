@@ -101,10 +101,14 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     paletteKeywords: ['sonnet', 'balanced'],
   },
   {
-    // Same $3/$15 sticker as Sonnet 4.6 (intro $2/$10 through
-    // 2026-08-31) but a new tokenizer that produces ~30% more tokens
-    // for the same text — the shared budget therefore holds less
-    // conversation text than on 4.6, which keeps cost roughly at par.
+    // $2/$10 — launched as introductory pricing through 2026-08-31,
+    // now confirmed permanent (Anthropic cancelled the scheduled
+    // increase to Sonnet 4.6's $3/$15 sticker; see
+    // platform.claude.com/docs/en/about-claude/pricing, "Claude
+    // Sonnet 5 introductory pricing" note). New tokenizer produces
+    // ~30% more tokens for the same text — the shared budget
+    // therefore holds less conversation text than on 4.6, which
+    // keeps cost roughly at par despite the lower sticker.
     id: 'claude-sonnet-5',
     label: 'Sonnet 5',
     description: 'Balanced, newest generation',

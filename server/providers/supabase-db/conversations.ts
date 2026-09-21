@@ -3,6 +3,7 @@
  * for the Supabase DatabaseProvider.
  */
 import type { DatabaseProvider, DatabaseRow, MessageInsertInput } from '../database'
+import { reportBillingRisk } from '../../utils/alert'
 import { getAdmin, getUser } from './helpers'
 
 function toMessageRow(input: MessageInsertInput): Record<string, unknown> {
@@ -279,7 +280,11 @@ export function conversationMethods(): ConversationMethods {
       // _v3 RPC adds the credit-settle delta to _v2's cache token
       // columns; the older generations stay registered for
       // rolling-deploy safety but are no longer called from app code.
-      await admin.rpc('increment_agent_usage_tokens_v3', {
+      // Best-effort (usage bookkeeping must not break the turn), but
+      // the failure is still reported — an unchecked `error` here
+      // previously meant the credit ledger could under-count every
+      // turn with zero signal (SS-14).
+      const { error } = await admin.rpc('increment_agent_usage_tokens_v3', {
         p_workspace_id: input.workspaceId,
         p_user_id: input.userId,
         p_month: input.month,
@@ -290,6 +295,9 @@ export function conversationMethods(): ConversationMethods {
         p_cache_read_input_tokens: input.cacheReadInputTokens,
         p_message_count_delta: input.messageCountDelta ?? 0,
       })
+      if (error) {
+        reportBillingRisk(error, { op: 'usage-settle.agent_tokens_v3', workspaceId: input.workspaceId, userId: input.userId })
+      }
     },
 
     async decrementAgentUsage(input) {
@@ -327,7 +335,7 @@ export function conversationMethods(): ConversationMethods {
 
     async updateAPIUsageTokens(input) {
       const admin = getAdmin()
-      await admin.rpc('increment_api_usage_tokens_v3', {
+      const { error } = await admin.rpc('increment_api_usage_tokens_v3', {
         p_workspace_id: input.workspaceId,
         p_api_key_id: input.apiKeyId,
         p_month: input.month,
@@ -337,6 +345,9 @@ export function conversationMethods(): ConversationMethods {
         p_cache_read_input_tokens: input.cacheReadInputTokens,
         p_message_count_delta: input.messageCountDelta ?? 0,
       })
+      if (error) {
+        reportBillingRisk(error, { op: 'usage-settle.api_tokens_v3', workspaceId: input.workspaceId, apiKeyId: input.apiKeyId })
+      }
     },
 
     async decrementAPIUsage(input) {

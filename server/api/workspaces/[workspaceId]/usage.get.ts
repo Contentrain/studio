@@ -44,7 +44,11 @@ export default defineEventHandler(async (event) => {
   if (!workspace)
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
 
-  const plan = normalizePlan(workspace.plan as string | null)
+  // The same plan the limits are actually enforced against. Reading
+  // `workspaces.plan` directly would show a locked workspace (expired
+  // trial, expired grace) the limits of the plan it no longer has —
+  // every gate resolves through `effectivePlan`, so this screen must too.
+  const plan = event.context?.billing?.effectivePlan ?? normalizePlan(workspace.plan as string | null)
   const overageSettings = (workspace.overage_settings as Record<string, boolean>) ?? {}
 
   // The three credit pools are counted in the workspace's billing period.
