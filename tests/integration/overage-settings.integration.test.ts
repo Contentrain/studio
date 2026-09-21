@@ -60,8 +60,8 @@ describe('overage settings API', () => {
       expect(aiCategory).toMatchObject({
         limitKey: 'ai.messages_per_month',
         settingsKey: 'ai_messages',
-        unitPrice: 0.05,
-        planLimit: 1500, // pro plan
+        unitPrice: 0.06,
+        planLimit: 500, // pro plan
         enabled: true,
       })
     })

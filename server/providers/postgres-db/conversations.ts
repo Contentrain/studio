@@ -9,6 +9,7 @@
  */
 import { sql } from 'kysely'
 import type { DatabaseProvider, DatabaseRow, MessageInsertInput } from '../database'
+import { reportBillingRisk } from '../../utils/alert'
 import { getAdmin, pickColumns, throwDbError, withUser } from './helpers'
 
 /**
@@ -332,7 +333,9 @@ export function conversationMethods(): ConversationMethods {
     async updateAgentUsageTokens(input) {
       // _v3 adds the credit-settle delta to _v2's cache token counters;
       // failures are swallowed like the Supabase impl (usage
-      // bookkeeping must not break the turn).
+      // bookkeeping must not break the turn) but still reported — a
+      // silently-failing settle previously meant the credit ledger
+      // under-counted every turn with zero signal (SS-14).
       try {
         await sql`
           SELECT public.increment_agent_usage_tokens_v3(
@@ -348,8 +351,8 @@ export function conversationMethods(): ConversationMethods {
           )
         `.execute(getAdmin())
       }
-      catch {
-        // parity: swallowed
+      catch (error) {
+        reportBillingRisk(error, { op: 'usage-settle.agent_tokens_v3', workspaceId: input.workspaceId, userId: input.userId })
       }
     },
 
@@ -411,8 +414,8 @@ export function conversationMethods(): ConversationMethods {
           )
         `.execute(getAdmin())
       }
-      catch {
-        // parity: swallowed
+      catch (error) {
+        reportBillingRisk(error, { op: 'usage-settle.api_tokens_v3', workspaceId: input.workspaceId, apiKeyId: input.apiKeyId })
       }
     },
 

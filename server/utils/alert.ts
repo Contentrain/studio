@@ -48,3 +48,41 @@ export function reportDataLossRisk(error: unknown, context: DataLossContext): vo
     })
     .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
 }
+
+export interface BillingRiskContext {
+  /** Stable operation id, e.g. 'usage-settle.agent_tokens_v3'. */
+  op: string
+  workspaceId?: string
+  /** Anything else that helps triage — counts, flags. NEVER user content. */
+  [key: string]: unknown
+}
+
+/**
+ * Report that a usage-metering write failed or behaved anomalously (e.g.
+ * the turn-end credit-settle RPC). These calls are intentionally
+ * best-effort — a metering hiccup must never break the user's turn — but
+ * "best-effort" previously meant "silent": the settle RPC could fail on
+ * every single call (missing function after an incomplete migration,
+ * wrong param shape) and nothing would ever surface it, leaving the
+ * credit ledger permanently under-counting usage with no signal. Same
+ * shape as `reportDataLossRisk` — log always, escalate to Sentry
+ * best-effort — for the same reason: self-hosters without Sentry still
+ * get the log line, and nothing here can throw back into the caller.
+ */
+export function reportBillingRisk(error: unknown, context: BillingRiskContext): void {
+  const { op, ...extra } = context
+  const message = error instanceof Error ? error.message : String(error)
+
+  // eslint-disable-next-line no-console
+  console.error(`[billing-risk] ${op}: ${message}`, extra)
+
+  void import('@sentry/nuxt')
+    .then((Sentry) => {
+      Sentry.captureException(error instanceof Error ? error : new Error(message), {
+        level: 'error',
+        tags: { billing_risk: 'true', op },
+        extra,
+      })
+    })
+    .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
+}

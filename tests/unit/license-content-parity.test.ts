@@ -239,15 +239,22 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins Pro canonical AI message limit', () => {
-      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(1500)
+      // 500 credits × AI_CREDIT_UNIT_USD ($0.03) = $15 ≈ 30% of the $49
+      // Pro price (SS-14 profit policy: platform AI spend at full quota
+      // stays at or under 30% of plan price). Was 1500 (~92% of price,
+      // near-zero margin) before the 2026-09 unit-economics fix.
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(500)
     })
 
     it('pins Pro canonical API message limit', () => {
-      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(3000)
+      // Same 30%-of-price target as the chat credit limit above. Was
+      // 3000 (~184% of the $49 Pro price on its own) before the fix.
+      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(500)
     })
 
     it('pins Starter AI message limit', () => {
-      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(150)
+      // 90 credits × $0.03 = $2.70 = 30% of the $9 Starter price.
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(90)
     })
 
     it('team.members keeps the structural owner seat on free', () => {
@@ -284,8 +291,10 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins canonical unit prices', () => {
-      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.05)
-      expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.05)
+      // $0.06 = 2× AI_CREDIT_UNIT_USD ($0.03) — the SS-14 profit-policy
+      // floor (overage price >= 2x marginal cost). Was 0.05 (1.67x).
+      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.06)
+      expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.06)
       expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.price).toBe(0.005)
       expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price).toBe(0.10)
       expect(OVERAGE_PRICING['forms.submissions_per_month']!.price).toBe(0.01)

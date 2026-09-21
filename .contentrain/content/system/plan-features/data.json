@@ -19,13 +19,13 @@
     "free_value": "0",
     "key": "ai.messages_per_month",
     "name": "AI Message Credits per Month",
-    "overage_price": 0.05,
+    "overage_price": 0.06,
     "overage_settings_key": "ai_messages",
     "overage_unit": "per credit",
-    "pro_value": "1500",
+    "pro_value": "500",
     "requires_ee": "false",
     "sort_order": 1,
-    "starter_value": "150",
+    "starter_value": "90",
     "type": "limit"
   },
   "ai-pro-models": {
@@ -184,13 +184,13 @@
     "free_value": "0",
     "key": "api.messages_per_month",
     "name": "API Message Credits per Month",
-    "overage_price": 0.05,
+    "overage_price": 0.06,
     "overage_settings_key": "api_messages",
     "overage_unit": "per credit",
-    "pro_value": "3000",
+    "pro_value": "500",
     "requires_ee": "false",
     "sort_order": 2,
-    "starter_value": "100",
+    "starter_value": "90",
     "type": "limit"
   },
   "api-webhooks": {
