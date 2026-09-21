@@ -239,22 +239,49 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins Pro canonical AI message limit', () => {
-      // 500 credits × AI_CREDIT_UNIT_USD ($0.03) = $15 ≈ 30% of the $49
-      // Pro price (SS-14 profit policy: platform AI spend at full quota
-      // stays at or under 30% of plan price). Was 1500 (~92% of price,
-      // near-zero margin) before the 2026-09 unit-economics fix.
-      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(500)
+      // P1 applies to the SUM of every platform-cost-bearing pool, not
+      // per meter — Conversation API also runs on the Studio key with
+      // no BYOA fallback (ee/enterprise/conversation-api.ts), so a Pro
+      // workspace can draw AI (350) + API (140) = 490 credits in one
+      // month. 490 × $0.03 = $14.70 ≈ 30% of the $49 Pro price. A first
+      // cut that set each pool to 500 (SO-14 B-1) let the two pools sum
+      // to $30 — 61% of price — before the pooled-budget correction.
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(350)
     })
 
     it('pins Pro canonical API message limit', () => {
-      // Same 30%-of-price target as the chat credit limit above. Was
-      // 3000 (~184% of the $49 Pro price on its own) before the fix.
-      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(500)
+      // Same pooled 30%-of-price budget as the chat credit limit above
+      // — see the comment there. Was 3000 (~184% of the $49 Pro price
+      // on its own) before the 2026-09 unit-economics fix.
+      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(140)
+    })
+
+    it('pins the pooled Pro AI+API budget under the P1 policy', () => {
+      // Regression guard for the pooled-vs-per-meter mistake above:
+      // the combined spend across both platform-cost-bearing pools
+      // must stay at or under 30% of plan price, not just each pool
+      // in isolation.
+      const pooledCredits = PLAN_LIMITS['ai.messages_per_month']!.values.pro
+        + PLAN_LIMITS['api.messages_per_month']!.values.pro
+      const proPrice = 49
+      expect(pooledCredits * AI_CREDIT_UNIT_USD).toBeLessThanOrEqual(proPrice * 0.3)
     })
 
     it('pins Starter AI message limit', () => {
-      // 90 credits × $0.03 = $2.70 = 30% of the $9 Starter price.
-      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(90)
+      // 60 credits × $0.03 = $1.80 = 30% of the pooled Starter budget
+      // (AI 60 + API 30 = 90 credits × $0.03 = $2.70 = 30% of $9).
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(60)
+    })
+
+    it('pins Starter canonical API message limit', () => {
+      expect(PLAN_LIMITS['api.messages_per_month']!.values.starter).toBe(30)
+    })
+
+    it('pins the pooled Starter AI+API budget under the P1 policy', () => {
+      const pooledCredits = PLAN_LIMITS['ai.messages_per_month']!.values.starter
+        + PLAN_LIMITS['api.messages_per_month']!.values.starter
+      const starterPrice = 9
+      expect(pooledCredits * AI_CREDIT_UNIT_USD).toBeLessThanOrEqual(starterPrice * 0.3)
     })
 
     it('team.members keeps the structural owner seat on free', () => {
@@ -291,10 +318,16 @@ describe('license ↔ content parity', () => {
     })
 
     it('pins canonical unit prices', () => {
-      // $0.06 = 2× AI_CREDIT_UNIT_USD ($0.03) — the SS-14 profit-policy
-      // floor (overage price >= 2x marginal cost). Was 0.05 (1.67x).
-      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.06)
-      expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.06)
+      // $0.08 ≈ 2.7x AI_CREDIT_UNIT_USD ($0.03) — above the SS-14
+      // profit-policy floor (overage price >= 2x marginal cost) with
+      // headroom: SO-14 B-4 measured real cost per credit at $0.069 on
+      // live September staging data (lanista-software workspace, 43%
+      // capture rate against the pre-cap-raise 30-credit ceiling). A
+      // straight 2x ($0.06) would have priced overage below what a
+      // credit actually costs once the per-message cap moved 30→60.
+      // Was 0.05 (1.67x, loss-making) before the 2026-09 fix.
+      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.08)
+      expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.08)
       expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.price).toBe(0.005)
       expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price).toBe(0.10)
       expect(OVERAGE_PRICING['forms.submissions_per_month']!.price).toBe(0.01)

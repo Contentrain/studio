@@ -121,8 +121,8 @@ describe('license utilities', () => {
     expect(getAvailableFeatures('free')).not.toContain('cdn.delivery')
     expect(getPlanLimit('starter', 'cdn.api_keys')).toBe(3)
     expect(getPlanLimit('pro', 'team.members')).toBe(25)
-    expect(getPlanLimit('starter', 'ai.messages_per_month')).toBe(90)
-    expect(getPlanLimit('pro', 'ai.messages_per_month')).toBe(500)
+    expect(getPlanLimit('starter', 'ai.messages_per_month')).toBe(60)
+    expect(getPlanLimit('pro', 'ai.messages_per_month')).toBe(350)
   })
 
   it('Community Edition force-disables requires_ee features regardless of plan', () => {

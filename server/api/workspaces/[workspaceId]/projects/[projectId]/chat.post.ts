@@ -348,7 +348,7 @@ export default defineEventHandler(async (event) => {
               outputTokens: totalOutputTokens,
               cacheCreationInputTokens: totalCacheCreationInputTokens,
               cacheReadInputTokens: totalCacheReadInputTokens,
-            })
+            }, plan)
           : 1
         const extraCredits = credits - 1
         if (extraCredits > 0)

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   AI_CREDIT_UNIT_USD,
+  DEFAULT_MAX_CREDITS_PER_MESSAGE,
   estimateMessageCostUsd,
   estimateMessageCredits,
-  MAX_CREDITS_PER_MESSAGE,
+  getMaxCreditsPerMessage,
+  STARTER_MAX_CREDITS_PER_MESSAGE,
   pricingForModel,
 } from '../../shared/utils/ai-credits'
 
@@ -47,8 +49,8 @@ describe('estimateMessageCostUsd', () => {
 
 describe('estimateMessageCredits', () => {
   it('floors at 1 credit — a light message never costs more than its reservation', () => {
-    expect(estimateMessageCredits(usage())).toBe(1)
-    expect(estimateMessageCredits(usage({ inputTokens: 2_000, outputTokens: 300, cacheReadInputTokens: 20_000 }))).toBe(1)
+    expect(estimateMessageCredits(usage(), 'pro')).toBe(1)
+    expect(estimateMessageCredits(usage({ inputTokens: 2_000, outputTokens: 300, cacheReadInputTokens: 20_000 }), 'pro')).toBe(1)
   })
 
   it('weighs a heavy editorial turn by its real cost', () => {
@@ -59,7 +61,7 @@ describe('estimateMessageCredits', () => {
       cacheCreationInputTokens: 50_000,
       cacheReadInputTokens: 180_000,
       outputTokens: 6_000,
-    }))
+    }), 'pro')
     const cost = estimateMessageCostUsd(usage({
       inputTokens: 10_000,
       cacheCreationInputTokens: 50_000,
@@ -71,13 +73,26 @@ describe('estimateMessageCredits', () => {
     expect(credits).toBeLessThanOrEqual(12)
   })
 
-  it('caps a pathological turn at MAX_CREDITS_PER_MESSAGE', () => {
-    const credits = estimateMessageCredits(usage({
+  it('caps a pathological turn at the plan ceiling — Pro/Enterprise at 60, Starter at 30', () => {
+    const heavy = usage({
       model: 'claude-opus-4-8',
       inputTokens: 2_000_000,
       outputTokens: 500_000,
-    }))
-    expect(credits).toBe(MAX_CREDITS_PER_MESSAGE)
+    })
+    expect(estimateMessageCredits(heavy, 'pro')).toBe(DEFAULT_MAX_CREDITS_PER_MESSAGE)
+    expect(estimateMessageCredits(heavy, 'enterprise')).toBe(DEFAULT_MAX_CREDITS_PER_MESSAGE)
+    expect(estimateMessageCredits(heavy, 'starter')).toBe(STARTER_MAX_CREDITS_PER_MESSAGE)
+  })
+
+  it('getMaxCreditsPerMessage: Starter is lower — its quota is small enough that the default 60 cap could burn it in one turn', () => {
+    // Starter's quota dropped 90→60 in the same P1 rebase that raised
+    // the ceiling 30→60 (SO-14 B-3): a 60-credit turn would be 100% of
+    // the Starter quota instead of 12% of Pro's. Starter keeps the old
+    // per-message ceiling; Pro/Enterprise take the raised one.
+    expect(getMaxCreditsPerMessage('starter')).toBe(30)
+    expect(getMaxCreditsPerMessage('pro')).toBe(60)
+    expect(getMaxCreditsPerMessage('enterprise')).toBe(60)
+    expect(getMaxCreditsPerMessage('community')).toBe(60)
   })
 
   it('a Haiku turn costs a fraction of the same Sonnet turn (the starter-tier economics)', () => {

@@ -25,7 +25,7 @@ describe('usage API', () => {
           overage_settings: { ai_messages: true },
           media_storage_bytes: 2 * 1024 * 1024 * 1024, // 2 GB
         }),
-        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(45),
+        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(35),
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(10),
         countMonthlySubmissions: vi.fn().mockResolvedValue(80),
         countMonthlyComments: vi.fn().mockResolvedValue(12),
@@ -42,15 +42,15 @@ describe('usage API', () => {
       const comments = result.categories.find((c: { key: string }) => c.key === 'comments')
       expect(comments).toMatchObject({ key: 'comments', limitKey: 'comments.per_month', current: 12, unit: 'comments', overageEnabled: false, overageUnitPrice: 0 })
 
-      // AI Messages: 45/500 = 9%
+      // AI Messages: 35/350 = 10%
       const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
       expect(ai).toMatchObject({
         key: 'ai_messages',
-        current: 45,
-        limit: 500,
+        current: 35,
+        limit: 350,
         overageEnabled: true,
         overageUnits: 0,
-        percentage: 9,
+        percentage: 10,
       })
 
       // Form submissions: 80/3000 ≈ 3%
@@ -82,7 +82,7 @@ describe('usage API', () => {
           overage_settings: { ai_messages: true },
           media_storage_bytes: 0,
         }),
-        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(175), // 175 > 90 starter limit
+        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(120), // 120 > 60 starter limit
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
         countMonthlySubmissions: vi.fn().mockResolvedValue(0),
         countMonthlyComments: vi.fn().mockResolvedValue(0),
@@ -95,15 +95,15 @@ describe('usage API', () => {
 
       const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
       expect(ai).toMatchObject({
-        current: 175,
-        limit: 90,
-        overageUnits: 85,
-        overageUnitPrice: 0.06,
-        overageAmount: 5.1, // 85 credits x $0.06
+        current: 120,
+        limit: 60,
+        overageUnits: 60,
+        overageUnitPrice: 0.08,
+        overageAmount: 4.8, // 60 credits x $0.08
       })
-      expect(ai.percentage).toBe(194)
+      expect(ai.percentage).toBe(200)
 
-      expect(result.totalOverageAmount).toBe(5.1)
+      expect(result.totalOverageAmount).toBe(4.8)
     })
 
     it('returns -1 for unlimited limits (enterprise)', async () => {
