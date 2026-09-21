@@ -38,11 +38,18 @@
  * changes nothing; `--apply` performs it.
  *
  * Usage:
- *   NUXT_POLAR_ACCESS_TOKEN=polar_oat_… NUXT_POLAR_SERVER=sandbox \
- *     pnpm polar:sync                  # dry run — prints the diff
- *     pnpm polar:sync --apply          # perform it
- *     pnpm polar:sync --apply --rotate-prices
+ *   pnpm polar:sync                    # dry run against `.env` (sandbox)
+ *   pnpm polar:sync --apply            # perform it
+ *   pnpm polar:sync --apply --rotate-prices
  *                                      # also replace drifted unit prices
+ *
+ *   The target organisation comes from the env file, not the command:
+ *   `pnpm polar:sync` pins `--env-file=.env`. For the live catalogue name
+ *   both the file and the server, or the script refuses to write:
+ *
+ *   npx tsx --env-file=.env.prod scripts/polar-sync.ts                  # dry run
+ *   npx tsx --env-file=.env.prod scripts/polar-sync.ts \
+ *     --apply --rotate-prices --server=production
  */
 
 import { Polar } from '@polar-sh/sdk'
@@ -74,6 +81,31 @@ const APPLY = process.argv.includes('--apply')
  * it changes what existing subscribers are charged.
  */
 const ROTATE_PRICES = process.argv.includes('--rotate-prices')
+
+/**
+ * Writing to the live catalogue needs saying so out loud.
+ *
+ * `pnpm polar:sync` pins `--env-file=.env`, and that file points at the
+ * sandbox — so which organisation this script talks to is decided by an
+ * env file the command line never mentions. Someone reaching for a prod
+ * sync will type the same familiar command and hit sandbox; someone who
+ * once edited `.env` to point at production will type it and hit the
+ * live catalogue believing otherwise. Neither mistake is visible in what
+ * they typed.
+ *
+ * So a production write has to name production on the command line. It
+ * only guards `--apply`: reading is how you find out where you are
+ * pointed, and making that awkward would just push people to guess.
+ */
+if (APPLY && server === 'production' && !process.argv.includes('--server=production')) {
+  console.error(
+    'Refusing to write to the PRODUCTION Polar catalogue without --server=production.\n'
+    + '  The target comes from NUXT_POLAR_SERVER in the env file, not from the command,\n'
+    + '  and `pnpm polar:sync` pins --env-file=.env (sandbox). If you meant production:\n'
+    + '    npx tsx --env-file=.env.prod scripts/polar-sync.ts --apply --server=production',
+  )
+  process.exit(1)
+}
 
 /** Stand-in id for a meter a dry run would create but has not. */
 const PENDING_METER_ID = '(pending-create)'
@@ -321,6 +353,12 @@ function buildMeteredPriceBlueprint(meterIdByName: Map<string, string>): Array<{
       summary.warnings.push(`Meter "${meterDef.name}" missing; skipping metered price for ${limitKey}`)
       continue
     }
+    if (!meterDef.overageBillable) {
+      // Sold as a hard limit: no metered price, so no invoice line. Events
+      // keep flowing, so the usage is still measured and shown.
+      console.log(`    · ${meterDef.name}: sold as hard limit — no metered price`)
+      continue
+    }
     // Price per *meter* unit, not per plan-limit unit.
     out.push({
       meterId,
@@ -391,6 +429,7 @@ async function syncMeterCredits(
     if (!meterId) continue
     const limitUnits = includedUnitsFor(slug, meterDef.limitKey)
     if (limitUnits === null) continue
+    if (!meterDef.overageBillable) continue
     const units = Math.round(limitUnits * meterDef.unitsPerLimitUnit)
 
     // A meter that does not count what the plan sells cannot carry the

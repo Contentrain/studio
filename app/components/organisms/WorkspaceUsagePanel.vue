@@ -108,8 +108,17 @@ function categoryIcon(key: string): string {
             </span>
           </div>
 
-          <!-- Overage toggle -->
-          <div v-if="category.limit !== -1 && category.limit > 0">
+          <!-- Overage toggle. Absent where extra usage is not sold at
+               all: offering a switch that cannot take effect is worse
+               than saying the limit is fixed. -->
+          <span
+            v-if="category.overageSellable === false"
+            class="text-xs text-muted"
+            :title="t('billing.overage_not_available')"
+          >
+            {{ t('billing.overage_hard_limit') }}
+          </span>
+          <div v-else-if="category.limit !== -1 && category.limit > 0">
             <AtomsFormSwitch
               :model-value="category.overageEnabled"
               :disabled="!canToggleOverage || togglingKey !== null"
