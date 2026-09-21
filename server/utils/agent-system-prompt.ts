@@ -173,6 +173,10 @@ function buildDynamicBody(
 ): string {
   const sections: string[] = []
 
+  // SERVER TIME — the only place the agent can get "now" from; without it,
+  // date fields (publish_at, a "today" fix) got invented or back-dated.
+  sections.push(agentPrompt('context.server_time', { time: new Date().toISOString() }))
+
   // ATTACHED SOURCES — files/links the user added to this message
   if (attachments && attachments.length > 0) {
     sections.push(buildAttachmentSection(attachments))
@@ -584,12 +588,18 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // Reads are reads, writes are writes — never probe with a write.
     agentPrompt('rules.no_write_probe'),
     agentPrompt('rules.report_what_changed'),
+    // A "can't see it" report is almost always status/locale, not cache —
+    // checking first avoids blaming infrastructure for a draft.
+    agentPrompt('rules.check_before_blaming_cache'),
 
     // Content updates
     agentPrompt('rules.update_existing_id'),
     agentPrompt('rules.update_merge'),
+    agentPrompt('rules.verbatim_text'),
+    agentPrompt('rules.check_near_duplicate'),
     // Scheduling is meta, not status — the two get conflated otherwise.
     agentPrompt('rules.scheduling'),
+    agentPrompt('rules.no_invented_dates'),
     // Model updates merge the same way — a one-field payload used to replace a
     // 39-field model.
     agentPrompt('rules.model_update_merge'),
@@ -612,6 +622,11 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
 
     // Dictionary models hold user-facing UI copy
     agentPrompt('rules.ui_strings'),
+
+    // Conversational behavior
+    agentPrompt('rules.no_ask_and_act'),
+    agentPrompt('rules.no_needless_confirmation'),
+    agentPrompt('rules.professional_tone'),
 
     // Form submissions lifecycle
     agentPrompt('forms.lifecycle'),

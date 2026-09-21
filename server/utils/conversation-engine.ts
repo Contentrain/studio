@@ -1,4 +1,5 @@
 import { clearBranchRequestSafe } from './branch-requests'
+import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
 import { decideMerge, savedEntryIds, writeSignals } from './approval-gate'
 import { getBrainCache } from './brain-cache'
@@ -507,6 +508,20 @@ async function mergeForTool(
   const step1 = await engine.mergeToContentrain(branch)
   if (step1.merged) turnMerge.pendingFinalize.push(branch)
   return { merged: step1.merged }
+}
+
+/**
+ * A low-cardinality cause code for Sentry tags — not the raw message. A
+ * `result.error` string is almost always formatted "Label: detail" (the
+ * detail can echo a field value or an id), so keeping only the label
+ * bounds what travels; a flat `errorClass: 'tool_result_error'` gave every
+ * cause the same bucket, defeating the per-tool-error-rate dashboard #294
+ * asked for. The length cap is a second bound for the rare message with no
+ * colon at all.
+ */
+function errorResultClass(message: string): string {
+  const label = message.split(':')[0]?.trim()
+  return label ? label.slice(0, 60) : 'tool_result_error'
 }
 
 /**
@@ -1625,10 +1640,28 @@ export async function executeToolWithAutoMerge(
       invalidateBrainCache(projectId)
     }
 
+    if (result && typeof result === 'object' && 'error' in result) {
+      const message = String((result as { error: unknown }).error)
+      reportAgentToolError(message, {
+        tool: name,
+        projectId,
+        workspaceId,
+        modelId: params.model as string | undefined,
+        errorClass: errorResultClass(message),
+      })
+    }
+
     return { result, affected }
   }
   catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Tool execution failed'
+    reportAgentToolError(msg, {
+      tool: name,
+      projectId,
+      workspaceId,
+      modelId: params.model as string | undefined,
+      errorClass: e instanceof Error ? e.constructor.name : 'UnknownError',
+    })
     return { result: { error: msg }, affected }
   }
 }
