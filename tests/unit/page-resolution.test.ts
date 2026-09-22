@@ -35,6 +35,7 @@ const brain = {
     }],
     ['guides:tr', [
       { slug: 'youtube', frontmatter: { title: 'YouTube Rehberi' }, body: '…' },
+      { slug: 'blog', frontmatter: { title: 'Blog' }, body: '…' },
     ]],
     ['banners:tr', { x1: { title: 'Lansman bannerı', slug: 'lansman' } }],
     ['settings:tr', { slug: 'should-never-match' }],
@@ -87,6 +88,18 @@ describe('resolvePageUrl', () => {
     const page = resolvePageUrl('https://site.example/lansman', brain)
     expect(page.status).toBe('ambiguous')
     expect(page.candidates.map(c => `${c.model}/${c.entry}`).sort()).toEqual(['articles/d0d0d0d0d0d0', 'banners/x1'])
+  })
+
+  it('does not fall back to a section segment when the page slug is unknown', () => {
+    // `/blog` is itself an entry; a deleted or mistyped post under it must
+    // not resolve to that entry.
+    expect(resolvePageUrl('https://site.example/blog/silinmis-yazi', brain)).toMatchObject({ status: 'none', candidates: [] })
+    expect(resolvePageUrl('https://site.example/blog', brain).candidates[0]).toMatchObject({ model: 'guides', entry: 'blog' })
+  })
+
+  it('reads a trailing index page as the page above it', () => {
+    expect(extractPageUrls('https://site.example/rehberler/youtube/index.html', [])).toHaveLength(1)
+    expect(resolvePageUrl('https://site.example/rehberler/youtube/index.html', brain).candidates[0]).toMatchObject({ entry: 'youtube' })
   })
 
   it('says none when no entry has the slug — and ignores singletons', () => {

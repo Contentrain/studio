@@ -14,8 +14,10 @@ import { pickLabel } from './relation-expand'
  * Studio does not know a project's public site address, so the page is matched
  * by its path against what the content brain holds: document slugs, and the
  * values of `slug`-typed fields in collections. A slug is the evidence — no
- * host check. The last path segment is tried first (`/guides/youtube` →
- * `youtube`), then the ones before it.
+ * host check. Only the last path segment is the page's slug
+ * (`/guides/youtube` → `youtube`); an earlier one is a section, and falling
+ * back to it would point `/blog/deleted-post` at a `blog` entry — a wrong
+ * target is worse than none.
  */
 
 export interface PageCandidate {
@@ -67,23 +69,24 @@ export function extractPageUrls(message: string, attachedFilenames: string[]): s
 }
 
 export function resolvePageUrl(url: string, brain: BrainLike): PageResolution {
-  const segments = pathSegments(url) ?? []
-  const index = slugIndex(brain)
-  for (const segment of segments.toReversed()) {
-    const hits = index.get(segment)
-    if (!hits || hits.size === 0) continue
-    const candidates = [...hits.values()].slice(0, MAX_CANDIDATES)
-    return { url, status: candidates.length === 1 ? 'resolved' : 'ambiguous', candidates }
-  }
-  return { url, status: 'none', candidates: [] }
+  const slug = pathSegments(url)?.at(-1)
+  const hits = slug ? slugIndex(brain).get(slug) : undefined
+  if (!hits || hits.size === 0) return { url, status: 'none', candidates: [] }
+  const candidates = [...hits.values()].slice(0, MAX_CANDIDATES)
+  return { url, status: candidates.length === 1 ? 'resolved' : 'ambiguous', candidates }
 }
+
+/** A trailing `index` / `index.html` names the page above it, not a slug. */
+const INDEX_SEGMENT = /^index(?:\.html?)?$/
 
 function pathSegments(url: string): string[] | null {
   try {
-    return new URL(url).pathname
+    const segments = new URL(url).pathname
       .split('/')
       .filter(Boolean)
       .map(segment => safeDecode(segment).toLowerCase())
+    while (segments.length > 0 && INDEX_SEGMENT.test(segments.at(-1)!)) segments.pop()
+    return segments
   }
   catch {
     return null
