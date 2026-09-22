@@ -8,6 +8,7 @@ import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
+import { brainRefEntries, findInboundEntryRefs } from '~~/server/utils/relation-expand'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
 import type { LocatedValidationError } from './validation-format'
@@ -111,6 +112,10 @@ export interface ToolExecutionContext {
 
 const DEFAULT_MAX_TOOL_ITERATIONS = 8
 const DEFAULT_MAX_TOOL_RESULT_LENGTH = 32000
+
+/** brain_query listing page size — see the `truncated` field on its result. */
+const DEFAULT_BRAIN_QUERY_LIMIT = 20
+const MAX_BRAIN_QUERY_LIMIT = 100
 
 /**
  * Appended to the last tool_result message before the graceful-close
@@ -796,11 +801,41 @@ export async function executeToolWithAutoMerge(
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
         }
-        const writeResult = await engine.deleteContent(modelId, locale, params.entryIds as string[], userEmail)
+        // Inbound-reference guard (#293): deleting an entry that other entries
+        // still point at leaves dangling relations — later saves of those
+        // entries then fail on a target that no longer exists. Refuse and list
+        // EVERY referencing entry, so the agent clears them or asks the user;
+        // mirrors the delete_model guard. The list stays in the tool result:
+        // only the fixed label before the ':' becomes the monitoring cause code.
+        const entryIds = params.entryIds as string[]
+        const refBrain = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const referencesChecked = refBrain.models.has(modelId)
+        if (referencesChecked) {
+          const views: ExpandModelView[] = []
+          for (const [key, data] of refBrain.content) {
+            const m = key.slice(0, key.indexOf(':'))
+            const def = refBrain.models.get(m)
+            if (def?.fields) views.push({ modelId: m, fields: def.fields, entries: brainRefEntries(data) })
+          }
+          const inbound = findInboundEntryRefs(modelId, entryIds, views)
+          if (inbound.length > 0) {
+            const shown = inbound.slice(0, 20).map(r => `${r.model}.${r.ref} (${r.field}${r.label ? `, "${r.label}"` : ''}) → ${r.target}`)
+            result = {
+              error: `${errorMessage('content.entry_in_use')}: ${shown.join('; ')}${inbound.length > 20 ? ` +${inbound.length - 20} more` : ''}`,
+              referencedBy: inbound,
+            }
+            break
+          }
+        }
+        // Said out loud, not skipped silently: without the model in the content
+        // brain there was nothing to check references against.
+        const referenceNote = referencesChecked ? {} : { referencesChecked: false }
+
+        const writeResult = await engine.deleteContent(modelId, locale, entryIds, userEmail)
         // A refused delete (bad slug, nothing matched) has no branch to merge —
         // report the validation errors and stop, like save_content does.
         if (!writeResult.branch) {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, ...referenceNote }
           break
         }
         affected.models.push(modelId)
@@ -811,10 +846,10 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult) }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), ...referenceNote }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review, ...referenceNote }
         }
 
         // Emit webhook event (fire-and-forget)
@@ -1597,19 +1632,77 @@ export async function executeToolWithAutoMerge(
         const contentData = brainData.content.get(key) ?? null
         const metaData = brainData.meta.get(key) ?? null
         const modelDef = brainData.models.get(modelId)
+        const kind = modelDef?.kind ?? 'collection'
 
-        if (params.entryId && contentData && typeof contentData === 'object' && !Array.isArray(contentData)) {
+        // A singleton/dictionary is one record, not a list — `entryId`
+        // has nothing to select there (it used to be looked up as a FIELD
+        // NAME on that record, which is almost never a hit, and silently
+        // read back `data: null`).
+        if ((kind === 'collection' || kind === 'document') && params.entryId) {
           const entryId = params.entryId as string
-          const entry = (contentData as Record<string, unknown>)[entryId]
+          const entries = normalizeQueryEntries(contentData, kind)
+          const entry = entries.find(e => queryEntryKey(e, kind) === entryId) ?? null
           // The entry-scoped read used to drop `meta` entirely, which made it
           // the ONE path that could never answer "is this published?" — while
           // the truncation notice on a large model points the caller straight
           // at it. Narrow to an entry and its meta narrows with it.
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', entryId, meta: entryMetaFor(metaData, modelDef?.kind, entryId), data: entry ?? null }
+          result = { modelId, locale, kind, entryId, meta: entryMetaFor(metaData, kind, entryId), data: entry }
+          break
         }
-        else {
+
+        if (kind === 'singleton' || kind === 'dictionary') {
           // `meta` before `data` — see the note in `get_content`.
-          result = { modelId, locale, kind: modelDef?.kind ?? 'collection', meta: metaData, data: contentData }
+          result = { modelId, locale, kind, meta: metaData, data: contentData }
+          break
+        }
+
+        // Listing: filter, sort, paginate. Always shaped this way (never a
+        // bare object/array of everything) so a large model can never again
+        // reach the generic tool-result cutoff and come back as broken JSON
+        // — `truncated` says so instead, and `offset`/`limit` page through it.
+        const where = params.where as Record<string, unknown> | undefined
+        const sort = params.sort as { field?: string, direction?: string } | undefined
+        const fields = params.fields as string[] | undefined
+        const validFieldNames = queryEntryFieldNames(modelDef, kind)
+        const namedFields = [...Object.keys(where ?? {}), ...(sort?.field ? [sort.field] : []), ...(fields ?? [])]
+        const unknownFields = [...new Set(namedFields.filter(f => !validFieldNames.has(f)))]
+        if (unknownFields.length > 0) {
+          result = { error: `Unknown field${unknownFields.length > 1 ? 's' : ''} ${unknownFields.map(f => `"${f}"`).join(', ')} for model "${modelId}". Valid fields: ${[...validFieldNames].sort().join(', ')}` }
+          break
+        }
+
+        const entries = normalizeQueryEntries(contentData, kind)
+        const filtered = applyQueryWhere(entries, where)
+        const sorted = applyQuerySort(filtered, sort)
+        const total = sorted.length
+        // Not `|| default`: a non-numeric offset (e.g. a stringified NaN) is
+        // truthy and would skip that fallback, then propagate NaN through
+        // slice() into an empty page reported as `truncated: false` — indistinguishable from "nothing more to see".
+        const offset = typeof params.offset === 'number' && Number.isFinite(params.offset)
+          ? Math.max(0, Math.trunc(params.offset))
+          : 0
+        const limit = typeof params.limit === 'number' && Number.isFinite(params.limit)
+          ? Math.min(MAX_BRAIN_QUERY_LIMIT, Math.max(1, Math.trunc(params.limit)))
+          : DEFAULT_BRAIN_QUERY_LIMIT
+        const page = sorted.slice(offset, offset + limit)
+        const omit = fields && fields.length > 0 ? [] : defaultOmittedFields(modelDef, kind)
+        const pageMeta: Record<string, unknown> = {}
+        for (const entry of page) {
+          const entryId = queryEntryKey(entry, kind)
+          const meta = entryMetaFor(metaData, kind, entryId)
+          if (meta !== null) pageMeta[entryId] = meta
+        }
+        result = {
+          modelId,
+          locale,
+          kind,
+          meta: pageMeta,
+          data: page.map(entry => applyQueryFields(entry, kind, fields, omit)),
+          total,
+          returned: page.length,
+          offset,
+          truncated: offset + page.length < total,
+          ...(omit.length > 0 ? { omittedFields: omit } : {}),
         }
         break
       }
@@ -1725,6 +1818,141 @@ function statusOf(meta: unknown): string | null {
   if (!meta || typeof meta !== 'object') return null
   const value = (meta as Record<string, unknown>).status
   return typeof value === 'string' ? value : null
+}
+
+/**
+ * brain_query listing support — collection and document are the only two
+ * kinds with more than one entry, and they store that list in two different
+ * shapes (`brain-cache.ts`): a collection is an id-keyed object, a document
+ * an array of `{slug, frontmatter, body}`. Both normalize here into a flat
+ * record per entry — `id` for a collection, `slug` for a document, exactly
+ * the field name each kind's own tools already use — so `where`/`sort`/
+ * `fields` can work the same way regardless of kind.
+ */
+function normalizeQueryEntries(contentData: unknown, kind: string): Array<Record<string, unknown>> {
+  if (kind === 'document') {
+    if (!Array.isArray(contentData)) return []
+    return contentData.map((raw) => {
+      const entry = raw as { slug: string, frontmatter: Record<string, unknown>, body: string }
+      return { slug: entry.slug, ...entry.frontmatter, body: entry.body }
+    })
+  }
+  if (!contentData || typeof contentData !== 'object' || Array.isArray(contentData)) return []
+  return Object.entries(contentData as Record<string, Record<string, unknown>>)
+    .map(([id, data]) => ({ id, ...data }))
+}
+
+/** The field a normalized entry's identity lives under, by kind. */
+function queryEntryKey(entry: Record<string, unknown>, kind: string): string {
+  return String(kind === 'document' ? entry.slug : entry.id)
+}
+
+/**
+ * The field names `where`/`sort`/`fields` may name for this model — the
+ * schema's own fields plus the identity field (`id`/`slug`) and, for a
+ * document, `body`. An unrecognized name is refused rather than silently
+ * matching nothing (`where`), leaving order unchanged (`sort`), or being
+ * dropped (`fields`) — the same class of silent-wrong-answer this whole
+ * tool was rewritten to stop giving.
+ */
+function queryEntryFieldNames(modelDef: ModelDefinition | undefined, kind: string): Set<string> {
+  const names = new Set<string>(Object.keys(modelDef?.fields ?? {}))
+  names.add(kind === 'document' ? 'slug' : 'id')
+  if (kind === 'document') names.add('body')
+  return names
+}
+
+/**
+ * Whether an entry's stored value for a field matches `expected`, aware of
+ * the two shapes a relation field's value takes: `relations` (array — any
+ * element matching is a match) and a polymorphic compound (`{ model, ref }`
+ * — matched by `ref`). A plain `===` on either shape never matches, which
+ * would have made this tool's own documented example — `where: { category:
+ * "x" }` on a `relations` field — silently return zero results.
+ */
+function matchesWhereValue(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(actual)) return actual.some(item => matchesWhereValue(item, expected))
+  if (actual && typeof actual === 'object' && 'ref' in actual) return (actual as { ref: unknown }).ref === expected
+  return actual === expected
+}
+
+/**
+ * Equality-only, named-field filtering — deliberately not a query
+ * language. `where` values come straight from the model, so an arbitrary
+ * expression syntax would need its own parser and its own failure modes;
+ * exact match on a field the agent already saw in brain_search or
+ * get_content output does not.
+ */
+function applyQueryWhere(
+  entries: Array<Record<string, unknown>>,
+  where: Record<string, unknown> | undefined,
+): Array<Record<string, unknown>> {
+  if (!where || typeof where !== 'object') return entries
+  const conditions = Object.entries(where)
+  if (conditions.length === 0) return entries
+  return entries.filter(entry => conditions.every(([field, value]) => matchesWhereValue(entry[field], value)))
+}
+
+/**
+ * Sort by one named field. Entries missing that field sort after every
+ * entry that has it, in both directions — "missing" is not a value on
+ * either end of an order, so a direction flip must not move it there.
+ */
+function applyQuerySort(
+  entries: Array<Record<string, unknown>>,
+  sort: { field?: string, direction?: string } | undefined,
+): Array<Record<string, unknown>> {
+  if (!sort?.field) return entries
+  const { field } = sort
+  const desc = sort.direction === 'desc'
+  const present = entries.filter(e => e[field] !== undefined && e[field] !== null)
+  const missing = entries.filter(e => e[field] === undefined || e[field] === null)
+  present.sort((a, b) => {
+    const av = a[field]
+    const bv = b[field]
+    const cmp = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : String(av).localeCompare(String(bv))
+    return desc ? -cmp : cmp
+  })
+  return [...present, ...missing]
+}
+
+/**
+ * Fields left out of a listing page when the caller didn't ask for specific
+ * `fields` — `markdown`/`richtext` fields, and a document's `body`. A page
+ * of 20 entries each carrying one full article body clears the 32k
+ * tool-result cap on its own (a page of pagination that still lands on the
+ * generic mid-JSON cutoff defeats the point of paginating); the omission is
+ * reported back so the agent can ask for a field by name when it needs it.
+ */
+function defaultOmittedFields(modelDef: ModelDefinition | undefined, kind: string): string[] {
+  const omitted: string[] = []
+  if (kind === 'document') omitted.push('body')
+  for (const [name, def] of Object.entries(modelDef?.fields ?? {})) {
+    if (def.type === 'markdown' || def.type === 'richtext') omitted.push(name)
+  }
+  return omitted
+}
+
+/** Keep only the named fields (plus the entry's own identity field), or drop `omit` when none were named. */
+function applyQueryFields(
+  entry: Record<string, unknown>,
+  kind: string,
+  fields: string[] | undefined,
+  omit: string[],
+): Record<string, unknown> {
+  if (fields && fields.length > 0) {
+    const idField = kind === 'document' ? 'slug' : 'id'
+    const projected: Record<string, unknown> = { [idField]: entry[idField] }
+    for (const field of fields) {
+      if (field in entry) projected[field] = entry[field]
+    }
+    return projected
+  }
+  if (omit.length === 0) return entry
+  const omitted = new Set(omit)
+  return Object.fromEntries(Object.entries(entry).filter(([field]) => !omitted.has(field)))
 }
 
 function summarizeWriteResult(
