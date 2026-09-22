@@ -93,8 +93,16 @@ interface CachedSnapshot {
   schemaValidation?: SchemaValidationResult | null
 }
 
-/** Upper bound on how long a sync waits for the worker's cached key. */
-const WORKER_READY_TIMEOUT_MS = 3000
+/**
+ * Upper bound on how long a sync waits for the worker's cached key.
+ *
+ * Only a hung worker ever reaches it. The worker answers `init` with one
+ * IndexedDB read (FlexSearch loads on the first search, not on boot), and a
+ * project with a cache is on screen from that cache while the sync runs. 3s
+ * was measured to be too short on a loaded machine: the worker answered in
+ * 50s, and every reload in that state paid a full sync.
+ */
+const WORKER_READY_TIMEOUT_MS = 10_000
 
 export function useContentBrain() {
   const treeSha = useState<string | null>('brain-tree-sha', () => null)

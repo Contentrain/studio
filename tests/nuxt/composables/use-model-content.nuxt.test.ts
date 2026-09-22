@@ -1,5 +1,5 @@
 import type { ComputedRef, Ref } from 'vue'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useModelContent } from '../../../app/composables/useModelContent'
@@ -42,6 +42,7 @@ describe('useModelContent', () => {
     useState('model-content-kind').value = 'collection'
     useState('model-content-meta').value = null
     useState('model-content-loading').value = false
+    useState('model-content-request').value = null
   })
 
   afterEach(() => {
@@ -146,5 +147,84 @@ describe('useModelContent', () => {
 
     expect(invalidate).toHaveBeenCalledWith('project-1')
     expect(store.content.value).toBeNull()
+  })
+
+  function brainQuerying(queryContent: BrainStub['queryContent']): BrainStub {
+    return {
+      queryContent,
+      invalidate: vi.fn(),
+      syncing: ref(true),
+      ready: ref(true),
+      config: ref(null),
+      models: ref([]),
+      vocabulary: ref(null),
+      contentContext: ref(null),
+      contentSummary: ref({}),
+      hasContentrain: computed(() => true),
+      projectStats: computed(() => null),
+      syncError: ref<string | null>(null),
+      initBrain: vi.fn(),
+      destroyBrain: vi.fn(),
+      sync: vi.fn(),
+      searchContent: vi.fn(),
+      treeSha: ref<string | null>('cached-tree'),
+    }
+  }
+
+  it('keeps the newest answer when an older read arrives after it', async () => {
+    // A model opened from the cache during the sync is read out of IndexedDB;
+    // the read made once the sync answered comes from memory, and first.
+    let answerCachedRead: (result: BrainQueryResult) => void = () => {}
+    const queryContent = vi.fn()
+      .mockImplementationOnce(() => new Promise<BrainQueryResult>((resolve) => {
+        answerCachedRead = resolve
+      }))
+      .mockResolvedValueOnce({ data: { entry: { title: 'Fresh' } }, kind: 'collection', meta: null })
+    nuxtState.brain = brainQuerying(queryContent)
+
+    const store = useModelContent()
+    const cachedRead = store.fetchContent('workspace-1', 'project-1', 'faq', 'en')
+    await store.fetchContent('workspace-1', 'project-1', 'faq', 'en')
+    expect(store.loading.value).toBe(false)
+
+    answerCachedRead({ data: { entry: { title: 'Stale' } }, kind: 'collection', meta: null })
+    await cachedRead
+
+    expect(store.content.value).toEqual({ entry: { title: 'Fresh' } })
+  })
+
+  it('reads the open model again when the sync brings another tree', async () => {
+    const queryContent = vi.fn()
+      .mockResolvedValueOnce({ data: { entry: { title: 'Stale' } }, kind: 'collection', meta: null })
+      .mockResolvedValueOnce({ data: { entry: { title: 'Fresh' } }, kind: 'collection', meta: null })
+    const brain = brainQuerying(queryContent)
+    nuxtState.brain = brain
+
+    const store = useModelContent()
+    store.followTreeChanges()
+    await store.fetchContent('workspace-1', 'project-1', 'faq', 'tr')
+    expect(store.content.value).toEqual({ entry: { title: 'Stale' } })
+
+    brain.treeSha.value = 'new-tree'
+    await nextTick()
+    await vi.waitFor(() => expect(store.content.value).toEqual({ entry: { title: 'Fresh' } }))
+    expect(queryContent).toHaveBeenLastCalledWith('faq', 'tr')
+  })
+
+  it('reads nothing on a tree change when no model is open', async () => {
+    const queryContent = vi.fn()
+    const brain = brainQuerying(queryContent)
+    nuxtState.brain = brain
+
+    const store = useModelContent()
+    store.followTreeChanges()
+    await store.fetchContent('workspace-1', 'project-1', 'faq', 'en')
+    store.clearContent()
+    queryContent.mockClear()
+
+    brain.treeSha.value = 'new-tree'
+    await nextTick()
+
+    expect(queryContent).not.toHaveBeenCalled()
   })
 })
