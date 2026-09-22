@@ -96,6 +96,22 @@ export function createContentEngine(ctx: ContentEngineContext) {
     return { ...second, branch: rewritten.branch, redone: true }
   }
 
+  /**
+   * Run a write; if its commit was refused because the branch is not at the
+   * snapshot it was built on (MCP's stale-base 409, PROVIDER_CONFLICT), run
+   * it once more — a fresh snapshot and a fresh branch name. Same one-redo
+   * rule as a merge conflict; a second refusal is returned to the caller.
+   */
+  async function onStaleBaseRedo<T>(write: () => Promise<T>): Promise<T> {
+    try {
+      return await write()
+    }
+    catch (e: unknown) {
+      if ((e as { status?: number }).status !== 409) throw e
+      return write()
+    }
+  }
+
   /** Step 1 only (`cr/*` → `contentrain`), reporting a conflict instead of throwing it. */
   async function landOnContentrain(branch: string): Promise<{ merged: boolean, sha: string | null, conflict?: boolean }> {
     try {
@@ -110,13 +126,13 @@ export function createContentEngine(ctx: ContentEngineContext) {
   return {
     ensureContentBranch: internal.ensureContentBranch,
     saveContent: async (modelId: string, locale: string, data: Record<string, unknown>, userEmail: string, options?: SaveOptions) => {
-      const write = () => saveContent(internal, modelId, locale, data, userEmail, options)
+      const write = () => onStaleBaseRedo(() => saveContent(internal, modelId, locale, data, userEmail, options))
       const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, Object.keys(data), options)
       return result
     },
     deleteContent: async (modelId: string, locale: string, entryIds: string[], userEmail: string, locales?: string[]) => {
-      const write = () => deleteContent(internal, modelId, locale, entryIds, userEmail, locales)
+      const write = () => onStaleBaseRedo(() => deleteContent(internal, modelId, locale, entryIds, userEmail, locales))
       const result = remember(await write(), write)
       // A multi-locale delete (#284) clears schedules everywhere those
       // entries had one — passing no locale clears every locale's row,
@@ -126,7 +142,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
       return result
     },
     saveDocument: async (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: SaveOptions) => {
-      const write = () => saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options)
+      const write = () => onStaleBaseRedo(() => saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options))
       const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, [slug], options)
       return result
@@ -134,7 +150,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
     // Several documents in one commit (#292) — redone as a whole on a merge
     // conflict, like any other write this engine made.
     saveDocuments: async (modelId: string, locale: string, documents: DocumentInput[], userEmail: string, options?: SaveOptions) => {
-      const write = () => saveDocuments(internal, modelId, locale, documents, userEmail, options)
+      const write = () => onStaleBaseRedo(() => saveDocuments(internal, modelId, locale, documents, userEmail, options))
       const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, documents.map(d => d.slug), options)
       return result
@@ -142,19 +158,19 @@ export function createContentEngine(ctx: ContentEngineContext) {
     // Exact find/replace in text fields (#282). A redo re-reads the newer head
     // and applies the same edit there — the edit, not a stale copy of the field.
     replaceText: async (modelId: string, locale: string, edits: TextEdit[], userEmail: string, options?: SaveOptions) => {
-      const write = () => replaceText(internal, modelId, locale, edits, userEmail, options)
+      const write = () => onStaleBaseRedo(() => replaceText(internal, modelId, locale, edits, userEmail, options))
       return remember(await write(), write)
     },
     saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string, options?: Parameters<typeof saveModel>[3]) =>
-      saveModel(internal, definition, userEmail, options),
+      onStaleBaseRedo(() => saveModel(internal, definition, userEmail, options)),
     deleteModel: (modelId: string, userEmail: string) =>
-      deleteModel(internal, modelId, userEmail),
+      onStaleBaseRedo(() => deleteModel(internal, modelId, userEmail)),
     addLocale: (locale: string, userEmail: string) =>
-      addLocale(internal, locale, userEmail),
+      onStaleBaseRedo(() => addLocale(internal, locale, userEmail)),
     saveVocabulary: (terms: Parameters<typeof saveVocabulary>[1], userEmail: string, options?: { replace?: boolean }) =>
-      saveVocabulary(internal, terms, userEmail, options),
+      onStaleBaseRedo(() => saveVocabulary(internal, terms, userEmail, options)),
     updateEntryStatus: async (modelId: string, locale: string, entryIds: string[], status: 'draft' | 'published' | 'archived', userEmail: string, locales?: string[]) => {
-      const write = () => updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail, locales)
+      const write = () => onStaleBaseRedo(() => updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail, locales))
       return remember(await write(), write)
     },
     listContentBranches: () => listContentBranches(internal),
@@ -175,7 +191,7 @@ export function createContentEngine(ctx: ContentEngineContext) {
     },
     rejectBranch: (branch: string) => rejectBranch(internal, branch),
     copyLocale: async (modelId: string, fromLocale: string, toLocale: string, userEmail: string) => {
-      const write = () => copyLocale(internal, modelId, fromLocale, toLocale, userEmail)
+      const write = () => onStaleBaseRedo(() => copyLocale(internal, modelId, fromLocale, toLocale, userEmail))
       return remember(await write(), write)
     },
     initProject: (stack: string, locales: string[], domains: string[], models: Parameters<typeof initProject>[4], userEmail: string) =>

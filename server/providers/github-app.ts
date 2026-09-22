@@ -197,10 +197,6 @@ export function createGitHubExtensions(octokit: Octokit, owner: string, repo: st
       }
     },
 
-    async createBranchAt(name: string, sha: string): Promise<void> {
-      await octokit.git.createRef({ owner, repo, ref: `refs/heads/${name}`, sha })
-    },
-
     async getTree(ref?: string): Promise<TreeEntry[]> {
       let sha = ref
       if (!sha) {

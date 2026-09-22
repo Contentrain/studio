@@ -1,11 +1,11 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
+import { validateSlug } from '@contentrain/types'
 import type { ContentDeleteInput } from '@contentrain/mcp/core/ops'
 import { planContentDelete } from '@contentrain/mcp/core/ops'
 import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { openWriteSnapshot, createFeatureBranch, toObjectMap } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, toObjectMap, writeBase } from './helpers'
 
 function invalid(field: string, message: string): WriteResult {
   return {
@@ -171,7 +171,7 @@ export async function deleteContent(
   const allChanges: FileChange[] = [...changesByPath.values()]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const touchedList = [...touchedLocales].toSorted()
   const commit = await ctx.git.applyPlan({
@@ -179,7 +179,7 @@ export async function deleteContent(
     changes: allChanges,
     message: `contentrain: delete ${entryIds.length} entries from ${modelId} [${touchedList.join(',') || locale}]\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)

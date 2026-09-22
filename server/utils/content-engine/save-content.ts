@@ -1,5 +1,4 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, ValidationResult, Vocabulary } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { ValidationContext } from '../content-validation'
 import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
@@ -13,6 +12,7 @@ import {
   toObjectMap,
   planMatchesCurrent,
   validateSchedule,
+  writeBase,
 } from './helpers'
 import { normalizeModelContentMedia } from '../media-rewrite'
 import { saveDocument } from './save-document'
@@ -281,7 +281,7 @@ export async function saveContent(
     }
   }
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const sharedNote = fanOut.locales.length > 0
     ? `\n\nShared across locales (${fanOut.locales.join(', ')}): ${fanOut.fields.join(', ')}`
@@ -291,7 +291,7 @@ export async function saveContent(
     changes: allChanges,
     message: `contentrain: save ${modelId} [${locale}]${sharedNote}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
