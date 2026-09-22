@@ -165,12 +165,16 @@ function getModelContentDir(ctx: { contentRoot: string }, model: ModelDefinition
  * first push and takes the selective path with an empty store underneath.
  * The question is about the store, not the diff, so it has to be asked here.
  *
- * `complete` is the marker. It is written by every build that leaves the
- * store whole, which after this change is every build that writes a manifest
- * at all. Its real job is the one-time migration: manifests written before
- * this existed have no such field, read as unknown, and earn one promoted
- * full rebuild that heals whatever they were hiding. Each store heals on its
- * own next push, so nothing needs a backfill or a concurrency limit.
+ * `complete` is the marker, and only a build that uploaded every model it
+ * listed writes it `true`. Two things make it false-y, and both earn one
+ * promoted full rebuild that heals the store on its own next push — no
+ * backfill, no concurrency limit:
+ *
+ * - **absent** — a manifest written before the claim was tracked. The
+ *   one-time migration.
+ * - **`false`** — the last build lost at least one model (step 5's
+ *   per-model catch) and said so rather than claiming a store it knows has
+ *   a hole in it.
  */
 async function selectiveBuildUnsafeReason(
   cdn: CDNProvider,
@@ -190,6 +194,7 @@ async function selectiveBuildUnsafeReason(
     return 'the store manifest could not be read'
   }
 
+  if (manifest.complete === false) return 'the last build could not upload every model'
   if (manifest.complete !== true) return 'the store manifest predates completeness tracking'
   if (manifest.branch !== branch) return `the store was built from "${String(manifest.branch)}", not "${branch}"`
   return null
@@ -211,6 +216,8 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
   let filesUploaded = 0
   let filesDeleted = 0
   let totalSizeBytes = 0
+  // Set by the per-model catch in step 5, read by the manifest in step 8.
+  let modelUploadFailed = false
   const changedModelIds: string[] = []
   const uploadedPaths = new Set<string>()
 
@@ -456,6 +463,10 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
           // silently vanished from the CDN. Surface it (best-effort per model,
           // the build continues for the rest) instead of dropping it on the floor.
           reportDataLossRisk(e, { op: 'cdn-build.model', projectId, modelId: model.id, locale })
+          // The build still finishes, but this model is missing or stale at
+          // `commitSha` — exactly the claim `_manifest.json.complete` makes on
+          // behalf of every model it lists. Recorded so step 8 can withdraw it.
+          modelUploadFailed = true
         }
       }
     }
@@ -583,7 +594,16 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       // previous claim — in place. A manifest without this field is one
       // written before the claim was tracked, and buys a single promoted
       // full rebuild the next time a push arrives.
-      complete: true,
+      //
+      // A build that lost a model in step 5 keeps going — that is deliberate,
+      // one bad model should not cost every other one its upload — but it can
+      // no longer make this claim, so it withdraws it. Written as a plain
+      // `false` rather than left at whatever the previous manifest said: a
+      // selective build that inherited `true` would hand the next push a
+      // clean-looking store with a hole in it, which is #278 in miniature.
+      // `false` costs one promoted full rebuild on the next push and the
+      // store heals itself.
+      complete: !modelUploadFailed,
       config: {
         stack: config.stack,
         locales: config.locales,
