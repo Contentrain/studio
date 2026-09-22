@@ -323,7 +323,7 @@ Without \`entryId\`, a collection or document model comes back as a PAGE, not ev
 
   {
     name: 'search_media',
-    description: 'Search the project media library. Returns assets with variants, dimensions, blurhash, and alt text. Use this to find existing images before uploading new ones.',
+    description: 'Search the project media library. Returns assets with path, delivery URL, size (bytes), upload date (createdAt), variants, dimensions, blurhash, and alt text. Use this to find existing images before uploading new ones.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -359,13 +359,14 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
   },
   {
     name: 'get_media',
-    description: 'Get full metadata for a specific media asset by ID. Returns variants, dimensions, blurhash, alt, tags, and usage info.',
+    description: 'Get full metadata for one media asset. Identify it by assetId, or by the media path (`media/original/…`) or delivery URL you already have from content, an attachment, or search_media — the id inside a path is NOT the asset id. Returns variants, dimensions, size, blurhash, alt, tags, and usage info.',
     inputSchema: {
       type: 'object',
       properties: {
-        assetId: { type: 'string', description: 'Asset UUID' },
+        assetId: { type: 'string', description: 'Asset UUID (the `id` from search_media)' },
+        path: { type: 'string', description: 'Stored media path, e.g. "media/original/abc123.webp"' },
+        url: { type: 'string', description: 'This project\'s delivery URL for the asset' },
       },
-      required: ['assetId'],
     },
     requiredPhase: ['active'],
     defaultAffects: { snapshotChanged: false, branchesChanged: false },
