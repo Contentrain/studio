@@ -15,8 +15,17 @@
  * `contentrain` and check the caller's intent actually survived, retrying from
  * a fresh read when it didn't. Reads are not memoized on this provider, so the
  * verification sees real state.
+ *
+ * Each attempt also reads and forks from ONE `contentrain` commit (the write
+ * snapshot, #285). Forking from wherever `contentrain` points at write time
+ * made the branch's diff revert any term another writer landed after our read.
+ * The merge then went through cleanly, and the check above only looks at this
+ * caller's terms, so the other writer's term was lost without a trace. Forked
+ * from the snapshot, that change is a real 3-way merge: git keeps both edits,
+ * or reports a conflict that the loop retries from a fresh read.
  */
 
+import { canonicalStringify } from '@contentrain/types'
 import type { TermPatch, Vocabulary } from '~~/server/utils/vocabulary-merge'
 import { applyVocabularyPatch, vocabularyPatchSatisfied } from '~~/server/utils/vocabulary-merge'
 
@@ -52,9 +61,9 @@ export default defineEventHandler(async (event) => {
    * Swallowing a read failure here would silently drop every existing term
    * and write the result back as the new truth.
    */
-  async function readVocabulary(): Promise<Vocabulary> {
+  async function readVocabulary(ref: string): Promise<Vocabulary> {
     try {
-      return JSON.parse(await git.readFile(vocabPath, CONTENT_BRANCH)) as Vocabulary
+      return JSON.parse(await git.readFile(vocabPath, ref)) as Vocabulary
     }
     catch (err) {
       if (isNotFound(err)) return { version: 1, terms: {} }
@@ -66,18 +75,30 @@ export default defineEventHandler(async (event) => {
   await engine.ensureContentBranch()
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const vocabulary = applyVocabularyPatch(await readVocabulary(), body.terms)
+    const snapshot = await openWriteSnapshot(git)
+    const vocabulary = applyVocabularyPatch(await readVocabulary(writeBase(snapshot)), body.terms)
 
     // `applyPlan` forks `base` when the branch is missing — no separate
     // createBranch, matching every other write path in the content engine.
     const branchName = generateBranchName('content', 'vocabulary')
-    await git.applyPlan({
-      branch: branchName,
-      changes: [{ path: vocabPath, content: `${JSON.stringify(vocabulary, null, 2)}\n` }],
-      message: 'contentrain: update vocabulary',
-      author: { name: 'Contentrain Studio', email: 'ai@contentrain.io' },
-      base: CONTENT_BRANCH,
-    })
+    try {
+      await git.applyPlan({
+        branch: branchName,
+        // The serialisation every other writer (engine, MCP) uses: sorted keys.
+        // Two writers ordering the same terms differently would make the 3-way
+        // merge above conflict over nothing.
+        changes: [{ path: vocabPath, content: canonicalStringify(vocabulary) }],
+        message: 'contentrain: update vocabulary',
+        author: { name: 'Contentrain Studio', email: 'ai@contentrain.io' },
+        base: writeBase(snapshot),
+      })
+    }
+    catch (err) {
+      // MCP's stale-base refusal (409): the branch is not at the snapshot.
+      // Nothing was written — retry from a fresh snapshot.
+      if ((err as { status?: number }).status === 409) continue
+      throw err
+    }
 
     let mergeResult: { merged: boolean, pullRequestUrl?: string | null }
     try {
@@ -114,7 +135,7 @@ export default defineEventHandler(async (event) => {
 
     // The merge can succeed and still lose the term, when the other writer
     // forked the same base and merged last. Verify before reporting success.
-    const landed = await readVocabulary()
+    const landed = await readVocabulary(CONTENT_BRANCH)
     if (vocabularyPatchSatisfied(landed, body.terms)) {
       return { vocabulary: landed, merged: true }
     }
