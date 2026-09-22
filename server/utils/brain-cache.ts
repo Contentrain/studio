@@ -13,6 +13,7 @@
  * Self-hosted product = single Node.js process = no distributed cache needed.
  */
 
+import { createHash } from 'node:crypto'
 import type { ApprovalPolicyFile, ContentrainConfig, FieldDef, ModelDefinition, ModelKind } from '@contentrain/types'
 import type { GitProvider, TreeEntry } from '../providers/git'
 import type { SchemaValidationResult } from './schema-validation'
@@ -186,10 +187,30 @@ function trackedFiles(tree: TreeEntry[], extraPaths?: string[]): TreeEntry[] {
 }
 
 /**
- * Compute a simple hash from tree entries for delta detection.
+ * Content version of the tracked file set, as a fixed-length digest.
+ *
+ * This used to return the `path:sha|path:sha|…` join itself, which is a
+ * fingerprint of the right *content* at entirely the wrong *size*: it grows
+ * with the repo. Measured on staging, a 54-file project produced 4,404
+ * characters. The value does not stay on the server — the client stores it and
+ * hands it back on the next sync as its cache key — so its length is on the
+ * wire, in a URL. Past roughly 14 KB of query string the request is rejected
+ * with 431 before any handler sees it (measured: 150 files answered 200, 160
+ * files answered 431), and since the client's fallback is a full sync, every
+ * project above ~155 tracked files lost delta detection permanently.
+ *
+ * Hashing fixes the size for good. Nothing reads the individual entries out of
+ * this string — `cached.treeSha === currentHash` is the only comparison, and
+ * the per-path diff that drives incremental refresh comes from
+ * `buildFileShaMap` over the same file set, not from here.
+ *
+ * The digest is not a Git object SHA and is not meant to match one; it is an
+ * opaque cache token. A client still holding a pre-hash token simply fails the
+ * comparison and gets one full sync, after which it holds the new form.
  */
 function computeTreeHash(tree: TreeEntry[], extraPaths?: string[]): string {
-  return trackedFiles(tree, extraPaths).map(e => `${e.path}:${e.sha}`).join('|')
+  const joined = trackedFiles(tree, extraPaths).map(e => `${e.path}:${e.sha}`).join('|')
+  return createHash('sha256').update(joined).digest('hex')
 }
 
 /** Per-path blob SHA map over the same tracked file set as the hash. */
