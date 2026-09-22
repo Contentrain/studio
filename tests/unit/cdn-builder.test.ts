@@ -685,6 +685,52 @@ describe('cdn builder', () => {
       // And the promoted rebuild heals the flag, so this costs one push, not every push.
       expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').complete).toBe(true)
     })
+
+    /**
+     * A model that fails in step 5 uploads nothing, so none of its paths are in
+     * `uploadedPaths` — and the sweep read that as "stale" and deleted the
+     * content the site was serving. A failed model now keeps its previous
+     * artifacts: stale beats a 404, and the next build replaces them.
+     */
+    function failingOn(provider: ReturnType<typeof createCDNProvider>['provider'], failPath: string) {
+      const put = vi.mocked(provider.putObject)
+      const original = put.getMockImplementation()!
+      put.mockImplementation(async (projectId, path, data, contentType) => {
+        if (path === failPath) throw new Error('R2 unavailable')
+        return original(projectId, path, data, contentType)
+      })
+    }
+
+    it('keeps a failed model\'s previous artifacts through a full rebuild sweep', async () => {
+      const { provider, objects } = createCDNProvider()
+      objects.set('proj:content/team/en.json', '{"m1":{"name":"Old member"}}')
+      objects.set('proj:content/retired/en.json', '{}')
+      failingOn(provider, 'content/team/en.json')
+
+      await executeCDNBuild({
+        projectId: 'proj', buildId: 'b', git: twoModelGit(), cdn: provider, contentRoot: '', commitSha: 'sha1', branch: 'main', fullRebuild: true,
+      })
+
+      expect(objects.get('proj:content/team/en.json')).toBe('{"m1":{"name":"Old member"}}')
+      // Genuinely stale objects of other models are still collected.
+      expect(objects.has('proj:content/retired/en.json')).toBe(false)
+      expect(objects.has('proj:content/faq/en.json')).toBe(true)
+    })
+
+    it('keeps a failed model\'s previous artifacts through a selective sweep', async () => {
+      const { provider, objects } = createCDNProvider()
+      objects.set('proj:_manifest.json', JSON.stringify({ version: '1', commitSha: 'old', branch: 'main', complete: true }))
+      objects.set('proj:content/faq/en.json', '{"a1":{"question":"Old Q"}}')
+      failingOn(provider, 'content/faq/en.json')
+
+      const result = await executeCDNBuild({
+        projectId: 'proj', buildId: 'b', git: twoModelGit(), cdn: provider, contentRoot: '', commitSha: 'sha1', branch: 'main',
+        changedPaths: ['.contentrain/content/marketing/faq/en.json'],
+      })
+
+      expect(result.changedModels).toEqual(['faq'])
+      expect(objects.get('proj:content/faq/en.json')).toBe('{"a1":{"question":"Old Q"}}')
+    })
   })
 
   it('merges unchanged models from storage into the bundle on selective builds', async () => {
