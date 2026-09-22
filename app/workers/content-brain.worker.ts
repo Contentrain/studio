@@ -18,9 +18,9 @@ const { 'brain-meta': metaStore, 'brain-content': contentStore } = createSharedS
   ['brain-meta', 'brain-content'],
 )
 
-// FlexSearch index (no published types — use any). Built on the first search,
-// not on load: FlexSearch is imported lazily so the worker can answer `init`
-// — the cache key and the cached snapshot — before that module is even fetched.
+// FlexSearch index (no published types — use any). Built after the sync, not
+// on load: FlexSearch is imported lazily so the worker can answer `init` — the
+// cache key and the cached snapshot — before that module is even fetched.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let searchIndex: any = null
 // The build in flight, so concurrent searches share it instead of each building.
@@ -70,9 +70,9 @@ self.onmessage = async (event: MessageEvent) => {
         const { payload, projectId } = msg
 
         if (payload.delta && !payload.config && !payload.models && !payload.content) {
-          // No changes on the server. The search index is still built from
-          // IndexedDB — on the first search, which calls `ensureSearchIndex`.
+          // No changes on the server. The search index is built from IndexedDB.
           self.postMessage({ type: 'synced', treeSha: payload.treeSha, stats: null })
+          warmSearchIndex()
           break
         }
 
@@ -129,7 +129,7 @@ self.onmessage = async (event: MessageEvent) => {
           timestamp: Date.now(),
         } satisfies CachedMeta, metaStore)
 
-        // The index now describes old content; the next search rebuilds it.
+        // The index now describes old content; it is rebuilt below.
         dropSearchIndex()
 
         // Notify other tabs
@@ -143,6 +143,7 @@ self.onmessage = async (event: MessageEvent) => {
             entries: totalEntries,
           },
         })
+        warmSearchIndex()
         break
       }
 
@@ -170,7 +171,18 @@ self.onmessage = async (event: MessageEvent) => {
         // Belt and braces: every path that can leave a worker without an index
         // — a cross-tab sync, an invalidate, a cached load — ends up here
         // rather than silently answering nothing.
-        await ensureSearchIndex(currentProjectId)
+        try {
+          await ensureSearchIndex(currentProjectId)
+        }
+        catch (error) {
+          // No index is no results, not a broken brain: the worker-wide error
+          // would show a sync failure. The likeliest cause is a tab left open
+          // across a deploy, asking for a FlexSearch chunk that is gone.
+          // eslint-disable-next-line no-console
+          console.warn('[brain-worker] Search index unavailable:', error)
+          self.postMessage({ type: 'searchResult', id, results: [] })
+          break
+        }
         const filters = { modelId: searchModelId, locale: searchLocale, limit: limit ?? 10 }
         let results: Array<{ modelId: string, entryId: string, locale: string, score: number }> = []
 
@@ -345,6 +357,16 @@ async function ensureSearchIndex(projectId: string | null) {
     }
     await indexBuild
   }
+}
+
+/**
+ * Build the index now, in the background, once the sync has answered — so the
+ * FlexSearch chunk loads while it is still on the server and the first search
+ * does not pay for the build. `init` stays fast: it never waits for this.
+ * A failure is left for a search to report as no results.
+ */
+function warmSearchIndex() {
+  ensureSearchIndex(currentProjectId).catch(() => {})
 }
 
 async function buildSearchIndex(projectId: string) {

@@ -13,7 +13,7 @@ const projectId = computed(() => route.params.projectId as string)
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLastPath } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, primeSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
-const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
+const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, followTreeChanges, clearContent } = useModelContent()
 const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
 const { t } = useContent()
 
@@ -143,6 +143,10 @@ watch(activeModelId, async (modelId, oldModelId) => {
   if (!ws) return
   await fetchContent(ws.id, projectId.value, modelId, activeLocale.value)
 })
+
+// A sync that brings another tree re-reads the open model — it may have been
+// opened from the cache while that sync was still running.
+followTreeChanges()
 
 // Locale change — re-fetch current model content
 watch(activeLocale, async (locale) => {

@@ -19,12 +19,14 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const PROJECT = 'project-1'
 
-// Counts the search indexes the worker builds.
-const flexsearch = vi.hoisted(() => ({ builds: 0 }))
+// Counts the search indexes the worker builds, and can make building fail the
+// way it does when the lazily imported chunk cannot be loaded.
+const flexsearch = vi.hoisted(() => ({ builds: 0, fail: false }))
 vi.mock('flexsearch', async (importOriginal) => {
   const actual = await importOriginal<{ default: { Document: new (options: unknown) => unknown } }>()
   class CountingDocument extends (actual.default.Document as new (options: unknown) => object) {
     constructor(options: unknown) {
+      if (flexsearch.fail) throw new TypeError('Failed to fetch dynamically imported module')
       super(options)
       flexsearch.builds++
     }
@@ -149,17 +151,51 @@ describe('brain worker search after a reload', () => {
     expect(source).toMatch(/await import\('flexsearch'\)/)
   })
 
-  it('builds no index until someone searches, then one', async () => {
+  it('builds no index for init, then one after the sync that searches share', async () => {
     const fresh = await bootWorker()
     flexsearch.builds = 0
     await fresh({ type: 'init', projectId: PROJECT })
-    await fresh({ type: 'sync', projectId: PROJECT, payload: SYNC_PAYLOAD })
-    await fresh({ type: 'sync', projectId: PROJECT, payload: { delta: true, treeSha: 'sha-1' } })
     expect(flexsearch.builds).toBe(0)
 
+    await fresh({ type: 'sync', projectId: PROJECT, payload: SYNC_PAYLOAD })
+    await fresh({ type: 'sync', projectId: PROJECT, payload: { delta: true, treeSha: 'sha-1' } })
     await fresh({ type: 'search', id: 's5', query: 'creator', limit: 10 })
     await fresh({ type: 'search', id: 's5b', query: 'friday', limit: 10 })
     expect(flexsearch.builds).toBe(1)
+    expect((lastOfType('searchResult')?.results as unknown[]).length).toBeGreaterThan(0)
+  })
+
+  it('starts the build after the sync, before anyone searches', async () => {
+    const fresh = await bootWorker()
+    await fresh({ type: 'init', projectId: PROJECT })
+    flexsearch.builds = 0
+    await fresh({ type: 'sync', projectId: PROJECT, payload: { delta: true, treeSha: 'sha-1' } })
+
+    await vi.waitFor(() => expect(flexsearch.builds).toBe(1))
+  })
+
+  it('answers no results, not a worker error, when the index cannot be built', async () => {
+    const fresh = await bootWorker()
+    const seen: Array<Record<string, unknown>> = []
+    const run = async (msg: Record<string, unknown>) => {
+      await fresh(msg)
+      seen.push(...posted)
+    }
+    flexsearch.fail = true
+    try {
+      await run({ type: 'init', projectId: PROJECT })
+      await run({ type: 'sync', projectId: PROJECT, payload: { delta: true, treeSha: 'sha-1' } })
+      await run({ type: 'search', id: 's8', query: 'creator', limit: 10 })
+
+      expect(lastOfType('searchResult')).toMatchObject({ id: 's8', results: [] })
+      expect(seen.filter(m => m.type === 'error')).toEqual([])
+    }
+    finally {
+      flexsearch.fail = false
+    }
+
+    // Nothing is left broken: the next search builds the index.
+    await run({ type: 'search', id: 's9', query: 'creator', limit: 10 })
     expect((lastOfType('searchResult')?.results as unknown[]).length).toBeGreaterThan(0)
   })
 
