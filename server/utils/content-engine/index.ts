@@ -3,7 +3,8 @@ import { classifyMergeFailure, createBranchGuard, finalizeContentrain, listConte
 import { deleteContent } from './delete-content'
 import { initProject } from './init-project'
 import { saveContent } from './save-content'
-import { saveDocument } from './save-document'
+import type { DocumentInput } from './save-document'
+import { saveDocument, saveDocuments } from './save-document'
 import { saveModel } from './save-model'
 import { deleteModel } from './delete-model'
 import { addLocale, saveVocabulary } from './config-ops'
@@ -122,6 +123,14 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const write = () => saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options)
       const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, [slug], options)
+      return result
+    },
+    // Several documents in one commit (#292) — redone as a whole on a merge
+    // conflict, like any other write this engine made.
+    saveDocuments: async (modelId: string, locale: string, documents: DocumentInput[], userEmail: string, options?: SaveOptions) => {
+      const write = () => saveDocuments(internal, modelId, locale, documents, userEmail, options)
+      const result = remember(await write(), write)
+      if (result.validation.valid) afterSave(projectId, modelId, locale, documents.map(d => d.slug), options)
       return result
     },
     saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string, options?: Parameters<typeof saveModel>[3]) =>

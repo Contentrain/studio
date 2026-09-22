@@ -25,6 +25,8 @@ export interface SaveOptions {
   schedule?: EntrySchedule
   /** Stated intent per entry — see `entry-mode.ts`. Absent = legacy upsert. */
   mode?: 'create' | 'update'
+  /** Status for the entries this save touches, in the same commit (#297). */
+  status?: 'published' | 'draft'
 }
 
 export interface WriteResult {
@@ -40,6 +42,8 @@ export interface WriteResult {
   unchanged?: boolean
   /** Collection ids / document slugs this save created vs. changed. */
   entries?: { created: string[], updated: string[] }
+  /** Status each touched entry will have once this write lands, read from its meta. */
+  statuses?: Record<string, string>
   /**
    * Locale-agnostic fields (media, relations) this save also wrote into the
    * model's other locales, and which locales those were. Absent when the

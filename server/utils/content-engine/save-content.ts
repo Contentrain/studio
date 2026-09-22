@@ -7,6 +7,7 @@ import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import {
   applyStudioMetaOverrides,
   openWriteSnapshot,
+  plannedStatuses,
   createFeatureBranch,
   shapeEntriesForSave,
   toObjectMap,
@@ -246,8 +247,18 @@ export async function saveContent(
       reader,
       autoPublish: options?.autoPublish ?? false,
       userEmail,
+      // A requested status is for the entries the caller addressed; the
+      // fan-out locales only receive shared media/relation values.
+      ...(writtenLocale === locale && options?.status ? { status: options.status } : {}),
     })
   }
+  const statuses = plannedStatuses(
+    patchedChanges,
+    resolveMetaPath(ctx.pathCtx, modelDef, locale, config.locales?.default ?? 'en'),
+    modelDef.kind,
+    touchedIds,
+    modelId,
+  )
 
   // context.json is NOT committed on feature branches (MCP 1.5.0 model):
   // it is regenerated deterministically on `contentrain` post-merge so
@@ -266,6 +277,7 @@ export async function saveContent(
       diff: [],
       validation,
       unchanged: true,
+      ...(Object.keys(statuses).length > 0 ? { statuses } : {}),
     }
   }
 
@@ -291,5 +303,6 @@ export async function saveContent(
     validation,
     ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
     ...(entryPartition ? { entries: entryPartition } : {}),
+    ...(Object.keys(statuses).length > 0 ? { statuses } : {}),
   }
 }

@@ -455,7 +455,9 @@ describe('conversation engine regression', () => {
     const blocks = messages[2]!.content as Array<{ type: string, toolUseId?: string, content: string }>
     expect(blocks[0]!.type).toBe('tool_result')
     expect(blocks[0]!.content.length).toBeGreaterThan(4000)
-    expect(blocks[0]!.content).not.toContain('truncated')
+    // Not the generic mid-JSON cutoff suffix — brain_query's own `truncated`
+    // field (false here, the page fit) legitimately contains the word.
+    expect(blocks[0]!.content).not.toContain('result exceeded the size limit')
 
     // tool_result events carry per-tool `affected` so the client can do a
     // live, debounced context-panel refresh as each operation lands.
@@ -491,6 +493,9 @@ describe('conversation engine regression', () => {
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       models: new Map([['posts', { id: 'posts', kind: 'collection' }]]),
+      // delete_content checks inbound references against the brain's content.
+      content: new Map(),
+      meta: new Map(),
     }))
 
     const writeResult = {
