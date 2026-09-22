@@ -1,4 +1,4 @@
-import type { ValidationResult } from '@contentrain/types'
+import type { RepoReader, ValidationResult } from '@contentrain/types'
 import type { Branch, Commit, CommitAuthor, FileDiff, GitProvider, MergeResult } from '../../providers/git'
 
 // ── Public types (re-exported from index.ts) ────────────────────────
@@ -27,6 +27,13 @@ export interface SaveOptions {
   mode?: 'create' | 'update'
   /** Status for the entries this save touches, in the same commit (#297). */
   status?: 'published' | 'draft'
+  /**
+   * Engine-internal: write against a snapshot the caller already read from,
+   * instead of opening a new one. A write computed from what the caller read
+   * (a find/replace, #282) must fork from that same commit, or a change that
+   * lands in between is overwritten instead of surfacing as a conflict.
+   */
+  snapshot?: { baseSha: string | null, reader: RepoReader }
 }
 
 export interface WriteResult {

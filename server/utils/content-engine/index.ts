@@ -5,6 +5,8 @@ import { initProject } from './init-project'
 import { saveContent } from './save-content'
 import type { DocumentInput } from './save-document'
 import { saveDocument, saveDocuments } from './save-document'
+import type { TextEdit } from './replace-text'
+import { replaceText } from './replace-text'
 import { saveModel } from './save-model'
 import { deleteModel } from './delete-model'
 import { addLocale, saveVocabulary } from './config-ops'
@@ -132,6 +134,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, documents.map(d => d.slug), options)
       return result
+    },
+    // Exact find/replace in text fields (#282). A redo re-reads the newer head
+    // and applies the same edit there — the edit, not a stale copy of the field.
+    replaceText: async (modelId: string, locale: string, edits: TextEdit[], userEmail: string, options?: SaveOptions) => {
+      const write = () => replaceText(internal, modelId, locale, edits, userEmail, options)
+      return remember(await write(), write)
     },
     saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string, options?: Parameters<typeof saveModel>[3]) =>
       saveModel(internal, definition, userEmail, options),

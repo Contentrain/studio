@@ -75,6 +75,8 @@ export const STUDIO_DEFAULT_POLICY: ApprovalPolicyFile = {
  */
 const TOOL_RISK: Record<string, RiskClass> = {
   save_content: 'low_risk_content',
+  // Changes only the matched text; several entries in one call lift to bulk like any write.
+  replace_in_field: 'low_risk_content',
   approve_submission: 'low_risk_content',
   update_status: 'low_risk_content',
   vocabulary: 'low_risk_content',
@@ -163,6 +165,12 @@ function isEmptyValue(value: unknown): boolean {
 export function writeSignals(tool: string, params: Record<string, unknown>): WriteSignals {
   if (tool === 'update_status' && typeof params.status === 'string')
     return { targetStatus: params.status }
+  if (tool === 'replace_in_field') {
+    // Only the replacement text is written; the rest of the field is untouched
+    // by construction, so its length is what a reviewer would read.
+    const edits = Array.isArray(params.edits) ? params.edits as Array<{ replace?: unknown }> : []
+    return { textChars: edits.reduce((sum, e) => sum + (typeof e?.replace === 'string' ? e.replace.length : 0), 0) }
+  }
   if (tool !== 'save_content') return {}
 
   // A save can set status in the same commit (#297). It is the same visibility

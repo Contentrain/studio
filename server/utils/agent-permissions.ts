@@ -26,6 +26,7 @@ const TOOL_ROLES: Record<string, string[]> = {
   list_models: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   get_content: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   save_content: ['editor', 'admin', 'owner'],
+  replace_in_field: ['editor', 'admin', 'owner'],
   delete_content: ['editor', 'admin', 'owner'],
   save_model: ['admin', 'owner'],
   validate: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],

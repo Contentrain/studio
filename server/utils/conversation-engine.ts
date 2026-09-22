@@ -14,6 +14,7 @@ import { estimateContentTokens, markMessageTail } from './conversation-history'
 import type { LocatedValidationError } from './validation-format'
 import { formatValidationError, formatValidationErrors } from './validation-format'
 import { isEntryWriteMode } from './content-engine/entry-mode'
+import type { TextEdit } from './content-engine/replace-text'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -782,6 +783,54 @@ export async function executeToolWithAutoMerge(
         }
 
         // Emit webhook event (fire-and-forget)
+        emitWebhookEvent(projectId, workspaceId, 'content.saved', {
+          models: [modelId],
+          locale,
+          source: 'conversation',
+        }).catch(() => {})
+        break
+      }
+
+      case 'replace_in_field': {
+        const modelId = params.model as string
+        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
+          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
+          break
+        }
+        const locale = await resolveLocale()
+        if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
+          result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
+        const edits = Array.isArray(params.edits) ? params.edits as TextEdit[] : []
+        const writeResult = await engine.replaceText(modelId, locale, edits, userEmail, { autoPublish })
+        // A find that matched nothing is a hard error and nothing was written —
+        // the agent must not report the fix as done (#282).
+        if (!writeResult.validation.valid) {
+          result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors)}` }
+          break
+        }
+        const replacements = writeResult.replacements ?? []
+        if (writeResult.unchanged) {
+          result = { ...summarizeWriteResult(writeResult, locale), merged: true, workflow, replacements }
+          break
+        }
+
+        affected.models.push(modelId)
+        affected.locales.push(locale)
+        affected.branchesChanged = true
+        invalidateBrainCache(projectId)
+
+        const entries = [...new Set(edits.map(e => e?.entry).filter((e): e is string => typeof e === 'string' && e.length > 0))]
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries }, commitSha: writeResult.commit?.sha })
+        if (gate.allowed && writeResult.branch) {
+          const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), workflow, replacements }
+        }
+        else {
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, workflow, reviewBranch: writeResult.branch, ...gate.review, replacements }
+        }
+
         emitWebhookEvent(projectId, workspaceId, 'content.saved', {
           models: [modelId],
           locale,
