@@ -50,6 +50,9 @@ describe('postgres-db usage (contract)', () => {
 
     expect(await methods.getWorkspaceMonthlyAIUsage(user.workspaceId, MONTH)).toBe(20)
     expect(await methods.getWorkspaceMonthlyAIUsage(other.workspaceId, MONTH)).toBe(0)
+    // The BYOA count is read on its own, for the panel's separate line.
+    expect(await methods.getWorkspaceMonthlyAIUsage(user.workspaceId, MONTH, 'byoa')).toBe(100)
+    expect(await methods.getWorkspaceMonthlyAIUsage(other.workspaceId, MONTH, 'byoa')).toBe(0)
   })
 
   it('sums conversation-API usage across keys for the month', async () => {

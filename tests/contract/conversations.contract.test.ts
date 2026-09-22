@@ -190,6 +190,56 @@ describe('postgres-db conversations (contract)', () => {
     }
   })
 
+  it('agent usage: a BYOA turn is outside the quota and does not draw from it (030)', async () => {
+    // Before 030 the pool summed every source and applied the limit to
+    // every caller: a member on their own key used up the Studio-key
+    // members' credits, and was refused once the pool was full.
+    const member = await seedUser('conv-byoa')
+    try {
+      const month = '2026-08'
+      const reserve = (userId: string, source: 'studio' | 'byoa') => methods.incrementAgentUsageIfAllowed({
+        workspaceId: user.workspaceId,
+        userId,
+        month,
+        source,
+        limit: 2,
+      })
+
+      // BYOA turns past the limit: all allowed, none counted.
+      for (let i = 0; i < 3; i++)
+        expect(await reserve(member.userId, 'byoa')).toEqual({ allowed: true, currentCount: 0 })
+
+      // The Studio pool is still whole.
+      expect(await reserve(user.userId, 'studio')).toEqual({ allowed: true, currentCount: 1 })
+      expect(await reserve(user.userId, 'studio')).toEqual({ allowed: true, currentCount: 2 })
+      const denied = await reserve(user.userId, 'studio')
+      expect(denied).toEqual({ allowed: false, currentCount: 2 })
+
+      // A full pool does not refuse a BYOA turn.
+      expect((await reserve(member.userId, 'byoa')).allowed).toBe(true)
+
+      // The BYOA row is still booked: the turn-end settle updates it in
+      // place, and the usage panel counts BYOA turns from it.
+      await methods.updateAgentUsageTokens({
+        workspaceId: user.workspaceId,
+        userId: member.userId,
+        month,
+        source: 'byoa',
+        inputTokens: 70,
+        outputTokens: 30,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        messageCountDelta: 0,
+      })
+      const byoa = await methods.getAgentUsage(user.workspaceId, month, 'byoa', { userId: member.userId })
+      expect(byoa!.message_count).toBe(4)
+      expect(byoa!.input_tokens).toBe(70)
+    }
+    finally {
+      await deleteSeededUser(member.userId)
+    }
+  })
+
   it('upsertAgentUsage accumulates and never throws', async () => {
     const input = {
       workspaceId: user.workspaceId,

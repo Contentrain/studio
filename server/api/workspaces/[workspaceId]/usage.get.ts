@@ -64,8 +64,12 @@ export default defineEventHandler(async (event) => {
   const calendarMonth = new Date().toISOString().substring(0, 7)
 
   // Fetch all usage metrics in parallel
-  const [aiUsage, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls, comments] = await Promise.all([
+  const [aiUsage, byoaRequests, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls, comments] = await Promise.all([
     db.getWorkspaceMonthlyAIUsage(workspaceId, period.key),
+    // Turns run on members' own Anthropic keys. Shown beside the AI
+    // credits, never counted in them: they are outside the quota and are
+    // not billed (migration 030, chat route metering guard).
+    db.getWorkspaceMonthlyAIUsage(workspaceId, period.key, 'byoa'),
     db.getWorkspaceMonthlyAPIUsage(workspaceId, period.key),
     db.countMonthlySubmissions(workspaceId),
     db.getWorkspaceMonthlyCDNBandwidth(workspaceId, calendarMonth),
@@ -176,6 +180,7 @@ export default defineEventHandler(async (event) => {
       source: period.source,
     },
     categories,
+    byoaRequests,
     totalOverageAmount: Math.round(totalOverageAmount * 100) / 100,
     projectedOverageAmount: Math.round(projectedOverageAmount * 100) / 100,
   }

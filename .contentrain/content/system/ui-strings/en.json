@@ -126,6 +126,7 @@
   "billing.update_payment": "Update Payment",
   "billing.upgrade": "Upgrade",
   "billing.upgrade_to_connect": "Upgrade to a paid plan to connect repositories and start building.",
+  "billing.usage_byoa_requests": "With your own API key: {count} requests (not counted toward credits, not billed)",
   "billing.usage_percentage": "used",
   "billing.usage_period_billing": "Billing period",
   "billing.usage_period_calendar": "Calendar month",
