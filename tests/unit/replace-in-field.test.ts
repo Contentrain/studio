@@ -106,7 +106,6 @@ function gitWith(files: Record<string, unknown>) {
     fileExists: vi.fn().mockResolvedValue(false),
     listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'head1', protected: false }]),
     getBranchSha: vi.fn().mockResolvedValue('head1'),
-    createBranchAt: vi.fn().mockResolvedValue(undefined),
     mergeBranch: vi.fn().mockResolvedValue({ merged: true, sha: 'm', pullRequestUrl: null }),
     getBranchDiff: vi.fn().mockResolvedValue([]),
     getDefaultBranch: vi.fn().mockResolvedValue('main'),
@@ -159,7 +158,7 @@ describe('engine.replaceText', () => {
     // One snapshot: the content was read at head1, and the branch forks there.
     expect(reads.filter(r => r.path.endsWith('articles/tr.json')).every(r => r.ref === 'head1')).toBe(true)
     expect(git.getBranchSha).toHaveBeenCalledTimes(1)
-    expect(git.createBranchAt).toHaveBeenCalledWith(expect.any(String), 'head1')
+    expect(git.applyPlan.mock.calls[0]![0].base).toBe('head1')
   })
 
   it('writes nothing when one edit of a batch does not match', async () => {

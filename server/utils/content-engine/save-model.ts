@@ -1,10 +1,10 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter } from '@contentrain/types'
+import { parseMarkdownFrontmatter } from '@contentrain/types'
 import { planModelSave } from '@contentrain/mcp/core/ops'
 import { collectFieldPaths, legacyFieldNames } from '@contentrain/mcp/core/model-manager'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { openWriteSnapshot, createFeatureBranch, toObjectMap } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, toObjectMap, writeBase } from './helpers'
 import type { BreakingModelChange, FieldUsage, ModelChangeSummary, ModelSaveOptions } from './model-merge'
 import {
   breakingCandidates,
@@ -208,14 +208,14 @@ export async function saveModel(
   const allChanges: FileChange[] = [...plan.changes]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'model', next.id, undefined, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'model', next.id, undefined)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
     message: `contentrain: save model ${next.id}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
