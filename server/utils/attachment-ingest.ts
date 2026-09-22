@@ -33,7 +33,7 @@ import type { AIContentBlock, AIImageMediaType } from '../providers/ai'
 import { extractMediaStoragePath } from './media-rewrite'
 import { publicMediaBase, toDeliveryUrl } from './media-url'
 import { resolveVariantConfig } from './media-variants'
-import { useMediaProvider } from './providers'
+import { useDatabaseProvider, useMediaProvider } from './providers'
 import { isAllowedWebhookUrl } from './webhook-engine'
 
 /**
@@ -68,6 +68,11 @@ export interface AttachmentRef {
   truncated?: boolean
   /** Set when ingestion failed; `blocks` is then empty. */
   error?: string
+  /**
+   * Set when the attachment landed somewhere other than asked — a media
+   * image kept as context because workspace storage is full. Not a failure.
+   */
+  notice?: string
 }
 
 export interface IngestFileInput {
@@ -87,6 +92,11 @@ export interface IngestFileInput {
    * model, which kills the whole chat turn (issue #137).
    */
   cdnEnabled?: boolean
+  /**
+   * Workspace media storage limit in bytes (plan limit, raised by overage),
+   * the same one the media upload routes enforce. `0`/absent = unlimited.
+   */
+  storageLimitBytes?: number
 }
 
 /** Max converted text length (~25K tokens) before truncation. */
@@ -367,6 +377,22 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
     // (which 400s the entire model call). Fail here, actionably, instead.
     if (input.cdnEnabled !== true)
       return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.cdn_disabled') })
+    // Same atomic reservation as the media routes. A full library does not
+    // fail the attachment: the image still reaches the agent as context, and
+    // the user is told it was not stored.
+    const db = useDatabaseProvider()
+    const reserveBytes = input.buffer.length
+    let storageReserved = false
+    if (input.storageLimitBytes && input.storageLimitBytes > 0) {
+      const reservation = await db.reserveStorageIfAllowed(input.workspaceId, reserveBytes, input.storageLimitBytes).catch(() => null)
+      if (!reservation)
+        return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_upload_failed') })
+      if (!reservation.allowed) {
+        const ref = await ingestContextImage(input, mime, id)
+        return ref.error ? ref : { ...ref, notice: errorMessage('attachment.storage_full_context') }
+      }
+      storageReserved = true
+    }
     try {
       const asset = await media.upload({
         projectId: input.projectId,
@@ -377,7 +403,12 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
         variants: resolveVariantConfig(undefined),
         uploadedBy: input.userId,
         source: 'upload',
+        skipStorageIncrement: storageReserved,
       })
+      if (storageReserved) {
+        const delta = (typeof asset.size === 'number' ? asset.size : 0) - reserveBytes
+        if (delta !== 0) await db.incrementWorkspaceStorageBytes(input.workspaceId, delta).catch(() => {})
+      }
       const url = toDeliveryUrl(input.projectId, asset.originalPath)
       return {
         id,
@@ -392,11 +423,16 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
       }
     }
     catch {
+      if (storageReserved) await db.incrementWorkspaceStorageBytes(input.workspaceId, -reserveBytes).catch(() => {})
       return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_upload_failed') })
     }
   }
 
-  // Context (default): downscale + size-cap, emit base64 webp. Ephemeral.
+  return ingestContextImage(input, mime, id)
+}
+
+/** Context (default): downscale + size-cap, emit base64 webp. Ephemeral. */
+async function ingestContextImage(input: IngestFileInput, mime: AIImageMediaType, id: string): Promise<AttachmentRef> {
   try {
     const optimized = await optimizeContextImage(input.buffer)
     if (!optimized)

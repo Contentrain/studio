@@ -18,6 +18,7 @@
   "attachment.not_text": "This file isn’t readable text.",
   "attachment.payload_too_large": "These attachments are too large for one message. Remove some and try again.",
   "attachment.pdf_too_large": "This PDF is too large to attach (10MB limit).",
+  "attachment.storage_full_context": "Your workspace media storage is full, so this image was attached for this message only and not added to the media library. Free up space or raise your storage limit to store it.",
   "attachment.too_many": "Too many attachments. The limit is {limit} per message.",
   "attachment.unsupported_type": "Unsupported file type: {type}",
   "attachment.xlsx_parse_failed": "Couldn’t read this spreadsheet.",

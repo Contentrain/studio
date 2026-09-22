@@ -29,6 +29,7 @@
   "forms.rejected": "Submission rejected.",
   "forms.submission_list": "Found {count} submissions ({status}).",
   "media.asset_not_found": "Asset not found",
+  "media.asset_reference_required": "Give assetId, path, or url to identify the asset",
   "media.fetch_failed": "Failed to fetch URL",
   "media.type_not_allowed": "File type not allowed: {type}",
   "media.uploaded": "Image uploaded, optimized, and variants generated. Use the path in your content fields.",
