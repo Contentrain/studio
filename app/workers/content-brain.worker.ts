@@ -44,12 +44,17 @@ self.onmessage = async (event: MessageEvent) => {
         currentProjectId = msg.projectId
         // eslint-disable-next-line no-console
         console.log('[brain-worker] Init for project:', msg.projectId)
-        // Load cached treeSha from IDB
+        // The cache key AND the cached snapshot, in one message. The main
+        // thread only sends the key once this arrives, and the server answers
+        // a matching key with an empty delta — so the snapshot has to be in
+        // hand by then, or the screen has nothing to show for a project it
+        // holds whole in IndexedDB.
         const cachedMeta = await get(`${msg.projectId}:meta`, metaStore)
         self.postMessage({
           type: 'ready',
-          treeSha: cachedMeta?.treeSha ?? null,
+          treeSha: cachedKey(cachedMeta),
           cached: !!cachedMeta,
+          snapshot: cachedMeta ? await readSnapshot(msg.projectId, cachedMeta) : null,
         })
         break
       }
@@ -76,6 +81,9 @@ self.onmessage = async (event: MessageEvent) => {
           vocabulary: payload.vocabulary,
           contentContext: payload.contentContext,
           contentSummary: payload.contentSummary,
+          // Cached so a delta load still has the health report: the server
+          // answers an unchanged tree with nothing at all.
+          schemaValidation: payload.schemaValidation ?? null,
           timestamp: Date.now(),
         }, metaStore)
 
@@ -165,29 +173,7 @@ self.onmessage = async (event: MessageEvent) => {
       case 'getSnapshot': {
         const { projectId } = msg
         const cachedMeta = await get(`${projectId}:meta`, metaStore)
-
-        // Collect all model definitions
-        const allKeys = await keys(contentStore)
-        const models: Record<string, unknown>[] = []
-        for (const k of allKeys) {
-          const keyStr = String(k)
-          if (keyStr.startsWith(`${projectId}:model:`)) {
-            const def = await get(k, contentStore)
-            if (def) models.push(def as Record<string, unknown>)
-          }
-        }
-
-        self.postMessage({
-          type: 'snapshot',
-          data: {
-            exists: !!cachedMeta?.config,
-            config: cachedMeta?.config ?? null,
-            models,
-            content: cachedMeta?.contentSummary ?? {},
-            vocabulary: cachedMeta?.vocabulary ?? null,
-            contentContext: cachedMeta?.contentContext ?? null,
-          },
-        })
+        self.postMessage({ type: 'snapshot', data: await readSnapshot(projectId, cachedMeta) })
         break
       }
 
@@ -247,6 +233,47 @@ channel.onmessage = (event: MessageEvent) => {
   if (event.data.type === 'synced' && event.data.projectId === currentProjectId) {
     // Another tab synced — notify main thread to refresh state
     self.postMessage({ type: 'externalSync', treeSha: event.data.treeSha })
+  }
+}
+
+interface CachedMeta {
+  treeSha?: string | null
+  config?: unknown
+  vocabulary?: unknown
+  contentContext?: unknown
+  contentSummary?: unknown
+  schemaValidation?: unknown
+}
+
+/**
+ * The key to offer the server, or null to ask for a full sync.
+ *
+ * A cache written before `schemaValidation` was stored holds no health report,
+ * and a matching key would be answered with an empty delta that never brings
+ * one. Withholding the key once heals it: the full answer rewrites the meta.
+ */
+function cachedKey(meta: CachedMeta | undefined): string | null {
+  if (!meta || !('schemaValidation' in meta)) return null
+  return meta.treeSha ?? null
+}
+
+/** Everything the screen needs, read out of IndexedDB. */
+async function readSnapshot(projectId: string, meta: CachedMeta | undefined) {
+  const models: Record<string, unknown>[] = []
+  for (const k of await keys(contentStore)) {
+    if (!String(k).startsWith(`${projectId}:model:`)) continue
+    const def = await get(k, contentStore)
+    if (def) models.push(def as Record<string, unknown>)
+  }
+
+  return {
+    exists: !!meta?.config,
+    config: meta?.config ?? null,
+    models,
+    content: meta?.contentSummary ?? {},
+    vocabulary: meta?.vocabulary ?? null,
+    contentContext: meta?.contentContext ?? null,
+    schemaValidation: meta?.schemaValidation ?? null,
   }
 }
 
