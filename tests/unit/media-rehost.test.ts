@@ -148,7 +148,8 @@ describe('checkRehostSource', () => {
     const { checkRehostSource } = await load()
     const base = { projectId: 'new-proj', siteUrl: 'https://studio.example.com', copyAssets: true }
     expect(checkRehostSource({ ...base, from: { siteUrl: 'https://staging.example.com', projectId: 'old-proj' } })).toBe('copy_other_instance')
-    expect(checkRehostSource({ ...base, from: { siteUrl: 'https://studio.example.com', projectId: 'old-proj' } })).toBeNull()
+    expect(checkRehostSource({ ...base, from: { siteUrl: 'https://studio.example.com', projectId: 'old-proj' } })).toBe('invalid_source')
+    expect(checkRehostSource({ ...base, from: { siteUrl: 'https://studio.example.com', projectId: '0b6f3c1e-9d2a-4f5b-8c7d-1e2f3a4b5c6d' } })).toBeNull()
   })
 })
 

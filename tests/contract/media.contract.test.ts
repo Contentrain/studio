@@ -156,6 +156,9 @@ describe('postgres-db media (contract)', () => {
       created_at: created,
     }))
     await methods.createMediaAsset(baseAsset({ original_path: 'media/original/rehost-b.webp' }))
+    // A second, newer row for the same path: nothing makes (project_id,
+    // original_path) unique, and it must not become a second row on the target.
+    await methods.createMediaAsset(baseAsset({ original_path: 'media/original/rehost-a.webp', alt: 'Newer duplicate' }))
     await methods.createMediaAsset(baseAsset({ original_path: 'media/original/rehost-c.webp' }))
     // Already listed on the target — must be skipped, not duplicated.
     await methods.createMediaAsset(baseAsset({ project_id: targetId, original_path: 'media/original/rehost-b.webp' }))
@@ -189,7 +192,8 @@ describe('postgres-db media (contract)', () => {
     })
     expect(copied!.id).not.toBe(a.id)
     expect(new Date(copied!.created_at as string).toISOString()).toBe(created)
-    // The source keeps its rows.
-    expect(await methods.findMediaAssetByPath(projectId, 'media/original/rehost-a.webp')).toMatchObject({ id: a.id })
+    // The source keeps its rows — both of the duplicates included.
+    expect((await methods.listMediaAssetPaths(projectId)).filter(p => p === 'media/original/rehost-a.webp')).toHaveLength(2)
+    expect(await methods.getMediaAsset(a.id as string)).toMatchObject({ project_id: projectId })
   })
 })

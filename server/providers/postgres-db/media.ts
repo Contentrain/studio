@@ -202,7 +202,10 @@ export function mediaMethods(): MediaMethods {
       if (originalPaths.length === 0) return 0
       // INSERT … SELECT is one statement: all rows land or none do. The
       // NOT EXISTS keeps a re-run (or a path already uploaded here) from
-      // adding a second row for the same file.
+      // adding a second row for the same file; DISTINCT ON does the same for
+      // a source that holds two rows for one path (nothing makes
+      // (project_id, original_path) unique) — the oldest wins, as in
+      // findMediaAssetByContentHash.
       const result = await getAdmin()
         .insertInto('media_assets')
         .columns([
@@ -212,6 +215,7 @@ export function mediaMethods(): MediaMethods {
         ])
         .expression(eb => eb
           .selectFrom('media_assets as s')
+          .distinctOn('s.original_path')
           .select([
             sql<string>`${toProjectId}::uuid`.as('project_id'),
             sql<string>`${toWorkspaceId}::uuid`.as('workspace_id'),
@@ -226,7 +230,10 @@ export function mediaMethods(): MediaMethods {
               .select(sql`1`.as('one'))
               .where('t.project_id', '=', toProjectId)
               .whereRef('t.original_path', '=', 's.original_path'),
-          ))))
+          )))
+          .orderBy('s.original_path')
+          .orderBy('s.created_at', 'asc')
+          .orderBy('s.id', 'asc'))
         .executeTakeFirst()
       return Number(result.numInsertedOrUpdatedRows ?? 0)
     },

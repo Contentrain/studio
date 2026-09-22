@@ -156,7 +156,9 @@ export function mediaMethods(): MediaMethods {
       const wanted = new Set(originalPaths)
       const present = new Set((await selectAllPages<{ original_path: string }>('original_path', toProjectId)).map(r => r.original_path))
       const seen = new Set<string>()
+      // Oldest row wins for a path held twice, as on the postgres provider.
       const rows = (await selectAllPages<DatabaseRow>('*', fromProjectId))
+        .toSorted((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
         .filter((row) => {
           const path = row.original_path as string
           if (!wanted.has(path) || present.has(path) || seen.has(path)) return false

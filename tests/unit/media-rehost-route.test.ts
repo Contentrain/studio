@@ -108,7 +108,8 @@ describe('media rehost route', () => {
   })
 
   describe('copyAssets source access', () => {
-    const COPY_BODY = { from: { siteUrl: 'https://studio.example.com', projectId: 'old-proj' }, copyAssets: true }
+    const SOURCE_ID = '0b6f3c1e-9d2a-4f5b-8c7d-1e2f3a4b5c6d'
+    const COPY_BODY = { from: { siteUrl: 'https://studio.example.com', projectId: SOURCE_ID }, copyAssets: true }
 
     function stubSource(source: Record<string, unknown> | null, requireWorkspaceRole: ReturnType<typeof vi.fn>) {
       const db = { getProjectById: vi.fn().mockResolvedValue(source), requireWorkspaceRole }
@@ -120,7 +121,7 @@ describe('media rehost route', () => {
 
     it.each([true, false])('refuses a project in a workspace the caller does not own or admin (dryRun %s), leaking no counts', async (dryRun) => {
       stubRoute({ role: 'owner', body: { ...COPY_BODY, dryRun } })
-      const db = stubSource({ id: 'old-proj', workspace_id: 'other-ws' }, forbidden())
+      const db = stubSource({ id: SOURCE_ID, workspace_id: 'other-ws' }, forbidden())
       const handler = await loadHandler()
 
       const error = await handler({} as never).catch((e: unknown) => e) as { statusCode: number, message: string, data?: unknown }
@@ -129,6 +130,15 @@ describe('media rehost route', () => {
       expect(db.requireWorkspaceRole).toHaveBeenCalledWith('token-1', 'user-1', 'other-ws', ['owner', 'admin'])
       expect(runMediaRehost).not.toHaveBeenCalled()
       expect(useCDNProvider).not.toHaveBeenCalled()
+    })
+
+    it('answers 400 for a source id that is not a uuid, before any lookup', async () => {
+      stubRoute({ role: 'owner', body: { ...COPY_BODY, from: { ...COPY_BODY.from, projectId: 'old-proj' } } })
+      const db = stubSource(null, vi.fn())
+      const handler = await loadHandler()
+
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 400, message: 'media.rehost_invalid_source' })
+      expect(db.getProjectById).not.toHaveBeenCalled()
     })
 
     it('answers 404 for a project that does not exist', async () => {
@@ -142,7 +152,7 @@ describe('media rehost route', () => {
 
     it('lets an owner/admin of the source workspace through', async () => {
       stubRoute({ role: 'owner', body: COPY_BODY })
-      stubSource({ id: 'old-proj', workspace_id: 'workspace-1' }, vi.fn().mockResolvedValue('owner'))
+      stubSource({ id: SOURCE_ID, workspace_id: 'workspace-1' }, vi.fn().mockResolvedValue('owner'))
       runMediaRehost.mockResolvedValue({ status: 'dry_run', counts: COUNTS })
       const handler = await loadHandler()
 
@@ -155,7 +165,7 @@ describe('media rehost route', () => {
       ['library_failed', 'media.rehost_library_failed'],
     ])('maps %s to 409 with the counts', async (status, message) => {
       stubRoute({ role: 'owner', body: { ...COPY_BODY, dryRun: false } })
-      stubSource({ id: 'old-proj', workspace_id: 'workspace-1' }, vi.fn().mockResolvedValue('owner'))
+      stubSource({ id: SOURCE_ID, workspace_id: 'workspace-1' }, vi.fn().mockResolvedValue('owner'))
       runMediaRehost.mockResolvedValue({ status, counts: COUNTS })
       const handler = await loadHandler()
 

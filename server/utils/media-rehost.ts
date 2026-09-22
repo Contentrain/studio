@@ -84,6 +84,7 @@ export type RehostResult
 
 export type RehostSourceError = 'invalid_source' | 'same_source' | 'copy_other_instance'
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const READ_CONCURRENCY = 8
 const COPY_CONCURRENCY = 8
 
@@ -111,6 +112,9 @@ export function checkRehostSource(input: { from: RehostSource, projectId: string
   const sameInstance = fromSite === normalizeSiteUrl(input.siteUrl)
   if (sameInstance && input.from.projectId === input.projectId) return 'same_source'
   if (input.copyAssets && !sameInstance) return 'copy_other_instance'
+  // A copy looks the source up in this instance's database, where project ids
+  // are uuids — anything else would reach Postgres as a cast error (500).
+  if (input.copyAssets && !UUID.test(input.from.projectId)) return 'invalid_source'
   return null
 }
 
