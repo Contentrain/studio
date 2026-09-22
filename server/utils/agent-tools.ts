@@ -46,11 +46,13 @@ Updates MERGE with existing data — only send changed fields. Inside an object 
 
 FORMAT BY KIND:
 - collection: { "entryId": { field: value, ... } }
-- document: slug + data (frontmatter) + body
+- document: slug + data (frontmatter) + body — or, to write several documents of one model in ONE commit, \`documents: [{ slug, data, body }]\` (up to 20; all or nothing: one invalid document writes none). Use it whenever you change more than one section of a guide.
 - singleton: { field: value, ... } — always mode "update"
 - dictionary: { "key": "string value", ... } — ALL values must be strings; mode "update"
 
-The result lists which entries were \`created\` and which \`updated\` — report exactly that.
+STATUS: pass \`status: "published"\` to create-and-publish (or \`"draft"\` to unpublish) in the same commit — no separate update_status needed. Without it, new entries are saved as draft and existing ones keep their status.
+
+The result lists which entries were \`created\` and which \`updated\`, and \`statuses\` — the status each entry has once merged. "merged: true" does NOT mean published: say an entry is live only if its status is "published".
 
 RELATION FIELDS:
 - relation (single): set value to target entry ID (collection) or slug (document)
@@ -66,13 +68,28 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
         model: { type: 'string', description: 'Model ID' },
         mode: { type: 'string', enum: ['create', 'update'], description: '"create" = new entries only (refused if the id/slug exists); "update" = existing entries only (refused if missing)' },
         locale: { type: 'string', description: 'Locale code (defaults to context locale)' },
-        data: { type: 'object', description: 'Content data — only include fields that changed' },
+        data: { type: 'object', description: 'Content data — only include fields that changed. Required unless `documents` is used.' },
         slug: { type: 'string', description: 'Document slug (required for document kind only)' },
         body: { type: 'string', description: 'Markdown body (document kind only)' },
+        documents: {
+          type: 'array',
+          maxItems: 20,
+          description: 'Document kind only: several documents in one commit, instead of slug/data/body.',
+          items: {
+            type: 'object',
+            properties: {
+              slug: { type: 'string' },
+              data: { type: 'object', description: 'Frontmatter fields — only those that changed' },
+              body: { type: 'string', description: 'Markdown body (omit to keep the existing one)' },
+            },
+            required: ['slug'],
+          },
+        },
+        status: { type: 'string', enum: ['published', 'draft'], description: 'Status for the entries this save touches, in the same commit. Omit to keep existing status (new entries: draft).' },
         publish_at: { type: ['string', 'null'], description: 'Scheduled publish date, ISO 8601. Meta only, never in data; does not change status. null clears; omit to leave unchanged.' },
         expire_at: { type: ['string', 'null'], description: 'Scheduled expiry, ISO 8601, after publish_at. Same rules as publish_at.' },
       },
-      required: ['model', 'mode', 'data'],
+      required: ['model', 'mode'],
     },
     requiredPhase: ['active'],
     defaultAffects: { snapshotChanged: false, branchesChanged: true },
