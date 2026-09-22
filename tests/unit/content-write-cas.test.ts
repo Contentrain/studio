@@ -71,7 +71,8 @@ function createFakeRepo(initial: Record<string, string>, opts: { cas: boolean })
   const branches = new Map<string, string>()
   let seq = 0
   const commit = (files: Map<string, string>, parents: string[]) => {
-    const sha = `c${++seq}`
+    // Full 40-hex shas: MCP reads a 40-hex `base` as a commit, anything else as a branch name.
+    const sha = (++seq).toString(16).padStart(40, '0')
     commits.set(sha, { parents, files })
     return sha
   }
@@ -143,9 +144,20 @@ function createFakeRepo(initial: Record<string, string>, opts: { cas: boolean })
         }))
     }),
     applyPlan: vi.fn(async (input: ApplyPlanInput) => {
-      // MCP GitHubProvider semantics: an existing branch's head is the parent,
-      // otherwise the head of `base` at the moment of writing.
-      const parent = branches.get(input.branch) ?? branches.get(input.base ?? 'contentrain')!
+      // MCP GitHubProvider semantics (3.6.0): a full-sha `base` is the parent
+      // of a new branch, and an existing branch must sit exactly on it — else
+      // 409, nothing written. A branch-name `base` forks from that branch's
+      // head at the moment of writing; an existing branch's head is the parent.
+      const head = branches.get(input.branch)
+      let parent: string
+      if (input.base && /^[0-9a-f]{40}$/i.test(input.base)) {
+        if (head !== undefined && head !== input.base)
+          throw Object.assign(new Error(`Branch ${input.branch} is at ${head}, not at the base ${input.base}`), { status: 409 })
+        parent = input.base
+      }
+      else {
+        parent = head ?? branches.get(input.base ?? 'contentrain')!
+      }
       const files = new Map(commits.get(parent)!.files)
       for (const change of input.changes) {
         if (change.content === null) files.delete(change.path)
@@ -182,10 +194,6 @@ function createFakeRepo(initial: Record<string, string>, opts: { cas: boolean })
     ...(opts.cas
       ? {
           getBranchSha: vi.fn(async (branch: string) => branches.get(branch) ?? null),
-          createBranchAt: vi.fn(async (name: string, sha: string) => {
-            if (branches.has(name)) throw Object.assign(new Error('Reference already exists'), { status: 422 })
-            branches.set(name, sha)
-          }),
         }
       : {}),
   }
@@ -297,41 +305,46 @@ describe('content writes fork from the commit they read (#285)', () => {
     expect(repo.git.applyPlan.mock.calls[0]![0].base).toBe('contentrain')
   })
 
-  it('forks the write branch at the commit the reads came from', async () => {
+  it('commits on the commit the reads came from', async () => {
     const repo = articlesRepo({ cas: true })
     const engine = await engineFor(repo.git)
     const headAtRead = await repo.git.getBranchSha!('contentrain')
 
-    const write = await engine.saveContent('articles', 'tr', { a1: { title: 'x' } }, 'a@example.com')
+    await engine.saveContent('articles', 'tr', { a1: { title: 'x' } }, 'a@example.com')
 
-    expect(repo.git.createBranchAt).toHaveBeenCalledWith(write.branch, headAtRead)
+    // The snapshot sha is the `base` itself — MCP forks the branch there.
+    expect(repo.git.applyPlan.mock.calls[0]![0].base).toBe(headAtRead)
     // Every read of the write was pinned to that commit, not to the branch name.
     const refs = repo.git.readFile.mock.calls.map(call => call[1])
     expect(refs.length).toBeGreaterThan(0)
     expect(new Set(refs)).toEqual(new Set([headAtRead]))
   })
 
-  it('never writes into a branch name that already exists', async () => {
+  it('redoes a write once when its branch is not at the base it was built on', async () => {
     const repo = articlesRepo({ cas: true })
     const engine = await engineFor(repo.git)
-    // First name collides, second is free.
-    repo.git.createBranchAt!
-      .mockRejectedValueOnce(Object.assign(new Error('Reference already exists'), { status: 422 }))
+    const stale = Object.assign(new Error('Branch is at another commit'), { status: 409 })
+    const applyPlan = repo.git.applyPlan.getMockImplementation()!
+    repo.git.applyPlan.mockImplementationOnce(async () => {
+      throw stale
+    })
 
     const write = await engine.saveContent('articles', 'tr', { a1: { title: 'x' } }, 'a@example.com')
+    repo.git.applyPlan.mockImplementation(applyPlan)
 
-    expect(repo.git.createBranchAt).toHaveBeenCalledTimes(2)
-    expect(repo.git.createBranchAt.mock.calls[1]![0]).toBe(write.branch)
+    expect(repo.git.applyPlan).toHaveBeenCalledTimes(2)
+    expect(repo.git.applyPlan.mock.calls[1]![0].branch).toBe(write.branch)
+    expect(repo.content(write.branch).a1!.title).toBe('x')
   })
 
-  it('gives up after a second name collision instead of writing onto someone else\'s branch', async () => {
+  it('returns a second stale-base refusal instead of retrying forever', async () => {
     const repo = articlesRepo({ cas: true })
     const engine = await engineFor(repo.git)
-    const exists = Object.assign(new Error('Reference already exists'), { status: 422 })
-    repo.git.createBranchAt!.mockRejectedValueOnce(exists).mockRejectedValueOnce(exists)
+    const stale = Object.assign(new Error('Branch is at another commit'), { status: 409 })
+    repo.git.applyPlan.mockRejectedValueOnce(stale).mockRejectedValueOnce(stale)
 
-    await expect(engine.saveContent('articles', 'tr', { a1: { title: 'x' } }, 'a@example.com')).rejects.toThrow('Reference already exists')
-    expect(repo.git.applyPlan).not.toHaveBeenCalled()
+    await expect(engine.saveContent('articles', 'tr', { a1: { title: 'x' } }, 'a@example.com')).rejects.toThrow('Branch is at another commit')
+    expect(repo.git.applyPlan).toHaveBeenCalledTimes(2)
   })
 })
 

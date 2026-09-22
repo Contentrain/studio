@@ -1,9 +1,8 @@
 import type { FileChange, ModelDefinition } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH } from '@contentrain/types'
 import { planModelDelete } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { openWriteSnapshot, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, writeBase } from './helpers'
 
 /**
  * Delete a model definition and all of its content + meta files.
@@ -42,14 +41,14 @@ export async function deleteModel(
   const allChanges: FileChange[] = [...plan.changes]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'model', modelId, undefined, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'model', modelId, undefined)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
     message: `contentrain: delete model ${modelId}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)

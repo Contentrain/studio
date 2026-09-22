@@ -1,9 +1,9 @@
 import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
-import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
+import { canonicalStringify, validateSlug } from '@contentrain/types'
 import type { EngineInternalContext, StatusChange, StatusWriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import type { WriteSnapshot } from './helpers'
-import { openWriteSnapshot, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, writeBase } from './helpers'
 
 /** Nothing to write: every listed entry already carries the requested status. */
 function unchangedStatusResult(statusChanges: StatusChange[]): StatusWriteResult {
@@ -257,7 +257,7 @@ export async function updateEntryStatus(
 
   const changedCount = statusChanges.filter(c => c.from !== c.to).length
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const touchedList = [...touchedLocales].toSorted()
   const commit = await ctx.git.applyPlan({
@@ -265,7 +265,7 @@ export async function updateEntryStatus(
     changes: allChanges,
     message: `contentrain: ${status} ${changedCount} entries in ${modelId} [${touchedList.join(',') || locale}]\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
@@ -375,14 +375,14 @@ export async function copyLocale(
   const allChanges: FileChange[] = [...copyChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, undefined, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, undefined)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
     message: `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
@@ -466,14 +466,14 @@ async function copyDocumentLocale(
   // model), not committed on the feature branch.
   const allChanges: FileChange[] = changes.toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, undefined, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, undefined)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
     message: `contentrain: copy ${modelId} from ${fromLocale} to ${toLocale}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
