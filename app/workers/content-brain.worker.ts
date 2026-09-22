@@ -47,14 +47,15 @@ self.onmessage = async (event: MessageEvent) => {
         // The cache key AND the cached snapshot, in one message. The main
         // thread only sends the key once this arrives, and the server answers
         // a matching key with an empty delta — so the snapshot has to be in
-        // hand by then, or the screen has nothing to show for a project it
-        // holds whole in IndexedDB.
-        const cachedMeta = await get(`${msg.projectId}:meta`, metaStore)
+        // hand by then, and it has to be exactly what that key stands for.
+        // Both come out of the one meta record, which a sync writes last.
+        const cachedMeta = await get(`${msg.projectId}:meta`, metaStore) as CachedMeta | undefined
+        const current = isCurrentMeta(cachedMeta)
         self.postMessage({
           type: 'ready',
-          treeSha: cachedKey(cachedMeta),
+          treeSha: current ? cachedMeta.treeSha ?? null : null,
           cached: !!cachedMeta,
-          snapshot: cachedMeta ? await readSnapshot(msg.projectId, cachedMeta) : null,
+          snapshot: current ? await readSnapshot(msg.projectId, cachedMeta) : null,
         })
         break
       }
@@ -74,23 +75,18 @@ self.onmessage = async (event: MessageEvent) => {
           break
         }
 
-        // Store meta (config, vocabulary, context, treeSha)
-        await set(`${projectId}:meta`, {
-          treeSha: payload.treeSha,
-          config: payload.config,
-          vocabulary: payload.vocabulary,
-          contentContext: payload.contentContext,
-          contentSummary: payload.contentSummary,
-          // Cached so a delta load still has the health report: the server
-          // answers an unchanged tree with nothing at all.
-          schemaValidation: payload.schemaValidation ?? null,
-          timestamp: Date.now(),
-        }, metaStore)
+        // Order matters. The meta record carries the key the next load offers
+        // the server, and a matching key is answered with nothing — so it is
+        // written LAST, after everything it vouches for. A sync cut short
+        // before then (reload, project switch) leaves the previous meta, whose
+        // key the server no longer matches: the next load syncs in full.
+        const liveKeys = new Set<string>()
 
         // Store models
         if (payload.models) {
           for (const [modelId, def] of Object.entries(payload.models)) {
             await set(`${projectId}:model:${modelId}`, def, contentStore)
+            liveKeys.add(`${projectId}:model:${modelId}`)
           }
         }
 
@@ -99,8 +95,10 @@ self.onmessage = async (event: MessageEvent) => {
         if (payload.content) {
           for (const [key, value] of Object.entries(payload.content as Record<string, { data: unknown, meta: unknown, kind: string }>)) {
             await set(`${projectId}:content:${key}`, value.data, contentStore)
+            liveKeys.add(`${projectId}:content:${key}`)
             if (value.meta) {
               await set(`${projectId}:meta:${key}`, value.meta, contentStore)
+              liveKeys.add(`${projectId}:meta:${key}`)
             }
             // Count entries
             if (value.data && typeof value.data === 'object') {
@@ -109,6 +107,26 @@ self.onmessage = async (event: MessageEvent) => {
             }
           }
         }
+
+        // A full answer is the whole project: whatever it no longer has — a
+        // deleted model, a dropped locale — goes, or a query would still find it.
+        if (!payload.delta) await pruneProject(projectId, liveKeys)
+
+        await set(`${projectId}:meta`, {
+          treeSha: payload.treeSha,
+          config: payload.config,
+          // The definitions the screen lists, in the server's order, in the
+          // same record as the key — so a snapshot can never pair this key
+          // with another tree's models.
+          models: Object.values(payload.models ?? {}),
+          vocabulary: payload.vocabulary,
+          contentContext: payload.contentContext,
+          contentSummary: payload.contentSummary,
+          // Cached so a delta load still has the health report: the server
+          // answers an unchanged tree with nothing at all.
+          schemaValidation: payload.schemaValidation ?? null,
+          timestamp: Date.now(),
+        } satisfies CachedMeta, metaStore)
 
         // Rebuild FlexSearch index
         await rebuildSearchIndex(projectId)
@@ -239,31 +257,41 @@ channel.onmessage = (event: MessageEvent) => {
 interface CachedMeta {
   treeSha?: string | null
   config?: unknown
+  models?: unknown[]
   vocabulary?: unknown
   contentContext?: unknown
   contentSummary?: unknown
   schemaValidation?: unknown
+  timestamp?: number
 }
 
 /**
- * The key to offer the server, or null to ask for a full sync.
+ * Whether this meta record is self-contained: its key, its models and its
+ * health report written together by one sync.
  *
- * A cache written before `schemaValidation` was stored holds no health report,
- * and a matching key would be answered with an empty delta that never brings
- * one. Withholding the key once heals it: the full answer rewrites the meta.
+ * A cache written before that kept its models in separate keys, which could
+ * belong to another tree (never pruned, or written after the key by a sync
+ * that was cut short), and held no health report. Its key is withheld and its
+ * snapshot not shown — one full sync rewrites it in the current shape.
  */
-function cachedKey(meta: CachedMeta | undefined): string | null {
-  if (!meta || !('schemaValidation' in meta)) return null
-  return meta.treeSha ?? null
+function isCurrentMeta(meta: CachedMeta | undefined): meta is CachedMeta {
+  return !!meta && Array.isArray(meta.models) && 'schemaValidation' in meta
 }
 
-/** Everything the screen needs, read out of IndexedDB. */
+/**
+ * Everything the screen needs, read out of IndexedDB. A current meta holds it
+ * all; an older one falls back to the model keys (only the error and
+ * cross-tab paths ask for that — never the key-bearing `ready`).
+ */
 async function readSnapshot(projectId: string, meta: CachedMeta | undefined) {
-  const models: Record<string, unknown>[] = []
-  for (const k of await keys(contentStore)) {
-    if (!String(k).startsWith(`${projectId}:model:`)) continue
-    const def = await get(k, contentStore)
-    if (def) models.push(def as Record<string, unknown>)
+  let models = meta?.models
+  if (!Array.isArray(models)) {
+    models = []
+    for (const k of await keys(contentStore)) {
+      if (!String(k).startsWith(`${projectId}:model:`)) continue
+      const def = await get(k, contentStore)
+      if (def) models.push(def)
+    }
   }
 
   return {
@@ -273,7 +301,18 @@ async function readSnapshot(projectId: string, meta: CachedMeta | undefined) {
     content: meta?.contentSummary ?? {},
     vocabulary: meta?.vocabulary ?? null,
     contentContext: meta?.contentContext ?? null,
-    schemaValidation: meta?.schemaValidation ?? null,
+    // Left undefined for a cache that never stored one, so the main thread
+    // keeps whatever it already has instead of clearing it.
+    schemaValidation: meta?.schemaValidation,
+  }
+}
+
+/** Delete this project's model and content keys that `live` does not list. */
+async function pruneProject(projectId: string, live: Set<string>) {
+  const prefixes = [`${projectId}:model:`, `${projectId}:content:`, `${projectId}:meta:`]
+  for (const k of await keys(contentStore)) {
+    const key = String(k)
+    if (prefixes.some(p => key.startsWith(p)) && !live.has(key)) await del(k, contentStore)
   }
 }
 

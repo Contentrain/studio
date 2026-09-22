@@ -3,6 +3,18 @@ import { get, set } from 'idb-keyval'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { createSharedStores } from '../../app/workers/brain-idb-store'
 
+// Lets a test cut a sync short at a given key, the way a reload or a project
+// switch (`destroyBrain` → `terminate`) does.
+const writes = vi.hoisted(() => ({ failAt: null as string | null }))
+vi.mock('idb-keyval', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('idb-keyval')>()
+  return {
+    ...actual,
+    set: (key: IDBValidKey, value: unknown, store?: Parameters<typeof actual.set>[2]) =>
+      writes.failAt === String(key) ? Promise.reject(new Error('worker terminated')) : actual.set(key, value, store),
+  }
+})
+
 /**
  * What a reloaded brain worker reports on `init`.
  *
@@ -18,9 +30,10 @@ const SYNC_PAYLOAD = {
   treeSha: 'd'.repeat(64),
   delta: false,
   config: { locales: { default: 'tr', supported: ['tr'] } },
+  // Server order, deliberately not alphabetical.
   models: {
-    articles: { id: 'articles', name: 'Articles', kind: 'collection' },
     authors: { id: 'authors', name: 'Authors', kind: 'collection' },
+    articles: { id: 'articles', name: 'Articles', kind: 'collection' },
   },
   content: {
     'articles:tr': { data: { a1: { title: 'Merhaba' } }, meta: null, kind: 'collection' },
@@ -76,28 +89,82 @@ describe('brain worker init on a warm reload', () => {
       vocabulary: SYNC_PAYLOAD.vocabulary,
       schemaValidation: SYNC_PAYLOAD.schemaValidation,
     })
-    expect((ready.snapshot.models as Array<{ id: string }>).map(m => m.id).toSorted()).toEqual(['articles', 'authors'])
+    // In the server's order, as a full answer lists them.
+    expect((ready.snapshot.models as Array<{ id: string }>).map(m => m.id)).toEqual(['authors', 'articles'])
   })
 
-  it('withholds the key of a cache written before the health report was stored', async () => {
-    // Offering that key would earn an empty delta, and the health report would
-    // never arrive. Without it the server sends everything, once.
+  it.each([
+    ['no health report', 'schemaValidation'],
+    ['models kept only in separate keys', 'models'],
+  ])('withholds the key and the snapshot of an older cache (%s)', async (_label, field) => {
+    // Offering that key would earn an empty delta and pin whatever the old
+    // shape got wrong. Without it the server sends everything, once.
     const { 'brain-meta': metaStore } = createSharedStores('cr-brain', ['brain-meta', 'brain-content'])
     const key = `${PROJECT}:meta`
     const meta = await get(key, metaStore) as Record<string, unknown>
-    const { schemaValidation: _dropped, ...legacy } = meta
+    const { [field]: _dropped, ...legacy } = meta
     await set(key, legacy, metaStore)
 
     const handle = await bootWorker()
     await handle({ type: 'init', projectId: PROJECT })
 
-    const ready = lastOfType('ready') as { treeSha: string | null, cached: boolean, snapshot: Record<string, unknown> }
-    expect(ready.treeSha).toBeNull()
-    // The cache still renders while the full sync is on its way.
-    expect(ready.cached).toBe(true)
-    expect(ready.snapshot.config).toEqual(SYNC_PAYLOAD.config)
+    expect(lastOfType('ready')).toMatchObject({ treeSha: null, cached: true, snapshot: null })
 
     await set(key, meta, metaStore)
+  })
+
+  it('does not bring back a model the project no longer has', async () => {
+    // Sync {authors, articles}, then {articles}. The warm snapshot must say
+    // {articles}: the server answers its key with an empty delta, so anything
+    // extra in it would sit in the sidebar with nothing to ever remove it.
+    const first = await bootWorker()
+    await first({ type: 'init', projectId: 'pruned' })
+    await first({ type: 'sync', projectId: 'pruned', payload: { ...SYNC_PAYLOAD, treeSha: 'a'.repeat(64) } })
+    await first({
+      type: 'sync',
+      projectId: 'pruned',
+      payload: {
+        ...SYNC_PAYLOAD,
+        treeSha: 'b'.repeat(64),
+        models: { articles: SYNC_PAYLOAD.models.articles },
+        content: { 'articles:tr': SYNC_PAYLOAD.content['articles:tr'] },
+      },
+    })
+
+    const handle = await bootWorker()
+    await handle({ type: 'init', projectId: 'pruned' })
+    const ready = lastOfType('ready') as { treeSha: string, snapshot: { models: Array<{ id: string }> } }
+    expect(ready.treeSha).toBe('b'.repeat(64))
+    expect(ready.snapshot.models.map(m => m.id)).toEqual(['articles'])
+
+    // Nor can a query find its content.
+    await handle({ type: 'query', id: 'q1', projectId: 'pruned', modelId: 'authors', locale: 'tr' })
+    expect(lastOfType('queryResult')).toMatchObject({ data: { data: null } })
+  })
+
+  it('keeps the previous key when a sync is cut short', async () => {
+    // The worker dies after writing the new models but before the meta. The
+    // next load must not offer the new tree's key over the old tree's record —
+    // it offers the old key, which the server no longer matches, and syncs in full.
+    const first = await bootWorker()
+    await first({ type: 'init', projectId: 'torn' })
+    await first({ type: 'sync', projectId: 'torn', payload: { ...SYNC_PAYLOAD, treeSha: 'a'.repeat(64) } })
+
+    writes.failAt = 'torn:meta'
+    await first({
+      type: 'sync',
+      projectId: 'torn',
+      payload: { ...SYNC_PAYLOAD, treeSha: 'b'.repeat(64), models: { articles: SYNC_PAYLOAD.models.articles } },
+    })
+    writes.failAt = null
+    expect(lastOfType('error')).toBeDefined()
+
+    const handle = await bootWorker()
+    await handle({ type: 'init', projectId: 'torn' })
+    const ready = lastOfType('ready') as { treeSha: string, snapshot: { models: Array<{ id: string }> } }
+    expect(ready.treeSha).toBe('a'.repeat(64))
+    // ...and the snapshot is the one that key stands for.
+    expect(ready.snapshot.models.map(m => m.id)).toEqual(['authors', 'articles'])
   })
 
   it('reports no snapshot for a project this browser never synced', async () => {
