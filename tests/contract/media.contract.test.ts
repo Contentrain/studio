@@ -136,4 +136,64 @@ describe('postgres-db media (contract)', () => {
     await methods.removeMediaUsage(usage)
     expect(await methods.getMediaUsage(asset.id as string)).toEqual([])
   })
+
+  it('copyMediaAssetRows: copies the rows for the given paths to another project, skipping paths it already has', async () => {
+    // The media rehost after a project id change (#321): rows follow the
+    // copied storage objects, and a re-run must not add a second row.
+    const target = await sql<{ id: string }>`
+      INSERT INTO public.projects (workspace_id, repo_full_name)
+      VALUES (${user.workspaceId}, 'contentrain/media-rehost-target') RETURNING id
+    `.execute(getDb())
+    const targetId = target.rows[0]!.id
+
+    const created = new Date(Date.now() - 86_400_000).toISOString()
+    const a = await methods.createMediaAsset(baseAsset({
+      original_path: 'media/original/rehost-a.webp',
+      alt: 'Alt A',
+      tags: ['hero'],
+      variants: { thumb: { path: 'media/variants/rehost-a-320.webp', width: 320 } },
+      focal_point: { x: 0.2, y: 0.8 },
+      created_at: created,
+    }))
+    await methods.createMediaAsset(baseAsset({ original_path: 'media/original/rehost-b.webp' }))
+    // A second, newer row for the same path: nothing makes (project_id,
+    // original_path) unique, and it must not become a second row on the target.
+    await methods.createMediaAsset(baseAsset({ original_path: 'media/original/rehost-a.webp', alt: 'Newer duplicate' }))
+    await methods.createMediaAsset(baseAsset({ original_path: 'media/original/rehost-c.webp' }))
+    // Already listed on the target — must be skipped, not duplicated.
+    await methods.createMediaAsset(baseAsset({ project_id: targetId, original_path: 'media/original/rehost-b.webp' }))
+
+    const input = {
+      fromProjectId: projectId,
+      toProjectId: targetId,
+      toWorkspaceId: user.workspaceId,
+      originalPaths: ['media/original/rehost-a.webp', 'media/original/rehost-b.webp', 'media/original/not-there.webp'],
+    }
+    expect(await methods.copyMediaAssetRows(input)).toBe(1)
+    expect(await methods.copyMediaAssetRows(input)).toBe(0)
+    expect(await methods.copyMediaAssetRows({ ...input, originalPaths: [] })).toBe(0)
+
+    expect((await methods.listMediaAssetPaths(targetId)).sort()).toEqual([
+      'media/original/rehost-a.webp',
+      'media/original/rehost-b.webp',
+    ])
+    const copied = await methods.findMediaAssetByPath(targetId, 'media/original/rehost-a.webp')
+    expect(copied).toMatchObject({
+      project_id: targetId,
+      workspace_id: user.workspaceId,
+      filename: a.filename,
+      content_hash: a.content_hash,
+      size_bytes: a.size_bytes,
+      alt: 'Alt A',
+      tags: ['hero'],
+      variants: { thumb: { path: 'media/variants/rehost-a-320.webp', width: 320 } },
+      focal_point: { x: 0.2, y: 0.8 },
+      uploaded_by: user.userId,
+    })
+    expect(copied!.id).not.toBe(a.id)
+    expect(new Date(copied!.created_at as string).toISOString()).toBe(created)
+    // The source keeps its rows — both of the duplicates included.
+    expect((await methods.listMediaAssetPaths(projectId)).filter(p => p === 'media/original/rehost-a.webp')).toHaveLength(2)
+    expect(await methods.getMediaAsset(a.id as string)).toMatchObject({ project_id: projectId })
+  })
 })

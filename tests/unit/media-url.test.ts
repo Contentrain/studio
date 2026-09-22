@@ -61,4 +61,14 @@ describe('media URL helpers', () => {
     expect(ownMediaStoragePath('proj-1', 'https://studio.example.com/api/cdn/v1/proj-1/content/models.json')).toBeNull()
     expect(ownMediaStoragePath('proj-1', 42)).toBeNull()
   })
+
+  it('resolves storage paths under any instance\'s base, for the media rehost', async () => {
+    const { mediaBaseFor, mediaStoragePathUnder } = await import('../../server/utils/media-url')
+    const base = mediaBaseFor('https://staging.example.com/', 'old-proj')
+    expect(base).toBe('https://staging.example.com/api/cdn/v1/old-proj')
+    expect(mediaStoragePathUnder(base, `${base}/media/original/a.webp#x`)).toBe('media/original/a.webp')
+    expect(mediaStoragePathUnder(base, `${base}-2/media/original/a.webp`)).toBeNull()
+    expect(mediaStoragePathUnder(base, `${base}/content/posts/en.json`)).toBeNull()
+    expect(mediaStoragePathUnder(base, null)).toBeNull()
+  })
 })

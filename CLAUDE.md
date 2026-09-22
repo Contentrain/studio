@@ -305,6 +305,16 @@ regeneration is the single point it needs to be accurate.
   only into entries that already exist there. The schema has no
   `localized` flag yet; when `@contentrain/types` grows one, it should
   replace the type list, not sit beside it.
+- Media references stay absolute delivery URLs (#321, option 1). Moving a
+  project to another instance or project id is `POST .../media/rehost`
+  (`server/utils/media-rehost.ts`): a textual rewrite of the old
+  `{siteUrl}/api/cdn/v1/{projectId}/media/` base across all content files,
+  one commit forked from the read snapshot, refused (409) while any
+  referenced path is missing from this project's storage. `copyAssets`
+  (same instance, caller must be owner/admin of the SOURCE workspace —
+  project ids are public) copies storage objects and then the library rows
+  (`copyMediaAssetRows`, one statement). Relative paths (option 2) wait for
+  a resolver in `@contentrain/query`.
 
 ## Chat Prompt Cache Layout — CRITICAL
 

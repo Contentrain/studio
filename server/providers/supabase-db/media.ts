@@ -13,10 +13,31 @@ type MediaMethods = Pick<
   | 'listMediaAssets'
   | 'updateMediaAsset'
   | 'deleteMediaAsset'
+  | 'listMediaAssetPaths'
+  | 'copyMediaAssetRows'
   | 'trackMediaUsage'
   | 'removeMediaUsage'
   | 'getMediaUsage'
 >
+
+const PAGE_SIZE = 1000
+
+/** Every media_assets row of a project — PostgREST caps a response at 1000 rows. */
+async function selectAllPages<T>(columns: string, projectId: string): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await getAdmin()
+      .from('media_assets')
+      .select(columns)
+      .eq('project_id', projectId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error)
+      throw createError({ statusCode: 500, message: errorMessage('media.list_failed', { detail: error.message }) })
+    out.push(...(data ?? []) as T[])
+    if (!data || data.length < PAGE_SIZE) return out
+  }
+}
 
 export function mediaMethods(): MediaMethods {
   return {
@@ -123,6 +144,35 @@ export function mediaMethods(): MediaMethods {
         .single()
 
       return (data as DatabaseRow) ?? null
+    },
+
+    async listMediaAssetPaths(projectId) {
+      const rows = await selectAllPages<{ original_path: string }>('original_path', projectId)
+      return rows.map(r => r.original_path)
+    },
+
+    async copyMediaAssetRows({ fromProjectId, toProjectId, toWorkspaceId, originalPaths }) {
+      if (originalPaths.length === 0) return 0
+      const wanted = new Set(originalPaths)
+      const present = new Set((await selectAllPages<{ original_path: string }>('original_path', toProjectId)).map(r => r.original_path))
+      const seen = new Set<string>()
+      // Oldest row wins for a path held twice, as on the postgres provider.
+      const rows = (await selectAllPages<DatabaseRow>('*', fromProjectId))
+        .toSorted((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+        .filter((row) => {
+          const path = row.original_path as string
+          if (!wanted.has(path) || present.has(path) || seen.has(path)) return false
+          seen.add(path)
+          return true
+        })
+        .map(({ id: _id, updated_at: _updatedAt, ...row }) => ({ ...row, project_id: toProjectId, workspace_id: toWorkspaceId }))
+      if (rows.length === 0) return 0
+
+      // One bulk insert is one PostgREST request and one statement: every row or none.
+      const { error } = await getAdmin().from('media_assets').insert(rows)
+      if (error)
+        throw createError({ statusCode: 500, message: errorMessage('media.create_failed', { detail: error.message }) })
+      return rows.length
     },
 
     // ─── Media Usage ───
