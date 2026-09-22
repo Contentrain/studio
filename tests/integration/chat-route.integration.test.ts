@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 
 vi.mock('~~/server/utils/agent-types', async () => await import('../../server/utils/agent-types'))
@@ -21,6 +21,12 @@ function createGitStub() {
 }
 
 describe('chat route integration', () => {
+  beforeEach(() => {
+    // The route computes the attachment-promotion storage limit (#289).
+    vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(1))
+    vi.stubGlobal('getEffectiveLimit', vi.fn((limit: number) => limit))
+  })
+
   it('returns 403 when the caller has no chat tools', async () => {
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
