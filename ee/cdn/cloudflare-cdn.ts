@@ -10,7 +10,7 @@
  * LICENSE: Proprietary — Contentrain Enterprise Edition
  */
 
-import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import type { CDNProvider, CDNObject } from '../../server/providers/cdn'
 
 export interface CloudflareR2Config {
@@ -139,6 +139,15 @@ export function createCloudflareR2Provider(config: CloudflareR2Config): CDNProvi
       } while (continuationToken)
 
       return objects
+    },
+
+    async copyObject(fromProjectId, fromPath, toProjectId, toPath) {
+      const sourceKey = `${fromProjectId}/${fromPath}`.split('/').map(encodeURIComponent).join('/')
+      await client.send(new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: `${bucket}/${sourceKey}`,
+        Key: `${toProjectId}/${toPath}`,
+      }))
     },
 
     async purgeCache(_projectId, _paths?) {

@@ -66,6 +66,18 @@ function resolveContentDirForModel(
 }
 
 /**
+ * A model's content directory, content-root prefixed and hardened like every
+ * other resolver. For walks that must see every file a model owns whatever
+ * its locale strategy (the media rehost).
+ */
+export function resolveModelContentDir(
+  ctx: PathContext,
+  model: Pick<ModelDefinition, 'id' | 'domain' | 'content_path'>,
+): string {
+  return resolveContentDirForModel(ctx, model)
+}
+
+/**
  * Resolve the on-disk path for a content file.
  *
  * CRITICAL: honors `model.locale_strategy` — MUST stay byte-for-byte aligned
