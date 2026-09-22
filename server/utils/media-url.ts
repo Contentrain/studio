@@ -8,8 +8,17 @@ import type { MediaAsset } from '../providers/media'
  * normalize media to the same URLs Studio's own write path produces.
  */
 export function publicMediaBase(projectId: string): string {
-  const base = String(useRuntimeConfig().public.siteUrl ?? '').replace(/\/+$/, '')
-  return `${base}/api/cdn/v1/${projectId}`
+  return mediaBaseFor(String(useRuntimeConfig().public.siteUrl ?? ''), projectId)
+}
+
+/**
+ * The media delivery base of any Studio instance + project:
+ * `{siteUrl}/api/cdn/v1/{projectId}`. `publicMediaBase` is this instance's;
+ * the media rehost uses it to recognise another instance's (or a previous
+ * project id's) references.
+ */
+export function mediaBaseFor(siteUrl: string, projectId: string): string {
+  return `${siteUrl.replace(/\/+$/, '')}/api/cdn/v1/${projectId}`
 }
 
 /**
@@ -52,7 +61,17 @@ export function rewriteMediaUrl(projectId: string, value: unknown): unknown {
 export function ownMediaStoragePath(projectId: string, value: unknown): string | null {
   if (typeof value !== 'string') return null
   if (/^media\//.test(value)) return value.split(/[?#]/)[0]!
-  const prefix = `${publicMediaBase(projectId)}/`
+  return mediaStoragePathUnder(publicMediaBase(projectId), value)
+}
+
+/**
+ * The media storage path (`media/...`) of a delivery URL under `base`
+ * (see `mediaBaseFor`), or null when the value is not one. Query/hash
+ * suffixes are stripped.
+ */
+export function mediaStoragePathUnder(base: string, value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const prefix = `${base}/`
   if (!value.startsWith(prefix)) return null
   const rest = value.slice(prefix.length).split(/[?#]/)[0]!
   return /^media\//.test(rest) ? rest : null

@@ -585,6 +585,21 @@ export interface DatabaseProvider {
     blurhash?: string | null
   }) => Promise<DatabaseRow>
   deleteMediaAsset: (assetId: string) => Promise<DatabaseRow | null>
+  /** `original_path` of every asset row the project holds (the media rehost's skip set). */
+  listMediaAssetPaths: (projectId: string) => Promise<string[]>
+  /**
+   * Copy the source project's asset rows for `originalPaths` to another
+   * project of this instance (the media rehost after a project id change):
+   * same file, size, type, alt, tags, variants, uploader and created_at, new
+   * id / project / workspace. Paths the target already has a row for are
+   * skipped. One statement — every row or none. Returns the rows inserted.
+   */
+  copyMediaAssetRows: (input: {
+    fromProjectId: string
+    toProjectId: string
+    toWorkspaceId: string
+    originalPaths: string[]
+  }) => Promise<number>
 
   // ═══════════════════════════════════════════════════
   // MEDIA USAGE
