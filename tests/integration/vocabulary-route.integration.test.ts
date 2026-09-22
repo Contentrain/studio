@@ -1,3 +1,4 @@
+import { canonicalStringify } from '@contentrain/types'
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 
@@ -161,6 +162,10 @@ describe('vocabulary route — merge-conflict resilience', () => {
       expect(git.applyPlan).toHaveBeenCalledWith(expect.objectContaining({ base: 'snap-1' }))
       // The check that the term survived reads the live branch.
       expect(git.readFile.mock.calls.at(-1)).toEqual(['.contentrain/vocabulary.json', 'contentrain'])
+      // Written the way the engine and MCP write it (sorted keys), so the
+      // 3-way merge never conflicts over key order.
+      const written = (git.applyPlan.mock.calls[0]![0] as { changes: Array<{ content: string }> }).changes[0]!.content
+      expect(written).toBe(canonicalStringify({ version: 1, terms: { cta: { en: 'Get started' }, signup: { en: 'Sign up' } } }))
     })
   })
 
@@ -230,6 +235,40 @@ describe('vocabulary route — merge-conflict resilience', () => {
       expect(response.status).toBe(200)
       expect(git.applyPlan.mock.calls.map(c => (c[0] as { base: string }).base)).toEqual(['snap-1', 'snap-2'])
       expect(mergeBranch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('gives up with 409 after three stale-base refusals, with no branch to clean up', async () => {
+    // A refused applyPlan wrote nothing, so there is no branch to delete. Three
+    // in a row means `contentrain` keeps moving under us: report the conflict
+    // rather than loop.
+    const mergeBranch = vi.fn()
+    const git = {
+      readFile: vi.fn().mockResolvedValue(VOCAB_JSON),
+      applyPlan: vi.fn().mockRejectedValue(Object.assign(new Error('Branch moved away from base'), { status: 409 })),
+      deleteBranch: vi.fn().mockResolvedValue(undefined),
+    }
+    stubCommonGlobals({ mergeBranch }, git)
+    // h3 drops the message from the error body, so check the key it was built from.
+    const errorMessage = vi.fn((key: string) => key)
+    vi.stubGlobal('errorMessage', errorMessage)
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/vocabulary', handler: await loadVocabularyPatchHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/vocabulary', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ terms: { cta: { en: 'Get started' } } }),
+      })
+
+      expect(response.status).toBe(409)
+      expect(errorMessage).toHaveBeenCalledWith('vocabulary.save_conflict')
+      expect(git.applyPlan.mock.calls.map(c => (c[0] as { base: string }).base)).toEqual(['snap-1', 'snap-2', 'snap-3'])
+      expect(git.deleteBranch).not.toHaveBeenCalled()
+      expect(mergeBranch).not.toHaveBeenCalled()
     })
   })
 })

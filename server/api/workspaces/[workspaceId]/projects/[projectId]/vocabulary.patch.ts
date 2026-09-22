@@ -25,6 +25,7 @@
  * or reports a conflict that the loop retries from a fresh read.
  */
 
+import { canonicalStringify } from '@contentrain/types'
 import type { TermPatch, Vocabulary } from '~~/server/utils/vocabulary-merge'
 import { applyVocabularyPatch, vocabularyPatchSatisfied } from '~~/server/utils/vocabulary-merge'
 
@@ -83,7 +84,10 @@ export default defineEventHandler(async (event) => {
     try {
       await git.applyPlan({
         branch: branchName,
-        changes: [{ path: vocabPath, content: `${JSON.stringify(vocabulary, null, 2)}\n` }],
+        // The serialisation every other writer (engine, MCP) uses: sorted keys.
+        // Two writers ordering the same terms differently would make the 3-way
+        // merge above conflict over nothing.
+        changes: [{ path: vocabPath, content: canonicalStringify(vocabulary) }],
         message: 'contentrain: update vocabulary',
         author: { name: 'Contentrain Studio', email: 'ai@contentrain.io' },
         base: writeBase(snapshot),
