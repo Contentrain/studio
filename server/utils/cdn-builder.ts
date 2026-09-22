@@ -220,6 +220,9 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
   let modelUploadFailed = false
   const changedModelIds: string[] = []
   const uploadedPaths = new Set<string>()
+  // Models step 5 could not build. Their previous artifacts stay in the store:
+  // stale content beats a 404, and the next build replaces it.
+  const failedModelIds = new Set<string>()
 
   // Locale bundles (_bundle/{locale}.json) collect every content body built in
   // this run, keyed by the exact delivery path — the SDK primes its per-path
@@ -467,6 +470,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
           // `commitSha` — exactly the claim `_manifest.json.complete` makes on
           // behalf of every model it lists. Recorded so step 8 can withdraw it.
           modelUploadFailed = true
+          failedModelIds.add(model.id)
         }
       }
     }
@@ -625,6 +629,11 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
 
     // 9. Diff-based stale object cleanup
     progress({ phase: 'cleanup', message: 'Cleaning stale objects...' })
+    // A model that failed in step 5 uploaded nothing (or only part of its
+    // files), so "not in uploadedPaths" does not mean stale for it — sweeping
+    // would turn the content the site was serving into a 404.
+    const failedPrefixes = [...failedModelIds].flatMap(id => [`content/${id}/`, `meta/${id}/`, `documents/${id}/`])
+    const keepForFailedModel = (path: string) => failedPrefixes.some(prefix => path.startsWith(prefix))
     try {
       if (fullRebuild || !options.changedPaths?.length) {
         // Full rebuild: delete every build-owned object not in the new build.
@@ -637,6 +646,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
         const existing = await cdn.listObjects(projectId)
         for (const obj of existing) {
           if (obj.path.startsWith('media/')) continue
+          if (keepForFailedModel(obj.path)) continue
           if (!uploadedPaths.has(obj.path)) {
             await cdn.deleteObject(projectId, obj.path)
             filesDeleted++
@@ -646,6 +656,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
       else {
         // Selective build: only clean under affected model prefixes
         for (const model of targetModels) {
+          if (failedModelIds.has(model.id)) continue
           const prefixes = [`content/${model.id}/`, `meta/${model.id}/`, `documents/${model.id}/`]
           for (const prefix of prefixes) {
             const existing = await cdn.listObjects(projectId, prefix)
