@@ -15,6 +15,7 @@ import type { ContentrainConfig, ModelDefinition, ModelKind } from '@contentrain
 
 // Vite ?worker import — returns a constructor, not an instance
 import ContentBrainWorker from '~/workers/content-brain.worker.ts?worker'
+import { usableTreeSha } from '~~/shared/utils/tree-sha'
 
 interface BrainSyncResponse {
   treeSha: string
@@ -67,6 +68,17 @@ let requestCounter = 0
 const sharedContentStore = new Map<string, { data: unknown, meta: Record<string, unknown> | null, kind: string }>()
 let sharedWorker: Worker | null = null
 let sharedProjectId: string | null = null
+/**
+ * Resolves when the worker has reported `ready` for `sharedProjectId` — i.e.
+ * when the cache key it read out of IndexedDB has actually landed in
+ * `treeSha`. `initBrain` only *posts* a message, so without this every caller
+ * that syncs in the same tick reads `treeSha` before the worker answers.
+ */
+let workerReady: Promise<void> | null = null
+let resolveWorkerReady: (() => void) | null = null
+
+/** Upper bound on how long a sync waits for the worker's cached key. */
+const WORKER_READY_TIMEOUT_MS = 3000
 
 export function useContentBrain() {
   const treeSha = useState<string | null>('brain-tree-sha', () => null)
@@ -85,16 +97,32 @@ export function useContentBrain() {
 
   // --- Worker Lifecycle ---
 
-  function initBrain(projectId: string) {
-    if (!import.meta.client) return
+  /**
+   * Boot the worker for this project.
+   *
+   * Returns a promise that settles once the worker has reported back, so a
+   * caller can sync *after* the cached key is in hand rather than racing it.
+   * Callers that do not care can still ignore the return value.
+   */
+  function initBrain(projectId: string): Promise<void> {
+    if (!import.meta.client) return Promise.resolve()
 
     // If already initialized for this project, skip
-    if (sharedWorker && sharedProjectId === projectId) return
+    if (sharedWorker && sharedProjectId === projectId) return workerReady ?? Promise.resolve()
 
     // Destroy previous worker if switching projects
     if (sharedWorker) destroyBrain()
 
     sharedProjectId = projectId
+    workerReady = new Promise<void>((resolve) => {
+      resolveWorkerReady = resolve
+      // A missed cache costs one full sync; a gate that never opens costs the
+      // whole screen, because `sync` holds `syncing` true while it waits. Cap
+      // the wait so every worker failure this code did not anticipate degrades
+      // to the old behaviour instead of hanging. The work behind it is a single
+      // IndexedDB read.
+      setTimeout(resolve, WORKER_READY_TIMEOUT_MS)
+    })
 
     try {
       sharedWorker = new ContentBrainWorker()
@@ -102,6 +130,7 @@ export function useContentBrain() {
       sharedWorker.onerror = (e) => {
         // eslint-disable-next-line no-console
         console.error('[brain] Worker error:', e.message)
+        resolveWorkerReady?.()
       }
       // eslint-disable-next-line no-console
       console.log('[brain] Worker created successfully, sending init for project:', projectId)
@@ -113,7 +142,12 @@ export function useContentBrain() {
       console.warn('[brain] Worker creation failed, using in-memory only mode:', e)
       sharedWorker = null
       workerAvailable.value = false
+      // Nothing will ever send `ready`, so settle now — a sync that waits on a
+      // worker that does not exist would hang instead of degrading.
+      resolveWorkerReady?.()
     }
+
+    return workerReady ?? Promise.resolve()
   }
 
   function destroyBrain() {
@@ -124,6 +158,11 @@ export function useContentBrain() {
     }
     workerAvailable.value = false
     sharedProjectId = null
+    // Release anyone still waiting on the worker we just terminated, then drop
+    // the gate so the next `initBrain` installs a fresh one.
+    resolveWorkerReady?.()
+    workerReady = null
+    resolveWorkerReady = null
     ready.value = false
     treeSha.value = null
     config.value = null
@@ -149,6 +188,7 @@ export function useContentBrain() {
         console.log('[brain] Worker ready, cached:', msg.cached, 'treeSha:', msg.treeSha)
         treeSha.value = msg.treeSha ?? null
         ready.value = !!msg.cached
+        resolveWorkerReady?.()
         break
 
       case 'synced':
@@ -194,6 +234,9 @@ export function useContentBrain() {
         const { t } = useContent()
         syncError.value = t('content.sync_error')
         syncing.value = false
+        // A worker that failed inside `init` will never send `ready`. Settle
+        // the gate so the sync proceeds without a key rather than hanging.
+        resolveWorkerReady?.()
         break
       }
     }
@@ -205,9 +248,17 @@ export function useContentBrain() {
     syncing.value = true
     syncError.value = null
 
+    // The cache key lives in IndexedDB and only the worker can read it. Waiting
+    // for it is the whole point: measured on staging, syncing in the same tick
+    // as `initBrain` sent an empty query string on every single page load, so
+    // the server answered with the full payload (22 KB) even though the browser
+    // already held that exact content and the delta answer was 4.5 KB.
+    if (import.meta.client && workerReady) await workerReady
+
     try {
       const params = new URLSearchParams()
-      if (treeSha.value) params.set('treeSha', treeSha.value)
+      const key = usableTreeSha(treeSha.value)
+      if (key) params.set('treeSha', key)
 
       const response = await $fetch<BrainSyncResponse>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/brain/sync?${params}`,
