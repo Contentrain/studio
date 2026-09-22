@@ -58,6 +58,9 @@ on a CDN build, so all of those bodies can ship together.
   the next full rebuild.
 - A selective build that touches no models skips bundle emission (content
   unchanged → existing bundles are still current).
+- Exception: a model that fails to build keeps its previous standalone
+  artifacts but is missing from that build's bundle. The build writes
+  `complete: false`, so the next push rebuilds in full and heals both.
 
 ## Consumption
 
