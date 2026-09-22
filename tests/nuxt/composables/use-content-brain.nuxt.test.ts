@@ -21,6 +21,7 @@ const workerState = vi.hoisted(() => ({
   replyDelayMs: 0,
   reply: true as boolean,
   treeSha: null as string | null,
+  snapshot: null as Record<string, unknown> | null,
   instances: 0,
 }))
 
@@ -37,7 +38,12 @@ vi.mock('~/workers/content-brain.worker.ts?worker', () => ({
       if (msg.type !== 'init' || !workerState.reply) return
       setTimeout(() => {
         this.onmessage?.({
-          data: { type: 'ready', treeSha: workerState.treeSha, cached: workerState.treeSha !== null },
+          data: {
+            type: 'ready',
+            treeSha: workerState.treeSha,
+            cached: workerState.treeSha !== null || workerState.snapshot !== null,
+            snapshot: workerState.snapshot,
+          },
         } as MessageEvent)
       }, workerState.replyDelayMs)
     }
@@ -71,6 +77,7 @@ describe('useContentBrain sync', () => {
     workerState.replyDelayMs = 0
     workerState.reply = true
     workerState.treeSha = null
+    workerState.snapshot = null
     workerState.instances = 0
     useState('brain-tree-sha').value = null
     useState('brain-syncing').value = false
@@ -154,5 +161,98 @@ describe('useContentBrain sync', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(syncQuery(fetchMock)).toBe('')
     expect(brain.syncing.value).toBe(false)
+  })
+})
+
+/** What a worker reads out of a populated IndexedDB: 12 models, as on staging. */
+function cachedSnapshot(configDefault = 'en') {
+  const models = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, name: `Model ${i}`, kind: 'collection', domain: 'app', i18n: true, fields: {} }))
+  return {
+    exists: true,
+    config: { locales: { default: configDefault, supported: [configDefault] } },
+    models,
+    content: Object.fromEntries(models.map(m => [m.id, { count: 3, locales: [configDefault], kind: 'collection' }])),
+    vocabulary: null,
+    contentContext: null,
+    schemaValidation: { valid: true, warnings: [], healthScore: 97, modelCount: 12, validModels: 12, timestamp: 't' },
+  }
+}
+
+/** The server's answer to a key that matches: nothing but the key. */
+const EMPTY_DELTA = {
+  treeSha: DIGEST,
+  delta: true,
+  config: null,
+  models: null,
+  content: null,
+  vocabulary: null,
+  contentContext: null,
+  contentSummary: null,
+}
+
+describe('useContentBrain on a warm reload', () => {
+  beforeEach(() => {
+    workerState.replyDelayMs = 0
+    workerState.reply = true
+    workerState.treeSha = null
+    workerState.snapshot = null
+    useState('brain-tree-sha').value = null
+    useState('brain-syncing').value = false
+    useState('brain-ready').value = false
+    useState('brain-config').value = null
+    useState('brain-models').value = []
+    useState('brain-schema-validation').value = null
+  })
+
+  afterEach(async () => {
+    const { useContentBrain } = await import('../../../app/composables/useContentBrain')
+    useContentBrain().destroyBrain()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('shows the cached project when the server answers with an empty delta', async () => {
+    // The regression #322 exposed. Once the key reached the server, a reload of
+    // an unchanged project got `{ treeSha, delta: true }` and nothing else —
+    // and the screen only ever filled from a full answer, so a project with 12
+    // models rendered as "Project needs setup".
+    workerState.treeSha = DIGEST
+    workerState.snapshot = cachedSnapshot()
+    workerState.replyDelayMs = 5
+    const fetchMock = vi.fn().mockResolvedValue(EMPTY_DELTA)
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const { useContentBrain } = await import('../../../app/composables/useContentBrain')
+    const brain = useContentBrain()
+    brain.initBrain('project-warm')
+    await brain.sync('workspace-1', 'project-warm')
+
+    expect(syncQuery(fetchMock)).toBe(`treeSha=${DIGEST}`)
+    expect(brain.hasContentrain.value).toBe(true)
+    expect(brain.models.value).toHaveLength(12)
+    expect(brain.contentSummary.value.m0).toEqual({ count: 3, locales: ['en'], kind: 'collection' })
+    // The health report is cached too; an empty delta never brings one.
+    expect(brain.schemaValidation.value?.healthScore).toBe(97)
+  })
+
+  it('keeps a full answer over a cached snapshot that arrives after it', async () => {
+    // A worker slower than the wait cap: the sync goes out without a key and
+    // the full answer lands first. The cache it then reports is older.
+    vi.useFakeTimers()
+    workerState.treeSha = DIGEST
+    workerState.snapshot = cachedSnapshot('tr')
+    workerState.replyDelayMs = 5000
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue(FULL_RESPONSE))
+
+    const { useContentBrain } = await import('../../../app/composables/useContentBrain')
+    const brain = useContentBrain()
+    brain.initBrain('project-slow')
+    const pending = brain.sync('workspace-1', 'project-slow')
+    await vi.advanceTimersByTimeAsync(3000)
+    await pending
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(brain.config.value?.locales?.default).toBe('en')
+    expect(brain.models.value).toHaveLength(0)
   })
 })
