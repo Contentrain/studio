@@ -1,4 +1,5 @@
-import { isStashExpired, readPromotion, readStash, recordPromotion, replaceStashMarkers, stashIdsIn } from './attachment-stash'
+import { deletePromotion, isStashExpired, readPromotion, readStash, recordPromotion, replaceStashMarkers, stashIdsIn } from './attachment-stash'
+import { reportDataLossRisk } from './alert'
 import { uploadWithStorageReservation } from './media-quota-upload'
 import { toDeliveryUrl } from './media-url'
 import { useCDNProvider, useMediaProvider } from './providers'
@@ -89,6 +90,9 @@ export async function promoteAttachmentMarkers<T>(
   const promoted: PromotedAttachment[] = []
   const urls = new Map<string, string>()
 
+  // 1. Resolve every source before anything is uploaded, so a missing one
+  //    costs nothing.
+  const pending: Array<{ id: string, source: { buffer: Buffer, contentType: string, filename: string }, downscaled: boolean }> = []
   for (const id of ids) {
     // Written once already (an earlier save in this conversation): reuse the asset.
     const existing = isStashExpired(id) ? null : await readPromotion(cdn, scope, id)
@@ -98,12 +102,29 @@ export async function promoteAttachmentMarkers<T>(
       promoted.push({ attachment: id, path: existing, url })
       continue
     }
-
     const original = await readStash(cdn, scope, id)
-    const fallback = original ? null : ctx.downscaled.get(id)
+    const fallback = original ? undefined : ctx.downscaled.get(id)
     const source = original ?? fallback
     if (!source) return { error: errorMessage('attachment.promotion_expired', { id }) }
+    pending.push({ id, source, downscaled: !original })
+  }
 
+  // 2 + 3. Upload, then record each promotion. All-or-nothing: the save is
+  // refused when any of them fails, so none of its uploads may stay behind
+  // as an orphan eating quota — and an unrecorded promotion would upload a
+  // second copy on retry. Everything this call added is rolled back.
+  const added: Array<{ id: string, assetId: string, recorded: boolean }> = []
+  const rollback = async () => {
+    for (const item of added) {
+      if (item.recorded) await deletePromotion(cdn, scope, item.id).catch(() => {})
+      // `delete` also returns the asset's bytes to the storage counter.
+      await media.delete(ctx.projectId, item.assetId).catch((e: unknown) => {
+        reportDataLossRisk(e, { op: 'attachment-promotion.rollback', projectId: ctx.projectId, assetId: item.assetId })
+      })
+    }
+  }
+
+  for (const { id, source, downscaled } of pending) {
     const upload = await uploadWithStorageReservation({
       media,
       workspaceId: ctx.workspaceId,
@@ -114,14 +135,24 @@ export async function promoteAttachmentMarkers<T>(
       contentType: source.contentType,
       storageLimitBytes: ctx.storageLimitBytes,
     })
-    if (!upload.ok)
+    if (!upload.ok) {
+      await rollback()
       return { error: errorMessage(upload.reason === 'quota' ? 'attachment.promotion_quota_exceeded' : 'attachment.media_upload_failed') }
-
+    }
+    const entry = { id, assetId: upload.asset.id, recorded: false }
+    added.push(entry)
+    try {
+      await recordPromotion(cdn, scope, id, upload.asset.originalPath)
+      entry.recorded = true
+    }
+    catch {
+      await rollback()
+      return { error: errorMessage('attachment.media_upload_failed') }
+    }
     const path = upload.asset.originalPath
-    await recordPromotion(cdn, scope, id, path).catch(() => {})
     const url = toDeliveryUrl(ctx.projectId, path)
     urls.set(id, url)
-    promoted.push({ attachment: id, path, url, ...(fallback ? { downscaled: true as const } : {}) })
+    promoted.push({ attachment: id, path, url, ...(downscaled ? { downscaled: true as const } : {}) })
   }
 
   return { value: replaceIn(value, id => urls.get(id)) as T, promoted }

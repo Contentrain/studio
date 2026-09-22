@@ -17,15 +17,23 @@ const cdn = {
     return { path, size: 0, contentType, etag: 'e' }
   }),
   getObject: vi.fn(async (projectId: string, path: string) => objects.get(`${projectId}/${path}`) ?? null),
+  deleteObject: vi.fn(async (projectId: string, path: string) => {
+    objects.delete(`${projectId}/${path}`)
+  }),
 }
+/** The media library: asset id → path. */
+const library = new Map<string, string>()
 const upload = vi.fn()
+const remove = vi.fn(async (_projectId: string, assetId: string) => {
+  library.delete(assetId)
+})
 const reserve = vi.fn()
 const increment = vi.fn()
 let mediaAvailable = true
 
 vi.mock('../../server/utils/providers', () => ({
   useCDNProvider: () => cdn,
-  useMediaProvider: () => (mediaAvailable ? { upload } : null),
+  useMediaProvider: () => (mediaAvailable ? { upload, delete: remove } : null),
   useDatabaseProvider: () => ({ reserveStorageIfAllowed: reserve, incrementWorkspaceStorageBytes: increment }),
 }))
 
@@ -51,7 +59,14 @@ function context(overrides: Partial<Parameters<typeof promoteAttachmentMarkers>[
 beforeEach(() => {
   objects.clear()
   mediaAvailable = true
-  upload.mockReset().mockImplementation(async ({ filename }: { filename: string }) => ({ originalPath: `media/original/${filename}.webp`, size: 10 }))
+  library.clear()
+  remove.mockClear()
+  cdn.putObject.mockClear()
+  upload.mockReset().mockImplementation(async ({ filename }: { filename: string }) => {
+    const id = `asset-${library.size + 1}`
+    library.set(id, `media/original/${filename}.webp`)
+    return { id, originalPath: `media/original/${filename}.webp`, size: 10 }
+  })
   reserve.mockReset().mockResolvedValue({ allowed: true, currentBytes: 0 })
   increment.mockReset().mockResolvedValue(undefined)
   vi.stubGlobal('hasFeature', vi.fn(() => true))
@@ -125,6 +140,35 @@ describe('promoteAttachmentMarkers', () => {
 
     expect(result).toEqual({ error: 'attachment.promotion_quota_exceeded' })
     expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('leaves no asset behind when a later attachment of the same save hits the quota', async () => {
+    const first = await stashOriginal(cdn as never, SCOPE, { buffer: ORIGINAL, contentType: 'image/png', filename: 'bir.png' })
+    const second = await stashOriginal(cdn as never, SCOPE, { buffer: ORIGINAL, contentType: 'image/png', filename: 'iki.png' })
+    reserve.mockResolvedValueOnce({ allowed: true, currentBytes: 0 }).mockResolvedValueOnce({ allowed: false, currentBytes: 1_000_000 })
+
+    const result = await promoteAttachmentMarkers({ a: `attachment:${first}`, b: `attachment:${second}` }, context())
+
+    expect(result).toEqual({ error: 'attachment.promotion_quota_exceeded' })
+    expect(upload).toHaveBeenCalledOnce()
+    expect(library.size).toBe(0)
+    expect([...objects.keys()].some(k => k.endsWith('.promoted.json'))).toBe(false)
+  })
+
+  it('rolls the upload back when its promotion cannot be recorded', async () => {
+    const id = await stashOriginal(cdn as never, SCOPE, { buffer: ORIGINAL, contentType: 'image/png', filename: 'kapak.png' })
+    const put = cdn.putObject.getMockImplementation()!
+    cdn.putObject.mockImplementation(async (projectId, path, data, contentType) => {
+      if (path.endsWith('.promoted.json')) throw new Error('R2 unavailable')
+      return put(projectId, path, data, contentType)
+    })
+
+    const result = await promoteAttachmentMarkers({ cover: `attachment:${id}` }, context())
+    cdn.putObject.mockImplementation(put)
+
+    expect(result).toEqual({ error: 'attachment.media_upload_failed' })
+    expect(remove).toHaveBeenCalledWith('p1', 'asset-1')
+    expect(library.size).toBe(0)
   })
 
   it('does not resolve an attachment made in another workspace', async () => {

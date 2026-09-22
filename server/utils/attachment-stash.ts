@@ -101,3 +101,7 @@ export async function readPromotion(cdn: CDNProvider, scope: StashScope, id: str
 export async function recordPromotion(cdn: CDNProvider, scope: StashScope, id: string, path: string): Promise<void> {
   await cdn.putObject(STASH_NAMESPACE, `${stashPath(scope, id)}.promoted.json`, JSON.stringify({ path }), 'application/json')
 }
+
+export async function deletePromotion(cdn: CDNProvider, scope: StashScope, id: string): Promise<void> {
+  await cdn.deleteObject(STASH_NAMESPACE, `${stashPath(scope, id)}.promoted.json`)
+}
