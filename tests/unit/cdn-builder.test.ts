@@ -601,6 +601,90 @@ describe('cdn builder', () => {
 
       expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').complete).toBe(true)
     })
+
+    /**
+     * Step 5 catches a per-model failure and keeps building — one bad model
+     * should not cost the others their upload. But the build then wrote
+     * `complete: true` anyway, over a store it knew had a hole in it. The
+     * next push read that and stayed selective, so the lost model stayed
+     * 404 until something happened to touch it: #278 again, narrower.
+     */
+    it('withdraws the completeness claim when a model could not be uploaded', async () => {
+      const { provider, objects } = createCDNProvider()
+      const put = vi.mocked(provider.putObject)
+      const original = put.getMockImplementation()!
+      put.mockImplementation(async (projectId, path, data, contentType) => {
+        if (path === 'content/team/en.json') throw new Error('R2 unavailable')
+        return original(projectId, path, data, contentType)
+      })
+
+      const result = await executeCDNBuild({
+        projectId: 'proj',
+        buildId: 'b',
+        git: twoModelGit(),
+        cdn: provider,
+        contentRoot: '',
+        commitSha: 'sha1',
+        branch: 'main',
+        fullRebuild: true,
+      })
+
+      // The build still succeeds and the healthy model still ships...
+      expect(result.error).toBeUndefined()
+      expect(objects.has('proj:content/faq/en.json')).toBe(true)
+      expect(objects.has('proj:content/team/en.json')).toBe(false)
+      expect(vi.mocked(reportDataLossRisk)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ op: 'cdn-build.model', modelId: 'team' }),
+      )
+      // ...but the manifest still lists `team`, so it must not claim to hold it.
+      const manifest = JSON.parse(objects.get('proj:_manifest.json') ?? '{}')
+      expect(manifest.models.map((m: { id: string }) => m.id)).toContain('team')
+      expect(manifest.complete).toBe(false)
+    })
+
+    it('writes a plain false on a selective build, not the previous true', async () => {
+      // The inheritance trap: a selective build that copied the old manifest's
+      // `true` forward would hand the next push a clean-looking store with a
+      // hole in it, and the hole would never heal.
+      const { provider, objects } = createCDNProvider()
+      objects.set('proj:_manifest.json', JSON.stringify({
+        version: '1', commitSha: 'old', branch: 'main', complete: true,
+      }))
+      const put = vi.mocked(provider.putObject)
+      const original = put.getMockImplementation()!
+      put.mockImplementation(async (projectId, path, data, contentType) => {
+        if (path === 'content/faq/en.json') throw new Error('R2 unavailable')
+        return original(projectId, path, data, contentType)
+      })
+
+      const result = await executeCDNBuild({
+        projectId: 'proj',
+        buildId: 'b',
+        git: twoModelGit(),
+        cdn: provider,
+        contentRoot: '',
+        commitSha: 'sha1',
+        branch: 'main',
+        changedPaths: ['.contentrain/content/marketing/faq/en.json'],
+      })
+
+      expect(result.changedModels).toEqual(['faq'])
+      expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').complete).toBe(false)
+    })
+
+    it('builds every model when the last build withdrew the claim', async () => {
+      // The other half: `false` has to be read back as "do not trust me",
+      // otherwise withdrawing it buys nothing.
+      const { result, objects } = await buildTouchingOnlyFaq({
+        version: '1', commitSha: 'old', branch: 'main', complete: false,
+      })
+
+      expect(result.changedModels.sort()).toEqual(['faq', 'team'])
+      expect(objects.has('proj:content/team/en.json')).toBe(true)
+      // And the promoted rebuild heals the flag, so this costs one push, not every push.
+      expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').complete).toBe(true)
+    })
   })
 
   it('merges unchanged models from storage into the bundle on selective builds', async () => {
