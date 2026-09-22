@@ -45,7 +45,6 @@ function createGit(files: Record<string, string>, merge: Record<string, unknown>
     fileExists: vi.fn(async (path: string) => path in files),
     getTree: vi.fn(async () => Object.keys(files).map(path => ({ path, type: 'blob' as const, sha: 'x' }))),
     getBranchSha: vi.fn().mockResolvedValue('base-sha'),
-    createBranchAt: vi.fn().mockResolvedValue(undefined),
     applyPlan: vi.fn().mockResolvedValue({ sha: 'commit-sha', message: '', author: { name: '', email: '' }, timestamp: '' }),
     deleteBranch: vi.fn().mockResolvedValue(undefined),
   }
@@ -187,7 +186,6 @@ describe('runMediaRehost', () => {
     expect(result.status).toBe('missing_assets')
     expect(result.counts.missing).toHaveLength(2)
     expect(git.applyPlan).not.toHaveBeenCalled()
-    expect(git.createBranchAt).not.toHaveBeenCalled()
   })
 
   it('rewrites every reference in one commit forked from the read snapshot, and lands it', async () => {
@@ -199,10 +197,12 @@ describe('runMediaRehost', () => {
     const result = await runMediaRehost(baseInput(git, cdn, merge))
 
     expect(result).toMatchObject({ status: 'committed', commitSha: 'commit-sha', merged: true })
-    expect(git.createBranchAt).toHaveBeenCalledWith(expect.stringMatching(/^cr\/media\/rehost\//), 'base-sha')
     expect(git.applyPlan).toHaveBeenCalledTimes(1)
     const plan = git.applyPlan.mock.calls[0]![0] as { changes: Array<{ path: string, content: string }>, message: string, base: string }
-    expect(plan.base).toBe('contentrain')
+    // Forked from the commit the files were read at, not from wherever
+    // `contentrain` points at write time (#285) — the branch name is new.
+    expect(plan.base).toBe('base-sha')
+    expect((plan as unknown as { branch: string }).branch).toMatch(/^cr\/media\/rehost\//)
     expect(plan.changes.map(c => c.path)).toEqual([
       '.contentrain/content/blog/articles/launch.md',
       '.contentrain/content/blog/posts/en.json',

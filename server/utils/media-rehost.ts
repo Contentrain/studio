@@ -1,11 +1,10 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { CDNProvider } from '../providers/cdn'
 import type { DatabaseProvider } from '../providers/database'
 import type { GitProvider } from '../providers/git'
 import type { EngineMergeResult } from './content-engine/types'
 import { STUDIO_AUTHOR } from './content-engine/types'
-import { createFeatureBranch, openWriteSnapshot } from './content-engine/helpers'
+import { createFeatureBranch, openWriteSnapshot, writeBase } from './content-engine/helpers'
 import { resolveConfigPath, resolveContentPath, resolveModelContentDir, resolveModelsDir } from './content-paths'
 import { mediaBaseFor, mediaStoragePathUnder } from './media-url'
 
@@ -244,7 +243,7 @@ export async function runMediaRehost(input: RehostInput): Promise<RehostResult> 
   const toBase = mediaBaseFor(normalizeSiteUrl(input.siteUrl), projectId)
 
   const snapshot = await openWriteSnapshot(git)
-  const ref = snapshot.baseSha ?? CONTENTRAIN_BRANCH
+  const ref = writeBase(snapshot)
   const files = await readContentFiles(git, snapshot.reader, ref, input.contentRoot)
   const plan = planMediaRehost(files, fromBase, toBase)
 
@@ -320,8 +319,6 @@ export async function runMediaRehost(input: RehostInput): Promise<RehostResult> 
     { git, pathCtx: { contentRoot: input.contentRoot }, projectId, ensureContentBranch: () => Promise.resolve() },
     'media',
     'rehost',
-    undefined,
-    snapshot.baseSha,
   )
   const commit = await git.applyPlan({
     branch: branchName,
@@ -335,7 +332,10 @@ export async function runMediaRehost(input: RehostInput): Promise<RehostResult> 
       `Co-Authored-By: ${input.userEmail}`,
     ].join('\n'),
     author: STUDIO_AUTHOR,
-    base: CONTENTRAIN_BRANCH,
+    // The commit the files were read at: the branch forks there, so a save
+    // that landed since makes the merge a conflict instead of being reverted
+    // (#285). Passing the branch name 'contentrain' would silently undo that.
+    base: writeBase(snapshot),
   })
 
   // The files were read at the snapshot; a save that landed since makes the
