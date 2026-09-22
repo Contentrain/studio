@@ -37,6 +37,40 @@ describe('useWorkspaces', () => {
     expect(workspaces.activeWorkspace.value?.id).toBe('workspace-1')
   })
 
+  it('shares one request between callers that load the list at the same time', async () => {
+    // A cold project page: the page and the workspace switcher both find the
+    // list empty in the same tick. Staging showed two `/api/workspaces` calls.
+    const fetchMock = vi.fn().mockResolvedValue([
+      { id: 'workspace-1', name: 'Primary', slug: 'primary', type: 'primary', owner_id: 'user-1', logo_url: null, github_installation_id: null, plan: 'free', created_at: '2026-03-25T00:00:00.000Z' },
+    ])
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const page = useWorkspaces()
+    const switcher = useWorkspaces()
+    await Promise.all([page.fetchWorkspaces(), switcher.fetchWorkspaces()])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(switcher.activeWorkspace.value?.id).toBe('workspace-1')
+
+    // Once it has landed, the next call is a new request, not a stale answer.
+    await page.fetchWorkspaces()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets the next caller retry after a failed load', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce([])
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const workspaces = useWorkspaces()
+    await expect(workspaces.fetchWorkspaces()).rejects.toThrow('network')
+    await workspaces.fetchWorkspaces()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(workspaces.loading.value).toBe(false)
+  })
+
   it('persists workspace selection and last path locally', () => {
     const workspaces = useWorkspaces()
 

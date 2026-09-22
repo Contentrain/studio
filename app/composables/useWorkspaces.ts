@@ -46,6 +46,14 @@ export function useWorkspaceRole() {
 const STORAGE_KEY_WORKSPACE = 'cr-active-workspace'
 const STORAGE_KEY_LAST_PATH = 'cr-last-path'
 
+/**
+ * The list request in flight. A project page and the workspace switcher both
+ * load the list when it is empty, in the same tick on a cold load — measured
+ * on staging as two `/api/workspaces` calls on every page load. Callers that
+ * arrive while one is running share it.
+ */
+let workspacesInFlight: Promise<void> | null = null
+
 export function useWorkspaces() {
   const workspaces = useState<Workspace[]>('workspaces', () => [])
   const loading = useState('workspaces-loading', () => false)
@@ -61,7 +69,14 @@ export function useWorkspaces() {
     workspaces.value.find(w => w.id === activeWorkspaceId.value) ?? null,
   )
 
-  async function fetchWorkspaces() {
+  function fetchWorkspaces(): Promise<void> {
+    workspacesInFlight ??= loadWorkspaces().finally(() => {
+      workspacesInFlight = null
+    })
+    return workspacesInFlight
+  }
+
+  async function loadWorkspaces() {
     loading.value = true
     try {
       workspaces.value = await $fetch<Workspace[]>('/api/workspaces')

@@ -85,9 +85,12 @@ const isCDNActive = computed(() => (route.query as Record<string, string | undef
 const isAssetsActive = computed(() => (route.query as Record<string, string | undefined>).assets === 'true')
 const { healthScore } = useProjectHealth()
 
-// Fetch branches when project/workspace context becomes available.
+// Fetch branches when project/workspace context becomes available. Two
+// sources, not a getter returning a fresh array: that array is never equal to
+// the last one, so every reload of the workspace list — same ids — fetched the
+// branches again (measured on staging: `/branches` twice per page load).
 watch(
-  () => [currentProjectId.value, activeWorkspace.value?.id] as const,
+  [currentProjectId, () => activeWorkspace.value?.id],
   async ([id, workspaceId]) => {
     if (id && workspaceId) {
       await fetchBranches(workspaceId, id)
