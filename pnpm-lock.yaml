@@ -23,14 +23,14 @@ importers:
         specifier: ^3.1076.0
         version: 3.1076.0
       '@contentrain/mcp':
-        specifier: 3.6.0
-        version: 3.6.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
+        specifier: 3.6.1
+        version: 3.6.1(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
       '@contentrain/query':
         specifier: ^7.3.6
         version: 7.3.6
       '@contentrain/types':
-        specifier: 1.18.1
-        version: 1.18.1
+        specifier: 1.19.0
+        version: 1.19.0
       '@gitbeaker/rest':
         specifier: ^43.8.0
         version: 43.8.0
@@ -691,8 +691,8 @@ packages:
     resolution: {integrity: sha512-7zVFCDB2reMvJH5dmbKnOQPjZEvjdJTH8jc0U/PIPU1r3/+vf5pD1HlfitV2MWsWXrvu7u39iY1lyLUPOaN0Gw==}
     engines: {node: '>=22.12.0'}
 
-  '@contentrain/mcp@3.6.0':
-    resolution: {integrity: sha512-3cugZXxMRHvL/0i/XJhNl4OZtTSYNc6e1JOoerbbZYgzOYhQqBREpQd1TzJH+fRF6TCtP413xoHx4t4GLnITjg==}
+  '@contentrain/mcp@3.6.1':
+    resolution: {integrity: sha512-stTHzwJoCiXrlHmkLReRV0ejXiV8muF9qPeVsup0dtibPvKkOsNWj+2tcEjB2gEFfEn/bxopacPt41hWET2rFg==}
     hasBin: true
     peerDependencies:
       '@gitbeaker/rest': '>=43.0.0'
@@ -710,8 +710,8 @@ packages:
   '@contentrain/types@1.18.0':
     resolution: {integrity: sha512-p+uE0agOSohfVDXJbwj2DGXCVpVHRtjNm0xQ4e1MTGZMuZqiS1r94ev+k3AB2Mn9Tc1Hqx0/kBS85C35oZQqsA==}
 
-  '@contentrain/types@1.18.1':
-    resolution: {integrity: sha512-dCDOOLLmHoRPvYNdfxhmJ3o4aj0T8gDzMFyaw0hCjarYqdFQoMnquKqtulZv1clqSlH2JGJyr9+y76obGniyUQ==}
+  '@contentrain/types@1.19.0':
+    resolution: {integrity: sha512-dO+M+WywG52UYvhe8OF5G7OtrAweM92xxyVrAjTb4Zxg4d0YnPf61l3yrY/d1mSCHWe+N2iYiPL++J/IFVEu6w==}
 
   '@conventional-changelog/git-client@3.1.2':
     resolution: {integrity: sha512-jZqwnJwf7nboIlAcw/mkOjVa6DexCcUOgT2oOQgkoi3z9vR8tGFkcMy2BFcYwjhL9sYcDDXkRQDayiDieCoW7A==}
@@ -7910,9 +7910,9 @@ snapshots:
       conventional-commits-parser: 7.1.2
       picocolors: 1.1.1
 
-  '@contentrain/mcp@3.6.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
+  '@contentrain/mcp@3.6.1(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
     dependencies:
-      '@contentrain/types': 1.18.1
+      '@contentrain/types': 1.19.0
       '@modelcontextprotocol/sdk': 1.30.0(zod@3.25.76)
       simple-git: 3.36.0
       typescript: 5.9.3
@@ -7933,7 +7933,7 @@ snapshots:
 
   '@contentrain/types@1.18.0': {}
 
-  '@contentrain/types@1.18.1': {}
+  '@contentrain/types@1.19.0': {}
 
   '@conventional-changelog/git-client@3.1.2(conventional-commits-parser@7.1.2)':
     dependencies:
