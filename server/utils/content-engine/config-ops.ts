@@ -1,8 +1,8 @@
 import type { ContentrainConfig, FileChange, Vocabulary } from '@contentrain/types'
-import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, LOCALE_PATTERN } from '@contentrain/types'
+import { canonicalStringify, LOCALE_PATTERN } from '@contentrain/types'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { openWriteSnapshot, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, writeBase } from './helpers'
 
 function errResult(message: string): WriteResult {
   return {
@@ -51,14 +51,14 @@ export async function addLocale(
   }
 
   const change: FileChange = { path: resolveConfigPath(ctx.pathCtx), content: canonicalStringify(updated) }
-  const { branchName } = await createFeatureBranch(ctx, 'config', 'locales', undefined, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'config', 'locales', undefined)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: [change],
     message: `contentrain: add locale ${locale}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
@@ -98,14 +98,14 @@ export async function saveVocabulary(
   const merged: Vocabulary = { version: existing.version + 1, terms: mergedTerms }
 
   const change: FileChange = { path: resolveVocabularyPath(ctx.pathCtx), content: canonicalStringify(merged) }
-  const { branchName } = await createFeatureBranch(ctx, 'config', 'vocabulary', undefined, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'config', 'vocabulary', undefined)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: [change],
     message: `contentrain: update vocabulary\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)

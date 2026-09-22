@@ -1,9 +1,9 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader, ValidationResult, Vocabulary } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter, validateSlug } from '@contentrain/types'
+import { parseMarkdownFrontmatter, validateSlug } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { applyStudioMetaOverrides, openWriteSnapshot, createFeatureBranch, plannedStatuses, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
+import { applyStudioMetaOverrides, openWriteSnapshot, createFeatureBranch, plannedStatuses, planMatchesCurrent, splitEntrySchedule, validateSchedule, writeBase } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 import { entryModeErrors } from './entry-mode'
 import { mergeEntryFields } from './field-merge'
@@ -154,7 +154,7 @@ async function writeDocuments(
     }
   }
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
 
   const subject = ok.length === 1
     ? `contentrain: save document ${modelId}/${ok[0]!.slug} [${locale}]`
@@ -164,7 +164,7 @@ async function writeDocuments(
     changes: allChanges,
     message: `${subject}\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
+    base: writeBase(snapshot),
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)

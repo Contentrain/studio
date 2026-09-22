@@ -185,16 +185,13 @@ export interface GitProvider extends RepoProvider {
   getTree: (ref?: string) => Promise<TreeEntry[]>
 
   /**
-   * Compare-and-swap primitives for the content write path. A write reads the
-   * files it rewrites at one commit and must commit on top of THAT commit, not
-   * whatever `contentrain` points at by the time it writes — otherwise a change
-   * that landed in between is silently reverted (#285). Optional: a provider
-   * without them keeps the older fork-at-write-time behaviour.
+   * Current commit sha of `branch`, or null when it does not exist. The
+   * content write path pins its reads to this commit and passes it to
+   * `applyPlan` as `base` (#285): a write rewrites whole files from what it
+   * read, so it must commit on top of THAT commit. Optional: without it a
+   * write reads and forks `contentrain` by name.
    */
-  /** Current commit sha of `branch`, or null when the branch does not exist. */
   getBranchSha?: (branch: string) => Promise<string | null>
-  /** Create `name` pointing at `sha`. Rejects when `name` already exists. */
-  createBranchAt?: (name: string, sha: string) => Promise<void>
 
   /**
    * Studio-side commit helper — delegates to `applyPlan` with the
