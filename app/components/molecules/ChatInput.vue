@@ -57,6 +57,7 @@ interface ServerRef {
   truncated?: boolean
   error?: string
   notice?: string
+  stashId?: string
 }
 
 function guessKind(file: File): UIAttachment['kind'] {
@@ -110,6 +111,7 @@ function applyRef(att: UIAttachment, ref: ServerRef | undefined) {
   att.preview = ref.preview
   att.truncated = ref.truncated
   att.previewUrl = previewFromBlocks(ref.blocks)
+  att.stashId = ref.stashId
   if (ref.notice) toast.warning(ref.notice)
 }
 

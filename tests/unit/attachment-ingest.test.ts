@@ -8,6 +8,7 @@ const reserveMock = vi.fn()
 const incrementMock = vi.fn()
 vi.mock('../../server/utils/providers', () => ({
   useMediaProvider: () => mediaProvider,
+  useCDNProvider: () => cdnProvider,
   useDatabaseProvider: () => ({ reserveStorageIfAllowed: reserveMock, incrementWorkspaceStorageBytes: incrementMock }),
 }))
 vi.mock('../../server/utils/media-url', () => ({
@@ -19,6 +20,7 @@ vi.mock('../../server/utils/webhook-engine', () => ({
 }))
 
 let mediaProvider: { upload: typeof uploadMock } | null = null
+let cdnProvider: { putObject: ReturnType<typeof vi.fn> } | null = null
 let allowUrl: (url: string) => boolean = () => true
 
 const {
@@ -43,6 +45,7 @@ function baseInput(overrides: Partial<Parameters<typeof ingestFile>[0]>) {
 
 beforeEach(() => {
   mediaProvider = null
+  cdnProvider = null
   allowUrl = () => true
   uploadMock.mockReset()
   reserveMock.mockReset()
@@ -373,6 +376,6 @@ describe('validateAttachmentBlocks', () => {
   })
 
   it('returns empty for non-array input', () => {
-    expect(validateAttachmentBlocks(undefined, opts)).toEqual({ blocks: [], summary: [] })
+    expect(validateAttachmentBlocks(undefined, opts)).toEqual({ blocks: [], summary: [], downscaled: new Map() })
   })
 })

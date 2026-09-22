@@ -112,6 +112,7 @@ If CDN/media delivery is enabled:
 
 - Set R2 account and credentials
 - Verify bucket access and object lifecycle expectations
+- Add a bucket lifecycle rule that deletes objects under the `_tmp/` prefix after 1 day. Chat image attachments keep their original there so a later save can promote it into the media library. Studio already refuses stash entries older than 24 hours, so the rule only reclaims space
 
 ### Redis
 
