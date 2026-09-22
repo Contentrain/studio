@@ -50,7 +50,7 @@ FORMAT BY KIND:
 - singleton: { field: value, ... } — always mode "update"
 - dictionary: { "key": "string value", ... } — ALL values must be strings; mode "update"
 
-STATUS: pass \`status: "published"\` to create-and-publish (or \`"draft"\` to unpublish) in the same commit — no separate update_status needed. Without it, new entries are saved as draft and existing ones keep their status.
+STATUS: pass \`status: "published"\` to create-and-publish (or \`"draft"\` to unpublish) in the same commit — no separate update_status needed. Applies ONLY to the locale this call writes to, not the entry's other locales (use update_status for that). Without it, new entries are saved as draft and existing ones keep their status.
 
 The result lists which entries were \`created\` and which \`updated\`, and \`statuses\` — the status each entry has once merged. "merged: true" does NOT mean published: say an entry is live only if its status is "published".
 
@@ -136,13 +136,18 @@ Use this — not save_content — whenever the change is smaller than the field:
   },
   {
     name: 'delete_content',
-    description: 'Delete entries from a model. For collections: pass entry IDs. For documents: pass slugs (the whole document is removed across all locales). For dictionaries: pass keys as entryIds.',
+    description: `Delete entries from a model. For collections: pass entry IDs. For documents: pass slugs (the whole document is removed, every locale together — locale narrowing is not supported for documents). For dictionaries: pass keys as entryIds.
+
+An entry is one translation unit: for an i18n collection or dictionary, deleting it removes EVERY configured locale's copy by default, in one commit — not just the locale you're working in. Pass \`locales\` (a subset) to delete only those locales and leave the rest; the result's \`remainingLocales\` lists which locales still hold the entry afterward. Omit \`locales\` for a non-i18n model.
+
+The result always reports \`touchedLocales\` (what this call actually deleted) and \`files\` (the exact paths removed) — never guess either from the request.`,
     inputSchema: {
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
-        locale: { type: 'string', description: 'Locale code' },
+        locale: { type: 'string', description: 'Locale code (non-i18n models only; ignored for i18n collections/dictionaries — use `locales` there)' },
         entryIds: { type: 'array', items: { type: 'string' }, description: 'Entry IDs (collection), slugs (document) or keys (dictionary) to delete' },
+        locales: { type: 'array', items: { type: 'string' }, description: 'i18n collections/dictionaries only: narrow the delete to these locales instead of every configured locale. Not supported for documents.' },
       },
       required: ['model', 'entryIds'],
     },
@@ -417,14 +422,17 @@ Then: save_content({ model: "hero", data: { cover: "media/original/abc123.webp" 
 
 Call it ONLY when the user asked for the status to change. NEVER call it to find out what the status IS — reading is what brain_query and brain_search are for, and their \`meta\`/\`status\` fields answer that question without touching anything.
 
-Returns \`statusChanges\`: [{ entryId, from, to }] for every entry named, so report the transition you actually caused ("draft → published"), never "it was already published" about an entry you just published. Entries already at the requested status are left untouched and come back with \`unchanged: true\`.`,
+An entry's status is one fact about the whole entry: for an i18n model, this sets EVERY configured locale by default, in one commit — not just the locale you're working in (unlike save_content's inline \`status\`, which only ever touches the locale it writes to). Pass \`locales\` to narrow to a subset; the result's \`remainingLocales\` lists which locales were left at their old status.
+
+Returns \`statusChanges\`: [{ entryId, from, to, locale? }] for every entry named (\`locale\` present only when this call touched more than one), so report the transition you actually caused ("draft → published"), never "it was already published" about an entry you just published. Also returns \`touchedLocales\`. An entry already at the requested status everywhere in scope is left untouched and comes back with \`unchanged: true\`.`,
     inputSchema: {
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
-        locale: { type: 'string', description: 'Locale code (defaults to context locale)' },
+        locale: { type: 'string', description: 'Locale code (non-i18n models only; ignored for i18n models — use `locales` there). Defaults to context locale.' },
         entryIds: { type: 'array', items: { type: 'string' }, description: 'Entry IDs (collection) or slugs (document) to update' },
         status: { type: 'string', enum: ['published', 'draft', 'archived'], description: 'New status' },
+        locales: { type: 'array', items: { type: 'string' }, description: 'i18n models only: narrow the status change to these locales instead of every configured locale.' },
       },
       required: ['model', 'entryIds', 'status'],
     },

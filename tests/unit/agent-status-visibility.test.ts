@@ -186,6 +186,10 @@ describe('update_status tells the caller what it changed', () => {
 
   it('surfaces the from → to transition on the tool result', async () => {
     vi.stubGlobal('invalidateBrainCache', vi.fn())
+    // #284: update_status now checks the model's i18n flag before deciding
+    // its locale scope — a plain non-i18n fixture keeps this test's
+    // single-locale behavior unchanged.
+    stubBrain({ content: new Map(), meta: new Map(), models: new Map([['articles', { id: 'articles', kind: 'collection' }]]) })
     const engine = statusEngine({
       statusChanges: [{ entryId: 'f3a81c09d24e', from: 'draft', to: 'published' }],
     })
@@ -204,6 +208,7 @@ describe('update_status tells the caller what it changed', () => {
   it('does not merge or drop the brain cache when nothing was written', async () => {
     const invalidate = vi.fn()
     vi.stubGlobal('invalidateBrainCache', invalidate)
+    stubBrain({ content: new Map(), meta: new Map(), models: new Map([['articles', { id: 'articles', kind: 'collection' }]]) })
     const engine = statusEngine({
       branch: '',
       commit: { sha: '' },

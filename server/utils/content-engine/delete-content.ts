@@ -5,7 +5,7 @@ import { planContentDelete } from '@contentrain/mcp/core/ops'
 import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { openWriteSnapshot, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch, toObjectMap } from './helpers'
 
 function invalid(field: string, message: string): WriteResult {
   return {
@@ -14,6 +14,20 @@ function invalid(field: string, message: string): WriteResult {
     diff: [],
     validation: { valid: false, errors: [{ field, message, severity: 'error' as const }] },
   }
+}
+
+/** Read-only: which of `locales` still hold at least one of `entryIds`, so a narrowed delete's warning never claims a locale that never had the entry (#284). */
+async function localesStillHolding(reader: RepoReader, ctx: EngineInternalContext, modelDef: ModelDefinition, locales: string[], entryIds: string[]): Promise<string[]> {
+  const holding: string[] = []
+  for (const loc of locales) {
+    try {
+      const raw = JSON.parse(await reader.readFile(resolveContentPath(ctx.pathCtx, modelDef, loc)))
+      const data = toObjectMap(raw) as Record<string, unknown>
+      if (entryIds.some(id => id in data)) holding.push(loc)
+    }
+    catch { /* no content file for this locale */ }
+  }
+  return holding
 }
 
 /**
@@ -32,6 +46,19 @@ function invalid(field: string, message: string): WriteResult {
  * prior plan, which keeps the running content-map + meta-map correct even
  * when multiple deletions collapse into one file. A dictionary plans all keys
  * at once, so a missing key fails the whole batch before anything is written.
+ *
+ * #284 — an i18n entry is one translation unit, not one file per locale, so a
+ * delete removes it from every configured locale by default. `locales`
+ * narrows to a subset; every locale left out is reported back in
+ * `remainingLocales` (only the ones actually still holding the entry — never
+ * claims a locale the entry was never in) so the caller can't mistake a
+ * narrowed delete for a full one. Collections and dictionaries loop the
+ * target locales themselves, since MCP's own `ContentDeleteInput.locale` is
+ * singular. Documents keep MCP's whole-slug-directory delete (every locale,
+ * unconditionally, same as before this policy) — narrowing a document delete
+ * to specific locales isn't supported yet and is refused explicitly rather
+ * than silently ignored; `locale` alone (unchanged, #301) still selects which
+ * locale a non-i18n model's single copy is addressed at.
  */
 export async function deleteContent(
   ctx: EngineInternalContext,
@@ -39,7 +66,8 @@ export async function deleteContent(
   locale: string,
   entryIds: string[],
   userEmail: string,
-): Promise<WriteResult> {
+  locales?: string[],
+): Promise<WriteResult & { touchedLocales?: string[], remainingLocales?: string[] }> {
   await ctx.ensureContentBranch()
 
   const snapshot = await openWriteSnapshot(ctx.git)
@@ -53,6 +81,28 @@ export async function deleteContent(
   // caller's). Read it from config — same source `planContentSave` uses.
   const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
   const defaultLocale = config.locales?.default ?? 'en'
+  const allLocales = config.locales?.supported ?? [locale]
+
+  // The locales this call writes to. Non-i18n content and documents keep the
+  // single `locale` they always used — the multi-locale default only applies
+  // where an entry genuinely has more than one locale's copy to delete.
+  let targetLocales = [locale]
+  if (modelDef.i18n && modelDef.kind !== 'document') {
+    if (locales && locales.length > 0) {
+      const unknown = locales.filter(l => !allLocales.includes(l))
+      if (unknown.length > 0) return invalid('locales', `Not a configured locale for this project: ${unknown.join(', ')}`)
+      targetLocales = [...new Set(locales)]
+    }
+    else {
+      targetLocales = allLocales
+    }
+  }
+  else if (modelDef.i18n && modelDef.kind === 'document' && locales && locales.length > 0) {
+    const narrowed = locales.length < allLocales.length || locales.some(l => !allLocales.includes(l))
+    if (narrowed) {
+      return invalid('locales', 'Deleting only some locales of a document is not supported yet — every locale is removed together. Omit "locales" to delete the whole document.')
+    }
+  }
 
   let inputs: ContentDeleteInput[]
   switch (modelDef.kind) {
@@ -70,18 +120,22 @@ export async function deleteContent(
       }
       break
     }
+    // Non-i18n content is locale-agnostic (stored in one file) — MCP refuses
+    // a `locale` on it outright, so it's only ever set for an i18n model.
     case 'dictionary':
-      inputs = [{ model: modelDef, keys: entryIds, locale, defaultLocale }]
+      inputs = targetLocales.map(loc => ({ model: modelDef, keys: entryIds, ...(modelDef.i18n ? { locale: loc } : {}), defaultLocale }))
       break
     default:
-      inputs = entryIds.map(id => ({ model: modelDef, id, locale, defaultLocale }))
+      inputs = targetLocales.flatMap(loc => entryIds.map(id => ({ model: modelDef, id, ...(modelDef.i18n ? { locale: loc } : {}), defaultLocale })))
   }
 
   let workingReader: RepoReader = reader
   const changesByPath = new Map<string, FileChange>()
+  const touchedLocales = new Set<string>()
 
   for (const input of inputs) {
     const plan = await planContentDelete(workingReader, input)
+    if (plan.changes.length > 0 && input.locale) touchedLocales.add(input.locale)
     for (const change of plan.changes) {
       changesByPath.set(change.path, change)
     }
@@ -94,6 +148,24 @@ export async function deleteContent(
     return invalid('entryIds', `No content found to delete in "${modelId}" for: ${entryIds.join(', ')}`)
   }
 
+  // A document delete removes every locale unconditionally (see above) — not
+  // reflected in `touchedLocales` via `input.locale`, since document inputs
+  // never carry one. Same for non-i18n content: its inputs carry no `locale`
+  // either (single file, see above), so it's the addressed `locale` itself.
+  if (modelDef.kind === 'document') {
+    for (const loc of allLocales) touchedLocales.add(loc)
+  }
+  else if (!modelDef.i18n) {
+    touchedLocales.add(locale)
+  }
+
+  const excludedLocales = modelDef.i18n && modelDef.kind !== 'document'
+    ? allLocales.filter(loc => !targetLocales.includes(loc))
+    : []
+  const remainingLocales = excludedLocales.length > 0
+    ? await localesStillHolding(reader, ctx, modelDef, excludedLocales, entryIds)
+    : []
+
   // context.json is regenerated on `contentrain` post-merge (MCP 1.5.0
   // model), not committed on the feature branch.
   const allChanges: FileChange[] = [...changesByPath.values()]
@@ -101,15 +173,23 @@ export async function deleteContent(
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
 
+  const touchedList = [...touchedLocales].toSorted()
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
-    message: `contentrain: delete ${entryIds.length} entries from ${modelId} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
+    message: `contentrain: delete ${entryIds.length} entries from ${modelId} [${touchedList.join(',') || locale}]\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
 
-  return { branch: branchName, commit, diff, validation: { valid: true, errors: [] } }
+  return {
+    branch: branchName,
+    commit,
+    diff,
+    validation: { valid: true, errors: [] },
+    touchedLocales: touchedList,
+    ...(remainingLocales.length > 0 ? { remainingLocales } : {}),
+  }
 }

@@ -1,4 +1,4 @@
-import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition } from '@contentrain/types'
+import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
 import type { EngineInternalContext, StatusChange, StatusWriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
@@ -14,6 +14,64 @@ function unchangedStatusResult(statusChanges: StatusChange[]): StatusWriteResult
     validation: { valid: true, errors: [] },
     unchanged: true,
     statusChanges,
+  }
+}
+
+function invalidStatusResult(field: string, message: string): StatusWriteResult {
+  return {
+    branch: '',
+    commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+    diff: [],
+    validation: { valid: false, errors: [{ field, message, severity: 'error' as const }] },
+    statusChanges: [],
+  }
+}
+
+/**
+ * Read-only: which of `locales` still have at least one named entry NOT at
+ * `status` — so a narrowed status change's warning never claims a locale
+ * that never had the entry, or was already at the requested status (#284).
+ */
+async function localeStillDiffers(
+  reader: RepoReader,
+  ctx: EngineInternalContext,
+  modelDef: ModelDefinition,
+  defaultLocale: string,
+  loc: string,
+  entryIds: string[],
+  status: string,
+): Promise<boolean> {
+  if (modelDef.kind === 'document') {
+    for (const rawSlug of entryIds) {
+      const slug = rawSlug.toLowerCase()
+      try {
+        const meta = JSON.parse(await reader.readFile(resolveMetaPath(ctx.pathCtx, modelDef, loc, defaultLocale, slug))) as Record<string, unknown>
+        if (readStatus(meta) !== status) return true
+      }
+      catch { /* no meta for this slug in this locale — nothing left behind */ }
+    }
+    return false
+  }
+  if (modelDef.kind === 'collection') {
+    let meta: Record<string, EntryMeta> = {}
+    try {
+      meta = JSON.parse(await reader.readFile(resolveMetaPath(ctx.pathCtx, modelDef, loc, defaultLocale))) as Record<string, EntryMeta>
+    }
+    catch {
+      return false
+    }
+    return entryIds.some((id) => {
+      const record = meta[id]
+      return !!record && typeof record === 'object' && readStatus(record) !== status
+    })
+  }
+  // singleton / dictionary — one model-level record
+  try {
+    const meta = JSON.parse(await reader.readFile(resolveMetaPath(ctx.pathCtx, modelDef, loc, defaultLocale))) as Record<string, unknown>
+    return readStatus(meta) !== status
+  }
+  catch {
+    return false
   }
 }
 
@@ -33,6 +91,16 @@ function unchangedStatusResult(statusChanges: StatusChange[]): StatusWriteResult
  *   write is indistinguishable from a status read, and an agent that ran
  *   one to *discover* the status could report "it was already published"
  *   about entries it had just published itself.
+ *
+ * #284 — an entry's status is one fact about the whole entry, not one per
+ * translation: this call sets every configured locale by default. `locales`
+ * narrows to a subset; every locale left out that still differs is reported
+ * back in `remainingLocales` (never a locale the entry was never in, or one
+ * already at the requested status), so the caller can't mistake a narrowed
+ * change for a full one. Non-i18n content keeps the single `locale` it
+ * always used (#301, unchanged). Each `statusChange` carries its own
+ * `locale` only when the call actually touched more than one — a
+ * single-locale call's transitions stay exactly the shape they were.
  */
 export async function updateEntryStatus(
   ctx: EngineInternalContext,
@@ -41,7 +109,8 @@ export async function updateEntryStatus(
   entryIds: string[],
   status: 'draft' | 'published' | 'archived',
   userEmail: string,
-): Promise<StatusWriteResult> {
+  locales?: string[],
+): Promise<StatusWriteResult & { touchedLocales?: string[], remainingLocales?: string[] }> {
   await ctx.ensureContentBranch()
 
   const snapshot = await openWriteSnapshot(ctx.git)
@@ -56,6 +125,20 @@ export async function updateEntryStatus(
   // see the change. `resolveMetaPath` needs the default locale to do this.
   const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
   const defaultLocale = config.locales?.default ?? 'en'
+  const allLocales = config.locales?.supported ?? [locale]
+
+  let targetLocales = [locale]
+  if (modelDef.i18n) {
+    if (locales && locales.length > 0) {
+      const unknown = locales.filter(l => !allLocales.includes(l))
+      if (unknown.length > 0) return invalidStatusResult('locales', `Not a configured locale for this project: ${unknown.join(', ')}`)
+      targetLocales = [...new Set(locales)]
+    }
+    else {
+      targetLocales = allLocales
+    }
+  }
+  const multiLocale = targetLocales.length > 1
 
   // The meta layout differs by kind, so status writes must branch on it too:
   //  - collection: one id-keyed map at `.../{modelId}/{locale}.json`
@@ -71,89 +154,89 @@ export async function updateEntryStatus(
   // Every listed entry's status BEFORE this call — `null` when the entry has
   // no meta record yet. Reported back to the caller either way.
   const statusChanges: StatusChange[] = []
+  const touchedLocales = new Set<string>()
 
   // A status change is a write, and gets the same stamp a content write does.
   // One timestamp for the whole call, so a bulk status change reads as the
   // single operation it was.
   const updatedAt = new Date().toISOString()
 
-  if (modelDef.kind === 'document') {
-    for (const rawSlug of entryIds) {
-      const slug = rawSlug.toLowerCase()
-      const slugError = validateSlug(slug)
-      if (slugError) {
-        return {
-          branch: '',
-          commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
-          diff: [],
-          validation: { valid: false, errors: [{ field: 'slug', message: slugError, severity: 'error' as const }] },
-          statusChanges: [],
+  for (const loc of targetLocales) {
+    if (modelDef.kind === 'document') {
+      for (const rawSlug of entryIds) {
+        const slug = rawSlug.toLowerCase()
+        const slugError = validateSlug(slug)
+        if (slugError) return invalidStatusResult('slug', slugError)
+
+        const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, loc, defaultLocale, slug)
+        let existingMeta: Record<string, unknown> = {}
+        try {
+          existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
         }
+        catch { /* no meta yet */ }
+
+        const from = readStatus(existingMeta)
+        statusChanges.push({ entryId: slug, from, to: status, ...(multiLocale ? { locale: loc } : {}) })
+        if (from === status) continue
+
+        touchedLocales.add(loc)
+        changes.push({
+          path: metaPath,
+          content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
+        })
+      }
+    }
+    else if (modelDef.kind === 'collection') {
+      const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, loc, defaultLocale)
+      let existingMeta: Record<string, EntryMeta> = {}
+      try {
+        existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, EntryMeta>
+      }
+      catch { /* no meta */ }
+
+      let touched = false
+      for (const entryId of entryIds) {
+        const from = readStatus(existingMeta[entryId])
+        statusChanges.push({ entryId, from, to: status, ...(multiLocale ? { locale: loc } : {}) })
+        // Re-stamping an entry that is already at the requested status would
+        // churn its `updated_at` / `updated_by` for nothing — and, in a mixed
+        // batch, misattribute an untouched entry to this caller.
+        if (from === status) continue
+
+        touched = true
+        existingMeta[entryId] = {
+          ...existingMeta[entryId],
+          status,
+          updated_by: userEmail,
+          updated_at: updatedAt,
+        } as EntryMeta
       }
 
-      const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale, slug)
+      if (touched) {
+        touchedLocales.add(loc)
+        changes.push({ path: metaPath, content: canonicalStringify(existingMeta) })
+      }
+    }
+    else {
+      // singleton / dictionary — a single top-level EntryMeta object. The meta
+      // is model-level, so the transition is reported against the model id.
+      const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, loc, defaultLocale)
       let existingMeta: Record<string, unknown> = {}
       try {
         existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
       }
-      catch { /* no meta yet */ }
+      catch { /* no meta */ }
 
       const from = readStatus(existingMeta)
-      statusChanges.push({ entryId: slug, from, to: status })
-      if (from === status) continue
+      statusChanges.push({ entryId: modelId, from, to: status, ...(multiLocale ? { locale: loc } : {}) })
 
-      changes.push({
-        path: metaPath,
-        content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
-      })
-    }
-  }
-  else if (modelDef.kind === 'collection') {
-    const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale)
-    let existingMeta: Record<string, EntryMeta> = {}
-    try {
-      existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, EntryMeta>
-    }
-    catch { /* no meta */ }
-
-    let touched = false
-    for (const entryId of entryIds) {
-      const from = readStatus(existingMeta[entryId])
-      statusChanges.push({ entryId, from, to: status })
-      // Re-stamping an entry that is already at the requested status would
-      // churn its `updated_at` / `updated_by` for nothing — and, in a mixed
-      // batch, misattribute an untouched entry to this caller.
-      if (from === status) continue
-
-      touched = true
-      existingMeta[entryId] = {
-        ...existingMeta[entryId],
-        status,
-        updated_by: userEmail,
-        updated_at: updatedAt,
-      } as EntryMeta
-    }
-
-    if (touched) changes.push({ path: metaPath, content: canonicalStringify(existingMeta) })
-  }
-  else {
-    // singleton / dictionary — a single top-level EntryMeta object. The meta
-    // is model-level, so the transition is reported against the model id.
-    const metaPath = resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale)
-    let existingMeta: Record<string, unknown> = {}
-    try {
-      existingMeta = JSON.parse(await reader.readFile(metaPath)) as Record<string, unknown>
-    }
-    catch { /* no meta */ }
-
-    const from = readStatus(existingMeta)
-    statusChanges.push({ entryId: modelId, from, to: status })
-
-    if (from !== status) {
-      changes.push({
-        path: metaPath,
-        content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
-      })
+      if (from !== status) {
+        touchedLocales.add(loc)
+        changes.push({
+          path: metaPath,
+          content: canonicalStringify({ ...existingMeta, status, updated_by: userEmail, updated_at: updatedAt }),
+        })
+      }
     }
   }
 
@@ -161,6 +244,12 @@ export async function updateEntryStatus(
   // commit here would be an empty semantic change that still costs a branch,
   // a ~18s merge round and a CDN rebuild.
   if (changes.length === 0) return unchangedStatusResult(statusChanges)
+
+  const excludedLocales = modelDef.i18n ? allLocales.filter(loc => !targetLocales.includes(loc)) : []
+  const remainingLocales: string[] = []
+  for (const loc of excludedLocales) {
+    if (await localeStillDiffers(reader, ctx, modelDef, defaultLocale, loc, entryIds, status)) remainingLocales.push(loc)
+  }
 
   // context.json is regenerated on `contentrain` post-merge (MCP 1.5.0
   // model), not committed on the feature branch.
@@ -170,16 +259,25 @@ export async function updateEntryStatus(
 
   const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
 
+  const touchedList = [...touchedLocales].toSorted()
   const commit = await ctx.git.applyPlan({
     branch: branchName,
     changes: allChanges,
-    message: `contentrain: ${status} ${changedCount} entries in ${modelId}\n\nCo-Authored-By: ${userEmail}`,
+    message: `contentrain: ${status} ${changedCount} entries in ${modelId} [${touchedList.join(',') || locale}]\n\nCo-Authored-By: ${userEmail}`,
     author: STUDIO_AUTHOR,
     base: MCP_CONTENTRAIN_BRANCH,
   })
 
   const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
-  return { branch: branchName, commit, diff, validation: { valid: true, errors: [] }, statusChanges }
+  return {
+    branch: branchName,
+    commit,
+    diff,
+    validation: { valid: true, errors: [] },
+    statusChanges,
+    touchedLocales: touchedList,
+    ...(remainingLocales.length > 0 ? { remainingLocales } : {}),
+  }
 }
 
 /** Current `status` off a meta record — `null` when absent or malformed. */

@@ -138,7 +138,9 @@ describe('delete_content refuses to orphan references (#293)', () => {
   it('deletes an unreferenced entry', async () => {
     const { result, engine } = await runDelete(['a9'])
 
-    expect(engine.deleteContent).toHaveBeenCalledWith('articles', 'tr', ['a9'], 'e@x.io')
+    // 5th arg is the #284 locale scope — undefined here since this fixture's
+    // "articles" model doesn't declare i18n.
+    expect(engine.deleteContent).toHaveBeenCalledWith('articles', 'tr', ['a9'], 'e@x.io', undefined)
     expect(result).not.toHaveProperty('referencesChecked')
   })
 
