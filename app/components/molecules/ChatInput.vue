@@ -56,6 +56,7 @@ interface ServerRef {
   preview?: string
   truncated?: boolean
   error?: string
+  notice?: string
 }
 
 function guessKind(file: File): UIAttachment['kind'] {
@@ -109,6 +110,7 @@ function applyRef(att: UIAttachment, ref: ServerRef | undefined) {
   att.preview = ref.preview
   att.truncated = ref.truncated
   att.previewUrl = previewFromBlocks(ref.blocks)
+  if (ref.notice) toast.warning(ref.notice)
 }
 
 async function uploadFile(file: File, intent: 'context' | 'media') {
