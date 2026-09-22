@@ -108,7 +108,7 @@ export interface ToolScope {
  * lands on the same rung.
  */
 export interface WriteSignals {
-  /** The status the write moves entries to, for `update_status`. */
+  /** The status the write moves entries to — `update_status`, or a `save_content` that sets one. */
   targetStatus?: string
   /** Fields the write sets to an empty value (`''`, `null`, `[]`, `{}`). */
   emptiedFields?: number
@@ -165,12 +165,27 @@ export function writeSignals(tool: string, params: Record<string, unknown>): Wri
     return { targetStatus: params.status }
   if (tool !== 'save_content') return {}
 
-  const data = params.data
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+  // A save can set status in the same commit (#297). It is the same visibility
+  // change update_status makes, so it lifts the same way — otherwise "save and
+  // publish" would walk past a review the separate publish is held for.
+  const targetStatus = typeof params.status === 'string' ? { targetStatus: params.status } : {}
+
   const values: unknown[] = []
-  for (const value of Object.values(data as Record<string, unknown>)) {
-    if (!params.slug && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
-    else values.push(value)
+  if (Array.isArray(params.documents)) {
+    // A batch of documents (#292): every document's fields and body count.
+    for (const document of params.documents as Array<{ data?: unknown, body?: unknown }>) {
+      if (document?.data && typeof document.data === 'object' && !Array.isArray(document.data))
+        values.push(...Object.values(document.data as Record<string, unknown>))
+      if (typeof document?.body === 'string' && document.body) values.push(document.body)
+    }
+  }
+  else {
+    const data = params.data
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return targetStatus
+    for (const value of Object.values(data as Record<string, unknown>)) {
+      if (!params.slug && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
+      else values.push(value)
+    }
   }
   let emptiedFields = 0
   let textChars = 0
@@ -178,7 +193,7 @@ export function writeSignals(tool: string, params: Record<string, unknown>): Wri
     if (isEmptyValue(value)) emptiedFields++
     else if (typeof value === 'string') textChars += value.length
   }
-  return { emptiedFields, textChars }
+  return { ...targetStatus, emptiedFields, textChars }
 }
 
 /**
@@ -233,6 +248,8 @@ export function parseApprovalPolicy(raw: string): { policy: ApprovalPolicyFile |
  * {@link toolRisk} lifts a multi-entry write a rung.
  */
 export function savedEntryIds(params: Record<string, unknown>): string[] {
+  if (Array.isArray(params.documents))
+    return (params.documents as Array<{ slug?: unknown }>).map(d => String(d?.slug ?? '')).filter(Boolean)
   if (typeof params.slug === 'string' && params.slug) return [params.slug]
   const data = params.data
   if (data && typeof data === 'object' && !Array.isArray(data)) return Object.keys(data)

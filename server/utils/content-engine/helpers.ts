@@ -206,8 +206,15 @@ export async function applyStudioMetaOverrides(args: {
   reader: RepoReader
   autoPublish: boolean
   userEmail: string
+  /**
+   * The status the caller asked for, applied to the touched entries only.
+   * Wins over `autoPublish` and the entry's current status, so "create and
+   * publish" is one commit instead of a save plus an update_status (#297).
+   */
+  status?: 'published' | 'draft'
 }): Promise<FileChange[]> {
-  const { planChanges, metaPath, model, touchedIds, reader, autoPublish, userEmail } = args
+  const { planChanges, metaPath, model, touchedIds, reader, autoPublish, userEmail, status } = args
+  const resolveStatus = (current: string | undefined) => status ?? (autoPublish ? 'published' : (current ?? 'draft'))
 
   let baseMeta: Record<string, unknown> = {}
   const planned = planChanges.find(c => c.path === metaPath)
@@ -239,7 +246,7 @@ export async function applyStudioMetaOverrides(args: {
       const currentStatus = metaMap[entryId]?.status
       metaMap[entryId] = {
         ...(metaMap[entryId] ?? {}),
-        status: autoPublish ? 'published' : (currentStatus ?? 'draft'),
+        status: resolveStatus(currentStatus),
         source: 'agent',
         updated_by: userEmail,
         updated_at: updatedAt,
@@ -251,7 +258,7 @@ export async function applyStudioMetaOverrides(args: {
     const currentStatus = (baseMeta as unknown as EntryMeta).status
     updatedMeta = {
       ...baseMeta,
-      status: autoPublish ? 'published' : (currentStatus ?? 'draft'),
+      status: resolveStatus(currentStatus),
       source: 'agent' as const,
       updated_by: userEmail,
       updated_at: updatedAt,
@@ -264,6 +271,41 @@ export async function applyStudioMetaOverrides(args: {
   }
 
   return planChanges.map(c => c.path === metaPath ? studioMetaChange : c)
+}
+
+/**
+ * The status each touched entry will have once this write lands, read from the
+ * meta the write itself carries — not guessed. A save used to report only
+ * `merged: true`, which the agent read as "published" while the entry was a
+ * draft; the editor then couldn't find it on the site (#297).
+ */
+export function plannedStatuses(
+  changes: FileChange[],
+  metaPath: string,
+  kind: ModelDefinition['kind'],
+  touchedIds: string[],
+  key: string,
+): Record<string, string> {
+  const change = changes.find(c => c.path === metaPath)
+  if (typeof change?.content !== 'string') return {}
+  let meta: Record<string, unknown>
+  try {
+    meta = JSON.parse(change.content) as Record<string, unknown>
+  }
+  catch {
+    return {}
+  }
+  const statuses: Record<string, string> = {}
+  if (kind === 'collection') {
+    for (const id of touchedIds) {
+      const entryStatus = (meta[id] as EntryMeta | undefined)?.status
+      if (entryStatus) statuses[id] = entryStatus
+    }
+  }
+  else if (typeof meta.status === 'string') {
+    statuses[key] = meta.status
+  }
+  return statuses
 }
 
 const SCHEDULE_KEYS = ['publish_at', 'expire_at'] as const

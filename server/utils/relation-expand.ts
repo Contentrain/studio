@@ -182,3 +182,29 @@ export function expandReverse(
   }
   return out
 }
+
+/**
+ * Entries that still reference any of `refs` in `targetModelId` — the links a
+ * delete of those refs would leave dangling (#293). Every referencing entry is
+ * returned, deduplicated across locales; references among the refs being
+ * deleted together don't count, since they go with them.
+ */
+export function findInboundEntryRefs(
+  targetModelId: string,
+  refs: string[],
+  views: ExpandModelView[],
+): Array<{ model: string, ref: string, field: string, label: string | null, target: string }> {
+  const deleting = new Set(refs)
+  const seen = new Set<string>()
+  const out: Array<{ model: string, ref: string, field: string, label: string | null, target: string }> = []
+  for (const target of refs) {
+    for (const hit of expandReverse(targetModelId, target, views)) {
+      if (hit.model === targetModelId && deleting.has(hit.ref)) continue
+      const key = [hit.model, hit.ref, hit.field, target].join('\u0000')
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ ...hit, target })
+    }
+  }
+  return out
+}

@@ -1,13 +1,23 @@
-import type { ContentrainConfig, FileChange, ModelDefinition, Vocabulary } from '@contentrain/types'
+import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader, ValidationResult, Vocabulary } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter, validateSlug } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { applyStudioMetaOverrides, openWriteSnapshot, createFeatureBranch, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
+import { applyStudioMetaOverrides, openWriteSnapshot, createFeatureBranch, plannedStatuses, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 import { entryModeErrors } from './entry-mode'
 import { mergeEntryFields } from './field-merge'
 import { planDocumentLocaleFanOut } from './locale-fanout'
+
+/** One document of a save: its slug, the frontmatter fields sent, and the body. */
+export interface DocumentInput {
+  slug: string
+  frontmatter: Record<string, unknown>
+  body: string
+}
+
+/** The most documents one batch save may write — see `saveDocuments`. */
+export const MAX_DOCUMENTS_PER_SAVE = 20
 
 /**
  * Save a document entry (markdown with frontmatter).
@@ -17,7 +27,7 @@ import { planDocumentLocaleFanOut } from './locale-fanout'
  * own status + user-email logic. `context.json` is not touched here —
  * it is regenerated on `contentrain` post-merge (MCP 1.5.0 model).
  */
-export async function saveDocument(
+export function saveDocument(
   ctx: EngineInternalContext,
   modelId: string,
   locale: string,
@@ -27,25 +37,63 @@ export async function saveDocument(
   userEmail: string,
   options?: SaveOptions,
 ): Promise<WriteResult> {
-  const scheduleError = validateSchedule(options?.schedule)
-  if (scheduleError) {
-    return {
-      branch: '',
-      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
-      diff: [],
-      validation: { valid: false, errors: [{ field: 'publish_at', message: scheduleError, severity: 'error' as const }] },
-    }
-  }
+  return writeDocuments(ctx, modelId, locale, [{ slug, frontmatter, body }], userEmail, options)
+}
 
-  const safeSlug = slug.toLowerCase()
-  const slugError = validateSlug(safeSlug)
-  if (slugError) {
-    return {
-      branch: '',
-      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
-      diff: [],
-      validation: { valid: false, errors: [{ field: 'slug', message: slugError, severity: 'error' as const }] },
-    }
+/**
+ * Save several documents of one model in ONE commit — one branch, one merge.
+ *
+ * Rewriting a guide's sections used to be one save per section, each with its
+ * own branch and merge at ~20–30 s apiece: 10–13 sections took five to six
+ * minutes (#292). Every document is planned, merged and validated on its own
+ * exactly as a single save would; the batch is all-or-nothing — one invalid
+ * document writes none of them.
+ */
+export function saveDocuments(
+  ctx: EngineInternalContext,
+  modelId: string,
+  locale: string,
+  documents: DocumentInput[],
+  userEmail: string,
+  options?: SaveOptions,
+): Promise<WriteResult> {
+  if (documents.length === 0 || documents.length > MAX_DOCUMENTS_PER_SAVE) {
+    return Promise.resolve(refused({
+      valid: false,
+      errors: [{ field: '', severity: 'error', message: `A batch save takes 1 to ${MAX_DOCUMENTS_PER_SAVE} documents, got ${documents.length}.` }],
+    }))
+  }
+  return writeDocuments(ctx, modelId, locale, documents, userEmail, options)
+}
+
+function refused(validation: ValidationResult): WriteResult {
+  return {
+    branch: '',
+    commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+    diff: [],
+    validation,
+  }
+}
+
+async function writeDocuments(
+  ctx: EngineInternalContext,
+  modelId: string,
+  locale: string,
+  documents: DocumentInput[],
+  userEmail: string,
+  options?: SaveOptions,
+): Promise<WriteResult> {
+  const scheduleError = validateSchedule(options?.schedule)
+  if (scheduleError)
+    return refused({ valid: false, errors: [{ field: 'publish_at', message: scheduleError, severity: 'error' as const }] })
+
+  const slugs = documents.map(d => d.slug.toLowerCase())
+  const duplicate = slugs.find((slug, i) => slugs.indexOf(slug) !== i)
+  if (duplicate)
+    return refused({ valid: false, errors: [{ field: 'slug', entry: duplicate, message: 'The same slug appears twice in one save.', severity: 'error' as const }] })
+  for (const slug of slugs) {
+    const slugError = validateSlug(slug)
+    if (slugError) return refused({ valid: false, errors: [{ field: 'slug', entry: slug, message: slugError, severity: 'error' as const }] })
   }
 
   await ctx.ensureContentBranch()
@@ -55,6 +103,110 @@ export async function saveDocument(
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
+
+  const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
+  let vocabulary: Vocabulary | null = null
+  try {
+    vocabulary = JSON.parse(await reader.readFile(resolveVocabularyPath(ctx.pathCtx))) as Vocabulary
+  }
+  catch { /* no vocabulary */ }
+
+  const planned: PlannedDocument[] = []
+  for (const document of documents) {
+    planned.push(await planDocumentWrite({ ctx, reader, modelDef, config, vocabulary, modelId, locale, document, userEmail, options }))
+  }
+
+  // All-or-nothing: report every invalid document, write none of them.
+  const invalid = planned.filter((p): p is Extract<PlannedDocument, { ok: false }> => !p.ok)
+  if (invalid.length > 0)
+    return refused({ valid: false, errors: invalid.flatMap(p => p.validation.errors) })
+  const ok = planned as Array<Extract<PlannedDocument, { ok: true }>>
+
+  // Documents never share files (content and meta are per slug), so the
+  // union of their plans is exact.
+  const byPath = new Map<string, FileChange>()
+  for (const p of ok) {
+    for (const change of p.changes) byPath.set(change.path, change)
+  }
+  const allChanges = [...byPath.values()].toSorted((a, b) => a.path.localeCompare(b.path))
+
+  const validation: ValidationResult = { valid: true, errors: ok.flatMap(p => p.validation.errors) }
+  const entries = {
+    created: ok.filter(p => !p.exists).map(p => p.slug),
+    updated: ok.filter(p => p.exists).map(p => p.slug),
+  }
+  const statuses = Object.assign({}, ...ok.map(p => p.statuses)) as Record<string, string>
+  const sharedFields = [...new Set(ok.flatMap(p => p.fanOut.fields))]
+  const sharedLocales = [...new Set(ok.flatMap(p => p.fanOut.locales))]
+  const shared = sharedLocales.length > 0 ? { sharedAcrossLocales: { fields: sharedFields, locales: sharedLocales } } : {}
+
+  // Byte-identical plan → no-op; skip the branch/commit/merge cycle
+  // (same short-circuit as saveContent).
+  if (await planMatchesCurrent(reader, allChanges)) {
+    return {
+      branch: '',
+      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
+      diff: [],
+      validation,
+      unchanged: true,
+      entries,
+      statuses,
+    }
+  }
+
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
+
+  const subject = ok.length === 1
+    ? `contentrain: save document ${modelId}/${ok[0]!.slug} [${locale}]`
+    : `contentrain: save ${ok.length} documents in ${modelId} [${locale}]`
+  const commit = await ctx.git.applyPlan({
+    branch: branchName,
+    changes: allChanges,
+    message: `${subject}\n\nCo-Authored-By: ${userEmail}`,
+    author: STUDIO_AUTHOR,
+    base: MCP_CONTENTRAIN_BRANCH,
+  })
+
+  const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
+  return {
+    branch: branchName,
+    commit,
+    diff,
+    validation,
+    ...shared,
+    entries,
+    statuses,
+  }
+}
+
+type PlannedDocument
+  = | { ok: false, validation: ValidationResult }
+    | {
+      ok: true
+      slug: string
+      exists: boolean
+      changes: FileChange[]
+      validation: ValidationResult
+      fanOut: { fields: string[], locales: string[] }
+      statuses: Record<string, string>
+    }
+
+/** Plan one document's files — the per-document half of a (batch) save. */
+async function planDocumentWrite(args: {
+  ctx: EngineInternalContext
+  reader: RepoReader
+  modelDef: ModelDefinition
+  config: ContentrainConfig
+  vocabulary: Vocabulary | null
+  modelId: string
+  locale: string
+  document: DocumentInput
+  userEmail: string
+  options?: SaveOptions
+}): Promise<PlannedDocument> {
+  const { ctx, reader, modelDef, config, vocabulary, modelId, locale, userEmail, options } = args
+  const safeSlug = args.document.slug.toLowerCase()
+  let { frontmatter, body } = args.document
 
   const fields = modelDef.fields ?? {}
 
@@ -112,21 +264,7 @@ export async function saveDocument(
     validation.errors.push(...modeErrors)
     validation.valid = false
   }
-  if (!validation.valid) {
-    return {
-      branch: '',
-      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
-      diff: [],
-      validation,
-    }
-  }
-
-  const config = JSON.parse(await reader.readFile(resolveConfigPath(ctx.pathCtx))) as ContentrainConfig
-  let vocabulary: Vocabulary | null = null
-  try {
-    vocabulary = JSON.parse(await reader.readFile(resolveVocabularyPath(ctx.pathCtx))) as Vocabulary
-  }
-  catch { /* no vocabulary */ }
+  if (!validation.valid) return { ok: false, validation }
 
   // `planContentSave` for document kind expects frontmatter + body folded
   // into `entry.data` under a `body` key. It strips `body` out before
@@ -149,13 +287,12 @@ export async function saveDocument(
   }
   catch (err) {
     return {
-      branch: '',
-      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
-      diff: [],
+      ok: false,
       validation: {
         valid: false,
         errors: [{
           field: '',
+          entry: safeSlug,
           message: err instanceof Error ? err.message : String(err),
           severity: 'error' as const,
         }],
@@ -163,53 +300,30 @@ export async function saveDocument(
     }
   }
 
+  const defaultLocale = config.locales?.default ?? 'en'
   let patchedChanges = plan.changes
   for (const writtenLocale of [locale, ...fanOut.locales]) {
     patchedChanges = await applyStudioMetaOverrides({
       planChanges: patchedChanges,
-      metaPath: resolveMetaPath(ctx.pathCtx, modelDef, writtenLocale, config.locales?.default ?? 'en', safeSlug),
+      metaPath: resolveMetaPath(ctx.pathCtx, modelDef, writtenLocale, defaultLocale, safeSlug),
       model: modelDef,
       touchedIds: [],
       reader,
       autoPublish: options?.autoPublish ?? false,
       userEmail,
+      // Only the addressed locale's document takes a requested status; the
+      // fan-out locales receive shared media/relation values, not a publish.
+      ...(writtenLocale === locale && options?.status ? { status: options.status } : {}),
     })
   }
 
-  // context.json is regenerated on `contentrain` post-merge, not committed
-  // here (MCP 1.5.0 model — see `branch-ops.ts`).
-  const allChanges: FileChange[] = [...patchedChanges]
-    .toSorted((a, b) => a.path.localeCompare(b.path))
-
-  // Byte-identical plan → no-op; skip the branch/commit/merge cycle
-  // (same short-circuit as saveContent).
-  if (await planMatchesCurrent(reader, allChanges)) {
-    return {
-      branch: '',
-      commit: { sha: '', message: '', author: STUDIO_AUTHOR, timestamp: '' },
-      diff: [],
-      validation,
-      unchanged: true,
-    }
-  }
-
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
-
-  const commit = await ctx.git.applyPlan({
-    branch: branchName,
-    changes: allChanges,
-    message: `contentrain: save document ${modelId}/${safeSlug} [${locale}]\n\nCo-Authored-By: ${userEmail}`,
-    author: STUDIO_AUTHOR,
-    base: MCP_CONTENTRAIN_BRANCH,
-  })
-
-  const diff = await ctx.git.getBranchDiff(branchName, CONTENT_BRANCH)
   return {
-    branch: branchName,
-    commit,
-    diff,
+    ok: true,
+    slug: safeSlug,
+    exists: documentExists,
+    changes: patchedChanges,
     validation,
-    ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
-    entries: documentExists ? { created: [], updated: [safeSlug] } : { created: [safeSlug], updated: [] },
+    fanOut: { fields: fanOut.fields, locales: fanOut.locales },
+    statuses: plannedStatuses(patchedChanges, resolveMetaPath(ctx.pathCtx, modelDef, locale, defaultLocale, safeSlug), modelDef.kind, [], safeSlug),
   }
 }

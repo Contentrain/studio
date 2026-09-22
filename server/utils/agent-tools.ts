@@ -46,11 +46,13 @@ Updates MERGE with existing data — only send changed fields. Inside an object 
 
 FORMAT BY KIND:
 - collection: { "entryId": { field: value, ... } }
-- document: slug + data (frontmatter) + body
+- document: slug + data (frontmatter) + body — or, to write several documents of one model in ONE commit, \`documents: [{ slug, data, body }]\` (up to 20; all or nothing: one invalid document writes none). Use it whenever you change more than one section of a guide.
 - singleton: { field: value, ... } — always mode "update"
 - dictionary: { "key": "string value", ... } — ALL values must be strings; mode "update"
 
-The result lists which entries were \`created\` and which \`updated\` — report exactly that.
+STATUS: pass \`status: "published"\` to create-and-publish (or \`"draft"\` to unpublish) in the same commit — no separate update_status needed. Without it, new entries are saved as draft and existing ones keep their status.
+
+The result lists which entries were \`created\` and which \`updated\`, and \`statuses\` — the status each entry has once merged. "merged: true" does NOT mean published: say an entry is live only if its status is "published".
 
 RELATION FIELDS:
 - relation (single): set value to target entry ID (collection) or slug (document)
@@ -66,13 +68,28 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
         model: { type: 'string', description: 'Model ID' },
         mode: { type: 'string', enum: ['create', 'update'], description: '"create" = new entries only (refused if the id/slug exists); "update" = existing entries only (refused if missing)' },
         locale: { type: 'string', description: 'Locale code (defaults to context locale)' },
-        data: { type: 'object', description: 'Content data — only include fields that changed' },
+        data: { type: 'object', description: 'Content data — only include fields that changed. Required unless `documents` is used.' },
         slug: { type: 'string', description: 'Document slug (required for document kind only)' },
         body: { type: 'string', description: 'Markdown body (document kind only)' },
+        documents: {
+          type: 'array',
+          maxItems: 20,
+          description: 'Document kind only: several documents in one commit, instead of slug/data/body.',
+          items: {
+            type: 'object',
+            properties: {
+              slug: { type: 'string' },
+              data: { type: 'object', description: 'Frontmatter fields — only those that changed' },
+              body: { type: 'string', description: 'Markdown body (omit to keep the existing one)' },
+            },
+            required: ['slug'],
+          },
+        },
+        status: { type: 'string', enum: ['published', 'draft'], description: 'Status for the entries this save touches, in the same commit. Omit to keep existing status (new entries: draft).' },
         publish_at: { type: ['string', 'null'], description: 'Scheduled publish date, ISO 8601. Meta only, never in data; does not change status. null clears; omit to leave unchanged.' },
         expire_at: { type: ['string', 'null'], description: 'Scheduled expiry, ISO 8601, after publish_at. Same rules as publish_at.' },
       },
-      required: ['model', 'mode', 'data'],
+      required: ['model', 'mode'],
     },
     requiredPhase: ['active'],
     defaultAffects: { snapshotChanged: false, branchesChanged: true },
@@ -255,13 +272,29 @@ Provide initial models with full field definitions using Contentrain's 27 type s
 
   {
     name: 'brain_query',
-    description: 'Read full content for a model and locale from the project brain cache. Faster than get_content — returns instantly from cache. Use this for reading content. Publish status comes back in the `meta` block: `meta[entryId].status` for collections and documents, `meta.status` for singletons and dictionaries. Passing `entryId` narrows `meta` to that one entry — this is the cheapest way to answer "is this entry draft or published?".',
+    description: `Read content for a model and locale from the project brain cache. Faster than get_content — returns instantly from cache. Use this for reading content.
+
+Publish status comes back in the \`meta\` block: \`meta[entryId].status\` for collections and documents, \`meta.status\` for singletons and dictionaries. Passing \`entryId\` (an id for a collection, a slug for a document) narrows \`meta\` to that one entry — this is the cheapest way to answer "is this entry draft or published?". \`entryId\` does not apply to singletons or dictionaries — there is only the one record, returned in \`data\` either way.
+
+Without \`entryId\`, a collection or document model comes back as a PAGE, not everything at once: \`data\` is an array of entries, alongside \`total\` (how many matched), \`returned\` (this page's size), \`offset\`, and \`truncated\` (true when more pages remain — raise \`offset\` by \`returned\` to get the rest). Without \`fields\`, markdown/richtext fields and a document's \`body\` are left out of the page by default (listed in \`omittedFields\`) — ask for them by name in \`fields\`, or use \`entryId\` for one entry's full content. Narrow with \`where\`/\`sort\`/\`fields\` rather than paging through everything: "all articles in category X" is \`where: { category: "x" }\` (matches a \`relations\` array too, by containing "x"); "the latest 10 articles" is \`sort: { field: "publish_at", direction: "desc" }, limit: 10\`. A field name not on the model (in \`where\`, \`sort\`, or \`fields\`) is refused with the valid list, rather than silently matching nothing.`,
     inputSchema: {
       type: 'object',
       properties: {
         model: { type: 'string', description: 'Model ID' },
         locale: { type: 'string', description: 'Locale code (default: context locale)' },
-        entryId: { type: 'string', description: 'Specific entry ID (optional)' },
+        entryId: { type: 'string', description: 'Specific entry id (collection) or slug (document). Not applicable to singletons/dictionaries.' },
+        where: { type: 'object', description: 'Equality filter, field name -> exact value. Only entries matching every given field are returned. No operators — exact match only. Against a `relations` field, matches if the value is in the array; against a relation field storing a polymorphic { model, ref }, matches the ref.' },
+        sort: {
+          type: 'object',
+          description: 'Order results by one field.',
+          properties: {
+            field: { type: 'string', description: 'Field to sort by' },
+            direction: { type: 'string', enum: ['asc', 'desc'], description: 'Default: asc' },
+          },
+        },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Only return these fields per entry (plus the id/slug) — overrides the default omission of large text fields. Omit to get every field except markdown/richtext/body (see omittedFields on the result).' },
+        limit: { type: 'number', description: 'Entries per page (default 20, max 100). Ignored with entryId.' },
+        offset: { type: 'number', description: 'Entries to skip, for the next page (default 0). Ignored with entryId.' },
       },
       required: ['model'],
     },
