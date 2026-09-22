@@ -5,6 +5,7 @@ import type { Branch } from '../providers/git'
 import type { AgentPermissions } from './agent-permissions'
 import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-types'
 import { extractMediaStoragePath } from './media-rewrite'
+import type { PageResolution } from './page-resolution'
 
 /**
  * Bounded Task Executor system prompt.
@@ -143,7 +144,7 @@ export interface PromptAttachment {
 function buildAttachmentSection(attachments: PromptAttachment[]): string {
   const lines: string[] = [
     '## Attached sources (this message)',
-    'The user attached the following sources to THIS message. Treat them as source material for the requested content.',
+    'The user attached the following sources to THIS message. Treat them as source material for the requested content — except a page listed under "Linked pages" that resolves to an entry: that page IS the entry, see there.',
   ]
   for (const a of attachments) {
     if (a.kind === 'image' && a.url) {
@@ -163,6 +164,26 @@ function buildAttachmentSection(attachments: PromptAttachment[]): string {
   return lines.join('\n')
 }
 
+/**
+ * Pages the editor linked to this turn, resolved to the entries that render
+ * them (#288) — so "delete this" / "update its cover" acts on that entry
+ * instead of treating the page as material for new content.
+ */
+function buildLinkedPagesSection(pages: PageResolution[]): string {
+  const lines: string[] = ['## Linked pages (this message)', agentPrompt('context.linked_pages_intro')]
+  const describe = (c: PageResolution['candidates'][number]) =>
+    `${c.model}/${c.entry}${c.title ? ` "${c.title}"` : ''} (${c.locales.join(', ')})`
+  for (const page of pages) {
+    if (page.status === 'resolved')
+      lines.push(`- ${page.url} → ${describe(page.candidates[0]!)}`)
+    else if (page.status === 'ambiguous')
+      lines.push(`- ${page.url} → ${agentPrompt('context.linked_page_ambiguous')} ${page.candidates.map(describe).join('; ')}`)
+    else
+      lines.push(`- ${page.url} → ${agentPrompt('context.linked_page_none')}`)
+  }
+  return lines.join('\n')
+}
+
 function buildDynamicBody(
   models: ModelDefinition[],
   state: ProjectState,
@@ -170,6 +191,7 @@ function buildDynamicBody(
   intent: ClassifiedIntent,
   config: ContentrainConfig | null,
   attachments?: PromptAttachment[],
+  pages?: PageResolution[],
 ): string {
   const sections: string[] = []
 
@@ -180,6 +202,10 @@ function buildDynamicBody(
   // ATTACHED SOURCES — files/links the user added to this message
   if (attachments && attachments.length > 0) {
     sections.push(buildAttachmentSection(attachments))
+  }
+
+  if (pages && pages.length > 0) {
+    sections.push(buildLinkedPagesSection(pages))
   }
 
   // UI CONTEXT — what the user is looking at RIGHT NOW (includes active model annotation)
@@ -286,11 +312,12 @@ export function buildSystemPromptBlocks(
   customInstructions?: string | null,
   attachments?: PromptAttachment[],
   edition?: 'agpl' | 'ee',
+  pages?: PageResolution[],
 ): SystemPromptBlocks {
   return {
     static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions, edition),
     contentIndex: contentIndex && contentIndex.trim() ? contentIndex : null,
-    dynamic: buildDynamicBody(models, state, uiContext, intent, config, attachments),
+    dynamic: buildDynamicBody(models, state, uiContext, intent, config, attachments, pages),
   }
 }
 
@@ -591,6 +618,9 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // A "can't see it" report is almost always status/locale, not cache —
     // checking first avoids blaming infrastructure for a draft.
     agentPrompt('rules.check_before_blaming_cache'),
+    // A linked page that resolves to an entry is the target of an order, not
+    // material for new content (#288).
+    agentPrompt('rules.linked_page_target'),
 
     // Content updates
     agentPrompt('rules.update_existing_id'),
