@@ -8,6 +8,7 @@ import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
+import { brainRefEntries, findInboundEntryRefs } from '~~/server/utils/relation-expand'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
 import type { LocatedValidationError } from './validation-format'
@@ -779,11 +780,41 @@ export async function executeToolWithAutoMerge(
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
         }
-        const writeResult = await engine.deleteContent(modelId, locale, params.entryIds as string[], userEmail)
+        // Inbound-reference guard (#293): deleting an entry that other entries
+        // still point at leaves dangling relations — later saves of those
+        // entries then fail on a target that no longer exists. Refuse and list
+        // EVERY referencing entry, so the agent clears them or asks the user;
+        // mirrors the delete_model guard. The list stays in the tool result:
+        // only the fixed label before the ':' becomes the monitoring cause code.
+        const entryIds = params.entryIds as string[]
+        const refBrain = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const referencesChecked = refBrain.models.has(modelId)
+        if (referencesChecked) {
+          const views: ExpandModelView[] = []
+          for (const [key, data] of refBrain.content) {
+            const m = key.slice(0, key.indexOf(':'))
+            const def = refBrain.models.get(m)
+            if (def?.fields) views.push({ modelId: m, fields: def.fields, entries: brainRefEntries(data) })
+          }
+          const inbound = findInboundEntryRefs(modelId, entryIds, views)
+          if (inbound.length > 0) {
+            const shown = inbound.slice(0, 20).map(r => `${r.model}.${r.ref} (${r.field}${r.label ? `, "${r.label}"` : ''}) → ${r.target}`)
+            result = {
+              error: `${errorMessage('content.entry_in_use')}: ${shown.join('; ')}${inbound.length > 20 ? ` +${inbound.length - 20} more` : ''}`,
+              referencedBy: inbound,
+            }
+            break
+          }
+        }
+        // Said out loud, not skipped silently: without the model in the content
+        // brain there was nothing to check references against.
+        const referenceNote = referencesChecked ? {} : { referencesChecked: false }
+
+        const writeResult = await engine.deleteContent(modelId, locale, entryIds, userEmail)
         // A refused delete (bad slug, nothing matched) has no branch to merge —
         // report the validation errors and stop, like save_content does.
         if (!writeResult.branch) {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, ...referenceNote }
           break
         }
         affected.models.push(modelId)
@@ -794,10 +825,10 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult) }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), ...referenceNote }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review, ...referenceNote }
         }
 
         // Emit webhook event (fire-and-forget)
