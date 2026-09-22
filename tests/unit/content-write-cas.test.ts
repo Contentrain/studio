@@ -399,6 +399,22 @@ describe('a conflicting auto-merge is redone once, never forced (#285)', () => {
     expect(repo.git.mergeBranch).toHaveBeenCalledTimes(2)
   })
 
+  it('a stale-base refusal during the merge-conflict redo is redone too, not thrown', async () => {
+    const repo = articlesRepo({ cas: true })
+    const engine = await engineFor(repo.git)
+    const write = await engine.saveContent('articles', 'tr', { a1: { title: 'x' } }, 'a@example.com')
+    repo.git.mergeBranch.mockRejectedValueOnce(Object.assign(new Error('Merge conflict'), { status: 409 }))
+    repo.git.applyPlan.mockRejectedValueOnce(Object.assign(new Error('Branch is at another commit'), { status: 409 }))
+    repo.git.applyPlan.mockClear()
+
+    const landed = await engine.mergeToContentrain(write.branch)
+
+    expect(landed).toMatchObject({ merged: true, redone: true })
+    // The redo's first commit was refused and retried once under the same rule.
+    expect(repo.git.applyPlan).toHaveBeenCalledTimes(2)
+    expect(repo.content().a1!.title).toBe('x')
+  })
+
   it('does not redo a branch this engine did not write (a person merging a held review)', async () => {
     const repo = articlesRepo({ cas: true })
     const writer = await engineFor(repo.git)

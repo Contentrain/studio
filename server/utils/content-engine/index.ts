@@ -126,14 +126,14 @@ export function createContentEngine(ctx: ContentEngineContext) {
   return {
     ensureContentBranch: internal.ensureContentBranch,
     saveContent: async (modelId: string, locale: string, data: Record<string, unknown>, userEmail: string, options?: SaveOptions) => {
-      const write = () => saveContent(internal, modelId, locale, data, userEmail, options)
-      const result = remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => saveContent(internal, modelId, locale, data, userEmail, options))
+      const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, Object.keys(data), options)
       return result
     },
     deleteContent: async (modelId: string, locale: string, entryIds: string[], userEmail: string, locales?: string[]) => {
-      const write = () => deleteContent(internal, modelId, locale, entryIds, userEmail, locales)
-      const result = remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => deleteContent(internal, modelId, locale, entryIds, userEmail, locales))
+      const result = remember(await write(), write)
       // A multi-locale delete (#284) clears schedules everywhere those
       // entries had one — passing no locale clears every locale's row,
       // exactly as a single-locale delete clears just its own.
@@ -142,24 +142,24 @@ export function createContentEngine(ctx: ContentEngineContext) {
       return result
     },
     saveDocument: async (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: SaveOptions) => {
-      const write = () => saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options)
-      const result = remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options))
+      const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, [slug], options)
       return result
     },
     // Several documents in one commit (#292) — redone as a whole on a merge
     // conflict, like any other write this engine made.
     saveDocuments: async (modelId: string, locale: string, documents: DocumentInput[], userEmail: string, options?: SaveOptions) => {
-      const write = () => saveDocuments(internal, modelId, locale, documents, userEmail, options)
-      const result = remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => saveDocuments(internal, modelId, locale, documents, userEmail, options))
+      const result = remember(await write(), write)
       if (result.validation.valid) afterSave(projectId, modelId, locale, documents.map(d => d.slug), options)
       return result
     },
     // Exact find/replace in text fields (#282). A redo re-reads the newer head
     // and applies the same edit there — the edit, not a stale copy of the field.
     replaceText: async (modelId: string, locale: string, edits: TextEdit[], userEmail: string, options?: SaveOptions) => {
-      const write = () => replaceText(internal, modelId, locale, edits, userEmail, options)
-      return remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => replaceText(internal, modelId, locale, edits, userEmail, options))
+      return remember(await write(), write)
     },
     saveModel: (definition: Parameters<typeof saveModel>[1], userEmail: string, options?: Parameters<typeof saveModel>[3]) =>
       onStaleBaseRedo(() => saveModel(internal, definition, userEmail, options)),
@@ -170,8 +170,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
     saveVocabulary: (terms: Parameters<typeof saveVocabulary>[1], userEmail: string, options?: { replace?: boolean }) =>
       onStaleBaseRedo(() => saveVocabulary(internal, terms, userEmail, options)),
     updateEntryStatus: async (modelId: string, locale: string, entryIds: string[], status: 'draft' | 'published' | 'archived', userEmail: string, locales?: string[]) => {
-      const write = () => updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail, locales)
-      return remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail, locales))
+      return remember(await write(), write)
     },
     listContentBranches: () => listContentBranches(internal),
     mergeBranch: async (branch: string): Promise<EngineMergeResult & { branch: string, redone?: boolean }> => {
@@ -191,8 +191,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
     },
     rejectBranch: (branch: string) => rejectBranch(internal, branch),
     copyLocale: async (modelId: string, fromLocale: string, toLocale: string, userEmail: string) => {
-      const write = () => copyLocale(internal, modelId, fromLocale, toLocale, userEmail)
-      return remember(await onStaleBaseRedo(write), write)
+      const write = () => onStaleBaseRedo(() => copyLocale(internal, modelId, fromLocale, toLocale, userEmail))
+      return remember(await write(), write)
     },
     initProject: (stack: string, locales: string[], domains: string[], models: Parameters<typeof initProject>[4], userEmail: string) =>
       initProject(internal, stack, locales, domains, models, userEmail),
