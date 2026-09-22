@@ -113,10 +113,13 @@ export async function promoteAttachmentMarkers<T>(
   // refused when any of them fails, so none of its uploads may stay behind
   // as an orphan eating quota — and an unrecorded promotion would upload a
   // second copy on retry. Everything this call added is rolled back.
-  const added: Array<{ id: string, assetId: string, recorded: boolean }> = []
+  const added: Array<{ id: string, assetId: string }> = []
   const rollback = async () => {
     for (const item of added) {
-      if (item.recorded) await deletePromotion(cdn, scope, item.id).catch(() => {})
+      // Unconditionally: a record write can land and still throw (a timeout
+      // after the write), and a record left pointing at a deleted asset would
+      // hand the next save a dead path. Deleting a missing object is free.
+      await deletePromotion(cdn, scope, item.id).catch(() => {})
       // `delete` also returns the asset's bytes to the storage counter.
       await media.delete(ctx.projectId, item.assetId).catch((e: unknown) => {
         reportDataLossRisk(e, { op: 'attachment-promotion.rollback', projectId: ctx.projectId, assetId: item.assetId })
@@ -139,11 +142,9 @@ export async function promoteAttachmentMarkers<T>(
       await rollback()
       return { error: errorMessage(upload.reason === 'quota' ? 'attachment.promotion_quota_exceeded' : 'attachment.media_upload_failed') }
     }
-    const entry = { id, assetId: upload.asset.id, recorded: false }
-    added.push(entry)
+    added.push({ id, assetId: upload.asset.id })
     try {
       await recordPromotion(cdn, scope, id, upload.asset.originalPath)
-      entry.recorded = true
     }
     catch {
       await rollback()

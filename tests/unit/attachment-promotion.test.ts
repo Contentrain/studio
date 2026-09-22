@@ -169,6 +169,7 @@ describe('promoteAttachmentMarkers', () => {
     expect(result).toEqual({ error: 'attachment.media_upload_failed' })
     expect(remove).toHaveBeenCalledWith('p1', 'asset-1')
     expect(library.size).toBe(0)
+    expect(cdn.deleteObject).toHaveBeenCalledWith('_tmp', expect.stringMatching(/\.promoted\.json$/))
   })
 
   it('does not resolve an attachment made in another workspace', async () => {
