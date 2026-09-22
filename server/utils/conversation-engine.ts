@@ -8,6 +8,7 @@ import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '
 import type { ChatUIContext, AffectedResources, ProjectPhase } from '~~/server/utils/agent-types'
 import type { AgentPermissions } from '~~/server/utils/agent-permissions'
 import type { ExpandModelView } from '~~/server/utils/relation-expand'
+import { brainRefEntries, findInboundEntryRefs } from '~~/server/utils/relation-expand'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
 import type { LocatedValidationError } from './validation-format'
@@ -508,11 +509,26 @@ async function mergeForTool(
   engine: ReturnType<typeof createContentEngine>,
   branch: string,
   turnMerge?: TurnMergeState,
-): Promise<{ merged: boolean }> {
-  if (!turnMerge) return engine.mergeBranch(branch)
+): Promise<{ merged: boolean, conflict?: boolean, branch: string }> {
+  if (!turnMerge) {
+    const merged = await engine.mergeBranch(branch)
+    return { merged: merged.merged, conflict: merged.conflict, branch: merged.branch ?? branch }
+  }
   const step1 = await engine.mergeToContentrain(branch)
-  if (step1.merged) turnMerge.pendingFinalize.push(branch)
-  return { merged: step1.merged }
+  // A write redone after a conflict landed under a new branch name.
+  const landed = step1.branch ?? branch
+  if (step1.merged) turnMerge.pendingFinalize.push(landed)
+  return { merged: step1.merged, conflict: step1.conflict, branch: landed }
+}
+
+/**
+ * The merge fields of a write tool's result. A conflict that survived the
+ * engine's one redo is an error the agent must act on — re-read, then write
+ * again — never a quiet `merged: false` it could mistake for a held review.
+ */
+function mergeOutcome(merge: { merged: boolean, conflict?: boolean, branch: string }): Record<string, unknown> {
+  if (!merge.conflict) return { merged: merge.merged }
+  return { merged: false, conflict: true, error: agentMessage('content.concurrent_edit', { branch: merge.branch }) }
 }
 
 /**
@@ -739,7 +755,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params) }, commitSha: writeResult.commit?.sha })
         if (gate.allowed && writeResult.branch) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), merged: mergeResult.merged, workflow }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), workflow }
         }
         else if (writeResult.branch) {
           result = { ...summarizeWriteResult(writeResult, locale), merged: false, workflow, reviewBranch: writeResult.branch, ...gate.review }
@@ -768,11 +784,41 @@ export async function executeToolWithAutoMerge(
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
         }
-        const writeResult = await engine.deleteContent(modelId, locale, params.entryIds as string[], userEmail)
+        // Inbound-reference guard (#293): deleting an entry that other entries
+        // still point at leaves dangling relations — later saves of those
+        // entries then fail on a target that no longer exists. Refuse and list
+        // EVERY referencing entry, so the agent clears them or asks the user;
+        // mirrors the delete_model guard. The list stays in the tool result:
+        // only the fixed label before the ':' becomes the monitoring cause code.
+        const entryIds = params.entryIds as string[]
+        const refBrain = await getOrBuildBrainCache(git, contentRoot, projectId)
+        const referencesChecked = refBrain.models.has(modelId)
+        if (referencesChecked) {
+          const views: ExpandModelView[] = []
+          for (const [key, data] of refBrain.content) {
+            const m = key.slice(0, key.indexOf(':'))
+            const def = refBrain.models.get(m)
+            if (def?.fields) views.push({ modelId: m, fields: def.fields, entries: brainRefEntries(data) })
+          }
+          const inbound = findInboundEntryRefs(modelId, entryIds, views)
+          if (inbound.length > 0) {
+            const shown = inbound.slice(0, 20).map(r => `${r.model}.${r.ref} (${r.field}${r.label ? `, "${r.label}"` : ''}) → ${r.target}`)
+            result = {
+              error: `${errorMessage('content.entry_in_use')}: ${shown.join('; ')}${inbound.length > 20 ? ` +${inbound.length - 20} more` : ''}`,
+              referencedBy: inbound,
+            }
+            break
+          }
+        }
+        // Said out loud, not skipped silently: without the model in the content
+        // brain there was nothing to check references against.
+        const referenceNote = referencesChecked ? {} : { referencesChecked: false }
+
+        const writeResult = await engine.deleteContent(modelId, locale, entryIds, userEmail)
         // A refused delete (bad slug, nothing matched) has no branch to merge —
         // report the validation errors and stop, like save_content does.
         if (!writeResult.branch) {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, ...referenceNote }
           break
         }
         affected.models.push(modelId)
@@ -783,10 +829,10 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), ...referenceNote }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review, ...referenceNote }
         }
 
         // Emit webhook event (fire-and-forget)
@@ -833,7 +879,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [params.id as string] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged, ...modelChange }
+          result = { ...summarizeWriteResult(writeResult), ...mergeOutcome(mergeResult), ...modelChange }
         }
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...modelChange, ...gate.review }
@@ -1125,7 +1171,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [copyModelId], locales: [fromLocale, toLocale] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult), ...mergeOutcome(mergeResult) }
         }
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
@@ -1152,7 +1198,7 @@ export async function executeToolWithAutoMerge(
 
         // Init always auto-merges
         const mergeResult = await engine.mergeBranch(initResult.branch)
-        result = { ...summarizeWriteResult(initResult), merged: mergeResult.merged }
+        result = { ...summarizeWriteResult(initResult), ...mergeOutcome(mergeResult) }
         break
       }
 
@@ -1348,7 +1394,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: entryIds }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), merged: mergeResult.merged, statusChanges }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), statusChanges }
         }
         else {
           result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, statusChanges, ...gate.review }
@@ -1467,7 +1513,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult), ...mergeOutcome(mergeResult) }
         }
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
@@ -1492,7 +1538,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { locales: [newLocale] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult), ...mergeOutcome(mergeResult) }
         }
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }
@@ -1545,7 +1591,7 @@ export async function executeToolWithAutoMerge(
         const gate = await gateMerge({ scope: { models: [modelId] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult), merged: mergeResult.merged }
+          result = { ...summarizeWriteResult(writeResult), ...mergeOutcome(mergeResult) }
         }
         else {
           result = { ...summarizeWriteResult(writeResult), merged: false, reviewBranch: writeResult.branch, ...gate.review }

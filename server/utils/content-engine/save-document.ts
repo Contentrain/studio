@@ -3,7 +3,7 @@ import { CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, parseMarkdownFrontmatter,
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { applyStudioMetaOverrides, pinReaderToContentrain, createFeatureBranch, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
+import { applyStudioMetaOverrides, openWriteSnapshot, createFeatureBranch, planMatchesCurrent, splitEntrySchedule, validateSchedule } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 import { entryModeErrors } from './entry-mode'
 import { mergeEntryFields } from './field-merge'
@@ -50,7 +50,8 @@ export async function saveDocument(
 
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
@@ -192,7 +193,7 @@ export async function saveDocument(
     }
   }
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,

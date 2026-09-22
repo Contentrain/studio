@@ -1,8 +1,9 @@
-import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition } from '@contentrain/types'
 import { canonicalStringify, CONTENTRAIN_BRANCH as MCP_CONTENTRAIN_BRANCH, validateSlug } from '@contentrain/types'
 import type { EngineInternalContext, StatusChange, StatusWriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { pinReaderToContentrain, createFeatureBranch } from './helpers'
+import type { WriteSnapshot } from './helpers'
+import { openWriteSnapshot, createFeatureBranch } from './helpers'
 
 /** Nothing to write: every listed entry already carries the requested status. */
 function unchangedStatusResult(statusChanges: StatusChange[]): StatusWriteResult {
@@ -43,7 +44,8 @@ export async function updateEntryStatus(
 ): Promise<StatusWriteResult> {
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
@@ -166,7 +168,7 @@ export async function updateEntryStatus(
 
   const changedCount = statusChanges.filter(c => c.from !== c.to).length
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
@@ -200,7 +202,8 @@ export async function copyLocale(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
@@ -225,7 +228,7 @@ export async function copyLocale(
   // dictionary); for a document it read the content *directory* as a file and
   // wrote a slug-less `//` meta path, so copy_locale silently did nothing.
   if (modelDef.kind === 'document') {
-    return copyDocumentLocale(ctx, modelDef, modelId, fromLocale, toLocale, userEmail, reader, defaultLocale)
+    return copyDocumentLocale(ctx, modelDef, modelId, fromLocale, toLocale, userEmail, snapshot, defaultLocale)
   }
 
   const sourcePath = resolveContentPath(ctx.pathCtx, modelDef, fromLocale)
@@ -274,7 +277,7 @@ export async function copyLocale(
   const allChanges: FileChange[] = [...copyChanges]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, undefined, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
@@ -312,9 +315,10 @@ async function copyDocumentLocale(
   fromLocale: string,
   toLocale: string,
   userEmail: string,
-  reader: RepoReader,
+  snapshot: WriteSnapshot,
   defaultLocale: string,
 ): Promise<WriteResult> {
+  const { reader } = snapshot
   // No slug → `resolveContentPath` returns the model's content directory.
   const contentDir = resolveContentPath(ctx.pathCtx, modelDef, fromLocale)
 
@@ -364,7 +368,7 @@ async function copyDocumentLocale(
   // model), not committed on the feature branch.
   const allChanges: FileChange[] = changes.toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, undefined, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,

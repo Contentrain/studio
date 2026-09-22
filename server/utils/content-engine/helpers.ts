@@ -23,17 +23,21 @@ export function generateBranchName(scope: string, target: string, locale?: strin
  * Pick a `cr/*` feature-branch name with the branch-health guard in
  * front. Blocks above the 80-branch threshold, warns above 50.
  *
- * Note: as of Faz S2 this helper no longer calls `createBranch` up
- * front — `provider.applyPlan({ branch, base })` creates the branch
- * atomically together with the first commit. The name is kept for
- * backward compatibility with existing Studio callers and tests.
+ * Without `baseSha` the branch is not created here — `provider.applyPlan({
+ * branch, base })` creates it together with the first commit, forking from
+ * `base` as it is AT WRITE TIME. With `baseSha` (see `openWriteSnapshot`) the
+ * branch is created at that commit first, so the write's commit lands on
+ * exactly the tree its reads came from and the later merge is a real 3-way
+ * merge instead of a silent overwrite (#285).
  */
 export async function createFeatureBranch(
   ctx: EngineInternalContext,
   scope: string,
   target: string,
   locale?: string,
+  baseSha?: string | null,
 ): Promise<{ branchName: string, healthWarning?: string }> {
+  let healthWarning: string | undefined
   if (ctx.projectId) {
     const cached = await getHealthStatus(ctx.projectId)
     const health = cached ?? await checkBranchHealth(ctx.git, ctx.projectId, ctx.pathCtx.contentRoot)
@@ -45,15 +49,60 @@ export async function createFeatureBranch(
       })
     }
 
-    return {
-      branchName: generateBranchName(scope, target, locale),
-      healthWarning: health.status === 'warning'
-        ? `Warning: ${health.unmergedCount} unmerged branches. Review and merge pending branches.`
-        : undefined,
-    }
+    if (health.status === 'warning')
+      healthWarning = `Warning: ${health.unmergedCount} unmerged branches. Review and merge pending branches.`
   }
 
-  return { branchName: generateBranchName(scope, target, locale) }
+  const branchName = baseSha && ctx.git.createBranchAt
+    ? await forkBranchAt(ctx.git, baseSha, () => generateBranchName(scope, target, locale))
+    : generateBranchName(scope, target, locale)
+
+  return healthWarning ? { branchName, healthWarning } : { branchName }
+}
+
+/**
+ * Create a fresh branch at `sha`. A name that already exists is never written
+ * to — `applyPlan` would stack the commit on that branch's head, not on the
+ * snapshot — so a collision draws a new name once and then gives up.
+ */
+async function forkBranchAt(git: GitProvider, sha: string, nextName: () => string): Promise<string> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const name = nextName()
+    try {
+      await git.createBranchAt!(name, sha)
+      return name
+    }
+    catch (error) {
+      if ((error as { status?: number }).status !== 422) throw error
+      lastError = error
+    }
+  }
+  throw lastError
+}
+
+/** The commit a write reads from, and a reader pinned to it. */
+export interface WriteSnapshot {
+  /** `contentrain` head the reads are pinned to; null when the provider cannot pin. */
+  baseSha: string | null
+  reader: RepoReader
+}
+
+/**
+ * Pin a write's reads to one `contentrain` commit.
+ *
+ * Every write rewrites whole files (a collection's locale file, its meta map)
+ * from what it read. Reading `contentrain` by name and committing on top of
+ * wherever `contentrain` points later lets a change that landed in between be
+ * reverted without a trace — an editor's draft flipped back to published by a
+ * colleague's unrelated save seven seconds later (#285). Resolving the head
+ * once and reading at that sha gives the write a fixed base to fork from.
+ */
+export async function openWriteSnapshot(git: GitProvider): Promise<WriteSnapshot> {
+  const baseSha = git.getBranchSha && git.createBranchAt
+    ? await git.getBranchSha(CONTENTRAIN_BRANCH)
+    : null
+  return { baseSha, reader: pinReaderToRef(git, baseSha ?? CONTENTRAIN_BRANCH) }
 }
 
 /**
@@ -93,10 +142,15 @@ export function toObjectMap(data: unknown): Record<string, unknown> {
  * (`main` / `master` / …) — which is downstream of the content SSOT.
  */
 export function pinReaderToContentrain(git: GitProvider): RepoReader {
+  return pinReaderToRef(git, CONTENTRAIN_BRANCH)
+}
+
+/** Same wrapper, defaulting to any ref — a branch name or a commit sha. */
+export function pinReaderToRef(git: GitProvider, defaultRef: string): RepoReader {
   return {
-    readFile: (path, ref) => git.readFile(path, ref ?? CONTENTRAIN_BRANCH),
-    listDirectory: (path, ref) => git.listDirectory(path, ref ?? CONTENTRAIN_BRANCH),
-    fileExists: (path, ref) => git.fileExists(path, ref ?? CONTENTRAIN_BRANCH),
+    readFile: (path, ref) => git.readFile(path, ref ?? defaultRef),
+    listDirectory: (path, ref) => git.listDirectory(path, ref ?? defaultRef),
+    fileExists: (path, ref) => git.fileExists(path, ref ?? defaultRef),
   }
 }
 

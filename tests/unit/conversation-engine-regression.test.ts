@@ -493,6 +493,9 @@ describe('conversation engine regression', () => {
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       models: new Map([['posts', { id: 'posts', kind: 'collection' }]]),
+      // delete_content checks inbound references against the brain's content.
+      content: new Map(),
+      meta: new Map(),
     }))
 
     const writeResult = {

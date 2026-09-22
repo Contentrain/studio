@@ -5,7 +5,7 @@ import { planContentDelete } from '@contentrain/mcp/core/ops'
 import { OverlayReader } from '@contentrain/mcp/core/overlay-reader'
 import type { EngineInternalContext, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { pinReaderToContentrain, createFeatureBranch } from './helpers'
+import { openWriteSnapshot, createFeatureBranch } from './helpers'
 
 function invalid(field: string, message: string): WriteResult {
   return {
@@ -42,7 +42,8 @@ export async function deleteContent(
 ): Promise<WriteResult> {
   await ctx.ensureContentBranch()
 
-  const reader = pinReaderToContentrain(ctx.git)
+  const snapshot = await openWriteSnapshot(ctx.git)
+  const reader = snapshot.reader
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)
   const modelDef = JSON.parse(await reader.readFile(modelPath)) as ModelDefinition
@@ -98,7 +99,7 @@ export async function deleteContent(
   const allChanges: FileChange[] = [...changesByPath.values()]
     .toSorted((a, b) => a.path.localeCompare(b.path))
 
-  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale)
+  const { branchName } = await createFeatureBranch(ctx, 'content', modelId, locale, snapshot.baseSha)
 
   const commit = await ctx.git.applyPlan({
     branch: branchName,
