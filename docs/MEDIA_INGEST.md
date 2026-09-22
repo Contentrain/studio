@@ -85,3 +85,27 @@ calls this endpoint and keeps the failed URLs in the box for a retry.
    `contentrain_bulk` or a script over `.contentrain/content/**`).
 4. Verify no reference points at the old host (the `@contentrain/verify`
    asset check when it ships; until then a grep for the old hostname).
+
+## Moving a project between Studio instances
+
+Content stores media as absolute delivery URLs of the instance and project that
+uploaded them. After moving a project to another instance, or reconnecting its
+repository as a new project, rewrite them with **Project settings → Media**
+(owner/admin), or directly:
+
+```
+POST /api/workspaces/{workspaceId}/projects/{projectId}/media/rehost
+{ "from": { "siteUrl": "https://old-studio.example", "projectId": "…" }, "dryRun": true, "copyAssets": false }
+```
+
+The dry run (the default) returns the files, references and distinct media paths
+it would rewrite, plus `missing`: the paths this project's storage does not hold.
+`"dryRun": false` rewrites every `{siteUrl}/api/cdn/v1/{projectId}/media/…`
+reference, in markdown bodies too, in **one commit**. While anything is missing
+it commits nothing and answers `409` with the same counts. `copyAssets: true`
+first copies the old project's `media/` objects that this project lacks, then
+adds the old project's media library entries for those files in one statement,
+skipping paths already listed here. It only works on the same instance, where
+both projects share one bucket, and only for an owner/admin of the old
+project's workspace. A failed copy or entry insert answers `409` with nothing
+committed; re-running is safe.

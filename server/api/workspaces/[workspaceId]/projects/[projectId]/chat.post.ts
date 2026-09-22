@@ -134,6 +134,10 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
+    // A BYOA turn reserves too, but only to book its row: the turn-end
+    // settle updates that row in place and the usage panel counts BYOA
+    // turns from it. The database never refuses it and never counts it
+    // toward the pool (migration 030) — the user's own key pays for it.
     if (monthlyLimit !== Infinity) {
       const { allowed } = await db.incrementAgentUsageIfAllowed({
         workspaceId,
@@ -339,7 +343,11 @@ export default defineEventHandler(async (event) => {
           // of those count as "we paid for an LLM call."
           if (!committed && (evt.type === 'text' || evt.type === 'tool_use')) {
             committed = true
-            recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
+            // Only Studio-funded turns reach the payment provider. A BYOA
+            // turn is paid for on the user's own Anthropic key; metering it
+            // would bill them a second time for the same work.
+            if (usageSource === 'studio')
+              recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
           }
 
           // Forward all events to SSE stream

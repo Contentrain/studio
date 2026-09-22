@@ -76,6 +76,22 @@ let sharedProjectId: string | null = null
  */
 let workerReady: Promise<void> | null = null
 let resolveWorkerReady: (() => void) | null = null
+/**
+ * Whether a full sync answer has been applied for `sharedProjectId`. The
+ * cached snapshot that rides on `ready` must not overwrite it: when the worker
+ * is slow enough that the sync went out without a key, the network answer is
+ * the newer one.
+ */
+let networkApplied = false
+
+interface CachedSnapshot {
+  config: ContentrainConfig | null
+  models: ModelDefinition[]
+  content: Record<string, { count: number, locales: string[], kind: ModelKind }>
+  vocabulary: Record<string, Record<string, string>> | null
+  contentContext: Record<string, unknown> | null
+  schemaValidation?: SchemaValidationResult | null
+}
 
 /** Upper bound on how long a sync waits for the worker's cached key. */
 const WORKER_READY_TIMEOUT_MS = 3000
@@ -158,6 +174,7 @@ export function useContentBrain() {
     }
     workerAvailable.value = false
     sharedProjectId = null
+    networkApplied = false
     // Release anyone still waiting on the worker we just terminated, then drop
     // the gate so the next `initBrain` installs a fresh one.
     resolveWorkerReady?.()
@@ -175,6 +192,17 @@ export function useContentBrain() {
     pendingRequests.clear()
   }
 
+  /** Put what the worker read out of IndexedDB on screen. */
+  function applySnapshot(data: CachedSnapshot) {
+    config.value = data.config ?? null
+    models.value = data.models ?? []
+    vocabulary.value = data.vocabulary ?? null
+    contentContext.value = data.contentContext ?? null
+    contentSummary.value = data.content ?? {}
+    // Absent in a cache written before it was stored — leave what is there.
+    if (data.schemaValidation !== undefined) schemaValidation.value = data.schemaValidation
+  }
+
   // --- Worker Message Handler ---
 
   function handleWorkerMessage(event: MessageEvent) {
@@ -187,6 +215,10 @@ export function useContentBrain() {
         // eslint-disable-next-line no-console
         console.log('[brain] Worker ready, cached:', msg.cached, 'treeSha:', msg.treeSha)
         treeSha.value = msg.treeSha ?? null
+        // The snapshot arrives with the key, so by the time a sync can send
+        // that key — and get back an empty delta — the screen already has
+        // what the key stands for.
+        if (msg.snapshot && !networkApplied) applySnapshot(msg.snapshot)
         ready.value = !!msg.cached
         resolveWorkerReady?.()
         break
@@ -199,13 +231,7 @@ export function useContentBrain() {
         break
 
       case 'snapshot':
-        if (msg.data) {
-          config.value = msg.data.config ?? null
-          models.value = msg.data.models ?? []
-          vocabulary.value = msg.data.vocabulary ?? null
-          contentContext.value = msg.data.contentContext ?? null
-          contentSummary.value = msg.data.content ?? {}
-        }
+        if (msg.data) applySnapshot(msg.data)
         break
 
       case 'queryResult':
@@ -284,6 +310,13 @@ export function useContentBrain() {
             sharedContentStore.set(key, value as { data: unknown, meta: Record<string, unknown> | null, kind: string })
           }
         }
+        networkApplied = true
+      }
+      else if (!config.value && sharedWorker && sharedProjectId) {
+        // An empty delta says "you already have it" — and it is in IndexedDB.
+        // `ready` normally delivered it already; this covers any path where it
+        // did not, rather than leave the project looking uninitialised.
+        sharedWorker.postMessage({ type: 'getSnapshot', projectId: sharedProjectId })
       }
 
       treeSha.value = response.treeSha

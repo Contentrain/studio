@@ -10,7 +10,7 @@ const props = defineProps<{
   workspaceId: string
   projectId: string
   projectName?: string
-  initialTab?: 'general' | 'api' | 'webhooks' | 'danger'
+  initialTab?: 'general' | 'media' | 'api' | 'webhooks' | 'danger'
   config?: {
     workflow?: string
     stack?: string
@@ -27,7 +27,7 @@ const emit = defineEmits<{
 const { deleteProject } = useProjects()
 const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
-const activeTab = ref<'general' | 'api' | 'webhooks' | 'danger'>(props.initialTab ?? 'general')
+const activeTab = ref<'general' | 'media' | 'api' | 'webhooks' | 'danger'>(props.initialTab ?? 'general')
 
 // Edition gates: Conversation API and outbound webhooks are ee/-backed
 // (runEnterpriseRoute paths). Hide the tabs in Community Edition so
@@ -35,11 +35,16 @@ const activeTab = ref<'general' | 'api' | 'webhooks' | 'danger'>(props.initialTa
 // (edition='ee') keep both tabs.
 const conversationApiEnabled = useFeature('api.conversation')
 const webhooksEnabled = useFeature('api.webhooks_outbound')
+// Media rehost rewrites content onto this instance's CDN delivery URLs, so it
+// needs the CDN stack; owner/admin only (the server enforces both).
+const cdnEnabled = useFeature('cdn.delivery')
+const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const availableTabs = computed(() => {
-  const tabs: Array<{ value: 'general' | 'api' | 'webhooks' | 'danger', label: string }> = [
+  const tabs: Array<{ value: 'general' | 'media' | 'api' | 'webhooks' | 'danger', label: string }> = [
     { value: 'general', label: t('project_settings.general') },
   ]
+  if (cdnEnabled.value && isOwnerOrAdmin.value) tabs.push({ value: 'media', label: t('media_rehost.tab') })
   if (conversationApiEnabled.value) tabs.push({ value: 'api', label: t('conversation_keys.title') })
   if (webhooksEnabled.value) tabs.push({ value: 'webhooks', label: t('webhooks.title') })
   tabs.push({ value: 'danger', label: t('danger_zone.title') })
@@ -469,6 +474,14 @@ async function save() {
               </div>
             </section>
           </div>
+        </div>
+
+        <!-- Media addresses -->
+        <div v-else-if="activeTab === 'media'" class="flex-1 overflow-y-auto">
+          <OrganismsMediaRehostPanel
+            :workspace-id="workspaceId"
+            :project-id="projectId"
+          />
         </div>
 
         <!-- Conversation API Keys -->

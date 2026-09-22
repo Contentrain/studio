@@ -19,13 +19,13 @@ type UsageMethods = Pick<
 
 export function usageMethods(): UsageMethods {
   return {
-    async getWorkspaceMonthlyAIUsage(workspaceId, month) {
+    async getWorkspaceMonthlyAIUsage(workspaceId, month, source = 'studio') {
       const { data } = await getAdmin()
         .from('agent_usage')
         .select('message_count')
         .eq('workspace_id', workspaceId)
         .eq('month', month)
-        .eq('source', 'studio')
+        .eq('source', source)
 
       return (data ?? []).reduce(
         (sum: number, r: Record<string, unknown>) => sum + ((r.message_count as number) ?? 0),
