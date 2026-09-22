@@ -142,8 +142,11 @@ describe('agent tool error observability (#294)', () => {
       }),
     })
 
+    // #284: update_status now checks the model's i18n flag first — a plain
+    // brain (no i18n on "articles") keeps this test's single-locale shape.
+    const brain = { content: new Map(), meta: new Map(), models: new Map([['articles', { id: 'articles', kind: 'collection' }]]) }
     for (const entry of ['a1', 'b2']) {
-      const { result } = await runTool('update_status', { model: 'articles', locale: 'tr', entryIds: [entry], status: 'draft' }, {}, failing(entry))
+      const { result } = await runTool('update_status', { model: 'articles', locale: 'tr', entryIds: [entry], status: 'draft' }, brain, failing(entry))
       expect((result as { error: string }).error).toBe(`The change was not applied because it failed validation: ${entry}.status (tr): Invalid status`)
     }
 

@@ -115,10 +115,14 @@ export function createContentEngine(ctx: ContentEngineContext) {
       if (result.validation.valid) afterSave(projectId, modelId, locale, Object.keys(data), options)
       return result
     },
-    deleteContent: async (modelId: string, locale: string, entryIds: string[], userEmail: string) => {
-      const write = () => deleteContent(internal, modelId, locale, entryIds, userEmail)
+    deleteContent: async (modelId: string, locale: string, entryIds: string[], userEmail: string, locales?: string[]) => {
+      const write = () => deleteContent(internal, modelId, locale, entryIds, userEmail, locales)
       const result = remember(await write(), write)
-      if (projectId) clearEntrySchedules(projectId, modelId, entryIds, locale).catch(() => {})
+      // A multi-locale delete (#284) clears schedules everywhere those
+      // entries had one — passing no locale clears every locale's row,
+      // exactly as a single-locale delete clears just its own.
+      const touched = result.touchedLocales ?? [locale]
+      if (projectId) clearEntrySchedules(projectId, modelId, entryIds, touched.length === 1 ? touched[0] : undefined).catch(() => {})
       return result
     },
     saveDocument: async (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: SaveOptions) => {
@@ -149,8 +153,8 @@ export function createContentEngine(ctx: ContentEngineContext) {
       addLocale(internal, locale, userEmail),
     saveVocabulary: (terms: Parameters<typeof saveVocabulary>[1], userEmail: string, options?: { replace?: boolean }) =>
       saveVocabulary(internal, terms, userEmail, options),
-    updateEntryStatus: async (modelId: string, locale: string, entryIds: string[], status: 'draft' | 'published' | 'archived', userEmail: string) => {
-      const write = () => updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail)
+    updateEntryStatus: async (modelId: string, locale: string, entryIds: string[], status: 'draft' | 'published' | 'archived', userEmail: string, locales?: string[]) => {
+      const write = () => updateEntryStatus(internal, modelId, locale, entryIds, status, userEmail, locales)
       return remember(await write(), write)
     },
     listContentBranches: () => listContentBranches(internal),

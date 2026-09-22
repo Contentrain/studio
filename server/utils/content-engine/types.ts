@@ -57,6 +57,20 @@ export interface WriteResult {
    * save touched only the addressed locale.
    */
   sharedAcrossLocales?: { fields: string[], locales: string[] }
+  /**
+   * Every locale this call actually wrote to (#284 — `delete_content` and
+   * `update_status` default to the whole entry, every configured locale, not
+   * just the one the caller is addressing). Absent from calls that don't
+   * carry a locale scope of their own.
+   */
+  touchedLocales?: string[]
+  /**
+   * Locales left out of a narrowed `delete_content` / `update_status` call
+   * that still hold the entry (or the pre-call status) — never a locale the
+   * entry was never in. Present only when the call was narrowed and left
+   * something behind.
+   */
+  remainingLocales?: string[]
 }
 
 /** One entry's publish-status transition. `from` is `null` if it had no meta. */
@@ -64,6 +78,12 @@ export interface StatusChange {
   entryId: string
   from: string | null
   to: string
+  /**
+   * Which locale this transition happened in. Present only when the call
+   * touched more than one locale (#284) — a single-locale call's transitions
+   * are unambiguous without it, so the shape stays exactly what it was.
+   */
+  locale?: string
 }
 
 /**

@@ -603,6 +603,36 @@ export async function executeToolWithAutoMerge(
     return (brain.config as { locales?: { default?: string } } | null)?.locales?.default ?? 'en'
   }
 
+  // #284 — `delete_content` and `update_status` default to every configured
+  // locale for an i18n model, unlike `resolveLocale()`'s single addressed
+  // locale (unchanged, #301, and still used by every other write tool). An
+  // explicit `params.locales` narrows the target set; an entry in it that the
+  // key's `allowedLocales` restriction excludes is a hard error (the caller
+  // asked for something it can't have); the default set is silently narrowed
+  // to whatever the key IS allowed to touch instead — either way, the engine
+  // reports what actually got left out. `undefined` here means "the engine's
+  // own single-locale default", so a non-i18n model is untouched.
+  const resolveTargetLocales = async (modelId: string): Promise<{ locales?: string[], error?: string }> => {
+    const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+    const modelDef = brain.models.get(modelId)
+    if (!modelDef?.i18n) return {}
+    const allLocales = (brain.config as { locales?: { supported?: string[] } } | null)?.locales?.supported ?? []
+    const requested = Array.isArray(params.locales)
+      ? (params.locales as unknown[]).filter((l): l is string => typeof l === 'string')
+      : undefined
+
+    if (requested && requested.length > 0) {
+      if (permissions.allowedLocales.length > 0) {
+        const disallowed = requested.filter(l => !permissions.allowedLocales.includes(l))
+        if (disallowed.length > 0) return { error: `Locale(s) not allowed for this API key: ${disallowed.join(', ')}` }
+      }
+      return { locales: requested }
+    }
+
+    const locales = permissions.allowedLocales.length > 0 ? allLocales.filter(l => permissions.allowedLocales.includes(l)) : allLocales
+    return { locales }
+  }
+
   // Execution-time authorization backstop. chat.post.ts already filters
   // the tool list handed to the model, but a hallucinated/forged tool
   // name — or any future caller that reuses this engine without
@@ -850,6 +880,13 @@ export async function executeToolWithAutoMerge(
           result = { error: `Locale "${locale}" is not allowed for this API key` }
           break
         }
+        // #284: an i18n entry is one translation unit — delete every
+        // configured locale by default, or the caller's `locales` subset.
+        const { locales: targetLocales, error: localesError } = await resolveTargetLocales(modelId)
+        if (localesError) {
+          result = { error: localesError }
+          break
+        }
         // Inbound-reference guard (#293): deleting an entry that other entries
         // still point at leaves dangling relations — later saves of those
         // entries then fail on a target that no longer exists. Refuse and list
@@ -880,31 +917,38 @@ export async function executeToolWithAutoMerge(
         // brain there was nothing to check references against.
         const referenceNote = referencesChecked ? {} : { referencesChecked: false }
 
-        const writeResult = await engine.deleteContent(modelId, locale, entryIds, userEmail)
+        const writeResult = await engine.deleteContent(modelId, locale, entryIds, userEmail, targetLocales)
         // A refused delete (bad slug, nothing matched) has no branch to merge —
         // report the validation errors and stop, like save_content does.
         if (!writeResult.branch) {
           result = { ...summarizeWriteResult(writeResult, locale), merged: false, ...referenceNote }
           break
         }
+        const touchedLocales = writeResult.touchedLocales ?? [locale]
+        // Every locale left out that still holds the entry, told out loud —
+        // never let the agent assume a narrowed delete reached everywhere (#284).
+        const remainingNote = writeResult.remainingLocales?.length
+          ? { warning: agentMessage('content.locales_left_unchanged', { locales: writeResult.remainingLocales.join(', ') }) }
+          : {}
         affected.models.push(modelId)
-        affected.locales.push(locale)
+        affected.locales.push(...touchedLocales)
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
 
-        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
+        const gate = await gateMerge({ scope: { models: [modelId], locales: touchedLocales, entries: params.entryIds as string[] }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), ...referenceNote }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), ...referenceNote, ...remainingNote }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review, ...referenceNote }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, ...gate.review, ...referenceNote, ...remainingNote }
         }
 
         // Emit webhook event (fire-and-forget)
         emitWebhookEvent(projectId, workspaceId, 'content.deleted', {
           models: [modelId],
           locale,
+          locales: touchedLocales,
           entryIds: params.entryIds as string[],
           source: 'conversation',
         }).catch(() => {})
@@ -1452,32 +1496,45 @@ export async function executeToolWithAutoMerge(
           result = { error: agentMessage('content.no_entries') }
           break
         }
-        const writeResult = await engine.updateEntryStatus(modelId, locale, entryIds, status, userEmail)
+        // #284: an entry's status is one fact about the whole entry — set
+        // every configured locale by default, or the caller's `locales` subset.
+        const { locales: targetLocales, error: localesError } = await resolveTargetLocales(modelId)
+        if (localesError) {
+          result = { error: localesError }
+          break
+        }
+        const writeResult = await engine.updateEntryStatus(modelId, locale, entryIds, status, userEmail, targetLocales)
         if (!writeResult.validation.valid) {
           result = { error: `${errorMessage('write.validation_failed')}: ${formatValidationErrors(writeResult.validation.errors, ', ')}` }
           break
         }
         // `statusChanges` is the honest record of what this call did:
-        // `{ entryId, from, to }` per entry, including the ones already at
-        // the requested status. Always reported, so the agent can never
-        // present a status it just wrote as a status it merely observed.
+        // `{ entryId, from, to, locale? }` per entry, including the ones
+        // already at the requested status. Always reported, so the agent can
+        // never present a status it just wrote as a status it merely observed.
         const statusChanges = writeResult.statusChanges
+        // Every locale left out that still differs, told out loud — never
+        // let the agent assume a narrowed status change reached everywhere.
+        const remainingNote = writeResult.remainingLocales?.length
+          ? { warning: agentMessage('content.locales_left_unchanged', { locales: writeResult.remainingLocales.join(', ') }) }
+          : {}
         if (writeResult.unchanged) {
           // Nothing was written — no branch, no merge, no cache to drop.
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false, statusChanges }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, statusChanges, ...remainingNote }
           break
         }
+        const touchedLocales = writeResult.touchedLocales ?? [locale]
         affected.models.push(modelId)
-        affected.locales.push(locale)
+        affected.locales.push(...touchedLocales)
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
-        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: entryIds }, commitSha: writeResult.commit?.sha })
+        const gate = await gateMerge({ scope: { models: [modelId], locales: touchedLocales, entries: entryIds }, commitSha: writeResult.commit?.sha })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
-          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), statusChanges }
+          result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), statusChanges, ...remainingNote }
         }
         else {
-          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, statusChanges, ...gate.review }
+          result = { ...summarizeWriteResult(writeResult, locale), merged: false, reviewBranch: writeResult.branch, statusChanges, ...gate.review, ...remainingNote }
         }
         break
       }
@@ -2019,7 +2076,7 @@ function applyQueryFields(
 }
 
 function summarizeWriteResult(
-  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] }, entries?: { created: string[], updated: string[] }, statuses?: Record<string, string> },
+  result: { branch: string, commit: { sha: string }, diff: Array<{ path: string }>, validation: { valid: boolean, errors: LocatedValidationError[] }, unchanged?: boolean, sharedAcrossLocales?: { fields: string[], locales: string[] }, entries?: { created: string[], updated: string[] }, statuses?: Record<string, string>, touchedLocales?: string[], remainingLocales?: string[] },
   // The locale the write targeted. Echoed so the agent can see — and report —
   // which language it changed; before, it was only inside the branch name (#284).
   locale?: string,
@@ -2033,6 +2090,13 @@ function summarizeWriteResult(
     branch: result.branch,
     commitSha: result.commit.sha,
     ...(locale ? { locale } : {}),
+    // `delete_content` / `update_status`: every locale this call actually
+    // wrote to (#284) — a single-locale write doesn't carry this, `locale`
+    // above already says which one.
+    ...(result.touchedLocales ? { locales: result.touchedLocales } : {}),
+    // Locales a narrowed multi-locale call deliberately left at their old
+    // state — present only when it left something behind.
+    ...(result.remainingLocales ? { remainingLocales: result.remainingLocales } : {}),
     filesChanged: result.diff.length,
     // The paths, not just a count: a document delete removes every locale's
     // file, a collection write touches one locale — the paths say which.

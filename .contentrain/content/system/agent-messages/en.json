@@ -22,6 +22,7 @@
   "content.deleted": "Content entry deleted and merged.",
   "content.invalid_status": "Invalid status \"{status}\". Use one of: published, draft, archived.",
   "content.locale_required": "A locale code is required.",
+  "content.locales_left_unchanged": "Left unchanged, still not covered by this call: {locales}.",
   "content.no_entries": "No entry IDs were provided to update.",
   "content.saved": "Content saved and merged successfully.",
   "forms.approved": "Submission approved and content entry created.",
