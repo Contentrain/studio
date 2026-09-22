@@ -130,4 +130,60 @@ describe('useSnapshot', () => {
     expect(snapshotStore.snapshot.value?.models[0]?.id).toBe('docs')
     expect(snapshotStore.snapshot.value?.content.docs).toEqual({ count: 2, locales: ['en'] })
   })
+
+  function brainWith(state: { ready: boolean, config: Record<string, unknown> | null, syncing: boolean }): BrainStub {
+    const config = ref(state.config)
+    const models = ref<ModelStub[]>(state.config ? [{ id: 'faq', name: 'FAQ', kind: 'collection', fields: {}, domain: 'app', i18n: false }] : [])
+    return {
+      ready: ref(state.ready),
+      hasContentrain: computed(() => config.value !== null),
+      config,
+      models,
+      modelList: computed(() => models.value),
+      vocabulary: ref(null),
+      contentContext: ref(null),
+      contentSummary: ref({}),
+      treeSha: ref<string | null>(null),
+      projectStats: computed(() => null),
+      syncing: ref(state.syncing),
+      syncError: ref<string | null>(null),
+      initBrain: vi.fn(),
+      sync: vi.fn(),
+      destroyBrain: vi.fn(),
+      invalidate: vi.fn(),
+      queryContent: vi.fn().mockResolvedValue(null),
+      searchContent: vi.fn().mockResolvedValue([]),
+    }
+  }
+
+  it('shows the cached project while the sync runs instead of a skeleton', () => {
+    // The worker handed over the cache; the network has not answered yet.
+    nuxtState.brain = brainWith({ ready: true, config: { locales: { default: 'en' } }, syncing: true })
+
+    const snapshotStore = useSnapshot()
+
+    expect(snapshotStore.snapshot.value?.models[0]?.id).toBe('faq')
+    expect(snapshotStore.loading.value).toBe(false)
+    expect(snapshotStore.refreshing.value).toBe(true)
+  })
+
+  it('is loading only while there is nothing at all to show', () => {
+    nuxtState.brain = brainWith({ ready: false, config: null, syncing: true })
+
+    const snapshotStore = useSnapshot()
+
+    expect(snapshotStore.snapshot.value).toBeNull()
+    expect(snapshotStore.loading.value).toBe(true)
+    expect(snapshotStore.refreshing.value).toBe(false)
+  })
+
+  it('boots the worker without syncing when primed', () => {
+    const brain = brainWith({ ready: false, config: null, syncing: false })
+    nuxtState.brain = brain
+
+    useSnapshot().primeSnapshot('project-1')
+
+    expect(brain.initBrain).toHaveBeenCalledWith('project-1')
+    expect(brain.sync).not.toHaveBeenCalled()
+  })
 })

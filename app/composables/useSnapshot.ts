@@ -75,6 +75,15 @@ export function useSnapshot() {
     await brain.sync(workspaceId, projectId)
   }
 
+  /**
+   * Start reading this project's cache now. The worker needs only the project
+   * id, so a page can boot it before the workspace round trips that the sync
+   * itself has to wait for — and show the cache in the meantime.
+   */
+  function primeSnapshot(projectId: string) {
+    void brain.initBrain(projectId)
+  }
+
   function clearSnapshot() {
     brain.destroyBrain()
   }
@@ -96,10 +105,13 @@ export function useSnapshot() {
     vocabulary,
     contentContext,
     projectStats,
-    loading: brain.syncing,
-    refreshing: computed(() => false),
+    // Only a project with nothing to show waits on the network. One with a
+    // cache (or an earlier answer) stays on screen while the sync runs.
+    loading: computed(() => brain.syncing.value && snapshot.value === null),
+    refreshing: computed(() => brain.syncing.value && snapshot.value !== null),
     error: brain.syncError,
     fetchSnapshot,
+    primeSnapshot,
     clearSnapshot,
     invalidateCache,
   }

@@ -12,7 +12,7 @@ const projectId = computed(() => route.params.projectId as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLastPath } = useWorkspaces()
 const { projects, fetchProjects } = useProjects()
-const { snapshot, loading: snapshotLoading, fetchSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
+const { snapshot, loading: snapshotLoading, fetchSnapshot, primeSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, clearContent } = useModelContent()
 const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
 const { t } = useContent()
@@ -86,11 +86,16 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
     clearSnapshot()
   }
 
+  // The worker needs only the project id: it reads this browser's cache while
+  // the workspace round trip is still in flight, and the screen shows it.
+  primeSnapshot(newProjectId)
+
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
 
   const ws = workspaces.value.find(w => w.slug === newSlug)
   if (!ws) {
+    clearSnapshot()
     saveLastPath('/')
     await router.replace('/')
     return
@@ -98,26 +103,28 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
 
   setActiveWorkspace(ws.id)
 
-  // Re-fetch projects on workspace change or when list is empty
-  if (!oldSlug || oldSlug !== newSlug || projects.value.length === 0)
-    await fetchProjects(ws.id)
+  // The project list, the brain sync and an open branch's review need only
+  // the workspace id, so they run side by side instead of one after another.
+  // The sync route checks project access itself; the list check below only
+  // decides where to send someone who followed a stale link.
+  const needsProjects = !oldSlug || oldSlug !== newSlug || projects.value.length === 0
+  await Promise.all([
+    needsProjects ? fetchProjects(ws.id) : undefined,
+    fetchSnapshot(ws.id, newProjectId),
+    activeBranch.value ? fetchBranchReview(ws.id, newProjectId, activeBranch.value) : undefined,
+  ])
 
   // Verify project exists in this workspace
   const projectExists = projects.value.some(p => p.id === newProjectId)
   if (!projectExists) {
+    clearSnapshot()
     saveLastPath(`/w/${newSlug}`)
     await router.replace(`/w/${newSlug}`)
     return
   }
 
-  await fetchSnapshot(ws.id, newProjectId)
-
   // Set default locale from config
   applyProjectDefaultLocale()
-
-  if (activeBranch.value) {
-    await fetchBranchReview(ws.id, newProjectId, activeBranch.value)
-  }
 
   if (activeModelId.value) {
     await fetchContent(ws.id, newProjectId, activeModelId.value, activeLocale.value)
