@@ -15,6 +15,7 @@ import { buildContentIndex, getOrBuildBrainCache } from '../../server/utils/brai
 import { createContentEngine } from '../../server/utils/content-engine'
 import { errorMessage } from '../../server/utils/content-strings'
 import { normalizeContentRoot } from '../../server/utils/content-paths'
+import { extractPageUrls, resolvePageUrl } from '../../server/utils/page-resolution'
 import { runConversationLoop } from '../../server/utils/conversation-engine'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '../../server/utils/conversation-history'
 import { estimateMessageCredits } from '../../shared/utils/ai-credits'
@@ -270,6 +271,11 @@ async function runConversationMessage(
       vocabulary,
       plan,
       keyData.customInstructions,
+      undefined,
+      undefined,
+      // Same page → entry resolution as Studio chat (#288): URLs in the
+      // message name the entry the order is about.
+      extractPageUrls(body.message, []).map(url => resolvePageUrl(url, brain)),
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
 

@@ -70,6 +70,11 @@ export default defineEventHandler(async (event) => {
   const intentPart = (formData ?? []).find(p => p.name === 'intent')
   const intent = intentPart?.data?.toString() === 'media' ? 'media' as const : 'context' as const
 
+  // Media-intent images count against workspace storage like every other
+  // media upload (plan limit, raised when storage overage is on).
+  const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
+  const storageLimitBytes = getEffectiveLimit(getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024, 'media.storage_gb', overageSettings)
+
   const attachments = await Promise.all(files.map(async (filePart) => {
     if (filePart.data.length > ATTACHMENT_MAX_FILE_BYTES) {
       return {
@@ -92,6 +97,7 @@ export default defineEventHandler(async (event) => {
       plan,
       intent,
       cdnEnabled: project.cdn_enabled === true,
+      storageLimitBytes,
     })
   }))
 

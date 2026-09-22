@@ -1293,6 +1293,8 @@ export async function executeToolWithAutoMerge(
           tags: a.tags,
           dimensions: `${a.width}x${a.height}`,
           format: a.format,
+          size: a.size,
+          createdAt: a.createdAt,
           blurhash: a.blurhash,
           variants: Object.fromEntries(Object.entries(a.variants).map(([k, v]) => [k, v.path])),
         }))
@@ -1408,7 +1410,19 @@ export async function executeToolWithAutoMerge(
           result = { error: errorMessage('media.library_upgrade', getUpgradeParams(plan)) }
           break
         }
-        const asset = await mediaProvider.getAsset(params.assetId as string)
+        // The id in a media path is the storage key, not the asset id (#289):
+        // the agent mostly holds a path or delivery URL from content or an
+        // attachment, so both resolve here, but only for this project's media.
+        const assetId = typeof params.assetId === 'string' ? params.assetId : ''
+        const reference = params.path ?? params.url
+        const ownPath = assetId ? null : ownMediaStoragePath(projectId, reference)
+        if (!assetId && !ownPath) {
+          result = { error: agentMessage(reference ? 'media.asset_not_found' : 'media.asset_reference_required') }
+          break
+        }
+        const asset = assetId
+          ? await mediaProvider.getAsset(assetId)
+          : await mediaProvider.getAssetByPath?.(projectId, ownPath!) ?? null
         if (!asset || asset.projectId !== projectId) {
           result = { error: agentMessage('media.asset_not_found') }
           break

@@ -4,8 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // --- Mock Nuxt-dependent sibling utils (relative to the module under test) ---
 const uploadMock = vi.fn()
+const reserveMock = vi.fn()
+const incrementMock = vi.fn()
 vi.mock('../../server/utils/providers', () => ({
   useMediaProvider: () => mediaProvider,
+  useDatabaseProvider: () => ({ reserveStorageIfAllowed: reserveMock, incrementWorkspaceStorageBytes: incrementMock }),
 }))
 vi.mock('../../server/utils/media-url', () => ({
   toDeliveryUrl: (projectId: string, path: string) => `https://cdn.example/api/cdn/v1/${projectId}/${path}`,
@@ -42,6 +45,8 @@ beforeEach(() => {
   mediaProvider = null
   allowUrl = () => true
   uploadMock.mockReset()
+  reserveMock.mockReset()
+  incrementMock.mockReset().mockResolvedValue(undefined)
   // hasFeature is a server auto-import global; default to false (base64 path).
   vi.stubGlobal('hasFeature', vi.fn(() => false))
   vi.stubGlobal('createError', (e: { statusCode: number, message: string }) => Object.assign(new Error(e.message), e))
@@ -180,6 +185,62 @@ describe('ingestFile — image branch', () => {
     const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png' }))
     expect(uploadMock).not.toHaveBeenCalled()
     expect(ref.destination).toBe('context')
+  })
+
+  // #289 — the media-intent upload skipped the workspace storage limit that
+  // every other media upload path enforces.
+  it('reserves workspace storage before a media-intent upload and settles the real size', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+    reserveMock.mockResolvedValue({ allowed: true, currentBytes: 0 })
+    uploadMock.mockResolvedValue({ originalPath: 'media/abc.webp', size: 10, width: 4, height: 4, variants: {} })
+    const buffer = await tinyPng()
+
+    const ref = await ingestFile(baseInput({ buffer, filename: 'pic.png', declaredMime: 'image/png', intent: 'media', cdnEnabled: true, storageLimitBytes: 1_000_000 }))
+
+    expect(reserveMock).toHaveBeenCalledWith('ws', buffer.length, 1_000_000)
+    expect(uploadMock.mock.calls[0]![0]).toMatchObject({ skipStorageIncrement: true })
+    expect(incrementMock).toHaveBeenCalledWith('ws', 10 - buffer.length)
+    expect(ref.destination).toBe('media')
+    expect(ref.notice).toBeUndefined()
+  })
+
+  it('keeps the image as context, with a notice, when workspace storage is full', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+    reserveMock.mockResolvedValue({ allowed: false, currentBytes: 1_000_000 })
+
+    const ref = await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media', cdnEnabled: true, storageLimitBytes: 1_000_000 }))
+
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(ref.error).toBeUndefined()
+    expect(ref.destination).toBe('context')
+    expect((ref.blocks[0] as { source: { type: string } }).source.type).toBe('base64')
+    expect(ref.notice).toBe('attachment.storage_full_context')
+  })
+
+  it('releases the reservation when the upload fails', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+    reserveMock.mockResolvedValue({ allowed: true, currentBytes: 0 })
+    uploadMock.mockRejectedValue(new Error('r2 down'))
+    const buffer = await tinyPng()
+
+    const ref = await ingestFile(baseInput({ buffer, filename: 'pic.png', declaredMime: 'image/png', intent: 'media', cdnEnabled: true, storageLimitBytes: 1_000_000 }))
+
+    expect(ref.error).toBe('attachment.media_upload_failed')
+    expect(incrementMock).toHaveBeenCalledWith('ws', -buffer.length)
+  })
+
+  it('does not reserve when the plan has no storage limit', async () => {
+    mediaProvider = { upload: uploadMock }
+    vi.stubGlobal('hasFeature', vi.fn(() => true))
+    uploadMock.mockResolvedValue({ originalPath: 'media/abc.webp', size: 10, width: 4, height: 4, variants: {} })
+
+    await ingestFile(baseInput({ buffer: await tinyPng(), filename: 'pic.png', declaredMime: 'image/png', intent: 'media', cdnEnabled: true }))
+
+    expect(reserveMock).not.toHaveBeenCalled()
+    expect(uploadMock.mock.calls[0]![0]).toMatchObject({ skipStorageIncrement: false })
   })
 
   it('errors for intent=media when the media feature is unavailable', async () => {

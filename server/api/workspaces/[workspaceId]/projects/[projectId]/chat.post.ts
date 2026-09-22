@@ -14,6 +14,7 @@ import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldInclud
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
 import { estimateMessageCredits } from '../../../../../../shared/utils/ai-credits'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
+import { extractPageUrls, resolvePageUrl } from '../../../../../utils/page-resolution'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
 import { getEdition } from '../../../../../utils/license'
 import { getEffectiveLimit } from '../../../../../utils/overage'
@@ -232,12 +233,17 @@ export default defineEventHandler(async (event) => {
     // state) change between turns, so they travel in the current user
     // turn — after the cached history — instead of in front of it.
     const contentIndex = buildContentIndex(brain)
+    // Pages the editor linked or pasted, resolved to the entries that render
+    // them, so an order about "this page" lands on the right entry (#288).
+    const linkedPages = extractPageUrls(body.message, attachmentSummary.map(a => a.filename))
+      .map(url => resolvePageUrl(url, brain))
     const promptBlocks = buildSystemPromptBlocks(
       projectConfig, models, permissions, projectState, uiContext, intent,
       contentIndex || null,
       vocabulary, plan, null,
       attachmentSummary,
       getEdition(),
+      linkedPages,
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
     // The content index rides in the request context only when it
