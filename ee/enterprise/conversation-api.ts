@@ -30,6 +30,7 @@ const API_TOOL_ROLES: Record<string, string[]> = {
   list_models: ['viewer', 'editor', 'admin'],
   get_content: ['viewer', 'editor', 'admin'],
   save_content: ['editor', 'admin'],
+  replace_in_field: ['editor', 'admin'],
   delete_content: ['editor', 'admin'],
   save_model: ['admin'],
   validate: ['viewer', 'editor', 'admin'],

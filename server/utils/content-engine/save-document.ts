@@ -98,7 +98,7 @@ async function writeDocuments(
 
   await ctx.ensureContentBranch()
 
-  const snapshot = await openWriteSnapshot(ctx.git)
+  const snapshot = options?.snapshot ?? await openWriteSnapshot(ctx.git)
   const reader = snapshot.reader
 
   const modelPath = resolveModelPath(ctx.pathCtx, modelId)

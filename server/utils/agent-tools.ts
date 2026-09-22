@@ -96,6 +96,45 @@ IMPORTANT: Never include system fields (id, slug, status, source) in data.`,
     workflowBehavior: 'workflow-dependent',
   },
   {
+    name: 'replace_in_field',
+    description: `Fix a word, a typo, a link or a URL INSIDE a text field without re-sending the field. The server finds \`find\` in the current value and replaces it with \`replace\`; nothing else in the field can change.
+
+Use this — not save_content — whenever the change is smaller than the field: a spelling fix, a changed link target, a renamed product, one sentence in a long markdown body. Re-sending a long field to change a few words corrupts text you did not mean to touch.
+
+- \`find\` is an EXACT, case-sensitive match. Copy it verbatim from the current value (brain_query / get_content), with enough context to be unique.
+- Every occurrence is replaced unless \`occurrence\` (1-based) names one. The result reports \`replacements\`: how many were replaced per edit.
+- A \`find\` that does not occur is an ERROR and nothing is written — read the value again, never report it as fixed.
+- All edits (up to 50, across entries of one model and locale) land in ONE commit, all-or-nothing.
+- Documents: \`field: "body"\` edits the markdown body; any other field is frontmatter. Dictionaries: \`field\` is the key. Singletons and dictionaries take no \`entry\`.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', description: 'Model ID' },
+        locale: { type: 'string', description: 'Locale to edit. Omit to use the locale the user works in.' },
+        edits: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          items: {
+            type: 'object',
+            properties: {
+              entry: { type: 'string', description: 'Collection entry id or document slug. Omit for singletons and dictionaries.' },
+              field: { type: 'string', description: 'Text field to edit; "body" for a document body; the key for a dictionary.' },
+              find: { type: 'string', description: 'Exact text to find, copied from the current value.' },
+              replace: { type: 'string', description: 'Replacement text; "" deletes the match.' },
+              occurrence: { type: 'integer', minimum: 1, description: 'Replace only this occurrence (1-based). Omit to replace every occurrence.' },
+            },
+            required: ['field', 'find', 'replace'],
+          },
+        },
+      },
+      required: ['model', 'edits'],
+    },
+    requiredPhase: ['active'],
+    defaultAffects: { snapshotChanged: false, branchesChanged: true },
+    workflowBehavior: 'workflow-dependent',
+  },
+  {
     name: 'delete_content',
     description: 'Delete entries from a model. For collections: pass entry IDs. For documents: pass slugs (the whole document is removed across all locales). For dictionaries: pass keys as entryIds.',
     inputSchema: {

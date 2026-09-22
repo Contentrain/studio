@@ -595,6 +595,7 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // Content updates
     agentPrompt('rules.update_existing_id'),
     agentPrompt('rules.update_merge'),
+    agentPrompt('rules.targeted_text_edit'),
     agentPrompt('rules.verbatim_text'),
     agentPrompt('rules.check_near_duplicate'),
     // Scheduling is meta, not status — the two get conflated otherwise.
