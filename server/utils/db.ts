@@ -27,6 +27,7 @@ export interface ProjectRow {
   status?: string
   /** Validated `MigrationHandoff` document when the repo came from Contentrain Migrate. */
   migration_handoff?: Record<string, unknown> | null
+  cdn_enabled?: boolean
 }
 
 export interface WorkspaceRow {
@@ -145,7 +146,7 @@ export async function resolveProjectContext(
 ): Promise<ProjectContext> {
   const db = useDatabaseProvider()
 
-  const project = await db.getProjectById(projectId, 'id, repo_full_name, content_root, workspace_id, default_branch, detected_stack, status, migration_handoff')
+  const project = await db.getProjectById(projectId, 'id, repo_full_name, content_root, workspace_id, default_branch, detected_stack, status, migration_handoff, cdn_enabled')
   if (!project || project.workspace_id !== workspaceId)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 

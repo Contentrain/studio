@@ -18,6 +18,8 @@
   "attachment.not_text": "This file isn’t readable text.",
   "attachment.payload_too_large": "These attachments are too large for one message. Remove some and try again.",
   "attachment.pdf_too_large": "This PDF is too large to attach (10MB limit).",
+  "attachment.promotion_expired": "Attachment {id} is no longer available (attachments can be placed into content for 24 hours). Ask the user to attach the image again.",
+  "attachment.promotion_quota_exceeded": "Workspace media storage is full, so the attached image could not be added to the media library and nothing was saved. Free up space or raise the storage limit, then try again.",
   "attachment.storage_full_context": "Your workspace media storage is full, so this image was attached for this message only and not added to the media library. Free up space or raise your storage limit to store it.",
   "attachment.too_many": "Too many attachments. The limit is {limit} per message.",
   "attachment.unsupported_type": "Unsupported file type: {type}",

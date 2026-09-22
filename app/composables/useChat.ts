@@ -54,6 +54,8 @@ export interface UIAttachment {
   previewUrl?: string
   preview?: string
   truncated?: boolean
+  /** Server-issued: the one-day original a later save can promote (#289). */
+  stashId?: string
   error?: string
 }
 
@@ -472,7 +474,7 @@ export function useChat(options?: {
               activeBranch: null,
             },
             attachments: readyAttachments.length
-              ? readyAttachments.map(a => ({ blocks: a.blocks, filename: a.filename, kind: a.kind }))
+              ? readyAttachments.map(a => ({ blocks: a.blocks, filename: a.filename, kind: a.kind, ...(a.stashId ? { stashId: a.stashId } : {}) }))
               : undefined,
           }),
         },

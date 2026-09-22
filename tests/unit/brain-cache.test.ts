@@ -358,4 +358,66 @@ describe('brain cache', () => {
     const docs = brain.content.get('guide-sections:tr') as Array<Record<string, unknown>>
     expect(docs.every(d => !('meta' in d))).toBe(true)
   })
+  /**
+   * `treeSha` does not stay on the server: the client stores it and hands it
+   * back as its cache key on the next sync. It used to be the whole
+   * `path:sha|…` join, so its length grew with the repo — measured on staging,
+   * 54 files produced 4,404 characters, and past ~14 KB of query string the
+   * request is rejected with 431 before any handler runs. Every project above
+   * roughly 155 tracked files lost delta detection permanently.
+   */
+  describe('tree hash size', () => {
+    function bigTree(fileCount: number) {
+      const files: Array<{ path: string, sha: string, type: 'blob' }> = [
+        { path: '.contentrain/config.json', sha: 'sha-config', type: 'blob' },
+        { path: '.contentrain/models/posts.json', sha: 'sha-model', type: 'blob' },
+        { path: '.contentrain/content/marketing/posts/en.json', sha: 'sha-content', type: 'blob' },
+        { path: '.contentrain/meta/marketing/posts/en.json', sha: 'sha-meta', type: 'blob' },
+      ]
+      for (let i = files.length; i < fileCount; i++) {
+        files.push({ path: `.contentrain/content/marketing/filler-${i}/en.json`, sha: `sha-${i}`.padEnd(40, '0'), type: 'blob' })
+      }
+      return files
+    }
+
+    it('stays a fixed-length digest no matter how many files the repo has', async () => {
+      const mod = await import('../../server/utils/brain-cache')
+
+      const small = await mod.getOrBuildBrainCache(createGit({ getTree: async () => bigTree(4) }) as never, '', 'p-small')
+      const large = await mod.getOrBuildBrainCache(createGit({ getTree: async () => bigTree(800) }) as never, '', 'p-large')
+
+      expect(small.treeSha).toMatch(/^[0-9a-f]{64}$/)
+      expect(large.treeSha).toMatch(/^[0-9a-f]{64}$/)
+      // The property that matters on the wire: 800 files cost the same as 4.
+      expect(large.treeSha.length).toBe(small.treeSha.length)
+      // A URL carrying it stays far under the ~14 KB that earns a 431.
+      expect(encodeURIComponent(large.treeSha).length).toBeLessThan(100)
+    })
+
+    it('still distinguishes two different trees', async () => {
+      // A shorter token is only useful if it is still a fingerprint. Same file
+      // set, one blob SHA changed.
+      const mod = await import('../../server/utils/brain-cache')
+      const a = await mod.getOrBuildBrainCache(createGit({ getTree: async () => bigTree(40) }) as never, '', 'p-a')
+
+      const changed = bigTree(40)
+      changed[10] = { ...changed[10]!, sha: 'sha-changed'.padEnd(40, '0') }
+      const b = await mod.getOrBuildBrainCache(createGit({ getTree: async () => changed }) as never, '', 'p-b')
+
+      expect(a.treeSha).not.toBe(b.treeSha)
+    })
+
+    it('reuses the cache when the tree is unchanged', async () => {
+      // Guards the other direction: a digest that changed on every call would
+      // make the quick-path compare in getOrBuildBrainCache always miss.
+      const mod = await import('../../server/utils/brain-cache')
+      const git = createGit({ getTree: async () => bigTree(40) })
+
+      const first = await mod.getOrBuildBrainCache(git as never, '', 'p-stable')
+      const second = await mod.getOrBuildBrainCache(git as never, '', 'p-stable')
+
+      expect(second.treeSha).toBe(first.treeSha)
+      expect(second).toBe(first)
+    })
+  })
 })

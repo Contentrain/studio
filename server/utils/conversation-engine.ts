@@ -15,6 +15,8 @@ import type { LocatedValidationError } from './validation-format'
 import { formatValidationError, formatValidationErrors } from './validation-format'
 import { isEntryWriteMode } from './content-engine/entry-mode'
 import type { TextEdit } from './content-engine/replace-text'
+import type { AttachmentPromotionContext, PromotedAttachment } from './attachment-promotion'
+import { hasAttachmentMarker, promoteAttachmentMarkers } from './attachment-promotion'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -107,6 +109,8 @@ export interface ToolExecutionContext {
   workspaceId: string
   uiContext: ChatUIContext
   phase: ProjectPhase
+  /** Chat only: lets a save promote this conversation's attachments (#289). */
+  attachmentPromotion?: AttachmentPromotionContext
 }
 
 // ─── Constants ───
@@ -375,7 +379,7 @@ export async function* runConversationLoop(
 
         // Execute tool
         const result = await executeToolWithAutoMerge(
-          tc.name, tc.input, toolCtx.engine, toolCtx.git, toolCtx.userEmail, toolCtx.userId, toolCtx.contentRoot, toolCtx.workflow, toolCtx.permissions, toolCtx.plan, toolCtx.projectId, toolCtx.workspaceId, toolCtx.uiContext, turnMerge,
+          tc.name, tc.input, toolCtx.engine, toolCtx.git, toolCtx.userEmail, toolCtx.userId, toolCtx.contentRoot, toolCtx.workflow, toolCtx.permissions, toolCtx.plan, toolCtx.projectId, toolCtx.workspaceId, toolCtx.uiContext, turnMerge, toolCtx.attachmentPromotion,
         )
         executedToolNames.push(tc.name)
 
@@ -564,8 +568,12 @@ export async function executeToolWithAutoMerge(
   workspaceId: string,
   uiContext: ChatUIContext,
   turnMerge?: TurnMergeState,
+  attachmentPromotion?: AttachmentPromotionContext,
 ): Promise<{ result: unknown, affected: AffectedResources }> {
-  const params = (input ?? {}) as Record<string, unknown>
+  // Reassigned only by attachment promotion, which returns a copy — the
+  // input object itself is the model's tool_use, replayed byte-for-byte.
+  let params = (input ?? {}) as Record<string, unknown>
+  let promotedAttachments: PromotedAttachment[] = []
   const affected: AffectedResources = emptyAffected()
   // Plans without review workflow support always auto-publish on save.
   const autoPublish = !hasFeature(plan, 'workflow.review')
@@ -686,6 +694,21 @@ export async function executeToolWithAutoMerge(
       }
 
       case 'save_content': {
+        // `attachment:<id>` in the payload → the attachment is stored in the
+        // media library first and the marker becomes its URL (#289).
+        if (hasAttachmentMarker(params)) {
+          if (!attachmentPromotion) {
+            result = { error: errorMessage('attachment.media_unavailable') }
+            break
+          }
+          const promotion = await promoteAttachmentMarkers(params, attachmentPromotion)
+          if ('error' in promotion) {
+            result = { error: promotion.error }
+            break
+          }
+          params = promotion.value
+          promotedAttachments = promotion.promoted
+        }
         const modelId = params.model as string
         if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
           result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
@@ -1886,6 +1909,11 @@ export async function executeToolWithAutoMerge(
       default:
         result = { error: `Unknown tool: ${name}` }
     }
+
+    // The assets a save promoted exist whether or not the write then landed,
+    // so they are reported on any non-error result.
+    if (promotedAttachments.length > 0 && result && typeof result === 'object' && !('error' in result))
+      result = { ...result, promotedAttachments }
 
     // Invalidate brain cache after any write operation
     if (affected.snapshotChanged || affected.models.length > 0 || affected.branchesChanged) {
