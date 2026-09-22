@@ -21,7 +21,8 @@ interface RehostCounts {
   references: number
   mediaPaths: number
   missing: string[]
-  copy: { requested: boolean, toCopy: number, copied: number }
+  copy: { requested: boolean, toCopy: number, copied: number, failed: string[] }
+  library: { toAdd: number, existing: number, added: number }
 }
 
 interface RehostResponse {
@@ -89,7 +90,8 @@ async function runApply() {
     toast.success(t('media_rehost.success', { references: result.counts.references }))
   }
   catch (e) {
-    // 409 carries the counts: missing files, or a concurrent content change.
+    // 409 carries the counts: missing files, a failed copy or library insert,
+    // or a concurrent content change.
     const counts = (e as { data?: { data?: RehostCounts } }).data?.data
     if (counts) preview.value = counts
     toast.error(resolveApiError(e, t('media_rehost.error')))
@@ -156,6 +158,9 @@ async function runApply() {
       </p>
       <p v-if="preview.copy.requested && preview.copy.toCopy > 0" class="text-body dark:text-secondary-300">
         {{ t('media_rehost.to_copy', { count: preview.copy.toCopy }) }}
+      </p>
+      <p v-if="preview.copy.requested" class="text-body dark:text-secondary-300">
+        {{ t('media_rehost.library_rows', { add: preview.library.toAdd, existing: preview.library.existing }) }}
       </p>
       <template v-if="preview.missing.length > 0">
         <p class="font-medium text-danger-600 dark:text-danger-400">

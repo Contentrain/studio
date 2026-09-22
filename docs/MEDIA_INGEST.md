@@ -103,6 +103,9 @@ it would rewrite, plus `missing`: the paths this project's storage does not hold
 `"dryRun": false` rewrites every `{siteUrl}/api/cdn/v1/{projectId}/media/…`
 reference, in markdown bodies too, in **one commit**. While anything is missing
 it commits nothing and answers `409` with the same counts. `copyAssets: true`
-first copies the old project's `media/` objects that this project lacks. It
-only works on the same instance, where both projects share one bucket. Storage
-objects are copied, but media library entries are not.
+first copies the old project's `media/` objects that this project lacks, then
+adds the old project's media library entries for those files in one statement,
+skipping paths already listed here. It only works on the same instance, where
+both projects share one bucket, and only for an owner/admin of the old
+project's workspace. A failed copy or entry insert answers `409` with nothing
+committed; re-running is safe.

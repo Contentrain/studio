@@ -1,6 +1,7 @@
 import type { ContentrainConfig, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { CDNProvider } from '../providers/cdn'
+import type { DatabaseProvider } from '../providers/database'
 import type { GitProvider } from '../providers/git'
 import type { EngineMergeResult } from './content-engine/types'
 import { STUDIO_AUTHOR } from './content-engine/types'
@@ -28,8 +29,10 @@ import { mediaBaseFor, mediaStoragePathUnder } from './media-url'
  *
  * `copyAssets` covers a project-id change inside one instance (same bucket):
  * every object under the old project's `media/` prefix that the new prefix
- * lacks is copied first. It copies storage objects only — media library rows
- * stay with the old project.
+ * lacks is copied first, then the old project's media library rows for the
+ * files now in this project's storage are added here in one statement (paths
+ * that already have a row are skipped). A failed copy or row insert stops the
+ * run with nothing committed; both steps are safe to re-run.
  */
 
 export interface RehostSource {
@@ -47,6 +50,10 @@ export interface RehostInput {
   from: RehostSource
   dryRun: boolean
   copyAssets: boolean
+  /** Media library rows — read for counts, written only by a real `copyAssets` run. */
+  library: Pick<DatabaseProvider, 'listMediaAssetPaths' | 'copyMediaAssetRows'>
+  /** This project's workspace, stamped on copied library rows. */
+  workspaceId: string
   userEmail: string
   /** Land the rehost branch (`engine.mergeBranch`). */
   merge: (branch: string) => Promise<EngineMergeResult>
@@ -61,13 +68,17 @@ export interface RehostCounts {
   mediaPaths: number
   /** Referenced paths this project's storage does not hold (after any copy). */
   missing: string[]
-  copy: { requested: boolean, toCopy: number, copied: number }
+  copy: { requested: boolean, toCopy: number, copied: number, failed: string[] }
+  /** Library rows of the old project for files in this project's storage. */
+  library: { toAdd: number, existing: number, added: number }
 }
 
 export type RehostResult
   = | { status: 'dry_run', counts: RehostCounts }
     | { status: 'nothing_to_do', counts: RehostCounts }
     | { status: 'missing_assets', counts: RehostCounts }
+    | { status: 'copy_failed', counts: RehostCounts }
+    | { status: 'library_failed', counts: RehostCounts }
     | { status: 'conflict', counts: RehostCounts }
     | { status: 'committed', counts: RehostCounts, branch: string, commitSha: string, merged: boolean, pullRequestUrl: string | null }
 
@@ -235,6 +246,7 @@ export async function runMediaRehost(input: RehostInput): Promise<RehostResult> 
 
   let stored = await storedMediaPaths(cdn, projectId)
   let toCopy: string[] = []
+  const failed: string[] = []
   let copied = 0
   if (input.copyAssets) {
     toCopy = [...await storedMediaPaths(cdn, input.from.projectId)].filter(p => !stored.has(p)).sort()
@@ -243,12 +255,29 @@ export async function runMediaRehost(input: RehostInput): Promise<RehostResult> 
     }
     else if (toCopy.length > 0) {
       await mapLimit(toCopy, COPY_CONCURRENCY, async (path) => {
-        await copyObject(cdn, input.from.projectId, projectId, path)
-        copied++
+        try {
+          await copyObject(cdn, input.from.projectId, projectId, path)
+          copied++
+        }
+        catch {
+          failed.push(path)
+        }
       })
+      failed.sort()
       // Verify against storage, not against what the copy loop believes.
       stored = await storedMediaPaths(cdn, projectId)
     }
+  }
+
+  // Library rows follow the files: every old row whose file is (or, in a dry
+  // run, would be) in this project's storage, minus paths already listed here.
+  let rowsToAdd: string[] = []
+  let rowsExisting = 0
+  if (input.copyAssets) {
+    const present = new Set(await input.library.listMediaAssetPaths(projectId))
+    const candidates = [...new Set(await input.library.listMediaAssetPaths(input.from.projectId))].filter(p => stored.has(p))
+    rowsToAdd = candidates.filter(p => !present.has(p)).sort()
+    rowsExisting = candidates.length - rowsToAdd.length
   }
 
   const counts: RehostCounts = {
@@ -259,11 +288,28 @@ export async function runMediaRehost(input: RehostInput): Promise<RehostResult> 
     references: plan.references,
     mediaPaths: plan.paths.length,
     missing: plan.paths.filter(p => !stored.has(p)),
-    copy: { requested: input.copyAssets, toCopy: toCopy.length, copied },
+    copy: { requested: input.copyAssets, toCopy: toCopy.length, copied, failed },
+    library: { toAdd: rowsToAdd.length, existing: rowsExisting, added: 0 },
   }
 
   if (input.dryRun) return { status: 'dry_run', counts }
+  if (failed.length > 0) return { status: 'copy_failed', counts }
   if (counts.missing.length > 0) return { status: 'missing_assets', counts }
+
+  if (rowsToAdd.length > 0) {
+    try {
+      counts.library.added = await input.library.copyMediaAssetRows({
+        fromProjectId: input.from.projectId,
+        toProjectId: projectId,
+        toWorkspaceId: input.workspaceId,
+        originalPaths: rowsToAdd,
+      })
+    }
+    catch {
+      return { status: 'library_failed', counts }
+    }
+  }
+
   if (plan.changes.length === 0) return { status: 'nothing_to_do', counts }
 
   const { branchName } = await createFeatureBranch(

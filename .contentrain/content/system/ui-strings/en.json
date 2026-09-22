@@ -722,6 +722,7 @@
   "media_rehost.from_project_id": "Previous project id",
   "media_rehost.from_site_url": "Previous Studio address",
   "media_rehost.from_site_url_placeholder": "https://studio.example.com",
+  "media_rehost.library_rows": "Media library: {add} entries to add, {existing} already there.",
   "media_rehost.missing_hint": "Copy or upload them first. Nothing is committed while any file is missing.",
   "media_rehost.missing_more": "and {count} more",
   "media_rehost.missing_title": "{count} media files are missing from this project's storage",

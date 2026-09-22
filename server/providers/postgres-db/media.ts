@@ -3,6 +3,7 @@
  * DatabaseProvider. Behavior parity with supabase-db/media.ts.
  */
 import type { DatabaseProvider, DatabaseRow } from '../database'
+import { sql } from 'kysely'
 import { getAdmin } from './helpers'
 
 type MediaMethods = Pick<
@@ -14,6 +15,8 @@ type MediaMethods = Pick<
   | 'listMediaAssets'
   | 'updateMediaAsset'
   | 'deleteMediaAsset'
+  | 'listMediaAssetPaths'
+  | 'copyMediaAssetRows'
   | 'trackMediaUsage'
   | 'removeMediaUsage'
   | 'getMediaUsage'
@@ -184,6 +187,48 @@ export function mediaMethods(): MediaMethods {
       catch {
         return null
       }
+    },
+
+    async listMediaAssetPaths(projectId) {
+      const rows = await getAdmin()
+        .selectFrom('media_assets')
+        .select('original_path')
+        .where('project_id', '=', projectId)
+        .execute()
+      return rows.map(r => r.original_path)
+    },
+
+    async copyMediaAssetRows({ fromProjectId, toProjectId, toWorkspaceId, originalPaths }) {
+      if (originalPaths.length === 0) return 0
+      // INSERT … SELECT is one statement: all rows land or none do. The
+      // NOT EXISTS keeps a re-run (or a path already uploaded here) from
+      // adding a second row for the same file.
+      const result = await getAdmin()
+        .insertInto('media_assets')
+        .columns([
+          'project_id', 'workspace_id', 'filename', 'content_type', 'size_bytes', 'content_hash',
+          'width', 'height', 'format', 'blurhash', 'focal_point', 'duration_seconds', 'alt', 'tags',
+          'original_path', 'variants', 'uploaded_by', 'source', 'created_at',
+        ])
+        .expression(eb => eb
+          .selectFrom('media_assets as s')
+          .select([
+            sql<string>`${toProjectId}::uuid`.as('project_id'),
+            sql<string>`${toWorkspaceId}::uuid`.as('workspace_id'),
+            's.filename', 's.content_type', 's.size_bytes', 's.content_hash',
+            's.width', 's.height', 's.format', 's.blurhash', 's.focal_point', 's.duration_seconds', 's.alt', 's.tags',
+            's.original_path', 's.variants', 's.uploaded_by', 's.source', 's.created_at',
+          ])
+          .where('s.project_id', '=', fromProjectId)
+          .where('s.original_path', 'in', originalPaths)
+          .where(({ not, exists, selectFrom }) => not(exists(
+            selectFrom('media_assets as t')
+              .select(sql`1`.as('one'))
+              .where('t.project_id', '=', toProjectId)
+              .whereRef('t.original_path', '=', 's.original_path'),
+          ))))
+        .executeTakeFirst()
+      return Number(result.numInsertedOrUpdatedRows ?? 0)
     },
 
     // ─── Media Usage ───

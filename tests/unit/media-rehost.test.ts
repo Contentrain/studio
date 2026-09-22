@@ -66,15 +66,32 @@ function createCdn(objects: Record<string, string[]>) {
   return cdn as unknown as CDNProvider & typeof cdn
 }
 
+function createLibrary(rows: Record<string, string[]>, opts: { failInsert?: boolean } = {}) {
+  const store = Object.fromEntries(Object.entries(rows).map(([k, v]) => [k, [...v]]))
+  const library = {
+    listMediaAssetPaths: vi.fn(async (projectId: string) => [...(store[projectId] ?? [])]),
+    copyMediaAssetRows: vi.fn(async (input: { fromProjectId: string, toProjectId: string, toWorkspaceId: string, originalPaths: string[] }) => {
+      if (opts.failInsert) throw new Error('insert failed')
+      const target = (store[input.toProjectId] ??= [])
+      const add = input.originalPaths.filter(p => (store[input.fromProjectId] ?? []).includes(p) && !target.includes(p))
+      target.push(...add)
+      return add.length
+    }),
+  }
+  return library
+}
+
 async function load() {
   return await import('../../server/utils/media-rehost')
 }
 
-function baseInput(git: GitProvider, cdn: CDNProvider, merge: ReturnType<typeof vi.fn>) {
+function baseInput(git: GitProvider, cdn: CDNProvider, merge: ReturnType<typeof vi.fn>, library = createLibrary({})) {
   return {
     git,
     cdn,
     merge,
+    library,
+    workspaceId: 'ws-1',
     contentRoot: '',
     projectId: 'new-proj',
     siteUrl: 'https://studio.example.com/',
@@ -212,13 +229,13 @@ describe('runMediaRehost', () => {
     }
 
     const preview = await runMediaRehost({ ...input, dryRun: true })
-    expect(preview.counts.copy).toEqual({ requested: true, toCopy: 3, copied: 0 })
+    expect(preview.counts.copy).toEqual({ requested: true, toCopy: 3, copied: 0, failed: [] })
     expect(preview.counts.missing).toEqual([])
     expect(cdn.copyObject).not.toHaveBeenCalled()
 
     const result = await runMediaRehost(input)
     expect(result.status).toBe('committed')
-    expect(result.counts.copy).toEqual({ requested: true, toCopy: 3, copied: 3 })
+    expect(result.counts.copy).toEqual({ requested: true, toCopy: 3, copied: 3, failed: [] })
     expect(cdn.copyObject).toHaveBeenCalledTimes(3)
     expect(cdn.copyObject).not.toHaveBeenCalledWith('old-proj', 'media/original/a.webp', 'new-proj', 'media/original/a.webp')
   })
@@ -254,5 +271,85 @@ describe('runMediaRehost', () => {
 
     expect(result.status).toBe('nothing_to_do')
     expect(git.applyPlan).not.toHaveBeenCalled()
+  })
+
+  it('dry run counts library rows to add and already there, touching nothing', async () => {
+    const { runMediaRehost } = await load()
+    const { git, merge } = createGit(repo())
+    const cdn = createCdn({ 'old-proj': ALL_PATHS, 'new-proj': ['media/original/a.webp'] })
+    // An old row whose file is gone from storage is not a candidate.
+    const library = createLibrary({ 'old-proj': [...ALL_PATHS, 'media/original/gone.webp'], 'new-proj': ['media/original/a.webp'] })
+
+    const result = await runMediaRehost({ ...baseInput(git, cdn, merge, library), siteUrl: 'https://staging.example.com', copyAssets: true, dryRun: true })
+
+    expect(result.counts.library).toEqual({ toAdd: 2, existing: 1, added: 0 })
+    expect(library.copyMediaAssetRows).not.toHaveBeenCalled()
+    expect(cdn.copyObject).not.toHaveBeenCalled()
+  })
+
+  it('adds the old library rows after the storage copy, skipping paths already listed, then commits', async () => {
+    const { runMediaRehost } = await load()
+    const { git, merge } = createGit(repo())
+    const cdn = createCdn({ 'old-proj': ALL_PATHS, 'new-proj': ['media/original/a.webp'] })
+    const library = createLibrary({ 'old-proj': ALL_PATHS, 'new-proj': ['media/original/a.webp'] })
+
+    const result = await runMediaRehost({ ...baseInput(git, cdn, merge, library), siteUrl: 'https://staging.example.com', copyAssets: true })
+
+    expect(result.status).toBe('committed')
+    expect(result.counts.library).toEqual({ toAdd: 2, existing: 1, added: 2 })
+    expect(library.copyMediaAssetRows).toHaveBeenCalledTimes(1)
+    expect(library.copyMediaAssetRows).toHaveBeenCalledWith({
+      fromProjectId: 'old-proj',
+      toProjectId: 'new-proj',
+      toWorkspaceId: 'ws-1',
+      originalPaths: ['media/original/b.png', 'media/original/c.jpg'],
+    })
+    // Rows only after every file is in place, and before the commit.
+    expect(cdn.copyObject.mock.invocationCallOrder.at(-1)!).toBeLessThan(library.copyMediaAssetRows.mock.invocationCallOrder[0]!)
+    expect(library.copyMediaAssetRows.mock.invocationCallOrder[0]!).toBeLessThan(git.applyPlan.mock.invocationCallOrder[0]!)
+  })
+
+  it('stops with nothing committed and no rows when a storage copy fails', async () => {
+    const { runMediaRehost } = await load()
+    const { git, merge } = createGit(repo())
+    const cdn = createCdn({ 'old-proj': ALL_PATHS, 'new-proj': [] })
+    cdn.copyObject.mockImplementationOnce(async () => {
+      throw new Error('R2 down')
+    })
+    const library = createLibrary({ 'old-proj': ALL_PATHS })
+
+    const result = await runMediaRehost({ ...baseInput(git, cdn, merge, library), siteUrl: 'https://staging.example.com', copyAssets: true })
+
+    expect(result.status).toBe('copy_failed')
+    expect(result.counts.copy.failed).toHaveLength(1)
+    expect(library.copyMediaAssetRows).not.toHaveBeenCalled()
+    expect(git.applyPlan).not.toHaveBeenCalled()
+  })
+
+  it('stops with nothing committed when the library insert fails', async () => {
+    const { runMediaRehost } = await load()
+    const { git, merge } = createGit(repo())
+    const cdn = createCdn({ 'old-proj': ALL_PATHS, 'new-proj': [] })
+    const library = createLibrary({ 'old-proj': ALL_PATHS }, { failInsert: true })
+
+    const result = await runMediaRehost({ ...baseInput(git, cdn, merge, library), siteUrl: 'https://staging.example.com', copyAssets: true })
+
+    expect(result.status).toBe('library_failed')
+    expect(result.counts.library).toEqual({ toAdd: 3, existing: 0, added: 0 })
+    expect(git.applyPlan).not.toHaveBeenCalled()
+  })
+
+  it('leaves the library alone without copyAssets', async () => {
+    const { runMediaRehost } = await load()
+    const { git, merge } = createGit(repo())
+    const cdn = createCdn({ 'new-proj': ALL_PATHS })
+    const library = createLibrary({ 'old-proj': ALL_PATHS })
+
+    const result = await runMediaRehost(baseInput(git, cdn, merge, library))
+
+    expect(result.status).toBe('committed')
+    expect(result.counts.library).toEqual({ toAdd: 0, existing: 0, added: 0 })
+    expect(library.listMediaAssetPaths).not.toHaveBeenCalled()
+    expect(library.copyMediaAssetRows).not.toHaveBeenCalled()
   })
 })
