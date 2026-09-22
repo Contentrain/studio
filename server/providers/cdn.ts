@@ -38,6 +38,13 @@ export interface CDNProvider {
   /** Purge CDN edge cache for specific paths. Called after upload. */
   purgeCache: (projectId: string, paths?: string[]) => Promise<void>
 
+  /**
+   * Server-side copy between two project namespaces of the same bucket (the
+   * media rehost after a project id change). Optional — callers fall back to
+   * get + put when a provider cannot copy in place.
+   */
+  copyObject?: (fromProjectId: string, fromPath: string, toProjectId: string, toPath: string) => Promise<void>
+
   /** Get the storage key for an object (bucket-relative). */
   getStorageKey: (projectId: string, path: string) => string
 }
