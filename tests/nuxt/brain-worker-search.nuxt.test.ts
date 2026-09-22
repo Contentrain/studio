@@ -1,4 +1,6 @@
 import 'fake-indexeddb/auto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -16,6 +18,19 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
  */
 
 const PROJECT = 'project-1'
+
+// Counts the search indexes the worker builds.
+const flexsearch = vi.hoisted(() => ({ builds: 0 }))
+vi.mock('flexsearch', async (importOriginal) => {
+  const actual = await importOriginal<{ default: { Document: new (options: unknown) => unknown } }>()
+  class CountingDocument extends (actual.default.Document as new (options: unknown) => object) {
+    constructor(options: unknown) {
+      super(options)
+      flexsearch.builds++
+    }
+  }
+  return { ...actual, default: { ...actual.default, Document: CountingDocument } }
+})
 
 const SYNC_PAYLOAD = {
   treeSha: 'sha-1',
@@ -123,5 +138,55 @@ describe('brain worker search after a reload', () => {
 
     const results = lastOfType('searchResult')?.results as unknown[]
     expect(results.length).toBeGreaterThan(0)
+  })
+
+  it('does not import FlexSearch at the top of the worker', () => {
+    // The worker answers `init` — the cache key and the cached snapshot —
+    // without it. A top-level import made that first answer wait for the whole
+    // library to load.
+    const source = readFileSync(resolve(process.cwd(), 'app/workers/content-brain.worker.ts'), 'utf8')
+    expect(source).not.toMatch(/^import\b[^\n]*['"]flexsearch['"]/m)
+    expect(source).toMatch(/await import\('flexsearch'\)/)
+  })
+
+  it('builds no index until someone searches, then one', async () => {
+    const fresh = await bootWorker()
+    flexsearch.builds = 0
+    await fresh({ type: 'init', projectId: PROJECT })
+    await fresh({ type: 'sync', projectId: PROJECT, payload: SYNC_PAYLOAD })
+    await fresh({ type: 'sync', projectId: PROJECT, payload: { delta: true, treeSha: 'sha-1' } })
+    expect(flexsearch.builds).toBe(0)
+
+    await fresh({ type: 'search', id: 's5', query: 'creator', limit: 10 })
+    await fresh({ type: 'search', id: 's5b', query: 'friday', limit: 10 })
+    expect(flexsearch.builds).toBe(1)
+    expect((lastOfType('searchResult')?.results as unknown[]).length).toBeGreaterThan(0)
+  })
+
+  it('searches the new content after a sync replaced it', async () => {
+    const fresh = await bootWorker()
+    await fresh({ type: 'init', projectId: PROJECT })
+    await fresh({ type: 'search', id: 's6', query: 'creator', limit: 10 })
+    expect((lastOfType('searchResult')?.results as unknown[]).length).toBeGreaterThan(0)
+
+    // The same project, now without anything that says "creator".
+    await fresh({
+      type: 'sync',
+      projectId: PROJECT,
+      payload: {
+        ...SYNC_PAYLOAD,
+        treeSha: 'sha-2',
+        content: {
+          'articles:en': { data: { a1: { title: 'Ship it on Friday', body: 'Nothing here' } }, meta: null, kind: 'collection' },
+          'authors:en': { data: { u1: { name: 'Ahmet', bio: 'writer' } }, meta: null, kind: 'collection' },
+        },
+      },
+    })
+    await fresh({ type: 'search', id: 's7', query: 'creator', limit: 10 })
+
+    expect(lastOfType('searchResult')?.results).toEqual([])
+
+    // Put the shared IndexedDB back the way the other tests expect it.
+    await fresh({ type: 'sync', projectId: PROJECT, payload: SYNC_PAYLOAD })
   })
 })

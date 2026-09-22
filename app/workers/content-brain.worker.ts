@@ -7,7 +7,6 @@
  */
 
 import { del, get, keys, set } from 'idb-keyval'
-import FlexSearch from 'flexsearch'
 // A worker has no Nuxt auto-imports, so these are explicit.
 import { collectSearchHits, indexFetchLimit } from '../utils/search-results'
 import { createSharedStores } from './brain-idb-store'
@@ -19,9 +18,16 @@ const { 'brain-meta': metaStore, 'brain-content': contentStore } = createSharedS
   ['brain-meta', 'brain-content'],
 )
 
-// FlexSearch index (no published types — use any)
+// FlexSearch index (no published types — use any). Built on the first search,
+// not on load: FlexSearch is imported lazily so the worker can answer `init`
+// — the cache key and the cached snapshot — before that module is even fetched.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let searchIndex: any = null
+// The build in flight, so concurrent searches share it instead of each building.
+let indexBuild: Promise<void> | null = null
+// Bumped whenever the content under the index changes; a build that started
+// before the change must not install an index of the old content.
+let indexGeneration = 0
 
 // BroadcastChannel for cross-tab sync
 const channel = new BroadcastChannel('cr-brain')
@@ -64,13 +70,8 @@ self.onmessage = async (event: MessageEvent) => {
         const { payload, projectId } = msg
 
         if (payload.delta && !payload.config && !payload.models && !payload.content) {
-          // No changes on the server — but "no changes" is about the repo, not
-          // about this worker. A worker is created fresh on every page load and
-          // its FlexSearch index lives only in memory, while the content it is
-          // built from lives in IndexedDB and survives. So on the common path —
-          // reload a project nobody has edited — the index was never built and
-          // search answered nothing, forever, without an error.
-          await ensureSearchIndex(projectId)
+          // No changes on the server. The search index is still built from
+          // IndexedDB — on the first search, which calls `ensureSearchIndex`.
           self.postMessage({ type: 'synced', treeSha: payload.treeSha, stats: null })
           break
         }
@@ -128,8 +129,8 @@ self.onmessage = async (event: MessageEvent) => {
           timestamp: Date.now(),
         } satisfies CachedMeta, metaStore)
 
-        // Rebuild FlexSearch index
-        await rebuildSearchIndex(projectId)
+        // The index now describes old content; the next search rebuilds it.
+        dropSearchIndex()
 
         // Notify other tabs
         channel.postMessage({ type: 'synced', projectId, treeSha: payload.treeSha })
@@ -224,13 +225,13 @@ self.onmessage = async (event: MessageEvent) => {
         for (const k of allContentKeys) {
           if (String(k).startsWith(`${projectId}:`)) await del(k, contentStore)
         }
-        searchIndex = null
+        dropSearchIndex()
         self.postMessage({ type: 'invalidated' })
         break
       }
 
       case 'destroy': {
-        searchIndex = null
+        dropSearchIndex()
         currentProjectId = null
         channel.close()
         self.close()
@@ -316,19 +317,39 @@ async function pruneProject(projectId: string, live: Set<string>) {
   }
 }
 
+function dropSearchIndex() {
+  indexGeneration++
+  searchIndex = null
+  indexBuild = null
+}
+
 /**
  * Build the index if this worker does not have one yet.
  *
  * Cheap when it already does, which is what lets every entry point call it
- * without thinking about whether some other one already has.
+ * without thinking about whether some other one already has. Concurrent calls
+ * share one build.
  */
 async function ensureSearchIndex(projectId: string | null) {
-  if (searchIndex || !projectId) return
-  await rebuildSearchIndex(projectId)
+  if (!projectId) return
+  // A sync can drop the index while a build is running. That build then
+  // installs nothing, and the next pass builds over the newer content.
+  for (let attempt = 0; attempt < 3 && !searchIndex; attempt++) {
+    if (!indexBuild) {
+      const generation = indexGeneration
+      indexBuild = buildSearchIndex(projectId).then((index) => {
+        if (generation === indexGeneration) searchIndex = index
+      }).finally(() => {
+        if (generation === indexGeneration) indexBuild = null
+      })
+    }
+    await indexBuild
+  }
 }
 
-async function rebuildSearchIndex(projectId: string) {
-  searchIndex = new FlexSearch.Document({
+async function buildSearchIndex(projectId: string) {
+  const { default: FlexSearch } = await import('flexsearch')
+  const index = new FlexSearch.Document({
     document: {
       id: 'id',
       index: ['text'],
@@ -356,7 +377,7 @@ async function rebuildSearchIndex(projectId: string) {
       for (const [entryId, entry] of Object.entries(data as Record<string, unknown>)) {
         const text = extractSearchableText(entry)
         if (text) {
-          searchIndex.add({
+          index.add({
             id: `${modelId}:${locale}:${entryId}`,
             text,
             modelId,
@@ -374,7 +395,7 @@ async function rebuildSearchIndex(projectId: string) {
           const slug = (doc.slug as string) ?? ''
           const text = extractSearchableText(doc)
           if (text && slug) {
-            searchIndex.add({
+            index.add({
               id: `${modelId}:${locale}:${slug}`,
               text,
               modelId,
@@ -386,6 +407,8 @@ async function rebuildSearchIndex(projectId: string) {
       }
     }
   }
+
+  return index
 }
 
 function extractSearchableText(value: unknown): string {

@@ -155,7 +155,9 @@ describe('useContentBrain sync', () => {
     brain.initBrain('project-4')
     const pending = brain.sync('workspace-1', 'project-4')
 
-    await vi.advanceTimersByTimeAsync(3000)
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
     await pending
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -241,16 +243,16 @@ describe('useContentBrain on a warm reload', () => {
     vi.useFakeTimers()
     workerState.treeSha = DIGEST
     workerState.snapshot = cachedSnapshot('tr')
-    workerState.replyDelayMs = 5000
+    workerState.replyDelayMs = 15_000
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue(FULL_RESPONSE))
 
     const { useContentBrain } = await import('../../../app/composables/useContentBrain')
     const brain = useContentBrain()
     brain.initBrain('project-slow')
     const pending = brain.sync('workspace-1', 'project-slow')
-    await vi.advanceTimersByTimeAsync(3000)
+    await vi.advanceTimersByTimeAsync(10_000)
     await pending
-    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(5_000)
 
     expect(brain.config.value?.locales?.default).toBe('en')
     expect(brain.models.value).toHaveLength(0)
