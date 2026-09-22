@@ -25,7 +25,8 @@ describe('usage API', () => {
           overage_settings: { ai_messages: true },
           media_storage_bytes: 2 * 1024 * 1024 * 1024, // 2 GB
         }),
-        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(35),
+        // BYOA turns are read separately and never folded into the credits.
+        getWorkspaceMonthlyAIUsage: vi.fn(async (_ws: string, _month: string, source?: string) => source === 'byoa' ? 4 : 35),
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(10),
         countMonthlySubmissions: vi.fn().mockResolvedValue(80),
         countMonthlyComments: vi.fn().mockResolvedValue(12),
@@ -52,6 +53,8 @@ describe('usage API', () => {
         overageUnits: 0,
         percentage: 10,
       })
+
+      expect(result.byoaRequests).toBe(4)
 
       // Form submissions: 80/3000 ≈ 3%
       const forms = result.categories.find((c: { key: string }) => c.key === 'form_submissions')

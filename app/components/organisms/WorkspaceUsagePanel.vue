@@ -140,6 +140,13 @@ function categoryIcon(key: string): string {
           :overage-unit-price="category.overageUnitPrice"
         />
 
+        <p
+          v-if="category.key === 'ai_messages' && (usage.byoaRequests ?? 0) > 0"
+          class="mt-2 text-xs text-muted"
+        >
+          {{ t('billing.usage_byoa_requests', { count: usage.byoaRequests ?? 0 }) }}
+        </p>
+
         <!-- Limit reached warning (overage disabled) -->
         <div
           v-if="category.percentage >= 100 && !category.overageEnabled && category.limit > 0"

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 import { ensureContentBranch } from '../../server/utils/ensure-content-branch'
+import { openWriteSnapshot, writeBase } from '../../server/utils/content-engine/helpers'
 
 async function loadProjectCreateHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/index.post')).default
@@ -226,6 +227,8 @@ describe('project config and branch route integration', () => {
     }))
     vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/vocabulary/1234567890-abcd'))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('openWriteSnapshot', openWriteSnapshot)
+    vi.stubGlobal('writeBase', writeBase)
     // The review resolves entries against the project's own models; the branch
     // list uses the same snapshot to name them.
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
@@ -364,6 +367,8 @@ describe('project config and branch route integration', () => {
     }))
     vi.stubGlobal('generateBranchName', vi.fn(() => `cr/content/vocabulary/${merges}-abcd`))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('openWriteSnapshot', openWriteSnapshot)
+    vi.stubGlobal('writeBase', writeBase)
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({
       ensureContentBranch: vi.fn().mockResolvedValue(undefined),
       mergeBranch,
