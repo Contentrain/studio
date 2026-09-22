@@ -35,6 +35,8 @@ export interface UsageData {
   /** Optional: absent from an older server response. */
   period?: UsagePeriodInfo
   categories: UsageCategory[]
+  /** AI turns run on members' own keys this period — outside the quota, not billed. Absent from an older server response. */
+  byoaRequests?: number
   totalOverageAmount: number
   projectedOverageAmount: number
 }

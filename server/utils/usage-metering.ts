@@ -45,6 +45,11 @@ async function recordUsage(input: {
   }
 }
 
+/**
+ * Studio-funded AI credits only. A BYOA turn runs on the user's own
+ * Anthropic key and must never reach this meter — the chat route skips
+ * the call for it — which is why `source` is fixed to `studio` here.
+ */
 export function recordAIUsage(input: {
   workspaceId: string
   count: number

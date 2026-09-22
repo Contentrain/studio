@@ -912,8 +912,12 @@ export interface DatabaseProvider {
   // USAGE AGGREGATION (billing dashboard)
   // ═══════════════════════════════════════════════════
 
-  /** Sum AI message count (source=studio) across all users in workspace for a month. */
-  getWorkspaceMonthlyAIUsage: (workspaceId: string, month: string) => Promise<number>
+  /**
+   * Sum AI usage across all users in workspace for a month. `studio`
+   * (default) is the credit pool the plan limit applies to; `byoa` counts
+   * turns run on members' own keys, which are outside the quota.
+   */
+  getWorkspaceMonthlyAIUsage: (workspaceId: string, month: string, source?: 'studio' | 'byoa') => Promise<number>
   /** Sum API message count (source=api) across all API keys in workspace for a month. */
   getWorkspaceMonthlyAPIUsage: (workspaceId: string, month: string) => Promise<number>
   /** Sum CDN bandwidth bytes across all projects in workspace for a month. */

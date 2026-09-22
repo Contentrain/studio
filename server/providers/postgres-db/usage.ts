@@ -18,14 +18,14 @@ type UsageMethods = Pick<
 
 export function usageMethods(): UsageMethods {
   return {
-    async getWorkspaceMonthlyAIUsage(workspaceId, month) {
+    async getWorkspaceMonthlyAIUsage(workspaceId, month, source = 'studio') {
       try {
         const row = await getAdmin()
           .selectFrom('agent_usage')
           .select(eb => eb.fn.coalesce(eb.fn.sum('message_count'), eb.lit(0)).as('total'))
           .where('workspace_id', '=', workspaceId)
           .where('month', '=', month)
-          .where('source', '=', 'studio')
+          .where('source', '=', source)
           .executeTakeFirst()
 
         return Number(row?.total ?? 0)
