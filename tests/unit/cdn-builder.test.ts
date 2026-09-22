@@ -506,6 +506,103 @@ describe('cdn builder', () => {
     expect(objects.has('proj:_bundle/en.json')).toBe(true)
   })
 
+  /**
+   * A selective build writes only the models a push touched, then writes a
+   * manifest listing every model at that commit. On a store that has never
+   * held a full build that manifest is a lie: the untouched models were
+   * never uploaded, so consumers read "complete at commit X" and 404 on
+   * everything the push happened to miss (#278).
+   *
+   * A project connected to an existing repo hits this on its very first
+   * push — the payload carries an ordinary `before`, so `resolvePushDiff`
+   * sees a perfectly good diff and takes the selective path over an empty
+   * store.
+   */
+  describe('selective builds on a store that is not known to be complete', () => {
+    const twoModelFiles = {
+      '.contentrain/config.json': JSON.stringify({
+        stack: 'nuxt',
+        locales: { default: 'en', supported: ['en'] },
+        domains: ['marketing'],
+      }),
+      '.contentrain/models/faq.json': JSON.stringify({
+        id: 'faq', name: 'FAQ', kind: 'collection', domain: 'marketing', i18n: true, fields: {},
+      }),
+      '.contentrain/models/team.json': JSON.stringify({
+        id: 'team', name: 'Team', kind: 'collection', domain: 'marketing', i18n: true, fields: {},
+      }),
+      '.contentrain/content/marketing/faq/en.json': JSON.stringify({ a1: { question: 'Q' } }),
+      '.contentrain/content/marketing/team/en.json': JSON.stringify({ m1: { name: 'Member' } }),
+    }
+
+    function twoModelGit() {
+      const normalize = (p: string) => p.replace(/^\/+/, '').replace(/\/$/, '')
+      return {
+        ...createGitProvider(twoModelFiles),
+        listDirectory: vi.fn(async (p: string) =>
+          normalize(p) === '.contentrain/models' ? ['faq.json', 'team.json'] : []),
+      } as unknown as GitProvider
+    }
+
+    async function buildTouchingOnlyFaq(seedManifest?: Record<string, unknown>) {
+      const { provider, objects } = createCDNProvider()
+      if (seedManifest) objects.set('proj:_manifest.json', JSON.stringify(seedManifest))
+      const result = await executeCDNBuild({
+        projectId: 'proj',
+        buildId: 'b',
+        git: twoModelGit(),
+        cdn: provider,
+        contentRoot: '',
+        commitSha: 'sha1',
+        branch: 'main',
+        changedPaths: ['.contentrain/content/marketing/faq/en.json'],
+      })
+      return { result, objects }
+    }
+
+    it('builds every model when the store has no manifest at all', async () => {
+      const { result, objects } = await buildTouchingOnlyFaq()
+
+      // Promoted: the untouched model is uploaded too, so the manifest's
+      // claim about it is true.
+      expect(result.changedModels.sort()).toEqual(['faq', 'team'])
+      expect(objects.has('proj:content/team/en.json')).toBe(true)
+    })
+
+    it('builds every model when the manifest predates completeness tracking', async () => {
+      // What every store written before this change looks like. Each one
+      // earns exactly one promoted rebuild, on its own next push.
+      const { result, objects } = await buildTouchingOnlyFaq({ version: '1', commitSha: 'old', branch: 'main' })
+
+      expect(result.changedModels.sort()).toEqual(['faq', 'team'])
+      expect(objects.has('proj:content/team/en.json')).toBe(true)
+    })
+
+    it('builds every model when the store was built from another branch', async () => {
+      const { result } = await buildTouchingOnlyFaq({
+        version: '1', commitSha: 'old', branch: 'develop', complete: true,
+      })
+
+      expect(result.changedModels.sort()).toEqual(['faq', 'team'])
+    })
+
+    it('stays selective once the store says it is complete', async () => {
+      // The promotion must not fire on every push forever — that would turn
+      // every content edit into a full rebuild.
+      const { result } = await buildTouchingOnlyFaq({
+        version: '1', commitSha: 'old', branch: 'main', complete: true,
+      })
+
+      expect(result.changedModels).toEqual(['faq'])
+    })
+
+    it('marks the manifest complete so the next build can trust it', async () => {
+      const { objects } = await buildTouchingOnlyFaq()
+
+      expect(JSON.parse(objects.get('proj:_manifest.json') ?? '{}').complete).toBe(true)
+    })
+  })
+
   it('merges unchanged models from storage into the bundle on selective builds', async () => {
     const files = {
       '.contentrain/config.json': JSON.stringify({
@@ -546,6 +643,10 @@ describe('cdn builder', () => {
 
     // The unchanged model's artifact already lives in CDN storage.
     objects.set('proj:content/team/en.json', JSON.stringify({ m1: { name: 'Existing member' } }))
+    // …because a completed full build put it there. A selective build only
+    // runs on top of a store that says so; without this the build is
+    // promoted to a full rebuild and there is nothing to merge from.
+    objects.set('proj:_manifest.json', JSON.stringify({ version: '1', commitSha: 'old', branch: 'main', complete: true }))
 
     const result = await executeCDNBuild({
       projectId: 'proj',
@@ -593,7 +694,7 @@ describe('cdn builder', () => {
 
     // Seed a pre-existing bundle + manifest at an OLD commit, as a healthy
     // full rebuild would have left them. The no-op must not touch either.
-    objects.set('proj:_manifest.json', JSON.stringify({ version: '1', commitSha: 'old' }))
+    objects.set('proj:_manifest.json', JSON.stringify({ version: '1', commitSha: 'old', branch: 'main', complete: true }))
     objects.set('proj:_bundle/en.json', JSON.stringify({ version: '1', commitSha: 'old', paths: {} }))
 
     const result = await executeCDNBuild({
