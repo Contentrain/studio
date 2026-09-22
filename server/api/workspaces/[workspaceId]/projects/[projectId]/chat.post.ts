@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
   // authored by `/attachments` but echoed back here, so they are
   // untrusted: throws 400 on count/size violations, silently drops
   // forged/invalid blocks. The summary feeds the agent system prompt.
-  const { blocks: attachmentBlocks, summary: attachmentSummary } = validateAttachmentBlocks(body.attachments, { projectId })
+  const { blocks: attachmentBlocks, summary: attachmentSummary, downscaled: attachmentDownscaled } = validateAttachmentBlocks(body.attachments, { projectId })
   const userContent: string | AIContentBlock[] = attachmentBlocks.length > 0
     ? [...attachmentBlocks, { type: 'text', text: body.message }]
     : body.message
@@ -303,7 +303,31 @@ export default defineEventHandler(async (event) => {
       try {
         for await (const evt of runConversationLoop(
           { model, apiKey, systemPrompt, messages, tools: aiTools, maxOutputTokens: maxOutputTokensFor(model), abortSignal: abortController.signal },
-          { engine: contentEngine, git, userEmail: session.user.email ?? '', userId: session.user.id, contentRoot, workflow, permissions, plan, projectId, workspaceId, uiContext, phase },
+          {
+            engine: contentEngine,
+            git,
+            userEmail: session.user.email ?? '',
+            userId: session.user.id,
+            contentRoot,
+            workflow,
+            permissions,
+            plan,
+            projectId,
+            workspaceId,
+            uiContext,
+            phase,
+            // A save that places an attachment into content promotes it into
+            // the media library, behind the same storage limit as uploads (#289).
+            attachmentPromotion: {
+              workspaceId,
+              projectId,
+              userId: session.user.id,
+              plan,
+              cdnEnabled: project.cdn_enabled === true,
+              storageLimitBytes: getEffectiveLimit(getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024, 'media.storage_gb', overageSettings),
+              downscaled: attachmentDownscaled,
+            },
+          },
         )) {
         // Stop processing if client disconnected
           if (abortController.signal.aborted) break

@@ -3,16 +3,21 @@
  *
  * Turns a user-attached file or a pasted URL into self-contained
  * `AIContentBlock[]` the chat agent can consume. Design constraints
- * (see plan): EPHEMERAL — no new storage provider, no new billing line;
- * converted content rides the existing chat token metering. Per type:
+ * (see plan): EPHEMERAL to the conversation — no new storage provider, no
+ * new billing line; converted content rides the existing chat token
+ * metering. One deliberate exception (#289): a context image's ORIGINAL is
+ * kept for a day under the bucket's `_tmp/` prefix (`attachment-stash.ts`),
+ * outside the quota, so that a write placing the image into a field can
+ * promote the original rather than the downscaled copy the model saw. Per type:
  *
  *   - csv / txt / md / tsv / json  → text block (provenance-headed)
  *   - docx (Word)                  → text block (mammoth)
  *   - xlsx (Excel)                 → text block, Markdown tables (exceljs)
  *   - pdf                          → native `document` (base64) block
  *   - image (png/jpeg/gif/webp)    → image block:
- *       · CDN/media ON  → upload to the media library, reference by URL
- *       · CDN/media OFF → sharp-downscaled, size-capped base64 (fallback)
+ *       · intent `media`   → upload to the media library, reference by URL
+ *       · intent `context` → sharp-downscaled, size-capped base64 (+ the
+ *                            one-day original, where media is available)
  *   - link (URL)                   → text block (HTML → text)
  *
  * Binaries are discarded after conversion (except the CDN image path,
@@ -32,8 +37,9 @@ import sharp from 'sharp'
 import type { AIContentBlock, AIImageMediaType } from '../providers/ai'
 import { extractMediaStoragePath } from './media-rewrite'
 import { publicMediaBase, toDeliveryUrl } from './media-url'
-import { resolveVariantConfig } from './media-variants'
-import { useDatabaseProvider, useMediaProvider } from './providers'
+import { isStashId, stashOriginal } from './attachment-stash'
+import { uploadWithStorageReservation } from './media-quota-upload'
+import { useCDNProvider, useMediaProvider } from './providers'
 import { isAllowedWebhookUrl } from './webhook-engine'
 
 /**
@@ -66,6 +72,11 @@ export interface AttachmentRef {
   bytes?: number
   /** True when converted text was truncated to the char cap. */
   truncated?: boolean
+  /**
+   * A context image whose original is kept for a day: the agent writes
+   * `attachment:<stashId>` into a media field and the write promotes it.
+   */
+  stashId?: string
   /** Set when ingestion failed; `blocks` is then empty. */
   error?: string
   /**
@@ -176,6 +187,11 @@ export interface AttachmentSummary {
 export interface ValidatedAttachments {
   blocks: AIContentBlock[]
   summary: AttachmentSummary[]
+  /**
+   * This turn's downscaled copy of each stashed image, by stash id — what a
+   * promotion falls back to when the original has already expired.
+   */
+  downscaled: Map<string, { buffer: Buffer, contentType: string, filename: string }>
 }
 
 /**
@@ -198,17 +214,21 @@ export function validateAttachmentBlocks(
   opts: { projectId: string },
 ): ValidatedAttachments {
   if (!Array.isArray(attachments) || attachments.length === 0)
-    return { blocks: [], summary: [] }
+    return { blocks: [], summary: [], downscaled: new Map() }
   if (attachments.length > MAX_ATTACHMENT_COUNT)
     throw createError({ statusCode: 400, message: errorMessage('attachment.too_many', { limit: MAX_ATTACHMENT_COUNT }) })
 
   const deliveryPrefix = `${publicMediaBase(opts.projectId)}/`
   const blocks: AIContentBlock[] = []
   const summary: AttachmentSummary[] = []
+  const downscaled: ValidatedAttachments['downscaled'] = new Map()
   let totalChars = 0
 
   for (const raw of attachments) {
-    const att = raw as { blocks?: unknown, filename?: unknown }
+    const att = raw as { blocks?: unknown, filename?: unknown, stashId?: unknown }
+    // Echoed by the client, so only its shape is trusted here; the id is
+    // looked up under the caller's own workspace + project at promotion.
+    const stashId = isStashId(att?.stashId) ? att.stashId : undefined
     const rawBlocks = Array.isArray(att?.blocks) ? att.blocks : []
     const filename = typeof att?.filename === 'string' ? att.filename.slice(0, 200) : 'attachment'
     const attBlocks: AIContentBlock[] = []
@@ -223,8 +243,13 @@ export function validateAttachmentBlocks(
       totalChars += JSON.stringify(block).length
       if (block.type === 'image') {
         attKind = 'image'
-        if (block.source.type === 'url') attUrl = block.source.url
-        else hasBase64Image = true
+        if (block.source.type === 'url') {
+          attUrl = block.source.url
+        }
+        else {
+          hasBase64Image = true
+          if (stashId) downscaled.set(stashId, { buffer: Buffer.from(block.source.data, 'base64'), contentType: block.source.mediaType, filename })
+        }
       }
       else if (block.type === 'document') {
         attKind = 'document'
@@ -239,7 +264,7 @@ export function validateAttachmentBlocks(
     // block is invisible to it. A server-authored reference line ahead of
     // the image is the only way the agent can know the asset's address —
     // or know that an ephemeral image has none.
-    const descriptor = buildImageDescriptor(filename, attUrl, hasBase64Image)
+    const descriptor = buildImageDescriptor(filename, attUrl, hasBase64Image, stashId)
     if (descriptor) blocks.push(descriptor)
 
     blocks.push(...attBlocks)
@@ -249,7 +274,7 @@ export function validateAttachmentBlocks(
   if (totalChars > MAX_TOTAL_ATTACHMENT_CHARS)
     throw createError({ statusCode: 400, message: errorMessage('attachment.payload_too_large') })
 
-  return { blocks, summary }
+  return { blocks, summary, downscaled }
 }
 
 /**
@@ -258,7 +283,7 @@ export function validateAttachmentBlocks(
  * visible to it, which historically made the agent invent URLs/UUIDs or
  * re-ask the user for something it was already given.
  */
-function buildImageDescriptor(filename: string, url: string | undefined, hasBase64Image: boolean): AIContentBlock | null {
+function buildImageDescriptor(filename: string, url: string | undefined, hasBase64Image: boolean, stashId?: string): AIContentBlock | null {
   if (url) {
     const storagePath = extractMediaStoragePath(url)
     return {
@@ -266,6 +291,15 @@ function buildImageDescriptor(filename: string, url: string | undefined, hasBase
       text: `[Attached image "${filename}" — stored in the media library.`
         + ` Delivery URL: ${url}${storagePath ? ` — storage path: ${storagePath}` : ''}.`
         + ` Use this exact URL in image/video/file fields via save_content. Do NOT call upload_media for it.]`,
+    }
+  }
+  if (hasBase64Image && stashId) {
+    return {
+      type: 'text',
+      text: `[Attached image "${filename}" — not in the media library yet.`
+        + ` To use it in an image/video/file field (or as a markdown image), write exactly attachment:${stashId} as the value;`
+        + ` the save stores the original in the media library and its result lists the promoted asset.`
+        + ` Usable for 24 hours. Never invent media URLs or paths.]`,
     }
   }
   if (hasBase64Image) {
@@ -380,64 +414,53 @@ async function ingestImage(input: IngestFileInput, mime: AIImageMediaType): Prom
     // Same atomic reservation as the media routes. A full library does not
     // fail the attachment: the image still reaches the agent as context, and
     // the user is told it was not stored.
-    const db = useDatabaseProvider()
-    const reserveBytes = input.buffer.length
-    let storageReserved = false
-    if (input.storageLimitBytes && input.storageLimitBytes > 0) {
-      const reservation = await db.reserveStorageIfAllowed(input.workspaceId, reserveBytes, input.storageLimitBytes).catch(() => null)
-      if (!reservation)
-        return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_upload_failed') })
-      if (!reservation.allowed) {
-        const ref = await ingestContextImage(input, mime, id)
-        return ref.error ? ref : { ...ref, notice: errorMessage('attachment.storage_full_context') }
-      }
-      storageReserved = true
+    const upload = await uploadWithStorageReservation({
+      media,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      userId: input.userId,
+      buffer: input.buffer,
+      filename: input.filename,
+      contentType: mime,
+      storageLimitBytes: input.storageLimitBytes,
+    })
+    if (!upload.ok && upload.reason === 'quota') {
+      const ref = await ingestContextImage(input, mime, id)
+      return ref.error ? ref : { ...ref, notice: errorMessage('attachment.storage_full_context') }
     }
-    try {
-      const asset = await media.upload({
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        file: input.buffer,
-        filename: input.filename,
-        contentType: mime,
-        variants: resolveVariantConfig(undefined),
-        uploadedBy: input.userId,
-        source: 'upload',
-        skipStorageIncrement: storageReserved,
-      })
-      if (storageReserved) {
-        const delta = (typeof asset.size === 'number' ? asset.size : 0) - reserveBytes
-        if (delta !== 0) await db.incrementWorkspaceStorageBytes(input.workspaceId, delta).catch(() => {})
-      }
-      const url = toDeliveryUrl(input.projectId, asset.originalPath)
-      return {
-        id,
-        source: 'upload',
-        filename: input.filename,
-        mime,
-        kind: 'image',
-        destination: 'media',
-        blocks: [{ type: 'image', source: { type: 'url', url } }],
-        preview: url,
-        bytes: asset.size,
-      }
-    }
-    catch {
-      if (storageReserved) await db.incrementWorkspaceStorageBytes(input.workspaceId, -reserveBytes).catch(() => {})
+    if (!upload.ok)
       return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.media_upload_failed') })
+    const url = toDeliveryUrl(input.projectId, upload.asset.originalPath)
+    return {
+      id,
+      source: 'upload',
+      filename: input.filename,
+      mime,
+      kind: 'image',
+      destination: 'media',
+      blocks: [{ type: 'image', source: { type: 'url', url } }],
+      preview: url,
+      bytes: upload.asset.size,
     }
   }
 
   return ingestContextImage(input, mime, id)
 }
 
-/** Context (default): downscale + size-cap, emit base64 webp. Ephemeral. */
+/**
+ * Context (default): downscale + size-cap, emit base64 webp. The model sees
+ * only this copy. Where the project could store media, the original is also
+ * kept for a day (`attachment-stash.ts`) so a later write that places the
+ * image into a field promotes the original, not the downscaled copy.
+ */
 async function ingestContextImage(input: IngestFileInput, mime: AIImageMediaType, id: string): Promise<AttachmentRef> {
   try {
     const optimized = await optimizeContextImage(input.buffer)
     if (!optimized)
       return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.image_too_large') })
+    const stashId = await stashForPromotion(input, mime)
     return {
+      ...(stashId ? { stashId } : {}),
       id,
       source: 'upload',
       filename: input.filename,
@@ -450,6 +473,19 @@ async function ingestContextImage(input: IngestFileInput, mime: AIImageMediaType
   }
   catch {
     return errorRef({ filename: input.filename, mime, source: 'upload', kind: 'image', error: errorMessage('attachment.image_decode_failed') })
+  }
+}
+
+/** Keep the original when a write could promote it; best-effort, never fails the attachment. */
+async function stashForPromotion(input: IngestFileInput, mime: AIImageMediaType): Promise<string | undefined> {
+  try {
+    if (input.cdnEnabled !== true || !hasFeature(input.plan, 'media.upload') || !useMediaProvider()) return undefined
+    const cdn = useCDNProvider()
+    if (!cdn) return undefined
+    return await stashOriginal(cdn, { workspaceId: input.workspaceId, projectId: input.projectId }, { buffer: input.buffer, contentType: mime, filename: input.filename })
+  }
+  catch {
+    return undefined
   }
 }
 
