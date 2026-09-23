@@ -16,6 +16,7 @@ import { withTestServer } from '../helpers/http'
 const state = vi.hoisted(() => ({
   workspaceApiUsage: 0,
   usageReadFails: false,
+  usageReadsZero: false,
   overage: false,
   modelCalls: 0,
   meter: [] as number[],
@@ -54,6 +55,8 @@ vi.mock('../../server/utils/providers', () => ({
     },
     getWorkspaceMonthlyAPIUsage: async () => {
       if (state.usageReadFails) throw new Error('connection reset')
+      // What the postgres and supabase readers return when their query fails.
+      if (state.usageReadsZero) return 0
       return state.workspaceApiUsage
     },
     decrementAPIUsage: async () => { state.workspaceApiUsage -= 1 },
@@ -123,6 +126,7 @@ describe('Conversation API — the payment meter respects overage off (MG-12 D1)
     state.meter = []
     state.modelCalls = 0
     state.usageReadFails = false
+    state.usageReadsZero = false
     vi.stubGlobal('recordAPIUsage', vi.fn(async (input: { count: number }) => {
       state.meter.push(input.count)
     }))
@@ -169,5 +173,19 @@ describe('Conversation API — the payment meter respects overage off (MG-12 D1)
     expect(state.modelCalls).toBe(0)
     expect(state.meter).toEqual([])
     expect(state.workspaceApiUsage).toBe(10)
+  })
+
+  it('overage off and the usage read swallows its error (returns 0): refused, refunded, nothing metered', async () => {
+    // QA-4: getWorkspaceMonthlyAPIUsage catches its own errors and returns 0
+    // in both providers. After the reservation the total is at least 1, so 0
+    // means the read failed; treated as a total, it would open an allowance
+    // of the whole plan and meter this 45-credit call in full.
+    state.workspaceApiUsage = 139
+    state.usageReadsZero = true
+
+    expect(await sendApiMessage({ overage: false })).toBe(503)
+    expect(state.modelCalls).toBe(0)
+    expect(state.meter).toEqual([])
+    expect(state.workspaceApiUsage).toBe(139)
   })
 })

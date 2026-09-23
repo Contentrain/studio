@@ -248,8 +248,8 @@ async function runConversationMessage(
     // usage past the allowance is recorded in `api_message_usage` but never
     // sent to the payment provider, which would bill it as overage the
     // workspace did not enable. With overage on (or an unlimited plan) the
-    // call is metered in full. If the workspace total cannot be read the
-    // call fails closed: it is refused before any model work, and the
+    // call is metered in full. If the workspace total cannot be read (an
+    // error, or a total below the credit just reserved) the call fails closed: it is refused before any model work, and the
     // `finally` below refunds the reservation. Metering blind could bill
     // overage the workspace switched off.
     const overageOn = workspaceLimit > workspacePlanLimit
@@ -262,6 +262,13 @@ async function runConversationMessage(
       }
       catch (err) {
         reportBillingRisk(err, { op: 'conversation-api.meter-allowance', workspaceId: keyData.workspaceId })
+        throw createError({ statusCode: 503, message: errorMessage('conversation.usage_unavailable') })
+      }
+      // The credit reserved above makes the total at least 1. Below that the
+      // read failed silently (both providers' readers turn an error into 0),
+      // and 0 would open an allowance of the whole plan plus one.
+      if (!(used >= 1)) {
+        reportBillingRisk(new Error(`workspace API usage read ${used} after a reservation`), { op: 'conversation-api.meter-allowance', workspaceId: keyData.workspaceId })
         throw createError({ statusCode: 503, message: errorMessage('conversation.usage_unavailable') })
       }
       meterAllowance = Math.max(0, workspacePlanLimit - (used - 1))
