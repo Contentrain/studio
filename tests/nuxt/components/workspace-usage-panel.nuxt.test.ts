@@ -75,4 +75,19 @@ describe('WorkspaceUsagePanel', () => {
     expect(wrapper.text()).not.toContain('Allow overage')
     expect(wrapper.find('[role="switch"]').exists()).toBe(false)
   })
+
+  it('shows a meter it could not read as unavailable — no number, no switch, no price (AI-15)', async () => {
+    const data = staging(true)
+    data.categories[1] = category('form_submissions', 'forms.submissions_per_month', 'Form Submissions', 0, 3000, 'submissions', '2026-10-01T00:00:00.000Z', { overageUnitPrice: 0.01, percentage: 0, unavailable: true })
+    state.usage = data
+    const wrapper = await mountSuspended(WorkspaceUsagePanel, { props: { workspaceId: 'ws-1' } })
+    const text = wrapper.text()
+    expect(text).toContain('Usage could not be loaded right now. Try again in a moment.')
+    expect(text).toContain('Unavailable')
+    expect(text).not.toContain('/ 3,000 submissions')
+    expect(text).not.toContain('/ 3000 submissions')
+    expect(text).not.toContain('$0.01 per submission past the limit')
+    // The other meters still show their numbers.
+    expect(text).toContain('$0.08 per credit past the limit')
+  })
 })

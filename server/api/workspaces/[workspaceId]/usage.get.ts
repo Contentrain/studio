@@ -61,6 +61,8 @@ export default defineEventHandler(async (event) => {
     storageBytes: (workspace.media_storage_bytes as number) ?? 0,
     period,
     overageLocks,
+    // A meter that cannot be read shows as unavailable, never as 0.
+    readErrors: 'unavailable',
   })
 
   // CLI-compatible flat format: ?format=simple
@@ -75,10 +77,10 @@ export default defineEventHandler(async (event) => {
       api_messages: 'apiMessages',
       mcp_calls: 'mcpCalls',
     }
-    const simple: Record<string, { current: number, limit: number, percentage: number }> = {}
+    const simple: Record<string, { current: number, limit: number, percentage: number, unavailable?: true }> = {}
     for (const c of usage.categories) {
       const key = keyMap[c.key] ?? c.key
-      simple[key] = { current: c.current, limit: c.limit, percentage: c.percentage }
+      simple[key] = { current: c.current, limit: c.limit, percentage: c.percentage, ...(c.unavailable ? { unavailable: true as const } : {}) }
     }
     return simple
   }

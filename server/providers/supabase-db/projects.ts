@@ -130,10 +130,11 @@ export function projectMethods(): ProjectMethods {
 
     async getProjectMediaStorageSum(projectId) {
       const admin = getAdmin()
-      const { data } = await admin
+      const { data, error } = await admin
         .from('media_assets')
         .select('size_bytes')
         .eq('project_id', projectId)
+      if (error) throw createError({ statusCode: 500, message: error.message })
 
       if (!data?.length) return 0
       return data.reduce((sum: number, a: { size_bytes: number | null }) => sum + (a.size_bytes ?? 0), 0)

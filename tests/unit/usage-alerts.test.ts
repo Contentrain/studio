@@ -162,4 +162,15 @@ describe('usage alerts', () => {
     expect(html).toContain('Storage does not reset each month')
     expect(html).not.toContain('resets on <strong></strong>')
   })
+
+  it('skips a meter it cannot read instead of counting it as 0, and still alerts on the others (AI-15)', async () => {
+    const db = fakeDb({ ai: 1036 })
+    db.countMonthlySubmissions.mockRejectedValue(new Error('connection reset'))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    const sent = await runUsageAlerts(deps(db, sendEmail))
+    expect(sent.map(s => `${s.meter}:${s.threshold}`)).toEqual(['ai_messages:100'])
+    expect(error.mock.calls.some(([line]) => String(line).includes('[billing-risk] usage-read.form_submissions'))).toBe(true)
+    error.mockRestore()
+  })
 })

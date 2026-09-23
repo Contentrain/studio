@@ -23,6 +23,11 @@ export default defineEventHandler(async (event) => {
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found_in_workspace') })
 
+  // Read the project's media total before anything is removed: a read that
+  // fails stops the deletion here, with the project intact, instead of after
+  // the files are gone with the workspace's storage counter left wrong (AI-15).
+  const totalBytes = await db.getProjectMediaStorageSum(projectId)
+
   // 1. Clean R2 storage (CDN content + media assets)
   const cdn = useCDNProvider()
   if (cdn) {
@@ -37,7 +42,6 @@ export default defineEventHandler(async (event) => {
   }
 
   // 2. Update workspace storage quota
-  const totalBytes = await db.getProjectMediaStorageSum(projectId)
   if (totalBytes > 0) {
     await db.incrementWorkspaceStorageBytes(workspaceId, -totalBytes)
   }

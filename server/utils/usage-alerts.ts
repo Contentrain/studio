@@ -127,6 +127,9 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
         period: usagePeriodFrom(account as UsagePeriodAccount | null, now),
         overageLocks: resolveOverageLocks(account as OverageLockAccount | null),
         now,
+        // An unreadable meter is skipped (reported, never alerted on as 0);
+        // the meters that were read still alert.
+        readErrors: 'unavailable',
       })
 
       const alerts = planUsageAlerts(usage.categories)

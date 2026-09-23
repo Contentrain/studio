@@ -211,12 +211,13 @@ export function commentMethods(): CommentMethods {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const { count } = await getAdmin()
+      const { count, error } = await getAdmin()
         .from('comments')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
         .eq('source', 'web')
         .gte('created_at', monthStart.toISOString())
+      if (error) throw createError({ statusCode: 500, message: error.message })
 
       return count ?? 0
     },

@@ -273,26 +273,20 @@ export function cdnMethods(): CDNMethods {
     },
 
     async getMonthlyProjectCDNUsage(projectId, startDate, endDate) {
-      // Failure reads as zero totals (the Supabase impl never checks the error).
-      try {
-        const row = await getAdmin()
-          .selectFrom('cdn_usage')
-          .select(eb => [
-            eb.fn.coalesce(eb.fn.sum('request_count'), eb.lit(0)).as('request_count'),
-            eb.fn.coalesce(eb.fn.sum('bandwidth_bytes'), eb.lit(0)).as('bandwidth_bytes'),
-          ])
-          .where('project_id', '=', projectId)
-          .where('period_start', '>=', startDate)
-          .where('period_start', '<=', endDate)
-          .executeTakeFirst()
+      const row = await getAdmin()
+        .selectFrom('cdn_usage')
+        .select(eb => [
+          eb.fn.coalesce(eb.fn.sum('request_count'), eb.lit(0)).as('request_count'),
+          eb.fn.coalesce(eb.fn.sum('bandwidth_bytes'), eb.lit(0)).as('bandwidth_bytes'),
+        ])
+        .where('project_id', '=', projectId)
+        .where('period_start', '>=', startDate)
+        .where('period_start', '<=', endDate)
+        .executeTakeFirst()
 
-        return {
-          requestCount: Number(row?.request_count ?? 0),
-          bandwidthBytes: Number(row?.bandwidth_bytes ?? 0),
-        }
-      }
-      catch {
-        return { requestCount: 0, bandwidthBytes: 0 }
+      return {
+        requestCount: Number(row?.request_count ?? 0),
+        bandwidthBytes: Number(row?.bandwidth_bytes ?? 0),
       }
     },
 

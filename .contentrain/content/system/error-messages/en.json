@@ -154,6 +154,7 @@
   "forms.submission_not_found": "Form submission not found.",
   "forms.update_failed": "Failed to update form submission: {detail}",
   "forms.upgrade": "Forms require a plan upgrade.",
+  "forms.usage_unavailable": "This form cannot accept submissions right now. Try again in a moment.",
   "forms.validation_failed": "Form validation failed.",
   "generic.server_error": "Something went wrong. Please try again or contact support if the problem persists.",
   "github.installation_access_denied": "You do not have access to this GitHub App installation.",
