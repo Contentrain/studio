@@ -14,6 +14,8 @@ vi.mock('../../server/utils/providers', () => ({
 vi.mock('../../server/utils/media-url', () => ({
   toDeliveryUrl: (projectId: string, path: string) => `https://cdn.example/api/cdn/v1/${projectId}/${path}`,
   publicMediaBase: (projectId: string) => `https://cdn.example/api/cdn/v1/${projectId}`,
+  // The CDN host first, then the app host media written before it still lives on.
+  ownMediaBases: (projectId: string) => [`https://cdn.example/api/cdn/v1/${projectId}`, `https://studio.example/api/cdn/v1/${projectId}`],
 }))
 vi.mock('../../server/utils/webhook-engine', () => ({
   isAllowedWebhookUrl: (url: string) => allowUrl(url),
@@ -360,6 +362,13 @@ describe('validateAttachmentBlocks', () => {
       { filename: 'evil', blocks: [{ type: 'image', source: { type: 'url', url: 'https://evil.com/x.png' } }] },
     ], opts)
     expect(blocks).toHaveLength(0)
+  })
+
+  it('keeps an image on the app host this project\'s media lived on before the CDN host', () => {
+    const { blocks } = validateAttachmentBlocks([
+      { filename: 'old', blocks: [{ type: 'image', source: { type: 'url', url: `https://studio.example/api/cdn/v1/${opts.projectId}/media/a.webp` } }] },
+    ], opts)
+    expect(blocks.some(b => b.type === 'image')).toBe(true)
   })
 
   it('drops oversized base64 image data', () => {
