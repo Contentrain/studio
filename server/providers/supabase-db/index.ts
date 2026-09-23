@@ -25,6 +25,7 @@ import { mcpCloudMethods } from './mcp-cloud'
 import { mediaMethods } from './media'
 import { memberMethods } from './members'
 import { oauthTokenMethods } from './oauth-tokens'
+import { migrateGrantMethods } from './migrate-grants'
 import { paymentAccountMethods } from './payment-accounts'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
@@ -56,5 +57,6 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...mcpCloudMethods(),
     ...trialReminderMethods(),
     ...paymentAccountMethods(),
+    ...migrateGrantMethods(),
   }
 }

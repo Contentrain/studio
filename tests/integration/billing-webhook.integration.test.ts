@@ -159,6 +159,39 @@ describe('billing webhook integration', () => {
     }))
   })
 
+  it('uses up the Migrate grant a subscription was started from', async () => {
+    const markMigrateGrantRedeemed = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      archiveActivePaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      markWorkspaceTrialConsumed,
+      markMigrateGrantRedeemed,
+    }))
+    const created = {
+      event: 'subscription.created',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'trialing',
+      trialEndsAt: '2026-11-22T12:00:00.000Z',
+      cancelAtPeriodEnd: false,
+    }
+    handleWebhookMock.mockResolvedValue({ ...created, migrateGrantId: 'grant-1' })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', 'sub_123')
+
+    // An ordinary subscription touches no grant.
+    markMigrateGrantRedeemed.mockClear()
+    handleWebhookMock.mockResolvedValue(created)
+    await handler({ context: {} } as never)
+    expect(markMigrateGrantRedeemed).not.toHaveBeenCalled()
+  })
+
   it('downgrades to free on subscription.canceled', async () => {
     handleWebhookMock.mockResolvedValue({
       event: 'subscription.canceled',

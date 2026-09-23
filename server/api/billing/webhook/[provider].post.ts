@@ -226,6 +226,12 @@ export default defineEventHandler(async (event) => {
         isActive: true,
       })
       await overageLock.commit()
+      // A subscription started from a Migrate grant's checkout uses the
+      // grant up: no second included trial after cancel-and-resubscribe.
+      // Idempotent — whichever of created/updated arrives first marks it.
+      if (result.migrateGrantId) {
+        await db.markMigrateGrantRedeemed(result.migrateGrantId, result.subscriptionId ?? null)
+      }
       // First 'trialing' observation consumes the workspace's one-time
       // trial, so a later re-checkout (after cancel/expiry) gets a paid
       // checkout with no new trial. Idempotent (set once, never moved).
@@ -304,6 +310,12 @@ export default defineEventHandler(async (event) => {
         isActive: true,
       })
       await overageLock.commit()
+      // A subscription started from a Migrate grant's checkout uses the
+      // grant up: no second included trial after cancel-and-resubscribe.
+      // Idempotent — whichever of created/updated arrives first marks it.
+      if (result.migrateGrantId) {
+        await db.markMigrateGrantRedeemed(result.migrateGrantId, result.subscriptionId ?? null)
+      }
 
       const workspaceUpdate: Record<string, unknown> = {}
       if (result.plan) workspaceUpdate.plan = result.plan

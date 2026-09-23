@@ -5,6 +5,8 @@
  * payment plugin (Polar by default, Stripe as fallback). Returns the
  * hosted checkout URL for the client to redirect to.
  */
+import { startPlanCheckout } from '../../utils/plan-checkout'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const db = useDatabaseProvider()
@@ -31,58 +33,17 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
   }
 
-  // Guard: prevent duplicate subscriptions via the active payment account.
-  const account = await db.getActivePaymentAccount(body.workspaceId)
-  if (account?.subscription_id) {
-    const status = account.subscription_status as string | null
-    if (status && !['canceled', 'incomplete_expired'].includes(status)) {
-      throw createError({
-        statusCode: 409,
-        message: errorMessage('billing.subscription_exists'),
-      })
-    }
-  }
-
-  // Rate limit checkout creation per workspace — prevents duplicate sessions from rapid clicks
-  const rateCheck = await checkRateLimit(`checkout:${body.workspaceId}`, 1, 30_000)
-  if (!rateCheck.allowed) {
-    throw createError({ statusCode: 429, message: errorMessage('auth.rate_limited') })
-  }
-
-  const payment = usePaymentProvider()
-  if (!payment) {
-    throw createError({ statusCode: 503, message: errorMessage('generic.server_error') })
-  }
-
-  const config = useRuntimeConfig()
-  const siteUrl = config.public.siteUrl as string
-  const wsSlug = (workspace as { slug: string }).slug
+  const ws = workspace as { id: string, slug: string, name: string, trial_consumed_at?: string | null }
 
   // Grant the free trial only if this workspace has never used one. A
   // returning customer (trial canceled/expired) gets a paid checkout with
   // no new trial — closes the cancel→re-trial loop.
-  const withTrial = !(workspace as { trial_consumed_at?: string | null }).trial_consumed_at
-
-  let result
-  try {
-    result = await payment.createCheckoutSession({
-      workspaceId: body.workspaceId,
-      workspaceName: (workspace as { name: string }).name,
-      plan: body.plan,
-      customerEmail: session.user.email ?? '',
-      successUrl: `${siteUrl}/w/${wsSlug}/settings?billing=success`,
-      cancelUrl: `${siteUrl}/w/${wsSlug}/settings?billing=cancelled`,
-      withTrial,
-    })
-  }
-  catch (err) {
-    // Provider SDK failure (expired/invalid token, provider outage, bad
-    // product id). Log the detail server-side and surface a clean message
-    // instead of an unhandled 500 that leaks the SDK stack to the client.
-    // eslint-disable-next-line no-console -- ops visibility for provider failures
-    console.error('[billing-checkout] createCheckoutSession failed:', err)
-    throw createError({ statusCode: 502, message: errorMessage('billing.provider_unavailable') })
-  }
-
-  return { url: result.url }
+  return startPlanCheckout({
+    workspace: { id: body.workspaceId, slug: ws.slug, name: ws.name },
+    plan: body.plan,
+    customerEmail: session.user.email ?? '',
+    withTrial: !ws.trial_consumed_at,
+    successPath: `/w/${ws.slug}/settings?billing=success`,
+    cancelPath: `/w/${ws.slug}/settings?billing=cancelled`,
+  })
 })

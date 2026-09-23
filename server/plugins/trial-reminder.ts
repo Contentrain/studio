@@ -2,7 +2,7 @@
  * Trial ending reminder scheduler — Nitro plugin.
  *
  * Runs every 6 hours: queries trialing workspaces whose `trial_ends_at`
- * falls inside the T-3 / T-1 / T-0 windows and whose monotonic
+ * falls inside the T-7 / T-3 / T-1 / T-0 windows and whose monotonic
  * `trial_reminder_stage` has not yet advanced past that step. Each
  * match receives a templated email (`trial-ending`) and its stage is
  * bumped so subsequent runs don't re-send.
@@ -27,23 +27,31 @@ const INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 const DAY_MS = 24 * 60 * 60 * 1000
 
 interface ReminderWindow {
-  /** Stage number recorded after send (1, 2 or 3). */
-  stage: 1 | 2 | 3
+  /**
+   * Stage number recorded after send (1–4). Monotonic: a later window only
+   * needs the cursor below its own stage, so a trial that starts inside the
+   * T-3 window simply never gets the T-7 mail. Migration 031 shifted the
+   * cursors when T-7 was put in front.
+   */
+  stage: 1 | 2 | 3 | 4
   /** Lower bound of `trial_ends_at` relative to now, in ms (inclusive). */
   fromOffsetMs: number
   /** Upper bound of `trial_ends_at` relative to now, in ms (inclusive). */
   toOffsetMs: number
-  /** Label used in the email subject/body ("in 3 days", "in 1 day", "today"). */
+  /** Label used in the email subject/body ("in 7 days", "in 3 days", "tomorrow", "today"). */
   trialEndsText: string
 }
 
-const WINDOWS: ReminderWindow[] = [
+export const WINDOWS: ReminderWindow[] = [
+  // T-7: a week's notice. Long trials (e.g. the 60 days a Migrate order
+  // includes) need more than three days to decide or cancel.
+  { stage: 1, fromOffsetMs: 6.5 * DAY_MS, toOffsetMs: 7.5 * DAY_MS, trialEndsText: 'in 7 days' },
   // T-3: trial ends roughly 3 days from now
-  { stage: 1, fromOffsetMs: 2.5 * DAY_MS, toOffsetMs: 3.5 * DAY_MS, trialEndsText: 'in 3 days' },
+  { stage: 2, fromOffsetMs: 2.5 * DAY_MS, toOffsetMs: 3.5 * DAY_MS, trialEndsText: 'in 3 days' },
   // T-1: trial ends roughly 1 day from now
-  { stage: 2, fromOffsetMs: 0.5 * DAY_MS, toOffsetMs: 1.5 * DAY_MS, trialEndsText: 'tomorrow' },
+  { stage: 3, fromOffsetMs: 0.5 * DAY_MS, toOffsetMs: 1.5 * DAY_MS, trialEndsText: 'tomorrow' },
   // T-0: trial_ends_at inside a ±6h window around now
-  { stage: 3, fromOffsetMs: -6 * 60 * 60 * 1000, toOffsetMs: 6 * 60 * 60 * 1000, trialEndsText: 'today' },
+  { stage: 4, fromOffsetMs: -6 * 60 * 60 * 1000, toOffsetMs: 6 * 60 * 60 * 1000, trialEndsText: 'today' },
 ]
 
 export default defineNitroPlugin((nitroApp) => {
