@@ -96,7 +96,19 @@ function normalizeSiteUrl(siteUrl: string): string {
 }
 
 /** Validate the source before anything is read. Null when usable. */
-export function checkRehostSource(input: { from: RehostSource, projectId: string, siteUrl: string, copyAssets: boolean }): RehostSourceError | null {
+export function checkRehostSource(input: {
+  from: RehostSource
+  projectId: string
+  /** The host this instance writes media URLs under (`cdnUrl || siteUrl`). */
+  siteUrl: string
+  copyAssets: boolean
+  /**
+   * Other hosts of this same instance — the app host when media moved to a
+   * CDN host. A source on one of them is this instance (no copy needed), and
+   * the same project there is a move to the media host, not a no-op.
+   */
+  aliases?: string[]
+}): RehostSourceError | null {
   const fromSite = normalizeSiteUrl(input.from.siteUrl)
   let url: URL
   try {
@@ -108,8 +120,9 @@ export function checkRehostSource(input: { from: RehostSource, projectId: string
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'invalid_source'
   if (!/^[\w-]{1,64}$/.test(input.from.projectId)) return 'invalid_source'
 
-  const sameInstance = fromSite === normalizeSiteUrl(input.siteUrl)
-  if (sameInstance && input.from.projectId === input.projectId) return 'same_source'
+  const onMediaHost = fromSite === normalizeSiteUrl(input.siteUrl)
+  const sameInstance = onMediaHost || (input.aliases ?? []).some(alias => fromSite === normalizeSiteUrl(alias))
+  if (onMediaHost && input.from.projectId === input.projectId) return 'same_source'
   if (input.copyAssets && !sameInstance) return 'copy_other_instance'
   // A copy looks the source up in this instance's database, where project ids
   // are uuids — anything else would reach Postgres as a cast error (500).

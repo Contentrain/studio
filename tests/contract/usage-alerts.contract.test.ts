@@ -39,6 +39,8 @@ describe('postgres-db usage-alerts (contract)', () => {
     expect(await methods.claimUsageAlert(key)).toBe(false)
     // Another threshold or period is its own alert.
     expect(await methods.claimUsageAlert({ ...key, threshold: 80 })).toBe(true)
+    // CDN delivery's hard stop is a third level (migration 034).
+    expect(await methods.claimUsageAlert({ ...key, meter: 'cdn_bandwidth', threshold: 120 })).toBe(true)
     expect(await methods.claimUsageAlert({ ...key, periodKey: '2026-10-15' })).toBe(true)
 
     await methods.releaseUsageAlert(key)

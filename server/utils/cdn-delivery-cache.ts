@@ -140,13 +140,13 @@ export async function cachedProjectDelivery(projectId: string): Promise<Database
   return project
 }
 
-/** Workspace plan row, cached. Plan changes propagate within the TTL. */
+/** Workspace plan + overage row, cached. Changes propagate within the TTL. */
 export async function cachedWorkspacePlan(workspaceId: string): Promise<DatabaseRow | null> {
   const hit = getFresh(workspacePlanCache, workspaceId)
   if (hit) return hit
 
   const db = useDatabaseProvider()
-  const workspace = await db.getWorkspaceById(workspaceId, 'plan')
+  const workspace = await db.getWorkspaceById(workspaceId, 'plan, overage_settings')
   if (workspace) setEntry(workspacePlanCache, workspaceId, workspace)
   return workspace
 }

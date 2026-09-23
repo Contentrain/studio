@@ -143,6 +143,16 @@ describe('checkRehostSource', () => {
     expect(checkRehostSource({ ...base, from: { siteUrl: 'https://studio.example.com/', projectId: 'new-proj' } })).toBe('same_source')
   })
 
+  it('moves the same project from the app host onto the CDN host when media lives there', async () => {
+    const { checkRehostSource } = await load()
+    const base = { projectId: 'p1', siteUrl: 'https://cdn.example.com', aliases: ['https://studio.example.com'], copyAssets: false }
+    // App-host URLs of this very project are a move, not a no-op.
+    expect(checkRehostSource({ ...base, from: { siteUrl: 'https://studio.example.com', projectId: 'p1' } })).toBeNull()
+    expect(checkRehostSource({ ...base, from: { siteUrl: 'https://cdn.example.com/', projectId: 'p1' } })).toBe('same_source')
+    // The app host is this instance: a copy from it is allowed.
+    expect(checkRehostSource({ ...base, copyAssets: true, from: { siteUrl: 'https://studio.example.com', projectId: '8b0c2d4e-1f3a-4b5c-9d6e-7f8a9b0c1d2e' } })).toBeNull()
+  })
+
   it('copies assets only from a project on this instance', async () => {
     const { checkRehostSource } = await load()
     const base = { projectId: 'new-proj', siteUrl: 'https://studio.example.com', copyAssets: true }

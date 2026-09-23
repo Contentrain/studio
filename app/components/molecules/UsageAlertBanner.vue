@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { UsageCategory } from '~/composables/useUsage'
+import { CDN_ORIGIN_HARD_STOP_RATIO } from '~~/shared/utils/cdn-limit'
 
 /**
  * Usage notice for the whole workspace — 80 % and limit-reached, wherever
@@ -13,15 +14,26 @@ import type { UsageCategory } from '~/composables/useUsage'
  * Owners and admins get the 80 % warning too, with a link to Billing. Members
  * only hear about limits that stop something, and who can change them.
  *
- * CDN bandwidth is left out: its limit is not enforced (policy open, PRC-2),
- * so "has stopped" would be false.
+ * CDN bandwidth has a buffer: past its limit delivery continues (a grace
+ * notice with the upgrade link, owners and admins) and it stops only at
+ * `CDN_ORIGIN_HARD_STOP_RATIO` of the limit.
  */
+
 const { t } = useContent()
 const { usage, fetchUsage } = useUsage()
 const { activeWorkspace } = useWorkspaces()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
-const ALERTING = ['ai_messages', 'form_submissions', 'comments', 'api_messages', 'mcp_calls', 'media_storage']
+const ALERTING = ['ai_messages', 'form_submissions', 'comments', 'api_messages', 'mcp_calls', 'media_storage', 'cdn_bandwidth']
+
+/** Where a meter stops: its limit, or the CDN's hard stop past it. */
+function stopAt(c: UsageCategory): number {
+  return c.key === 'cdn_bandwidth' ? c.limit * CDN_ORIGIN_HARD_STOP_RATIO : c.limit
+}
+/** CDN between its limit and the hard stop: still serving. */
+function inGrace(c: UsageCategory): boolean {
+  return c.key === 'cdn_bandwidth' && !c.overageEnabled && c.current >= c.limit && c.current < stopAt(c)
+}
 
 watch(() => activeWorkspace.value?.id, (id) => {
   if (id) fetchUsage().catch(() => {})
@@ -32,9 +44,9 @@ const relevant = computed(() =>
 )
 /** At the limit with nothing billed past it: this has stopped. */
 // Raw values, not the rounded percentage: 995 / 1000 shows 100 % but nothing has stopped.
-const stopped = computed(() => relevant.value.filter(c => c.current >= c.limit && !c.overageEnabled))
+const stopped = computed(() => relevant.value.filter(c => c.current >= stopAt(c) && !c.overageEnabled))
 const warnings = computed(() => isOwnerOrAdmin.value
-  ? relevant.value.filter(c => c.current >= c.limit * 0.8 && c.current < c.limit)
+  ? relevant.value.filter(c => (c.current >= c.limit * 0.8 && c.current < c.limit) || inGrace(c))
   : [])
 const alerts = computed(() => [...stopped.value, ...warnings.value])
 const primary = computed<UsageCategory | null>(() => alerts.value[0] ?? null)
@@ -47,13 +59,14 @@ const text = computed(() => {
   const c = primary.value
   if (!c) return ''
   const date = c.resetsAt ? formatDate(c.resetsAt) : ''
-  if (c.current >= c.limit) return t(`usage_banner.stopped_${c.key}` as never, { date })
+  if (inGrace(c)) return t('usage_banner.grace_cdn_bandwidth', { percentage: Math.round(CDN_ORIGIN_HARD_STOP_RATIO * 100) })
+  if (c.current >= stopAt(c)) return t(`usage_banner.stopped_${c.key}` as never, { date })
   return date
     ? t('usage_banner.warning', { name: c.name, percentage: c.percentage, date })
     : t('usage_banner.warning_undated', { name: c.name, percentage: c.percentage })
 })
 
-const isStop = computed(() => !!primary.value && primary.value.current >= primary.value.limit)
+const isStop = computed(() => !!primary.value && primary.value.current >= stopAt(primary.value) && !primary.value.overageEnabled)
 
 const billingPath = computed(() => {
   const slug = activeWorkspace.value?.slug
@@ -62,7 +75,7 @@ const billingPath = computed(() => {
 
 /** Dismissal lasts for this exact set of alerts; a new alert shows again. */
 const DISMISS_KEY = 'contentrain-usage-banner-dismissed'
-const signature = computed(() => alerts.value.map(c => `${c.key}:${c.current >= c.limit ? 100 : 80}`).join(','))
+const signature = computed(() => alerts.value.map(c => `${c.key}:${c.current >= stopAt(c) ? 'stop' : c.current >= c.limit ? 100 : 80}`).join(','))
 
 /** Storage can be unavailable (private mode, blocked site data): the banner must still render. */
 function readDismissed(): string | null {

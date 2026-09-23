@@ -88,4 +88,21 @@ describe('postgres-db usage (contract)', () => {
     expect(await methods.getWorkspaceMonthlyCDNBandwidth(user.workspaceId, MONTH)).toBe(1_500_000)
     expect(await methods.getWorkspaceMonthlyCDNBandwidth(other.workspaceId, MONTH)).toBe(0)
   })
+
+  it('sums one day of CDN bytes per workspace across its projects, leaving out empty workspaces', async () => {
+    const second = await sql<{ id: string }>`
+      INSERT INTO public.projects (workspace_id, repo_full_name)
+      VALUES (${user.workspaceId}, 'contentrain/usage-fixture-2')
+      RETURNING id
+    `.execute(getDb())
+    const DAY = '2026-03-15'
+    await sql`INSERT INTO public.cdn_usage (project_id, period_start, bandwidth_bytes) VALUES (${projectId}, ${DAY}, 700)`.execute(getDb())
+    await sql`INSERT INTO public.cdn_usage (project_id, period_start, bandwidth_bytes) VALUES (${second.rows[0]!.id}, ${DAY}, 300)`.execute(getDb())
+
+    const totals = await methods.listWorkspaceCDNBandwidthForDay(DAY)
+    expect(totals.filter(t => t.workspaceId === user.workspaceId)).toEqual([{ workspaceId: user.workspaceId, bytes: 1000 }])
+    expect(totals.some(t => t.workspaceId === other.workspaceId)).toBe(false)
+    // The day before has nothing for this workspace.
+    expect((await methods.listWorkspaceCDNBandwidthForDay('2026-03-14')).some(t => t.workspaceId === user.workspaceId)).toBe(false)
+  })
 })

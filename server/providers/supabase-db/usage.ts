@@ -16,6 +16,7 @@ type UsageMethods = Pick<
   | 'getWorkspaceMonthlyAIUsage'
   | 'getWorkspaceMonthlyAPIUsage'
   | 'getWorkspaceMonthlyCDNBandwidth'
+  | 'listWorkspaceCDNBandwidthForDay'
 >
 
 export function usageMethods(): UsageMethods {
@@ -81,6 +82,34 @@ export function usageMethods(): UsageMethods {
         (sum: number, r: Record<string, unknown>) => sum + ((r.bandwidth_bytes as number) ?? 0),
         0,
       )
+    },
+
+    async listWorkspaceCDNBandwidthForDay(day) {
+      // A failure propagates — the meter job must not record "no usage"
+      // for a day it could not read.
+      const admin = getAdmin()
+      const { data: usage, error } = await admin
+        .from('cdn_usage')
+        .select('project_id, bandwidth_bytes')
+        .eq('period_start', day)
+      if (error) throw error
+      if (!usage || usage.length === 0) return []
+
+      const projectIds = [...new Set(usage.map((r: Record<string, unknown>) => r.project_id as string))]
+      const { data: projects, error: projectError } = await admin
+        .from('projects')
+        .select('id, workspace_id')
+        .in('id', projectIds)
+      if (projectError) throw projectError
+      const workspaceOf = new Map((projects ?? []).map((p: Record<string, unknown>) => [p.id as string, p.workspace_id as string]))
+
+      const totals = new Map<string, number>()
+      for (const row of usage as Array<Record<string, unknown>>) {
+        const workspaceId = workspaceOf.get(row.project_id as string)
+        if (!workspaceId) continue
+        totals.set(workspaceId, (totals.get(workspaceId) ?? 0) + Number(row.bandwidth_bytes ?? 0))
+      }
+      return [...totals].map(([workspaceId, bytes]) => ({ workspaceId, bytes })).filter(r => r.bytes > 0)
     },
   }
 }

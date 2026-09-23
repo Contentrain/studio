@@ -77,6 +77,14 @@ export default defineNuxtConfig({
       r2AccessKeyId: '', // NUXT_CDN_R2_ACCESS_KEY_ID
       r2SecretAccessKey: '', // NUXT_CDN_R2_SECRET_ACCESS_KEY
       r2Bucket: '', // NUXT_CDN_R2_BUCKET — required when R2 creds are set (no implicit default)
+      // Shared secret Cloudflare adds as `X-CR-Edge` on the CDN host; only
+      // then is `CF-Connecting-IP` trusted as the client IP (docs/CDN_EDGE.md).
+      edgeSecret: '', // NUXT_CDN_EDGE_SECRET
+      // Origin-transfer limit per plan (`cdn.bandwidth_gb`): 'enforce' (serve to
+      // 120 % with alerts, then 429 + Retry-After) | 'observe' (count + log) | 'off'.
+      originLimit: 'enforce', // NUXT_CDN_ORIGIN_LIMIT
+      // Daily `cdn_origin_gb` meter events. Off until the meter exists in Polar.
+      originMeter: false, // NUXT_CDN_ORIGIN_METER
     },
     // Provider selection — pairs must match: supabase+supabase (default) or
     // managed+postgres. Enforced at boot by server/plugins/00.validate-config.ts.
@@ -123,6 +131,9 @@ export default defineNuxtConfig({
     },
     public: {
       siteUrl: 'http://localhost:3000',
+      // Separate CDN host (e.g. https://cdn.contentrain.io) in front of the same
+      // service. Set: new media URLs use it; URLs on siteUrl keep resolving.
+      cdnUrl: '', // NUXT_PUBLIC_CDN_URL
       turnstileSiteKey: '', // NUXT_PUBLIC_TURNSTILE_SITE_KEY — widget key handed to external form/comment embeds
       githubAppSlug: 'contentrain-studio', // NUXT_PUBLIC_GITHUB_APP_SLUG
       billingEnabled: false, // NUXT_PUBLIC_BILLING_ENABLED — auto-derived on boot from configured payment plugins; set manually only to override

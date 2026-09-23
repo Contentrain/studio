@@ -63,9 +63,18 @@ describe('UsageAlertBanner', () => {
     expect((await mountSuspended(UsageAlertBanner)).text()).toBe('')
   })
 
-  it('says nothing about CDN bandwidth, whose limit is not enforced', async () => {
-    state.usage = usage(category('cdn_bandwidth', 'CDN Bandwidth', 70, 60, '2026-10-01T00:00:00.000Z'))
+  it('CDN past its limit: still serving, owners see the upgrade notice, members see nothing yet', async () => {
+    state.usage = usage(category('cdn_bandwidth', 'CDN Bandwidth', 65, 60, '2026-10-01T00:00:00.000Z'))
+    const text = (await mountSuspended(UsageAlertBanner)).text()
+    expect(text).toContain('Delivery stops at 120%')
+    state.role = 'member'
     expect((await mountSuspended(UsageAlertBanner)).text()).toBe('')
+  })
+
+  it('CDN at the 120 % hard stop: everyone is told delivery has stopped', async () => {
+    state.role = 'member'
+    state.usage = usage(category('cdn_bandwidth', 'CDN Bandwidth', 73, 60, '2026-10-01T00:00:00.000Z'))
+    expect((await mountSuspended(UsageAlertBanner)).text()).toContain('CDN delivery has stopped until October 1')
   })
 
   it('995 of 1 000 is not "stopped" even though it rounds to 100 %', async () => {

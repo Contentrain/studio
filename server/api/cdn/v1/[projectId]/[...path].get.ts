@@ -1,4 +1,6 @@
 import { trackEnterpriseCdnUsage, trackEnterprisePublicCdnUsage } from '../../../../utils/enterprise'
+import { addCdnOriginBytes, checkCdnOriginBudget } from '../../../../utils/cdn-origin-budget'
+import { getEffectiveLimit } from '../../../../utils/overage'
 
 /**
  * CDN delivery endpoint — serves content + media from CDN storage.
@@ -109,6 +111,25 @@ export default defineEventHandler(async (event) => {
   if (!hasFeature(plan, 'cdn.delivery'))
     throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)) })
 
+  // Origin-transfer limit (`cdn.bandwidth_gb`, docs/CDN_EDGE.md). Checked
+  // before the storage read, so a refused request costs no egress.
+  // Intentional: a paused or expired workspace keeps serving within the
+  // origin cap until its keys or project are revoked. The plan comes from
+  // the workspace column (the same one the entitlement gate reads), so an
+  // expired Pro trial serves within the Pro cap — bounded by that cap, and
+  // only until revoke; a site going dark at trial end is the worse outcome.
+  const workspaceId = project.workspace_id as string
+  const limitGb = getEffectiveLimit(
+    getPlanLimit(plan, 'cdn.bandwidth_gb'),
+    'cdn.bandwidth_gb',
+    (workspace?.overage_settings as Record<string, boolean> | null | undefined) ?? null,
+  )
+  const budget = await checkCdnOriginBudget({ workspaceId, limitGb })
+  if (!budget.allowed) {
+    setResponseHeader(event, 'Retry-After', budget.retryAfterSeconds)
+    throw createError({ statusCode: 429, message: errorMessage('cdn.origin_limit_reached', { limit: limitGb }) })
+  }
+
   // Get content from CDN storage
   const cdn = useCDNProvider()
   if (!cdn)
@@ -160,6 +181,8 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'ETag', result.etag)
   if (keyId)
     setResponseHeader(event, 'X-Contentrain-Key', keyId.substring(0, 8))
+
+  void addCdnOriginBytes(workspaceId, result.data.length)
 
   // Track CDN usage (fire-and-forget, Business+ feature). Keyed requests are
   // attributed to the key; keyless public-media requests land in the project's

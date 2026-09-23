@@ -36,7 +36,7 @@ import mammoth from 'mammoth'
 import sharp from 'sharp'
 import type { AIContentBlock, AIImageMediaType } from '../providers/ai'
 import { extractMediaStoragePath } from './media-rewrite'
-import { publicMediaBase, toDeliveryUrl } from './media-url'
+import { ownMediaBases, toDeliveryUrl } from './media-url'
 import { isStashId, stashOriginal } from './attachment-stash'
 import { uploadWithStorageReservation } from './media-quota-upload'
 import { useCDNProvider, useMediaProvider } from './providers'
@@ -218,7 +218,7 @@ export function validateAttachmentBlocks(
   if (attachments.length > MAX_ATTACHMENT_COUNT)
     throw createError({ statusCode: 400, message: errorMessage('attachment.too_many', { limit: MAX_ATTACHMENT_COUNT }) })
 
-  const deliveryPrefix = `${publicMediaBase(opts.projectId)}/`
+  const deliveryPrefixes = ownMediaBases(opts.projectId).map(base => `${base}/`)
   const blocks: AIContentBlock[] = []
   const summary: AttachmentSummary[] = []
   const downscaled: ValidatedAttachments['downscaled'] = new Map()
@@ -237,7 +237,7 @@ export function validateAttachmentBlocks(
     let hasBase64Image = false
 
     for (const candidate of rawBlocks) {
-      const block = sanitizeBlock(candidate, deliveryPrefix)
+      const block = sanitizeBlock(candidate, deliveryPrefixes)
       if (!block) continue
       attBlocks.push(block)
       totalChars += JSON.stringify(block).length
@@ -314,7 +314,7 @@ function buildImageDescriptor(filename: string, url: string | undefined, hasBase
   return null
 }
 
-function sanitizeBlock(candidate: unknown, deliveryPrefix: string): AIContentBlock | null {
+function sanitizeBlock(candidate: unknown, deliveryPrefixes: string[]): AIContentBlock | null {
   if (!candidate || typeof candidate !== 'object') return null
   const b = candidate as Record<string, unknown>
   switch (b.type) {
@@ -326,7 +326,7 @@ function sanitizeBlock(candidate: unknown, deliveryPrefix: string): AIContentBlo
       const src = b.source as Record<string, unknown> | undefined
       if (!src || typeof src !== 'object') return null
       if (src.type === 'url') {
-        return typeof src.url === 'string' && src.url.startsWith(deliveryPrefix)
+        return typeof src.url === 'string' && deliveryPrefixes.some(prefix => (src.url as string).startsWith(prefix))
           ? { type: 'image', source: { type: 'url', url: src.url } }
           : null
       }
