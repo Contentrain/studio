@@ -83,6 +83,7 @@ export function createAnthropicProvider(): AIProvider {
               usage.cacheCreationInputTokens = m.cache_creation_input_tokens ?? 0
               usage.cacheReadInputTokens = m.cache_read_input_tokens ?? 0
             }
+            yield { type: 'message_start', usage: { ...usage } }
             break
 
           case 'content_block_start':

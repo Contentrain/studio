@@ -21,14 +21,24 @@ code writes rows via `server/utils/usage-metering.ts`; the
 `server/plugins/usage-drain.ts` Nitro plugin picks them up every 30s
 and dispatches to the active provider's `ingestUsageEvent`.
 
-**AI/API messages are credit-weighted.** The `ai_messages` and
-`api_messages` meters count credits, not flat messages: the chat routes
-reserve 1 credit atomically before the model call and settle the
-remainder (`estimateMessageCredits(...) - 1`, derived from the turn's
-real token spend — `shared/utils/ai-credits.ts`) as a top-up meter
-event once the turn finishes. A light message stays 1 credit; a heavy
-editorial turn consumes proportionally more. BYOA turns always meter 1
-credit (the token cost is on the customer's own Anthropic key).
+**AI/API messages are credit-weighted.** The AI and API credit meters
+count credits, not flat messages (`shared/utils/ai-credits.ts`). A light
+message is 1 credit; a heavy editorial turn consumes proportionally more.
+
+- **Studio chat** reserves the turn's whole ceiling atomically before the
+  model call — the plan's per-message cap, or what is left of the pool
+  if that is less (`reserve_agent_credits`, migration 031). The
+  conversation loop spends against that reservation as a dollar budget
+  (`server/utils/turn-budget.ts`) and closes the turn with a summary
+  when it runs out. The settle runs in `finally` from the real token
+  totals — also for a cancelled or failed turn — refunds the unused
+  part, and sends one meter event with the turn's credits. Concurrent
+  turns cannot take more than the pool holds.
+- **Conversation API** reserves 1 credit and settles
+  `estimateMessageCredits(...) - 1` as a top-up event when the turn
+  finishes.
+- **BYOA turns** are never metered and never draw from the pool (the
+  token cost is on the customer's own Anthropic key).
 
 ## Polar setup
 

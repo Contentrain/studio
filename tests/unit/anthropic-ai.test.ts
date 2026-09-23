@@ -77,6 +77,12 @@ describe('anthropic provider', () => {
     }
 
     expect(events).toEqual([
+      // The prompt's usage, as soon as the call starts — what a cancelled
+      // turn is still billed for (AI-8).
+      {
+        type: 'message_start',
+        usage: { inputTokens: 10, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
+      },
       { type: 'tool_use_start', toolId: 'tool-1', toolName: 'save_content' },
       { type: 'tool_use_input', toolId: 'tool-1', content: '{"title":"Hello"}' },
       {

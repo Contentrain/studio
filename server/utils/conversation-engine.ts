@@ -11,6 +11,17 @@ import type { ExpandModelView } from '~~/server/utils/relation-expand'
 import { brainRefEntries, findInboundEntryRefs } from '~~/server/utils/relation-expand'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
+import type { PromptEstimate, TurnBudget } from './turn-budget'
+import {
+  CLOSE_OUTPUT_TOKENS,
+  MIN_CLOSE_OUTPUT_TOKENS,
+  MIN_TOOL_CALL_OUTPUT_TOKENS,
+  TurnUsageTracker,
+  closeReserveUsd,
+  nextPromptEstimate,
+  planCall,
+  usageCostUsd,
+} from './turn-budget'
 import type { LocatedValidationError } from './validation-format'
 import { formatValidationError, formatValidationErrors } from './validation-format'
 import { isEntryWriteMode } from './content-engine/entry-mode'
@@ -92,6 +103,21 @@ export interface ConversationConfig {
    */
   maxOutputTokens?: number
   abortSignal?: AbortSignal
+  /**
+   * Spend ceiling for the turn (`server/utils/turn-budget.ts`). Before
+   * each call the engine checks the call's worst case against what is
+   * left, lowers `max_tokens` to fit, and closes the turn once not even
+   * a useful call fits. Omitted = no budget (BYOA turns, where the
+   * user's own key pays, and callers that still settle the old way).
+   */
+  budget?: TurnBudget
+  /**
+   * Live token totals of the turn, including the call in flight. The
+   * caller settles from `snapshot()` in its `finally`, so a cancelled
+   * or failed turn counts what it really cost. Created internally when
+   * omitted.
+   */
+  usageTracker?: TurnUsageTracker
 }
 
 // ─── Tool Execution Context ───
@@ -134,14 +160,43 @@ const MAX_BRAIN_QUERY_LIMIT = 100
 const GRACEFUL_CLOSE_INSTRUCTION
   = 'You have reached the tool-step limit for this turn. Answer now with a concise summary of what you just did and its results, in the language of the conversation. Do not propose further actions.'
 
+/**
+ * Budget variant of `GRACEFUL_CLOSE_INSTRUCTION` — the turn stopped
+ * because its spend budget ran out, not its step count. Same rules:
+ * English on purpose, never persisted or shown verbatim.
+ */
+const BUDGET_CLOSE_INSTRUCTION
+  = 'This turn has reached its usage limit, so no more tools can run in it. Answer now with a concise summary of what you did so far and what is left to do, so the user can continue in a new message, in the language of the conversation. Do not call tools.'
+
+/** Deterministic close when the budget cannot pay for even a short summary call. */
+function buildBudgetFallbackSummary(executedToolNames: string[]): string {
+  const done = executedToolNames.length > 0
+    ? ` Completed before stopping: ${summarizeToolNames(executedToolNames)}.`
+    : ''
+  return `This message reached its usage limit and stopped here.${done} Send a new message to continue.`
+}
+
+function summarizeToolNames(executedToolNames: string[]): string {
+  const counts = new Map<string, number>()
+  for (const name of executedToolNames) counts.set(name, (counts.get(name) ?? 0) + 1)
+  return [...counts.entries()].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')
+}
+
+/** Rough prompt size of the first call — system, messages and tool definitions. */
+function estimatePromptTokens(config: ConversationConfig): number {
+  const system = typeof config.systemPrompt === 'string'
+    ? config.systemPrompt
+    : config.systemPrompt.map(b => b.text).join('\n')
+  let tokens = estimateContentTokens(system) + estimateContentTokens(JSON.stringify(config.tools))
+  for (const message of config.messages) tokens += estimateContentTokens(message.content)
+  return tokens
+}
+
 /** Deterministic last-resort summary when even the instructed wrap returns no text. */
 function buildFallbackSummary(executedToolNames: string[]): string {
   if (executedToolNames.length === 0)
     return 'The turn reached its step limit before completing any operations. Please retry with a smaller request.'
-  const counts = new Map<string, number>()
-  for (const name of executedToolNames) counts.set(name, (counts.get(name) ?? 0) + 1)
-  const parts = [...counts.entries()].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name))
-  return `Completed ${executedToolNames.length} operation(s) before reaching the step limit for this turn: ${parts.join(', ')}. The results above reflect what was applied.`
+  return `Completed ${executedToolNames.length} operation(s) before reaching the step limit for this turn: ${summarizeToolNames(executedToolNames)}. The results above reflect what was applied.`
 }
 
 // ─── Conversation Loop ───
@@ -203,6 +258,12 @@ export async function* runConversationLoop(
   const maxResultLength = config.maxToolResultLength ?? DEFAULT_MAX_TOOL_RESULT_LENGTH
   const maxOutputTokens = config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
   const aiProvider = useAIProvider()
+  const tracker = config.usageTracker ?? new TurnUsageTracker()
+  const budget = config.budget
+  // What the next call's prompt will cost at worst. The first call's
+  // cache state is unknown, so the whole prompt counts as fresh.
+  let nextPrompt: PromptEstimate = { cached: 0, fresh: budget ? estimatePromptTokens(config) : 0 }
+  let stoppedByBudget = false
 
   // Rows before this point came from `buildPromptMessages` (replayed
   // history + the current user turn; the history tail already carries
@@ -254,9 +315,16 @@ export async function* runConversationLoop(
       config.apiKey,
     )) {
       switch (streamEvent.type) {
+        case 'message_start':
+          tracker.startCall(streamEvent.usage)
+          break
         case 'text':
           currentText += streamEvent.content ?? ''
+          tracker.addStreamedOutput(streamEvent.content)
           yield { type: 'text', content: streamEvent.content }
+          break
+        case 'tool_use_input':
+          tracker.addStreamedOutput(streamEvent.content)
           break
         case 'tool_use_start':
           flushText()
@@ -274,6 +342,7 @@ export async function* runConversationLoop(
         }
         case 'message_end':
           flushText()
+          tracker.endCall(streamEvent.usage)
           usage.inputTokens += streamEvent.usage?.inputTokens ?? 0
           usage.outputTokens += streamEvent.usage?.outputTokens ?? 0
           usage.cacheCreationInputTokens += streamEvent.usage?.cacheCreationInputTokens ?? 0
@@ -321,9 +390,43 @@ export async function* runConversationLoop(
     while (iteration < maxIterations) {
       if (config.abortSignal?.aborted) break
 
+      // === TURN BUDGET ===
+      // Does the remaining budget cover this call at worst? Lower
+      // `max_tokens` to what it can pay for; once not even a useful
+      // call fits, stop calling tools and close the turn below. The
+      // first call always runs — the reservation already admitted the
+      // turn — with at least the minimum allowance.
+      let callMaxTokens = maxOutputTokens
+      let budgetLimited = false
+      if (budget) {
+        const plan = planCall({
+          budget,
+          spentUsd: usageCostUsd(config.model, tracker.snapshot()),
+          model: config.model,
+          prompt: nextPrompt,
+          maxOutputTokens,
+          minOutputTokens: MIN_TOOL_CALL_OUTPUT_TOKENS,
+          // Leave room for the closing summary, so a cut turn still ends
+          // with a proper answer rather than the fallback message.
+          reserveUsd: closeReserveUsd(config.model, nextPrompt, maxOutputTokens),
+        })
+        if (plan.ok) {
+          callMaxTokens = plan.maxTokens
+          budgetLimited = plan.limited
+        }
+        else if (iteration > 0) {
+          stoppedByBudget = true
+          break
+        }
+        else {
+          callMaxTokens = Math.min(maxOutputTokens, MIN_TOOL_CALL_OUTPUT_TOKENS)
+          budgetLimited = callMaxTokens < maxOutputTokens
+        }
+      }
+
       iteration++
 
-      const turn = yield* runModelStream(maxOutputTokens)
+      const turn = yield* runModelStream(callMaxTokens)
       totalInputTokens += turn.usage.inputTokens
       totalOutputTokens += turn.usage.outputTokens
       totalCacheCreationInputTokens += turn.usage.cacheCreationInputTokens
@@ -340,6 +443,15 @@ export async function* runConversationLoop(
       // preamble whose action silently never ran. Instead: keep the
       // partial (text-only) content for the transcript, surface a
       // typed error the client localizes, and end the turn honestly.
+      if (turn.stopReason === 'max_tokens' && budgetLimited) {
+        // Cut off by the budget, not by the configured ceiling: the turn
+        // cannot afford to go on. Keep the partial text and close below
+        // with the budget message instead of the "split your operation"
+        // error, which would be the wrong advice here.
+        trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
+        stoppedByBudget = true
+        break
+      }
       if (turn.stopReason === 'max_tokens') {
         trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
         yield {
@@ -413,6 +525,7 @@ export async function* runConversationLoop(
       config.messages.push({ role: 'user', content: toolResultBlocks })
       lastAssistantContent = turn.assistantBlocks
       trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks })
+      nextPrompt = nextPromptEstimate(turn.usage, estimateContentTokens(toolResultBlocks))
     }
 
     // === GRACEFUL CLOSE on iteration exhaustion ===
@@ -421,21 +534,52 @@ export async function* runConversationLoop(
     // otherwise be left with an answer that stops mid-work. Make one final
     // tools-disabled streaming call so the model summarizes what it did —
     // streamed live, and recorded as the final visible assistant turn.
-    if (!config.abortSignal?.aborted && iteration >= maxIterations && lastStopReason === 'tool_use') {
+    const hitStepLimit = iteration >= maxIterations && lastStopReason === 'tool_use'
+    // The budget close needs its own affordability check: when not even
+    // a short summary call fits, the turn ends with a deterministic
+    // message and no further spend.
+    let wrapMaxTokens = maxOutputTokens
+    let wrapAffordable = true
+    if (budget && (stoppedByBudget || hitStepLimit)) {
+      const plan = planCall({
+        budget,
+        spentUsd: usageCostUsd(config.model, tracker.snapshot()),
+        model: config.model,
+        prompt: nextPrompt,
+        maxOutputTokens: stoppedByBudget ? Math.min(maxOutputTokens, CLOSE_OUTPUT_TOKENS) : maxOutputTokens,
+        minOutputTokens: MIN_CLOSE_OUTPUT_TOKENS,
+      })
+      wrapAffordable = plan.ok
+      if (plan.ok) wrapMaxTokens = plan.maxTokens
+    }
+
+    if (!config.abortSignal?.aborted && (stoppedByBudget || hitStepLimit) && !wrapAffordable) {
+      // eslint-disable-next-line no-console
+      console.warn('[conversation] turn budget exhausted; closing without a summary call')
+      const fallbackText = buildBudgetFallbackSummary(executedToolNames)
+      yield { type: 'text', content: fallbackText }
+      lastAssistantContent = [{ type: 'text', text: fallbackText }]
+      trace.push({ iteration: iteration + 1, assistantBlocks: lastAssistantContent, toolResultBlocks: [] })
+    }
+    else if (!config.abortSignal?.aborted && (stoppedByBudget || hitStepLimit)) {
       // Nudge the wrap with an explicit summarize instruction appended
       // after the final tool_result blocks. REPLACE the message — never
       // mutate its content array, which `trace` still references — so
       // the instruction lives only in this one API call and is never
       // persisted or replayed on resume.
+      const instruction = stoppedByBudget ? BUDGET_CLOSE_INSTRUCTION : GRACEFUL_CLOSE_INSTRUCTION
       const lastMsg = config.messages[config.messages.length - 1]
-      if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content)) {
+      if (lastMsg?.role === 'user') {
+        const content: AIContentBlock[] = Array.isArray(lastMsg.content)
+          ? lastMsg.content
+          : [{ type: 'text', text: lastMsg.content }]
         config.messages[config.messages.length - 1] = {
           role: 'user',
-          content: [...lastMsg.content, { type: 'text', text: GRACEFUL_CLOSE_INSTRUCTION }],
+          content: [...content, { type: 'text', text: instruction }],
         }
       }
 
-      const wrap = yield* runModelStream(maxOutputTokens, [])
+      const wrap = yield* runModelStream(wrapMaxTokens, [])
       totalInputTokens += wrap.usage.inputTokens
       totalOutputTokens += wrap.usage.outputTokens
       totalCacheCreationInputTokens += wrap.usage.cacheCreationInputTokens
@@ -457,7 +601,9 @@ export async function* runConversationLoop(
         // tool-only.
         // eslint-disable-next-line no-console
         console.warn('[conversation] graceful-close wrap returned no text; synthesizing fallback summary')
-        const fallbackText = buildFallbackSummary(executedToolNames)
+        const fallbackText = stoppedByBudget
+          ? buildBudgetFallbackSummary(executedToolNames)
+          : buildFallbackSummary(executedToolNames)
         yield { type: 'text', content: fallbackText }
         lastAssistantContent = [{ type: 'text', text: fallbackText }]
         trace.push({ iteration: iteration + 1, assistantBlocks: lastAssistantContent, toolResultBlocks: [] })
@@ -480,6 +626,7 @@ export async function* runConversationLoop(
       affected: accumulatedAffected,
       lastContent: lastAssistantContent,
       iterations: trace,
+      ...(stoppedByBudget ? { stoppedBy: 'budget' } : {}),
     }
   }
   finally {

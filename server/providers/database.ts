@@ -461,6 +461,23 @@ export interface DatabaseProvider {
   }) => Promise<{ allowed: boolean, currentCount: number }>
 
   /**
+   * Atomic: reserve up to `amount` credits for one studio chat turn —
+   * the turn's ceiling, or what is left of the workspace pool if that
+   * is less — and return what was granted (migration 031). The turn
+   * spends against the grant; the settle refunds the unused part via a
+   * negative `messageCountDelta`. A non-studio (BYOA) reservation is
+   * never refused and books 1.
+   */
+  reserveAgentCredits: (input: {
+    workspaceId: string
+    userId: string
+    month: string
+    source: string
+    limit: number
+    amount: number
+  }) => Promise<{ allowed: boolean, granted: number, currentCount: number }>
+
+  /**
    * Update token counts on an existing `agent_usage` row after the
    * chat completes. Cache token fields are required (callers pass 0
    * when the provider didn't report cache usage) so the call shape
@@ -477,10 +494,10 @@ export interface DatabaseProvider {
     cacheCreationInputTokens: number
     cacheReadInputTokens: number
     /**
-     * Credit-settle delta: `estimateMessageCredits(...) - 1` for the
-     * turn (the initial 1 was reserved atomically before the model
-     * call). Optional so lighter call sites keep their shape; omitted
-     * means 0.
+     * Credit-settle delta: the turn's credits minus what was reserved
+     * for it. Negative when the turn used less than its reservation
+     * (`reserveAgentCredits`) — the refund. Optional so lighter call
+     * sites keep their shape; omitted means 0.
      */
     messageCountDelta?: number
   }) => Promise<void>

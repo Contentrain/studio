@@ -25,8 +25,9 @@ function setupChatStubs(overrides: {
   incrementAllowed?: boolean
   currentCount?: number
 } = {}) {
-  const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({
+  const reserveAgentCredits = vi.fn().mockResolvedValue({
     allowed: overrides.incrementAllowed ?? false,
+    granted: 0,
     currentCount: overrides.currentCount ?? 51,
   })
 
@@ -40,7 +41,7 @@ function setupChatStubs(overrides: {
     accessToken: 'token-1',
   }))
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-    incrementAgentUsageIfAllowed,
+    reserveAgentCredits,
   }))
   vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
     project: { id: 'project-1', status: 'active' },
@@ -62,12 +63,12 @@ function setupChatStubs(overrides: {
     public: { siteUrl: 'http://localhost:3000' },
   }))
 
-  return { incrementAgentUsageIfAllowed }
+  return { reserveAgentCredits }
 }
 
 describe('soft cap enforcement', () => {
   it('passes SOFT_CAP_MAX as limit when overage is enabled', async () => {
-    const { incrementAgentUsageIfAllowed } = setupChatStubs({
+    const { reserveAgentCredits } = setupChatStubs({
       overageSettings: { ai_messages: true },
       incrementAllowed: false,
       currentCount: 51,
@@ -84,12 +85,12 @@ describe('soft cap enforcement', () => {
         body: JSON.stringify({ message: 'hello', context: { billing: { overageSettings: { ai_messages: true } } } }),
       })
 
-      // The handler will call incrementAgentUsageIfAllowed.
+      // The handler will call reserveAgentCredits.
       // With overage enabled, the limit should be SOFT_CAP_MAX (2147483647), not 50.
       // Since we mock allowed: false, it will still get 429,
       // but we verify the limit argument passed to the RPC.
-      if (incrementAgentUsageIfAllowed.mock.calls.length > 0) {
-        const callArg = incrementAgentUsageIfAllowed.mock.calls[0][0]
+      if (reserveAgentCredits.mock.calls.length > 0) {
+        const callArg = reserveAgentCredits.mock.calls[0][0]
         // When billing context has overage enabled, limit should be raised
         expect(callArg.limit).toBeDefined()
       }
@@ -100,7 +101,7 @@ describe('soft cap enforcement', () => {
   })
 
   it('passes plan limit when overage is disabled (default hard cap)', async () => {
-    const { incrementAgentUsageIfAllowed } = setupChatStubs({
+    const { reserveAgentCredits } = setupChatStubs({
       overageSettings: {},
       incrementAllowed: false,
       currentCount: 51,
@@ -120,8 +121,8 @@ describe('soft cap enforcement', () => {
       expect(response.status).toBe(429)
 
       // Verify the RPC was called — the limit is controlled by billing context
-      if (incrementAgentUsageIfAllowed.mock.calls.length > 0) {
-        const callArg = incrementAgentUsageIfAllowed.mock.calls[0][0]
+      if (reserveAgentCredits.mock.calls.length > 0) {
+        const callArg = reserveAgentCredits.mock.calls[0][0]
         expect(callArg.limit).toBeDefined()
       }
     })

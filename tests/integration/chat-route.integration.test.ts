@@ -80,7 +80,7 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      incrementAgentUsageIfAllowed: vi.fn().mockResolvedValue({ allowed: false, currentCount: 3 }),
+      reserveAgentCredits: vi.fn().mockResolvedValue({ allowed: false, granted: 0, currentCount: 3 }),
     }))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       project: { id: 'project-1', status: 'active' },
@@ -138,7 +138,8 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      incrementAgentUsageIfAllowed: vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 }),
+      reserveAgentCredits: vi.fn().mockResolvedValue({ allowed: true, granted: 30, currentCount: 30 }),
+      updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
       getConversation: vi.fn().mockResolvedValue(null),
       createConversation: mockCreateConversation,
       loadConversationMessages: mockLoadMessages,
@@ -333,7 +334,8 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      incrementAgentUsageIfAllowed: vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 }),
+      reserveAgentCredits: vi.fn().mockResolvedValue({ allowed: true, granted: 30, currentCount: 30 }),
+      updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
       getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
       createConversation: vi.fn().mockResolvedValue('conversation-existing'),
       loadConversationMessages: vi.fn().mockResolvedValue([]),
@@ -402,8 +404,8 @@ describe('chat route integration', () => {
   })
 
   it('refunds the reserved slot when the provider errors before yielding any event', async () => {
-    const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 })
-    const decrementAgentUsage = vi.fn().mockResolvedValue(undefined)
+    const reserveAgentCredits = vi.fn().mockResolvedValue({ allowed: true, granted: 30, currentCount: 30 })
+    const updateAgentUsageTokens = vi.fn().mockResolvedValue(undefined)
     const recordAIUsage = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
@@ -416,8 +418,8 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      incrementAgentUsageIfAllowed,
-      decrementAgentUsage,
+      reserveAgentCredits,
+      updateAgentUsageTokens,
       getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
       createConversation: vi.fn().mockResolvedValue('conversation-existing'),
       loadConversationMessages: vi.fn().mockResolvedValue([]),
@@ -473,22 +475,24 @@ describe('chat route integration', () => {
       })
       await response.text() // drain SSE
 
-      expect(incrementAgentUsageIfAllowed).toHaveBeenCalledTimes(1)
-      expect(decrementAgentUsage).toHaveBeenCalledTimes(1)
-      expect(decrementAgentUsage).toHaveBeenCalledWith({
+      expect(reserveAgentCredits).toHaveBeenCalledTimes(1)
+      // No tokens were spent: the settle refunds the whole reservation.
+      expect(updateAgentUsageTokens).toHaveBeenCalledTimes(1)
+      expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({
         workspaceId: 'workspace-1',
         userId: 'user-1',
-        month: expect.any(String),
         source: 'studio',
-      })
-      // Meter event only fires after first billable provider event.
+        inputTokens: 0,
+        outputTokens: 0,
+        messageCountDelta: -30,
+      }))
       expect(recordAIUsage).not.toHaveBeenCalled()
     })
   })
 
-  it('keeps the reservation when the provider yields at least one event before erroring', async () => {
-    const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 })
-    const decrementAgentUsage = vi.fn().mockResolvedValue(undefined)
+  it('counts what a turn that failed mid-stream really used', async () => {
+    const reserveAgentCredits = vi.fn().mockResolvedValue({ allowed: true, granted: 30, currentCount: 30 })
+    const updateAgentUsageTokens = vi.fn().mockResolvedValue(undefined)
     const recordAIUsage = vi.fn().mockResolvedValue(undefined)
 
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
@@ -501,8 +505,8 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      incrementAgentUsageIfAllowed,
-      decrementAgentUsage,
+      reserveAgentCredits,
+      updateAgentUsageTokens,
       getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
       createConversation: vi.fn().mockResolvedValue('conversation-existing'),
       loadConversationMessages: vi.fn().mockResolvedValue([]),
@@ -556,16 +560,21 @@ describe('chat route integration', () => {
       })
       await response.text()
 
-      expect(incrementAgentUsageIfAllowed).toHaveBeenCalledTimes(1)
-      // Slot stays consumed: first real provider event flipped `committed`.
-      expect(decrementAgentUsage).not.toHaveBeenCalled()
+      expect(reserveAgentCredits).toHaveBeenCalledTimes(1)
+      // Tokens streamed before the failure are counted (≥ 1 credit), the
+      // rest of the reservation is refunded, and the meter gets the same.
+      expect(updateAgentUsageTokens).toHaveBeenCalledTimes(1)
+      const settle = updateAgentUsageTokens.mock.calls[0]![0]
+      expect(settle.outputTokens).toBeGreaterThan(0)
+      expect(settle.messageCountDelta).toBe(1 - 30)
       expect(recordAIUsage).toHaveBeenCalledTimes(1)
+      expect(recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 1 }))
     })
   })
 
   it('refunds the reserved slot when a pre-AI step fails after reservation', async () => {
-    const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 1 })
-    const decrementAgentUsage = vi.fn().mockResolvedValue(undefined)
+    const reserveAgentCredits = vi.fn().mockResolvedValue({ allowed: true, granted: 30, currentCount: 30 })
+    const updateAgentUsageTokens = vi.fn().mockResolvedValue(undefined)
     const recordAIUsage = vi.fn().mockResolvedValue(undefined)
     const loadConversationMessages = vi.fn().mockRejectedValue(new Error('history table offline'))
 
@@ -579,8 +588,8 @@ describe('chat route integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-      incrementAgentUsageIfAllowed,
-      decrementAgentUsage,
+      reserveAgentCredits,
+      updateAgentUsageTokens,
       getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
       createConversation: vi.fn().mockResolvedValue('conversation-existing'),
       loadConversationMessages,
@@ -614,9 +623,9 @@ describe('chat route integration', () => {
       // Handler throws before streaming starts; h3 turns it into a 500.
       expect(response.status).toBeGreaterThanOrEqual(500)
 
-      expect(incrementAgentUsageIfAllowed).toHaveBeenCalledTimes(1)
+      expect(reserveAgentCredits).toHaveBeenCalledTimes(1)
       expect(loadConversationMessages).toHaveBeenCalledTimes(1)
-      expect(decrementAgentUsage).toHaveBeenCalledTimes(1)
+      expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ messageCountDelta: -30 }))
       expect(recordAIUsage).not.toHaveBeenCalled()
     })
   })

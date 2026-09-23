@@ -20,7 +20,8 @@ async function loadChatHandler() {
 }
 
 function stubTurn(opts: { plan: string, monthlyLimit: number }) {
-  const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: true, currentCount: 0 })
+  const reserveAgentCredits = vi.fn().mockImplementation(async ({ amount }: { amount: number }) => ({ allowed: true, granted: amount, currentCount: amount }))
+  const updateAgentUsageTokens = vi.fn().mockResolvedValue(undefined)
   const recordAIUsage = vi.fn().mockResolvedValue(undefined)
   const saveChatResult = vi.fn().mockResolvedValue(undefined)
 
@@ -34,8 +35,8 @@ function stubTurn(opts: { plan: string, monthlyLimit: number }) {
     accessToken: 'token-1',
   }))
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-    incrementAgentUsageIfAllowed,
-    decrementAgentUsage: vi.fn().mockResolvedValue(undefined),
+    reserveAgentCredits,
+    updateAgentUsageTokens,
     getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
     createConversation: vi.fn().mockResolvedValue('conversation-existing'),
     loadConversationMessages: vi.fn().mockResolvedValue([]),
@@ -81,7 +82,7 @@ function stubTurn(opts: { plan: string, monthlyLimit: number }) {
     },
   }))
 
-  return { incrementAgentUsageIfAllowed, recordAIUsage, saveChatResult }
+  return { reserveAgentCredits, updateAgentUsageTokens, recordAIUsage, saveChatResult }
 }
 
 async function runTurn() {
@@ -109,27 +110,31 @@ describe('chat route — BYOA turns are outside the AI credit quota and never me
 
   it('a BYOA turn books its row as byoa and sends nothing to the payment meter', async () => {
     resolveEnterpriseChatApiKey.mockResolvedValue({ apiKey: 'sk-user-own', usageSource: 'byoa' })
-    const { incrementAgentUsageIfAllowed, recordAIUsage, saveChatResult } = stubTurn({ plan: 'pro', monthlyLimit: 350 })
+    const { reserveAgentCredits, updateAgentUsageTokens, recordAIUsage, saveChatResult } = stubTurn({ plan: 'pro', monthlyLimit: 350 })
 
     await runTurn()
 
-    // Row booked under `byoa` — migration 030 keeps it out of the pool.
-    expect(incrementAgentUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ source: 'byoa' }))
-    // Neither the base event nor a credit top-up reaches the meter.
+    // Row booked under `byoa` at 1 — migrations 030/031 keep it out of the pool.
+    expect(reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ source: 'byoa', amount: 1 }))
+    // The settle records its tokens but keeps it at 1 credit.
+    expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'byoa', inputTokens: 400_000, messageCountDelta: 0 }))
+    // Nothing reaches the payment meter.
     expect(recordAIUsage).not.toHaveBeenCalled()
-    expect(saveChatResult).toHaveBeenCalledWith(expect.objectContaining({ usageSource: 'byoa', extraMessageCount: 0 }))
+    expect(saveChatResult).toHaveBeenCalledWith(expect.objectContaining({ usageSource: 'byoa', settleUsage: false }))
   })
 
   it('a Studio-key turn is reserved and metered as before', async () => {
     resolveEnterpriseChatApiKey.mockResolvedValue({ apiKey: 'sk-studio', usageSource: 'studio' })
-    const { incrementAgentUsageIfAllowed, recordAIUsage } = stubTurn({ plan: 'pro', monthlyLimit: 350 })
+    const { reserveAgentCredits, updateAgentUsageTokens, recordAIUsage } = stubTurn({ plan: 'pro', monthlyLimit: 350 })
 
     await runTurn()
 
-    expect(incrementAgentUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', limit: 350 }))
-    // Base credit on the first provider event, then the credit-weighted top-up.
-    expect(recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 1 }))
-    expect(recordAIUsage.mock.calls.length).toBeGreaterThanOrEqual(1)
+    // The whole Pro turn ceiling (60) is reserved up front.
+    expect(reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', limit: 350, amount: 60 }))
+    // 400K in + 60K out on Haiku 4.5 = $0.70 = 23 credits; the other 37 are refunded.
+    expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', messageCountDelta: 23 - 60 }))
+    expect(recordAIUsage).toHaveBeenCalledTimes(1)
+    expect(recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 23 }))
   })
 
   it('on an unlimited plan only Studio-key turns are metered', async () => {
@@ -141,6 +146,6 @@ describe('chat route — BYOA turns are outside the AI credit quota and never me
     resolveEnterpriseChatApiKey.mockResolvedValue({ apiKey: 'sk-studio', usageSource: 'studio' })
     const studio = stubTurn({ plan: 'enterprise', monthlyLimit: Infinity })
     await runTurn()
-    expect(studio.recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 1 }))
+    expect(studio.recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 23 }))
   })
 })

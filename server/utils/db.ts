@@ -382,6 +382,12 @@ export async function saveChatResult(input: {
    * for turns that never produced a billable event.
    */
   extraMessageCount?: number
+  /**
+   * `false` when the caller settles the usage row itself. The studio
+   * chat route does, in its `finally`, so a turn whose trace insert
+   * fails — or that never gets here — is still settled (AI-8).
+   */
+  settleUsage?: boolean
 }) {
   const db = useDatabaseProvider()
 
@@ -407,7 +413,7 @@ export async function saveChatResult(input: {
     throw err
   }
 
-  await db.updateAgentUsageTokens({
+  if (input.settleUsage !== false) await db.updateAgentUsageTokens({
     workspaceId: input.workspaceId,
     userId: input.userId,
     month: input.usageMonth,
