@@ -113,6 +113,11 @@ export default defineEventHandler(async (event) => {
 
   // Origin-transfer limit (`cdn.bandwidth_gb`, docs/CDN_EDGE.md). Checked
   // before the storage read, so a refused request costs no egress.
+  // Intentional: a paused or expired workspace keeps serving within the
+  // origin cap until its keys or project are revoked. The plan comes from
+  // the workspace column (the same one the entitlement gate reads), so an
+  // expired Pro trial serves within the Pro cap — bounded by that cap, and
+  // only until revoke; a site going dark at trial end is the worse outcome.
   const workspaceId = project.workspace_id as string
   const limitGb = getEffectiveLimit(
     getPlanLimit(plan, 'cdn.bandwidth_gb'),

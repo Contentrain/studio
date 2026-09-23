@@ -182,7 +182,7 @@ describe('CDN route integration', () => {
       expect(getObject).toHaveBeenCalled()
     })
 
-    it('observe (the default): over the limit it still serves', async () => {
+    it('observe: over the limit it still serves', async () => {
       const { run, getObject } = await serveMedia({ mode: 'observe', usedBytes: 80 * GIB })
       await expect(run()).resolves.toEqual(Buffer.from('img'))
       expect(getObject).toHaveBeenCalled()

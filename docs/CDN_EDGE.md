@@ -88,6 +88,10 @@ workspace per calendar month. Cache hits never reach the origin and never count.
 | `NUXT_CDN_ORIGIN_LIMIT` | `enforce`: past the plan limit delivery **continues** (usage alert + banner with the upgrade link); at **120 %** of the limit the origin answers **429** + `Retry-After` until the month resets, unless overage is on · `observe`: count and log, never refuse (self-hosters, operators) · `off` | `enforce` |
 | `NUXT_CDN_ORIGIN_METER` | `true` sends one `cdn_origin_gb` event per workspace per finished UTC day to the payment meter | `false` |
 
+`enforce` is the default on every deployment profile, dedicated and on-premise
+included. An operator who wants to count without refusing sets `observe`
+explicitly.
+
 The owner hears about it through the usage alerts (`server/utils/usage-alerts.ts`),
 once per workspace and month at each level:
 - **80 %**: warning;
