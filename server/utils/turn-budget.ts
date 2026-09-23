@@ -23,11 +23,12 @@
 import type { AIUsage } from '../providers/ai'
 import type { ModelPricing } from '../../shared/utils/ai-models'
 import {
-  CACHE_READ_MULTIPLIER,
   CACHE_WRITE_MULTIPLIER,
+  cacheReadMultiplierFor,
   estimateMessageCostUsd,
   pricingForModel,
 } from '../../shared/utils/ai-credits'
+import { thinkingModeFor } from '../../shared/utils/ai-models'
 
 /** Below this output allowance a tool-using iteration is not worth making. */
 export const MIN_TOOL_CALL_OUTPUT_TOKENS = 1024
@@ -41,6 +42,37 @@ export const MIN_CLOSE_OUTPUT_TOKENS = 256
  * the history budget's ~3.5 chars/token.
  */
 export const CLOSE_TOOL_RESULT_ALLOWANCE_TOKENS = 9200
+
+/**
+ * Output a thinking model (`thinking: 'adaptive'`, Opus 5.5) spends on its
+ * reasoning before it writes anything — counted against `max_tokens` like
+ * the answer. A call whose ceiling the budget lowered to the plain floors
+ * above could spend all of it thinking and stop with nothing to show
+ * (`output_truncated`): the customer pays for the credits and gets no
+ * answer. So on those models every floor carries this headroom on top.
+ * Effort is not lowered instead: changing it mid-conversation invalidates
+ * the prompt cache, which would cost more than it saves.
+ */
+export const THINKING_HEADROOM_TOKENS = 3072
+
+export interface OutputFloors {
+  /** Below this output allowance a tool-using iteration is not made. */
+  minToolCall: number
+  /** Output allowance for the budget-close summary call. */
+  close: number
+  /** Below this, the summary call is skipped for a deterministic message. */
+  minClose: number
+}
+
+/** The output floors for a model: the plain ones, plus thinking headroom on thinking models. */
+export function outputFloorsFor(model: string): OutputFloors {
+  const headroom = thinkingModeFor(model) === 'adaptive' ? THINKING_HEADROOM_TOKENS : 0
+  return {
+    minToolCall: MIN_TOOL_CALL_OUTPUT_TOKENS + headroom,
+    close: CLOSE_OUTPUT_TOKENS + headroom,
+    minClose: MIN_CLOSE_OUTPUT_TOKENS + headroom,
+  }
+}
 
 export interface TurnBudget {
   /** Dollars the turn may spend at list price. */
@@ -69,7 +101,7 @@ export interface PromptEstimate {
 export function promptCostUsd(prompt: PromptEstimate, pricing: ModelPricing): number {
   return (
     prompt.fresh * pricing.inputPerMTok * CACHE_WRITE_MULTIPLIER
-    + prompt.cached * pricing.inputPerMTok * CACHE_READ_MULTIPLIER
+    + prompt.cached * pricing.inputPerMTok * cacheReadMultiplierFor(pricing)
   ) / 1e6
 }
 
@@ -113,7 +145,7 @@ export function closeReserveUsd(model: string, prompt: PromptEstimate, maxOutput
     cached: prompt.cached + prompt.fresh,
     fresh: maxOutputTokens + CLOSE_TOOL_RESULT_ALLOWANCE_TOKENS,
   }
-  return promptCostUsd(closePrompt, pricing) + CLOSE_OUTPUT_TOKENS * pricing.outputPerMTok / 1e6
+  return promptCostUsd(closePrompt, pricing) + outputFloorsFor(model).close * pricing.outputPerMTok / 1e6
 }
 
 export function usageCostUsd(model: string, usage: AIUsage): number {

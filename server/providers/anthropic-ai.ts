@@ -7,9 +7,11 @@ import type {
   AIProvider,
   AIStreamEvent,
   AISystemBlock,
+  AIThinkingBlock,
   AITool,
   AIUsage,
 } from './ai'
+import { effortFor, thinkingModeFor } from '../../shared/utils/ai-models'
 
 /**
  * Anthropic implementation of AIProvider.
@@ -29,6 +31,10 @@ import type {
  * prompt cache keys on. `toAnthropicMessages` therefore sorts object
  * keys recursively on the way out — live and replayed turns serialize
  * the same way regardless of origin.
+ *
+ * Thinking: see `requestThinking`. A model that cannot turn thinking
+ * off gets adaptive thinking, and its thinking blocks travel through
+ * the engine as `AIThinkingBlock`s so they go back unchanged.
  */
 export function createAnthropicProvider(): AIProvider {
   return {
@@ -37,21 +43,19 @@ export function createAnthropicProvider(): AIProvider {
       apiKey: string,
     ): AsyncGenerator<AIStreamEvent> {
       const client = new Anthropic({ apiKey })
+      const thinking = requestThinking(request.model)
 
       const stream = client.messages.stream({
         model: request.model,
         system: toAnthropicSystem(request.system),
-        messages: toAnthropicMessages(request.messages),
+        messages: toAnthropicMessages(request.messages, { keepThinking: thinking.keepThinking }),
         tools: toAnthropicTools(request.tools),
         max_tokens: request.maxTokens,
-        // Explicitly off, not merely omitted: newer models (Sonnet 5+)
-        // default to adaptive thinking when the field is absent, and
-        // Studio's engine neither persists nor replays thinking blocks
-        // — an assistant turn echoed back without them would break the
-        // tool-use loop.
-        thinking: { type: 'disabled' },
-      }, { signal: request.abortSignal })
+        ...thinking.params,
+      }, { signal: request.abortSignal, headers: thinking.headers })
 
+      // Thinking block being streamed, flushed as one event on its stop.
+      let currentThinking: AIThinkingBlock | undefined
       let currentToolId: string | undefined
       let currentToolName: string | undefined
       let currentToolInput = ''
@@ -90,6 +94,12 @@ export function createAnthropicProvider(): AIProvider {
             if (event.content_block.type === 'text') {
               // Text block starting — nothing to emit yet
             }
+            else if (event.content_block.type === 'thinking') {
+              currentThinking = { type: 'thinking', thinking: event.content_block.thinking ?? '', signature: event.content_block.signature ?? '' }
+            }
+            else if (event.content_block.type === 'redacted_thinking') {
+              currentThinking = { type: 'redacted_thinking', data: event.content_block.data }
+            }
             else if (event.content_block.type === 'tool_use') {
               currentToolId = event.content_block.id
               currentToolName = event.content_block.name
@@ -106,6 +116,12 @@ export function createAnthropicProvider(): AIProvider {
             if (event.delta.type === 'text_delta') {
               yield { type: 'text', content: event.delta.text }
             }
+            else if (event.delta.type === 'thinking_delta' && currentThinking?.type === 'thinking') {
+              currentThinking.thinking += event.delta.thinking
+            }
+            else if (event.delta.type === 'signature_delta' && currentThinking?.type === 'thinking') {
+              currentThinking.signature += event.delta.signature
+            }
             else if (event.delta.type === 'input_json_delta') {
               currentToolInput += event.delta.partial_json
               yield {
@@ -117,7 +133,11 @@ export function createAnthropicProvider(): AIProvider {
             break
 
           case 'content_block_stop':
-            if (currentToolId) {
+            if (currentThinking) {
+              yield { type: 'thinking', thinking: currentThinking }
+              currentThinking = undefined
+            }
+            else if (currentToolId) {
               let parsedInput: unknown
               try {
                 parsedInput = JSON.parse(currentToolInput)
@@ -167,16 +187,16 @@ export function createAnthropicProvider(): AIProvider {
       apiKey: string,
     ): Promise<AICompletionResponse> {
       const client = new Anthropic({ apiKey })
+      const thinking = requestThinking(request.model)
 
       const response = await client.messages.create({
         model: request.model,
         system: toAnthropicSystem(request.system),
-        messages: toAnthropicMessages(request.messages),
+        messages: toAnthropicMessages(request.messages, { keepThinking: thinking.keepThinking }),
         tools: toAnthropicTools(request.tools),
         max_tokens: request.maxTokens,
-        // See streamCompletion — thinking must be explicitly disabled.
-        thinking: { type: 'disabled' },
-      }, { signal: request.abortSignal })
+        ...thinking.params,
+      }, { signal: request.abortSignal, headers: thinking.headers })
 
       const respUsage = response.usage as {
         input_tokens: number
@@ -196,6 +216,51 @@ export function createAnthropicProvider(): AIProvider {
         },
       }
     },
+  }
+}
+
+/**
+ * Opt-in for the thinking-binding controls, so a prefix mismatch can
+ * degrade (`drop_block`) instead of failing the request.
+ */
+export const THINKING_BINDING_BETA = 'thinking-binding-controls-2026-08-01'
+
+/**
+ * Thinking parameters for a model (catalog `thinking` mode).
+ *
+ * `disabled` — sent explicitly, not merely omitted: newer models
+ * (Sonnet 5+) default to adaptive thinking when the field is absent.
+ * Thinking blocks are also left out of the replayed messages: a
+ * conversation that switched from a thinking model keeps them in its
+ * rows, and a model running without thinking has no use for them.
+ *
+ * `adaptive` — for a model that rejects `disabled` (Opus 5.5). Effort
+ * is set explicitly. Thinking blocks are kept, in the tool loop and on
+ * replay: the model needs them to continue after a tool call. They are
+ * signed against the conversation prefix, and Studio's replay does
+ * change earlier turns (a base64 image becomes a placeholder), which
+ * accounts created after 2026-08-31 treat as an error. `drop_block`
+ * turns that into dropping the stale blocks for that request, so the
+ * turn runs without the old reasoning instead of failing — the case
+ * for BYOA keys on new accounts.
+ */
+export function requestThinking(model: string): {
+  params: { thinking: Anthropic.ThinkingConfigParam, output_config?: Anthropic.OutputConfig }
+  headers?: Record<string, string>
+  keepThinking: boolean
+} {
+  if (thinkingModeFor(model) !== 'adaptive') {
+    return { params: { thinking: { type: 'disabled' } }, keepThinking: false }
+  }
+  const effort = effortFor(model)
+  return {
+    params: {
+      // `block_binding` is not in the SDK types yet; it rides with the beta header.
+      thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } } as Anthropic.ThinkingConfigParam,
+      ...(effort ? { output_config: { effort } } : {}),
+    },
+    headers: { 'anthropic-beta': THINKING_BINDING_BETA },
+    keepThinking: true,
   }
 }
 
@@ -238,18 +303,32 @@ export function canonicalizeJson(value: unknown): unknown {
  * Convert Studio messages to Anthropic format. Exported for unit
  * testing of the content-block mapping (image/document/tool blocks).
  */
-export function toAnthropicMessages(messages: AICompletionRequest['messages']): Anthropic.MessageParam[] {
+export function toAnthropicMessages(
+  messages: AICompletionRequest['messages'],
+  opts: { keepThinking?: boolean } = {},
+): Anthropic.MessageParam[] {
   return messages.map((msg) => {
     if (typeof msg.content === 'string') {
       return { role: msg.role, content: msg.content }
     }
 
+    const source = opts.keepThinking
+      ? msg.content
+      : msg.content.filter(block => block.type !== 'thinking' && block.type !== 'redacted_thinking')
+    // A turn that produced only thinking (cut off at max_tokens) would
+    // be empty without it — an empty assistant message is a 400.
+    if (source.length === 0) return { role: msg.role, content: [{ type: 'text' as const, text: '(no reply)' }] }
+
     // Convert content blocks. A `cacheControl` marker on any block maps
     // to `cache_control` — the history builder places one on the tail
     // of the replayed conversation.
-    const blocks: Anthropic.ContentBlockParam[] = msg.content.map((block) => {
+    const blocks: Anthropic.ContentBlockParam[] = source.map((block) => {
       const cache = toCacheControl(block.cacheControl)
       switch (block.type) {
+        case 'thinking':
+          return { type: 'thinking' as const, thinking: block.thinking, signature: block.signature }
+        case 'redacted_thinking':
+          return { type: 'redacted_thinking' as const, data: block.data }
         case 'text':
           return { type: 'text' as const, text: block.text, ...cache }
         case 'tool_use':
@@ -297,6 +376,12 @@ function fromAnthropicContent(content: Anthropic.ContentBlock[]): AIContentBlock
     }
     if (block.type === 'tool_use') {
       return { type: 'tool_use' as const, id: block.id, name: block.name, input: block.input }
+    }
+    if (block.type === 'thinking') {
+      return { type: 'thinking' as const, thinking: block.thinking, signature: block.signature }
+    }
+    if (block.type === 'redacted_thinking') {
+      return { type: 'redacted_thinking' as const, data: block.data }
     }
     return { type: 'text' as const, text: '' }
   })

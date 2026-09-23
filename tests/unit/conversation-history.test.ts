@@ -26,11 +26,9 @@ describe('selectHistoryBudget', () => {
       .toMatchObject({ maxTokens: 48_000 })
     // Catalog-sourced entries (shared/utils/ai-models.ts) — the replayed
     // history is served from the prompt cache, so the window is wide.
-    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-4-6', source: 'studio' }))
-      .toMatchObject({ maxTokens: 96_000 })
     expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 96_000 })
-    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-4-8', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-5-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 96_000 })
   })
 
@@ -72,7 +70,7 @@ describe('selectHistoryBudget', () => {
   })
 
   it('scales rowLimit with the token budget', () => {
-    const big = selectHistoryBudget({ plan: 'enterprise', model: 'claude-sonnet-4-6', source: 'byoa' })
+    const big = selectHistoryBudget({ plan: 'enterprise', model: 'claude-sonnet-5', source: 'byoa' })
     const small = selectHistoryBudget({ plan: 'starter', model: 'claude-haiku-4-5-20251001', source: 'studio' })
     expect(big.rowLimit).toBeGreaterThan(small.rowLimit)
     expect(small.rowLimit).toBeGreaterThanOrEqual(50) // minimum safety floor
@@ -408,6 +406,12 @@ describe('estimateContentTokens', () => {
     const tokens = estimateContentTokens([{ type: 'tool_use', id: 't', name: 'save_content', input: { body: 'x'.repeat(3500) } }])
     expect(tokens).toBeGreaterThan(1_000)
   })
+
+  it('counts a replayed thinking block by its signature, which carries the reasoning', () => {
+    // Opus 5.5 returns thinking with an empty visible text by default.
+    expect(estimateContentTokens([{ type: 'thinking', thinking: '', signature: 's'.repeat(4000) }])).toBe(1_000)
+    expect(estimateContentTokens([{ type: 'redacted_thinking', data: 'd'.repeat(400) }])).toBe(100)
+  })
 })
 
 describe('buildPromptMessages — turn-safe Anthropic protocol invariant', () => {
@@ -506,6 +510,20 @@ describe('markMessageTail', () => {
     const marked = markMessageTail(original)
     expect((marked.content as Array<Record<string, unknown>>)[0]).toMatchObject({ cacheControl: PROMPT_CACHE_CONTROL })
     expect(JSON.stringify(original)).not.toContain('cacheControl')
+  })
+
+  it('never marks a thinking block — the provider rejects cache_control on it', () => {
+    const marked = markMessageTail({
+      role: 'assistant' as const,
+      content: [
+        { type: 'text' as const, text: 'answer' },
+        { type: 'thinking' as const, thinking: '', signature: 'sig' },
+      ],
+    })
+    expect(marked.content).toEqual([
+      { type: 'text', text: 'answer', cacheControl: PROMPT_CACHE_CONTROL },
+      { type: 'thinking', thinking: '', signature: 'sig' },
+    ])
   })
 
   it('turns a plain-string message into a marked text block', () => {

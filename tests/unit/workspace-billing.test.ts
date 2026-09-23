@@ -83,6 +83,15 @@ describe('resolveConversationModel', () => {
     expect(DEFAULT_CONVERSATION_API_MODEL).toBe('claude-sonnet-5')
     expect(resolveConversationModel('claude-sonnet-4-20250514')).toBe('claude-sonnet-5')
     expect(resolveConversationModel(null)).toBe('claude-sonnet-5')
+    // Retired with the catalog: $3/$15 Sonnet 4.5 runs on Sonnet 5.
+    expect(resolveConversationModel('claude-sonnet-4-5')).toBe('claude-sonnet-5')
+    expect(resolveConversationModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001')
+  })
+
+  it('never lets a public API key run a premium model', async () => {
+    const { CONVERSATION_API_MODELS, resolveConversationModel } = await import('../../server/utils/conversation-keys')
+    expect([...CONVERSATION_API_MODELS].sort()).toEqual(['claude-haiku-4-5-20251001', 'claude-sonnet-5'])
+    expect(resolveConversationModel('claude-opus-5-5')).toBe('claude-sonnet-5')
     expect(resolveConversationModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001')
   })
 })

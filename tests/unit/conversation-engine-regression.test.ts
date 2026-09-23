@@ -261,6 +261,41 @@ describe('conversation engine regression', () => {
     })
   })
 
+  it('carries a thinking block into the next iteration unchanged, ahead of the tool call', async () => {
+    // Opus 5.5 cannot turn thinking off; its tool-use continuation is
+    // rejected unless the assistant turn replays the thinking block
+    // exactly as produced.
+    const thinking = { type: 'thinking' as const, thinking: '', signature: 'sig-abc' }
+    let call = 0
+    const { events, messages } = await collectConversationEvents({
+      aiProvider: {
+        streamCompletion() {
+          const idx = call++
+          return (async function* () {
+            if (idx === 0) {
+              yield { type: 'thinking', thinking }
+              yield { type: 'tool_use_start', toolId: 'tool-1', toolName: 'test_tool' }
+              yield { type: 'tool_use_end', toolId: 'tool-1', toolName: 'test_tool', toolInput: { a: 1 } }
+              yield { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 5, outputTokens: 2 } }
+            }
+            else {
+              yield { type: 'text', content: 'Done.' }
+              yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 1 } }
+            }
+          })()
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(messages[1]).toEqual({
+      role: 'assistant',
+      content: [thinking, { type: 'tool_use', id: 'tool-1', name: 'test_tool', input: { a: 1 } }],
+    })
+    // Thinking is not forwarded to the client as text.
+    expect(events.filter(e => e.type === 'text').map(e => (e as { content?: string }).content)).toEqual(['Done.'])
+  })
+
   it('streams assistant text before tool use in later iterations', async () => {
     let call = 0
     const { messages } = await collectConversationEvents({

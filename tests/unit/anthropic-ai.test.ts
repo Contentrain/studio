@@ -104,14 +104,83 @@ describe('anthropic provider', () => {
       },
     ])
 
-    // Thinking must be explicitly disabled on every request: models that
-    // default it ON when the field is omitted (Sonnet 5+) would emit
-    // thinking blocks Studio's engine never persists or replays, breaking
-    // the tool-use loop on the echoed assistant turn.
+    // Thinking must be explicitly disabled for a non-adaptive model:
+    // models that default it ON when the field is omitted (Sonnet 5+)
+    // would think on every call.
     expect(anthropicState.stream).toHaveBeenCalledWith(
       expect.objectContaining({ thinking: { type: 'disabled' } }),
       expect.anything(),
     )
+  })
+
+  it('runs Opus 5.5 with adaptive thinking and streams its thinking block as one event', async () => {
+    // Opus 5.5 answers `thinking: disabled` with a 400 at every effort.
+    anthropicState.stream.mockReturnValue((async function* () {
+      yield { type: 'message_start', message: { usage: { input_tokens: 10, output_tokens: 0 } } }
+      yield { type: 'content_block_start', content_block: { type: 'thinking', thinking: '', signature: '' } }
+      yield { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'plan' } }
+      yield { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'sig-' } }
+      yield { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'abc' } }
+      yield { type: 'content_block_stop' }
+      yield { type: 'content_block_start', content_block: { type: 'redacted_thinking', data: 'enc' } }
+      yield { type: 'content_block_stop' }
+      yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi.' } }
+      yield { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 4 } }
+      yield { type: 'message_stop' }
+    })())
+
+    const { createAnthropicProvider, THINKING_BINDING_BETA } = await import('../../server/providers/anthropic-ai')
+    const events = []
+    for await (const event of createAnthropicProvider().streamCompletion({
+      model: 'claude-opus-5-5',
+      system: 'system',
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      maxTokens: 256,
+    }, 'api-key')) {
+      events.push(event)
+    }
+
+    expect(events.filter(e => e.type !== 'message_start').slice(0, 3)).toEqual([
+      { type: 'thinking', thinking: { type: 'thinking', thinking: 'plan', signature: 'sig-abc' } },
+      { type: 'thinking', thinking: { type: 'redacted_thinking', data: 'enc' } },
+      { type: 'text', content: 'Hi.' },
+    ])
+    const [params, options] = anthropicState.stream.mock.calls[0]!
+    expect(params.thinking).toEqual({ type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } })
+    expect(params.output_config).toEqual({ effort: 'medium' })
+    expect(options.headers).toEqual({ 'anthropic-beta': THINKING_BINDING_BETA })
+  })
+
+  it('keeps thinking blocks on replay for a thinking model and drops them for the others', async () => {
+    const { toAnthropicMessages } = await import('../../server/providers/anthropic-ai')
+    const history = [
+      { role: 'user' as const, content: 'hi' },
+      {
+        role: 'assistant' as const,
+        content: [
+          { type: 'thinking' as const, thinking: '', signature: 'sig' },
+          { type: 'text' as const, text: 'Hello.' },
+        ],
+      },
+      { role: 'assistant' as const, content: [{ type: 'redacted_thinking' as const, data: 'enc' }] },
+    ]
+
+    expect(toAnthropicMessages(history, { keepThinking: true })[1]!.content).toEqual([
+      { type: 'thinking', thinking: '', signature: 'sig' },
+      { type: 'text', text: 'Hello.' },
+    ])
+    const plain = toAnthropicMessages(history)
+    expect(plain[1]!.content).toEqual([{ type: 'text', text: 'Hello.' }])
+    // A thinking-only turn must not become an empty message (400).
+    expect(plain[2]!.content).toEqual([{ type: 'text', text: '(no reply)' }])
+  })
+
+  it('keeps thinking explicitly disabled for every model that is not adaptive', async () => {
+    const { requestThinking } = await import('../../server/providers/anthropic-ai')
+    for (const model of ['claude-sonnet-5', 'claude-haiku-4-5-20251001', 'claude-sonnet-4-5', 'claude-opus-4-8']) {
+      expect(requestThinking(model)).toEqual({ params: { thinking: { type: 'disabled' } }, keepThinking: false })
+    }
   })
 
   it('captures prompt cache token buckets reported by the provider', async () => {

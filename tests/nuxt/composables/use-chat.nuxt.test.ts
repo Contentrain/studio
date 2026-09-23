@@ -419,7 +419,7 @@ describe('useChat', () => {
   })
 
   describe('model persistence', () => {
-    const OPUS = 'claude-opus-4-8'
+    const OPUS = 'claude-opus-5-5'
     const HAIKU = 'claude-haiku-4-5-20251001'
 
     it('stores the picked model against the open project', async () => {
@@ -452,10 +452,10 @@ describe('useChat', () => {
       expect(useChat().selectedModel.value).toBe(OPUS)
     })
 
-    it('ignores a stored model that has left the catalog', () => {
+    it.each(['claude-sonnet-4-0', 'claude-opus-4-8', 'claude-sonnet-4-6'])('ignores a stored model that has left the catalog (%s)', (retired) => {
       // The server quietly falls back to an allowed model; the picker would
       // otherwise keep showing a label for a model nobody can select.
-      localStorage.setItem('contentrain-chat-model:project-a', 'claude-sonnet-4-0')
+      localStorage.setItem('contentrain-chat-model:project-a', retired)
 
       route.params = { projectId: 'project-a' }
 

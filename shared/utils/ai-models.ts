@@ -20,7 +20,26 @@
 export interface ModelPricing {
   inputPerMTok: number
   outputPerMTok: number
+  /**
+   * Cache-read rate as a fraction of `inputPerMTok`. Absent = the
+   * standard 0.1× (`CACHE_READ_MULTIPLIER` in `ai-credits.ts`). Opus 5.5
+   * reads cache at 0.05× — a flat 0.1 would bill its cached history at
+   * twice what Anthropic charges.
+   */
+  cacheReadMultiplier?: number
 }
+
+/**
+ * How the provider adapter asks a model to think:
+ * - `disabled`: sent as `thinking: { type: 'disabled' }`. Newer models
+ *   default to adaptive thinking when the field is absent, so it is
+ *   sent explicitly.
+ * - `adaptive`: the model cannot turn thinking off (Opus 5.5 answers a
+ *   `disabled` request with a 400). The adapter sends adaptive thinking
+ *   with `effort`, and the engine carries the returned thinking blocks
+ *   back unchanged — inside the tool loop and on replay.
+ */
+export type ModelThinkingMode = 'disabled' | 'adaptive'
 
 export interface ChatModelEntry {
   /** Exact Anthropic model ID sent to the API. */
@@ -38,10 +57,24 @@ export interface ChatModelEntry {
    */
   tier: 'starter' | 'pro'
   /**
+   * Premium models cost Studio the most per turn. A trial workspace on
+   * the Studio-funded key cannot pick them (`chat.post.ts`); BYOA and
+   * paid subscriptions can. The gate reads this flag, not a model-ID
+   * list, so a future premium model is covered by its catalog entry.
+   */
+  premium?: boolean
+  /** See `ModelThinkingMode`. Absent = `disabled`. */
+  thinking?: ModelThinkingMode
+  /**
+   * `output_config.effort` for `adaptive` models. Set explicitly: Opus
+   * 5.5's API default is `medium`, other models default to `high`.
+   */
+  effort?: 'low' | 'medium' | 'high'
+  /**
    * Anthropic list price for this model, used by
    * `shared/utils/ai-credits.ts` to weigh a message's credit cost.
-   * Cache write/read multipliers live in the credits helper — these
-   * are the base per-MTok rates.
+   * The cache-write multiplier lives in the credits helper; a
+   * non-standard cache-read rate rides on the entry.
    */
   pricing: ModelPricing
   /**
@@ -68,7 +101,8 @@ export interface ChatModelEntry {
    * truncates the tool call and the operation never runs; too large a
    * value risks a provider 400 for exceeding the model's own limit.
    * Values here stay comfortably within every listed model's documented
-   * output limit (Sonnet/Haiku 64K, Opus 32K).
+   * output limit (Haiku 64K, Sonnet 5 / Opus 5.5 128K). On an `adaptive`
+   * model the thinking tokens count toward this ceiling too.
    */
   maxOutputTokens: number
   /** Command palette icon class. */
@@ -90,17 +124,6 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     paletteKeywords: ['haiku', 'fast', 'economic'],
   },
   {
-    id: 'claude-sonnet-4-6',
-    label: 'Sonnet 4.6',
-    description: 'Balanced',
-    tier: 'pro',
-    pricing: { inputPerMTok: 3, outputPerMTok: 15 },
-    historyBudget: 96_000,
-    maxOutputTokens: 16_000,
-    paletteIcon: 'icon-[annon--star]',
-    paletteKeywords: ['sonnet', 'balanced'],
-  },
-  {
     // $2/$10 — launched as introductory pricing through 2026-08-31,
     // now confirmed permanent (Anthropic cancelled the scheduled
     // increase to Sonnet 4.6's $3/$15 sticker; see
@@ -120,13 +143,20 @@ export const CHAT_MODELS: readonly ChatModelEntry[] = [
     paletteKeywords: ['sonnet', 'balanced', 'newest', 'sonnet 5'],
   },
   {
-    id: 'claude-opus-4-8',
-    label: 'Opus 4.8',
+    // $4/$20, cache reads at 0.05× ($0.20/MTok — the same absolute rate
+    // as Sonnet 5), so replayed history costs no more than on Sonnet;
+    // the premium is in output and uncached input. Thinking is always
+    // on for this model (see `ModelThinkingMode`).
+    id: 'claude-opus-5-5',
+    label: 'Opus 5.5',
     description: 'Most capable',
     tier: 'pro',
-    pricing: { inputPerMTok: 5, outputPerMTok: 25 },
+    premium: true,
+    thinking: 'adaptive',
+    effort: 'medium',
+    pricing: { inputPerMTok: 4, outputPerMTok: 20, cacheReadMultiplier: 0.05 },
     historyBudget: 96_000,
-    maxOutputTokens: 16_000,
+    maxOutputTokens: 32_000,
     paletteIcon: 'icon-[annon--trophy]',
     paletteKeywords: ['opus', 'capable', 'best'],
   },
@@ -162,4 +192,19 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 8192
  */
 export function maxOutputTokensFor(modelId: string): number {
   return CHAT_MODELS.find(m => m.id === modelId)?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
+}
+
+/** Thinking mode for a model ID; legacy and Conversation-API IDs are `disabled`. */
+export function thinkingModeFor(modelId: string): ModelThinkingMode {
+  return CHAT_MODELS.find(m => m.id === modelId)?.thinking ?? 'disabled'
+}
+
+/** `output_config.effort` for an `adaptive` model, or undefined. */
+export function effortFor(modelId: string): ChatModelEntry['effort'] {
+  return CHAT_MODELS.find(m => m.id === modelId)?.effort
+}
+
+/** Whether a model ID is a premium catalog model (see `ChatModelEntry.premium`). */
+export function isPremiumModel(modelId: string): boolean {
+  return CHAT_MODELS.some(m => m.id === modelId && m.premium === true)
 }

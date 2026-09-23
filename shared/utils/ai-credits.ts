@@ -75,24 +75,39 @@ export const CACHE_WRITE_MULTIPLIER = 2
 export const CACHE_READ_MULTIPLIER = 0.1
 
 /**
- * Conversation-API / legacy models not in the chat catalog. Unknown
- * models fall back to Sonnet-class list price — wrong for a future
- * cheap model (over-counts, fails safe) and for a future premium one
- * (under-counts until the catalog learns it).
+ * Models no longer offered in the chat catalog: Conversation-API
+ * models and retired chat models. A retired model keeps its entry so
+ * a turn that started on it, and any later re-computation, settles at
+ * what Anthropic actually billed.
  */
 const LEGACY_MODEL_PRICING: Record<string, ModelPricing> = {
+  'claude-sonnet-4-6': { inputPerMTok: 3, outputPerMTok: 15 },
   'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15 },
+  'claude-opus-4-8': { inputPerMTok: 5, outputPerMTok: 25 },
   'claude-opus-4-7': { inputPerMTok: 5, outputPerMTok: 25 },
   'claude-opus-4-1-20250805': { inputPerMTok: 15, outputPerMTok: 75 },
 }
 
-const FALLBACK_PRICING: ModelPricing = { inputPerMTok: 3, outputPerMTok: 15 }
-
 const CATALOG_PRICING: Record<string, ModelPricing>
   = Object.fromEntries(CHAT_MODELS.map(m => [m.id, m.pricing]))
 
+/**
+ * An ID in neither table (a new model reaching a call site before the
+ * catalog learns its price) is priced as the dearest model Studio
+ * offers. Erring high keeps the turn budget and the settle from
+ * under-counting a premium model; the catalog entry replaces the guess.
+ */
+const FALLBACK_PRICING: ModelPricing = CHAT_MODELS
+  .map(m => m.pricing)
+  .reduce((dearest, p) => (p.outputPerMTok > dearest.outputPerMTok ? p : dearest))
+
 export function pricingForModel(modelId: string): ModelPricing {
   return CATALOG_PRICING[modelId] ?? LEGACY_MODEL_PRICING[modelId] ?? FALLBACK_PRICING
+}
+
+/** Cache-read rate for a model, as a fraction of its input price (0.1x standard, 0.05x on Opus 5.5). */
+export function cacheReadMultiplierFor(pricing: ModelPricing): number {
+  return pricing.cacheReadMultiplier ?? CACHE_READ_MULTIPLIER
 }
 
 export interface MessageUsage {
@@ -109,7 +124,7 @@ export function estimateMessageCostUsd(usage: MessageUsage): number {
   return (
     usage.inputTokens * pricing.inputPerMTok
     + usage.cacheCreationInputTokens * pricing.inputPerMTok * CACHE_WRITE_MULTIPLIER
-    + usage.cacheReadInputTokens * pricing.inputPerMTok * CACHE_READ_MULTIPLIER
+    + usage.cacheReadInputTokens * pricing.inputPerMTok * cacheReadMultiplierFor(pricing)
     + usage.outputTokens * pricing.outputPerMTok
   ) / 1e6
 }
