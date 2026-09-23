@@ -146,6 +146,8 @@ export interface FeatureMatrixEntry {
   plans: StudioPlan[]
   requires_ee: boolean
   roadmap: boolean
+  /** Display name from the catalog (`plan-features` `name`). */
+  name: string
 }
 
 export const FEATURE_MATRIX: Record<string, FeatureMatrixEntry> = (() => {
@@ -156,6 +158,7 @@ export const FEATURE_MATRIX: Record<string, FeatureMatrixEntry> = (() => {
       plans: PLAN_SLUGS.filter(plan => parseBoolValue(valueForPlan(row, plan))),
       requires_ee: parseBoolValue(row.requires_ee),
       roadmap: parseBoolValue(row.roadmap ?? 'false'),
+      name: row.name,
     }
   }
   return matrix
@@ -374,4 +377,65 @@ export function getUpgradeParams(
     prefixed[`to${k.charAt(0).toUpperCase()}${k.slice(1)}`] = v
   }
   return { ...from, ...prefixed }
+}
+
+// ─── Plan claims in user- and agent-facing text ───
+//
+// Text that says which plans carry a feature ("available on all plans",
+// "BYOA on Pro and Enterprise") goes stale whenever the catalog moves a
+// feature. These build that wording from the catalog instead, so the text
+// can never promise what the plan does not grant (BG-1 P1-14).
+
+/** The plans a workspace can buy, lowest first. */
+const SOLD_PLANS: StudioPlan[] = ['starter', 'pro', 'enterprise']
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+}
+
+/** "Pro and Enterprise" / "every paid plan" — the sold plans that grant `feature`. */
+export function plansWithFeatureLabel(feature: string): string {
+  const entry = FEATURE_MATRIX[feature]
+  const plans = entry ? SOLD_PLANS.filter(plan => entry.plans.includes(plan)) : []
+  if (plans.length === SOLD_PLANS.length) return 'every paid plan'
+  if (plans.length === 0) return 'no current plan'
+  return joinNames(plans.map(plan => PLAN_PRICING[plan].name))
+}
+
+/**
+ * `{plans:<feature key>}` for every catalog feature, e.g.
+ * `{plans:ai.byoa}` → "Pro and Enterprise". Merged into every error and
+ * agent string, so any text can state availability without hard-coding it.
+ */
+export function featurePlanParams(): Record<string, string> {
+  const params: Record<string, string> = {}
+  for (const key of Object.keys(FEATURE_MATRIX)) params[`plans:${key}`] = plansWithFeatureLabel(key)
+  return params
+}
+
+/** Shipped features some paid plans lack — the only real difference beyond limits. */
+function gatedFeatures(): Array<[string, FeatureMatrixEntry]> {
+  return Object.entries(FEATURE_MATRIX).filter(([, e]) => {
+    if (e.roadmap) return false
+    const onSold = SOLD_PLANS.filter(plan => e.plans.includes(plan)).length
+    return onSold > 0 && onSold < SOLD_PLANS.length
+  })
+}
+
+/** "Bring Your Own API Key (Pro and Enterprise), Conversation API (Pro and Enterprise), …" */
+export function planGatedFeaturesLabel(): string {
+  return gatedFeatures().map(([key, e]) => `${e.name} (${plansWithFeatureLabel(key)})`).join(', ')
+}
+
+/** Shipped features `plan` does not include, by catalog name; empty when it has them all. */
+export function featuresMissingOnPlan(plan: StudioPlan | string | null | undefined): string[] {
+  const p = normalizePlan(plan)
+  return gatedFeatures().filter(([, e]) => !e.plans.includes(p)).map(([, e]) => e.name)
+}
+
+/** Shipped plan-gated features `plan` does include, by catalog name. */
+export function gatedFeaturesOnPlan(plan: StudioPlan | string | null | undefined): string[] {
+  const p = normalizePlan(plan)
+  return gatedFeatures().filter(([, e]) => e.plans.includes(p)).map(([, e]) => e.name)
 }
