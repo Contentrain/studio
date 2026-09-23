@@ -1,6 +1,6 @@
 /**
  * Usage alert persistence for the Supabase DatabaseProvider
- * (`supabase/migrations/031_usage_alerts.sql`). The primary key is the claim:
+ * (`supabase/migrations/032_usage_alerts.sql`). The primary key is the claim:
  * an insert that hits it means the alert was already sent.
  */
 import type { DatabaseProvider, DatabaseRow } from '../database'
