@@ -7,6 +7,8 @@
 
 import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../../shared/utils/license'
 import { isOverageSellable } from '../../../../server/utils/overage'
+import { resolveCreditUnit } from '../../../../server/utils/billing'
+import { creditTermsFor, isCreditLimitKey } from '../../../../shared/utils/credit-unit'
 import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
 import type { OverageLockAccount } from '../../../../server/utils/overage-lock'
 
@@ -37,13 +39,17 @@ export default defineEventHandler(async (event) => {
   const hasActiveSubscription = ['trialing', 'active', 'past_due'].includes(accountStatus ?? '')
 
   const locks = resolveOverageLocks(account as OverageLockAccount | null)
+  // Credit limits and every overage price in the terms the account's own
+  // product was sold with (`credit-unit.ts`): a pre-v2 subscription is shown
+  // its $0.03 credits and $0.08 overage, not the v2 catalog's.
+  const terms = creditTermsFor(resolveCreditUnit(account as { credit_unit?: unknown } | null))
 
   const categories = Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => ({
     limitKey,
     settingsKey: pricing.settingsKey,
     unit: pricing.unit,
-    unitPrice: pricing.price,
-    planLimit: getPlanLimitForPlan(plan, limitKey),
+    unitPrice: terms.overagePrice(limitKey) ?? pricing.price,
+    planLimit: isCreditLimitKey(limitKey) ? terms.creditLimit(plan, limitKey) : getPlanLimitForPlan(plan, limitKey),
     enabled: isOverageSellable(limitKey) && !locks[pricing.settingsKey] && overageSettings[pricing.settingsKey] === true,
     /** False → hard cap; the client hides or disables the toggle. */
     sellable: isOverageSellable(limitKey),
