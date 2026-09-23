@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   planOk: true,
   /** What `resolveWorkspaceBilling` answers — the billing-derived plan. */
   effectivePlan: 'pro' as string,
+  /** Billing locked (trial ended unpaid, grace over, cancellation effective). */
+  locked: false,
   mediaProvider: null as unknown,
   db: {
     getProjectById: vi.fn(),
@@ -79,11 +81,14 @@ vi.mock('~~/server/utils/rate-limit', () => ({
 // Plan + overage resolution is `resolveWorkspaceBilling`'s own suite; here
 // it is the billing-derived answer the route must gate on.
 vi.mock('~~/server/utils/workspace-billing', () => ({
-  resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }) => ({
-    state: 'subscribed',
-    effectivePlan: state.effectivePlan,
-    overageSettings: workspace.overage_settings ?? {},
-  })),
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }, opts?: { requireAccess?: boolean }) => {
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    return ({
+      state: 'subscribed',
+      effectivePlan: state.effectivePlan,
+      overageSettings: workspace.overage_settings ?? {},
+    })
+  }),
 }))
 
 vi.mock('~~/server/utils/license', () => ({
@@ -156,6 +161,7 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     state.quota = { allowed: true, used: 1 }
     state.planOk = true
     state.effectivePlan = 'pro'
+    state.locked = false
     state.mediaProvider = null
 
     state.db.getProjectById.mockResolvedValue({
@@ -235,6 +241,13 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
       statusCode: 403,
       message: 'oauth.plan_required',
     })
+  })
+
+  it('answers a locked workspace with 402 payment required, not a 403 upgrade', async () => {
+    state.locked = true
+    const handler = await loadHandler()
+    await expect(handler(makeEvent() as never)).rejects.toMatchObject({ statusCode: 402, data: { code: 'payment_required' } })
+    expect(state.proxyRequest).not.toHaveBeenCalled()
   })
 
   it('asks the billing-derived plan, not the workspace column, for the OAuth gate', async () => {

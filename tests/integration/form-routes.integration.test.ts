@@ -1,6 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 
+// Billing locked (trial ended unpaid, grace over, cancellation effective):
+// the real resolution otherwise, so every other test here is unchanged.
+const billingLock = vi.hoisted(() => ({ locked: false }))
+vi.mock('../../server/utils/workspace-billing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../server/utils/workspace-billing')>()
+  return {
+    ...actual,
+    resolveWorkspaceBilling: async (...args: Parameters<typeof actual.resolveWorkspaceBilling>) => {
+      if (billingLock.locked && args[2]?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+      return actual.resolveWorkspaceBilling(...args)
+    },
+  }
+})
+
 async function loadConfig() {
   return (await import('../../server/api/forms/v1/[projectId]/[modelId]/config.get')).default
 }
@@ -66,6 +80,31 @@ function dbStub(extra: Record<string, unknown> = {}) {
 }
 
 describe('public form routes', () => {
+  it('config and submit answer a locked workspace with 402 payment required, not a 403 upgrade', async () => {
+    billingLock.locked = true
+    try {
+      stubFormGlobals({ form: { captcha: null }, siteKey: '0xSITE' })
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub()))
+      await withTestServer({
+        routes: [
+          { path: '/api/forms/v1/project-1/contact/config', handler: await loadConfig() },
+          { path: '/api/forms/v1/project-1/contact/submit', handler: await loadSubmit() },
+        ],
+      }, async ({ request }) => {
+        expect((await request('/api/forms/v1/project-1/contact/config')).status).toBe(402)
+        const submit = await request('/api/forms/v1/project-1/contact/submit', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ data: { name: 'A', email: 'a@b.co' } }),
+        })
+        expect(submit.status).toBe(402)
+      })
+    }
+    finally {
+      billingLock.locked = false
+    }
+  })
+
   it('config exposes the project default locale and the Turnstile site key only when captcha is active', async () => {
     stubFormGlobals({ form: { captcha: 'turnstile' }, siteKey: '0xSITE' })
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub()))

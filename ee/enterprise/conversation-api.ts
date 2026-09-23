@@ -133,7 +133,7 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
   // `/api/workspaces/*`): resolve the plan and overage the same way it does,
   // so an expired trial loses Pro limits here too and a toggle the
   // subscription cannot bill never raises the cap.
-  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })
   const plan = billing.effectivePlan
   if (!hasFeature(plan, 'api.conversation'))
     throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })

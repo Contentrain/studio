@@ -35,6 +35,22 @@ describe('resolveWorkspaceBilling', () => {
     expect(billing).toMatchObject({ state: 'trial_expired', effectivePlan: 'free' })
   })
 
+  it('refuses a locked workspace with 402 payment required when access is required', async () => {
+    const expired = dbWith({ subscription_status: 'trialing', subscription_id: 'sub_1', trial_ends_at: '2020-01-01T00:00:00Z' })
+    await expect(resolveWorkspaceBilling(expired, { id: 'ws-1', type: 'primary', plan: 'pro' }, { requireAccess: true }))
+      .rejects.toMatchObject({
+        statusCode: 402,
+        message: 'billing.payment_required',
+        data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true },
+      })
+  })
+
+  it('lets an accessible workspace through when access is required', async () => {
+    const active = dbWith({ subscription_status: 'active', subscription_id: 'sub_1' })
+    await expect(resolveWorkspaceBilling(active, { id: 'ws-1', type: 'primary', plan: 'pro' }, { requireAccess: true }))
+      .resolves.toMatchObject({ state: 'subscribed', effectivePlan: 'pro' })
+  })
+
   it('turns off overage the subscription cannot bill', async () => {
     const billing = await resolveWorkspaceBilling(
       dbWith({ subscription_status: 'active', subscription_id: 'sub_1', plugin_metadata: { billable_meters: LEGACY_PRICES } }),
