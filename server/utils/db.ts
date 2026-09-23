@@ -309,7 +309,9 @@ function buildTraceRows(input: {
     rows.push({
       conversationId: input.conversationId,
       role: 'assistant',
-      content: assistantText || '[tool calls]',
+      // The placeholder names what the row holds: a thinking-only row (a
+      // turn cut off while the model was still thinking) has no tool call.
+      content: assistantText || (iter.assistantBlocks.some(b => b.type === 'tool_use') ? '[tool calls]' : ''),
       contentBlocks: iter.assistantBlocks,
       turnId,
       turnSequence: seq++,

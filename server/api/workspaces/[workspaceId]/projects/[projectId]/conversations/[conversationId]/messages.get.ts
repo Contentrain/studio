@@ -24,5 +24,10 @@ export default defineEventHandler(async (event) => {
   // orders ascending and applies the limit after, so a conversation
   // beyond the cap truncates its NEWEST turns — a pre-existing wart,
   // tracked separately.
-  return db.loadConversationMessages(conversationId, 300, 'id, role, content, content_blocks, tool_calls, model, created_at, turn_id')
+  const rows = await db.loadConversationMessages(conversationId, 300, 'id, role, content, content_blocks, tool_calls, model, created_at, turn_id')
+  // Thinking blocks (Opus 5.5) stay in the rows for replay, but the UI never
+  // renders them and their signatures are the bulk of the payload.
+  return rows.map(row => Array.isArray(row.content_blocks)
+    ? { ...row, content_blocks: (row.content_blocks as Array<{ type?: string }>).filter(b => b?.type !== 'thinking' && b?.type !== 'redacted_thinking') }
+    : row)
 })

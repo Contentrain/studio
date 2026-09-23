@@ -63,6 +63,33 @@ describe('conversation routes', () => {
     expect(loadConversationMessages).toHaveBeenCalledWith('conv-1', 300, 'id, role, content, content_blocks, tool_calls, model, created_at, turn_id')
   })
 
+  it('leaves thinking blocks and their signatures out of the transcript', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'conversationId') return 'conv-1'
+      if (key === 'projectId') return 'project-1'
+      return 'workspace-1'
+    }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({
+      getConversation: vi.fn().mockResolvedValue({ id: 'conv-1' }),
+      loadConversationMessages: vi.fn().mockResolvedValue([
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Hi.',
+          content_blocks: [
+            { type: 'thinking', thinking: '', signature: 'x'.repeat(2000) },
+            { type: 'redacted_thinking', data: 'enc' },
+            { type: 'text', text: 'Hi.' },
+          ],
+        },
+      ]),
+    })))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/conversations/[conversationId]/messages.get')).default
+    const result = await handler({} as never)
+    expect(result).toEqual([{ id: 'msg-2', role: 'assistant', content: 'Hi.', content_blocks: [{ type: 'text', text: 'Hi.' }] }])
+  })
+
   it('returns 404 for foreign or missing conversations', async () => {
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'conversationId') return 'conv-1'

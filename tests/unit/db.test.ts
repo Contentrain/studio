@@ -228,6 +228,30 @@ describe('db helpers', () => {
     })
   })
 
+  it('keeps a thinking-only row free of the [tool calls] placeholder', async () => {
+    // An Opus 5.5 turn cut off at max_tokens while thinking: no text, no tool call.
+    const { saveChatResult } = await loadDbModule()
+    await saveChatResult({
+      conversationId: 'conv-1',
+      userMessage: 'hi',
+      iterations: [
+        { iteration: 1, assistantBlocks: [{ type: 'thinking', thinking: '', signature: 'sig' }], toolResultBlocks: [] },
+      ],
+      lastAssistantContent: [],
+      model: 'claude-opus-5-5',
+      inputTokens: 5,
+      outputTokens: 5,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      usageSource: 'studio',
+      usageMonth: '2026-04',
+    })
+    const rows = mockDb.insertMessages.mock.calls[0]![0] as Array<Record<string, unknown>>
+    expect(rows[1]).toMatchObject({ role: 'assistant', content: '', contentBlocks: [{ type: 'thinking', thinking: '', signature: 'sig' }] })
+  })
+
   it('propagates cache token buckets onto the final assistant row', async () => {
     const { saveChatResult } = await loadDbModule()
     await saveChatResult({
