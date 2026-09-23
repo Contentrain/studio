@@ -186,6 +186,7 @@ describe('media route integration', () => {
     vi.stubGlobal('isAllowedMimeType', vi.fn().mockReturnValue(true))
     vi.stubGlobal('isAllowedWebhookUrl', vi.fn().mockReturnValue(true))
     vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(10))
+    vi.stubGlobal('getEffectiveLimit', vi.fn((planLimit: number) => planLimit))
     vi.stubGlobal('resolveVariantConfig', vi.fn().mockReturnValue({
       default: { width: 1200, fit: 'inside' },
     }))
@@ -218,6 +219,52 @@ describe('media route integration', () => {
       tags: ['imported'],
       contentType: 'image/png',
     }))
+  })
+
+  describe('URL import storage reservation', () => {
+    function stubUrlImport(reservation: { allowed: boolean, currentBytes: number }, upload = vi.fn().mockResolvedValue({ ...sampleAsset, size: 5 })) {
+      stubMediaRouteGlobals()
+      const db = (globalThis as unknown as { useDatabaseProvider: () => Record<string, ReturnType<typeof vi.fn>> }).useDatabaseProvider()
+      db.reserveStorageIfAllowed!.mockResolvedValue(reservation)
+      vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+      vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+      vi.stubGlobal('isAllowedMimeType', vi.fn().mockReturnValue(true))
+      vi.stubGlobal('isAllowedWebhookUrl', vi.fn().mockReturnValue(true))
+      vi.stubGlobal('getPlanLimit', vi.fn((_: string, limit: string) => limit === 'media.storage_gb' ? 5 : 10))
+      vi.stubGlobal('getEffectiveLimit', vi.fn((planLimit: number) => planLimit))
+      vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ upload }))
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ url: 'https://example.com/file.png' }))
+      vi.stubGlobal('setResponseStatus', vi.fn())
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer),
+      }))
+      return { db, upload }
+    }
+
+    it('reserves the fetched bytes against the plan storage and settles to the stored size', async () => {
+      const { db, upload } = stubUrlImport({ allowed: true, currentBytes: 1024 })
+      await (await loadMediaUploadUrlHandler())({ context: {} } as never)
+
+      expect(db.reserveStorageIfAllowed).toHaveBeenCalledWith('workspace-1', 3, 5 * 1024 * 1024 * 1024)
+      expect(upload).toHaveBeenCalledWith(expect.objectContaining({ skipStorageIncrement: true }))
+      // 3 reserved, 5 stored → +2.
+      expect(db.incrementWorkspaceStorageBytes).toHaveBeenCalledWith('workspace-1', 2)
+    })
+
+    it('refuses the import over quota without uploading', async () => {
+      const { upload } = stubUrlImport({ allowed: false, currentBytes: 5 * 1024 * 1024 * 1024 })
+      await expect((await loadMediaUploadUrlHandler())({ context: {} } as never)).rejects.toMatchObject({ statusCode: 403 })
+      expect(upload).not.toHaveBeenCalled()
+    })
+
+    it('releases the reservation when the upload fails', async () => {
+      const { db } = stubUrlImport({ allowed: true, currentBytes: 1024 }, vi.fn().mockRejectedValue(new Error('r2 down')))
+      await expect((await loadMediaUploadUrlHandler())({ context: {} } as never)).rejects.toThrow('r2 down')
+      expect(db.incrementWorkspaceStorageBytes).toHaveBeenCalledWith('workspace-1', -3)
+    })
   })
 
   it('supports bulk delete and bulk tag operations inside the current project', async () => {

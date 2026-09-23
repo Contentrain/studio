@@ -60,19 +60,47 @@ export default defineEventHandler(async (event) => {
     },
   )
 
-  const asset = await media.upload({
-    projectId,
-    workspaceId,
-    file: buffer,
-    filename,
-    contentType,
-    alt: body.alt,
-    tags: body.tags,
-    variants,
-    uploadedBy: session.user.id,
-    source: 'url',
-  })
+  // Atomic storage quota check + reservation — the same reserve → upload →
+  // settle/release the direct upload and bulk ingest make. Without it a URL
+  // import grew storage past the plan with no check at all.
+  const basePlanLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
+  const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
+  const storageLimit = getEffectiveLimit(basePlanLimit, 'media.storage_gb', overageSettings)
+  const reserveBytes = buffer.length
+  let storageReserved = false
+  if (storageLimit > 0) {
+    const reservation = await db.reserveStorageIfAllowed(workspaceId, reserveBytes, storageLimit)
+    if (!reservation.allowed)
+      throw createError({ statusCode: 403, message: errorMessage('storage.quota_exceeded') })
+    storageReserved = true
+  }
 
-  setResponseStatus(event, 201)
-  return asset
+  try {
+    const asset = await media.upload({
+      projectId,
+      workspaceId,
+      file: buffer,
+      filename,
+      contentType,
+      alt: body.alt,
+      tags: body.tags,
+      variants,
+      uploadedBy: session.user.id,
+      source: 'url',
+      skipStorageIncrement: storageReserved,
+    })
+
+    // Settle the reservation to the stored size (optimization may change it).
+    if (storageReserved) {
+      const delta = (typeof asset.size === 'number' ? asset.size : 0) - reserveBytes
+      if (delta !== 0) await db.incrementWorkspaceStorageBytes(workspaceId, delta)
+    }
+
+    setResponseStatus(event, 201)
+    return asset
+  }
+  catch (e) {
+    if (storageReserved) await db.incrementWorkspaceStorageBytes(workspaceId, -reserveBytes).catch(() => {})
+    throw e
+  }
 })
