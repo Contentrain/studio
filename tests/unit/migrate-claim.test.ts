@@ -1,7 +1,6 @@
 import { exportSPKI, generateKeyPair, SignJWT } from 'jose'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { MigrateClaimError, verifyMigrateClaim } from '../../server/utils/migrate-claim'
-import { isMigrateStudioClaim } from '../../shared/utils/migrate-claim'
 
 const claim = {
   v: 1,
@@ -25,16 +24,16 @@ beforeAll(async () => {
   otherPublicPem = await exportSPKI((await generateKeyPair('EdDSA', { extractable: true })).publicKey)
 })
 
-function sign(payload: Record<string, unknown> = claim, opts: { iss?: string, aud?: string, ttl?: number, iat?: number, jti?: string | null } = {}) {
+function sign(payload: Record<string, unknown> = claim, opts: { iss?: string, aud?: string, ttl?: number, iat?: number, jti?: string | null, sub?: string | null } = {}) {
   const iat = opts.iat ?? Math.floor(Date.now() / 1000)
   const jwt = new SignJWT(payload)
     .setProtectedHeader({ alg: 'EdDSA' })
     .setIssuer(opts.iss ?? 'contentrain-migrate')
     .setAudience(opts.aud ?? 'contentrain-studio')
-    .setSubject('migrate-user-1')
     .setIssuedAt(iat)
     .setExpirationTime(iat + (opts.ttl ?? 900))
   if (opts.jti !== null) jwt.setJti(opts.jti ?? 'jti-1')
+  if (opts.sub !== null) jwt.setSubject(opts.sub ?? 'migrate-user-1')
   return jwt.sign(privateKey)
 }
 
@@ -74,8 +73,34 @@ describe('verifyMigrateClaim', () => {
     expect(await reason(verifyMigrateClaim(await sign(claim, { ttl: 7 * 24 * 3600 }), publicPem))).toBe('invalid')
   })
 
-  it('refuses a token without a jti', async () => {
+  it('refuses a token without a jti or a Migrate user', async () => {
     expect(await reason(verifyMigrateClaim(await sign(claim, { jti: null }), publicPem))).toBe('invalid')
+    expect(await reason(verifyMigrateClaim(await sign(claim, { sub: null }), publicPem))).toBe('invalid')
+  })
+
+  it('checks the signed body against the shared contract', async () => {
+    const refused = [
+      { ...claim, v: 2 },
+      { ...claim, trial_days: 1.5 },
+      { ...claim, order_id: ' ' },
+      { ...claim, repo: { provider: 'gitlab', owner: 'a', name: 'b' } },
+      { ...claim, repo: { provider: 'github', owner: 'a/b', name: 'c' } },
+      { ...claim, plan_evidence: undefined },
+      { ...claim, plan_evidence: [{ limit_key: 'x', measured: 'lots', limit: 1 }] },
+      { ...claim, capabilities: [{ key: 'teleport' }] },
+    ]
+    for (const body of refused)
+      expect(await reason(verifyMigrateClaim(await sign(body), publicPem))).toBe('invalid')
+    expect(await reason(verifyMigrateClaim(await sign({ ...claim, plan_evidence: [] }), publicPem))).toBe('accepted')
+  })
+
+  it('allows the contract\'s clock skew, and no more', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    // Expired 30 s ago: within the 60 s skew.
+    expect(await reason(verifyMigrateClaim(await sign(claim, { iat: now - 630, ttl: 600 }), publicPem))).toBe('accepted')
+    // Issued 30 s "in the future" by a fast Migrate clock.
+    expect(await reason(verifyMigrateClaim(await sign(claim, { iat: now + 30, ttl: 600 }), publicPem))).toBe('accepted')
+    expect(await reason(verifyMigrateClaim(await sign(claim, { iat: now - 700, ttl: 600 }), publicPem))).toBe('expired')
   })
 
   it('refuses a trial longer than 90 days, or a plan Studio does not sell', async () => {
@@ -93,19 +118,5 @@ describe('verifyMigrateClaim', () => {
       .setJti('jti-hs')
       .sign(new TextEncoder().encode(publicPem))
     expect(await reason(verifyMigrateClaim(hs, publicPem))).toBe('invalid')
-  })
-})
-
-describe('isMigrateStudioClaim', () => {
-  it('accepts the contract shape and rejects near misses', () => {
-    expect(isMigrateStudioClaim(claim)).toBe(true)
-    expect(isMigrateStudioClaim({ ...claim, v: 2 })).toBe(false)
-    expect(isMigrateStudioClaim({ ...claim, trial_days: 0 })).toBe(false)
-    expect(isMigrateStudioClaim({ ...claim, trial_days: 1.5 })).toBe(false)
-    expect(isMigrateStudioClaim({ ...claim, repo: { provider: 'gitlab', owner: 'a', name: 'b' } })).toBe(false)
-    expect(isMigrateStudioClaim({ ...claim, order_id: ' ' })).toBe(false)
-    expect(isMigrateStudioClaim({ ...claim, plan_evidence: [] })).toBe(true)
-    expect(isMigrateStudioClaim({ ...claim, plan_evidence: undefined })).toBe(false)
-    expect(isMigrateStudioClaim({ ...claim, plan_evidence: [{ limit_key: 'x', measured: 'lots', limit: 1 }] })).toBe(false)
   })
 })
