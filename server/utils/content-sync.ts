@@ -157,8 +157,24 @@ export async function checkContentSync(git: GitProvider): Promise<ContentSyncRep
   if (!mergeBase) return unknown(baseBranch, contentSha, baseSha)
 
   if (mergeBase === baseSha) return { ...base, state: 'content_ahead', fastForward: false }
+
+  // The two states that warn the user are about CHANGES the content branch
+  // lacks. A base tip that differs only by commits — a merge commit with the
+  // same tree, as GitHub's merge API wrote on every advance — has none, so it
+  // is in sync. Checked only here, where a warning would otherwise show.
+  if (await sameTree(git, contentSha, baseSha)) return { ...base, state: 'in_sync', fastForward: false }
+
   if (mergeBase === contentSha) return { ...base, state: 'base_ahead', fastForward: true }
   return { ...base, state: 'diverged', fastForward: false }
+}
+
+async function sameTree(git: GitProvider, a: string, b: string): Promise<boolean> {
+  if (!git.getCommitTreeSha) return false
+  const [treeA, treeB] = await Promise.all([
+    git.getCommitTreeSha(a).catch(() => null),
+    git.getCommitTreeSha(b).catch(() => null),
+  ])
+  return !!treeA && treeA === treeB
 }
 
 /** The reading, cached. */

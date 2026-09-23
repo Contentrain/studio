@@ -194,6 +194,21 @@ export interface GitProvider extends RepoProvider {
   getBranchSha?: (branch: string) => Promise<string | null>
 
   /**
+   * Move `branch` to `sha` only if that is a fast-forward; false when the
+   * provider refuses (not a fast-forward, or the branch is protected).
+   * GitHub's merge API always writes a merge commit, even when the target is
+   * an ancestor of the source — so advancing `main` to `contentrain` through
+   * it left `main` one commit "ahead" with the same tree after every save,
+   * which the next save merged back, and the sync banner reported as changes
+   * the content branch did not have. Optional: without it every advance
+   * merges, as before.
+   */
+  fastForwardBranch?: (branch: string, sha: string) => Promise<boolean>
+
+  /** Tree sha of a commit, or null when the commit does not exist. Optional. */
+  getCommitTreeSha?: (sha: string) => Promise<string | null>
+
+  /**
    * Studio-side commit helper — delegates to `applyPlan` with the
    * legacy signature preserved. Kept as a backward-compatibility shim
    * so existing content-engine callers compile unchanged; Faz S2
