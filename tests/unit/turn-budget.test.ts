@@ -2,9 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AIMessage, AIProvider } from '../../server/providers/ai'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext, ProjectPhase } from '../../server/utils/agent-types'
-import { estimateMessageCostUsd, settleTurnCredits } from '../../shared/utils/ai-credits'
+import { estimateMessageCostUsd, pricingForModel, settleTurnCredits } from '../../shared/utils/ai-credits'
 import { THINKING_HEADROOM_TOKENS, TurnUsageTracker, nextPromptEstimate, outputFloorsFor, planCall, promptCostUsd } from '../../server/utils/turn-budget'
-import { pricingForModel } from '../../shared/utils/ai-credits'
 
 // The loop tests import the whole conversation engine; its first import
 // takes several seconds when the suite runs in parallel.
