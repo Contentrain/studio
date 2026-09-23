@@ -21,6 +21,19 @@ import type { OverageLockAccount } from '../../../utils/overage-lock'
 type Db = ReturnType<typeof useDatabaseProvider>
 
 /**
+ * `plugin_metadata.activation_email`: whether the "subscription activated"
+ * email is owed (`pending`) or went out (`sent`). It is sent on the first
+ * paid order, not on the status change: at a trial's end the provider can
+ * report the subscription active before the charge, and a charge that then
+ * fails used to reach the owner as "activated" first (ST-10 b).
+ */
+const ACTIVATION_EMAIL_KEY = 'activation_email'
+
+function metadataObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? { ...(value as Record<string, unknown>) } : {}
+}
+
+/**
  * Line the workspace's overage toggles up with what the subscription can
  * bill (`server/utils/overage-lock.ts`): a toggle the subscription cannot
  * invoice is turned off and remembered, and turned back on by the event
@@ -222,7 +235,12 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: null,
         plan: result.plan ?? null,
-        pluginMetadata: overageLock.pluginMetadata,
+        // A subscription created active was paid at checkout: the
+        // activation email goes out below, and is recorded as sent so the
+        // first order's `invoice.paid` does not send it again.
+        pluginMetadata: result.subscriptionStatus === 'active'
+          ? { ...metadataObject(overageLock.pluginMetadata), [ACTIVATION_EMAIL_KEY]: 'sent' }
+          : overageLock.pluginMetadata,
         isActive: true,
       })
       await overageLock.commit()
@@ -257,6 +275,7 @@ export default defineEventHandler(async (event) => {
       const wasTrialing = (existingAccount?.subscription_status as string | undefined) === 'trialing'
       const wasPastDue = (existingAccount?.subscription_status as string | undefined) === 'past_due'
       const becameActive = result.subscriptionStatus === 'active'
+      const activationEmail = metadataObject(existingAccount?.plugin_metadata)[ACTIVATION_EMAIL_KEY]
       // A failed renewal reaches us as an update with status `past_due`
       // (Polar sends no separate payment-failed event). The first one opens
       // the grace window; later ones — retries, card updates — keep it.
@@ -300,7 +319,12 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: gracePeriodEnd,
         plan: result.plan ?? null,
-        pluginMetadata: overageLock.pluginMetadata,
+        // Trial → active is not yet a payment: the activation email waits
+        // for the first paid order (`invoice.paid`), unless that already
+        // arrived and sent it.
+        pluginMetadata: becameActive && wasTrialing && activationEmail !== 'sent'
+          ? { ...metadataObject(overageLock.pluginMetadata ?? existingAccount?.plugin_metadata), [ACTIVATION_EMAIL_KEY]: 'pending' }
+          : overageLock.pluginMetadata,
         isActive: true,
       })
       await overageLock.commit()
@@ -315,9 +339,6 @@ export default defineEventHandler(async (event) => {
       // Only state transitions email. Plan swaps, quantity changes, card
       // updates all flow through subscription.updated too and would spam
       // the owner otherwise.
-      if (becameActive && wasTrialing) {
-        await sendBillingEmail(result.workspaceId, 'subscription-activated', result.plan)
-      }
       // Payment problems are never silent: the owner hears when the grace
       // window opens (and until when), and again when the charge goes
       // through. `invoice.paid` may get to the recovery first; whichever
@@ -414,6 +435,34 @@ export default defineEventHandler(async (event) => {
       const account = await db.getActivePaymentAccount(result.workspaceId)
       if (!account) break
       const currentStatus = account.subscription_status as string | null | undefined
+      // The first paid order is what activates a subscription for the
+      // owner: owed after a trial → active update (`pending`), or this order
+      // arrived before that update (still `trialing` here, a real charge).
+      const accountMeta = metadataObject(account.plugin_metadata)
+      const activationOwed = accountMeta[ACTIVATION_EMAIL_KEY] !== 'sent' && (
+        accountMeta[ACTIVATION_EMAIL_KEY] === 'pending'
+        || (currentStatus === 'trialing' && (result.amountPaid ?? 0) > 0)
+      )
+      if (activationOwed) {
+        await db.upsertPaymentAccount({
+          workspaceId: result.workspaceId,
+          provider: account.provider as string,
+          customerId: account.customer_id as string,
+          subscriptionId: (account.subscription_id as string | null) ?? null,
+          subscriptionStatus: currentStatus ?? null,
+          currentPeriodStart: (account.current_period_start as string | null) ?? null,
+          currentPeriodEnd: (account.current_period_end as string | null) ?? null,
+          trialEndsAt: (account.trial_ends_at as string | null) ?? null,
+          cancelAtPeriodEnd: Boolean(account.cancel_at_period_end),
+          gracePeriodEndsAt: (account.grace_period_ends_at as string | null) ?? null,
+          plan: (account.plan as string | null) ?? null,
+          pluginMetadata: { ...accountMeta, [ACTIVATION_EMAIL_KEY]: 'sent' },
+          isActive: true,
+        })
+        await sendBillingEmail(result.workspaceId, 'subscription-activated', (account.plan as string | null) ?? null)
+      }
+      // Some providers fire invoice.paid for a trial's $0 invoice: never
+      // collapse trialing into active here — subscription.updated does that.
       if (currentStatus === 'trialing') break
 
       const customerId = account.customer_id as string

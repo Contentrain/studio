@@ -332,7 +332,8 @@ describe('billing webhook integration', () => {
       await handler({ context: {} } as never)
 
       expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
-        pluginMetadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'] },
+        // Trial → active also marks the activation email owed (it goes out on the first paid order).
+        pluginMetadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'], activation_email: 'pending' },
       }))
       expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { ai_messages: false, mcp_calls: true } })
     })
@@ -460,6 +461,86 @@ describe('billing webhook integration', () => {
       currentPeriodEnd: '2026-10-23T11:50:43.823Z',
       cancelAtPeriodEnd: false,
       ...overrides,
+    })
+
+    describe('activation email: on the first paid order, not the status change (ST-10 b)', () => {
+      const ACTIVATED = 'Your Pro plan is active on Contentrain Studio'
+      const trialingAccount = { ...activeAccount, subscription_status: 'trialing', trial_ends_at: '2026-09-29T07:36:51.653Z', plugin_metadata: {} }
+      const paidOrder = (amountPaid: number) => ({ event: 'invoice.paid', workspaceId: 'ws-1', customerId: 'cus_123', subscriptionId: 'sub_123', invoiceId: 'ord_1', amountPaid })
+
+      it('trial → active sends nothing yet and marks the email owed', async () => {
+        captureEmails()
+        getActivePaymentAccount.mockResolvedValue(trialingAccount)
+        handleWebhookMock.mockResolvedValue(update({}))
+
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+
+        expect(subjects()).not.toContain(ACTIVATED)
+        expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+          subscriptionStatus: 'active',
+          pluginMetadata: expect.objectContaining({ activation_email: 'pending' }),
+        }))
+      })
+
+      it('the first paid order sends it once and records it', async () => {
+        captureEmails()
+        getActivePaymentAccount.mockResolvedValue({ ...activeAccount, plugin_metadata: { activation_email: 'pending' } })
+        handleWebhookMock.mockResolvedValue(paidOrder(4900))
+
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+
+        expect(subjects()).toEqual([ACTIVATED])
+        expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+          pluginMetadata: expect.objectContaining({ activation_email: 'sent' }),
+        }))
+      })
+
+      it('a trial whose charge fails never says activated', async () => {
+        captureEmails()
+        // Provider reports active, then the charge fails → past_due. No order is paid.
+        getActivePaymentAccount.mockResolvedValue(trialingAccount)
+        handleWebhookMock.mockResolvedValue(update({}))
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+        getActivePaymentAccount.mockResolvedValue({ ...activeAccount, plugin_metadata: { activation_email: 'pending' } })
+        handleWebhookMock.mockResolvedValue(update({ subscriptionStatus: 'past_due' }))
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+
+        expect(subjects()).not.toContain(ACTIVATED)
+      })
+
+      it('an order paid before the status update still sends it — once', async () => {
+        captureEmails()
+        getActivePaymentAccount.mockResolvedValue(trialingAccount)
+        handleWebhookMock.mockResolvedValue(paidOrder(4900))
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+        expect(subjects()).toEqual([ACTIVATED])
+        // The account stays trialing here; subscription.updated moves it.
+        expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+          subscriptionStatus: 'trialing',
+          pluginMetadata: expect.objectContaining({ activation_email: 'sent' }),
+        }))
+
+        upsertPaymentAccount.mockClear()
+        getActivePaymentAccount.mockResolvedValue({ ...trialingAccount, plugin_metadata: { activation_email: 'sent' } })
+        handleWebhookMock.mockResolvedValue(update({}))
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+
+        expect(subjects()).toEqual([ACTIVATED])
+        expect(upsertPaymentAccount).not.toHaveBeenCalledWith(expect.objectContaining({
+          pluginMetadata: expect.objectContaining({ activation_email: 'pending' }),
+        }))
+      })
+
+      it('a trial\'s $0 invoice sends nothing', async () => {
+        captureEmails()
+        getActivePaymentAccount.mockResolvedValue(trialingAccount)
+        handleWebhookMock.mockResolvedValue(paidOrder(0))
+
+        await (await mockPluginAndLoadHandler())({ context: {} } as never)
+
+        expect(sendEmail).not.toHaveBeenCalled()
+        expect(upsertPaymentAccount).not.toHaveBeenCalled()
+      })
     })
 
     it('keeps the plan until the period end when a cancellation is scheduled, and says until when', async () => {
