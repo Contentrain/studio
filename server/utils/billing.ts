@@ -12,6 +12,8 @@
 
 import type { StudioPlan, TrialContext } from '../../shared/utils/license'
 import { normalizePlan } from '../../shared/utils/license'
+import { CURRENT_CREDIT_UNIT, LEGACY_CREDIT_UNIT } from '../../shared/utils/credit-unit'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 import { isTrialOver } from '../../shared/utils/trial-end'
 
 export type BillingState
@@ -166,4 +168,13 @@ export function resolveTrialContext(
     trialing: state === 'trial_active',
     origin: meta?.trial_origin === 'migrate' ? 'migrate' : 'standard',
   }
+}
+
+/**
+ * The credit unit an account is billed in (`payment_accounts.credit_unit`,
+ * see `shared/utils/credit-unit.ts`). No account — free, self-hosted,
+ * operator-set plans — uses the current unit.
+ */
+export function resolveCreditUnit(account: { credit_unit?: unknown } | null | undefined): CreditUnit {
+  return account?.credit_unit === LEGACY_CREDIT_UNIT ? LEGACY_CREDIT_UNIT : CURRENT_CREDIT_UNIT
 }

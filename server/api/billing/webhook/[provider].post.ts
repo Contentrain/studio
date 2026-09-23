@@ -11,6 +11,7 @@
  * carried through `handleWebhook`'s headers param.
  */
 
+import { creditUnitFromMeters } from '../../../../shared/utils/credit-unit'
 import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payment'
 import type { PaymentPluginConfig } from '../../../providers/payment'
 import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
@@ -306,6 +307,9 @@ export default defineEventHandler(async (event) => {
         pluginMetadata: result.subscriptionStatus === 'active'
           ? { ...metadataObject(withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId)), [ACTIVATION_EMAIL_KEY]: 'sent' }
           : withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId),
+        // The credit unit follows the meters the subscription is priced on:
+        // a v2 product meters `_1c` credits, a pre-v2 one $0.03 credits.
+        ...(result.billableMeters ? { creditUnit: creditUnitFromMeters(result.billableMeters) } : {}),
         isActive: true,
       })
       await overageLock.commit()
@@ -400,6 +404,7 @@ export default defineEventHandler(async (event) => {
         gracePeriodEndsAt: gracePeriodEnd,
         plan: result.plan ?? null,
         pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, existingAccount?.plugin_metadata, result.migrateGrantId),
+        ...(result.billableMeters ? { creditUnit: creditUnitFromMeters(result.billableMeters) } : {}),
         // Written only through `setPaymentAccountMetadataKey`: this write is
         // built from a read an `invoice.paid` may have overtaken.
         preserveMetadataKeys: CLAIMED_METADATA_KEYS,

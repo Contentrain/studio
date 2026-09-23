@@ -60,13 +60,13 @@ describe('media license features (EE edition)', () => {
 
 describe('media plan limits (EE edition)', () => {
   it('returns correct storage limits', () => {
-    expect(getPlanLimit('starter', 'media.storage_gb')).toBe(1)
-    expect(getPlanLimit('pro', 'media.storage_gb')).toBe(15)
+    expect(getPlanLimit('starter', 'media.storage_gb')).toBe(5)
+    expect(getPlanLimit('pro', 'media.storage_gb')).toBe(25)
     expect(getPlanLimit('enterprise', 'media.storage_gb')).toBe(100)
   })
 
   it('returns correct file size limits', () => {
-    expect(getPlanLimit('starter', 'media.max_file_size_mb')).toBe(5)
+    expect(getPlanLimit('starter', 'media.max_file_size_mb')).toBe(10)
     expect(getPlanLimit('pro', 'media.max_file_size_mb')).toBe(50)
     expect(getPlanLimit('enterprise', 'media.max_file_size_mb')).toBe(100)
   })

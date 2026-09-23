@@ -24,8 +24,9 @@ import { maxOutputTokensFor } from '../../shared/utils/ai-models'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
 import type { getWorkspacePlan } from '../../server/utils/license'
-import { getPlanLimit, hasFeature } from '../../server/utils/license'
-import { applyTrialCap, trialCapPlan } from '../../shared/utils/license'
+import { getCreditLimit, hasFeature } from '../../server/utils/license'
+import { trialCapPlan } from '../../shared/utils/license'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 import type { TrialContext } from '../../shared/utils/license'
 import { getEffectiveLimit } from '../../server/utils/overage'
 import { checkRateLimit } from '../../server/utils/rate-limit'
@@ -83,6 +84,8 @@ interface ConversationApiContext {
   overageSettings: Record<string, boolean>
   /** Trial state and origin — a capped trial gets the lower API allowance. */
   trial: TrialContext
+  /** The credit unit the account is billed in. */
+  creditUnit: CreditUnit
 }
 
 function parseConversationContext(context: Partial<ChatUIContext> | undefined): ChatUIContext {
@@ -151,6 +154,7 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
     plan,
     overageSettings: billing.overageSettings,
     trial: billing.trial,
+    creditUnit: billing.creditUnit,
   }
 }
 
@@ -188,7 +192,7 @@ async function runConversationMessage(
   event: H3Event,
   body: { message: string, conversationId?: string, context?: Partial<ChatUIContext> },
 ) {
-  const { db, keyData, project, workspace, plan, overageSettings, trial } = await resolveConversationApiContext(event)
+  const { db, keyData, project, workspace, plan, overageSettings, trial, creditUnit } = await resolveConversationApiContext(event)
 
   if (!body.message?.trim())
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
@@ -209,8 +213,10 @@ async function runConversationMessage(
   const usageMonth = (await resolveUsagePeriod(keyData.workspaceId)).key
   // A capped trial (`applyTrialCap`) gets the lower allowance and never
   // overage — nothing metered in a trial is billed.
-  const planApiLimit = getPlanLimit(plan, 'api.messages_per_month')
-  const workspacePlanLimit = applyTrialCap(planApiLimit, 'api.messages_per_month', trial)
+  // Credits are counted in the unit the account is billed in (`credit-unit.ts`).
+  const planApiLimit = getCreditLimit(plan, 'api.messages_per_month', creditUnit)
+  const capPlan = trialCapPlan('api.messages_per_month', trial)
+  const workspacePlanLimit = capPlan ? Math.min(planApiLimit, getCreditLimit(capPlan, 'api.messages_per_month', creditUnit)) : planApiLimit
   const trialCapped = workspacePlanLimit < planApiLimit
   const workspaceLimit = trialCapped ? workspacePlanLimit : getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
   const keyLimit = trialCapped ? keyData.monthlyMessageLimit : getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)
@@ -287,7 +293,7 @@ async function runConversationMessage(
       const sendable = Math.min(count, meterAllowance - metered)
       if (sendable <= 0) return
       metered += sendable
-      recordAPIUsage({ workspaceId: keyData.workspaceId, count: sendable, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+      recordAPIUsage({ workspaceId: keyData.workspaceId, count: sendable, apiKeyId: keyData.keyId, month: usageMonth, creditUnit }).catch(() => {})
     }
 
     const permissions = buildPermissions(keyData)
@@ -464,7 +470,7 @@ async function runConversationMessage(
           outputTokens: totalOutputTokens,
           cacheCreationInputTokens: totalCacheCreationInputTokens,
           cacheReadInputTokens: totalCacheReadInputTokens,
-        }, trialCapPlan('api.messages_per_month', trial) ?? plan)
+        }, trialCapped && capPlan ? capPlan : plan, creditUnit)
       : 1
     const extraCredits = credits - 1
     if (extraCredits > 0)

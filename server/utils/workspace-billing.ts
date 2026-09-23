@@ -12,7 +12,9 @@
  */
 
 import { createError } from 'h3'
-import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveTrialContext } from './billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveCreditUnit, resolveTrialContext } from './billing'
+import { CURRENT_CREDIT_UNIT } from '../../shared/utils/credit-unit'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 import type { BillingState, PaymentAccountState, WorkspaceBillingRow } from './billing'
 import { getWorkspacePlan } from './license'
 import { resolveDeployment } from './deployment'
@@ -31,6 +33,8 @@ export interface WorkspaceBilling {
   overageSettings: Record<string, boolean>
   /** Trial state and origin, for `applyTrialCap`. */
   trial: TrialContext
+  /** The credit unit the account is billed in (`credit-unit.ts`). */
+  creditUnit: CreditUnit
 }
 
 /**
@@ -60,6 +64,7 @@ export async function resolveWorkspaceBilling(
       effectivePlan: getWorkspacePlan({ plan: (workspace.plan as string | null) ?? null }),
       overageSettings: storedOverage,
       trial: { trialing: false, origin: 'standard' },
+      creditUnit: CURRENT_CREDIT_UNIT,
     }
   }
 
@@ -83,5 +88,6 @@ export async function resolveWorkspaceBilling(
     effectivePlan: getEffectivePlan(row),
     overageSettings: withoutLockedOverage(storedOverage, resolveOverageLocks(account as OverageLockAccount | null)),
     trial: resolveTrialContext(state, account as { plugin_metadata?: unknown } | null),
+    creditUnit: resolveCreditUnit(account as { credit_unit?: unknown } | null),
   }
 }

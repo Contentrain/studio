@@ -77,7 +77,8 @@ vi.mock('../../server/utils/db', () => ({ saveApiChatResult: async () => {} }))
 // Plan and overage as the billing resolver (#337) reports them; the API
 // feature gate is an EE flag the test environment does not carry.
 vi.mock('../../server/utils/workspace-billing', () => ({
-  resolveWorkspaceBilling: async () => ({ state: 'subscribed', effectivePlan: 'pro', overageSettings: { api_messages: state.overage } }),
+  // A pre-v2 subscription: $0.03 credits, Pro 140 API (credit-unit.ts).
+  resolveWorkspaceBilling: async () => ({ state: 'subscribed', effectivePlan: 'pro', overageSettings: { api_messages: state.overage }, creditUnit: '0.03' }),
 }))
 vi.mock('../../server/utils/license', async importOriginal => ({
   ...(await importOriginal<typeof import('../../server/utils/license')>()),

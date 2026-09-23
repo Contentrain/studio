@@ -18,7 +18,8 @@
  *                 in hasFeature().
  */
 
-import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveTrialContext, WORKSPACE_BILLING_SELECT_FIELDS } from '../utils/billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveCreditUnit, resolveTrialContext, WORKSPACE_BILLING_SELECT_FIELDS } from '../utils/billing'
+import { CURRENT_CREDIT_UNIT } from '../../shared/utils/credit-unit'
 import type { PaymentAccountState, WorkspaceBillingRow } from '../utils/billing'
 import { getWorkspacePlan } from '../utils/license'
 import { resolveDeployment } from '../utils/deployment'
@@ -67,6 +68,7 @@ export default defineEventHandler(async (event) => {
       state: 'subscribed' as const,
       effectivePlan,
       overageSettings: (workspace.overage_settings as Record<string, boolean> | null | undefined) ?? {},
+      creditUnit: CURRENT_CREDIT_UNIT,
     }
     return
   }
@@ -98,7 +100,10 @@ export default defineEventHandler(async (event) => {
     resolveOverageLocks(account as OverageLockAccount | null),
   )
   const trial = resolveTrialContext(state, account)
-  event.context.billing = { state, effectivePlan, overageSettings, trial }
+  // Every credit figure downstream (quota, turn ceiling, settle, meter) is
+  // read in the unit this account is billed in (`credit-unit.ts`).
+  const creditUnit = resolveCreditUnit(account)
+  event.context.billing = { state, effectivePlan, overageSettings, trial, creditUnit }
 
   if (isBillingLocked(state)) {
     throw createError({

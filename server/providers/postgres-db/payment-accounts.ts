@@ -72,6 +72,7 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         grace_period_ends_at: input.gracePeriodEndsAt ?? null,
         plan: input.plan ?? null,
         plugin_metadata: JSON.stringify(input.pluginMetadata ?? {}),
+        ...(input.creditUnit ? { credit_unit: input.creditUnit } : {}),
         is_active: nowActive,
         ...(nowActive ? {} : { archived_at: new Date().toISOString() }),
       }
@@ -105,6 +106,7 @@ export function paymentAccountMethods(): PaymentAccountMethods {
                 grace_period_ends_at: payload.grace_period_ends_at,
                 plan: payload.plan,
                 ...(input.pluginMetadata === undefined ? {} : { plugin_metadata: metadataOnUpdate(payload.plugin_metadata, input.preserveMetadataKeys) }),
+                ...(input.creditUnit ? { credit_unit: input.creditUnit } : {}),
                 is_active: payload.is_active,
                 ...(nowActive ? { archived_at: null } : { archived_at: new Date().toISOString() }),
               } as never))

@@ -1035,6 +1035,12 @@ export interface DatabaseProvider {
     pluginMetadata?: Record<string, unknown>
     preserveMetadataKeys?: string[]
     isActive?: boolean
+    /**
+     * The credit unit the subscription is billed in (`credit-unit.ts`).
+     * Omitted → an update keeps the stored value, an insert gets the column
+     * default (the current unit).
+     */
+    creditUnit?: '0.03' | '0.01'
   }) => Promise<DatabaseRow>
 
   /**

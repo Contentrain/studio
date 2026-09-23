@@ -69,6 +69,8 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         plan: input.plan ?? null,
         is_active: nowActive,
       }
+      // Omitted → an update keeps the stored unit, an insert gets the default.
+      if (input.creditUnit) payload.credit_unit = input.creditUnit
       // Omitted → an update keeps the stored value, an insert gets the
       // column default `{}` (see the DatabaseProvider contract).
       if (input.pluginMetadata !== undefined) {

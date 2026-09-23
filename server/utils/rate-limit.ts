@@ -9,6 +9,8 @@
  */
 
 import { getRedis } from './redis'
+import { getCreditLimit } from './license'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -137,6 +139,6 @@ export function checkRateLimit(
  * see `shared/utils/ai-credits.ts`).
  * Delegates to the single source of truth in shared/utils/license.ts.
  */
-export function getMonthlyMessageLimit(plan: string): number {
-  return getPlanLimit(plan, 'ai.messages_per_month')
+export function getMonthlyMessageLimit(plan: string, unit: CreditUnit): number {
+  return getCreditLimit(plan, 'ai.messages_per_month', unit)
 }

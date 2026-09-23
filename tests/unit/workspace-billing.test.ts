@@ -72,7 +72,7 @@ describe('resolveWorkspaceBilling', () => {
     deployment.planSource = 'operator'
     const db = dbWith(null)
     const billing = await resolveWorkspaceBilling(db, { id: 'ws-1', plan: 'enterprise', overage_settings: { api_messages: true } })
-    expect(billing).toEqual({ state: 'subscribed', effectivePlan: 'enterprise', overageSettings: { api_messages: true }, trial: { trialing: false, origin: 'standard' } })
+    expect(billing).toEqual({ state: 'subscribed', effectivePlan: 'enterprise', overageSettings: { api_messages: true }, trial: { trialing: false, origin: 'standard' }, creditUnit: '0.01' })
     expect(db.getActivePaymentAccount).not.toHaveBeenCalled()
   })
 

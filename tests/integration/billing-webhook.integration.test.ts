@@ -422,6 +422,8 @@ describe('billing webhook integration', () => {
 
       expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
         subscriptionStatus: 'active',
+        // Priced on the $0.03 credit meters: a pre-v2 subscription keeps its unit.
+        creditUnit: '0.03',
         currentPeriodStart: '2026-09-29T07:36:51.653Z',
         currentPeriodEnd: '2026-10-29T07:36:51.653Z',
         trialEndsAt: null,
@@ -947,5 +949,13 @@ describe('billing webhook integration', () => {
       expect(updateWorkspace).not.toHaveBeenCalled()
       expect(sendEmail).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('billing webhook — the credit unit follows the subscription\'s meters (catalog v2)', () => {
+  it('a v2 subscription is billed in $0.01 credits, a pre-v2 one keeps $0.03', async () => {
+    const { creditUnitFromMeters } = await import('../../shared/utils/credit-unit')
+    expect(creditUnitFromMeters(['ai_credits_1c', 'api_credits_1c', 'form_submissions', 'mcp_calls'])).toBe('0.01')
+    expect(creditUnitFromMeters(['ai_credits', 'api_credits', 'form_submissions', 'mcp_calls'])).toBe('0.03')
   })
 })

@@ -12,8 +12,10 @@ import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/se
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor, premiumModelsAllowed } from '../../../../../../shared/utils/ai-models'
-import { AI_CREDIT_UNIT_USD, getMaxCreditsPerMessage, settleTurnCredits } from '../../../../../../shared/utils/ai-credits'
-import { applyTrialCap, trialCapPlan } from '../../../../../../shared/utils/license'
+import { settleTurnCredits } from '../../../../../../shared/utils/ai-credits'
+import { CURRENT_CREDIT_UNIT, creditTermsFor } from '../../../../../../shared/utils/credit-unit'
+import type { CreditUnit } from '../../../../../../shared/utils/credit-unit'
+import { trialCapPlan } from '../../../../../../shared/utils/license'
 import type { TrialContext } from '../../../../../../shared/utils/license'
 import { TurnUsageTracker } from '../../../../../utils/turn-budget'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
@@ -109,8 +111,16 @@ export default defineEventHandler(async (event) => {
   // Trial cap (`applyTrialCap`): a trial the catalog caps gets the lower
   // allowance until the first payment, and never overage — a hard cap
   // regardless of the toggle, since nothing metered in a trial is billed.
-  const planLimit = getMonthlyMessageLimit(plan)
-  const basePlanLimit = applyTrialCap(planLimit, 'ai.messages_per_month', event.context.billing?.trial as TrialContext | undefined)
+  //
+  // Credit unit (`credit-unit.ts`): every credit figure below — quota, turn
+  // ceiling, budget, settle, meter — is in the unit the account is billed
+  // in. A pre-v2 subscription keeps its $0.03 credits and their quota.
+  const creditUnit = (event.context.billing?.creditUnit as CreditUnit | undefined) ?? CURRENT_CREDIT_UNIT
+  const creditTerms = creditTermsFor(creditUnit)
+  const trial = event.context.billing?.trial as TrialContext | undefined
+  const planLimit = getMonthlyMessageLimit(plan, creditUnit)
+  const capPlan = trialCapPlan('ai.messages_per_month', trial)
+  const basePlanLimit = capPlan ? Math.min(planLimit, getMonthlyMessageLimit(capPlan, creditUnit)) : planLimit
   const trialCapped = basePlanLimit < planLimit
   const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
   const monthlyLimit = trialCapped ? basePlanLimit : getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
@@ -131,8 +141,8 @@ export default defineEventHandler(async (event) => {
   // 030/031) — the user's own key pays for it.
   // A capped trial also takes the capped plan's per-message ceiling: Pro's
   // 60 against a 60-credit trial allowance would be the whole trial in one turn.
-  const ceilingPlan = trialCapped ? (trialCapPlan('ai.messages_per_month', event.context.billing?.trial as TrialContext | undefined) ?? plan) : plan
-  const turnCeiling = usageSource === 'studio' ? getMaxCreditsPerMessage(ceilingPlan) : 1
+  const ceilingPlan = trialCapped && capPlan ? capPlan : plan
+  const turnCeiling = usageSource === 'studio' ? creditTerms.maxCreditsPerMessage(ceilingPlan) : 1
   const tracker = new TurnUsageTracker()
   let turnModel: string = DEFAULT_CHAT_MODEL
   let reservedCredits = 0
@@ -143,7 +153,7 @@ export default defineEventHandler(async (event) => {
     const usage = tracker.snapshot()
     const hasTokens = usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens > 0
     const credits = usageSource === 'studio'
-      ? settleTurnCredits({ model: turnModel, ...usage }, reservedCredits)
+      ? settleTurnCredits({ model: turnModel, ...usage }, reservedCredits, creditUnit)
       : (hasTokens ? 1 : 0)
     try {
       await db.updateAgentUsageTokens({
@@ -167,7 +177,7 @@ export default defineEventHandler(async (event) => {
     // never exceed the plan allowance (BR-11 P0-1): `credits` is at most
     // the reservation, and the reservation at most what was left of it.
     if (usageSource === 'studio' && credits > 0)
-      await recordAIUsage({ workspaceId, count: credits, userId: session.user.id, month: usageMonth })
+      await recordAIUsage({ workspaceId, count: credits, userId: session.user.id, month: usageMonth, creditUnit })
   }
 
   try {
@@ -368,7 +378,7 @@ export default defineEventHandler(async (event) => {
             // the user's own key pays.
             budget: usageSource === 'studio'
               ? {
-                  maxUsd: reservedCredits * AI_CREDIT_UNIT_USD,
+                  maxUsd: reservedCredits * creditTerms.unitUsd,
                   // Less than the per-message cap was left in the pool: the
                   // budget is the month's last credits, not this turn's cap.
                   limitedBy: reservedCredits < turnCeiling ? 'credits' : 'turn',

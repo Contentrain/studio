@@ -10,6 +10,8 @@
  * the outbox writer, and the Polar meter setup script.
  */
 
+import { CREDIT_METERS } from './credit-unit'
+
 export interface UsageMeterDefinition {
   /** Stable short name — matches Polar meter slug. */
   readonly name: string
@@ -59,8 +61,14 @@ export const USAGE_METERS = {
   // so counting bills 2 where the ledger says N+1. A meter's aggregation
   // cannot be changed once it holds events without restating history, so
   // the corrected meters are new ones.
+  //
+  // `_1c`: catalog v2 counts credits of $0.01. A credit's size cannot change
+  // under a meter that already carries $0.03 credits (and the subscriptions
+  // priced on it), so v2 has its own. The $0.03 meters stay in Polar for
+  // the pre-v2 subscriptions; `CREDIT_METERS` (credit-unit.ts) maps a unit
+  // to its meters and every sender goes through it.
   AI_MESSAGES: {
-    name: 'ai_credits',
+    name: CREDIT_METERS['0.01'].ai,
     limitKey: 'ai.messages_per_month',
     settingsKey: 'ai_messages',
     unitLabel: 'credit',
@@ -69,7 +77,7 @@ export const USAGE_METERS = {
     overageBillable: true,
   },
   API_MESSAGES: {
-    name: 'api_credits',
+    name: CREDIT_METERS['0.01'].api,
     limitKey: 'api.messages_per_month',
     settingsKey: 'api_messages',
     unitLabel: 'credit',

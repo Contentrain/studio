@@ -15,9 +15,10 @@
  *
  * Operations:
  *   - Meters: create-if-missing by name.
- *   - Products: matched by metadata.contentrain_slug first, then by name.
- *               Creates if missing. Updates name/description in place.
- *               Stamps metadata.contentrain_slug on unmarked existing products.
+ *   - Products: matched by metadata.contentrain_slug + contentrain_catalog
+ *               ('v2'). Creates if missing. Updates name/description in place.
+ *               Pre-v2 products (no catalog tag) are never touched: their
+ *               subscriptions keep what they were sold (see CATALOG_VERSION).
  *   - Fixed monthly price: created only if missing. If an existing price
  *     disagrees with the content (drift), the script warns and exits 1.
  *     Polar prices cannot be legally mutated once in use — price changes
@@ -123,6 +124,7 @@ interface PlanContent {
   name: string
   price_monthly: number
   description: string
+  has_trial?: boolean
 }
 
 const plans = plansData as unknown as Record<string, PlanContent>
@@ -273,16 +275,25 @@ async function syncMeters(existingMeters: Array<{ id: string, name: string }>): 
 
 type ProductSummary = Awaited<ReturnType<typeof listAllProducts>>[number]
 
+/**
+ * The catalog generation this script writes. v2 (PRC-3) sells $0.01 credits
+ * on the `_1c` meters; the products sold before it keep their prices,
+ * benefits and $0.03 meters for the subscriptions on them (founder
+ * decision, 2026-09-23). So v2 products are separate products, tagged
+ * `metadata.contentrain_catalog = 'v2'`, and a product without the tag is
+ * never matched, updated or re-tagged — not even by name, since the v2
+ * products carry the same display names.
+ */
+const CATALOG_VERSION = 'v2'
+
+/** Trial length for plans with `has_trial` (the pre-v2 products' 14 days). */
+const TRIAL_DAYS = 14
+
 function findExistingProduct(
   products: ProductSummary[],
   slug: BillablePlan,
-  displayName: string,
 ): ProductSummary | undefined {
-  // Primary: metadata.contentrain_slug. Secondary: case-insensitive name match
-  // (covers products that were created manually before this script existed).
-  const byMeta = products.find(p => p.metadata?.contentrain_slug === slug)
-  if (byMeta) return byMeta
-  return products.find(p => p.name.trim().toLowerCase() === displayName.toLowerCase())
+  return products.find(p => p.metadata?.contentrain_slug === slug && p.metadata?.contentrain_catalog === CATALOG_VERSION)
 }
 
 interface ProductPriceRow {
@@ -431,6 +442,8 @@ async function syncMeterCredits(
     if (limitUnits === null) continue
     if (!meterDef.overageBillable) continue
     const units = Math.round(limitUnits * meterDef.unitsPerLimitUnit)
+    // Nothing included (e.g. Starter's API credits): no benefit to grant.
+    if (units <= 0) continue
 
     // A meter that does not count what the plan sells cannot carry the
     // plan's allowance. Polar caps `units` at int32, and a gigabyte
@@ -542,20 +555,26 @@ async function syncProduct(
   const fixedPriceCents = usdToCents(plan.price_monthly)
   const meteredBlueprint = buildMeteredPriceBlueprint(meterIdByName)
 
-  const existing = findExistingProduct(existingProducts, slug, pricing.name)
+  const existing = findExistingProduct(existingProducts, slug)
 
   if (!existing) {
     // Fresh create: one fixed recurring price + six metered prices.
     if (!APPLY) {
       console.log(`  + product "${pricing.name}" would be created — $${plan.price_monthly}/mo + ${meteredBlueprint.length} metered prices`)
+      // Show the included units it would get, too.
+      await syncMeterCredits(slug, 'dry-run-product', meterIdByName, [])
       return
     }
     try {
       const created = await polar.products.create({
         recurringInterval: 'month',
+        // The pre-v2 products carry a 14-day trial set in the dashboard
+        // (SO-16d); a v2 product sold with `has_trial` needs the same, or
+        // "Start free trial" would charge at checkout.
+        ...(plan.has_trial ? { trialInterval: 'day' as const, trialIntervalCount: TRIAL_DAYS } : {}),
         name: pricing.name,
         description: plan.description,
-        metadata: { contentrain_slug: slug },
+        metadata: { contentrain_slug: slug, contentrain_catalog: CATALOG_VERSION },
         prices: [
           { amountType: 'fixed', priceAmount: fixedPriceCents },
           ...meteredBlueprint.map(m => ({
@@ -567,6 +586,9 @@ async function syncProduct(
       })
       summary.products[slug] = created.id
       console.log(`  + product "${pricing.name}" created (${created.id}) — $${plan.price_monthly}/mo + ${meteredBlueprint.length} metered prices`)
+      // A fresh product needs its included units as much as an existing one:
+      // without the meter credits every included credit would bill.
+      await syncMeterCredits(slug, created.id, meterIdByName, [])
     }
     catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -581,9 +603,6 @@ async function syncProduct(
   const updates: Record<string, unknown> = {}
   if (existing.name !== pricing.name) updates.name = pricing.name
   if ((existing.description ?? '') !== plan.description) updates.description = plan.description
-  if (existing.metadata?.contentrain_slug !== slug) {
-    updates.metadata = { ...existing.metadata, contentrain_slug: slug }
-  }
 
   // Reconcile prices: keep every existing (unarchived) price, detect drift,
   // append any missing metered prices.

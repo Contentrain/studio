@@ -54,7 +54,8 @@ function stubTurn(opts: { allowed?: boolean } = {}) {
     contentRoot: '',
   }))
   vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
-  vi.stubGlobal('getMonthlyMessageLimit', vi.fn().mockReturnValue(PRO_CREDITS))
+  // Per plan, from the catalog (v2 unit): the trial cap reads Starter's.
+  vi.stubGlobal('getMonthlyMessageLimit', vi.fn((plan: string) => PLAN_LIMITS['ai.messages_per_month']!.values[plan as 'starter' | 'pro']))
   vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({ availableTools: ['get_content'], specificModels: false, allowedModels: [] }))
   // Pro plan: `ai.pro_models` on, so Opus is a candidate at all.
   vi.stubGlobal('hasFeature', vi.fn((_: unknown, feature: string) => feature === 'ai.pro_models'))
@@ -157,12 +158,12 @@ describe('chat route — trial AI credit cap', () => {
   it('a capped trial reserves a turn at Starter\'s per-message ceiling, not Pro\'s (QA-5 F3)', async () => {
     const turn = stubTurn()
     await runTurn(trial('migrate'))
-    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ amount: getMaxCreditsPerMessage('starter') }))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ amount: getMaxCreditsPerMessage('starter', '0.01') }))
 
     const paid = stubTurn()
     await runTurn(subscribed)
-    expect(paid.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ amount: getMaxCreditsPerMessage('pro') }))
-    expect(getMaxCreditsPerMessage('starter')).toBeLessThan(getMaxCreditsPerMessage('pro'))
+    expect(paid.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ amount: getMaxCreditsPerMessage('pro', '0.01') }))
+    expect(getMaxCreditsPerMessage('starter', '0.01')).toBeLessThan(getMaxCreditsPerMessage('pro', '0.01'))
   })
 
   it('the cap lifts with the first payment — the same workspace, subscribed, gets its plan', async () => {
