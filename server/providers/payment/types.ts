@@ -95,6 +95,13 @@ export interface WebhookResult {
    */
   amountPaid?: number
   /**
+   * Why the provider charged (payment events): `subscription_create` is the
+   * order that starts a subscription (a trial's $0 one included),
+   * `subscription_cycle` a period's charge — the trial's conversion among
+   * them, $0 too under a 100 % discount. Omitted when not reported.
+   */
+  billingReason?: 'subscription_create' | 'subscription_cycle' | 'subscription_update' | 'other'
+  /**
    * Meter names the subscription carries a metered price for. A
    * subscription keeps the prices it was created with, so this is what the
    * provider can actually invoice — not what the product sells today.

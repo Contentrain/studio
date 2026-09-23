@@ -121,7 +121,10 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         if (error && error.code !== 'PGRST116') throw createError({ statusCode: 500, message: error.message })
         if (!row) return false
         const metadata = (row.plugin_metadata ?? {}) as Record<string, unknown>
-        if (when === 'absent' ? key in metadata : metadata[key] !== when.equals) return false
+        const allowed = when === 'absent'
+          ? !(key in metadata)
+          : when === 'different' ? metadata[key] !== value : metadata[key] === when.equals
+        if (!allowed) return false
         const { data: updated, error: updateError } = await admin
           .from('payment_accounts')
           .update({ plugin_metadata: { ...metadata, [key]: value } })

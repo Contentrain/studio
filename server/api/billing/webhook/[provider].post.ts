@@ -29,6 +29,24 @@ type Db = ReturnType<typeof useDatabaseProvider>
  */
 const ACTIVATION_EMAIL_KEY = 'activation_email'
 
+/**
+ * `plugin_metadata.recovery_email`: the payment problem whose "payment
+ * received" email went out, named by that episode's grace end. The update
+ * and the order that end a past-due period arrive together and both see it
+ * past due; the one that claims the episode sends.
+ */
+const RECOVERY_EMAIL_KEY = 'recovery_email'
+
+/** Keys only `setPaymentAccountMetadataKey` writes; upserts built from a read keep them. */
+const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY]
+
+/** The past-due episode a read row is in, as its recovery claim value. */
+function pastDueEpisode(row: Record<string, unknown> | null | undefined): string {
+  return (row?.grace_period_ends_at as string | null | undefined)
+    ?? (row?.current_period_end as string | null | undefined)
+    ?? 'past_due'
+}
+
 function metadataObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? { ...(value as Record<string, unknown>) } : {}
 }
@@ -50,14 +68,16 @@ async function claimActivationEmail(db: Db, workspaceId: string, unmarked: boole
  * A past-due subscription paid. If it is the trial's first charge going
  * through at last, the owner hears "activated" instead — once, from
  * whichever event claims it; the other one, having seen it owed, says
- * nothing rather than "payment recovered".
+ * nothing rather than "payment recovered". Otherwise "payment received",
+ * once per past-due episode (`episode`, from `pastDueEpisode`).
  */
-async function sendPaymentRecovered(db: Db, workspaceId: string, plan: string | null, activationPending: boolean) {
+async function sendPaymentRecovered(db: Db, workspaceId: string, plan: string | null, activationPending: boolean, episode: string) {
   if (await claimActivationEmail(db, workspaceId, false)) {
     await sendBillingEmail(workspaceId, 'subscription-activated', plan)
     return
   }
   if (activationPending) return
+  if (!(await db.setPaymentAccountMetadataKey({ workspaceId, key: RECOVERY_EMAIL_KEY, value: episode, when: 'different' }))) return
   await sendBillingEmail(workspaceId, 'payment-recovered', plan)
 }
 
@@ -382,7 +402,7 @@ export default defineEventHandler(async (event) => {
         pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, existingAccount?.plugin_metadata, result.migrateGrantId),
         // Written only through `setPaymentAccountMetadataKey`: this write is
         // built from a read an `invoice.paid` may have overtaken.
-        preserveMetadataKeys: [ACTIVATION_EMAIL_KEY],
+        preserveMetadataKeys: CLAIMED_METADATA_KEYS,
         isActive: true,
       })
       await overageLock.commit()
@@ -413,7 +433,7 @@ export default defineEventHandler(async (event) => {
         })
       }
       if (becameActive && wasPastDue) {
-        await sendPaymentRecovered(db, result.workspaceId, result.plan ?? null, activationPending)
+        await sendPaymentRecovered(db, result.workspaceId, result.plan ?? null, activationPending, pastDueEpisode(existingAccount))
       }
       if (cancelScheduled) {
         const accessEndsAt = result.accessEndsAt
@@ -503,9 +523,14 @@ export default defineEventHandler(async (event) => {
       // Some providers fire invoice.paid for a trial's $0 invoice: never
       // collapse trialing into active here — subscription.updated does that.
       if (currentStatus === 'trialing') {
-        // A real charge while the row still says trialing: this order beat
-        // the trial → active update. It is the first paid order.
-        if ((result.amountPaid ?? 0) > 0 && await claimActivationEmail(db, result.workspaceId, true)) {
+        // The trial's conversion order while the row still says trialing:
+        // it beat the trial → active update, and it is the first paid order.
+        // A period's charge, $0 too under a 100 % discount — not the $0
+        // order that starts the trial. Without a reason, a real charge.
+        const conversion = result.billingReason
+          ? result.billingReason === 'subscription_cycle'
+          : (result.amountPaid ?? 0) > 0
+        if (conversion && await claimActivationEmail(db, result.workspaceId, true)) {
           await sendBillingEmail(result.workspaceId, 'subscription-activated', plan)
         }
         break
@@ -533,7 +558,7 @@ export default defineEventHandler(async (event) => {
       // Only email on recovery from past_due — regular monthly renewals
       // shouldn't trigger a "payment received" email.
       if (currentStatus === 'past_due') {
-        await sendPaymentRecovered(db, result.workspaceId, plan, activationPending)
+        await sendPaymentRecovered(db, result.workspaceId, plan, activationPending, pastDueEpisode(account))
       }
       // The first paid order after a trial → active update.
       else if (activationPending && await claimActivationEmail(db, result.workspaceId, false)) {

@@ -90,6 +90,12 @@ describe('postgres-db payment-accounts (contract)', () => {
     const cleared = await methods.upsertPaymentAccount({ ...base, pluginMetadata: { activation_email: 'pending' }, preserveMetadataKeys: ['activation_email'] })
     expect(cleared.plugin_metadata).toEqual({})
 
+    // 'different': one winner per value, a new value claims again.
+    const episode = (value: string) => methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'recovery_email', value, when: 'different' })
+    expect((await Promise.all([episode('g1'), episode('g1')])).filter(Boolean)).toHaveLength(1)
+    expect(await episode('g1')).toBe(false)
+    expect(await episode('g2')).toBe(true)
+
     // No active row: nothing to set.
     await methods.archiveActivePaymentAccount(user.workspaceId)
     expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'k', value: 'v', when: 'absent' })).toBe(false)
