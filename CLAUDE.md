@@ -60,7 +60,7 @@ events flow through `usage_events_outbox` and a drain cron.
   `DatabaseProvider` methods
 - To add a provider: new plugin file + one line in `bootstrapPaymentPlugins()`. No other core changes.
 - To record a usage event: call the typed helper in `server/utils/usage-metering.ts`. Don't write to the outbox directly.
-- AI/API message quotas count **credit-weighted** units (`shared/utils/ai-credits.ts`): the routes reserve 1 credit atomically, then settle `credits - 1` through the `_v3` usage RPCs and a top-up meter event. Never meter a studio-funded turn as a flat message, and never sell overage below `AI_CREDIT_UNIT_USD`.
+- AI/API message quotas count **credit-weighted** units (`shared/utils/ai-credits.ts`). Studio chat reserves the turn's whole ceiling atomically (`reserveAgentCredits`, migration 031), runs the loop against that as a dollar budget (`server/utils/turn-budget.ts`), and settles once in `finally` from the real token totals (`settleTurnCredits`) — refund included, cancel and error included. The Conversation API still reserves 1 and settles `credits - 1`. Never meter a studio-funded turn as a flat message, never settle a turn outside `finally`, and never sell overage below `AI_CREDIT_UNIT_USD`.
 - See `docs/PAYMENT_PROVIDERS.md` for the full setup + extension guide.
 
 ### Auth

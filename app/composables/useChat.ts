@@ -634,6 +634,11 @@ export function useChat(options?: {
         // authoritative refresh covering everything the turn touched.
         accumulateAffected(event.affected as AffectedResources | undefined)
         flushContentRefresh()
+        // The turn was cut because the month's AI credits ran out: show the
+        // same notice a refused next message would (credits, reset date,
+        // link to Usage) instead of letting the user find out by a 429.
+        if (event.code === 'ai_credits_exhausted' && typeof event.message === 'string')
+          creditsExhausted.value = { message: event.message, resetsAt: typeof event.resetsAt === 'string' ? event.resetsAt : null }
         break
       }
 

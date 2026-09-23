@@ -12,7 +12,8 @@ import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/se
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
-import { estimateMessageCredits } from '../../../../../../shared/utils/ai-credits'
+import { AI_CREDIT_UNIT_USD, getMaxCreditsPerMessage, settleTurnCredits } from '../../../../../../shared/utils/ai-credits'
+import { TurnUsageTracker } from '../../../../../utils/turn-budget'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { extractPageUrls, resolvePageUrl } from '../../../../../utils/page-resolution'
 import { resolveEnterpriseChatApiKey } from '../../../../../utils/enterprise'
@@ -111,55 +112,74 @@ export default defineEventHandler(async (event) => {
   const usagePeriod = await resolveUsagePeriod(workspaceId)
   const usageMonth = usagePeriod.key
 
-  // Billing semantic: a message is billable only once Anthropic streams
-  // its first real provider event (text or tool_use). Pre-AI failures
-  // (DB error, brain cache failure, abort before first token) refund
-  // the reserved slot via `tryRevert`. Post-first-event failures stay
-  // billable — we paid Anthropic for whatever tokens we received.
-  let reserved = false
-  let committed = false
-  const tryRevert = async (reason: string) => {
-    if (!reserved || committed || monthlyLimit === Infinity) return
+  // === TURN CREDITS (AI-8) ===
+  // The reservation takes the turn's whole ceiling up front — the plan's
+  // per-message cap, or what is left of the pool if that is less — so two
+  // concurrent turns can never take more than the pool holds. The engine
+  // spends against it as a dollar budget; `settleTurn` runs exactly once,
+  // in `finally` on every path (done, error, client disconnect, pre-AI
+  // failure), from the tracker's real token totals, and refunds what the
+  // turn did not use. A BYOA turn books 1 and is never refused (migration
+  // 030/031) — the user's own key pays for it.
+  const turnCeiling = usageSource === 'studio' ? getMaxCreditsPerMessage(plan) : 1
+  const tracker = new TurnUsageTracker()
+  let turnModel: string = DEFAULT_CHAT_MODEL
+  let reservedCredits = 0
+  let settled = false
+  const settleTurn = async (reason: string) => {
+    if (settled || reservedCredits === 0) return
+    settled = true
+    const usage = tracker.snapshot()
+    const hasTokens = usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens > 0
+    const credits = usageSource === 'studio'
+      ? settleTurnCredits({ model: turnModel, ...usage }, reservedCredits)
+      : (hasTokens ? 1 : 0)
     try {
-      await db.decrementAgentUsage({
+      await db.updateAgentUsageTokens({
         workspaceId,
         userId: session.user.id,
         month: usageMonth,
         source: usageSource,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheCreationInputTokens: usage.cacheCreationInputTokens,
+        cacheReadInputTokens: usage.cacheReadInputTokens,
+        messageCountDelta: credits - reservedCredits,
       })
     }
     catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`[chat] usage revert failed (${reason}):`, err)
+      reportBillingRisk(err, { op: `chat.settle.${reason}`, workspaceId, userId: session.user.id, credits, reservedCredits })
     }
+    // Only Studio-funded turns reach the payment provider. A BYOA turn is
+    // paid for on the user's own Anthropic key; metering it would bill
+    // them a second time for the same work. With overage off this can
+    // never exceed the plan allowance (BR-11 P0-1): `credits` is at most
+    // the reservation, and the reservation at most what was left of it.
+    if (usageSource === 'studio' && credits > 0)
+      await recordAIUsage({ workspaceId, count: credits, userId: session.user.id, month: usageMonth })
   }
 
   try {
-    // A BYOA turn reserves too, but only to book its row: the turn-end
-    // settle updates that row in place and the usage panel counts BYOA
-    // turns from it. The database never refuses it and never counts it
-    // toward the pool (migration 030) — the user's own key pays for it.
-    if (monthlyLimit !== Infinity) {
-      const { allowed } = await db.incrementAgentUsageIfAllowed({
-        workspaceId,
-        userId: session.user.id,
-        month: usageMonth,
-        source: usageSource,
-        limit: monthlyLimit,
+    const { allowed, granted } = await db.reserveAgentCredits({
+      workspaceId,
+      userId: session.user.id,
+      month: usageMonth,
+      source: usageSource,
+      limit: Number.isFinite(monthlyLimit) ? monthlyLimit : 2_147_483_647,
+      amount: turnCeiling,
+    })
+    if (!allowed)
+      throw createError({
+        statusCode: 429,
+        message: errorMessage('chat.monthly_limit_reached', {
+          limit: basePlanLimit,
+          date: new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+        }),
+        // The client turns this into a notice that links to Usage, where
+        // overage and upgrades live.
+        data: { code: 'ai_credits_exhausted', resetsAt: usagePeriod.resetsAt },
       })
-      if (!allowed)
-        throw createError({
-          statusCode: 429,
-          message: errorMessage('chat.monthly_limit_reached', {
-            limit: basePlanLimit,
-            date: new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
-          }),
-          // The client turns this into a notice that links to Usage, where
-          // overage and upgrades live.
-          data: { code: 'ai_credits_exhausted', resetsAt: usagePeriod.resetsAt },
-        })
-      reserved = true
-    }
+    reservedCredits = granted
 
     // === CONVERSATION ===
     let conversationId: string | undefined = body.conversationId
@@ -189,6 +209,7 @@ export default defineEventHandler(async (event) => {
     const model = (requestedModel && availableModels.includes(requestedModel))
       ? requestedModel
       : (availableModels.includes(DEFAULT_CHAT_MODEL) ? DEFAULT_CHAT_MODEL : availableModels[0]!)
+    turnModel = model
 
     // === HISTORY ===
     const budget = selectHistoryBudget({ plan, model, source: usageSource })
@@ -316,7 +337,26 @@ export default defineEventHandler(async (event) => {
 
       try {
         for await (const evt of runConversationLoop(
-          { model, apiKey, systemPrompt, messages, tools: aiTools, maxOutputTokens: maxOutputTokensFor(model), abortSignal: abortController.signal },
+          {
+            model,
+            apiKey,
+            systemPrompt,
+            messages,
+            tools: aiTools,
+            maxOutputTokens: maxOutputTokensFor(model),
+            abortSignal: abortController.signal,
+            // The reservation is the turn's spend ceiling. BYOA has none —
+            // the user's own key pays.
+            budget: usageSource === 'studio'
+              ? {
+                  maxUsd: reservedCredits * AI_CREDIT_UNIT_USD,
+                  // Less than the per-message cap was left in the pool: the
+                  // budget is the month's last credits, not this turn's cap.
+                  limitedBy: reservedCredits < turnCeiling ? 'credits' : 'turn',
+                }
+              : undefined,
+            usageTracker: tracker,
+          },
           {
             engine: contentEngine,
             git,
@@ -346,20 +386,6 @@ export default defineEventHandler(async (event) => {
         // Stop processing if client disconnected
           if (abortController.signal.aborted) break
 
-          // Commit on the first billable provider event. `text` and
-          // `tool_use` are real Anthropic stream events; `tool_result`
-          // is internal (engine-emitted post tool exec), `done` is
-          // synthetic, and `error` may fire before any tokens — none
-          // of those count as "we paid for an LLM call."
-          if (!committed && (evt.type === 'text' || evt.type === 'tool_use')) {
-            committed = true
-            // Only Studio-funded turns reach the payment provider. A BYOA
-            // turn is paid for on the user's own Anthropic key; metering it
-            // would bill them a second time for the same work.
-            if (usageSource === 'studio')
-              recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
-          }
-
           // Forward all events to SSE stream
           if (evt.type === 'done') {
             // Extract final state from done event before forwarding.
@@ -375,36 +401,31 @@ export default defineEventHandler(async (event) => {
             iterations = (evt.iterations as typeof iterations) ?? []
 
             // Forward the done event without lastContent (not needed by client)
+            // A turn cut because the month's credits ran out carries the same
+            // notice as the 429 the next message would get (credits + reset
+            // date + link to Usage), so the client can show it now.
+            const creditsExhausted = evt.stoppedBy === 'credits'
             await eventStream.push(JSON.stringify({
               type: 'done',
               usage: evt.usage,
               affected: evt.affected,
+              ...(evt.stoppedBy ? { stoppedBy: evt.stoppedBy } : {}),
+              ...(creditsExhausted
+                ? {
+                    code: 'ai_credits_exhausted',
+                    resetsAt: usagePeriod.resetsAt,
+                    message: errorMessage('chat.monthly_limit_reached', {
+                      limit: basePlanLimit,
+                      date: new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+                    }),
+                  }
+                : {}),
             }))
           }
           else {
             await eventStream.push(JSON.stringify(evt))
           }
         }
-
-        // === CREDIT SETTLE ===
-        // Quota and metering count credits, not flat messages: the
-        // reservation took 1 up front, the difference settles here
-        // from the turn's real token totals (`shared/utils/ai-credits.ts`).
-        // BYOA stays at 1 credit — the token cost is on the user's own
-        // Anthropic key. Uncommitted turns (no billable provider
-        // event) settle nothing; `tryRevert` refunds their reservation.
-        const credits = (committed && usageSource === 'studio')
-          ? estimateMessageCredits({
-              model,
-              inputTokens: totalInputTokens,
-              outputTokens: totalOutputTokens,
-              cacheCreationInputTokens: totalCacheCreationInputTokens,
-              cacheReadInputTokens: totalCacheReadInputTokens,
-            }, plan)
-          : 1
-        const extraCredits = credits - 1
-        if (extraCredits > 0)
-          recordAIUsage({ workspaceId, count: extraCredits, userId: session.user.id, month: usageMonth }).catch(() => {})
 
         // === SAVE TO DB ===
         // `saveChatResult` writes the full iteration trace as a
@@ -428,7 +449,9 @@ export default defineEventHandler(async (event) => {
           userId: session.user.id,
           usageSource,
           usageMonth,
-          extraMessageCount: extraCredits,
+          // Settled in `finally` below, from the tracker — also when this
+          // insert fails.
+          settleUsage: false,
         })
 
       // Webhook events are now emitted from conversation-engine.ts per tool execution
@@ -452,10 +475,10 @@ export default defineEventHandler(async (event) => {
         catch { /* stream closed */ }
       }
       finally {
-      // Revert the reserved slot if no provider event ever flipped
-      // `committed` (provider auth failure, abort before first token,
-      // brain/tool init failure that surfaced here, etc.).
-        await tryRevert('post-reserve')
+        // Settle what the turn really cost: the full turn, a cancelled or
+        // failed one (tokens up to the cut), or nothing at all when the
+        // model was never reached — the whole reservation is refunded.
+        await settleTurn('turn-end')
         try {
           await eventStream.close()
         }
@@ -470,10 +493,10 @@ export default defineEventHandler(async (event) => {
     return eventStream.send()
   }
   catch (err) {
-    // Pre-AI failure paths (DB reserve fail → 429 throw; createConversation,
-    // loadMessages, brain cache, etc.). processChat hasn't started yet so
-    // `committed` is still false; tryRevert refunds the slot if reserved.
-    await tryRevert('pre-AI')
+    // Pre-AI failure paths (429 on reserve; createConversation,
+    // loadMessages, brain cache, etc.). No tokens were spent, so the
+    // settle refunds the whole reservation, if one was taken.
+    await settleTurn('pre-AI')
     throw err
   }
 })

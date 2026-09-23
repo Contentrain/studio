@@ -126,6 +126,7 @@
   "conversation.key_not_found": "API key not found.",
   "conversation.monthly_limit": "Monthly message limit reached ({limit}). Upgrade your plan for more.",
   "conversation.upgrade": "The Conversation API is available on {plans:api.conversation}. Upgrade your plan to use it.",
+  "conversation.usage_unavailable": "Usage could not be checked right now, so this message was not sent. Try again in a moment.",
   "deploy.approval_required": "This release still needs approval before it can be deployed.",
   "deploy.hook_url_invalid": "Enter an https build-hook URL on a public host",
   "deploy.not_configured": "This project has no deploy hook",

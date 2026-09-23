@@ -14,13 +14,19 @@
  * bills (uncached input, cache write at the 1h-TTL 2x rate, cache
  * read at 0.1x, output).
  *
- * Flow (see `chat.post.ts` / `ee/enterprise/conversation-api.ts`):
- * the atomic reservation still takes 1 credit up front (the quota
- * gate), and the turn-end settle adds `credits - 1` via the `_v3`
- * usage RPCs + a top-up meter event. A message can therefore overshoot
- * the monthly cap by at most `getMaxCreditsPerMessage(plan) - 1` —
- * bounded and deliberate (the spend already happened; blocking
- * retroactively is impossible).
+ * Flow, studio chat (`chat.post.ts`, since AI-8): the atomic
+ * reservation takes the whole turn ceiling up front — up to
+ * `getMaxCreditsPerMessage(plan)`, never more than the credits left in
+ * the pool (`reserve_agent_credits`, migration 031) — and the engine
+ * spends against that reservation as a dollar budget
+ * (`server/utils/turn-budget.ts`). The settle runs in `finally`, from
+ * the real token totals, and refunds what the turn did not use. So two
+ * concurrent turns cannot overshoot the pool, and a cancelled or failed
+ * turn counts what it really cost (`settleTurnCredits`).
+ *
+ * The Conversation API (`ee/enterprise/conversation-api.ts`) still uses
+ * the older flow — reserve 1, settle `credits - 1` — and can overshoot
+ * by at most `getMaxCreditsPerMessage(plan) - 1`.
  *
  * BYOA messages stay at 1 credit — the token cost is on the user's
  * own Anthropic key, so Studio only meters the platform usage.
@@ -64,9 +70,9 @@ export function getMaxCreditsPerMessage(plan: StudioPlan | string): number {
 }
 
 /** Cache-write premium — Studio caches on the 1h TTL (`PROMPT_CACHE_CONTROL`). */
-const CACHE_WRITE_MULTIPLIER = 2
+export const CACHE_WRITE_MULTIPLIER = 2
 /** Cache-read discount. */
-const CACHE_READ_MULTIPLIER = 0.1
+export const CACHE_READ_MULTIPLIER = 0.1
 
 /**
  * Conversation-API / legacy models not in the chat catalog. Unknown
@@ -116,4 +122,19 @@ export function estimateMessageCostUsd(usage: MessageUsage): number {
 export function estimateMessageCredits(usage: MessageUsage, plan: StudioPlan | string): number {
   const credits = Math.round(estimateMessageCostUsd(usage) / AI_CREDIT_UNIT_USD)
   return Math.min(getMaxCreditsPerMessage(plan), Math.max(1, credits))
+}
+
+/**
+ * Credits a turn settles at, from its real token totals. Unlike
+ * `estimateMessageCredits` this is not rounded up to 1: a turn that
+ * never reached the model (no tokens) costs 0 and is fully refunded,
+ * while any turn with tokens costs at least 1. It is bounded by the
+ * credits reserved for it — the turn budget kept the spend inside that
+ * reservation, and anything a single call ran over is Studio's.
+ */
+export function settleTurnCredits(usage: MessageUsage, reserved: number): number {
+  const tokens = usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens
+  if (tokens === 0) return 0
+  const credits = Math.max(1, Math.round(estimateMessageCostUsd(usage) / AI_CREDIT_UNIT_USD))
+  return Math.min(Math.max(1, reserved), credits)
 }

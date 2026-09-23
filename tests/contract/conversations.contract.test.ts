@@ -159,6 +159,55 @@ describe('postgres-db conversations (contract)', () => {
     expect(await methods.getAgentUsage(user.workspaceId, '2026-01', 'studio', { userId: user.userId })).toBeNull()
   })
 
+  it('turn credits: concurrent reservations never take more than the pool holds, and the settle refunds', async () => {
+    // AI-8 / migration 031. Pool limit 100, 20 already used by another
+    // member; two turns with a 60-credit ceiling reserve at the same time.
+    const member = await seedUser('conv-reserve')
+    try {
+      const month = '2026-10'
+      await sql`
+        INSERT INTO public.agent_usage (workspace_id, user_id, month, source, message_count, input_tokens, output_tokens)
+        VALUES (${user.workspaceId}, ${member.userId}, ${month}, 'studio', 20, 0, 0)
+      `.execute(getDb())
+
+      const reserve = () => methods.reserveAgentCredits({
+        workspaceId: user.workspaceId,
+        userId: user.userId,
+        month,
+        source: 'studio',
+        limit: 100,
+        amount: 60,
+      })
+      const [a, b] = await Promise.all([reserve(), reserve()])
+      expect([a.granted, b.granted].toSorted((x, y) => x - y)).toEqual([20, 60])
+      expect(Math.max(a.currentCount, b.currentCount)).toBe(100)
+
+      // The pool is full: a third turn is refused, a BYOA turn is not.
+      const third = await reserve()
+      expect(third).toEqual({ allowed: false, granted: 0, currentCount: 100 })
+      const byoa = await methods.reserveAgentCredits({ workspaceId: user.workspaceId, userId: user.userId, month, source: 'byoa', limit: 100, amount: 60 })
+      expect(byoa).toMatchObject({ allowed: true, granted: 1 })
+
+      // The 60-credit turn used 45: the settle refunds 15.
+      await methods.updateAgentUsageTokens({
+        workspaceId: user.workspaceId,
+        userId: user.userId,
+        month,
+        source: 'studio',
+        inputTokens: 1000,
+        outputTokens: 100,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        messageCountDelta: 45 - 60,
+      })
+      const usage = await methods.getAgentUsage(user.workspaceId, month, 'studio', { userId: user.userId })
+      expect(usage!.message_count).toBe(80 - 15)
+    }
+    finally {
+      await deleteSeededUser(member.userId)
+    }
+  })
+
   it('agent usage: the quota is shared by every member of the workspace', async () => {
     // A second member of the same workspace. Before 027 the reservation
     // summed only the caller's rows, so each member got the full limit.

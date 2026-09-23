@@ -130,14 +130,19 @@ export interface AIUsage {
 }
 
 export interface AIStreamEvent {
-  type: 'text' | 'tool_use_start' | 'tool_use_input' | 'tool_use_end' | 'message_end' | 'error'
+  /**
+   * `message_start` carries the prompt's usage (input and cache buckets)
+   * as soon as the call starts — the part Anthropic bills even if the
+   * stream is cut off later. `message_end` carries the final figures.
+   */
+  type: 'text' | 'tool_use_start' | 'tool_use_input' | 'tool_use_end' | 'message_start' | 'message_end' | 'error'
   // text
   content?: string
   // tool_use
   toolId?: string
   toolName?: string
   toolInput?: unknown
-  // message_end
+  // message_start / message_end
   stopReason?: 'end_turn' | 'tool_use' | 'max_tokens'
   usage?: AIUsage
   // error

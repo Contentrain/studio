@@ -53,6 +53,7 @@ type ConversationMethods = Pick<
   | 'upsertAgentUsage'
   | 'getMonthlyUsageSummary'
   | 'incrementAgentUsageIfAllowed'
+  | 'reserveAgentCredits'
   | 'updateAgentUsageTokens'
   | 'decrementAgentUsage'
   | 'incrementAPIUsageIfAllowed'
@@ -328,6 +329,31 @@ export function conversationMethods(): ConversationMethods {
       }
 
       return { allowed: result.allowed, currentCount: result.current_count }
+    },
+
+    async reserveAgentCredits(input) {
+      let result: { allowed: boolean, granted: number, current_count: number }
+      try {
+        const outcome = await sql<{ result: typeof result }>`
+          SELECT public.reserve_agent_credits(
+            p_workspace_id => ${input.workspaceId},
+            p_user_id => ${input.userId},
+            p_month => ${input.month},
+            p_source => ${input.source},
+            p_limit => ${input.limit},
+            p_amount => ${input.amount}
+          ) AS result
+        `.execute(getAdmin())
+        result = outcome.rows[0]!.result
+      }
+      catch (error) {
+        throw createError({
+          statusCode: 500,
+          message: `Atomic usage check failed: ${error instanceof Error ? error.message : 'unknown'}`,
+        })
+      }
+
+      return { allowed: result.allowed, granted: result.granted, currentCount: result.current_count }
     },
 
     async updateAgentUsageTokens(input) {
