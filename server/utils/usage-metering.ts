@@ -10,12 +10,15 @@
  * meter names stay consistent with the Polar meter slugs defined in
  * `shared/utils/usage-meters.ts`.
  *
- * Recording is best-effort: outbox enqueue failures are logged and
- * swallowed so the triggering user action (send AI message, submit
- * form, etc.) is never blocked on billing plumbing.
+ * Recording is best-effort: an outbox enqueue failure never blocks the
+ * triggering user action (send AI message, submit form, etc.). It is
+ * not silent either: a lost event is usage the payment provider never
+ * bills, so it goes to `reportBillingRisk` (log + Sentry) with the
+ * meter, value and idempotency key needed to replay it by hand.
  */
 
 import { USAGE_METERS } from '../../shared/utils/usage-meters'
+import { reportBillingRisk } from './alert'
 import { isBillingConfigured } from './license'
 
 async function recordUsage(input: {
@@ -40,8 +43,13 @@ async function recordUsage(input: {
     })
   }
   catch (err) {
-    // eslint-disable-next-line no-console -- best-effort metering; log without blocking caller
-    console.error('[usage-metering] Failed to enqueue usage event:', err)
+    reportBillingRisk(err, {
+      op: 'usage-metering.enqueue',
+      workspaceId: input.workspaceId,
+      meterName: input.meterName,
+      value: input.value,
+      idempotencyKey: input.idempotencyKey,
+    })
   }
 }
 
