@@ -21,6 +21,10 @@ const state = vi.hoisted(() => ({
   quota: { allowed: true, used: 1 },
   mediaProvider: null as unknown,
   mediaFeature: true,
+  /** What `resolveWorkspaceBilling` answers — the billing-derived plan. */
+  effectivePlan: 'pro' as string,
+  /** Overrides the overage the billing resolution returns; null = the row's. */
+  billingOverage: null as Record<string, boolean> | null,
   db: {
     getProjectById: vi.fn(),
     getWorkspaceById: vi.fn(),
@@ -88,9 +92,19 @@ vi.mock('~~/server/utils/rate-limit', () => ({
   checkRateLimit: vi.fn(async () => state.rateCheck),
 }))
 
+// Plan + overage resolution is `resolveWorkspaceBilling`'s own suite; here
+// it is the billing-derived answer the route must gate on.
+vi.mock('~~/server/utils/workspace-billing', () => ({
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }) => ({
+    state: 'subscribed',
+    effectivePlan: state.effectivePlan,
+    overageSettings: state.billingOverage ?? workspace.overage_settings ?? {},
+  })),
+}))
+
 vi.mock('~~/server/utils/license', () => ({
   getWorkspacePlan: vi.fn(() => 'pro'),
-  hasFeature: vi.fn((_plan: string, feature: string) => (feature === 'media.upload' ? state.mediaFeature : true)),
+  hasFeature: vi.fn((plan: string, feature: string) => (feature === 'media.upload' ? state.mediaFeature : plan !== 'free')),
   getPlanLimit: vi.fn(() => 1000),
 }))
 
@@ -146,6 +160,8 @@ describe('MCP Cloud proxy gating', () => {
     state.quota = { allowed: true, used: 1 }
     state.mediaProvider = null
     state.mediaFeature = true
+    state.effectivePlan = 'pro'
+    state.billingOverage = null
 
     state.db.getProjectById.mockResolvedValue({
       id: 'proj-1',
@@ -327,6 +343,29 @@ describe('MCP Cloud proxy gating', () => {
 
     await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 429 })
     expect(state.proxyRequest).not.toHaveBeenCalled()
+  })
+
+  it('gates on the billing-derived plan, not the workspace column', async () => {
+    // `workspaces.plan` still says pro (the row fixture), but the trial
+    // expired: billing resolves the workspace to free.
+    state.effectivePlan = 'free'
+    const handler = await loadHandler()
+    const event = makeEvent({ __body: toolCallBody('contentrain_content_list') })
+
+    await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 403, message: 'mcp_cloud.upgrade' })
+    expect(state.proxyRequest).not.toHaveBeenCalled()
+  })
+
+  it('raises the cap only on overage the subscription can bill', async () => {
+    // The row has the toggle on; billing turned it off (trial, or a
+    // subscription with no price for the meter).
+    state.db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: 42, plan: 'pro', overage_settings: { mcp_calls: true }, owner_id: null })
+    state.billingOverage = { mcp_calls: false }
+    const { getEffectiveLimit } = await import('~~/server/utils/overage')
+    const handler = await loadHandler()
+
+    await handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)
+    expect(getEffectiveLimit).toHaveBeenCalledWith(expect.any(Number), 'api.mcp_calls_per_month', { mcp_calls: false })
   })
 
   it('tells the client when the monthly quota resets', async () => {

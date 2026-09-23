@@ -83,7 +83,7 @@ export function createAiKeysBridge() {
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
-      if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'ai.byoa'))
+      if (!hasFeature(event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {}), 'ai.byoa'))
         throw createError({ statusCode: 403, message: errorMessage('api.byoa_upgrade') })
 
       const runtimeConfig = useRuntimeConfig()

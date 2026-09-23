@@ -21,7 +21,7 @@ export function createWebhooksBridge() {
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
-      if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
+      if (!hasFeature(event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
       const data = await db.listProjectWebhooks(projectId, workspaceId)
@@ -61,7 +61,7 @@ export function createWebhooksBridge() {
         throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
-      const plan = getWorkspacePlan(workspace ?? {})
+      const plan = event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {})
       if (!hasFeature(plan, 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
@@ -97,7 +97,7 @@ export function createWebhooksBridge() {
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
-      if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
+      if (!hasFeature(event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
       if (body.url !== undefined && !isAllowedWebhookUrl(body.url))
@@ -155,7 +155,7 @@ export function createWebhooksBridge() {
         throw createError({ statusCode: 429, message: errorMessage('rate.limit_exceeded') })
 
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
-      if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
+      if (!hasFeature(event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
       const webhook = await db.getWebhook(webhookId, { projectId, workspaceId })
@@ -235,7 +235,7 @@ export function createWebhooksBridge() {
       await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
 
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
-      if (!hasFeature(getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
+      if (!hasFeature(event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {}), 'api.webhooks_outbound'))
         throw createError({ statusCode: 403, message: errorMessage('webhook.upgrade_required') })
 
       const webhook = await db.getWebhook(webhookId, { projectId, workspaceId })

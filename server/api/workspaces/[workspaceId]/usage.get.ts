@@ -118,7 +118,9 @@ export default defineEventHandler(async (event) => {
     const pricing = OVERAGE_PRICING[m.limitKey]
     // A limit that is not sellable is a hard cap: the toggle is ignored
     // and no amount is quoted, whatever `overage_settings` still holds.
-    const sellable = isOverageSellable(m.limitKey)
+    // A limit with no overage price (comments) is not sold either: there is
+    // no meter to bill it on, so it is a fixed limit, not a toggle that 400s.
+    const sellable = !!pricing && isOverageSellable(m.limitKey)
     const overageLock = pricing ? overageLocks[pricing.settingsKey] ?? null : null
     const overageEnabled = sellable && pricing && !overageLock ? (overageSettings[pricing.settingsKey] === true) : false
     const overageUnits = sellable ? calculateOverageUnits(m.current, planLimit) : 0

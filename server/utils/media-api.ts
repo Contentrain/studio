@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import type { MediaProvider } from '../providers/media'
 import type { CDNKeyScope } from './cdn-keys'
+import { resolveWorkspaceBilling } from './workspace-billing'
 
 export interface MediaApiContext {
   projectId: string
@@ -54,11 +55,14 @@ export async function resolveMediaApiContext(
   if (!project.cdn_enabled)
     throw createError({ statusCode: 403, message: errorMessage('cdn.not_enabled') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, overage_settings, owner_id')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, type, plan, overage_settings, owner_id')
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  const plan = getWorkspacePlan(workspace)
+  // Billing-derived (this public route is outside the billing middleware):
+  // an expired trial or grace period loses its plan here too.
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const plan = billing.effectivePlan
   if (!hasFeature(plan, opts.feature))
     throw createError({ statusCode: 403, message: errorMessage(opts.upgradeKey, getUpgradeParams(plan)) })
 
@@ -75,7 +79,7 @@ export async function resolveMediaApiContext(
     // uploads have no acting user, so attribute them to the workspace owner
     // (who authorized the key).
     ownerId: workspace.owner_id as string,
-    overageSettings: (workspace.overage_settings as Record<string, boolean>) ?? {},
+    overageSettings: billing.overageSettings,
     media,
   }
 }

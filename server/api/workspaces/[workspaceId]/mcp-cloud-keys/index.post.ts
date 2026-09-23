@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: errorMessage('workspace.not_found') })
   }
 
-  const plan = getWorkspacePlan(workspace)
+  const plan = event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace)
   if (!hasFeature(plan, 'api.mcp_cloud')) {
     throw createError({ statusCode: 403, message: errorMessage('mcp_cloud.upgrade') })
   }

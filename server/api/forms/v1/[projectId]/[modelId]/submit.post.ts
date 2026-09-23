@@ -16,6 +16,7 @@ import { verifyTurnstileToken } from '~~/server/utils/turnstile'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { createContentEngine } from '~~/server/utils/content-engine'
 import { generateEntryId } from '@contentrain/types'
+import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -49,13 +50,16 @@ export default defineEventHandler(async (event) => {
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, name, slug, plan, github_installation_id, overage_settings')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, name, slug, type, plan, github_installation_id, overage_settings')
 
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
   // Plan check
-  const plan = getWorkspacePlan(workspace)
+  // Billing-derived (this public route is outside the billing middleware):
+  // an expired trial or grace period loses its plan here too.
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const plan = billing.effectivePlan
   if (!hasFeature(plan, 'forms.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
 
@@ -172,7 +176,7 @@ export default defineEventHandler(async (event) => {
   const userAgent = getHeader(event, 'user-agent') ?? null
   const referrer = getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? null
   const basePlanLimit = getPlanLimit(plan, 'forms.submissions_per_month')
-  const overageSettings = workspace.overage_settings as Record<string, boolean> | null
+  const overageSettings = billing.overageSettings
   const monthlyLimit = getEffectiveLimit(basePlanLimit, 'forms.submissions_per_month', overageSettings)
 
   // Per-model cap from the form config (below the workspace plan limit).

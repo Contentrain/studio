@@ -16,6 +16,8 @@ const aliasConfig = {
     '@': rootDir,
     '~~': rootDir,
     '@@': rootDir,
+    // Nuxt/Nitro virtual module — see tests/helpers/nuxt-imports.ts.
+    '#imports': fileURLToPath(new URL('./tests/helpers/nuxt-imports.ts', import.meta.url)),
   },
 }
 

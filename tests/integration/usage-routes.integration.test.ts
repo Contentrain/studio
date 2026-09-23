@@ -162,6 +162,26 @@ describe('usage API', () => {
       }
     })
 
+    it('shows comments as a fixed limit: there is no overage price to sell them on', async () => {
+      // Comments have no meter and no overage price. Offering the switch
+      // only produced a 400 from the settings route (no such key).
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, media_storage_bytes: 0 }),
+        getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(0),
+        getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
+        countMonthlySubmissions: vi.fn().mockResolvedValue(0),
+        countMonthlyComments: vi.fn().mockResolvedValue(0),
+        getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
+        getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
+      }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default
+      const result = await handler({} as never)
+
+      const comments = result.categories.find((c: { key: string }) => c.key === 'comments')
+      expect(comments).toMatchObject({ overageSellable: false, overageEnabled: false })
+    })
+
     it('rejects non-owner/admin', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
         getWorkspaceForUser: vi.fn().mockResolvedValue(null),

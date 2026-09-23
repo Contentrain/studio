@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   session: { userId: 'user-1' } as { userId: string } | null,
   auth: { user: { id: 'user-1', email: 'u@example.test' }, accessToken: 'jwt-1' } as Record<string, unknown> | null,
   planOk: true,
+  effectivePlan: 'pro' as string,
   dcrClient: {
     clientId: 'dcr_test1234',
     kind: 'dcr' as const,
@@ -53,6 +54,12 @@ vi.mock('~~/server/utils/providers', () => ({
 
 vi.mock('~~/server/utils/db', () => ({
   requireProjectAccess: vi.fn(async () => {}),
+}))
+
+// The billing-derived plan the MCP OAuth route also gates on — resolved in
+// `resolveWorkspaceBilling`'s own suite; here only its answer matters.
+vi.mock('~~/server/utils/workspace-billing', () => ({
+  resolveWorkspaceBilling: vi.fn(async () => ({ state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: {} })),
 }))
 
 vi.mock('~~/server/utils/license', () => ({
@@ -123,6 +130,7 @@ describe('OAuth consent flow', () => {
     state.session = { userId: 'user-1' }
     state.auth = { user: { id: 'user-1', email: 'u@example.test' }, accessToken: 'jwt-1' }
     state.planOk = true
+    state.effectivePlan = 'pro'
     state.createdCodes = []
     state.db = {
       listUserWorkspaces: vi.fn(async () => [
@@ -237,6 +245,22 @@ describe('OAuth consent flow', () => {
       })
       expect(response.status).toBe(403)
       expect(state.createdCodes).toHaveLength(0)
+    })
+  })
+
+  it('asks the billing-derived plan, not the workspace column', async () => {
+    // An expired trial: the row still says pro, billing resolves it to free.
+    const { hasFeature } = await import('~~/server/utils/license')
+    await withConsentServer(async ({ request }) => {
+      const jar = await startDance(request)
+      state.effectivePlan = 'free'
+
+      await request('/api/oauth/consent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cookie': jar.header(), 'origin': 'http://localhost:3000' },
+        body: JSON.stringify({ decision: 'approve', workspaceId: 'ws-1', projectId: 'proj-1' }),
+      })
+      expect(hasFeature).toHaveBeenCalledWith('free', 'api.mcp_cloud_oauth')
     })
   })
 

@@ -21,6 +21,8 @@ const state = vi.hoisted(() => ({
   rateCheck: { allowed: true, remaining: 59, retryAfterMs: 0 },
   quota: { allowed: true, used: 1 },
   planOk: true,
+  /** What `resolveWorkspaceBilling` answers — the billing-derived plan. */
+  effectivePlan: 'pro' as string,
   mediaProvider: null as unknown,
   db: {
     getProjectById: vi.fn(),
@@ -72,6 +74,16 @@ vi.mock('~~/server/utils/providers', () => ({
 
 vi.mock('~~/server/utils/rate-limit', () => ({
   checkRateLimit: vi.fn(async () => state.rateCheck),
+}))
+
+// Plan + overage resolution is `resolveWorkspaceBilling`'s own suite; here
+// it is the billing-derived answer the route must gate on.
+vi.mock('~~/server/utils/workspace-billing', () => ({
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }) => ({
+    state: 'subscribed',
+    effectivePlan: state.effectivePlan,
+    overageSettings: workspace.overage_settings ?? {},
+  })),
 }))
 
 vi.mock('~~/server/utils/license', () => ({
@@ -143,6 +155,7 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     state.rateCheck = { allowed: true, remaining: 59, retryAfterMs: 0 }
     state.quota = { allowed: true, used: 1 }
     state.planOk = true
+    state.effectivePlan = 'pro'
     state.mediaProvider = null
 
     state.db.getProjectById.mockResolvedValue({
@@ -224,6 +237,13 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     })
   })
 
+  it('asks the billing-derived plan, not the workspace column, for the OAuth gate', async () => {
+    state.effectivePlan = 'free'
+    const { hasFeature } = await import('~~/server/utils/license')
+    const handler = await loadHandler()
+    await handler(makeEvent() as never).catch(() => {})
+    expect(hasFeature).toHaveBeenCalledWith('free', 'api.mcp_cloud_oauth')
+  })
   it('503s only after auth when the loopback is unavailable', async () => {
     state.mcpUrl = null
     const handler = await loadHandler()

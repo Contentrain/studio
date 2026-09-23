@@ -2,7 +2,7 @@ import { createError, getRouterParam, readBody, type H3Event } from 'h3'
 import { requireAuth } from '../../server/utils/auth'
 import { errorMessage } from '../../server/utils/content-strings'
 import { getWorkspacePlan, hasFeature, getPlanLimit } from '../../server/utils/license'
-import { generateConversationKey } from '../../server/utils/conversation-keys'
+import { CONVERSATION_API_MODELS, DEFAULT_CONVERSATION_API_MODEL, generateConversationKey } from '../../server/utils/conversation-keys'
 import { useDatabaseProvider } from '../../server/utils/providers'
 import { resolveUsagePeriod } from '../../server/utils/usage-period'
 
@@ -86,7 +86,7 @@ export function createConversationKeysBridge() {
 
       const workspace = await db.getWorkspaceById(workspaceId, 'plan')
 
-      const plan = getWorkspacePlan(workspace ?? {})
+      const plan = event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {})
       if (!hasFeature(plan, 'api.conversation'))
         throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
 
@@ -99,8 +99,7 @@ export function createConversationKeysBridge() {
       const validRoles = ['viewer', 'editor', 'admin']
       const role = validRoles.includes(body.role ?? '') ? body.role : 'editor'
 
-      const validModels = ['claude-sonnet-5', 'claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
-      const aiModel = validModels.includes(body.aiModel ?? '') ? body.aiModel : 'claude-sonnet-4-5'
+      const aiModel = CONVERSATION_API_MODELS.includes(body.aiModel ?? '') ? body.aiModel : DEFAULT_CONVERSATION_API_MODEL
 
       const rateLimitPerMinute = Math.max(1, Math.min(body.rateLimitPerMinute ?? 10, 60))
       const monthlyMessageLimit = Math.max(1, Math.min(body.monthlyMessageLimit ?? 1000, getPlanLimit(plan, 'api.messages_per_month')))
@@ -159,7 +158,7 @@ export function createConversationKeysBridge() {
       let plan: ReturnType<typeof getWorkspacePlan> | null = null
       if (needsPlan) {
         const workspace = await db.getWorkspaceById(workspaceId, 'plan')
-        plan = getWorkspacePlan(workspace ?? {})
+        plan = event.context?.billing?.effectivePlan ?? getWorkspacePlan(workspace ?? {})
       }
 
       if (body.customInstructions !== undefined) {
@@ -168,7 +167,6 @@ export function createConversationKeysBridge() {
       }
 
       const validRoles = ['viewer', 'editor', 'admin']
-      const validModels = ['claude-sonnet-5', 'claude-sonnet-4-5', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']
 
       const updates: Record<string, unknown> = {}
       if (body.name !== undefined) updates.name = body.name.trim()
@@ -178,7 +176,7 @@ export function createConversationKeysBridge() {
       if (body.allowedTools !== undefined) updates.allowed_tools = body.allowedTools
       if (body.allowedLocales !== undefined) updates.allowed_locales = body.allowedLocales
       if (body.customInstructions !== undefined) updates.custom_instructions = body.customInstructions ? body.customInstructions.substring(0, 2000) : body.customInstructions
-      if (body.aiModel !== undefined && validModels.includes(body.aiModel)) updates.ai_model = body.aiModel
+      if (body.aiModel !== undefined && CONVERSATION_API_MODELS.includes(body.aiModel)) updates.ai_model = body.aiModel
       if (body.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = Math.max(1, Math.min(body.rateLimitPerMinute, 60))
       if (body.monthlyMessageLimit !== undefined) {
         const planCap = getPlanLimit(plan!, 'api.messages_per_month')
