@@ -120,15 +120,21 @@ export default defineEventHandler(async (event) => {
   const trial = event.context.billing?.trial as TrialContext | undefined
   const planLimit = getMonthlyMessageLimit(plan, creditUnit)
   const capPlan = trialCapPlan('ai.messages_per_month', trial)
-  const basePlanLimit = capPlan ? Math.min(planLimit, getMonthlyMessageLimit(capPlan, creditUnit)) : planLimit
-  const trialCapped = basePlanLimit < planLimit
-  const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
-  const monthlyLimit = trialCapped ? basePlanLimit : getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
+  const trialCapped = capPlan !== null
   // Counted in the workspace's billing period, not the calendar month —
   // otherwise the quota resets on the 1st while the invoice runs from the
   // subscription anniversary (`server/utils/usage-period.ts`).
   const usagePeriod = await resolveUsagePeriod(workspaceId)
   const usageMonth = usagePeriod.key
+  // A capped trial has ONE pool for AI and API credits, the size of the cap
+  // plan's AI quota (`trialCreditPool`): the chat may take what the
+  // Conversation API has not.
+  const trialPool = capPlan ? getMonthlyMessageLimit(capPlan, creditUnit) : null
+  const basePlanLimit = trialPool !== null
+    ? Math.min(planLimit, Math.max(0, trialPool - await db.getWorkspaceMonthlyAPIUsage(workspaceId, usageMonth)))
+    : planLimit
+  const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
+  const monthlyLimit = trialCapped ? basePlanLimit : getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
 
   // === TURN CREDITS (AI-8) ===
   // The reservation takes the turn's whole ceiling up front — the plan's
@@ -196,7 +202,7 @@ export default defineEventHandler(async (event) => {
         // A capped trial says why and how to lift it: the full allowance
         // opens with the first payment, not at the period reset.
         message: trialCapped
-          ? errorMessage('chat.trial_credit_cap_reached', { limit: basePlanLimit, fullLimit: planLimit })
+          ? errorMessage('chat.trial_credit_cap_reached', { limit: trialPool ?? basePlanLimit, fullLimit: planLimit })
           : errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit, date }),
         // The client turns this into a notice that links to Usage, where
         // overage and upgrades live (and, for a trial, activation).

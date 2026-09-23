@@ -216,8 +216,13 @@ async function runConversationMessage(
   // Credits are counted in the unit the account is billed in (`credit-unit.ts`).
   const planApiLimit = getCreditLimit(plan, 'api.messages_per_month', creditUnit)
   const capPlan = trialCapPlan('api.messages_per_month', trial)
-  const workspacePlanLimit = capPlan ? Math.min(planApiLimit, getCreditLimit(capPlan, 'api.messages_per_month', creditUnit)) : planApiLimit
-  const trialCapped = workspacePlanLimit < planApiLimit
+  const trialCapped = capPlan !== null
+  // A capped trial has ONE pool for AI and API credits, the size of the cap
+  // plan's AI quota: the API may take what the chat has not. (The cap plan's
+  // own API quota — 0 on Starter — would leave the API unusable in a trial.)
+  const workspacePlanLimit = capPlan
+    ? Math.min(planApiLimit, Math.max(0, getCreditLimit(capPlan, 'ai.messages_per_month', creditUnit) - await db.getWorkspaceMonthlyAIUsage(keyData.workspaceId, usageMonth)))
+    : planApiLimit
   const workspaceLimit = trialCapped ? workspacePlanLimit : getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
   const keyLimit = trialCapped ? keyData.monthlyMessageLimit : getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)
 

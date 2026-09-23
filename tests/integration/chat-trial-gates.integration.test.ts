@@ -28,7 +28,7 @@ interface Billing {
   trial?: { trialing: boolean, origin: 'migrate' | 'standard' }
 }
 
-function stubTurn(opts: { allowed?: boolean } = {}) {
+function stubTurn(opts: { allowed?: boolean, apiUsed?: number } = {}) {
   const allowed = opts.allowed ?? true
   const reserveAgentCredits = vi.fn().mockImplementation(async ({ amount }: { amount: number }) => ({ allowed, granted: allowed ? amount : 0, currentCount: 0 }))
   const recordAIUsage = vi.fn().mockResolvedValue(undefined)
@@ -43,6 +43,8 @@ function stubTurn(opts: { allowed?: boolean } = {}) {
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
     reserveAgentCredits,
     updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
+    // API credits already used this period — shared with the chat in a capped trial.
+    getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(opts.apiUsed ?? 0),
     getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
     createConversation: vi.fn().mockResolvedValue('conversation-existing'),
     loadConversationMessages: vi.fn().mockResolvedValue([]),
@@ -189,5 +191,28 @@ describe('chat route — trial AI credit cap', () => {
     expect(errorMessage).toHaveBeenCalledWith('chat.trial_credit_cap_reached', { limit: STARTER_CREDITS, fullLimit: PRO_CREDITS })
     expect(turn.models).toEqual([])
     expect(turn.recordAIUsage).not.toHaveBeenCalled()
+  })
+
+  it('a capped trial shares one pool between chat and API: AI 200 + API 100 → the 301st credit is refused, unmetered', async () => {
+    // Pool = Starter's AI quota (300 in the current unit). With 100 spent on
+    // the API, the chat may take 200; the reservation's limit says so, and
+    // with AI already at 200 the pool refuses the turn.
+    expect(STARTER_CREDITS).toBe(300)
+    const turn = stubTurn({ allowed: false, apiUsed: 100 })
+    const errorMessage = vi.fn((key: string) => key)
+    vi.stubGlobal('errorMessage', errorMessage)
+    const { status, payload } = await runTurn(trial('migrate'))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ limit: 200 }))
+    expect(status).toBe(429)
+    expect(JSON.parse(payload).data).toMatchObject({ reason: 'trial_cap' })
+    // The message names the whole pool, not what is left of it.
+    expect(errorMessage).toHaveBeenCalledWith('chat.trial_credit_cap_reached', { limit: 300, fullLimit: PRO_CREDITS })
+    expect(turn.recordAIUsage).not.toHaveBeenCalled()
+  })
+
+  it('a normal Pro trial and a paid Pro keep separate pools (no API read, full AI quota)', async () => {
+    const turn = stubTurn({ apiUsed: 250 })
+    await runTurn(trial('standard'))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ limit: SOFT_CAP }))
   })
 })
