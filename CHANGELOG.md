@@ -1,6 +1,91 @@
 # Changelog
 
 
+## v0.4.3
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.2...v0.4.3)
+
+### ⚠️ Upgrade notes
+
+**1. Three migrations run before the new image serves: 028, 029, 030.**
+managed+postgres: the Railway pre-deploy runs them; plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. 028 and 030 replace functions in place with the same signatures; 029 adds `payment_accounts.current_period_start` and copies the current calendar month's usage counters to the billing-period key. Nothing is dropped, so rolling back the image alone is safe.
+
+**2. Plan quotas and the overage price changed (managed billing).**
+Per billing period: AI credits Starter 60, Pro 350; API credits Starter 30, Pro 140. Overage is $0.08 per credit. CDN bandwidth and media storage are now fixed limits with no overage. A workspace already above its new limit this period is stopped at the limit (429) from the deploy on, unless overage is on.
+
+**3. Polar operators: re-sync the catalogue in the same window.**
+Usage events are now `ai_credits` / `api_credits` (sum), no longer `ai_messages` / `api_messages`, and each plan's included credits are a meter-credit benefit. Dry run `npx tsx --env-file=<env> scripts/polar-sync.ts --rotate-prices`, then add `--apply --server=production`. Until the app and the catalogue are both on this release, AI and API usage is not billed.
+
+**4. R2: expire the `_tmp/` prefix after 1 day.**
+Chat attachments wait under `_tmp/` until a save moves them into the media library. Without a lifecycle rule the prefix only grows.
+
+**5. Use a separate `NUXT_ANTHROPIC_API_KEY` per environment** so AI cost stays attributable to the environment that spent it.
+
+### ✨ Highlights
+
+- Turns on your own Anthropic key (BYOA) no longer use the workspace's AI credits and are never billed; Usage lists them on their own line (#331)
+- Usage resets on your billing date instead of the 1st of the month (#277)
+- AI and API usage is counted in credits: a heavy turn costs more than one, capped per message at 30 on Starter and 60 on Pro and Enterprise (#274, #280)
+- CDN bandwidth and media storage are fixed limits; Usage marks them as such (#300)
+- The agent writes to the locale you are working in, and says which one (#301)
+- Behaviour change: asking the agent to delete an entry or change its status now applies to every locale unless you name one (#324)
+- Edits made at the same time merge instead of overwriting each other, vocabulary included (#304, #327, #333)
+- New: the agent can replace text inside a field without re-sending the whole field (#319)
+- New: a chat attachment you save into content moves into the media library, and chat attachments count toward storage (#323, #317)
+- The agent refuses to delete an entry other entries still reference, and resolves a linked site page to the entry it renders (#307, #316)
+- Saves say whether they created or updated, set the status in the same commit, merge object fields key by key, and save document batches together (#305, #310)
+- Brain queries filter, sort and paginate; Turkish requests are classified correctly and tool errors are reported (#308, #299, #306)
+- Projects open faster: the cached project renders at once, without the serial load waterfall or duplicate requests (#322, #329, #332)
+- CDN: a model that fails to build keeps its previous files, and a partial build is no longer reported as complete (#309, #318, #320)
+- MCP Cloud writes work again, and moving a project to another instance rewrites its media addresses in one commit (#302, #328)
+
+### 🚀 Enhancements
+
+- **agent:** Replace text inside a field instead of re-sending it ([#319](https://github.com/Contentrain/studio/pull/319))
+- **media:** Promote a chat attachment when a save puts it into content ([#323](https://github.com/Contentrain/studio/pull/323))
+- **media:** Move media addresses to this instance in one commit ([#321](https://github.com/Contentrain/studio/pull/321), [#328](https://github.com/Contentrain/studio/pull/328))
+
+### 🔥 Performance
+
+- **project:** Render the cached project at once and drop the serial load waterfall ([#332](https://github.com/Contentrain/studio/pull/332))
+
+### 🩹 Fixes
+
+- **billing:** Retire dead usage events instead of retrying them forever ([#276](https://github.com/Contentrain/studio/pull/276))
+- **billing:** Close the MCP Cloud quota check-then-act race ([#275](https://github.com/Contentrain/studio/pull/275))
+- **billing:** Bring AI credit unit economics to profit-policy floor ([#274](https://github.com/Contentrain/studio/pull/274))
+- **billing:** Count usage in the billing period, not the calendar month ([#277](https://github.com/Contentrain/studio/pull/277))
+- **billing:** Meter credits in the unit sold, and include the plan's allowance ([#280](https://github.com/Contentrain/studio/pull/280))
+- **chat:** Correct Turkish intent classification, report tool errors, tighten prompt rules ([#299](https://github.com/Contentrain/studio/pull/299))
+- **billing:** Stop selling overage on limits the meter cannot bill ([#300](https://github.com/Contentrain/studio/pull/300))
+- **agent:** Write to the locale the user works in, and say which one ([#301](https://github.com/Contentrain/studio/pull/301))
+- **mcp:** Stop forwarding the client's content-length to the loopback ([#302](https://github.com/Contentrain/studio/pull/302))
+- **api:** Reject a non-uuid project id before it reaches the database ([#303](https://github.com/Contentrain/studio/pull/303))
+- **content:** State create vs update on saves, and merge object fields key by key ([#305](https://github.com/Contentrain/studio/pull/305))
+- **agent:** Lead every write validation error with one fixed label ([#306](https://github.com/Contentrain/studio/pull/306))
+- **content:** Fork each write from the commit it read, so concurrent edits merge ([#304](https://github.com/Contentrain/studio/pull/304))
+- **agent:** Refuse to delete an entry other entries still reference ([#307](https://github.com/Contentrain/studio/pull/307))
+- **chat:** Filter, sort and paginate brain_query, fix entryId on documents and singletons ([#308](https://github.com/Contentrain/studio/pull/308))
+- **cdn:** Don't build selectively onto a store that was never built whole ([#309](https://github.com/Contentrain/studio/pull/309))
+- **content:** Set status in the save commit, report it, and batch document saves ([#310](https://github.com/Contentrain/studio/pull/310))
+- **agent:** Resolve a linked site page to the entry it renders ([#316](https://github.com/Contentrain/studio/pull/316))
+- **media:** Count chat media attachments against storage, find assets by path ([#317](https://github.com/Contentrain/studio/pull/317))
+- **cdn:** Don't claim a complete store when a model failed to upload ([#318](https://github.com/Contentrain/studio/pull/318))
+- **cdn:** Keep a failed model's previous artifacts through the sweep ([#320](https://github.com/Contentrain/studio/pull/320))
+- **brain:** Make the content cache key small enough to send, and actually send it ([#322](https://github.com/Contentrain/studio/pull/322))
+- **agent:** Default delete_content and update_status to every locale ([#324](https://github.com/Contentrain/studio/pull/324))
+- **brain:** Show the cached project when the sync answers with an empty delta ([#329](https://github.com/Contentrain/studio/pull/329))
+- **billing:** Keep BYOA turns out of the AI quota and the payment meter ([#331](https://github.com/Contentrain/studio/pull/331))
+- **vocabulary:** Read and fork each attempt from one contentrain commit ([#285](https://github.com/Contentrain/studio/pull/285), [#333](https://github.com/Contentrain/studio/pull/333))
+
+### 💅 Refactors
+
+- **content:** Pass the snapshot sha to applyPlan as its base (mcp 3.6.1) ([#327](https://github.com/Contentrain/studio/pull/327))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.2
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.1...v0.4.2)
