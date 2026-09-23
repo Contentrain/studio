@@ -77,10 +77,13 @@ export default defineEventHandler(async (event) => {
       api_messages: 'apiMessages',
       mcp_calls: 'mcpCalls',
     }
-    const simple: Record<string, { current: number, limit: number, percentage: number, unavailable?: true }> = {}
+    const simple: Record<string, { current: number | null, limit: number, percentage: number | null, unavailable?: true }> = {}
     for (const c of usage.categories) {
       const key = keyMap[c.key] ?? c.key
-      simple[key] = { current: c.current, limit: c.limit, percentage: c.percentage, ...(c.unavailable ? { unavailable: true as const } : {}) }
+      // An unread meter is null, not 0: a client that ignores the flag must not show "0 used".
+      simple[key] = c.unavailable
+        ? { current: null, limit: c.limit, percentage: null, unavailable: true }
+        : { current: c.current, limit: c.limit, percentage: c.percentage }
     }
     return simple
   }

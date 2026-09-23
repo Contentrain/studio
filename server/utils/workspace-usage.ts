@@ -116,17 +116,21 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
     if (r.status === 'rejected') reportBillingRisk(r.reason, { op: `usage-read.${READ_NAMES[i]}`, workspaceId })
   })
   // null: the read failed.
-  const [aiUsage, byoaRequests, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls, comments] = reads.map(r => (r.status === 'fulfilled' ? r.value : null))
+  const value = (i: number): number | null => {
+    const r = reads[i]!
+    return r.status === 'fulfilled' ? r.value : null
+  }
+  const [aiUsage, byoaRequests, apiUsage, formSubmissions, cdnBandwidthBytes, mcpCloudCalls, comments] = [0, 1, 2, 3, 4, 5, 6].map(value)
 
   const meters: Array<{ key: string, limitKey: string, name: string, current: number | null, unit: string, window: UsagePeriod | null }> = [
-    { key: 'ai_messages', limitKey: 'ai.messages_per_month', name: 'AI Credits', current: aiUsage, unit: 'credits', window: period },
-    { key: 'form_submissions', limitKey: 'forms.submissions_per_month', name: 'Form Submissions', current: formSubmissions, unit: 'submissions', window: calendar },
-    { key: 'comments', limitKey: 'comments.per_month', name: 'Comments', current: comments, unit: 'comments', window: calendar },
-    { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes === null ? null : cdnBandwidthBytes / GB, unit: 'GB', window: calendar },
+    { key: 'ai_messages', limitKey: 'ai.messages_per_month', name: 'AI Credits', current: aiUsage ?? null, unit: 'credits', window: period },
+    { key: 'form_submissions', limitKey: 'forms.submissions_per_month', name: 'Form Submissions', current: formSubmissions ?? null, unit: 'submissions', window: calendar },
+    { key: 'comments', limitKey: 'comments.per_month', name: 'Comments', current: comments ?? null, unit: 'comments', window: calendar },
+    { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes == null ? null : cdnBandwidthBytes / GB, unit: 'GB', window: calendar },
     // Storage is a level, not a rate: it does not reset and is not projected.
     { key: 'media_storage', limitKey: 'media.storage_gb', name: 'Media Storage', current: input.storageBytes / GB, unit: 'GB', window: null },
-    { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Credits', current: apiUsage, unit: 'credits', window: period },
-    { key: 'mcp_calls', limitKey: 'api.mcp_calls_per_month', name: 'MCP Cloud Calls', current: mcpCloudCalls, unit: 'calls', window: period },
+    { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Credits', current: apiUsage ?? null, unit: 'credits', window: period },
+    { key: 'mcp_calls', limitKey: 'api.mcp_calls_per_month', name: 'MCP Cloud Calls', current: mcpCloudCalls ?? null, unit: 'calls', window: period },
   ]
 
   const categories: WorkspaceUsageCategory[] = []

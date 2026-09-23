@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runUsageAlerts } from '../../server/utils/usage-alerts'
+import { planUsageAlerts, runUsageAlerts } from '../../server/utils/usage-alerts'
 import type { UsageAlertKey } from '../../server/providers/database'
 
 /**
@@ -172,5 +172,11 @@ describe('usage alerts', () => {
     expect(sent.map(s => `${s.meter}:${s.threshold}`)).toEqual(['ai_messages:100'])
     expect(error.mock.calls.some(([line]) => String(line).includes('[billing-risk] usage-read.form_submissions'))).toBe(true)
     error.mockRestore()
+  })
+
+  it('never plans an alert for an unavailable meter, whatever its numbers say', () => {
+    const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, unit: 'credits', percentage: 120, resetsAt: null, periodKey: '2026-09-15' }
+    expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420, unavailable: true }])).toEqual([])
+    expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420 }])).toHaveLength(1)
   })
 })
