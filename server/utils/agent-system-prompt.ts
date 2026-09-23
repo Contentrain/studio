@@ -1,4 +1,6 @@
 import type { ModelDefinition, ContentrainConfig, FieldDef } from '@contentrain/types'
+import { CURRENT_CREDIT_UNIT, creditLimitsFor } from '../../shared/utils/credit-unit'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 import type { AISystemBlock } from '../providers/ai'
 import { PROMPT_CACHE_CONTROL } from '../providers/ai'
 import type { Branch } from '../providers/git'
@@ -53,6 +55,7 @@ function buildStaticBody(
   plan?: import('./license').Plan,
   customInstructions?: string | null,
   edition?: 'agpl' | 'ee',
+  creditUnit?: CreditUnit,
 ): string {
   const sections: string[] = []
 
@@ -119,7 +122,7 @@ function buildStaticBody(
   sections.push(agentPrompt('permissions.role_capabilities'))
 
   // BASE RULES — intent-independent
-  sections.push(buildBaseRulesSection(config, permissions, plan, edition))
+  sections.push(buildBaseRulesSection(config, permissions, plan, edition, creditUnit))
 
   // CUSTOM INSTRUCTIONS (per Conversation API key, stable across the key's lifetime)
   if (customInstructions) {
@@ -314,9 +317,11 @@ export function buildSystemPromptBlocks(
   attachments?: PromptAttachment[],
   edition?: 'agpl' | 'ee',
   pages?: PageResolution[],
+  /** The account's credit unit — the quotas the agent quotes (`credit-unit.ts`). */
+  creditUnit?: CreditUnit,
 ): SystemPromptBlocks {
   return {
-    static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions, edition),
+    static: buildStaticBody(config, models, permissions, vocabulary, plan, customInstructions, edition, creditUnit),
     contentIndex: contentIndex && contentIndex.trim() ? contentIndex : null,
     dynamic: buildDynamicBody(models, state, uiContext, intent, config, attachments, pages),
   }
@@ -589,7 +594,7 @@ function buildContextSection(
  * `permissions` (role-stable per request), and `plan` (workspace-
  * stable). No intent dependency, so safe for the cached prefix.
  */
-function buildBaseRulesSection(config: ContentrainConfig | null, permissions: AgentPermissions, plan?: import('./license').Plan, edition?: 'agpl' | 'ee'): string {
+function buildBaseRulesSection(config: ContentrainConfig | null, permissions: AgentPermissions, plan?: import('./license').Plan, edition?: 'agpl' | 'ee', creditUnit?: CreditUnit): string {
   const effectivePlan = plan ?? 'starter'
   const workflow = config?.workflow ?? 'auto-merge'
 
@@ -698,7 +703,9 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     // Which shipped features the plan has or lacks comes from the catalog,
     // so the agent never promises what the plan does not grant (BG-1 P1-14).
     const planParams = {
-      ...getPlanParams(effectivePlan),
+      // Quotas in the account's own terms: a pre-v2 subscription keeps the
+      // credits it was sold with, and the agent must not quote the v2 ones.
+      ...getPlanParams(effectivePlan, creditLimitsFor(effectivePlan, creditUnit ?? CURRENT_CREDIT_UNIT)),
       missingFeatures: featuresMissingOnPlan(effectivePlan).join(', ') || 'nothing',
       includedFeatures: gatedFeaturesOnPlan(effectivePlan).join(', ') || 'every shipped feature',
     }

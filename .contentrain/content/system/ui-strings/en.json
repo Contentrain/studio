@@ -883,6 +883,7 @@
   "plans.manage_description": "Manage your subscription or change plan through the customer portal.",
   "plans.members_read_only": "Only workspace owners and admins can change the plan. Ask one of them to upgrade.",
   "plans.most_popular": "Most popular",
+  "plans.original_terms_note": "You keep your original plan terms: the credits and prices you subscribed with.",
   "plans.overage_then": "then {price} {unit}",
   "plans.per_month": "/mo",
   "plans.seats_included": "{count} seats included",

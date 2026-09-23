@@ -138,3 +138,12 @@ export function creditUnitFromMeters(billableMeters: readonly string[] | null | 
   const legacyMeters = [CREDIT_METERS['0.03'].ai, CREDIT_METERS['0.03'].api, 'ai_messages', 'api_messages']
   return billableMeters.some(m => legacyMeters.includes(m)) ? LEGACY_CREDIT_UNIT : null
 }
+
+/** Both credit limits of a plan in a unit — for `getPlanParams` and the plan card. */
+export function creditLimitsFor(plan: StudioPlan | string | null | undefined, unit: CreditUnit | string | null | undefined): Record<CreditLimitKey, number> {
+  const terms = creditTermsFor(unit)
+  return {
+    'ai.messages_per_month': terms.creditLimit(plan, 'ai.messages_per_month'),
+    'api.messages_per_month': terms.creditLimit(plan, 'api.messages_per_month'),
+  }
+}

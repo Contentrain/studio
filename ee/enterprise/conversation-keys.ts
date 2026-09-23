@@ -1,7 +1,8 @@
 import { createError, getRouterParam, readBody, type H3Event } from 'h3'
 import { requireAuth } from '../../server/utils/auth'
 import { errorMessage } from '../../server/utils/content-strings'
-import { getWorkspacePlan, hasFeature, getPlanLimit } from '../../server/utils/license'
+import { getCreditLimit, getWorkspacePlan, hasFeature, getPlanLimit } from '../../server/utils/license'
+import { CURRENT_CREDIT_UNIT } from '../../shared/utils/credit-unit'
 import { CONVERSATION_API_MODELS, DEFAULT_CONVERSATION_API_MODEL, generateConversationKey } from '../../server/utils/conversation-keys'
 import { useDatabaseProvider } from '../../server/utils/providers'
 import { resolveUsagePeriod } from '../../server/utils/usage-period'
@@ -102,7 +103,8 @@ export function createConversationKeysBridge() {
       const aiModel = CONVERSATION_API_MODELS.includes(body.aiModel ?? '') ? body.aiModel : DEFAULT_CONVERSATION_API_MODEL
 
       const rateLimitPerMinute = Math.max(1, Math.min(body.rateLimitPerMinute ?? 10, 60))
-      const monthlyMessageLimit = Math.max(1, Math.min(body.monthlyMessageLimit ?? 1000, getPlanLimit(plan, 'api.messages_per_month')))
+      // Per-key cap in the account's own credit terms (`credit-unit.ts`).
+      const monthlyMessageLimit = Math.max(1, Math.min(body.monthlyMessageLimit ?? 1000, getCreditLimit(plan, 'api.messages_per_month', event.context?.billing?.creditUnit ?? CURRENT_CREDIT_UNIT)))
       const customInstructions = body.customInstructions ? body.customInstructions.substring(0, 2000) : null
       const { key, keyHash, keyPrefix } = generateConversationKey()
 
@@ -179,7 +181,7 @@ export function createConversationKeysBridge() {
       if (body.aiModel !== undefined && CONVERSATION_API_MODELS.includes(body.aiModel)) updates.ai_model = body.aiModel
       if (body.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = Math.max(1, Math.min(body.rateLimitPerMinute, 60))
       if (body.monthlyMessageLimit !== undefined) {
-        const planCap = getPlanLimit(plan!, 'api.messages_per_month')
+        const planCap = getCreditLimit(plan!, 'api.messages_per_month', event.context?.billing?.creditUnit ?? CURRENT_CREDIT_UNIT)
         updates.monthly_message_limit = Math.max(1, Math.min(body.monthlyMessageLimit, planCap))
       }
 

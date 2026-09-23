@@ -138,6 +138,8 @@ export async function requireRole(
 
 /** Columns from payment_accounts returned to clients (no server-only fields). */
 const PAYMENT_ACCOUNT_PUBLIC_COLUMNS = [
+  // The credit unit the account is billed in — the plan card shows its terms.
+  'credit_unit',
   'provider',
   'customer_id',
   'subscription_id',

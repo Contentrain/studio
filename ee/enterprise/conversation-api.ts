@@ -352,6 +352,7 @@ async function runConversationMessage(
       // Same page → entry resolution as Studio chat (#288): URLs in the
       // message name the entry the order is about.
       extractPageUrls(body.message, []).map(url => resolvePageUrl(url, brain)),
+      creditUnit,
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
 

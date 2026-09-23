@@ -4,9 +4,20 @@ import { query } from '#contentrain'
 import type { PlanFeatures } from '#contentrain'
 import { ENTERPRISE_CONTACT_EMAIL, OVERAGE_PRICING } from '~~/shared/utils/license'
 import { USAGE_METER_LIST } from '~~/shared/utils/usage-meters'
+import { LEGACY_CREDIT_UNIT, creditTermsFor, isCreditLimitKey } from '~~/shared/utils/credit-unit'
 
 const { t } = useContent()
-const { billingState, effectivePlan, trialConsumed, startCheckout, openPortal } = useBilling()
+const { billingState, effectivePlan, trialConsumed, startCheckout, openPortal, activeAccount } = useBilling()
+
+/**
+ * A subscription sold before catalog v2 keeps the terms it was sold with
+ * ($0.03 credits, its quotas and prices — `credit-unit.ts`). Its own plan's
+ * card shows those, with a note, instead of the v2 catalog's numbers.
+ */
+const keepsOriginalTerms = computed(() => activeAccount.value?.credit_unit === LEGACY_CREDIT_UNIT)
+function isOwnTermsCard(slug: string): boolean {
+  return keepsOriginalTerms.value && effectivePlan.value === slug && hasActiveSubscription.value
+}
 // Checkout and the portal are owner/admin only (403 otherwise). A member who
 // opens this from a locked sidebar item or the trial banner sees the plans
 // and who to ask — not a button that fails.
@@ -114,25 +125,30 @@ interface LimitRow {
  * anyone chooses a plan. Limits that are hard caps (media, CDN: their meters
  * cannot bill past an allowance) show nothing, whatever the data lists.
  */
-function overageLabel(key: string): string | null {
+function overageLabel(key: string, ownTerms = false): string | null {
   const pricing = OVERAGE_PRICING[key]
   if (!pricing) return null
   if (USAGE_METER_LIST.some(m => m.limitKey === key && !m.overageBillable)) return null
-  return t('plans.overage_then', { price: `$${pricing.price}`, unit: pricing.unit })
+  const price = ownTerms ? creditTermsFor(LEGACY_CREDIT_UNIT).overagePrice(key) ?? pricing.price : pricing.price
+  return t('plans.overage_then', { price: `$${price}`, unit: pricing.unit })
 }
 
 /** Headline metered limits with the plan's value, in display order. */
 function limitRows(slug: string): LimitRow[] {
   const vKey = valueKeyFor(slug)
+  const ownTerms = isOwnTermsCard(slug)
+  const legacy = creditTermsFor(LEGACY_CREDIT_UNIT)
   return HEADLINE_LIMITS
     .map(key => allFeatures.value.find(f => f.key === key))
     .filter((f): f is PlanFeatures => Boolean(f))
     .map((f) => {
-      const raw = String((f[vKey] as string | undefined) ?? '')
+      const raw = ownTerms && isCreditLimitKey(f.key)
+        ? String(legacy.creditLimit(slug, f.key))
+        : String((f[vKey] as string | undefined) ?? '')
       return { key: f.key, label: cleanLimitName(f.name), raw, value: formatLimitValue(raw, f.key) }
     })
     .filter(r => r.raw !== '0' && r.raw !== '')
-    .map(({ key, label, value }) => ({ key, label, value, overage: isUnlimitedValue(value) ? null : overageLabel(key) }))
+    .map(({ key, label, value }) => ({ key, label, value, overage: isUnlimitedValue(value) ? null : overageLabel(key, ownTerms) }))
 }
 
 function isUnlimitedValue(value: string): boolean {
@@ -306,6 +322,9 @@ async function handlePlanAction(slug: string) {
             <div class="mb-4">
               <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 {{ t('plans.limits_title') }}
+              </p>
+              <p v-if="isOwnTermsCard(plan.slug)" class="mb-2 text-xs text-muted" data-testid="original-terms-note">
+                {{ t('plans.original_terms_note') }}
               </p>
               <ul class="space-y-1.5">
                 <li
