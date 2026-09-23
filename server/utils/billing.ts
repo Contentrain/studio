@@ -12,6 +12,7 @@
 
 import type { StudioPlan } from '../../shared/utils/license'
 import { normalizePlan } from '../../shared/utils/license'
+import { isTrialOver } from '../../shared/utils/trial-end'
 
 export type BillingState
   = 'free' // Primary / free-tier workspace — no subscription needed
@@ -63,7 +64,9 @@ export function resolveBillingState(workspace: WorkspaceBillingRow): BillingStat
     }
 
     if (subscription_status === 'trialing' && subscription_id) {
-      if (trial_ends_at && new Date(trial_ends_at).getTime() <= now) {
+      // Past the end by a little is still the trial: the conversion webhook
+      // may not have landed yet (`shared/utils/trial-end.ts`).
+      if (isTrialOver(trial_ends_at, now)) {
         return 'trial_expired'
       }
       return 'trial_active'
