@@ -167,8 +167,8 @@ describe('CDN route integration', () => {
       return { run: () => handler({} as never), getObject, setResponseHeader }
     }
 
-    it('enforce: at the limit the origin answers 429 with Retry-After and reads nothing from storage', async () => {
-      const { run, getObject, setResponseHeader } = await serveMedia({ mode: 'enforce', usedBytes: 60 * GIB })
+    it('enforce: at 120 % of the limit the origin answers 429 with Retry-After and reads nothing from storage', async () => {
+      const { run, getObject, setResponseHeader } = await serveMedia({ mode: 'enforce', usedBytes: 72 * GIB })
       await expect(run()).rejects.toMatchObject({ statusCode: 429 })
       expect(getObject).not.toHaveBeenCalled()
       const retryAfter = setResponseHeader.mock.calls.find(c => c[1] === 'Retry-After')?.[2] as number
@@ -176,8 +176,8 @@ describe('CDN route integration', () => {
       expect(retryAfter).toBeLessThanOrEqual(31 * 24 * 3600)
     })
 
-    it('enforce: under the limit it serves', async () => {
-      const { run, getObject } = await serveMedia({ mode: 'enforce', usedBytes: 59 * GIB })
+    it('enforce: past the limit but under 120 % it still serves', async () => {
+      const { run, getObject } = await serveMedia({ mode: 'enforce', usedBytes: 70 * GIB })
       await expect(run()).resolves.toEqual(Buffer.from('img'))
       expect(getObject).toHaveBeenCalled()
     })

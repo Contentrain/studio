@@ -80,9 +80,9 @@ export default defineNuxtConfig({
       // Shared secret Cloudflare adds as `X-CR-Edge` on the CDN host; only
       // then is `CF-Connecting-IP` trusted as the client IP (docs/CDN_EDGE.md).
       edgeSecret: '', // NUXT_CDN_EDGE_SECRET
-      // Origin-transfer limit per plan (`cdn.bandwidth_gb`): 'off' | 'observe'
-      // (count + log, never refuse) | 'enforce' (429 + Retry-After at the limit).
-      originLimit: 'observe', // NUXT_CDN_ORIGIN_LIMIT
+      // Origin-transfer limit per plan (`cdn.bandwidth_gb`): 'enforce' (serve to
+      // 120 % with alerts, then 429 + Retry-After) | 'observe' (count + log) | 'off'.
+      originLimit: 'enforce', // NUXT_CDN_ORIGIN_LIMIT
       // Daily `cdn_origin_gb` meter events. Off until the meter exists in Polar.
       originMeter: false, // NUXT_CDN_ORIGIN_METER
     },

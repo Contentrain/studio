@@ -15,15 +15,16 @@
  * Numbers come from `computeWorkspaceUsage`, the same computation as the
  * billing screen, so the email and the screen never disagree.
  *
- * CDN bandwidth is left out on purpose: its limit is not enforced today and
- * the policy is still open (PRC-2). An email saying delivery "has stopped"
- * would be false.
+ * CDN delivery has a buffer (`CDN_ORIGIN_HARD_STOP_RATIO`): at 100 % it is
+ * still serving, so its 100 % mail says so and asks for an upgrade; the stop
+ * comes at 120 %, which is its own third alert.
  *
  * Send is at most once per key: the row is claimed first (primary key), the
  * email goes out only if this run won the claim, and a failed send releases it
  * so the next run retries.
  */
 import { PLAN_PRICING, normalizePlan } from '../../shared/utils/license'
+import { CDN_ORIGIN_HARD_STOP_RATIO } from '../../shared/utils/cdn-limit'
 import type { DatabaseProvider, UsageAlertKey } from '../providers/database'
 import { emailTemplate, errorMessage } from './content-strings'
 import { getEffectivePlan, isBillingLocked, resolveBillingState } from './billing'
@@ -38,12 +39,12 @@ import type { WorkspaceUsageCategory } from './workspace-usage'
 /** Dedupe key for storage, which has no period (see `planUsageAlerts`' caller). */
 const STORAGE_PERIOD_KEY = 'level'
 
-/** Meters that alert. CDN is excluded — see the header. */
-const ALERTING_METERS = new Set(['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions', 'comments', 'media_storage'])
+/** Meters that alert. */
+const ALERTING_METERS = new Set(['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions', 'comments', 'media_storage', 'cdn_bandwidth'])
 
 export interface PlannedAlert {
   category: WorkspaceUsageCategory
-  threshold: 80 | 100
+  threshold: 80 | 100 | 120
   template: 'usage-warning' | 'usage-limit-reached' | 'usage-overage-started'
 }
 
@@ -56,7 +57,11 @@ export function planUsageAlerts(categories: WorkspaceUsageCategory[]): PlannedAl
     if (category.limit <= 0) continue
     // Raw values, not the rounded percentage: 995 / 1000 rounds to 100 % but nothing has stopped,
     // and a "stopped" mail sent then would also burn the one 100 % alert of the period.
-    if (category.current >= category.limit) {
+    // CDN: stopped only at the hard stop; between 100 % and it, still serving.
+    if (category.key === 'cdn_bandwidth' && !category.overageEnabled && category.current >= category.limit * CDN_ORIGIN_HARD_STOP_RATIO) {
+      planned.push({ category, threshold: 120, template: 'usage-limit-reached' })
+    }
+    else if (category.current >= category.limit) {
       planned.push({ category, threshold: 100, template: category.overageEnabled ? 'usage-overage-started' : 'usage-limit-reached' })
     }
     else if (category.current >= category.limit * 0.8) {
@@ -152,7 +157,11 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
           used: formatAmount(c.current, c.unit),
           limit: formatAmount(c.limit, c.unit),
           resetDate: formatDate(c.resetsAt),
-          consequence: errorMessage(`usage_alert.stopped_${c.key}`, { date: formatDate(c.resetsAt) }),
+          // CDN at 100 % is still serving; only its 120 % alert says delivery stopped.
+          consequence: errorMessage(
+            c.key === 'cdn_bandwidth' && alert.threshold === 100 ? 'usage_alert.grace_cdn_bandwidth' : `usage_alert.stopped_${c.key}`,
+            { date: formatDate(c.resetsAt), percentage: Math.round(CDN_ORIGIN_HARD_STOP_RATIO * 100) },
+          ),
           resetLine: c.resetsAt === null
             ? errorMessage('usage_alert.storage_note')
             : errorMessage('usage_alert.resets_on', { date: formatDate(c.resetsAt) }),

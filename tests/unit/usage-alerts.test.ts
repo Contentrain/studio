@@ -84,11 +84,24 @@ describe('usage alerts', () => {
     expect(overage.html).toContain('$0.01')
   })
 
-  it('does not email about CDN bandwidth, whose limit is not enforced', async () => {
-    const db = fakeDb({ cdn: 80 })
-    const sendEmail = vi.fn()
-    expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
-    expect(sendEmail).not.toHaveBeenCalled()
+  it('CDN delivery: 100 % says it is still serving, 120 % says it stopped — each once', async () => {
+    // Pro: 60 GB. 65 GB is past the limit but under the 120 % hard stop.
+    const grace = fakeDb({ cdn: 65 })
+    const graceMail = vi.fn().mockResolvedValue(undefined)
+    expect(await runUsageAlerts(deps(grace, graceMail))).toEqual([
+      expect.objectContaining({ meter: 'cdn_bandwidth', threshold: 100, template: 'usage-limit-reached' }),
+    ])
+    expect(graceMail.mock.calls[0]![0].html).toContain('still being delivered')
+    expect(graceMail.mock.calls[0]![0].html).toContain('120%')
+
+    const stopped = fakeDb({ cdn: 73 })
+    const stopMail = vi.fn().mockResolvedValue(undefined)
+    expect(await runUsageAlerts(deps(stopped, stopMail))).toEqual([
+      expect.objectContaining({ meter: 'cdn_bandwidth', threshold: 120, template: 'usage-limit-reached' }),
+    ])
+    expect(stopMail.mock.calls[0]![0].html).toContain('has stopped')
+    // The next sweep in the same month sends nothing more.
+    expect(await runUsageAlerts(deps(stopped, stopMail))).toEqual([])
   })
 
   it('a failed send is retried on the next run', async () => {

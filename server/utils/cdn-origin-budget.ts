@@ -13,11 +13,14 @@
  * requests; it only decides when to refuse.
  *
  * Mode (`NUXT_CDN_ORIGIN_LIMIT`):
+ * - `enforce` (default) — past the limit delivery continues (the owner is
+ *                alerted), and at `CDN_ORIGIN_HARD_STOP_RATIO` of it the origin
+ *                answers 429 with Retry-After until the month resets, unless
+ *                overage is on (`getEffectiveLimit`).
+ * - `observe`  — count and log, never refuse (self-hosters, operators).
  * - `off`      — neither count nor refuse.
- * - `observe`  — count, log once when a workspace passes its limit, never refuse.
- * - `enforce`  — at the limit, answer 429 with Retry-After until the month
- *                resets, unless overage is on (`getEffectiveLimit`).
  */
+import { CDN_ORIGIN_HARD_STOP_RATIO } from '../../shared/utils/cdn-limit'
 import { useDatabaseProvider } from './providers'
 import { getRedis } from './redis'
 
@@ -30,8 +33,8 @@ const memoryCounters = new Map<string, number>()
 const loggedOver = new Set<string>()
 
 export function cdnOriginLimitMode(): CdnOriginLimitMode {
-  const raw = String(useRuntimeConfig().cdn?.originLimit ?? 'observe')
-  return raw === 'off' || raw === 'enforce' ? raw : 'observe'
+  const raw = String(useRuntimeConfig().cdn?.originLimit ?? 'enforce')
+  return raw === 'off' || raw === 'observe' ? raw : 'enforce'
 }
 
 function monthKey(now: Date): string {
@@ -91,10 +94,11 @@ export async function checkCdnOriginBudget(input: {
   const logKey = `${input.workspaceId}:${monthKey(now)}`
   if (!loggedOver.has(logKey)) {
     loggedOver.add(logKey)
-    // eslint-disable-next-line no-console -- the one signal observe mode exists for
+    // eslint-disable-next-line no-console -- ops signal; the owner is told by the usage alert
     console.warn(`[cdn-origin] workspace=${input.workspaceId} over its ${input.limitGb} GB origin limit (${(used / GIB).toFixed(2)} GB, mode=${mode})`)
   }
-  if (mode === 'observe') return { allowed: true }
+  // Past the limit and under the hard stop: keep serving, the owner is alerted.
+  if (mode === 'observe' || used < input.limitGb * GIB * CDN_ORIGIN_HARD_STOP_RATIO) return { allowed: true }
   return { allowed: false, retryAfterSeconds: secondsUntilMonthReset(now) }
 }
 

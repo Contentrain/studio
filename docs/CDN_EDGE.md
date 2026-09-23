@@ -85,17 +85,24 @@ workspace per calendar month. Cache hits never reach the origin and never count.
 
 | Setting | Values | Default |
 |---|---|---|
-| `NUXT_CDN_ORIGIN_LIMIT` | `off` · `observe` (count and log once per workspace per month when over, never refuse) · `enforce` (at the limit: **429** + `Retry-After` until the month resets, unless overage is on) | `observe` |
+| `NUXT_CDN_ORIGIN_LIMIT` | `enforce`: past the plan limit delivery **continues** (usage alert + banner with the upgrade link); at **120 %** of the limit the origin answers **429** + `Retry-After` until the month resets, unless overage is on · `observe`: count and log, never refuse (self-hosters, operators) · `off` | `enforce` |
 | `NUXT_CDN_ORIGIN_METER` | `true` sends one `cdn_origin_gb` event per workspace per finished UTC day to the payment meter | `false` |
 
+The owner hears about it through the usage alerts (`server/utils/usage-alerts.ts`),
+once per workspace and month at each level:
+- **80 %**: warning;
+- **100 %**: "still being delivered, stops at 120 %", with the upgrade link;
+- **120 %**: "delivery has stopped until …".
+
+The in-app banner shows the same levels. The buffer caps what Studio pays past
+a plan at 20 % of its transfer (`shared/utils/cdn-limit.ts`).
+
 Rollout:
-1. Cloudflare steps above, then `observe` for about two weeks. Watch
-   `[cdn-origin]` log lines and the usage panel.
+1. Do the Cloudflare steps above. With the cache in front, a normal site stays
+   far below its origin limit.
 2. Run polar-sync so the `cdn_origin_gb` meter exists, then set
    `NUXT_CDN_ORIGIN_METER=true`. Overage stays unsold (`overageBillable: false`)
    until the price decision (PR-F / ST-6).
-3. Switch to `enforce` only after the plan numbers are final and customers have
-   been told.
 
 ## Rollback
 

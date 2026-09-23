@@ -156,7 +156,8 @@ export interface UsageAlertKey {
   workspaceId: string
   meter: string
   periodKey: string
-  threshold: 80 | 100
+  /** 120 is CDN delivery's hard stop (`CDN_ORIGIN_HARD_STOP_RATIO`). */
+  threshold: 80 | 100 | 120
 }
 
 export interface DatabaseProvider {
