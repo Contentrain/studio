@@ -100,6 +100,7 @@ Content-Type: application/json
 |---|---|
 | `200 { success: true, status: 'pending' \| 'approved', comment }` | Stored. `approved` renders now; `pending` is only echoed to its author |
 | `200 { success: false, errors: [{ field, message }] }` | Validation: `author.name`, `author.email`, `author.url`, `body`, `parentId` (missing / not approved / too deep), `captcha` |
+| `402 { data: { code: "payment_required" } }` | The workspace's billing is locked (trial ended unpaid, grace period over, cancellation took effect). Also on `GET`, and for an unknown model id (checked before the model lookup); only an unknown project (`404`), a missing body (`400`) and the per-IP read limit (`429`) answer first. Don't retry; hide the widget or show a neutral message — the `message` addresses the owner, not a visitor |
 | `403` | Thread closed for this entry, or plan lacks `comments.enabled` |
 | `404` | Unknown project/model, or comments disabled on the model |
 | `429` | Per-IP rate limit, or the workspace's monthly `comments.per_month` quota |
