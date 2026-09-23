@@ -23,9 +23,11 @@ describe('credit unit per account', () => {
     // The oldest subscriptions still price the event-counting meters.
     expect(creditUnitFromMeters(['ai_messages', 'api_messages', 'mcp_calls'])).toBe('0.03')
     expect(creditUnitFromMeters(['ai_credits_1c', 'api_credits_1c', 'mcp_calls'])).toBe('0.01')
-    // No metered price at all (e.g. an annual product) or nothing recorded: current.
-    expect(creditUnitFromMeters([])).toBe('0.01')
-    expect(creditUnitFromMeters(null)).toBe('0.01')
+    // No credit meter in the list says nothing about the unit (QA-12 B1):
+    // the stored one must stay.
+    expect(creditUnitFromMeters([])).toBeNull()
+    expect(creditUnitFromMeters(['mcp_calls'])).toBeNull()
+    expect(creditUnitFromMeters(null)).toBeNull()
   })
 
   it('keeps each unit on its own meters', () => {

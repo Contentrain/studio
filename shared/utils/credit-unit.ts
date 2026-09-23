@@ -123,16 +123,18 @@ export function creditTermsFor(unit: CreditUnit | string | null | undefined): Cr
 
 /**
  * The unit a subscription is billed in, from the meters its prices use
- * (`payment_accounts.plugin_metadata.billable_meters`). A subscription that
- * prices a legacy credit meter and no `_1c` one is legacy; everything else —
- * a v2 subscription, or one with no metered prices at all — is current.
+ * (`payment_accounts.plugin_metadata.billable_meters`): a `_1c` credit meter
+ * → current; a $0.03 credit meter (or the older event-counting ones) →
+ * legacy. Null when the list names no credit meter at all — an event with no
+ * metered prices says nothing about the unit, and the stored one must stay
+ * (a pre-v2 account read as current would jump from 350 to 1 600 credits).
  */
-export function creditUnitFromMeters(billableMeters: readonly string[] | null | undefined): CreditUnit {
-  if (!billableMeters) return CURRENT_CREDIT_UNIT
+export function creditUnitFromMeters(billableMeters: readonly string[] | null | undefined): CreditUnit | null {
+  if (!billableMeters) return null
   const current = CREDIT_METERS['0.01']
   if (billableMeters.includes(current.ai) || billableMeters.includes(current.api)) return CURRENT_CREDIT_UNIT
   // `ai_messages` / `api_messages` are the event-counting meters older
   // subscriptions still price (ST-4) — the same $0.03 era.
   const legacyMeters = [CREDIT_METERS['0.03'].ai, CREDIT_METERS['0.03'].api, 'ai_messages', 'api_messages']
-  return billableMeters.some(m => legacyMeters.includes(m)) ? LEGACY_CREDIT_UNIT : CURRENT_CREDIT_UNIT
+  return billableMeters.some(m => legacyMeters.includes(m)) ? LEGACY_CREDIT_UNIT : null
 }

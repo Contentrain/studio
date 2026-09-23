@@ -17,6 +17,7 @@ type PaymentAccountMethods = Pick<
   | 'getActivePaymentAccount'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
+  | 'setPaymentAccountCreditUnit'
   | 'archiveActivePaymentAccount'
   | 'enqueueUsageEvent'
   | 'listPendingUsageEvents'
@@ -124,6 +125,25 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         throw createError({
           statusCode: 500,
           message: `Failed to upsert payment account: ${error instanceof Error ? error.message : 'unknown'}`,
+        })
+      }
+    },
+
+    async setPaymentAccountCreditUnit({ workspaceId, unit, periodKey }) {
+      try {
+        const outcome = await sql<{ changed: boolean }>`
+          SELECT public.set_payment_account_credit_unit(
+            p_workspace_id => ${workspaceId},
+            p_unit => ${unit},
+            p_period_key => ${periodKey}
+          ) AS changed
+        `.execute(getAdmin())
+        return outcome.rows[0]?.changed === true
+      }
+      catch (error) {
+        throw createError({
+          statusCode: 500,
+          message: `Failed to set credit unit: ${error instanceof Error ? error.message : 'unknown'}`,
         })
       }
     },

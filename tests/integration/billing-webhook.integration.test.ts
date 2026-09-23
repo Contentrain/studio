@@ -19,6 +19,7 @@ describe('billing webhook integration', () => {
   // a recovery claim (new episode) wins. The activation tests use a store.
   const claimDefault = async ({ when }: { when: unknown }) => when === 'different'
   const setPaymentAccountMetadataKey = vi.fn(claimDefault)
+  const setPaymentAccountCreditUnit = vi.fn().mockResolvedValue(false)
 
   let handleWebhookMock: ReturnType<typeof vi.fn>
 
@@ -38,7 +39,9 @@ describe('billing webhook integration', () => {
       getActivePaymentAccount,
       markWorkspaceTrialConsumed,
       setPaymentAccountMetadataKey,
+      setPaymentAccountCreditUnit,
     }))
+    setPaymentAccountCreditUnit.mockClear()
   })
 
   afterEach(() => {
@@ -174,6 +177,7 @@ describe('billing webhook integration', () => {
       getActivePaymentAccount,
       markWorkspaceTrialConsumed,
       setPaymentAccountMetadataKey,
+      setPaymentAccountCreditUnit,
       markMigrateGrantRedeemed,
     }))
     const created = {
@@ -255,6 +259,47 @@ describe('billing webhook integration', () => {
       .toBe(PLAN_LIMITS['api.messages_per_month']!.values.starter)
   })
 
+  it('an update with no metered prices keeps a pre-v2 account on $0.03 credits (QA-12 B1)', async () => {
+    getActivePaymentAccount.mockResolvedValue({
+      subscription_id: 'sub_123', subscription_status: 'active', credit_unit: '0.03',
+      current_period_start: '2026-09-15T00:00:00.000Z', current_period_end: '2026-10-15T00:00:00.000Z',
+      plugin_metadata: { billable_meters: ['ai_credits', 'api_credits'] },
+    })
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.updated',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'active',
+      currentPeriodStart: '2026-09-15T00:00:00.000Z',
+      currentPeriodEnd: '2026-10-15T00:00:00.000Z',
+      billableMeters: [],
+    })
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(setPaymentAccountCreditUnit).not.toHaveBeenCalled()
+    expect(upsertPaymentAccount.mock.calls.at(-1)![0]).not.toHaveProperty('creditUnit')
+  })
+
+  it('a move onto a v2 product changes the unit through the converting call, for the period being consumed', async () => {
+    getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_123', subscription_status: 'active', credit_unit: '0.03', plugin_metadata: {} })
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.updated',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'active',
+      currentPeriodStart: '2026-09-15T00:00:00.000Z',
+      currentPeriodEnd: '2026-10-15T00:00:00.000Z',
+      billableMeters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls'],
+    })
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(setPaymentAccountCreditUnit).toHaveBeenCalledWith({ workspaceId: 'ws-1', unit: '0.01', periodKey: '2026-09-15' })
+  })
+
   it('keeps the Migrate mark next to what the account already records', async () => {
     getActivePaymentAccount.mockResolvedValue({
       subscription_id: 'sub_123',
@@ -269,6 +314,7 @@ describe('billing webhook integration', () => {
       getActivePaymentAccount,
       markWorkspaceTrialConsumed,
       setPaymentAccountMetadataKey,
+      setPaymentAccountCreditUnit,
       markMigrateGrantRedeemed: vi.fn().mockResolvedValue(undefined),
     }))
     handleWebhookMock.mockResolvedValue({
@@ -392,6 +438,7 @@ describe('billing webhook integration', () => {
         getActivePaymentAccount,
         markWorkspaceTrialConsumed,
         setPaymentAccountMetadataKey,
+        setPaymentAccountCreditUnit,
         getWorkspaceById,
       }))
     })
@@ -422,12 +469,18 @@ describe('billing webhook integration', () => {
 
       expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
         subscriptionStatus: 'active',
-        // Priced on the $0.03 credit meters: a pre-v2 subscription keeps its unit.
-        creditUnit: '0.03',
         currentPeriodStart: '2026-09-29T07:36:51.653Z',
         currentPeriodEnd: '2026-10-29T07:36:51.653Z',
         trialEndsAt: null,
       }))
+
+      // Priced on the $0.03 credit meters: the unit is (re)asserted as 0.03
+      // through the converting call, keyed by the period now being consumed.
+      // The key the quota gates count in for this account right now (a period
+      // that has not opened yet reads as the calendar month).
+      const { usagePeriodFrom: periodOf } = await import('../../server/utils/usage-period')
+      const periodKey = periodOf({ subscription_status: 'active', current_period_start: '2026-09-29T07:36:51.653Z', current_period_end: '2026-10-29T07:36:51.653Z' }).key
+      expect(setPaymentAccountCreditUnit).toHaveBeenCalledWith({ workspaceId: 'ws-1', unit: '0.03', periodKey })
 
       // The quota key the gates count in follows the stored row: the trial's
       // window before, the first paid period after — so the paid period
@@ -571,6 +624,7 @@ describe('billing webhook integration', () => {
         getActivePaymentAccount,
         markWorkspaceTrialConsumed,
         setPaymentAccountMetadataKey,
+        setPaymentAccountCreditUnit,
         getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro' }),
       }))
     }
@@ -677,6 +731,7 @@ describe('billing webhook integration', () => {
           upsertPaymentAccount: store.upsertPaymentAccount,
           getActivePaymentAccount: store.getActivePaymentAccount,
           setPaymentAccountMetadataKey: store.setPaymentAccountMetadataKey,
+          setPaymentAccountCreditUnit: vi.fn().mockResolvedValue(false),
           archiveActivePaymentAccount,
           updateWorkspace,
           markWorkspaceTrialConsumed,
@@ -957,5 +1012,15 @@ describe('billing webhook — the credit unit follows the subscription\'s meters
     const { creditUnitFromMeters } = await import('../../shared/utils/credit-unit')
     expect(creditUnitFromMeters(['ai_credits_1c', 'api_credits_1c', 'form_submissions', 'mcp_calls'])).toBe('0.01')
     expect(creditUnitFromMeters(['ai_credits', 'api_credits', 'form_submissions', 'mcp_calls'])).toBe('0.03')
+  })
+})
+
+describe('billing webhook — credit unit safety (QA-12 B1)', () => {
+  it('an event whose prices name no credit meter leaves the stored unit alone', async () => {
+    const { creditUnitFromMeters } = await import('../../shared/utils/credit-unit')
+    // No credit meter at all: nothing to say about the unit.
+    expect(creditUnitFromMeters([])).toBeNull()
+    expect(creditUnitFromMeters(['mcp_calls', 'form_submissions'])).toBeNull()
+    expect(creditUnitFromMeters(undefined)).toBeNull()
   })
 })
