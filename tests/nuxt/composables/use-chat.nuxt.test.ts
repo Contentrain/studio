@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, watch } from 'vue'
+import { computed, nextTick, watch } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { messageText, useChat } from '../../../app/composables/useChat'
 import { DEFAULT_CHAT_MODEL } from '../../../shared/utils/ai-models'
@@ -9,6 +10,15 @@ import { DEFAULT_CHAT_MODEL } from '../../../shared/utils/ai-models'
 // the imports.
 const { route } = vi.hoisted(() => ({ route: { params: {} as { projectId?: string } } }))
 mockNuxtImport('useRoute', () => () => route)
+
+// Billing, workspace and feature state for the trial lock. Defaults (free,
+// no workspace, no features) are what the rest of this file ran with.
+const { gate } = vi.hoisted(() => ({
+  gate: { billing: 'free', workspaceId: null as string | null, features: {} as Record<string, boolean> },
+}))
+mockNuxtImport('useBilling', () => () => ({ billingState: computed(() => gate.billing) }))
+mockNuxtImport('useWorkspaces', () => () => ({ activeWorkspace: computed(() => (gate.workspaceId ? { id: gate.workspaceId } : null)) }))
+mockNuxtImport('useFeature', () => (key: string) => computed(() => gate.features[key] === true))
 
 function createStreamResponse(chunks: string[], options?: { failAfter?: Error }) {
   let index = 0
@@ -43,6 +53,10 @@ describe('useChat', () => {
     useState('chat-model').value = DEFAULT_CHAT_MODEL
     useState('chat-stream-tick').value = 0
     route.params = {}
+    gate.billing = 'free'
+    gate.workspaceId = null
+    gate.features = {}
+    useState('chat-own-ai-key').value = { workspaceId: null, has: false, loaded: false }
     // Persistence watchers registered by an earlier useChat() call outlive
     // their test — there is no component scope to stop them. Let their writes
     // land before clearing, so each test starts from empty storage.
@@ -460,6 +474,55 @@ describe('useChat', () => {
       route.params = { projectId: 'project-a' }
 
       expect(useChat().selectedModel.value).toBe(DEFAULT_CHAT_MODEL)
+    })
+  })
+
+  describe('premium models in a trial', () => {
+    const OPUS = 'claude-opus-5-5'
+
+    function trialWithByoa() {
+      gate.billing = 'trial_active'
+      gate.workspaceId = 'ws-1'
+      gate.features = { 'ai.pro_models': true, 'ai.byoa': true }
+    }
+
+    it('keeps a BYOA user\'s Opus pick while their key list is still loading, and after it says they have a key', async () => {
+      trialWithByoa()
+      let resolveKeys: (v: unknown[]) => void = () => {}
+      vi.stubGlobal('$fetch', vi.fn(() => new Promise((r) => { resolveKeys = r })))
+      useState('chat-model').value = OPUS
+
+      const chat = useChat()
+      await nextTick()
+      expect(chat.lockedModelIds.value).toEqual([])
+      expect(chat.selectedModel.value).toBe(OPUS)
+
+      resolveKeys([{ id: 'key-1' }])
+      await flushPromises()
+      expect(chat.lockedModelIds.value).toEqual([])
+      expect(chat.selectedModel.value).toBe(OPUS)
+    })
+
+    it('locks Opus on the Studio key once the key list says there is none, and moves the pick to the default', async () => {
+      trialWithByoa()
+      vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+      useState('chat-model').value = OPUS
+
+      const chat = useChat()
+      await flushPromises()
+      expect(chat.lockedModelIds.value).toEqual([OPUS])
+      expect(chat.selectedModel.value).toBe(DEFAULT_CHAT_MODEL)
+    })
+
+    it('locks nothing outside a trial', async () => {
+      gate.billing = 'subscribed'
+      gate.workspaceId = 'ws-1'
+      gate.features = { 'ai.pro_models': true, 'ai.byoa': true }
+      useState('chat-model').value = OPUS
+      const chat = useChat()
+      await flushPromises()
+      expect(chat.lockedModelIds.value).toEqual([])
+      expect(chat.selectedModel.value).toBe(OPUS)
     })
   })
 })

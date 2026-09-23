@@ -231,10 +231,20 @@ export interface TrialContext {
  * The cap never raises a limit.
  */
 export function applyTrialCap(limit: number, limitKey: string, trial: TrialContext | null | undefined): number {
+  const plan = trialCapPlan(limitKey, trial)
+  return plan ? Math.min(limit, PLAN_LIMITS[limitKey]!.values[plan]) : limit
+}
+
+/**
+ * The plan a trial is capped to for this limit, or null when no cap
+ * applies. Per-message ceilings follow it too (a capped Pro trial settles
+ * at Starter's per-message ceiling, not Pro's).
+ */
+export function trialCapPlan(limitKey: string, trial: TrialContext | null | undefined): StudioPlan | null {
   const cap = PLAN_LIMITS[limitKey]?.trialCap
-  if (!cap || !trial?.trialing) return limit
-  if (cap.origins === 'migrate' && trial.origin !== 'migrate') return limit
-  return Math.min(limit, PLAN_LIMITS[limitKey]!.values[cap.plan])
+  if (!cap || !trial?.trialing) return null
+  if (cap.origins === 'migrate' && trial.origin !== 'migrate') return null
+  return cap.plan
 }
 
 /**

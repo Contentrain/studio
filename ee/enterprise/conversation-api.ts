@@ -25,7 +25,7 @@ import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
 import type { getWorkspacePlan } from '../../server/utils/license'
 import { getPlanLimit, hasFeature } from '../../server/utils/license'
-import { applyTrialCap } from '../../shared/utils/license'
+import { applyTrialCap, trialCapPlan } from '../../shared/utils/license'
 import type { TrialContext } from '../../shared/utils/license'
 import { getEffectiveLimit } from '../../server/utils/overage'
 import { checkRateLimit } from '../../server/utils/rate-limit'
@@ -464,7 +464,7 @@ async function runConversationMessage(
           outputTokens: totalOutputTokens,
           cacheCreationInputTokens: totalCacheCreationInputTokens,
           cacheReadInputTokens: totalCacheReadInputTokens,
-        }, plan)
+        }, trialCapPlan('api.messages_per_month', trial) ?? plan)
       : 1
     const extraCredits = credits - 1
     if (extraCredits > 0)

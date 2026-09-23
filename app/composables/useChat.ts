@@ -266,23 +266,34 @@ function useModelPersistence(selectedModel: Ref<string>) {
  * open; fetched once per workspace and shared across `useChat` callers.
  */
 function useOwnAiKey(billingState: Ref<string>) {
-  const state = useState<{ workspaceId: string | null, has: boolean }>('chat-own-ai-key', () => ({ workspaceId: null, has: false }))
+  const state = useState<{ workspaceId: string | null, has: boolean, loaded: boolean }>('chat-own-ai-key', () => ({ workspaceId: null, has: false, loaded: false }))
+  const { activeWorkspace } = useWorkspaces()
+  const byoa = useFeature('ai.byoa')
   if (import.meta.client) {
-    const { activeWorkspace } = useWorkspaces()
-    const byoa = useFeature('ai.byoa')
     watch([() => activeWorkspace.value?.id, billingState, byoa], async ([id, billing, canByoa]) => {
       if (!id || billing !== 'trial_active' || !canByoa || state.value.workspaceId === id) return
-      state.value = { workspaceId: id, has: false }
+      state.value = { workspaceId: id, has: false, loaded: false }
+      let has = false
       try {
         const keys = await $fetch<unknown[]>(`/api/workspaces/${id}/ai-keys`)
-        if (state.value.workspaceId === id) state.value = { workspaceId: id, has: Array.isArray(keys) && keys.length > 0 }
+        has = Array.isArray(keys) && keys.length > 0
       }
       catch {
-        // No key info: the picker keeps premium locked; the server decides anyway.
+        // No key info: treated as no key; the server decides anyway.
       }
+      if (state.value.workspaceId === id) state.value = { workspaceId: id, has, loaded: true }
     }, { immediate: true })
   }
-  return computed(() => state.value.has)
+  return {
+    has: computed(() => state.value.has),
+    /**
+     * Whether the answer is known. Outside a trial, or without BYOA, it is
+     * (no key can change anything); in a trial it is once the key list for
+     * this workspace has come back.
+     */
+    known: computed(() => billingState.value !== 'trial_active' || !byoa.value
+      || (state.value.loaded && state.value.workspaceId === (activeWorkspace.value?.id ?? null))),
+  }
 }
 
 export function useChat(options?: {
@@ -314,10 +325,13 @@ export function useChat(options?: {
   // guessing. The server applies the same rule (`premiumModelsAllowed`);
   // a BYOA key lifts it.
   const { billingState } = useBilling()
-  const hasOwnAiKey = useOwnAiKey(billingState)
-  const lockedModelIds = computed(() => premiumModelsAllowed({
+  const ownAiKey = useOwnAiKey(billingState)
+  // Nothing is locked until the key question is answered: locking first
+  // would move a BYOA user's persisted Opus pick to the default on every
+  // load, before the key list says they may keep it.
+  const lockedModelIds = computed(() => !ownAiKey.known.value || premiumModelsAllowed({
     billingState: billingState.value,
-    usageSource: hasOwnAiKey.value ? 'byoa' : 'studio',
+    usageSource: ownAiKey.has.value ? 'byoa' : 'studio',
   })
     ? []
     : allowedModels.value.filter(m => m.premium).map(m => m.id))
