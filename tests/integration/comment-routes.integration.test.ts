@@ -2,6 +2,20 @@ import { COMMENTS_EXPORT_FORMAT } from '@contentrain/types'
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 
+// Billing locked (trial ended unpaid, grace over, cancellation effective):
+// the real resolution otherwise, so every other test here is unchanged.
+const billingLock = vi.hoisted(() => ({ locked: false }))
+vi.mock('../../server/utils/workspace-billing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../server/utils/workspace-billing')>()
+  return {
+    ...actual,
+    resolveWorkspaceBilling: async (...args: Parameters<typeof actual.resolveWorkspaceBilling>) => {
+      if (billingLock.locked && args[2]?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+      return actual.resolveWorkspaceBilling(...args)
+    },
+  }
+})
+
 async function loadPublicGet() {
   return (await import('../../server/api/comments/v1/[projectId]/[modelId]/[entryId].get')).default
 }
@@ -218,6 +232,28 @@ describe('public comment routes', () => {
       // requireApproval=false + comments.auto_approve → approved
       expect(createCommentIfAllowed.mock.calls[0]![2]).toMatchObject({ status: 'approved' })
     })
+  })
+
+  it('GET answers a locked workspace with 402 payment required, not a 403 upgrade', async () => {
+    const db = {
+      getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', content_root: '.contentrain' }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, plan: 'pro', github_installation_id: 42, overage_settings: null }),
+      getCommentThread: vi.fn(),
+      listPublicComments: vi.fn(),
+    }
+    billingLock.locked = true
+    try {
+      stubPublicGlobals({})
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(db))
+      await withTestServer({
+        routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicGet() }],
+      }, async ({ request }) => {
+        expect((await request('/api/comments/v1/project-1/posts/entry-1')).status).toBe(402)
+      })
+    }
+    finally {
+      billingLock.locked = false
+    }
   })
 
   it('GET is 404 when the model has comments disabled and 403 when the plan lacks the feature', async () => {

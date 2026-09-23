@@ -81,7 +81,7 @@ export default defineEventHandler(async (event) => {
   }
   // Same billing-derived plan the MCP OAuth route gates on — consent must
   // not grant what the route will then refuse.
-  if (!hasFeature((await resolveWorkspaceBilling(db, workspace as { id: string })).effectivePlan, 'api.mcp_cloud_oauth')) {
+  if (!hasFeature((await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })).effectivePlan, 'api.mcp_cloud_oauth')) {
     throw createError({ statusCode: 403, message: errorMessage('oauth.plan_required') })
   }
 

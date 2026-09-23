@@ -13,6 +13,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
   effectivePlan: 'pro' as string,
+  /** Billing locked (trial ended unpaid, grace over, cancellation effective). */
+  locked: false,
   billingOverage: {} as Record<string, boolean>,
   workspaceRow: { id: 'ws-1', github_installation_id: 42, type: 'primary', plan: 'pro', overage_settings: { api_messages: true } },
   incrementAPIUsageIfAllowed: vi.fn(),
@@ -50,7 +52,10 @@ vi.mock('../../server/utils/providers', () => ({
   useGitProvider: vi.fn(),
 }))
 vi.mock('../../server/utils/workspace-billing', () => ({
-  resolveWorkspaceBilling: vi.fn(async () => ({ state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: state.billingOverage })),
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    return { state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: state.billingOverage }
+  }),
 }))
 vi.mock('../../server/utils/license', () => ({
   getWorkspacePlan: vi.fn(() => 'pro'),
@@ -70,6 +75,7 @@ async function send() {
 describe('Conversation API — plan and overage come from billing', () => {
   beforeEach(() => {
     state.effectivePlan = 'pro'
+    state.locked = false
     state.billingOverage = {}
     state.hasFeature.mockClear()
     state.getEffectiveLimit.mockClear()
@@ -81,6 +87,12 @@ describe('Conversation API — plan and overage come from billing', () => {
     state.effectivePlan = 'free'
     await expect(send()).rejects.toMatchObject({ statusCode: 403, message: 'conversation.upgrade' })
     expect(state.hasFeature).toHaveBeenCalledWith('free', 'api.conversation')
+    expect(state.incrementAPIUsageIfAllowed).not.toHaveBeenCalled()
+  })
+
+  it('answers a locked workspace with 402 payment required, not a 403 upgrade', async () => {
+    state.locked = true
+    await expect(send()).rejects.toMatchObject({ statusCode: 402, data: { code: 'payment_required' } })
     expect(state.incrementAPIUsageIfAllowed).not.toHaveBeenCalled()
   })
 
