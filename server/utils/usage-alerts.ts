@@ -103,13 +103,19 @@ function formatAmount(value: number, unit: string): string {
   return unit === 'GB' ? `${value.toFixed(1)} GB` : `${Math.round(value).toLocaleString('en-US')} ${unit}`
 }
 
-/** Releases the storage `level` claims of thresholds the workspace is now back below. */
+/**
+ * Where a storage threshold is re-armed: clearly below it, not just under. Usage that hovers around
+ * 80 % (an upload, a delete, an upload) would otherwise mail the owner on every sweep.
+ */
+export const STORAGE_REARM_BELOW: Record<80 | 100, number> = { 80: 0.7, 100: 0.9 }
+
+/** Releases the storage `level` claims of thresholds the workspace is now well back below. */
 async function rearmStorageAlerts(db: AlertDatabase, workspaceId: string, categories: WorkspaceUsageCategory[]): Promise<void> {
   const storage = categories.find(c => c.key === 'media_storage')
   if (!storage || storage.limit <= 0) return
   const below: Array<80 | 100> = []
-  if (storage.current < storage.limit) below.push(100)
-  if (storage.current < storage.limit * 0.8) below.push(80)
+  if (storage.current < storage.limit * STORAGE_REARM_BELOW[100]) below.push(100)
+  if (storage.current < storage.limit * STORAGE_REARM_BELOW[80]) below.push(80)
   for (const threshold of below)
     await db.releaseUsageAlert({ workspaceId, meter: 'media_storage', periodKey: STORAGE_PERIOD_KEY, threshold })
 }
