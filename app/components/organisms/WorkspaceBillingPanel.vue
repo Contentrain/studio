@@ -2,8 +2,12 @@
 import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
-const { billingState, effectivePlan, isTrialing, trialDaysLeft, openPortal } = useBilling()
+const { billingState, effectivePlan, isTrialing, trialDaysLeft, cancelsAt, openPortal } = useBilling()
 const deployment = useDeployment()
+// Members see the plan and the usage; only owners and admins can act on them
+// (checkout and portal answer 403 to anyone else).
+const { isOwnerOrAdmin } = useWorkspaceRole()
+const toast = useToast()
 
 defineProps<{
   workspaceId: string
@@ -80,8 +84,9 @@ async function handleManageSubscription() {
   try {
     await openPortal()
   }
-  catch {
-    // Portal redirect failed — user stays on page
+  catch (err: unknown) {
+    // The portal is the only way to change or keep the plan: say it failed.
+    toast.error(resolveApiError(err, t('common.server_error')))
   }
   finally {
     loading.value = false
@@ -137,7 +142,10 @@ async function handleManageSubscription() {
           </p>
         </div>
 
-        <div class="flex gap-2">
+        <p v-if="!isOwnerOrAdmin" class="max-w-56 text-right text-xs text-muted">
+          {{ t('billing.ask_owner') }}
+        </p>
+        <div v-else class="flex gap-2">
           <AtomsBaseButton
             v-if="hasSubscription"
             variant="secondary"
@@ -163,6 +171,26 @@ async function handleManageSubscription() {
         <div class="flex items-center gap-2 text-sm text-primary-700 dark:text-primary-300">
           <span class="icon-[annon--clock] size-4" aria-hidden="true" />
           <span>{{ t('billing.trial_days_left', { days: trialDaysLeft }) }}</span>
+        </div>
+      </div>
+
+      <!-- Scheduled cancellation: when the plan ends, and the way back. -->
+      <div v-if="cancelsAt" class="mt-4 rounded-md bg-warning-50 px-4 py-3 dark:bg-warning-950/30" data-testid="cancel-scheduled">
+        <div class="flex flex-wrap items-center gap-2 text-sm text-warning-800 dark:text-warning-200">
+          <span class="icon-[annon--clock] size-4 shrink-0" aria-hidden="true" />
+          <span class="min-w-0 flex-1">
+            {{ t('billing.cancel_scheduled', { plan: planName, date: new Date(cancelsAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) }) }}
+          </span>
+          <AtomsBaseButton
+            v-if="isOwnerOrAdmin && hasSubscription"
+            variant="secondary"
+            size="sm"
+            :loading="loading"
+            @click="handleManageSubscription"
+          >
+            {{ t('billing.cancel_undo') }}
+          </AtomsBaseButton>
+          <span v-else class="text-xs">{{ t('billing.ask_owner') }}</span>
         </div>
       </div>
 

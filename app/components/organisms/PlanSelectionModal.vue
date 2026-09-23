@@ -2,10 +2,15 @@
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
 import { query } from '#contentrain'
 import type { PlanFeatures } from '#contentrain'
-import { ENTERPRISE_CONTACT_EMAIL } from '~~/shared/utils/license'
+import { ENTERPRISE_CONTACT_EMAIL, OVERAGE_PRICING } from '~~/shared/utils/license'
+import { USAGE_METER_LIST } from '~~/shared/utils/usage-meters'
 
 const { t } = useContent()
 const { billingState, effectivePlan, trialConsumed, startCheckout, openPortal } = useBilling()
+// Checkout and the portal are owner/admin only (403 otherwise). A member who
+// opens this from a locked sidebar item or the trial banner sees the plans
+// and who to ask — not a button that fails.
+const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const props = defineProps<{
   open: boolean
@@ -100,6 +105,20 @@ interface LimitRow {
   key: string
   label: string
   value: string
+  /** "then $0.08 per credit" — only for limits whose overage is actually sold. */
+  overage: string | null
+}
+
+/**
+ * What a unit past the included amount costs, so the price is known before
+ * anyone chooses a plan. Limits that are hard caps (media, CDN: their meters
+ * cannot bill past an allowance) show nothing, whatever the data lists.
+ */
+function overageLabel(key: string): string | null {
+  const pricing = OVERAGE_PRICING[key]
+  if (!pricing) return null
+  if (USAGE_METER_LIST.some(m => m.limitKey === key && !m.overageBillable)) return null
+  return t('plans.overage_then', { price: `$${pricing.price}`, unit: pricing.unit })
 }
 
 /** Headline metered limits with the plan's value, in display order. */
@@ -113,7 +132,11 @@ function limitRows(slug: string): LimitRow[] {
       return { key: f.key, label: cleanLimitName(f.name), raw, value: formatLimitValue(raw, f.key) }
     })
     .filter(r => r.raw !== '0' && r.raw !== '')
-    .map(({ key, label, value }) => ({ key, label, value }))
+    .map(({ key, label, value }) => ({ key, label, value, overage: isUnlimitedValue(value) ? null : overageLabel(key) }))
+}
+
+function isUnlimitedValue(value: string): boolean {
+  return value === t('common.unlimited')
 }
 
 function byCategoryThenOrder(a: PlanFeatures, b: PlanFeatures): number {
@@ -166,6 +189,8 @@ interface PlanCta {
 }
 
 function ctaFor(slug: string): PlanCta {
+  if (!isOwnerOrAdmin.value)
+    return { label: t('plans.ask_owner'), disabled: true }
   if (effectivePlan.value === slug && hasActiveSubscription.value)
     return { label: t('plans.current_plan'), disabled: true }
   if (hasActiveSubscription.value)
@@ -215,11 +240,13 @@ async function handlePlanAction(slug: string) {
               {{ t('plans.select_title') }}
             </DialogTitle>
             <DialogDescription class="mt-1 text-sm text-muted">
-              {{ hasActiveSubscription
-                ? t('plans.manage_description')
-                : trialConsumed
-                  ? t('plans.trial_ended_description')
-                  : t('plans.select_description') }}
+              {{ !isOwnerOrAdmin
+                ? t('plans.members_read_only')
+                : hasActiveSubscription
+                  ? t('plans.manage_description')
+                  : trialConsumed
+                    ? t('plans.trial_ended_description')
+                    : t('plans.select_description') }}
             </DialogDescription>
           </div>
           <DialogClose
@@ -287,7 +314,10 @@ async function handlePlanAction(slug: string) {
                   class="flex items-baseline justify-between gap-3 text-sm"
                 >
                   <span class="text-body dark:text-secondary-300">{{ lim.label }}</span>
-                  <span class="shrink-0 font-semibold tabular-nums text-heading dark:text-secondary-100">{{ lim.value }}</span>
+                  <span class="shrink-0 text-right">
+                    <span class="block font-semibold tabular-nums text-heading dark:text-secondary-100">{{ lim.value }}</span>
+                    <span v-if="lim.overage" class="block text-xs text-muted tabular-nums">{{ lim.overage }}</span>
+                  </span>
                 </li>
               </ul>
             </div>

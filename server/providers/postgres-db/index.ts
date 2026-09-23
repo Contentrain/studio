@@ -30,6 +30,7 @@ import { paymentAccountMethods } from './payment-accounts'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
 import { trialReminderMethods } from './trial-reminders'
+import { usageAlertMethods } from './usage-alerts'
 import { usageMethods } from './usage'
 import { webhookMethods } from './webhooks'
 import { workspaceMethods } from './workspaces'
@@ -43,6 +44,7 @@ export function createPostgresDatabaseProvider(): DatabaseProvider {
     ...oauthTokenMethods(),
     ...auditMethods(),
     ...trialReminderMethods(),
+    ...usageAlertMethods(),
     ...workspaceMethods(),
     ...memberMethods(),
     ...projectMethods(),

@@ -30,6 +30,7 @@ import { paymentAccountMethods } from './payment-accounts'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
 import { trialReminderMethods } from './trial-reminders'
+import { usageAlertMethods } from './usage-alerts'
 import { webhookMethods } from './webhooks'
 import { usageMethods } from './usage'
 import { workspaceMethods } from './workspaces'
@@ -56,6 +57,7 @@ export function createSupabaseDatabaseProvider(): DatabaseProvider {
     ...usageMethods(),
     ...mcpCloudMethods(),
     ...trialReminderMethods(),
+    ...usageAlertMethods(),
     ...paymentAccountMethods(),
     ...migrateGrantMethods(),
   }

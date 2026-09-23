@@ -151,6 +151,14 @@ export interface MessageInsertInput {
   model?: string
 }
 
+/** One usage alert: a meter crossing a threshold in one counting period. */
+export interface UsageAlertKey {
+  workspaceId: string
+  meter: string
+  periodKey: string
+  threshold: 80 | 100
+}
+
 export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
   // PROFILES
@@ -939,6 +947,26 @@ export interface DatabaseProvider {
 
   /** Set `trial_reminder_stage` for a workspace. Cron calls this after send. */
   setTrialReminderStage: (workspaceId: string, stage: number) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // USAGE ALERTS (80 % / 100 % emails)
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Workspaces with an active payment account — the ones whose usage the
+   * alert job checks. Returns `id, name, slug, type, plan, owner_id,
+   * overage_settings, media_storage_bytes`.
+   */
+  listWorkspacesForUsageAlerts: () => Promise<DatabaseRow[]>
+
+  /**
+   * Record that an alert is being sent. `true` when this call inserted the
+   * row (send it), `false` when it was already there (someone sent it).
+   */
+  claimUsageAlert: (alert: UsageAlertKey) => Promise<boolean>
+
+  /** Undo a claim whose email failed, so the next run retries it. */
+  releaseUsageAlert: (alert: UsageAlertKey) => Promise<void>
 
   // ═══════════════════════════════════════════════════
   // USAGE AGGREGATION (billing dashboard)

@@ -494,6 +494,14 @@ export interface UsageEventsOutboxTable {
   last_error: string | null
 }
 
+export interface UsageAlertsTable {
+  workspace_id: string
+  meter: string
+  period_key: string
+  threshold: number
+  sent_at: Generated<string>
+}
+
 // ─── auth schema (postgres/migrations/000_auth_shim.sql) ───
 // Owned by the managed AuthProvider; present only on the postgres pair.
 
@@ -639,4 +647,5 @@ export interface StudioDatabase {
   'conversation_api_keys': ConversationApiKeysTable
   'webhook_deliveries': WebhookDeliveriesTable
   'usage_events_outbox': UsageEventsOutboxTable
+  'usage_alerts': UsageAlertsTable
 }

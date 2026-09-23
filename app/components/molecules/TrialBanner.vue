@@ -3,6 +3,9 @@ import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
 const { billingState, trialDaysLeft, effectivePlan } = useBilling()
+// Choosing a plan or fixing a payment is owner/admin only. A member gets the
+// notice and who to ask instead of a button that answers 403.
+const { isOwnerOrAdmin } = useWorkspaceRole()
 const route = useRoute()
 
 const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? effectivePlan.value)
@@ -61,7 +64,17 @@ function dismiss() {
   }
 }
 
+/**
+ * A payment that failed past its grace window pauses the workspace — that is
+ * not an expired trial, and the way back is fixing the card, not a new plan.
+ */
+const isGraceExpired = computed(() => billingState.value === 'grace_expired')
+/** Payment problems are fixed in the billing portal, not by choosing a plan. */
+const needsPaymentFix = computed(() => isPastDue.value || isGraceExpired.value)
+
 const bannerText = computed(() => {
+  if (isGraceExpired.value) return t('billing.subscription_paused')
+  if (billingState.value === 'canceled_expired') return t('billing.subscription_ended')
   if (isExpired.value) return t('trial.expired_text')
   if (isPastDue.value) return t('billing.payment_failed')
   if (isFree.value) return t('billing.upgrade_to_connect')
@@ -71,13 +84,13 @@ const bannerText = computed(() => {
 })
 
 const ctaText = computed(() => {
-  if (isPastDue.value) return t('billing.update_payment')
+  if (needsPaymentFix.value) return t('billing.update_payment')
   if (isFree.value) return t('billing.upgrade')
   return t('trial.choose_plan')
 })
 
 function handleCta() {
-  if (isPastDue.value) emit('manageBilling')
+  if (needsPaymentFix.value) emit('manageBilling')
   else emit('choosePlan')
 }
 </script>
@@ -111,7 +124,11 @@ function handleCta() {
       {{ planName }}
     </AtomsBadge>
 
+    <span v-if="!isOwnerOrAdmin" class="shrink-0 text-xs text-muted">
+      {{ t('billing.ask_owner') }}
+    </span>
     <button
+      v-else
       type="button"
       class="shrink-0 rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
       :class="[

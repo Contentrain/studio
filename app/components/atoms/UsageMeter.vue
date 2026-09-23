@@ -8,6 +8,8 @@ const props = defineProps<{
   overageUnitPrice?: number
 }>()
 
+const { t } = useContent()
+
 const isUnlimited = computed(() => props.limit === -1)
 
 const percentage = computed(() => {
@@ -38,11 +40,11 @@ function formatValue(value: number, unit: string): string {
 }
 
 function formatLimit(limit: number, unit: string): string {
-  if (limit === -1) return 'Unlimited'
+  if (limit === -1) return t('billing.usage_unlimited')
   if (unit === 'GB' || unit === 'GB/month') {
     return `${limit} GB`
   }
-  return `${limit}`
+  return `${limit.toLocaleString('en-US')} ${unit}`
 }
 </script>
 
@@ -54,7 +56,9 @@ function formatLimit(limit: number, unit: string): string {
         {{ formatValue(current, unit) }}
       </span>
       <span class="text-muted">
-        / {{ formatLimit(limit, unit) }} {{ !isUnlimited ? unit : '' }}
+        <!-- The unit is part of the formatted limit: "60 GB", "350 credits".
+             Appending it again printed "60 GB GB". -->
+        / {{ formatLimit(limit, unit) }}
       </span>
     </div>
 
@@ -81,7 +85,7 @@ function formatLimit(limit: number, unit: string): string {
         {{ Math.round((current / limit) * 100) }}%
       </span>
       <span v-if="(overageUnits ?? 0) > 0" class="text-danger-600 dark:text-danger-400 tabular-nums">
-        +{{ formatValue(overageUnits ?? 0, unit) }} overage
+        {{ t('billing.usage_overage_units', { amount: formatValue(overageUnits ?? 0, unit) }) }}
         <span v-if="overageUnitPrice">({{ '$' + ((overageUnits ?? 0) * overageUnitPrice).toFixed(2) }})</span>
       </span>
     </div>

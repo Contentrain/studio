@@ -270,6 +270,12 @@
   "project.settings_owner_only": "Only workspace owners and admins can change project settings.",
   "rate.limit_exceeded": "Too many requests. Please wait a moment and try again.",
   "storage.quota_exceeded": "Storage quota exceeded. Upgrade your plan for more storage or delete unused assets.",
+  "usage_alert.stopped_ai_messages": "Studio AI answers are paused until {date}. Members using their own AI key are not affected.",
+  "usage_alert.stopped_api_messages": "Conversation API requests are refused until {date}.",
+  "usage_alert.stopped_comments": "New comments on your site are being rejected until {date}.",
+  "usage_alert.stopped_form_submissions": "New form submissions from your site are being rejected until {date}. Visitors see an error and their message is not saved.",
+  "usage_alert.stopped_mcp_calls": "MCP Cloud calls are refused until {date}.",
+  "usage_alert.stopped_media_storage": "New media uploads are refused until you free up space or change the plan.",
   "validation.branch_params_required": "Workspace ID, Project ID, and branch name are required.",
   "validation.conversation_id_required": "Conversation ID is required.",
   "validation.data_required": "Content data is required.",
@@ -314,5 +320,9 @@
   "workspace.slug_too_short": "Workspace slug must be at least 2 characters.",
   "workspace.transfer_member_required": "A target member ID is required for ownership transfer.",
   "workspace.transfer_requires_admin": "Ownership can only be transferred to a member with admin role.",
-  "write.validation_failed": "The change was not applied because it failed validation"
+  "write.validation_failed": "The change was not applied because it failed validation",
+  "usage_alert.resets_on": "The count resets on <strong>{date}</strong>.",
+  "usage_alert.storage_note": "Storage does not reset each month: it frees up when files are removed.",
+  "usage_alert.next_overage": "To keep going now, allow overage or change the plan in Billing.",
+  "usage_alert.next_upgrade": "To keep going now, change the plan in Billing."
 }

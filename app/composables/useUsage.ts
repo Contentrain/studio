@@ -25,6 +25,8 @@ export interface UsageCategory {
   overageAmount: number
   unit: string
   percentage: number
+  /** When this meter resets; null for a level that does not (storage). Absent from an older server. */
+  resetsAt?: string | null
 }
 
 export interface UsagePeriodInfo {
@@ -40,6 +42,8 @@ export interface UsageData {
   billingPeriod: string
   /** Optional: absent from an older server response. */
   period?: UsagePeriodInfo
+  /** False for members: meters only, no switches or amounts. Absent (= true) from an older server. */
+  canManage?: boolean
   categories: UsageCategory[]
   /** AI turns run on members' own keys this period — outside the quota, not billed. Absent from an older server response. */
   byoaRequests?: number
