@@ -347,7 +347,14 @@ export default defineEventHandler(async (event) => {
             abortSignal: abortController.signal,
             // The reservation is the turn's spend ceiling. BYOA has none —
             // the user's own key pays.
-            budget: usageSource === 'studio' ? { maxUsd: reservedCredits * AI_CREDIT_UNIT_USD } : undefined,
+            budget: usageSource === 'studio'
+              ? {
+                  maxUsd: reservedCredits * AI_CREDIT_UNIT_USD,
+                  // Less than the per-message cap was left in the pool: the
+                  // budget is the month's last credits, not this turn's cap.
+                  limitedBy: reservedCredits < turnCeiling ? 'credits' : 'turn',
+                }
+              : undefined,
             usageTracker: tracker,
           },
           {
@@ -394,10 +401,25 @@ export default defineEventHandler(async (event) => {
             iterations = (evt.iterations as typeof iterations) ?? []
 
             // Forward the done event without lastContent (not needed by client)
+            // A turn cut because the month's credits ran out carries the same
+            // notice as the 429 the next message would get (credits + reset
+            // date + link to Usage), so the client can show it now.
+            const creditsExhausted = evt.stoppedBy === 'credits'
             await eventStream.push(JSON.stringify({
               type: 'done',
               usage: evt.usage,
               affected: evt.affected,
+              ...(evt.stoppedBy ? { stoppedBy: evt.stoppedBy } : {}),
+              ...(creditsExhausted
+                ? {
+                    code: 'ai_credits_exhausted',
+                    resetsAt: usagePeriod.resetsAt,
+                    message: errorMessage('chat.monthly_limit_reached', {
+                      limit: basePlanLimit,
+                      date: new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+                    }),
+                  }
+                : {}),
             }))
           }
           else {

@@ -45,6 +45,13 @@ export const CLOSE_TOOL_RESULT_ALLOWANCE_TOKENS = 9200
 export interface TurnBudget {
   /** Dollars the turn may spend at list price. */
   maxUsd: number
+  /**
+   * What sets the ceiling. `turn`: the plan's per-message cap — the next
+   * message starts with a full budget. `credits`: the workspace's monthly
+   * credits ran short of that cap — the next message will be refused, so
+   * the close must not tell the user to "send a new message".
+   */
+  limitedBy?: 'turn' | 'credits'
 }
 
 /**

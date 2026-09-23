@@ -144,7 +144,7 @@ function heavyModel(opts: { promptPerCall: number, outputPerCall: number }) {
   return { provider, requests }
 }
 
-async function runLoop(provider: Partial<AIProvider>, budget?: { maxUsd: number }) {
+async function runLoop(provider: Partial<AIProvider>, budget?: { maxUsd: number, limitedBy?: 'turn' | 'credits' }) {
   stubLoopGlobals(provider)
   const { runConversationLoop } = await import('../../server/utils/conversation-engine')
   const events: Array<Record<string, unknown>> = []
@@ -237,5 +237,37 @@ describe('conversation loop — turn budget', () => {
     const text = events.filter(e => e.type === 'text').map(e => e.content).join('')
     expect(text).toContain('reached its usage limit')
     expect(events.at(-1)!.stoppedBy).toBe('budget')
+  })
+
+  it('when the month\'s credits set the budget, the close does not tell the user to send another message', async () => {
+    // Same heavy turn, but the budget is the workspace's last credits.
+    const wrapPrompts: string[] = []
+    const { provider } = heavyModel({ promptPerCall: 60_000, outputPerCall: 12_000 })
+    const inner = provider.streamCompletion!
+    provider.streamCompletion = async function* (request, apiKey) {
+      if (request.tools.length === 0) {
+        const last = request.messages.at(-1)!
+        wrapPrompts.push(JSON.stringify(last.content))
+      }
+      yield* inner(request, apiKey)
+    }
+
+    const events = await runLoop(provider, { maxUsd: 0.9, limitedBy: 'credits' })
+
+    expect(events.at(-1)!.stoppedBy).toBe('credits')
+    expect(wrapPrompts).toHaveLength(1)
+    expect(wrapPrompts[0]).toContain('monthly AI credits')
+    expect(wrapPrompts[0]).not.toContain('new message')
+  })
+
+  it('the deterministic close names the monthly credits and does not suggest a new message', async () => {
+    const { provider } = heavyModel({ promptPerCall: 200_000, outputPerCall: 16_000 })
+
+    const events = await runLoop(provider, { maxUsd: 0.3, limitedBy: 'credits' })
+
+    const text = events.filter(e => e.type === 'text').map(e => e.content).join('')
+    expect(text).toContain('monthly AI credits are used up')
+    expect(text).not.toContain('Send a new message')
+    expect(events.at(-1)!.stoppedBy).toBe('credits')
   })
 })

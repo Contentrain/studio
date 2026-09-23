@@ -168,12 +168,22 @@ const GRACEFUL_CLOSE_INSTRUCTION
 const BUDGET_CLOSE_INSTRUCTION
   = 'This turn has reached its usage limit, so no more tools can run in it. Answer now with a concise summary of what you did so far and what is left to do, so the user can continue in a new message, in the language of the conversation. Do not call tools.'
 
+/**
+ * Variant for a turn cut because the workspace's monthly AI credits ran
+ * out, not the per-message cap: a new message would be refused, so the
+ * summary must not suggest one.
+ */
+const CREDITS_CLOSE_INSTRUCTION
+  = 'This workspace has used up its monthly AI credits, so no more tools can run. Answer now with a concise summary of what you did so far and what is left to do, in the language of the conversation. Do not suggest sending another message now and do not call tools.'
+
 /** Deterministic close when the budget cannot pay for even a short summary call. */
-function buildBudgetFallbackSummary(executedToolNames: string[]): string {
+function buildBudgetFallbackSummary(executedToolNames: string[], limitedBy: 'turn' | 'credits' = 'turn'): string {
   const done = executedToolNames.length > 0
     ? ` Completed before stopping: ${summarizeToolNames(executedToolNames)}.`
     : ''
-  return `This message reached its usage limit and stopped here.${done} Send a new message to continue.`
+  return limitedBy === 'credits'
+    ? `This workspace's monthly AI credits are used up, so this message stopped here.${done}`
+    : `This message reached its usage limit and stopped here.${done} Send a new message to continue.`
 }
 
 function summarizeToolNames(executedToolNames: string[]): string {
@@ -556,7 +566,7 @@ export async function* runConversationLoop(
     if (!config.abortSignal?.aborted && (stoppedByBudget || hitStepLimit) && !wrapAffordable) {
       // eslint-disable-next-line no-console
       console.warn('[conversation] turn budget exhausted; closing without a summary call')
-      const fallbackText = buildBudgetFallbackSummary(executedToolNames)
+      const fallbackText = buildBudgetFallbackSummary(executedToolNames, budget?.limitedBy)
       yield { type: 'text', content: fallbackText }
       lastAssistantContent = [{ type: 'text', text: fallbackText }]
       trace.push({ iteration: iteration + 1, assistantBlocks: lastAssistantContent, toolResultBlocks: [] })
@@ -567,7 +577,9 @@ export async function* runConversationLoop(
       // mutate its content array, which `trace` still references — so
       // the instruction lives only in this one API call and is never
       // persisted or replayed on resume.
-      const instruction = stoppedByBudget ? BUDGET_CLOSE_INSTRUCTION : GRACEFUL_CLOSE_INSTRUCTION
+      const instruction = !stoppedByBudget
+        ? GRACEFUL_CLOSE_INSTRUCTION
+        : budget?.limitedBy === 'credits' ? CREDITS_CLOSE_INSTRUCTION : BUDGET_CLOSE_INSTRUCTION
       const lastMsg = config.messages[config.messages.length - 1]
       if (lastMsg?.role === 'user') {
         const content: AIContentBlock[] = Array.isArray(lastMsg.content)
@@ -602,7 +614,7 @@ export async function* runConversationLoop(
         // eslint-disable-next-line no-console
         console.warn('[conversation] graceful-close wrap returned no text; synthesizing fallback summary')
         const fallbackText = stoppedByBudget
-          ? buildBudgetFallbackSummary(executedToolNames)
+          ? buildBudgetFallbackSummary(executedToolNames, budget?.limitedBy)
           : buildFallbackSummary(executedToolNames)
         yield { type: 'text', content: fallbackText }
         lastAssistantContent = [{ type: 'text', text: fallbackText }]
@@ -626,7 +638,7 @@ export async function* runConversationLoop(
       affected: accumulatedAffected,
       lastContent: lastAssistantContent,
       iterations: trace,
-      ...(stoppedByBudget ? { stoppedBy: 'budget' } : {}),
+      ...(stoppedByBudget ? { stoppedBy: budget?.limitedBy === 'credits' ? 'credits' : 'budget' } : {}),
     }
   }
   finally {

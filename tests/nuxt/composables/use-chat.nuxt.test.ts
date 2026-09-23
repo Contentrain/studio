@@ -202,6 +202,37 @@ describe('useChat', () => {
     })
   })
 
+  it('shows the credits-exhausted notice when a turn ends because the month\'s credits ran out', async () => {
+    // MG-12 D2: the server cut the turn at the month's last credits and says
+    // so on `done`, with the same notice a refused next message would carry.
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"text","content":"Updated two entries."}\n',
+      'data: {"type":"done","stoppedBy":"credits","code":"ai_credits_exhausted","resetsAt":"2026-10-21T00:00:00.000Z","message":"You have used this month\'s 60 AI credits. They reset on Oct 21, 2026.","affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'rewrite the post')
+
+    expect(chat.creditsExhausted.value).toEqual({
+      message: 'You have used this month\'s 60 AI credits. They reset on Oct 21, 2026.',
+      resetsAt: '2026-10-21T00:00:00.000Z',
+    })
+  })
+
+  it('shows no credits notice for an ordinary done', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"text","content":"Done."}\n',
+      'data: {"type":"done","stoppedBy":"budget","affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'hi')
+
+    expect(chat.creditsExhausted.value).toBeNull()
+  })
+
   it('keeps narration and tool calls in chronological segments across iterations', async () => {
     vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
