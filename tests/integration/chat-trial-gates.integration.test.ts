@@ -3,6 +3,7 @@ import { eventHandler } from 'h3'
 import type { H3Event } from 'h3'
 import { withTestServer } from '../helpers/http'
 import { PLAN_LIMITS } from '../../shared/utils/license'
+import { getMaxCreditsPerMessage } from '../../shared/utils/ai-credits'
 
 vi.mock('~~/server/utils/agent-types', async () => await import('../../server/utils/agent-types'))
 vi.mock('~~/server/utils/agent-state-machine', async () => await import('../../server/utils/agent-state-machine'))
@@ -28,7 +29,8 @@ interface Billing {
 }
 
 function stubTurn(opts: { allowed?: boolean } = {}) {
-  const incrementAgentUsageIfAllowed = vi.fn().mockResolvedValue({ allowed: opts.allowed ?? true, currentCount: 0 })
+  const allowed = opts.allowed ?? true
+  const reserveAgentCredits = vi.fn().mockImplementation(async ({ amount }: { amount: number }) => ({ allowed, granted: allowed ? amount : 0, currentCount: 0 }))
   const recordAIUsage = vi.fn().mockResolvedValue(undefined)
   const models: string[] = []
 
@@ -39,8 +41,8 @@ function stubTurn(opts: { allowed?: boolean } = {}) {
   }))
   vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'user-1', email: 'user@example.com' }, accessToken: 'token-1' }))
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-    incrementAgentUsageIfAllowed,
-    decrementAgentUsage: vi.fn().mockResolvedValue(undefined),
+    reserveAgentCredits,
+    updateAgentUsageTokens: vi.fn().mockResolvedValue(undefined),
     getConversation: vi.fn().mockResolvedValue({ id: 'conversation-existing' }),
     createConversation: vi.fn().mockResolvedValue('conversation-existing'),
     loadConversationMessages: vi.fn().mockResolvedValue([]),
@@ -78,7 +80,7 @@ function stubTurn(opts: { allowed?: boolean } = {}) {
     },
   }))
 
-  return { incrementAgentUsageIfAllowed, recordAIUsage, models }
+  return { reserveAgentCredits, recordAIUsage, models }
 }
 
 async function runTurn(billing: Billing, body: Record<string, unknown> = {}) {
@@ -149,19 +151,30 @@ describe('chat route — trial AI credit cap', () => {
     const turn = stubTurn()
     await runTurn(trial('migrate'))
     expect(STARTER_CREDITS).toBeLessThan(PRO_CREDITS)
-    expect(turn.incrementAgentUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ limit: STARTER_CREDITS }))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ limit: STARTER_CREDITS }))
+  })
+
+  it('a capped trial reserves a turn at Starter\'s per-message ceiling, not Pro\'s (QA-5 F3)', async () => {
+    const turn = stubTurn()
+    await runTurn(trial('migrate'))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ amount: getMaxCreditsPerMessage('starter') }))
+
+    const paid = stubTurn()
+    await runTurn(subscribed)
+    expect(paid.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ amount: getMaxCreditsPerMessage('pro') }))
+    expect(getMaxCreditsPerMessage('starter')).toBeLessThan(getMaxCreditsPerMessage('pro'))
   })
 
   it('the cap lifts with the first payment — the same workspace, subscribed, gets its plan', async () => {
     const turn = stubTurn()
     await runTurn(subscribed)
-    expect(turn.incrementAgentUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ limit: SOFT_CAP }))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ limit: SOFT_CAP }))
   })
 
   it('a standard trial is not capped while the catalog scopes the cap to Migrate trials', async () => {
     const turn = stubTurn()
     await runTurn(trial('standard'))
-    expect(turn.incrementAgentUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ limit: SOFT_CAP }))
+    expect(turn.reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ limit: SOFT_CAP }))
   })
 
   it('at the cap the turn is refused with the activation reason and nothing reaches the meter', async () => {
