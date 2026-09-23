@@ -15,6 +15,7 @@ describe('billing webhook integration', () => {
   const updateWorkspace = vi.fn().mockResolvedValue({})
   const getActivePaymentAccount = vi.fn().mockResolvedValue(null)
   const markWorkspaceTrialConsumed = vi.fn().mockResolvedValue(undefined)
+  const setPaymentAccountMetadataKey = vi.fn().mockResolvedValue(false)
 
   let handleWebhookMock: ReturnType<typeof vi.fn>
 
@@ -33,6 +34,7 @@ describe('billing webhook integration', () => {
       updateWorkspace,
       getActivePaymentAccount,
       markWorkspaceTrialConsumed,
+      setPaymentAccountMetadataKey,
     }))
   })
 
@@ -43,6 +45,7 @@ describe('billing webhook integration', () => {
     updateWorkspace.mockReset().mockResolvedValue({})
     getActivePaymentAccount.mockReset().mockResolvedValue(null)
     markWorkspaceTrialConsumed.mockReset().mockResolvedValue(undefined)
+    setPaymentAccountMetadataKey.mockReset().mockResolvedValue(false)
   })
 
   async function mockPluginAndLoadHandler(options: { configured?: boolean } = {}) {
@@ -167,6 +170,7 @@ describe('billing webhook integration', () => {
       updateWorkspace,
       getActivePaymentAccount,
       markWorkspaceTrialConsumed,
+      setPaymentAccountMetadataKey,
       markMigrateGrantRedeemed,
     }))
     const created = {
@@ -212,6 +216,7 @@ describe('billing webhook integration', () => {
       updateWorkspace,
       getActivePaymentAccount,
       markWorkspaceTrialConsumed,
+      setPaymentAccountMetadataKey,
       markMigrateGrantRedeemed: vi.fn().mockResolvedValue(undefined),
     }))
     handleWebhookMock.mockResolvedValue({
@@ -334,6 +339,7 @@ describe('billing webhook integration', () => {
         updateWorkspace,
         getActivePaymentAccount,
         markWorkspaceTrialConsumed,
+        setPaymentAccountMetadataKey,
         getWorkspaceById,
       }))
     })
@@ -407,7 +413,10 @@ describe('billing webhook integration', () => {
 
       expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
         pluginMetadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'] },
+        preserveMetadataKeys: ['activation_email'],
       }))
+      // Trial → active also marks the activation email owed (it goes out on the first paid order).
+      expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'activation_email', value: 'pending', when: 'absent' })
       expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { ai_messages: false, mcp_calls: true } })
     })
 
@@ -507,6 +516,7 @@ describe('billing webhook integration', () => {
         updateWorkspace,
         getActivePaymentAccount,
         markWorkspaceTrialConsumed,
+        setPaymentAccountMetadataKey,
         getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro' }),
       }))
     }
@@ -534,6 +544,200 @@ describe('billing webhook integration', () => {
       currentPeriodEnd: '2026-10-23T11:50:43.823Z',
       cancelAtPeriodEnd: false,
       ...overrides,
+    })
+
+    describe('activation email: on the first paid order, not the status change (ST-10 b)', () => {
+      const ACTIVATED = 'Your Pro plan is active on Contentrain Studio'
+      const RECOVERED_PREFIX = 'Payment received'
+      const trialingAccount = { ...activeAccount, subscription_status: 'trialing', trial_ends_at: '2026-09-29T07:36:51.653Z', plugin_metadata: {} }
+      const paidOrder = (amountPaid: number) => ({ event: 'invoice.paid', workspaceId: 'ws-1', customerId: 'cus_123', subscriptionId: 'sub_123', invoiceId: 'ord_1', amountPaid })
+
+      /**
+       * One payment_accounts row with the provider's write semantics: an
+       * upsert replaces the columns it is given and keeps
+       * `preserveMetadataKeys` from the row at write time; the metadata-key
+       * write is a compare-and-set. `readBarrier(n)` holds every read until
+       * n reads have happened — each event then works from the same
+       * snapshot, the interleaving that loses a write if the route writes
+       * back what it read.
+       */
+      function accountStore(initial: Record<string, unknown>) {
+        let row: Record<string, unknown> = structuredClone(initial)
+        let barrier: { waiting: number, release: () => void, done: Promise<void> } | null = null
+        const store = {
+          row: () => row,
+          readBarrier(n: number) {
+            let release!: () => void
+            const done = new Promise<void>((resolve) => {
+              release = resolve
+            })
+            barrier = { waiting: n, release, done }
+          },
+          getActivePaymentAccount: vi.fn(async () => {
+            const snapshot = structuredClone(row)
+            if (barrier) {
+              const b = barrier
+              if (--b.waiting === 0) {
+                barrier = null
+                b.release()
+              }
+              await b.done
+            }
+            return snapshot
+          }),
+          upsertPaymentAccount: vi.fn(async (input: Record<string, unknown>) => {
+            const stored = (row.plugin_metadata ?? {}) as Record<string, unknown>
+            let metadata = stored
+            if (input.pluginMetadata !== undefined) {
+              metadata = { ...(input.pluginMetadata as Record<string, unknown>) }
+              for (const key of (input.preserveMetadataKeys as string[] | undefined) ?? []) {
+                if (key in stored) metadata[key] = stored[key]
+                else Reflect.deleteProperty(metadata, key)
+              }
+            }
+            row = {
+              ...row,
+              subscription_status: input.subscriptionStatus ?? null,
+              trial_ends_at: input.trialEndsAt ?? null,
+              grace_period_ends_at: input.gracePeriodEndsAt ?? null,
+              plugin_metadata: metadata,
+            }
+            return row
+          }),
+          setPaymentAccountMetadataKey: vi.fn(async ({ key, value, when }: { key: string, value: string, when: 'absent' | { equals: string } }) => {
+            const metadata = (row.plugin_metadata ?? {}) as Record<string, unknown>
+            if (when === 'absent' ? key in metadata : metadata[key] !== when.equals) return false
+            row = { ...row, plugin_metadata: { ...metadata, [key]: value } }
+            return true
+          }),
+        }
+        return store
+      }
+
+      function useStore(store: ReturnType<typeof accountStore>) {
+        captureEmails()
+        vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+          upsertPaymentAccount: store.upsertPaymentAccount,
+          getActivePaymentAccount: store.getActivePaymentAccount,
+          setPaymentAccountMetadataKey: store.setPaymentAccountMetadataKey,
+          archiveActivePaymentAccount,
+          updateWorkspace,
+          markWorkspaceTrialConsumed,
+          getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro' }),
+        }))
+      }
+
+      async function deliver(...events: Record<string, unknown>[]) {
+        const handler = await mockPluginAndLoadHandler()
+        for (const e of events) handleWebhookMock.mockResolvedValueOnce(e)
+        await Promise.all(events.map(() => handler({ context: {} } as never)))
+      }
+
+      const meta = (store: ReturnType<typeof accountStore>) => store.row().plugin_metadata as Record<string, unknown>
+
+      it('trial → active sends nothing yet and marks the email owed', async () => {
+        const store = accountStore(trialingAccount)
+        useStore(store)
+
+        await deliver(update({}))
+
+        expect(subjects()).not.toContain(ACTIVATED)
+        expect(store.row().subscription_status).toBe('active')
+        expect(meta(store).activation_email).toBe('pending')
+      })
+
+      it('the first paid order sends it once, records it, and writes nothing else', async () => {
+        const store = accountStore({ ...activeAccount, plugin_metadata: { activation_email: 'pending' } })
+        useStore(store)
+
+        await deliver(paidOrder(4900))
+        await deliver(paidOrder(4900))
+
+        expect(subjects()).toEqual([ACTIVATED])
+        expect(meta(store).activation_email).toBe('sent')
+      })
+
+      it('a trial whose charge fails never says activated', async () => {
+        const store = accountStore(trialingAccount)
+        useStore(store)
+
+        await deliver(update({}))
+        await deliver(update({ subscriptionStatus: 'past_due' }))
+
+        expect(subjects()).not.toContain(ACTIVATED)
+      })
+
+      it('an order paid before the status update still sends it — once — and leaves the status to the update', async () => {
+        const store = accountStore(trialingAccount)
+        useStore(store)
+
+        await deliver(paidOrder(4900))
+        expect(subjects()).toEqual([ACTIVATED])
+        expect(store.row().subscription_status).toBe('trialing')
+
+        await deliver(update({}))
+
+        expect(subjects()).toEqual([ACTIVATED])
+        expect(store.row().subscription_status).toBe('active')
+        expect(meta(store).activation_email).toBe('sent')
+      })
+
+      it('a trial\'s $0 invoice sends nothing', async () => {
+        const store = accountStore(trialingAccount)
+        useStore(store)
+
+        await deliver(paidOrder(0))
+
+        expect(sendEmail).not.toHaveBeenCalled()
+        expect(store.upsertPaymentAccount).not.toHaveBeenCalled()
+        expect(meta(store)).toEqual({})
+      })
+
+      // QA-7: at conversion the provider sends the update and the order
+      // together. Both read the trialing row before either writes.
+      for (const order of [['update', 'order'], ['order', 'update']] as const) {
+        it(`update and order at once (${order.join(' first, ')} after the reads): one email, account active, marker kept`, async () => {
+          const store = accountStore(trialingAccount)
+          useStore(store)
+          const events = { update: update({}), order: paidOrder(4900) }
+
+          store.readBarrier(2)
+          await deliver(...order.map(k => events[k]))
+
+          expect(subjects()).toEqual([ACTIVATED])
+          expect(store.row().subscription_status).toBe('active')
+          expect(meta(store).activation_email).toBe('sent')
+
+          // Next month's renewal does not say "activated" again.
+          await deliver(paidOrder(4900))
+          expect(subjects()).toEqual([ACTIVATED])
+        })
+      }
+
+      it('a trial\'s failed first charge that then goes through says "activated", not "payment received"', async () => {
+        const store = accountStore(trialingAccount)
+        useStore(store)
+
+        await deliver(update({ subscriptionStatus: 'past_due' }))
+        expect(meta(store).activation_email).toBe('pending')
+
+        store.readBarrier(2)
+        await deliver(update({}), paidOrder(4900))
+
+        expect(subjects().filter(s => s === ACTIVATED)).toHaveLength(1)
+        expect(subjects().some(s => s.startsWith(RECOVERED_PREFIX))).toBe(false)
+        expect(store.row().subscription_status).toBe('active')
+      })
+
+      it('an ordinary renewal that recovers from past_due still says "payment received"', async () => {
+        const store = accountStore({ ...activeAccount, subscription_status: 'past_due', grace_period_ends_at: '2026-09-30T12:00:00.000Z', plugin_metadata: { activation_email: 'sent' } })
+        useStore(store)
+
+        await deliver(paidOrder(4900))
+
+        expect(subjects()).not.toContain(ACTIVATED)
+        expect(subjects().some(s => s.startsWith(RECOVERED_PREFIX))).toBe(true)
+      })
     })
 
     it('keeps the plan until the period end when a cancellation is scheduled, and says until when', async () => {

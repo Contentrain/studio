@@ -251,15 +251,27 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
             id: string
             customerId: string
             subscriptionId: string | null
+            totalAmount?: number
             metadata?: Record<string, unknown>
+            subscription?: { metadata?: Record<string, unknown> } | null
+            customer?: { externalId?: string | null } | null
           }
-          const workspaceId = typeof order.metadata?.workspace_id === 'string' ? order.metadata.workspace_id : undefined
+          // A renewal or trial-conversion order is created by Polar, not by
+          // our checkout, so it may not carry the checkout metadata. The
+          // subscription's metadata and the customer's external id (set to
+          // the workspace id at checkout) name the workspace too.
+          const fromMeta = (m?: Record<string, unknown>) => (typeof m?.workspace_id === 'string' ? m.workspace_id : undefined)
+          const workspaceId = fromMeta(order.metadata)
+            ?? fromMeta(order.subscription?.metadata)
+            ?? order.customer?.externalId
+            ?? undefined
           return {
             event: 'invoice.paid',
             workspaceId,
             subscriptionId: order.subscriptionId ?? undefined,
             customerId: order.customerId,
             invoiceId: order.id,
+            ...(typeof order.totalAmount === 'number' ? { amountPaid: order.totalAmount } : {}),
           }
         }
 

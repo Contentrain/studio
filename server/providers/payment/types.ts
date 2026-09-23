@@ -90,6 +90,11 @@ export interface WebhookResult {
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
   /**
+   * Amount actually charged, in minor units (payment events). 0 for a
+   * trial's $0 invoice; omitted when the provider does not report it.
+   */
+  amountPaid?: number
+  /**
    * Meter names the subscription carries a metered price for. A
    * subscription keeps the prices it was created with, so this is what the
    * provider can actually invoice — not what the product sells today.

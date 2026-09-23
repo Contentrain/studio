@@ -214,6 +214,7 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
             subscriptionId: subId,
             customerId: custId,
             invoiceId: raw.id as string,
+            ...(typeof raw.amount_paid === 'number' ? { amountPaid: raw.amount_paid } : {}),
           }
         }
 

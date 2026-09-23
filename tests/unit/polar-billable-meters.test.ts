@@ -51,3 +51,15 @@ describe('polar plugin — the meters a subscription prices', () => {
     expect(result.billableMeters).toBeUndefined()
   })
 })
+
+describe('polar plugin — order.paid', () => {
+  it('names the workspace from the customer when a renewal order carries no checkout metadata, and reports the amount', async () => {
+    validateEvent.mockReturnValue({
+      type: 'order.paid',
+      data: { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_1', totalAmount: 4900, metadata: {}, subscription: { metadata: {} }, customer: { externalId: 'ws-1' } },
+    })
+    const { polarPlugin } = await import('../../server/providers/payment/plugins/polar')
+    const provider = polarPlugin.create({ polar: { accessToken: 'tok', webhookSecret: 'sec' } } as never)
+    await expect(provider.handleWebhook('{}', {})).resolves.toMatchObject({ event: 'invoice.paid', workspaceId: 'ws-1', amountPaid: 4900 })
+  })
+})
