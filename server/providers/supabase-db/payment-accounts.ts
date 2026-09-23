@@ -13,6 +13,7 @@ type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
   | 'upsertPaymentAccount'
+  | 'setPaymentAccountMetadataKey'
   | 'archiveActivePaymentAccount'
   | 'enqueueUsageEvent'
   | 'listPendingUsageEvents'
@@ -70,7 +71,28 @@ export function paymentAccountMethods(): PaymentAccountMethods {
       }
       // Omitted → an update keeps the stored value, an insert gets the
       // column default `{}` (see the DatabaseProvider contract).
-      if (input.pluginMetadata !== undefined) payload.plugin_metadata = input.pluginMetadata
+      if (input.pluginMetadata !== undefined) {
+        const metadata = { ...input.pluginMetadata }
+        // PostgREST cannot express "keep the stored value" in an upsert:
+        // take the preserved keys from a read right before the write. The
+        // postgres provider does this inside the statement; here a claim
+        // landing between the two calls can still be lost.
+        if (input.preserveMetadataKeys?.length) {
+          const { data: current } = await admin
+            .from('payment_accounts')
+            .select('plugin_metadata')
+            .eq('workspace_id', input.workspaceId)
+            .eq('provider', input.provider)
+            .eq('customer_id', input.customerId)
+            .maybeSingle()
+          const stored = (current?.plugin_metadata ?? {}) as Record<string, unknown>
+          for (const key of input.preserveMetadataKeys) {
+            if (current && key in stored) metadata[key] = stored[key]
+            else if (current) Reflect.deleteProperty(metadata, key)
+          }
+        }
+        payload.plugin_metadata = metadata
+      }
       if (!nowActive) payload.archived_at = new Date().toISOString()
 
       const { data, error } = await admin
@@ -83,6 +105,33 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         throw createError({ statusCode: 500, message: `Failed to upsert payment account: ${error.message}` })
       }
       return data as DatabaseRow
+    },
+
+    async setPaymentAccountMetadataKey({ workspaceId, key, value, when }) {
+      const admin = getAdmin()
+      // Compare-and-set on `updated_at` (bumped by trigger on every update):
+      // the write lands only if nothing changed the row since the read.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: row, error } = await admin
+          .from('payment_accounts')
+          .select('id, plugin_metadata, updated_at')
+          .eq('workspace_id', workspaceId)
+          .eq('is_active', true)
+          .maybeSingle()
+        if (error && error.code !== 'PGRST116') throw createError({ statusCode: 500, message: error.message })
+        if (!row) return false
+        const metadata = (row.plugin_metadata ?? {}) as Record<string, unknown>
+        if (when === 'absent' ? key in metadata : metadata[key] !== when.equals) return false
+        const { data: updated, error: updateError } = await admin
+          .from('payment_accounts')
+          .update({ plugin_metadata: { ...metadata, [key]: value } })
+          .eq('id', row.id)
+          .eq('updated_at', row.updated_at)
+          .select('id')
+        if (updateError) throw createError({ statusCode: 500, message: updateError.message })
+        if (updated?.length) return true
+      }
+      throw createError({ statusCode: 500, message: `Failed to set payment account metadata ${key}: the row kept changing` })
     },
 
     async archiveActivePaymentAccount(workspaceId) {

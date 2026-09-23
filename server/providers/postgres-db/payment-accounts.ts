@@ -16,12 +16,27 @@ type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
   | 'upsertPaymentAccount'
+  | 'setPaymentAccountMetadataKey'
   | 'archiveActivePaymentAccount'
   | 'enqueueUsageEvent'
   | 'listPendingUsageEvents'
   | 'markUsageEventIngested'
   | 'markUsageEventDropped'
 >
+
+/**
+ * `plugin_metadata` for the ON CONFLICT update: the new value, except that
+ * the preserved keys keep what the row holds at write time (the conflict
+ * update sees the latest committed row, so a concurrent claim survives).
+ */
+function metadataOnUpdate(next: string, preserve: string[] | undefined) {
+  if (!preserve?.length) return next
+  return sql`(${next}::jsonb - ${preserve}::text[]) || coalesce(
+    (SELECT jsonb_object_agg(e.key, e.value)
+       FROM jsonb_each(payment_accounts.plugin_metadata) AS e
+      WHERE e.key = ANY(${preserve}::text[])),
+    '{}'::jsonb)`
+}
 
 export function paymentAccountMethods(): PaymentAccountMethods {
   return {
@@ -89,7 +104,7 @@ export function paymentAccountMethods(): PaymentAccountMethods {
                 cancel_at_period_end: payload.cancel_at_period_end,
                 grace_period_ends_at: payload.grace_period_ends_at,
                 plan: payload.plan,
-                ...(input.pluginMetadata === undefined ? {} : { plugin_metadata: payload.plugin_metadata }),
+                ...(input.pluginMetadata === undefined ? {} : { plugin_metadata: metadataOnUpdate(payload.plugin_metadata, input.preserveMetadataKeys) }),
                 is_active: payload.is_active,
                 ...(nowActive ? { archived_at: null } : { archived_at: new Date().toISOString() }),
               } as never))
@@ -108,6 +123,26 @@ export function paymentAccountMethods(): PaymentAccountMethods {
           statusCode: 500,
           message: `Failed to upsert payment account: ${error instanceof Error ? error.message : 'unknown'}`,
         })
+      }
+    },
+
+    async setPaymentAccountMetadataKey({ workspaceId, key, value, when }) {
+      // One statement: the row lock makes a concurrent caller re-check the
+      // condition against this write, so only one of them changes the row.
+      const condition = when === 'absent'
+        ? sql`(coalesce(plugin_metadata, '{}'::jsonb) -> ${key}::text) IS NULL`
+        : sql`(plugin_metadata ->> ${key}::text) = ${when.equals}::text`
+      try {
+        const result = await sql<{ id: string }>`
+          UPDATE payment_accounts
+          SET plugin_metadata = coalesce(plugin_metadata, '{}'::jsonb) || jsonb_build_object(${key}::text, ${value}::text)
+          WHERE workspace_id = ${workspaceId} AND is_active = true AND ${condition}
+          RETURNING id
+        `.execute(getAdmin())
+        return result.rows.length > 0
+      }
+      catch (error) {
+        throwDbError(error)
       }
     },
 

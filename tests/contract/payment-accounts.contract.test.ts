@@ -61,6 +61,40 @@ describe('postgres-db payment-accounts (contract)', () => {
     expect(await methods.getActivePaymentAccount(user.workspaceId)).toBeNull()
   })
 
+  it('metadata key: compare-and-set with one winner, kept by an upsert built from an earlier read', async () => {
+    const base = { workspaceId: user.workspaceId, provider: 'polar', customerId: 'cus_meta_1' }
+    await methods.upsertPaymentAccount({ ...base, subscriptionStatus: 'trialing', pluginMetadata: { billable_meters: ['a'] } })
+
+    // 'absent' sets once; a second 'absent' finds the key.
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'activation_email', value: 'pending', when: 'absent' })).toBe(true)
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'activation_email', value: 'pending', when: 'absent' })).toBe(false)
+
+    // Two concurrent claims of pending → sent: exactly one wins.
+    const claim = () => methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'activation_email', value: 'sent', when: { equals: 'pending' } })
+    const wins = await Promise.all([claim(), claim(), claim()])
+    expect(wins.filter(Boolean)).toHaveLength(1)
+
+    // An upsert carrying a stale value (read before the claim) keeps the
+    // stored one for a preserved key, and still replaces the rest.
+    const row = await methods.upsertPaymentAccount({
+      ...base,
+      subscriptionStatus: 'active',
+      pluginMetadata: { billable_meters: ['b'], activation_email: 'pending' },
+      preserveMetadataKeys: ['activation_email'],
+    })
+    expect(row.subscription_status).toBe('active')
+    expect(row.plugin_metadata).toEqual({ billable_meters: ['b'], activation_email: 'sent' })
+
+    // A preserved key the row does not hold is not introduced by the upsert.
+    await methods.upsertPaymentAccount({ ...base, pluginMetadata: {} })
+    const cleared = await methods.upsertPaymentAccount({ ...base, pluginMetadata: { activation_email: 'pending' }, preserveMetadataKeys: ['activation_email'] })
+    expect(cleared.plugin_metadata).toEqual({})
+
+    // No active row: nothing to set.
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'k', value: 'v', when: 'absent' })).toBe(false)
+  })
+
   it('usage outbox: idempotent enqueue, FIFO pending list, ingest/failure bookkeeping', async () => {
     const idempotencyKey = `evt-${randomUUID()}`
 
