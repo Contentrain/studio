@@ -489,7 +489,9 @@ describe('useChat', () => {
     it('keeps a BYOA user\'s Opus pick while their key list is still loading, and after it says they have a key', async () => {
       trialWithByoa()
       let resolveKeys: (v: unknown[]) => void = () => {}
-      vi.stubGlobal('$fetch', vi.fn(() => new Promise((r) => { resolveKeys = r })))
+      vi.stubGlobal('$fetch', vi.fn(() => new Promise((r) => {
+        resolveKeys = r
+      })))
       useState('chat-model').value = OPUS
 
       const chat = useChat()
