@@ -118,6 +118,21 @@ export default defineEventHandler(async (event) => {
   // billable — we paid Anthropic for whatever tokens we received.
   let reserved = false
   let committed = false
+  // What the payment meter may still receive for this turn. With overage
+  // OFF, only the included credits left when the turn started: usage past
+  // the plan limit is recorded in `agent_usage` but never sent to the
+  // payment provider, which would bill it as overage the customer did not
+  // enable (BR-11 P0-1). With overage on (or an unlimited plan) the turn
+  // is metered in full.
+  const overageOn = monthlyLimit > basePlanLimit
+  let meterAllowance = Infinity
+  let metered = 0
+  const meterCredits = (count: number) => {
+    const sendable = Math.min(count, meterAllowance - metered)
+    if (sendable <= 0) return
+    metered += sendable
+    recordAIUsage({ workspaceId, count: sendable, userId: session.user.id, month: usageMonth }).catch(() => {})
+  }
   const tryRevert = async (reason: string) => {
     if (!reserved || committed || monthlyLimit === Infinity) return
     try {
@@ -140,7 +155,7 @@ export default defineEventHandler(async (event) => {
     // turns from it. The database never refuses it and never counts it
     // toward the pool (migration 030) — the user's own key pays for it.
     if (monthlyLimit !== Infinity) {
-      const { allowed } = await db.incrementAgentUsageIfAllowed({
+      const { allowed, currentCount } = await db.incrementAgentUsageIfAllowed({
         workspaceId,
         userId: session.user.id,
         month: usageMonth,
@@ -159,6 +174,8 @@ export default defineEventHandler(async (event) => {
           data: { code: 'ai_credits_exhausted', resetsAt: usagePeriod.resetsAt },
         })
       reserved = true
+      // `currentCount` includes this turn's reserved credit.
+      if (!overageOn) meterAllowance = Math.max(0, basePlanLimit - (currentCount - 1))
     }
 
     // === CONVERSATION ===
@@ -357,7 +374,7 @@ export default defineEventHandler(async (event) => {
             // turn is paid for on the user's own Anthropic key; metering it
             // would bill them a second time for the same work.
             if (usageSource === 'studio')
-              recordAIUsage({ workspaceId, count: 1, userId: session.user.id, month: usageMonth }).catch(() => {})
+              meterCredits(1)
           }
 
           // Forward all events to SSE stream
@@ -403,8 +420,8 @@ export default defineEventHandler(async (event) => {
             }, plan)
           : 1
         const extraCredits = credits - 1
-        if (extraCredits > 0)
-          recordAIUsage({ workspaceId, count: extraCredits, userId: session.user.id, month: usageMonth }).catch(() => {})
+        if (extraCredits > 0 && usageSource === 'studio')
+          meterCredits(extraCredits)
 
         // === SAVE TO DB ===
         // `saveChatResult` writes the full iteration trace as a
