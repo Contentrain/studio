@@ -78,6 +78,19 @@ describe('overage settings API', () => {
       expect(result.canEnableOverage).toBe(true)
     })
 
+    it('reports a locked toggle as off, with why and until when', async () => {
+      mockDb({
+        workspace: { overage_settings: { ai_messages: true } },
+        paymentAccount: { subscription_status: 'trialing', trial_ends_at: '2026-09-29T07:36:51.653Z' },
+      })
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
+      const result = await handler({} as never)
+
+      const ai = result.categories.find((c: { settingsKey: string }) => c.settingsKey === 'ai_messages')
+      expect(ai).toMatchObject({ enabled: false, lock: { reason: 'trialing', until: '2026-09-29T07:36:51.653Z' } })
+    })
+
     it('returns canEnableOverage=false for free plan', async () => {
       mockDb({ workspace: { plan: 'free' }, paymentAccount: null })
 
@@ -177,6 +190,51 @@ describe('overage settings API', () => {
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
       await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
+    })
+
+    it('refuses to turn overage on during a trial, and says when it can be', async () => {
+      mockDb({ paymentAccount: { subscription_status: 'trialing', trial_ends_at: '2026-09-29T07:36:51.653Z' } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 409,
+        data: { code: 'overage_locked', reason: 'trialing', until: '2026-09-29T07:36:51.653Z' },
+      })
+      expect(updateWorkspace).not.toHaveBeenCalled()
+    })
+
+    it('refuses overage on a meter the subscription has no price for', async () => {
+      // A subscription created before the credit meters keeps its old
+      // prices: usage past the limit would be consumed and never invoiced.
+      mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions'] } } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 409,
+        data: { code: 'overage_locked', reason: 'not_in_subscription' },
+      })
+      expect(updateWorkspace).not.toHaveBeenCalled()
+    })
+
+    it('allows overage on a meter the subscription prices', async () => {
+      mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions'] } } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ mcp_calls: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).resolves.toEqual({ overageSettings: { mcp_calls: true } })
+    })
+
+    it('always lets a locked toggle be turned off', async () => {
+      mockDb({
+        workspace: { overage_settings: { ai_messages: true } },
+        paymentAccount: { subscription_status: 'trialing' },
+      })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: false }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).resolves.toEqual({ overageSettings: { ai_messages: false } })
     })
 
     it('rejects empty body', async () => {

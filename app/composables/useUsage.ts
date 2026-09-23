@@ -14,6 +14,12 @@ export interface UsageCategory {
   overageEnabled: boolean
   /** False → hard cap; extra usage is not sold for this category. */
   overageSellable?: boolean
+  /**
+   * Set → the subscription cannot bill overage yet (trial, or its prices
+   * predate this meter). The toggle is off and disabled; `until` is when the
+   * lock lifts on its own, null when it waits for a subscription update.
+   */
+  overageLock?: { reason: 'trialing' | 'not_in_subscription', until: string | null } | null
   overageUnits: number
   overageUnitPrice: number
   overageAmount: number

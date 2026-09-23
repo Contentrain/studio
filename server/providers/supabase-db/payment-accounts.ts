@@ -66,9 +66,11 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         cancel_at_period_end: input.cancelAtPeriodEnd ?? false,
         grace_period_ends_at: input.gracePeriodEndsAt ?? null,
         plan: input.plan ?? null,
-        plugin_metadata: input.pluginMetadata ?? {},
         is_active: nowActive,
       }
+      // Omitted → an update keeps the stored value, an insert gets the
+      // column default `{}` (see the DatabaseProvider contract).
+      if (input.pluginMetadata !== undefined) payload.plugin_metadata = input.pluginMetadata
       if (!nowActive) payload.archived_at = new Date().toISOString()
 
       const { data, error } = await admin

@@ -9,6 +9,8 @@
 import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../../shared/utils/license'
 import { calculateOverageUnits, isOverageSellable } from '../../../../server/utils/overage'
 import { resolveUsagePeriod } from '../../../../server/utils/usage-period'
+import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
 
 interface UsageCategory {
   key: string
@@ -19,6 +21,8 @@ interface UsageCategory {
   overageEnabled: boolean
   /** False when usage past the limit is not sold at all — a hard cap. */
   overageSellable: boolean
+  /** Set → overage cannot be turned on yet: why, and until when. */
+  overageLock: OverageLock | null
   overageUnits: number
   overageUnitPrice: number
   overageAmount: number
@@ -52,6 +56,16 @@ export default defineEventHandler(async (event) => {
   // every gate resolves through `effectivePlan`, so this screen must too.
   const plan = event.context?.billing?.effectivePlan ?? normalizePlan(workspace.plan as string | null)
   const overageSettings = (workspace.overage_settings as Record<string, boolean>) ?? {}
+
+  // Toggles the subscription cannot bill (trial, or a meter it has no price
+  // for) show as locked, with why and until when — never as on.
+  let overageLocks: Record<string, OverageLock> = {}
+  try {
+    overageLocks = resolveOverageLocks(await db.getActivePaymentAccount(workspaceId) as OverageLockAccount | null)
+  }
+  catch {
+    // Billing metadata unreadable: show the toggles as stored.
+  }
 
   // The three credit pools are counted in the workspace's billing period.
   const period = await resolveUsagePeriod(workspaceId)
@@ -105,7 +119,8 @@ export default defineEventHandler(async (event) => {
     // A limit that is not sellable is a hard cap: the toggle is ignored
     // and no amount is quoted, whatever `overage_settings` still holds.
     const sellable = isOverageSellable(m.limitKey)
-    const overageEnabled = sellable && pricing ? (overageSettings[pricing.settingsKey] === true) : false
+    const overageLock = pricing ? overageLocks[pricing.settingsKey] ?? null : null
+    const overageEnabled = sellable && pricing && !overageLock ? (overageSettings[pricing.settingsKey] === true) : false
     const overageUnits = sellable ? calculateOverageUnits(m.current, planLimit) : 0
     const overageUnitPrice = sellable ? pricing?.price ?? 0 : 0
     const overageAmount = overageUnits * overageUnitPrice
@@ -118,6 +133,7 @@ export default defineEventHandler(async (event) => {
       limit: planLimit === Infinity ? -1 : planLimit, // -1 signals unlimited to the client
       overageEnabled,
       overageSellable: sellable,
+      overageLock,
       overageUnits: Math.round(overageUnits * 100) / 100,
       overageUnitPrice,
       overageAmount: Math.round(overageAmount * 100) / 100,

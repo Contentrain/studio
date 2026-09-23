@@ -206,7 +206,8 @@ export async function runMcpCloudProxy(
     )
 
     // Billing-period keyed, same rule as the AI credit pools.
-    const month = (await resolveUsagePeriod(ctx.workspaceId)).key
+    const period = await resolveUsagePeriod(ctx.workspaceId)
+    const month = period.key
     const quota = ctx.meter.kind === 'key'
       ? await useDatabaseProvider().incrementMcpCloudUsageIfAllowed({
           workspaceId: ctx.workspaceId,
@@ -221,6 +222,10 @@ export async function runMcpCloudProxy(
           limit: effectiveLimit,
         })
     if (!quota.allowed) {
+      // The quota resets with the period: tell the client when, so an
+      // agent can back off for the right amount of time.
+      const retryAfterSeconds = Math.max(1, Math.ceil((new Date(period.resetsAt).getTime() - Date.now()) / 1000))
+      setResponseHeader(event, 'Retry-After', retryAfterSeconds)
       throw createError({
         statusCode: 429,
         message: errorMessage('mcp_cloud.monthly_limit', {
