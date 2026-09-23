@@ -171,6 +171,7 @@
   "github.user_token_missing": "GitHub authorization has expired. Sign in with GitHub again to continue.",
   "github.workspace_not_found": "No workspace found for this GitHub installation.",
   "github.workspace_state_required": "Workspace state parameter is required for GitHub App installation. Please install from workspace settings.",
+  "mcp_cloud.github_budget_low": "This workspace's GitHub API budget is nearly used up for the hour. Write tools resume in {seconds} seconds; reads keep working.",
   "mcp_cloud.invalid_allowed_tools": "allowedTools contains unknown tool names.",
   "mcp_cloud.invalid_monthly_limit": "monthlyCallLimit must be a positive integer.",
   "mcp_cloud.invalid_rate_limit": "rateLimitPerMinute must be an integer between 1 and 600.",

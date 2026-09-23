@@ -385,6 +385,54 @@ describe('MCP Cloud proxy gating', () => {
     }
   })
 
+  describe('GitHub budget guard (ST-5 c)', () => {
+    // Installation 42 is the workspace fixture's `github_installation_id`.
+    async function seedBudget(remaining: number, resetInSeconds = 600) {
+      const { __resetInstallationOctokitCache, recordGitHubRateBudget } = await import('../../server/providers/github-app')
+      __resetInstallationOctokitCache()
+      recordGitHubRateBudget(42, {
+        'x-ratelimit-remaining': String(remaining),
+        'x-ratelimit-limit': '5000',
+        'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + resetInSeconds),
+      })
+    }
+
+    it('refuses a write tool with 429 + Retry-After once the budget is inside the UI reserve, consuming nothing', async () => {
+      await seedBudget(900)
+      const handler = await loadHandler()
+      const event = makeEvent({ __body: toolCallBody('contentrain_content_save') })
+
+      await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 429, message: 'mcp_cloud.github_budget_low' })
+      const retryAfter = state.setResponseHeader.mock.calls.find(c => c[1] === 'Retry-After')?.[2] as number
+      expect(retryAfter).toBeGreaterThan(590)
+      expect(retryAfter).toBeLessThanOrEqual(600)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).not.toHaveBeenCalled()
+      expect(state.recordMCPCallUsage).not.toHaveBeenCalled()
+      expect(state.upstreamFetch).not.toHaveBeenCalled()
+    })
+
+    it('keeps read tools working on the reserve', async () => {
+      await seedBudget(900)
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
+    })
+
+    it('lets writes through while the budget is above the reserve', async () => {
+      await seedBudget(1500)
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
+    })
+
+    it('ignores a budget whose window has already reset', async () => {
+      await seedBudget(10, -5)
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
+    })
+  })
+
   it('invalidates brain cache and reconciles auto-merge on write tools', async () => {
     state.reconcile.mockResolvedValue(undefined)
     const handler = await loadHandler()

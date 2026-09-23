@@ -85,9 +85,42 @@ export function getGitHubRequestCount(installationId: number): number {
   return requestCounters.get(installationId) ?? 0
 }
 
+/**
+ * The installation's primary rate-limit budget as GitHub last reported it
+ * (`x-ratelimit-*` on every response). One budget per installation is
+ * shared by everything Studio does for that workspace — the UI, the chat
+ * agent, MCP Cloud — so the MCP write guard reads it to keep a share for
+ * the UI (`server/utils/mcp-github-budget.ts`).
+ */
+export interface GitHubRateBudget {
+  remaining: number
+  limit: number
+  /** When the hourly window resets (epoch ms). */
+  resetAt: number
+}
+
+const rateBudgets = new Map<number, GitHubRateBudget>()
+
+/** The last observed budget, or null when none is known or its window has reset. */
+export function getGitHubRateBudget(installationId: number, now: number = Date.now()): GitHubRateBudget | null {
+  const budget = rateBudgets.get(installationId)
+  if (!budget || budget.resetAt <= now) return null
+  return budget
+}
+
+/** Record a budget from response headers. Exported for tests. */
+export function recordGitHubRateBudget(installationId: number, headers: Record<string, unknown> | undefined): void {
+  const remaining = Number(headers?.['x-ratelimit-remaining'])
+  const limit = Number(headers?.['x-ratelimit-limit'])
+  const reset = Number(headers?.['x-ratelimit-reset'])
+  if (!Number.isFinite(remaining) || !Number.isFinite(limit) || !Number.isFinite(reset) || limit <= 0) return
+  rateBudgets.set(installationId, { remaining, limit, resetAt: reset * 1000 })
+}
+
 function registerRateObservability(client: Octokit, installationId: number): void {
   client.hook.after('request', (response) => {
     requestCounters.set(installationId, (requestCounters.get(installationId) ?? 0) + 1)
+    recordGitHubRateBudget(installationId, response.headers as Record<string, unknown> | undefined)
     const now = Date.now()
     if (now - (lastRateLog.get(installationId) ?? 0) < RATE_LOG_INTERVAL_MS) return
     const remaining = response.headers?.['x-ratelimit-remaining']
@@ -144,6 +177,7 @@ export function __resetInstallationOctokitCache(): void {
   installationOctokitCache.clear()
   requestCounters.clear()
   lastRateLog.clear()
+  rateBudgets.clear()
 }
 
 /**
