@@ -79,6 +79,10 @@ interface PolarSubscriptionLike {
   currentPeriodEnd: Date | string | null
   trialEnd: Date | string | null
   cancelAtPeriodEnd: boolean
+  /** When a scheduled cancellation takes effect (set with `cancelAtPeriodEnd`). */
+  endsAt?: Date | string | null
+  /** When the subscription actually ended — only set once it has. */
+  endedAt?: Date | string | null
   metadata?: Record<string, unknown>
   prices?: Array<{ amountType?: string, meter?: { name?: string } | null }>
 }
@@ -95,6 +99,20 @@ function billableMetersOf(sub: PolarSubscriptionLike): string[] | undefined {
     .map(p => p.meter?.name)
     .filter((n): n is string => typeof n === 'string' && n.length > 0)
   return [...new Set(names)].toSorted()
+}
+
+/**
+ * Whether the customer's access is over.
+ *
+ * Polar names events after what happened, not after where the
+ * subscription stands: `subscription.canceled` fires when a cancellation
+ * is *scheduled* (status still `active`, `cancelAtPeriodEnd`, `endsAt` =
+ * period end), and again, with `subscription.revoked`, when it takes
+ * effect (status `canceled`, `endedAt` set). Only the second ends a
+ * paid period, so the payload decides, never the event name.
+ */
+function hasEnded(sub: PolarSubscriptionLike): boolean {
+  return Boolean(sub.endedAt) || sub.status === 'canceled' || sub.status === 'incomplete_expired'
 }
 
 function subscriptionToResult(
@@ -117,6 +135,7 @@ function subscriptionToResult(
     trialEndsAt: sub.status === 'trialing' ? isoOrUndefined(sub.trialEnd) : undefined,
     cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),
     billableMeters: billableMetersOf(sub),
+    accessEndsAt: sub.cancelAtPeriodEnd ? isoOrUndefined(sub.endsAt) : undefined,
   }
 }
 
@@ -198,27 +217,28 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
         case 'subscription.created':
           return subscriptionToResult('subscription.created', event.data as unknown as PolarSubscriptionLike, productMap)
 
+        // Every subscription lifecycle event is mapped by the state it
+        // carries (`hasEnded`): a cancellation scheduled for the period end
+        // keeps the subscription — and the plan the customer paid for — until
+        // Polar ends it, which it announces with a status of `canceled`.
         case 'subscription.updated':
         case 'subscription.active':
         case 'subscription.uncanceled':
-          return subscriptionToResult('subscription.updated', event.data as unknown as PolarSubscriptionLike, productMap)
-
         case 'subscription.past_due':
-          return {
-            ...subscriptionToResult('subscription.updated', event.data as unknown as PolarSubscriptionLike, productMap),
-            subscriptionStatus: 'past_due',
-          }
-
         case 'subscription.canceled':
         case 'subscription.revoked': {
           const sub = event.data as unknown as PolarSubscriptionLike
-          return {
-            event: 'subscription.canceled',
-            workspaceId: typeof sub.metadata?.workspace_id === 'string' ? sub.metadata.workspace_id : undefined,
-            subscriptionId: sub.id,
-            customerId: sub.customerId,
-            subscriptionStatus: 'canceled',
+          if (hasEnded(sub)) {
+            return {
+              event: 'subscription.canceled',
+              workspaceId: typeof sub.metadata?.workspace_id === 'string' ? sub.metadata.workspace_id : undefined,
+              subscriptionId: sub.id,
+              customerId: sub.customerId,
+              subscriptionStatus: 'canceled',
+            }
           }
+          const result = subscriptionToResult('subscription.updated', sub, productMap)
+          return event.type === 'subscription.past_due' ? { ...result, subscriptionStatus: 'past_due' } : result
         }
 
         case 'order.paid': {

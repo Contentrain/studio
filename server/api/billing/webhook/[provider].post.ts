@@ -141,6 +141,19 @@ async function sendBillingEmail(
   })
 }
 
+/**
+ * How long a workspace keeps working after a payment fails. Past it the
+ * workspace is locked (`grace_expired`) until the card is fixed; the
+ * provider keeps retrying meanwhile (Polar: days 2, 7, 14, 21, then it
+ * ends the subscription), and a later successful charge unlocks it.
+ */
+const PAYMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1000
+
+/** The grace window already running, or a fresh one from now. */
+function graceEndFrom(existing: string | null | undefined): string {
+  return existing ?? new Date(Date.now() + PAYMENT_GRACE_MS).toISOString()
+}
+
 /** Format a timestamp for human-readable copy — e.g. "Tuesday, April 29". */
 function formatFriendlyDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -233,10 +246,26 @@ export default defineEventHandler(async (event) => {
     case 'subscription.updated': {
       if (!result.workspaceId || !result.customerId) break
       // Read the existing account BEFORE upsert so we can detect the
-      // trial→active transition (the only update-shape worth emailing on).
+      // transitions worth emailing on (trial→active, payment failed or
+      // recovered, cancellation scheduled).
       const existingAccount = await db.getActivePaymentAccount(result.workspaceId)
+      // A late update about a subscription the workspace has since replaced
+      // must not overwrite the new one's state (same rule as the ending
+      // branch below).
+      const activeSubscriptionId = (existingAccount?.subscription_id as string | null | undefined) ?? null
+      if (activeSubscriptionId && result.subscriptionId && activeSubscriptionId !== result.subscriptionId) break
       const wasTrialing = (existingAccount?.subscription_status as string | undefined) === 'trialing'
+      const wasPastDue = (existingAccount?.subscription_status as string | undefined) === 'past_due'
       const becameActive = result.subscriptionStatus === 'active'
+      // A failed renewal reaches us as an update with status `past_due`
+      // (Polar sends no separate payment-failed event). The first one opens
+      // the grace window; later ones — retries, card updates — keep it.
+      const isPastDue = result.subscriptionStatus === 'past_due'
+      const existingGrace = (existingAccount?.grace_period_ends_at as string | null | undefined) ?? null
+      const gracePeriodEnd = isPastDue ? graceEndFrom(existingGrace) : null
+      // A cancellation newly scheduled for the period (or trial) end. The
+      // plan stays until then; the owner is told the date.
+      const cancelScheduled = Boolean(result.cancelAtPeriodEnd) && !existingAccount?.cancel_at_period_end
       // Catch the trial here too, in case the first observation arrives as
       // an update rather than a create. Idempotent.
       if (result.subscriptionStatus === 'trialing') {
@@ -269,7 +298,7 @@ export default defineEventHandler(async (event) => {
           ? result.trialEndsAt ?? (existingAccount?.trial_ends_at as string | null) ?? null
           : null,
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
-        gracePeriodEndsAt: becameActive ? null : undefined,
+        gracePeriodEndsAt: gracePeriodEnd,
         plan: result.plan ?? null,
         pluginMetadata: overageLock.pluginMetadata,
         isActive: true,
@@ -283,27 +312,59 @@ export default defineEventHandler(async (event) => {
       if (Object.keys(workspaceUpdate).length > 0) {
         await db.updateWorkspace('', result.workspaceId, workspaceUpdate)
       }
-      // Trial→active is the only update-shape that deserves an email.
-      // Plan swaps, quantity changes, card updates all flow through
-      // subscription.updated too and would spam the owner otherwise.
+      // Only state transitions email. Plan swaps, quantity changes, card
+      // updates all flow through subscription.updated too and would spam
+      // the owner otherwise.
       if (becameActive && wasTrialing) {
         await sendBillingEmail(result.workspaceId, 'subscription-activated', result.plan)
+      }
+      // Payment problems are never silent: the owner hears when the grace
+      // window opens (and until when), and again when the charge goes
+      // through. `invoice.paid` may get to the recovery first; whichever
+      // sees `past_due` flip to active sends it, the other finds it active.
+      if (isPastDue && !existingGrace && gracePeriodEnd) {
+        await sendBillingEmail(result.workspaceId, 'payment-failed', result.plan, {
+          gracePeriodEndsText: formatFriendlyDate(gracePeriodEnd),
+        })
+      }
+      if (becameActive && wasPastDue) {
+        await sendBillingEmail(result.workspaceId, 'payment-recovered', result.plan)
+      }
+      if (cancelScheduled) {
+        const accessEndsAt = result.accessEndsAt
+          ?? (result.subscriptionStatus === 'trialing' ? result.trialEndsAt : result.currentPeriodEnd)
+        if (accessEndsAt) {
+          await sendBillingEmail(result.workspaceId, 'subscription-cancel-scheduled', result.plan, {
+            accessEndsText: formatFriendlyDate(accessEndsAt),
+          })
+        }
       }
       break
     }
 
     case 'subscription.canceled': {
+      // The subscription has ended (the provider plugin sends a cancellation
+      // scheduled for the period end as `subscription.updated`).
       if (!result.workspaceId) break
       // Snapshot the plan BEFORE archive + downgrade so the email
       // reflects what was canceled, not the post-cancel "free" state.
       const priorAccount = await db.getActivePaymentAccount(result.workspaceId)
+      // A late event about a subscription the workspace has since replaced
+      // must not end the new one.
+      const activeSubscriptionId = (priorAccount?.subscription_id as string | null | undefined) ?? null
+      if (activeSubscriptionId && result.subscriptionId && activeSubscriptionId !== result.subscriptionId) break
       const canceledPlan = result.plan ?? (priorAccount?.plan as string | null)
       await db.archiveActivePaymentAccount(result.workspaceId)
       await db.updateWorkspace('', result.workspaceId, {
         plan: 'free',
         trial_reminder_stage: 0,
       })
-      await sendBillingEmail(result.workspaceId, 'subscription-canceled', canceledPlan)
+      // One ending arrives as several events (Polar: updated, canceled,
+      // revoked — all `canceled`). Only the one that found the account
+      // still active tells the owner.
+      if (priorAccount) {
+        await sendBillingEmail(result.workspaceId, 'subscription-canceled', canceledPlan)
+      }
       break
     }
 
@@ -316,7 +377,7 @@ export default defineEventHandler(async (event) => {
       const existingGrace = (account.grace_period_ends_at as string | null | undefined) ?? null
       const customerId = account.customer_id as string
       const provider = account.provider as string
-      const gracePeriodEnd = existingGrace ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const gracePeriodEnd = graceEndFrom(existingGrace)
 
       await db.upsertPaymentAccount({
         workspaceId: result.workspaceId,

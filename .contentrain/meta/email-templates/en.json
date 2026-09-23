@@ -34,6 +34,11 @@
     "status": "draft",
     "updated_by": "contentrain-mcp"
   },
+  "subscription-cancel-scheduled": {
+    "source": "agent",
+    "status": "draft",
+    "updated_by": "contentrain-mcp"
+  },
   "subscription-canceled": {
     "source": "agent",
     "status": "draft",
