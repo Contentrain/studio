@@ -7,7 +7,8 @@ import type { BillingState } from '../../../app/composables/useBilling'
 // Hoisted because mockNuxtImport's factory is lifted above the imports. The
 // route has to be genuinely reactive — the banner re-arms urgent notices by
 // watching it.
-const { billing, nav } = vi.hoisted(() => ({
+const { billing, nav, who } = vi.hoisted(() => ({
+  who: { role: 'owner' },
   billing: { state: 'trial_active' as string },
   nav: { route: null as null | { path: string } },
 }))
@@ -16,6 +17,10 @@ mockNuxtImport('useBilling', () => () => ({
   billingState: computed(() => billing.state as BillingState),
   trialDaysLeft: computed(() => 7),
   effectivePlan: computed(() => 'pro' as const),
+}))
+mockNuxtImport('useWorkspaceRole', () => () => ({
+  role: computed(() => who.role),
+  isOwnerOrAdmin: computed(() => who.role === 'owner' || who.role === 'admin'),
 }))
 mockNuxtImport('useRoute', () => {
   nav.route ??= reactive({ path: '/w/acme' })
@@ -26,6 +31,7 @@ const DISMISS_KEY = 'contentrain-billing-banner-dismissed'
 
 describe('TrialBanner', () => {
   beforeEach(() => {
+    who.role = 'owner'
     billing.state = 'trial_active'
     if (nav.route) nav.route.path = '/w/acme'
     sessionStorage.clear()
@@ -97,5 +103,12 @@ describe('TrialBanner', () => {
 
     expect(dismiss.attributes('type')).toBe('button')
     expect(dismiss.text()).toContain('Dismiss')
+  })
+
+  it('gives a member who to ask instead of a plan button that answers 403', async () => {
+    who.role = 'member'
+    const wrapper = await mountSuspended(TrialBanner)
+    expect(wrapper.text()).toContain('Ask a workspace owner or admin.')
+    expect(wrapper.text()).not.toContain('Choose a plan')
   })
 })

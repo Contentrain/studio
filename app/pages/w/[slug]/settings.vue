@@ -99,7 +99,9 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger v-if="isOwnerOrAdmin" value="members" :class="tabTriggerClass">
           {{ t('settings.members_tab') }}
         </TabsTrigger>
-        <TabsTrigger v-if="isOwnerOrAdmin" value="billing" :class="tabTriggerClass">
+        <!-- Every member sees Billing: the plan and what is used. Actions stay
+             with owners and admins (the panel says so). -->
+        <TabsTrigger value="billing" :class="tabTriggerClass">
           {{ t('settings.billing_tab') }}
         </TabsTrigger>
         <TabsTrigger v-if="isOwnerOrAdmin" value="github" :class="tabTriggerClass">
@@ -124,7 +126,7 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <OrganismsWorkspaceMembersPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent v-if="isOwnerOrAdmin" value="billing" class="mt-6">
+      <TabsContent value="billing" class="mt-6">
         <OrganismsWorkspaceBillingPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 

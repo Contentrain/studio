@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('usage API', () => {
   function mockAuth() {
@@ -190,5 +190,98 @@ describe('usage API', () => {
       const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default
       await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
     })
+  })
+})
+
+describe('usage API — what the billing screen may claim (BR-12)', () => {
+  const NOW = new Date('2026-09-23T12:00:00Z')
+
+  function db(overrides: Record<string, unknown> = {}) {
+    return {
+      getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, media_storage_bytes: 0 }),
+      // Billed from the 15th: AI, API and MCP reset on the 15th, forms/comments/CDN on the 1st.
+      getActivePaymentAccount: vi.fn().mockResolvedValue({
+        subscription_status: 'active',
+        current_period_start: '2026-09-15T00:00:00Z',
+        current_period_end: '2026-10-15T00:00:00Z',
+      }),
+      getWorkspaceMonthlyAIUsage: vi.fn(async (_ws: string, _k: string, source?: string) => source === 'byoa' ? 0 : 1036),
+      getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
+      countMonthlySubmissions: vi.fn().mockResolvedValue(3100),
+      countMonthlyComments: vi.fn().mockResolvedValue(0),
+      getWorkspaceMonthlyCDNBandwidth: vi.fn().mockResolvedValue(0),
+      getWorkspaceMonthlyMcpCloudUsage: vi.fn().mockResolvedValue(0),
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'user-1', email: 'a@b.c' }, accessToken: 't' }))
+    vi.stubGlobal('getRouterParam', vi.fn(() => 'ws-1'))
+    vi.stubGlobal('getQuery', vi.fn(() => ({})))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function run(database: ReturnType<typeof db>) {
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(database))
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/usage.get.ts')).default
+    return handler({} as never)
+  }
+
+  it('quotes no overage and no projection for meters whose overage is off — they are hard-capped', async () => {
+    // Staging, 2026-09-23: 1036 / 350 AI credits with overage off showed
+    // "+686 overage ($54.88)" and "Projected overage ~$82.57".
+    const result = await run(db())
+    const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
+    expect(ai).toMatchObject({ current: 1036, limit: 350, overageEnabled: false, overageUnits: 0, overageAmount: 0 })
+    expect(result.totalOverageAmount).toBe(0)
+    expect(result.projectedOverageAmount).toBe(0)
+  })
+
+  it('still tells the owner the unit price before overage is turned on', async () => {
+    const result = await run(db())
+    const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
+    expect(ai.overageUnitPrice).toBe(0.08)
+  })
+
+  it('gives each meter its own reset date: billing-period meters on the 15th, calendar meters on the 1st', async () => {
+    const result = await run(db())
+    const by = (key: string) => result.categories.find((c: { key: string }) => c.key === key)
+    expect(by('ai_messages').resetsAt).toBe('2026-10-15T00:00:00.000Z')
+    expect(by('mcp_calls').resetsAt).toBe('2026-10-15T00:00:00.000Z')
+    expect(by('form_submissions').resetsAt).toBe('2026-10-01T00:00:00.000Z')
+    expect(by('comments').resetsAt).toBe('2026-10-01T00:00:00.000Z')
+    expect(by('media_storage').resetsAt).toBeNull()
+  })
+
+  it('projects only enabled overage, each meter across its own window', async () => {
+    // Forms: 3100 by the 23rd of a 30-day calendar month → ~4043 → 1043 over at $0.01.
+    const result = await run(db({
+      getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: { form_submissions: true }, media_storage_bytes: 0 }),
+    }))
+    expect(result.totalOverageAmount).toBe(1) // 100 over × $0.01
+    expect(result.projectedOverageAmount).toBeGreaterThan(9)
+    expect(result.projectedOverageAmount).toBeLessThan(12)
+  })
+
+  it('shows a member the meters instead of a 403, without prices or amounts', async () => {
+    const database = db({
+      getWorkspaceForUser: vi.fn(async (_t: string, _u: string, _w: string, roles?: string[]) =>
+        roles?.includes('member') ? { id: 'ws-1', plan: 'pro', overage_settings: { form_submissions: true }, media_storage_bytes: 0 } : null),
+    })
+    const result = await run(database)
+    expect(result.canManage).toBe(false)
+    const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
+    expect(ai).toMatchObject({ current: 1036, limit: 350, percentage: 296, overageUnitPrice: 0, overageAmount: 0 })
+    expect(result.totalOverageAmount).toBe(0)
+    expect(result.projectedOverageAmount).toBe(0)
+  })
+
+  it('owners and admins can manage', async () => {
+    expect((await run(db())).canManage).toBe(true)
   })
 })

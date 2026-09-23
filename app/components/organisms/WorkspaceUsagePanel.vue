@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { UsageCategory } from '~/composables/useUsage'
+import { OVERAGE_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
 const { usage, loading, fetchUsage, toggleOverage } = useUsage()
@@ -45,32 +46,46 @@ async function handleToggle(settingsKey: string, enabled: boolean) {
   }
 }
 
-function formatMonth(period: string): string {
-  const [year, month] = period.split('-')
-  const date = new Date(Number(year), Number(month) - 1)
-  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+/** Owners and admins manage; members see the meters only. Absent from an older server = manage. */
+const canManage = computed(() => usage.value?.canManage !== false)
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })
 }
 
 /**
- * When the counters go back to zero. On a subscription that is the
- * billing anniversary, not the 1st — without the date, "45 / 500" does
- * not tell anyone how long 45 took or how long 455 has to last.
+ * When this meter goes back to zero. Each meter carries its own date: AI,
+ * API and MCP follow the billing period, forms, comments and CDN the
+ * calendar month. One date for all of them was wrong for half of them.
  */
-const periodResetLabel = computed(() => {
-  const resetsAt = usage.value?.period?.resetsAt
-  if (!resetsAt) return null
-  const date = new Date(resetsAt)
-  if (Number.isNaN(date.getTime())) return null
-  return t('billing.usage_period_resets', {
-    date: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
-  })
-})
+function resetLabel(category: UsageCategory): string | null {
+  if (category.resetsAt === null) return t('billing.usage_level_note')
+  if (!category.resetsAt) return null
+  return t('billing.usage_resets_on', { date: formatDate(category.resetsAt) })
+}
 
-const periodSourceLabel = computed(() =>
-  usage.value?.period?.source === 'billing'
-    ? t('billing.usage_period_billing')
-    : t('billing.usage_period_calendar'),
-)
+/** The price of a unit past the limit, shown before the switch is turned on. */
+function unitPriceLabel(category: UsageCategory): string | null {
+  const pricing = OVERAGE_PRICING[category.limitKey]
+  if (!category.overageUnitPrice || !pricing) return null
+  return t('billing.overage_unit_price', { price: `$${category.overageUnitPrice}`, unit: pricing.unit })
+}
+
+/** The switch is described by its price and, when locked, by why. */
+function describedBy(category: UsageCategory): string | undefined {
+  const ids = [
+    unitPriceLabel(category) ? `overage-price-${category.key}` : null,
+    category.overageLock ? `overage-lock-${category.key}` : null,
+  ].filter(Boolean)
+  return ids.length ? ids.join(' ') : undefined
+}
+
+/** What to say when a meter is at its limit and nothing extra is billed. */
+function limitReachedText(category: UsageCategory): string {
+  if (!canManage.value) return t('billing.limit_reached_member', { name: category.name })
+  if (category.overageSellable === false || category.overageLock) return t('billing.limit_reached_fixed', { name: category.name })
+  return t('billing.limit_reached_manage', { name: category.name })
+}
 
 /** Icon per category */
 function categoryIcon(key: string): string {
@@ -93,11 +108,12 @@ function categoryIcon(key: string): string {
       <h3 class="text-sm font-medium text-heading dark:text-secondary-100">
         {{ t('billing.usage_title') }}
       </h3>
-      <span v-if="usage" class="text-right text-xs text-muted">
-        <span :title="periodSourceLabel">{{ formatMonth(usage.billingPeriod) }}</span>
-        <span v-if="periodResetLabel" class="ml-2 text-label">{{ periodResetLabel }}</span>
-      </span>
     </div>
+
+    <!-- Members see the meters; say who can change them. -->
+    <p v-if="usage && !canManage" class="rounded-md bg-secondary-50 px-3 py-2 text-xs text-muted dark:bg-secondary-900">
+      {{ t('billing.usage_member_note') }}
+    </p>
 
     <!-- Loading state -->
     <div v-if="loading && !usage" class="flex items-center justify-center py-8">
@@ -129,14 +145,22 @@ function categoryIcon(key: string): string {
           >
             {{ t('billing.overage_hard_limit') }}
           </span>
-          <div v-else-if="category.limit !== -1 && category.limit > 0" class="flex flex-col items-end gap-1">
+          <div v-else-if="canManage && category.limit !== -1 && category.limit > 0" class="flex flex-col items-end gap-1">
             <AtomsFormSwitch
               :model-value="category.overageEnabled"
               :disabled="!canToggleOverage || togglingKey !== null || !!category.overageLock"
               :label="t('billing.allow_overage')"
-              :described-by="category.overageLock ? `overage-lock-${category.key}` : undefined"
+              :described-by="describedBy(category)"
               @update:model-value="handleToggle(category.key, $event)"
             />
+            <!-- The price per unit past the limit, before anyone turns it on. -->
+            <span
+              v-if="unitPriceLabel(category)"
+              :id="`overage-price-${category.key}`"
+              class="text-right text-xs text-muted tabular-nums"
+            >
+              {{ unitPriceLabel(category) }}
+            </span>
             <!-- Why the switch is off and when it can be on. The plan's
                  included usage is unaffected either way. -->
             <span
@@ -147,7 +171,7 @@ function categoryIcon(key: string): string {
               {{ overageLockText(category.overageLock) }}
             </span>
           </div>
-          <span v-else class="text-xs text-success-600 dark:text-success-400">
+          <span v-else-if="category.limit === -1" class="text-xs text-success-600 dark:text-success-400">
             {{ t('billing.usage_unlimited') }}
           </span>
         </div>
@@ -160,6 +184,10 @@ function categoryIcon(key: string): string {
           :overage-units="category.overageUnits"
           :overage-unit-price="category.overageUnitPrice"
         />
+
+        <p v-if="resetLabel(category)" class="mt-1 text-xs text-muted">
+          {{ resetLabel(category) }}
+        </p>
 
         <p
           v-if="category.key === 'ai_messages' && (usage.byoaRequests ?? 0) > 0"
@@ -174,7 +202,7 @@ function categoryIcon(key: string): string {
           class="mt-2 rounded-md bg-danger-50 px-3 py-2 dark:bg-danger-950/30"
         >
           <p class="text-xs text-danger-700 dark:text-danger-300">
-            {{ t('billing.overage_disabled') }} — {{ category.name }} {{ t('billing.limit_reached') }}
+            {{ limitReachedText(category) }}
           </p>
         </div>
 
@@ -192,7 +220,7 @@ function categoryIcon(key: string): string {
 
     <!-- Overage summary -->
     <div
-      v-if="usage && (usage.totalOverageAmount > 0 || usage.projectedOverageAmount > 0)"
+      v-if="usage && canManage && (usage.totalOverageAmount > 0 || usage.projectedOverageAmount > 0)"
       class="rounded-lg border border-secondary-200 bg-secondary-50 p-4 dark:border-secondary-800 dark:bg-secondary-900"
     >
       <div class="space-y-2">
@@ -217,7 +245,7 @@ function categoryIcon(key: string): string {
 
     <!-- No overages -->
     <div
-      v-else-if="usage"
+      v-else-if="usage && canManage"
       class="rounded-lg border border-dashed border-secondary-200 px-4 py-3 text-center dark:border-secondary-800"
     >
       <p class="text-xs text-muted">

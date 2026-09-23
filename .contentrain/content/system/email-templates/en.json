@@ -70,5 +70,23 @@
     "name": "Form — New Submission",
     "slug": "form-submitted",
     "subject": "New {modelName} submission on {projectName}"
+  },
+  "usage-warning": {
+    "name": "Usage — 80% of a limit",
+    "slug": "usage-warning",
+    "subject": "{workspaceName}: {percentage}% of {meterName} used",
+    "body": "<p>Hi,</p><p><strong>{workspaceName}</strong> has used <strong>{used}</strong> of the <strong>{limit}</strong> {meterName} included in the {planName} plan ({percentage}%).</p><p>The count resets on <strong>{resetDate}</strong>. If you expect to need more before then, you can allow overage or change the plan in Billing.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Open Billing</a></td></tr></table>"
+  },
+  "usage-limit-reached": {
+    "name": "Usage — limit reached",
+    "slug": "usage-limit-reached",
+    "subject": "{workspaceName}: {meterName} limit reached",
+    "body": "<p>Hi,</p><p><strong>{workspaceName}</strong> has used all <strong>{limit}</strong> {meterName} included in the {planName} plan.</p><p>{consequence}</p><p>To keep going now, allow overage or change the plan in Billing.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Open Billing</a></td></tr></table>"
+  },
+  "usage-overage-started": {
+    "name": "Usage — overage started",
+    "slug": "usage-overage-started",
+    "subject": "{workspaceName}: {meterName} is now past the plan limit",
+    "body": "<p>Hi,</p><p><strong>{workspaceName}</strong> has used all <strong>{limit}</strong> {meterName} included in the {planName} plan. Overage is on, so nothing has stopped: usage past the limit is billed at <strong>{unitPrice}</strong> per unit on your next invoice.</p><p>The count resets on <strong>{resetDate}</strong>. You can turn overage off or change the plan in Billing.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Open Billing</a></td></tr></table>"
   }
 }

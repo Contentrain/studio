@@ -49,6 +49,21 @@
     "status": "draft",
     "updated_by": "contentrain-mcp"
   },
+  "usage-limit-reached": {
+    "source": "agent",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "usage-overage-started": {
+    "source": "agent",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "usage-warning": {
+    "source": "agent",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
   "webhook-dlq-alert": {
     "source": "import",
     "status": "draft",

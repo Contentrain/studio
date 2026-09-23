@@ -3,6 +3,9 @@ import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
 const { billingState, trialDaysLeft, effectivePlan } = useBilling()
+// Choosing a plan or fixing a payment is owner/admin only. A member gets the
+// notice and who to ask instead of a button that answers 403.
+const { isOwnerOrAdmin } = useWorkspaceRole()
 const route = useRoute()
 
 const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? effectivePlan.value)
@@ -111,7 +114,11 @@ function handleCta() {
       {{ planName }}
     </AtomsBadge>
 
+    <span v-if="!isOwnerOrAdmin" class="shrink-0 text-xs text-muted">
+      {{ t('billing.ask_owner') }}
+    </span>
     <button
+      v-else
       type="button"
       class="shrink-0 rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
       :class="[

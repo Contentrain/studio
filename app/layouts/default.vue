@@ -145,12 +145,19 @@ const shellPanelStorage = {
              On mobile it stays in flow — any top-anchored overlay would cover
              the chat header, and `min-h-0 flex-1` below already prevents the
              overflow this banner used to cause. -->
-        <MoleculesTrialBanner
+        <!-- Usage notice shares the same corner, stacked under the trial pill,
+             so the two never overlap. -->
+        <div
           v-if="isWorkspaceRoute && !showPaywall"
-          class="shrink-0 md:absolute md:right-4 md:top-2 md:z-30 md:w-auto"
-          @choose-plan="showPlanModal()"
-          @manage-billing="openPortal()"
-        />
+          class="flex shrink-0 flex-col md:absolute md:right-4 md:top-2 md:z-30 md:w-auto md:items-end md:gap-2"
+        >
+          <MoleculesTrialBanner
+            class="md:w-auto"
+            @choose-plan="showPlanModal()"
+            @manage-billing="openPortal()"
+          />
+          <MoleculesUsageAlertBanner />
+        </div>
         <main class="min-h-0 flex-1 overflow-y-auto">
           <OrganismsPaywallOverlay v-if="showPaywall" />
           <slot v-else />

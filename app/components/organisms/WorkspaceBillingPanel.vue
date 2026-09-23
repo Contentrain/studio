@@ -4,6 +4,9 @@ import { PLAN_PRICING } from '~~/shared/utils/license'
 const { t } = useContent()
 const { billingState, effectivePlan, isTrialing, trialDaysLeft, openPortal } = useBilling()
 const deployment = useDeployment()
+// Members see the plan and the usage; only owners and admins can act on them
+// (checkout and portal answer 403 to anyone else).
+const { isOwnerOrAdmin } = useWorkspaceRole()
 
 defineProps<{
   workspaceId: string
@@ -137,7 +140,10 @@ async function handleManageSubscription() {
           </p>
         </div>
 
-        <div class="flex gap-2">
+        <p v-if="!isOwnerOrAdmin" class="max-w-56 text-right text-xs text-muted">
+          {{ t('billing.ask_owner') }}
+        </p>
+        <div v-else class="flex gap-2">
           <AtomsBaseButton
             v-if="hasSubscription"
             variant="secondary"
