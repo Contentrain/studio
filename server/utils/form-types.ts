@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import type { H3Event } from 'h3'
 import type { DatabaseRow } from '~~/server/providers/database'
 import type { GitProvider } from '~~/server/providers/git'
@@ -30,11 +30,33 @@ export function getFormConfig(model: unknown): FormConfig | undefined {
 }
 
 /**
+ * Whether the request came through Studio's Cloudflare CDN host: the edge
+ * adds `X-CR-Edge: <NUXT_CDN_EDGE_SECRET>` (docs/CDN_EDGE.md). A client
+ * cannot forge it without the secret; with no secret configured nothing is
+ * trusted.
+ */
+export function isTrustedEdgeRequest(event: H3Event, secret: string | undefined = useRuntimeConfig().cdn?.edgeSecret): boolean {
+  const presented = getHeader(event, 'x-cr-edge')
+  if (!secret || !presented) return false
+  const a = Buffer.from(presented)
+  const b = Buffer.from(secret)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/**
  * Extract client IP — trust only the last hop from X-Forwarded-For
  * (the one appended by the reverse proxy, not the client-supplied ones).
  * Falls back to cf-connecting-ip, x-real-ip, or 'unknown'.
+ *
+ * Behind the Cloudflare CDN host the last hop is a Cloudflare edge, shared
+ * by every visitor — per-IP limits would put them all in one bucket. There
+ * `CF-Connecting-IP` is the visitor, trusted only on a verified edge request.
  */
 export function getClientIp(event: H3Event): string {
+  if (isTrustedEdgeRequest(event)) {
+    const edgeClient = getHeader(event, 'cf-connecting-ip')
+    if (edgeClient) return edgeClient
+  }
   const xff = getHeader(event, 'x-forwarded-for')
   if (xff) {
     const parts = xff.split(',').map(s => s.trim())

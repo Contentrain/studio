@@ -24,7 +24,7 @@ describe('limits that are not sold past the plan allowance', () => {
   })
 
   it('derives that from the meter manifest, not a second list', () => {
-    expect(USAGE_METERS.CDN_BANDWIDTH_BYTES.overageBillable).toBe(false)
+    expect(USAGE_METERS.CDN_ORIGIN_GB.overageBillable).toBe(false)
     expect(USAGE_METERS.MEDIA_STORAGE_BYTE_HOURS.overageBillable).toBe(false)
     expect(USAGE_METERS.AI_MESSAGES.overageBillable).toBe(true)
   })

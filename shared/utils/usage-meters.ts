@@ -87,13 +87,20 @@ export const USAGE_METERS = {
     unitsPerLimitUnit: 1,
     overageBillable: true,
   },
-  CDN_BANDWIDTH_BYTES: {
-    name: 'cdn_bandwidth_bytes',
+  // `cdn_origin_gb`, not the older `cdn_bandwidth_bytes`: a byte meter
+  // cannot carry a gigabyte allowance (Polar caps a meter credit at int32).
+  // The GB meter sums what the origin served — Cloudflare edge hits never
+  // reach it, so it is exactly what egress costs. One event per workspace
+  // per day (`server/plugins/cdn-origin-meter.ts`), never one per request.
+  CDN_ORIGIN_GB: {
+    name: 'cdn_origin_gb',
     limitKey: 'cdn.bandwidth_gb',
     settingsKey: 'cdn_bandwidth',
-    unitLabel: 'byte',
+    unitLabel: 'GB',
     aggregation: 'sum',
-    unitsPerLimitUnit: 1024 ** 3,
+    unitsPerLimitUnit: 1,
+    // Still a hard limit: turning overage on is the price decision (PR-F /
+    // ST-6), which also attaches the metered price in Polar.
     overageBillable: false,
   },
   FORM_SUBMISSIONS: {

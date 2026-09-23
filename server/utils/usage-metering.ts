@@ -120,18 +120,23 @@ export function recordFormSubmissionUsage(input: {
   })
 }
 
-export function recordCDNBandwidthUsage(input: {
+/**
+ * One day of CDN origin transfer for a workspace, in GB (`cdn_origin_gb`).
+ * Keyed by workspace + day, so a job re-running for the same day records
+ * nothing twice.
+ */
+export function recordCDNOriginUsage(input: {
   workspaceId: string
+  /** UTC day, `YYYY-MM-DD`. */
+  day: string
   bytes: number
-  projectId: string
-  usageRowId: string
 }): Promise<void> {
   return recordUsage({
     workspaceId: input.workspaceId,
-    meterName: USAGE_METERS.CDN_BANDWIDTH_BYTES.name,
-    value: input.bytes,
-    idempotencyKey: `cdn:${input.usageRowId}`,
-    metadata: { project_id: input.projectId, usage_row_id: input.usageRowId },
+    meterName: USAGE_METERS.CDN_ORIGIN_GB.name,
+    value: Math.round((input.bytes / 1024 ** 3) * 1e6) / 1e6,
+    idempotencyKey: `cdn-origin:${input.workspaceId}:${input.day}`,
+    metadata: { day: input.day, bytes: input.bytes },
   })
 }
 

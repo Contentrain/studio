@@ -14,6 +14,7 @@ const providerState = vi.hoisted(() => ({
     listCDNBuilds: vi.fn(),
     revokeCDNKey: vi.fn(),
     updateProject: vi.fn(),
+    getWorkspaceMonthlyCDNBandwidth: vi.fn(),
   },
 }))
 
@@ -80,6 +81,9 @@ describe('CDN route integration', () => {
     providerState.databaseProvider.listCDNBuilds.mockReset()
     providerState.databaseProvider.revokeCDNKey.mockReset()
     providerState.databaseProvider.updateProject.mockReset()
+    providerState.databaseProvider.getWorkspaceMonthlyCDNBandwidth.mockReset().mockResolvedValue(0)
+    // Origin limit (`cdn.bandwidth_gb`): 60 GB unless a test says otherwise.
+    vi.stubGlobal('getPlanLimit', vi.fn().mockReturnValue(60))
     eventStreamState.createEventStream.mockReset()
     eventStreamState.stream.push.mockClear()
     eventStreamState.stream.close.mockClear()
@@ -135,6 +139,54 @@ describe('CDN route integration', () => {
     // Keyed responses must never be shared-cacheable — even on 304.
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'Cache-Control', 'private, max-age=60')
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'Server-Timing', expect.stringContaining('auth;dur='))
+  })
+
+  describe('origin-transfer limit (cdn.bandwidth_gb)', () => {
+    const GIB = 1024 ** 3
+
+    async function serveMedia(opts: { mode: string, usedBytes: number }) {
+      const { __resetCdnOriginBudget } = await import('../../server/utils/cdn-origin-budget')
+      __resetCdnOriginBudget()
+      vi.stubGlobal('useRuntimeConfig', vi.fn(() => ({ cdn: { originLimit: opts.mode }, public: {} })))
+      providerState.databaseProvider.getWorkspaceMonthlyCDNBandwidth.mockResolvedValue(opts.usedBytes)
+      const setResponseHeader = vi.fn()
+      const getObject = vi.fn().mockResolvedValue({ etag: 'e', contentType: 'image/webp', data: Buffer.from('img') })
+      vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => (key === 'projectId' ? 'project-1' : key === 'path' ? 'media/a.webp' : undefined)))
+      vi.stubGlobal('getHeader', vi.fn(() => undefined))
+      vi.stubGlobal('getClientIp', vi.fn(() => '203.0.113.9'))
+      vi.stubGlobal('setResponseHeader', setResponseHeader)
+      vi.stubGlobal('setResponseStatus', vi.fn())
+      vi.stubGlobal('cachedValidateCDNKey', vi.fn())
+      vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({ allowed: true, remaining: 599, retryAfterMs: 0 }))
+      vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+      vi.stubGlobal('hasFeature', vi.fn((_: unknown, feature: string) => feature === 'cdn.delivery'))
+      vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ getObject }))
+      vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: true }))
+      vi.stubGlobal('cachedWorkspacePlan', vi.fn().mockResolvedValue({ plan: 'pro', overage_settings: {} }))
+      const handler = await loadPublicCDNHandler()
+      return { run: () => handler({} as never), getObject, setResponseHeader }
+    }
+
+    it('enforce: at the limit the origin answers 429 with Retry-After and reads nothing from storage', async () => {
+      const { run, getObject, setResponseHeader } = await serveMedia({ mode: 'enforce', usedBytes: 60 * GIB })
+      await expect(run()).rejects.toMatchObject({ statusCode: 429 })
+      expect(getObject).not.toHaveBeenCalled()
+      const retryAfter = setResponseHeader.mock.calls.find(c => c[1] === 'Retry-After')?.[2] as number
+      expect(retryAfter).toBeGreaterThan(0)
+      expect(retryAfter).toBeLessThanOrEqual(31 * 24 * 3600)
+    })
+
+    it('enforce: under the limit it serves', async () => {
+      const { run, getObject } = await serveMedia({ mode: 'enforce', usedBytes: 59 * GIB })
+      await expect(run()).resolves.toEqual(Buffer.from('img'))
+      expect(getObject).toHaveBeenCalled()
+    })
+
+    it('observe (the default): over the limit it still serves', async () => {
+      const { run, getObject } = await serveMedia({ mode: 'observe', usedBytes: 80 * GIB })
+      await expect(run()).resolves.toEqual(Buffer.from('img'))
+      expect(getObject).toHaveBeenCalled()
+    })
   })
 
   it('returns 304 from the provider conditional read without a body transfer', async () => {

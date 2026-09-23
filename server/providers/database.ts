@@ -982,6 +982,12 @@ export interface DatabaseProvider {
   getWorkspaceMonthlyAPIUsage: (workspaceId: string, month: string) => Promise<number>
   /** Sum CDN bandwidth bytes across all projects in workspace for a month. */
   getWorkspaceMonthlyCDNBandwidth: (workspaceId: string, month: string) => Promise<number>
+  /**
+   * CDN bytes served per workspace on one UTC day (`YYYY-MM-DD`), summed
+   * over every project and key. Workspaces with no usage that day are left
+   * out. Feeds the daily `cdn_origin_gb` meter event.
+   */
+  listWorkspaceCDNBandwidthForDay: (day: string) => Promise<Array<{ workspaceId: string, bytes: number }>>
 
   // ═══════════════════════════════════════════════════
   // PAYMENT ACCOUNTS (per-provider subscription state)

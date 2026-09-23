@@ -14,6 +14,7 @@ type UsageMethods = Pick<
   | 'getWorkspaceMonthlyAIUsage'
   | 'getWorkspaceMonthlyAPIUsage'
   | 'getWorkspaceMonthlyCDNBandwidth'
+  | 'listWorkspaceCDNBandwidthForDay'
 >
 
 export function usageMethods(): UsageMethods {
@@ -76,6 +77,22 @@ export function usageMethods(): UsageMethods {
       catch {
         return 0
       }
+    },
+
+    async listWorkspaceCDNBandwidthForDay(day) {
+      // Unlike the dashboard reads above, a failure here propagates: the
+      // meter job must not record "no usage" for a day it could not read.
+      const rows = await getAdmin()
+        .selectFrom('cdn_usage as cu')
+        .innerJoin('projects as pr', 'pr.id', 'cu.project_id')
+        .select(eb => ['pr.workspace_id as workspace_id', eb.fn.sum('cu.bandwidth_bytes').as('total')])
+        .where('cu.period_start', '=', day)
+        .groupBy('pr.workspace_id')
+        .execute()
+
+      return rows
+        .map(r => ({ workspaceId: String(r.workspace_id), bytes: Number(r.total ?? 0) }))
+        .filter(r => r.bytes > 0)
     },
   }
 }

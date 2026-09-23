@@ -2,13 +2,28 @@ import type { MediaAsset } from '../providers/media'
 
 /**
  * The per-project public media delivery base (no trailing slash):
- * `{siteUrl}/api/cdn/v1/{projectId}`. The single seam for where media resolves
- * — a CDN custom domain (ee/roadmap) would swap the host here. Also handed to
+ * `{cdnUrl || siteUrl}/api/cdn/v1/{projectId}`. The single seam for where
+ * media resolves: with `NUXT_PUBLIC_CDN_URL` set, new URLs use the CDN host
+ * (Cloudflare in front of the same route, docs/CDN_EDGE.md). Also handed to
  * the MCP Cloud loopback server (via the proxy) so external-agent writes
  * normalize media to the same URLs Studio's own write path produces.
  */
 export function publicMediaBase(projectId: string): string {
-  return mediaBaseFor(String(useRuntimeConfig().public.siteUrl ?? ''), projectId)
+  const pub = useRuntimeConfig().public
+  return mediaBaseFor(String(pub.cdnUrl || pub.siteUrl || ''), projectId)
+}
+
+/**
+ * Every base this instance serves a project's media under. With a separate
+ * CDN host (`NUXT_PUBLIC_CDN_URL`) that is the CDN host and the app host:
+ * both reach the same route, and content written before the CDN host was
+ * set keeps the app-host URL until it is rehosted.
+ */
+export function ownMediaBases(projectId: string): string[] {
+  const pub = useRuntimeConfig().public
+  const bases = [mediaBaseFor(String(pub.cdnUrl || pub.siteUrl || ''), projectId)]
+  if (pub.cdnUrl && pub.siteUrl) bases.push(mediaBaseFor(String(pub.siteUrl), projectId))
+  return bases
 }
 
 /**
@@ -61,7 +76,11 @@ export function rewriteMediaUrl(projectId: string, value: unknown): unknown {
 export function ownMediaStoragePath(projectId: string, value: unknown): string | null {
   if (typeof value !== 'string') return null
   if (/^media\//.test(value)) return value.split(/[?#]/)[0]!
-  return mediaStoragePathUnder(publicMediaBase(projectId), value)
+  for (const base of ownMediaBases(projectId)) {
+    const path = mediaStoragePathUnder(base, value)
+    if (path) return path
+  }
+  return null
 }
 
 /**

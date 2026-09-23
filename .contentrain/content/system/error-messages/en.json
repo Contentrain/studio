@@ -67,6 +67,7 @@
   "cdn.key_mismatch": "The API key does not match this project.",
   "cdn.key_name_required": "A name is required when creating an API key.",
   "cdn.not_enabled": "CDN is not enabled for this project. Enable it in project settings.",
+  "cdn.origin_limit_reached": "This project's workspace has used its {limit} GB of CDN origin transfer for the month. Delivery resumes when the month resets, or right away with overage or a larger plan.",
   "cdn.origin_not_allowed": "Your request origin is not in the allowed origins list for this API key.",
   "cdn.path_required": "A content path is required to fetch CDN content.",
   "cdn.scope_insufficient": "This API key is missing the required scope: {scope}.",

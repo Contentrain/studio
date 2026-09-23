@@ -35,9 +35,13 @@ export default defineEventHandler(async (event) => {
   // A real run must be asked for explicitly.
   const dryRun = body?.dryRun !== false
   const copyAssets = body?.copyAssets === true
-  const siteUrl = String(useRuntimeConfig().public.siteUrl ?? '')
+  // Media is written under the CDN host when one is set; the app host stays
+  // an alias of this instance, so its URLs can be moved onto the CDN host.
+  const pub = useRuntimeConfig().public
+  const siteUrl = String(pub.cdnUrl || pub.siteUrl || '')
+  const aliases = pub.cdnUrl && pub.siteUrl ? [String(pub.siteUrl)] : []
 
-  const sourceError = checkRehostSource({ from, projectId, siteUrl, copyAssets })
+  const sourceError = checkRehostSource({ from, projectId, siteUrl, copyAssets, aliases })
   if (sourceError)
     throw createError({ statusCode: 400, message: errorMessage(`media.rehost_${sourceError}`) })
 
