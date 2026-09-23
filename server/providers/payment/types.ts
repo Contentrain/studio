@@ -68,6 +68,11 @@ export interface WebhookResult {
   trialEndsAt?: string
   /** Whether subscription will cancel at period end. */
   cancelAtPeriodEnd?: boolean
+  /**
+   * When a scheduled cancellation takes effect — the end of what was paid
+   * for (or of the trial). Set only while `cancelAtPeriodEnd` is true.
+   */
+  accessEndsAt?: string
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
   /**

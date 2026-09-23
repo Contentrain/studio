@@ -418,4 +418,168 @@ describe('billing webhook integration', () => {
       statusCode: 404,
     })
   })
+
+  describe('paid access and payment problems', () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+
+    /** Route the owner emails to `sendEmail` so each test can see what went out. */
+    function captureEmails() {
+      sendEmail.mockClear()
+      vi.stubGlobal('useEmailProvider', () => ({ sendEmail }))
+      vi.stubGlobal('useAuthProvider', () => ({ getUserById: vi.fn().mockResolvedValue({ email: 'owner@example.com' }) }))
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        upsertPaymentAccount,
+        archiveActivePaymentAccount,
+        updateWorkspace,
+        getActivePaymentAccount,
+        markWorkspaceTrialConsumed,
+        getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro' }),
+      }))
+    }
+    const subjects = () => sendEmail.mock.calls.map(([mail]) => (mail as { subject: string }).subject)
+
+    const activeAccount = {
+      provider: 'polar',
+      customer_id: 'cus_123',
+      subscription_id: 'sub_123',
+      subscription_status: 'active',
+      current_period_end: '2026-10-23T11:50:43.823Z',
+      trial_ends_at: null,
+      grace_period_ends_at: null,
+      cancel_at_period_end: false,
+      plan: 'pro',
+    }
+    const update = (overrides: Record<string, unknown>) => ({
+      event: 'subscription.updated',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'active',
+      currentPeriodStart: '2026-09-23T11:50:43.823Z',
+      currentPeriodEnd: '2026-10-23T11:50:43.823Z',
+      cancelAtPeriodEnd: false,
+      ...overrides,
+    })
+
+    it('keeps the plan until the period end when a cancellation is scheduled, and says until when', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue(activeAccount)
+      handleWebhookMock.mockResolvedValue(update({ cancelAtPeriodEnd: true, accessEndsAt: '2026-10-23T11:50:43.823Z' }))
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(archiveActivePaymentAccount).not.toHaveBeenCalled()
+      expect(updateWorkspace).not.toHaveBeenCalledWith('', 'ws-1', expect.objectContaining({ plan: 'free' }))
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        subscriptionStatus: 'active',
+        cancelAtPeriodEnd: true,
+        isActive: true,
+        plan: 'pro',
+      }))
+      expect(subjects()).toEqual(['Your Pro plan stays active until Friday, October 23'])
+    })
+
+    it('does not repeat the cancel notice when the same cancellation arrives again', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue({ ...activeAccount, cancel_at_period_end: true })
+      handleWebhookMock.mockResolvedValue(update({ cancelAtPeriodEnd: true, accessEndsAt: '2026-10-23T11:50:43.823Z' }))
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(sendEmail).not.toHaveBeenCalled()
+    })
+
+    it('opens a 7-day grace window and tells the owner when a renewal fails', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue(activeAccount)
+      handleWebhookMock.mockResolvedValue(update({ subscriptionStatus: 'past_due' }))
+
+      const handler = await mockPluginAndLoadHandler()
+      const before = Date.now()
+      await handler({ context: {} } as never)
+
+      const written = upsertPaymentAccount.mock.calls[0]![0] as { subscriptionStatus: string, gracePeriodEndsAt: string }
+      expect(written.subscriptionStatus).toBe('past_due')
+      const graceMs = new Date(written.gracePeriodEndsAt).getTime() - before
+      expect(graceMs).toBeGreaterThanOrEqual(7 * 24 * 3600 * 1000 - 5000)
+      expect(graceMs).toBeLessThanOrEqual(7 * 24 * 3600 * 1000 + 5000)
+      expect(subjects()).toEqual(['Action required: payment failed for Acme'])
+    })
+
+    it('keeps the running grace window on a retry and does not email again', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue({ ...activeAccount, subscription_status: 'past_due', grace_period_ends_at: '2026-09-30T12:00:00.000Z' })
+      handleWebhookMock.mockResolvedValue(update({ subscriptionStatus: 'past_due' }))
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        subscriptionStatus: 'past_due',
+        gracePeriodEndsAt: '2026-09-30T12:00:00.000Z',
+      }))
+      expect(sendEmail).not.toHaveBeenCalled()
+    })
+
+    it('closes the grace window and says so when the charge goes through', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue({ ...activeAccount, subscription_status: 'past_due', grace_period_ends_at: '2026-09-30T12:00:00.000Z' })
+      handleWebhookMock.mockResolvedValue(update({ subscriptionStatus: 'active' }))
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        subscriptionStatus: 'active',
+        gracePeriodEndsAt: null,
+      }))
+      expect(subjects()).toEqual(['Payment received — Acme is active again'])
+    })
+
+    it('tells the owner once when a subscription ends, however many ending events arrive', async () => {
+      captureEmails()
+      const ended = { event: 'subscription.canceled', workspaceId: 'ws-1', subscriptionId: 'sub_123', customerId: 'cus_123', subscriptionStatus: 'canceled' }
+      handleWebhookMock.mockResolvedValue(ended)
+      const handler = await mockPluginAndLoadHandler()
+
+      getActivePaymentAccount.mockResolvedValueOnce(activeAccount)
+      await handler({ context: {} } as never)
+      // canceled + revoked follow; the account is already archived.
+      getActivePaymentAccount.mockResolvedValue(null)
+      await handler({ context: {} } as never)
+      await handler({ context: {} } as never)
+
+      expect(subjects()).toEqual(['Your Contentrain Studio subscription has been canceled'])
+    })
+
+    it('leaves a newer subscription alone when a late update for the old one arrives', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue({ ...activeAccount, subscription_id: 'sub_new' })
+      // The old subscription's past_due, delivered after the workspace moved on.
+      handleWebhookMock.mockResolvedValue(update({ subscriptionId: 'sub_123', subscriptionStatus: 'past_due' }))
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(upsertPaymentAccount).not.toHaveBeenCalled()
+      expect(updateWorkspace).not.toHaveBeenCalled()
+      expect(sendEmail).not.toHaveBeenCalled()
+    })
+
+    it('leaves a newer subscription alone when a late ending event for the old one arrives', async () => {
+      captureEmails()
+      getActivePaymentAccount.mockResolvedValue({ ...activeAccount, subscription_id: 'sub_new' })
+      handleWebhookMock.mockResolvedValue({ event: 'subscription.canceled', workspaceId: 'ws-1', subscriptionId: 'sub_123', customerId: 'cus_123', subscriptionStatus: 'canceled' })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(archiveActivePaymentAccount).not.toHaveBeenCalled()
+      expect(updateWorkspace).not.toHaveBeenCalled()
+      expect(sendEmail).not.toHaveBeenCalled()
+    })
+  })
 })
