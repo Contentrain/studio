@@ -198,7 +198,7 @@ function categoryIcon(key: string): string {
 
         <!-- Limit reached warning (overage disabled) -->
         <div
-          v-if="category.percentage >= 100 && !category.overageEnabled && category.limit > 0"
+          v-if="category.limit > 0 && category.current >= category.limit && !category.overageEnabled"
           class="mt-2 rounded-md bg-danger-50 px-3 py-2 dark:bg-danger-950/30"
         >
           <p class="text-xs text-danger-700 dark:text-danger-300">
@@ -208,7 +208,7 @@ function categoryIcon(key: string): string {
 
         <!-- Approaching limit warning -->
         <div
-          v-else-if="category.percentage >= 80 && category.percentage < 100"
+          v-else-if="category.limit > 0 && category.current >= category.limit * 0.8 && category.current < category.limit"
           class="mt-2 rounded-md bg-warning-50 px-3 py-2 dark:bg-warning-950/30"
         >
           <p class="text-xs text-warning-700 dark:text-warning-300">

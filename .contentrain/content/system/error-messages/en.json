@@ -318,5 +318,9 @@
   "workspace.slug_too_short": "Workspace slug must be at least 2 characters.",
   "workspace.transfer_member_required": "A target member ID is required for ownership transfer.",
   "workspace.transfer_requires_admin": "Ownership can only be transferred to a member with admin role.",
-  "write.validation_failed": "The change was not applied because it failed validation"
+  "write.validation_failed": "The change was not applied because it failed validation",
+  "usage_alert.resets_on": "The count resets on <strong>{date}</strong>.",
+  "usage_alert.storage_note": "Storage does not reset each month: it frees up when files are removed.",
+  "usage_alert.next_overage": "To keep going now, allow overage or change the plan in Billing.",
+  "usage_alert.next_upgrade": "To keep going now, change the plan in Billing."
 }

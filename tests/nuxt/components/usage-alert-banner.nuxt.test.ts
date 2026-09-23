@@ -67,4 +67,20 @@ describe('UsageAlertBanner', () => {
     state.usage = usage(category('cdn_bandwidth', 'CDN Bandwidth', 70, 60, '2026-10-01T00:00:00.000Z'))
     expect((await mountSuspended(UsageAlertBanner)).text()).toBe('')
   })
+
+  it('995 of 1 000 is not "stopped" even though it rounds to 100 %', async () => {
+    state.usage = usage(category('form_submissions', 'Form Submissions', 2995, 3000, '2026-10-01T00:00:00.000Z', { percentage: 100 }))
+    const text = (await mountSuspended(UsageAlertBanner)).text()
+    expect(text).not.toContain('being rejected')
+    expect(text).toContain('Form Submissions: 100% used')
+  })
+
+  it('renders when session storage is unavailable', async () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    state.usage = usage(category('ai_messages', 'AI Credits', 1036, 350, '2026-10-15T00:00:00.000Z'))
+    expect((await mountSuspended(UsageAlertBanner)).text()).toContain('AI credits are used up')
+    spy.mockRestore()
+  })
 })

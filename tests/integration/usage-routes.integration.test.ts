@@ -19,6 +19,7 @@ describe('usage API', () => {
   describe('GET /usage', () => {
     it('returns usage metrics for all categories', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
           plan: 'pro',
@@ -79,6 +80,7 @@ describe('usage API', () => {
 
     it('calculates overage units when usage exceeds limit', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
           plan: 'starter',
@@ -111,6 +113,7 @@ describe('usage API', () => {
 
     it('returns -1 for unlimited limits (enterprise)', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
           plan: 'enterprise',
@@ -138,6 +141,7 @@ describe('usage API', () => {
 
     it('returns zero usage for fresh workspace', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
           plan: 'starter',
@@ -166,6 +170,7 @@ describe('usage API', () => {
       // Comments have no meter and no overage price. Offering the switch
       // only produced a 400 from the settings route (no such key).
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, media_storage_bytes: 0 }),
         getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(0),
         getWorkspaceMonthlyAPIUsage: vi.fn().mockResolvedValue(0),
@@ -184,6 +189,7 @@ describe('usage API', () => {
 
     it('rejects non-owner/admin', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue(null),
       }))
 
@@ -198,6 +204,7 @@ describe('usage API — what the billing screen may claim (BR-12)', () => {
 
   function db(overrides: Record<string, unknown> = {}) {
     return {
+      getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, media_storage_bytes: 0 }),
       // Billed from the 15th: AI, API and MCP reset on the 15th, forms/comments/CDN on the 1st.
       getActivePaymentAccount: vi.fn().mockResolvedValue({
@@ -261,6 +268,7 @@ describe('usage API — what the billing screen may claim (BR-12)', () => {
   it('projects only enabled overage, each meter across its own window', async () => {
     // Forms: 3100 by the 23rd of a 30-day calendar month → ~4043 → 1043 over at $0.01.
     const result = await run(db({
+      getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: { form_submissions: true }, media_storage_bytes: 0 }),
     }))
     expect(result.totalOverageAmount).toBe(1) // 100 over × $0.01
@@ -268,20 +276,33 @@ describe('usage API — what the billing screen may claim (BR-12)', () => {
     expect(result.projectedOverageAmount).toBeLessThan(12)
   })
 
-  it('shows a member the meters instead of a 403, without prices or amounts', async () => {
-    const database = db({
-      getWorkspaceForUser: vi.fn(async (_t: string, _u: string, _w: string, roles?: string[]) =>
-        roles?.includes('member') ? { id: 'ws-1', plan: 'pro', overage_settings: { form_submissions: true }, media_storage_bytes: 0 } : null),
-    })
-    const result = await run(database)
+  /** `requireRole` as the providers implement it: a role outside the list is a thrown 403, never null. */
+  function asRole(role: string | null) {
+    return {
+      getWorkspaceForUser: vi.fn(async (_t: string, _u: string, _w: string, roles: string[] = ['owner', 'admin', 'member']) => {
+        if (!role || !roles.includes(role)) throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
+        return { id: 'ws-1', plan: 'pro', overage_settings: { form_submissions: true }, media_storage_bytes: 0 }
+      }),
+      getWorkspaceMemberRole: vi.fn().mockResolvedValue(role),
+    }
+  }
+
+  it('shows a member the meters instead of a 403, without prices, amounts or overage units', async () => {
+    const result = await run(db({ ...asRole('member'), countMonthlySubmissions: vi.fn().mockResolvedValue(3100) }))
     expect(result.canManage).toBe(false)
     const ai = result.categories.find((c: { key: string }) => c.key === 'ai_messages')
     expect(ai).toMatchObject({ current: 1036, limit: 350, percentage: 296, overageUnitPrice: 0, overageAmount: 0 })
+    const forms = result.categories.find((c: { key: string }) => c.key === 'form_submissions')
+    expect(forms).toMatchObject({ overageUnits: 0, overageAmount: 0, overageUnitPrice: 0 })
     expect(result.totalOverageAmount).toBe(0)
     expect(result.projectedOverageAmount).toBe(0)
   })
 
+  it('still answers 403 to someone who is not a member', async () => {
+    await expect(run(db(asRole(null)))).rejects.toMatchObject({ statusCode: 403 })
+  })
+
   it('owners and admins can manage', async () => {
-    expect((await run(db())).canManage).toBe(true)
+    expect((await run(db(asRole('admin')))).canManage).toBe(true)
   })
 })

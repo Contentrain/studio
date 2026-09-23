@@ -31,9 +31,10 @@ const relevant = computed(() =>
   (usage.value?.categories ?? []).filter(c => ALERTING.includes(c.key) && c.limit > 0),
 )
 /** At the limit with nothing billed past it: this has stopped. */
-const stopped = computed(() => relevant.value.filter(c => c.percentage >= 100 && !c.overageEnabled))
+// Raw values, not the rounded percentage: 995 / 1000 shows 100 % but nothing has stopped.
+const stopped = computed(() => relevant.value.filter(c => c.current >= c.limit && !c.overageEnabled))
 const warnings = computed(() => isOwnerOrAdmin.value
-  ? relevant.value.filter(c => c.percentage >= 80 && c.percentage < 100)
+  ? relevant.value.filter(c => c.current >= c.limit * 0.8 && c.current < c.limit)
   : [])
 const alerts = computed(() => [...stopped.value, ...warnings.value])
 const primary = computed<UsageCategory | null>(() => alerts.value[0] ?? null)
@@ -46,13 +47,13 @@ const text = computed(() => {
   const c = primary.value
   if (!c) return ''
   const date = c.resetsAt ? formatDate(c.resetsAt) : ''
-  if (c.percentage >= 100) return t(`usage_banner.stopped_${c.key}` as never, { date })
+  if (c.current >= c.limit) return t(`usage_banner.stopped_${c.key}` as never, { date })
   return date
     ? t('usage_banner.warning', { name: c.name, percentage: c.percentage, date })
     : t('usage_banner.warning_undated', { name: c.name, percentage: c.percentage })
 })
 
-const isStop = computed(() => (primary.value?.percentage ?? 0) >= 100)
+const isStop = computed(() => !!primary.value && primary.value.current >= primary.value.limit)
 
 const billingPath = computed(() => {
   const slug = activeWorkspace.value?.slug
@@ -61,13 +62,30 @@ const billingPath = computed(() => {
 
 /** Dismissal lasts for this exact set of alerts; a new alert shows again. */
 const DISMISS_KEY = 'contentrain-usage-banner-dismissed'
-const signature = computed(() => alerts.value.map(c => `${c.key}:${c.percentage >= 100 ? 100 : 80}`).join(','))
-const dismissed = ref<string | null>(import.meta.client ? sessionStorage.getItem(DISMISS_KEY) : null)
+const signature = computed(() => alerts.value.map(c => `${c.key}:${c.current >= c.limit ? 100 : 80}`).join(','))
+
+/** Storage can be unavailable (private mode, blocked site data): the banner must still render. */
+function readDismissed(): string | null {
+  if (!import.meta.client) return null
+  try {
+    return sessionStorage.getItem(DISMISS_KEY)
+  }
+  catch {
+    return null
+  }
+}
+const dismissed = ref<string | null>(readDismissed())
 const isVisible = computed(() => !!primary.value && dismissed.value !== signature.value)
 
 function dismiss() {
   dismissed.value = signature.value
-  if (import.meta.client) sessionStorage.setItem(DISMISS_KEY, signature.value)
+  if (!import.meta.client) return
+  try {
+    sessionStorage.setItem(DISMISS_KEY, signature.value)
+  }
+  catch {
+    // Dismissed for this page view only.
+  }
 }
 </script>
 

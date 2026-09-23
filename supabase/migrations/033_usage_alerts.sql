@@ -1,4 +1,4 @@
--- 032: usage alert send log (80 % / 100 % emails).
+-- 033: usage alert send log (80 % / 100 % emails).
 --
 -- The billing screen warned at 80 % and 100 %, but only to an owner who
 -- opened Settings › Billing. Nobody was told when AI credits ran out, and a

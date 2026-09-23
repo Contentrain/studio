@@ -1,6 +1,6 @@
 /**
  * Usage alert persistence for the plain-Postgres DatabaseProvider
- * (`supabase/migrations/032_usage_alerts.sql`). Same contract as the Supabase
+ * (`supabase/migrations/033_usage_alerts.sql`). Same contract as the Supabase
  * implementation: the primary key is the claim.
  */
 import type { DatabaseProvider, DatabaseRow } from '../database'

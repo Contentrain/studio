@@ -26,14 +26,17 @@
 import { PLAN_PRICING, normalizePlan } from '../../shared/utils/license'
 import type { DatabaseProvider, UsageAlertKey } from '../providers/database'
 import { emailTemplate, errorMessage } from './content-strings'
-import { getEffectivePlan } from './billing'
-import type { PaymentAccountState } from './billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState } from './billing'
+import type { PaymentAccountState, WorkspaceBillingRow } from './billing'
 import { resolveOverageLocks } from './overage-lock'
 import type { OverageLockAccount } from './overage-lock'
 import { usagePeriodFrom } from './usage-period'
 import type { UsagePeriodAccount } from './usage-period'
 import { computeWorkspaceUsage } from './workspace-usage'
 import type { WorkspaceUsageCategory } from './workspace-usage'
+
+/** Dedupe key for storage, which has no period (see `planUsageAlerts`' caller). */
+const STORAGE_PERIOD_KEY = 'level'
 
 /** Meters that alert. CDN is excluded — see the header. */
 const ALERTING_METERS = new Set(['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions', 'comments', 'media_storage'])
@@ -51,10 +54,12 @@ export function planUsageAlerts(categories: WorkspaceUsageCategory[]): PlannedAl
     if (!ALERTING_METERS.has(category.key)) continue
     // Unlimited (-1) or not included at all (0): nothing to warn about.
     if (category.limit <= 0) continue
-    if (category.percentage >= 100) {
+    // Raw values, not the rounded percentage: 995 / 1000 rounds to 100 % but nothing has stopped,
+    // and a "stopped" mail sent then would also burn the one 100 % alert of the period.
+    if (category.current >= category.limit) {
       planned.push({ category, threshold: 100, template: category.overageEnabled ? 'usage-overage-started' : 'usage-limit-reached' })
     }
-    else if (category.percentage >= 80) {
+    else if (category.current >= category.limit * 0.8) {
       planned.push({ category, threshold: 80, template: 'usage-warning' })
     }
   }
@@ -104,12 +109,16 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
 
     try {
       const account = await db.getActivePaymentAccount(workspaceId)
-      // The plan the limits are enforced against — an expired trial is not Pro.
-      const plan = getEffectivePlan({
+      const billingRow: WorkspaceBillingRow = {
         type: (ws.type as string) ?? 'team',
         plan: (ws.plan as string | null) ?? null,
         payment_account: (account as unknown as PaymentAccountState | null) ?? null,
-      })
+      }
+      // A locked workspace (expired trial, expired grace) is behind the paywall: measuring it
+      // against free limits and mailing "resets on …" would be wrong on both counts.
+      if (isBillingLocked(resolveBillingState(billingRow))) continue
+      // The plan the limits are enforced against — an expired trial is not Pro.
+      const plan = getEffectivePlan(billingRow)
       const usage = await computeWorkspaceUsage(db, {
         workspaceId,
         plan,
@@ -130,7 +139,9 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
       const planName = PLAN_PRICING[normalizePlan(plan)]?.name ?? plan
 
       for (const alert of alerts) {
-        const key: UsageAlertKey = { workspaceId, meter: alert.category.key, periodKey: alert.category.periodKey, threshold: alert.threshold }
+        // Storage is a level, not a period: one alert per threshold, not a new one every month.
+        const periodKey = alert.category.resetsAt === null ? STORAGE_PERIOD_KEY : alert.category.periodKey
+        const key: UsageAlertKey = { workspaceId, meter: alert.category.key, periodKey, threshold: alert.threshold }
         if (!(await db.claimUsageAlert(key))) continue
         const c = alert.category
         const tpl = emailTemplate(alert.template, {
@@ -142,6 +153,11 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
           limit: formatAmount(c.limit, c.unit),
           resetDate: formatDate(c.resetsAt),
           consequence: errorMessage(`usage_alert.stopped_${c.key}`, { date: formatDate(c.resetsAt) }),
+          resetLine: c.resetsAt === null
+            ? errorMessage('usage_alert.storage_note')
+            : errorMessage('usage_alert.resets_on', { date: formatDate(c.resetsAt) }),
+          // Overage is offered only where it can be turned on: sold, and not locked for this subscription.
+          nextStep: errorMessage(c.overageSellable && !c.overageLock ? 'usage_alert.next_overage' : 'usage_alert.next_upgrade'),
           unitPrice: `$${c.overageUnitPrice}`,
           billingUrl,
         })

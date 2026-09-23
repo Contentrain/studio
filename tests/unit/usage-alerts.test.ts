@@ -110,4 +110,56 @@ describe('usage alerts', () => {
     const sendEmail = vi.fn()
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
   })
+
+  it('waits for the limit itself: 2 990 of 3 000 is a warning, not "stopped"', async () => {
+    const db = fakeDb({ forms: 2990 })
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    const sent = await runUsageAlerts(deps(db, sendEmail))
+    expect(sent.map(s => `${s.meter}:${s.threshold}`)).toEqual(['form_submissions:80'])
+  })
+
+  it('storage alerts once per threshold, not every month, and does not promise a reset', async () => {
+    const db = fakeDb({}, { media_storage_bytes: 16 * 1024 ** 3 }) // Pro: 15 GB
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    const first = await runUsageAlerts(deps(db, sendEmail))
+    expect(first).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 100, periodKey: 'level' })])
+    const html = (sendEmail.mock.calls[0]![0] as { html: string }).html
+    expect(html).toContain('until you free up space')
+    expect(html).not.toMatch(/resets on/i)
+    // Next month: same level, no new mail.
+    const later = await runUsageAlerts({ ...deps(db, sendEmail), now: new Date('2026-10-23T12:00:00Z') })
+    expect(later).toEqual([])
+  })
+
+  it('offers overage only where it can be turned on', async () => {
+    const db = fakeDb({ forms: 3100, comments: 10_500 })
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    await runUsageAlerts(deps(db, sendEmail))
+    const mails = sendEmail.mock.calls.map(([m]) => m as { subject: string, html: string })
+    expect(mails.find(m => m.subject.includes('Form Submissions'))!.html).toContain('allow overage or change the plan')
+    const comments = mails.find(m => m.subject.includes('Comments'))!.html
+    expect(comments).toContain('change the plan in Billing')
+    expect(comments).not.toContain('allow overage')
+  })
+
+  it('does not mail a workspace that is locked behind the paywall', async () => {
+    const db = fakeDb({ ai: 1036 })
+    db.getActivePaymentAccount.mockResolvedValue({
+      subscription_id: 'sub_1', subscription_status: 'past_due',
+      current_period_start: '2026-08-15T00:00:00Z', current_period_end: '2026-09-15T00:00:00Z',
+      trial_ends_at: null, grace_period_ends_at: '2026-09-20T00:00:00Z',
+    })
+    const sendEmail = vi.fn()
+    expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('the storage warning says storage does not reset, with no empty date', async () => {
+    const db = fakeDb({}, { media_storage_bytes: 12.5 * 1024 ** 3 }) // 83 % of 15 GB
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    await runUsageAlerts(deps(db, sendEmail))
+    const html = (sendEmail.mock.calls[0]![0] as { html: string }).html
+    expect(html).toContain('Storage does not reset each month')
+    expect(html).not.toContain('resets on <strong></strong>')
+  })
 })

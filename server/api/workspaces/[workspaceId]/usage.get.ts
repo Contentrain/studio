@@ -27,13 +27,13 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId)
     throw createError({ statusCode: 400, message: errorMessage('validation.workspace_id_required') })
 
-  const managed = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], WORKSPACE_FIELDS)
-  const workspace = managed
-    ?? await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['member'], WORKSPACE_FIELDS)
-
+  // Any member may read; `requireRole` answers a non-member 403 (it throws, it does not return null).
+  // The role is read separately: it decides what the member sees, not whether they see.
+  const workspace = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'], WORKSPACE_FIELDS)
   if (!workspace)
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
-  const canManage = !!managed
+  const role = await db.getWorkspaceMemberRole(session.accessToken, session.user.id, workspaceId)
+  const canManage = role === 'owner' || role === 'admin'
 
   // The same plan the limits are actually enforced against. Reading
   // `workspaces.plan` directly would show a locked workspace (expired
@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
   // Members see the meters, not the money or the switches they cannot use.
   const categories = canManage
     ? usage.categories
-    : usage.categories.map(c => ({ ...c, overageLock: null, overageUnitPrice: 0, overageAmount: 0 }))
+    : usage.categories.map(c => Object.assign({}, c, { overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0 }))
 
   return {
     // Kept as the period key for compatibility with existing clients.
