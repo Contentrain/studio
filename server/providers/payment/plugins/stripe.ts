@@ -93,6 +93,7 @@ function mapSubscriptionToResult(
       ? secondsToIso(subscription.trial_end)
       : undefined,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    migrateGrantId: subscription.metadata?.migrate_grant_id || undefined,
   }
 }
 
@@ -122,14 +123,16 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
         success_url: input.successUrl,
         cancel_url: input.cancelUrl,
         metadata: {
+          ...input.metadata,
           workspace_id: input.workspaceId,
           plan: input.plan,
         },
         subscription_data: {
           // Omit the trial for a workspace that already consumed it — the
           // returning customer gets a paid subscription, no new trial.
-          ...(input.withTrial === false ? {} : { trial_period_days: TRIAL_PERIOD_DAYS }),
+          ...(input.withTrial === false ? {} : { trial_period_days: input.trialDays ?? TRIAL_PERIOD_DAYS }),
           metadata: {
+            ...input.metadata,
             workspace_id: input.workspaceId,
             plan: input.plan,
           },

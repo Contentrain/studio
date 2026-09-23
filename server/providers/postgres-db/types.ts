@@ -65,6 +65,23 @@ export interface PaymentAccountsTable {
   updated_at: Generated<string>
 }
 
+export interface MigrateGrantsTable {
+  id: Generated<string>
+  order_id: string
+  claim_jti: string
+  user_id: string
+  plan: string
+  trial_days: number
+  repo_owner: string
+  repo_name: string
+  email: string
+  workspace_id: string | null
+  bound_at: string | null
+  redeemed_at: string | null
+  redeemed_subscription_id: string | null
+  created_at: Generated<string>
+}
+
 export interface WorkspacesTable {
   id: Generated<string>
   name: string
@@ -593,6 +610,7 @@ export interface StudioDatabase {
   'oauth_provider_tokens': OAuthProviderTokensTable
   'audit_logs': AuditLogsTable
   'payment_accounts': PaymentAccountsTable
+  'migrate_grants': MigrateGrantsTable
   'workspaces': WorkspacesTable
   'workspace_members': WorkspaceMembersTable
   'ai_keys': AiKeysTable

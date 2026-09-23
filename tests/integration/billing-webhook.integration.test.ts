@@ -159,6 +159,80 @@ describe('billing webhook integration', () => {
     }))
   })
 
+  it('uses up the Migrate grant a subscription was started from', async () => {
+    const markMigrateGrantRedeemed = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      archiveActivePaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      markWorkspaceTrialConsumed,
+      markMigrateGrantRedeemed,
+    }))
+    const created = {
+      event: 'subscription.created',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'trialing',
+      trialEndsAt: '2026-11-22T12:00:00.000Z',
+      cancelAtPeriodEnd: false,
+    }
+    handleWebhookMock.mockResolvedValue({ ...created, migrateGrantId: 'grant-1' })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', 'sub_123')
+    // The trial cap tells a Migrate trial apart by this mark.
+    expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+      pluginMetadata: expect.objectContaining({ trial_origin: 'migrate' }),
+    }))
+
+    // An ordinary subscription touches no grant and carries no mark.
+    markMigrateGrantRedeemed.mockClear()
+    upsertPaymentAccount.mockClear()
+    handleWebhookMock.mockResolvedValue(created)
+    await handler({ context: {} } as never)
+    expect(markMigrateGrantRedeemed).not.toHaveBeenCalled()
+    const written = upsertPaymentAccount.mock.calls[0]![0] as { pluginMetadata?: Record<string, unknown> }
+    expect(written.pluginMetadata?.trial_origin).toBeUndefined()
+  })
+
+  it('keeps the Migrate mark next to what the account already records', async () => {
+    getActivePaymentAccount.mockResolvedValue({
+      subscription_id: 'sub_123',
+      subscription_status: 'trialing',
+      trial_ends_at: '2026-11-22T12:00:00.000Z',
+      plugin_metadata: { billable_meters: ['ai_credits', 'api_credits'] },
+    })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      archiveActivePaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      markWorkspaceTrialConsumed,
+      markMigrateGrantRedeemed: vi.fn().mockResolvedValue(undefined),
+    }))
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.updated',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'active',
+      cancelAtPeriodEnd: false,
+      migrateGrantId: 'grant-1',
+    })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+
+    expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+      pluginMetadata: { billable_meters: ['ai_credits', 'api_credits'], trial_origin: 'migrate' },
+    }))
+  })
+
   it('downgrades to free on subscription.canceled', async () => {
     handleWebhookMock.mockResolvedValue({
       event: 'subscription.canceled',

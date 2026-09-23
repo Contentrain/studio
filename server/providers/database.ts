@@ -912,7 +912,7 @@ export interface DatabaseProvider {
    * List trialing workspaces whose `trial_ends_at` falls in [from, to] and
    * whose `trial_reminder_stage` is strictly below `requiredStage`. The cron
    * uses this to pick workspaces that still need the next reminder in the
-   * sequence (T-3 → T-1 → T-0).
+   * sequence (T-7 → T-3 → T-1 → T-0).
    */
   listWorkspacesPendingTrialReminder: (args: {
     from: string
@@ -975,6 +975,44 @@ export interface DatabaseProvider {
 
   /** Archive the active payment account for a workspace (no-op if none). */
   archiveActivePaymentAccount: (workspaceId: string) => Promise<void>
+
+  // ═══════════════════════════════════════════════════
+  // MIGRATE GRANTS (Studio included with a Migrate order)
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Record the grant a verified Migrate claim carries — one row per order.
+   * Idempotent: a second claim for the same order inserts nothing and
+   * returns the row that exists (`created: false`), whoever owns it; the
+   * caller decides whether that owner is the one asking.
+   */
+  claimMigrateGrant: (input: {
+    orderId: string
+    claimJti: string
+    userId: string
+    plan: 'starter' | 'pro'
+    trialDays: number
+    repoOwner: string
+    repoName: string
+    email: string
+  }) => Promise<{ grant: DatabaseRow, created: boolean }>
+
+  /** A grant, only if `userId` owns it. */
+  getMigrateGrantForUser: (grantId: string, userId: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Tie a grant to the workspace its trial will start on. Atomic: succeeds
+   * when the grant was never bound (`bound_at` null) or is already bound to
+   * this workspace, and returns the row; returns null when it is bound
+   * elsewhere (or was bound to a workspace since deleted).
+   */
+  bindMigrateGrantWorkspace: (grantId: string, workspaceId: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Mark a grant used by the subscription its checkout created. Only the
+   * first call counts (later deliveries of the same event are no-ops).
+   */
+  markMigrateGrantRedeemed: (grantId: string, subscriptionId: string | null) => Promise<void>
 
   // ═══════════════════════════════════════════════════
   // USAGE EVENTS OUTBOX (provider-agnostic meter pipeline)

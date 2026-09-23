@@ -136,6 +136,7 @@ function subscriptionToResult(
     cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),
     billableMeters: billableMetersOf(sub),
     accessEndsAt: sub.cancelAtPeriodEnd ? isoOrUndefined(sub.endsAt) : undefined,
+    migrateGrantId: typeof sub.metadata?.migrate_grant_id === 'string' ? sub.metadata.migrate_grant_id : undefined,
   }
 }
 
@@ -166,7 +167,11 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
         // The product's trial config applies by default; `allowTrial: false`
         // suppresses it for a workspace that has already used its trial.
         ...(input.withTrial === false ? { allowTrial: false } : {}),
+        // An entitlement's trial length overrides the product's for this
+        // checkout only (Polar `trial_interval` / `trial_interval_count`).
+        ...(input.withTrial !== false && input.trialDays ? { trialInterval: 'day' as const, trialIntervalCount: input.trialDays } : {}),
         metadata: {
+          ...input.metadata,
           workspace_id: input.workspaceId,
           plan: input.plan,
         },
