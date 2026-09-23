@@ -28,6 +28,7 @@ import { getPlanLimit, hasFeature } from '../../server/utils/license'
 import { getEffectiveLimit } from '../../server/utils/overage'
 import { checkRateLimit } from '../../server/utils/rate-limit'
 import { useDatabaseProvider, useGitProvider } from '../../server/utils/providers'
+import { reportBillingRisk } from '../../server/utils/alert'
 
 const API_TOOL_ROLES: Record<string, string[]> = {
   list_models: ['viewer', 'editor', 'admin'],
@@ -241,6 +242,38 @@ async function runConversationMessage(
     }
     reserved = true
 
+    // What the payment meter may still receive for this call (MG-12 D1, the
+    // Conversation API counterpart of the chat route's BR-11 P0-1 fix). With
+    // overage OFF, only the plan's API credits left when the call started:
+    // usage past the allowance is recorded in `api_message_usage` but never
+    // sent to the payment provider, which would bill it as overage the
+    // workspace did not enable. With overage on (or an unlimited plan) the
+    // call is metered in full. If the workspace total cannot be read the
+    // call fails closed: it is refused before any model work, and the
+    // `finally` below refunds the reservation. Metering blind could bill
+    // overage the workspace switched off.
+    const overageOn = workspaceLimit > workspacePlanLimit
+    let meterAllowance = Infinity
+    if (!overageOn) {
+      let used: number
+      try {
+        // Includes this call's reserved credit.
+        used = await db.getWorkspaceMonthlyAPIUsage(keyData.workspaceId, usageMonth)
+      }
+      catch (err) {
+        reportBillingRisk(err, { op: 'conversation-api.meter-allowance', workspaceId: keyData.workspaceId })
+        throw createError({ statusCode: 503, message: errorMessage('conversation.usage_unavailable') })
+      }
+      meterAllowance = Math.max(0, workspacePlanLimit - (used - 1))
+    }
+    let metered = 0
+    const meterCredits = (count: number) => {
+      const sendable = Math.min(count, meterAllowance - metered)
+      if (sendable <= 0) return
+      metered += sendable
+      recordAPIUsage({ workspaceId: keyData.workspaceId, count: sendable, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+    }
+
     const permissions = buildPermissions(keyData)
     const [owner, repo] = project.repo_full_name.split('/')
     if (!owner || !repo) {
@@ -381,7 +414,7 @@ async function runConversationMessage(
     // synthetic, neither counts.
       if (!committed && (evt.type === 'text' || evt.type === 'tool_use')) {
         committed = true
-        recordAPIUsage({ workspaceId: keyData.workspaceId, count: 1, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+        meterCredits(1)
       }
 
       switch (evt.type) {
@@ -419,7 +452,7 @@ async function runConversationMessage(
       : 1
     const extraCredits = credits - 1
     if (extraCredits > 0)
-      recordAPIUsage({ workspaceId: keyData.workspaceId, count: extraCredits, apiKeyId: keyData.keyId, month: usageMonth }).catch(() => {})
+      meterCredits(extraCredits)
 
     await saveApiChatResult({
       conversationId,
