@@ -110,6 +110,11 @@ export function getGitHubRateBudget(installationId: number, now: number = Date.n
 
 /** Record a budget from response headers. Exported for tests. */
 export function recordGitHubRateBudget(installationId: number, headers: Record<string, unknown> | undefined): void {
+  // Only the REST `core` budget is the one the UI and MCP share. A search or
+  // GraphQL response carries its own, much smaller budget (30/min for
+  // search), which would otherwise read as "core nearly spent".
+  const resource = headers?.['x-ratelimit-resource']
+  if (resource !== undefined && resource !== 'core') return
   const remaining = Number(headers?.['x-ratelimit-remaining'])
   const limit = Number(headers?.['x-ratelimit-limit'])
   const reset = Number(headers?.['x-ratelimit-reset'])

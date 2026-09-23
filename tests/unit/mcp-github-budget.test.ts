@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { __resetInstallationOctokitCache, getGitHubRateBudget, recordGitHubRateBudget } from '../../server/providers/github-app'
-import { mcpWriteRetryAfterSeconds, UI_RESERVE_MIN, uiReserveFor } from '../../server/utils/mcp-github-budget'
+import { mcpReadRetryAfterSeconds, mcpWriteRetryAfterSeconds, readReserveFor, UI_RESERVE_MIN, uiReserveFor } from '../../server/utils/mcp-github-budget'
 
 const NOW = 1_800_000_000_000
 const headers = (remaining: number, limit = 5000, resetIn = 1200) => ({
@@ -36,5 +36,24 @@ describe('GitHub installation budget', () => {
     recordGitHubRateBudget(7, headers(1000))
     expect(mcpWriteRetryAfterSeconds(7, NOW)).toBeNull()
     expect(mcpWriteRetryAfterSeconds(8, NOW)).toBeNull()
+  })
+
+  it('records only the REST core budget, never a search or GraphQL one', () => {
+    recordGitHubRateBudget(7, { ...headers(25, 30), 'x-ratelimit-resource': 'search' })
+    expect(getGitHubRateBudget(7, NOW)).toBeNull()
+    recordGitHubRateBudget(7, { ...headers(4000), 'x-ratelimit-resource': 'core' })
+    expect(getGitHubRateBudget(7, NOW)?.remaining).toBe(4000)
+    recordGitHubRateBudget(7, { ...headers(10, 5000), 'x-ratelimit-resource': 'graphql' })
+    expect(getGitHubRateBudget(7, NOW)?.remaining).toBe(4000)
+  })
+
+  it('stops read tools only at the last 5% (at least 150)', () => {
+    expect(readReserveFor(5000)).toBe(250)
+    expect(readReserveFor(1000)).toBe(150)
+    recordGitHubRateBudget(7, headers(900))
+    expect(mcpWriteRetryAfterSeconds(7, NOW)).toBe(1200)
+    expect(mcpReadRetryAfterSeconds(7, NOW)).toBeNull()
+    recordGitHubRateBudget(7, headers(249))
+    expect(mcpReadRetryAfterSeconds(7, NOW)).toBe(1200)
   })
 })

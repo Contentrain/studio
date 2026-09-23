@@ -431,6 +431,14 @@ describe('MCP Cloud proxy gating', () => {
       expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
     })
 
+    it('holds read tools back too once only the last 5% is left', async () => {
+      await seedBudget(200)
+      const handler = await loadHandler()
+      await expect(handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never))
+        .rejects.toMatchObject({ statusCode: 429 })
+      expect(state.db.incrementMcpCloudUsageIfAllowed).not.toHaveBeenCalled()
+    })
+
     it('lets writes through while the budget is above the reserve', async () => {
       await seedBudget(1500)
       const handler = await loadHandler()
