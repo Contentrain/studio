@@ -40,6 +40,18 @@ type AIContentBlockBase
     | { type: 'tool_result', toolUseId: string, content: string, isError?: boolean }
     | { type: 'image', source: AIImageSource }
     | { type: 'document', source: AIDocumentSource }
+    | AIThinkingBlock
+
+/**
+ * Reasoning a thinking model returned (see `ModelThinkingMode` in
+ * `shared/utils/ai-models.ts`). Opaque to Studio: the engine stores and
+ * replays it byte-for-byte, because the provider checks the signature
+ * and rejects an edited block. Never carries a cache marker — the
+ * provider does not accept one on thinking blocks.
+ */
+export type AIThinkingBlock
+  = | { type: 'thinking', thinking: string, signature: string }
+    | { type: 'redacted_thinking', data: string }
 
 /**
  * Image attachment source. Provider-agnostic shape (camelCase
@@ -135,9 +147,11 @@ export interface AIStreamEvent {
    * as soon as the call starts — the part Anthropic bills even if the
    * stream is cut off later. `message_end` carries the final figures.
    */
-  type: 'text' | 'tool_use_start' | 'tool_use_input' | 'tool_use_end' | 'message_start' | 'message_end' | 'error'
+  type: 'text' | 'thinking' | 'tool_use_start' | 'tool_use_input' | 'tool_use_end' | 'message_start' | 'message_end' | 'error'
   // text
   content?: string
+  // thinking — the complete block, emitted once it closes
+  thinking?: AIThinkingBlock
   // tool_use
   toolId?: string
   toolName?: string

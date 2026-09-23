@@ -6,6 +6,7 @@ import {
   estimateMessageCredits,
   getMaxCreditsPerMessage,
   STARTER_MAX_CREDITS_PER_MESSAGE,
+  cacheReadMultiplierFor,
   pricingForModel,
 } from '../../shared/utils/ai-credits'
 
@@ -33,17 +34,34 @@ describe('estimateMessageCostUsd', () => {
     expect(cost).toBeCloseTo(7.2, 5)
   })
 
-  it('prices by model — the same tokens cost 2.5x more on Opus than Sonnet 5', () => {
+  it('prices by model — the same uncached tokens cost 2x more on Opus 5.5 than Sonnet 5', () => {
     const tokens = { inputTokens: 100_000, outputTokens: 10_000 }
     const sonnet = estimateMessageCostUsd(usage({ ...tokens, model: 'claude-sonnet-5' }))
-    const opus = estimateMessageCostUsd(usage({ ...tokens, model: 'claude-opus-4-8' }))
-    expect(opus / sonnet).toBeCloseTo(2.5, 5)
+    const opus = estimateMessageCostUsd(usage({ ...tokens, model: 'claude-opus-5-5' }))
+    expect(opus / sonnet).toBeCloseTo(2, 5)
   })
 
-  it('knows legacy Conversation-API models and falls back to Sonnet-class price for unknown ids', () => {
+  it('reads cache at the model\'s own rate — Opus 5.5 at 0.05x, the same $0.20/MTok as Sonnet 5', () => {
+    // A flat 0.1x billed Opus 5.5 history at $0.40/MTok, twice Anthropic's price.
+    const cached = { cacheReadInputTokens: 1_000_000 }
+    expect(estimateMessageCostUsd(usage({ ...cached, model: 'claude-opus-5-5' }))).toBeCloseTo(0.2, 5)
+    expect(estimateMessageCostUsd(usage({ ...cached, model: 'claude-sonnet-5' }))).toBeCloseTo(0.2, 5)
+    expect(estimateMessageCostUsd(usage({ ...cached, model: 'claude-haiku-4-5-20251001' }))).toBeCloseTo(0.1, 5)
+    expect(cacheReadMultiplierFor(pricingForModel('claude-opus-5-5'))).toBe(0.05)
+    expect(cacheReadMultiplierFor(pricingForModel('claude-sonnet-4-5'))).toBe(0.1)
+  })
+
+  it('settles retired chat models at their own list price', () => {
+    expect(pricingForModel('claude-sonnet-4-6')).toEqual({ inputPerMTok: 3, outputPerMTok: 15 })
+    expect(pricingForModel('claude-opus-4-8')).toEqual({ inputPerMTok: 5, outputPerMTok: 25 })
+  })
+
+  it('knows legacy Conversation-API models and prices an unknown id as the dearest catalog model', () => {
     expect(pricingForModel('claude-opus-4-1-20250805')).toEqual({ inputPerMTok: 15, outputPerMTok: 75 })
     expect(pricingForModel('claude-sonnet-4-5')).toEqual({ inputPerMTok: 3, outputPerMTok: 15 })
-    expect(pricingForModel('claude-model-from-the-future')).toEqual({ inputPerMTok: 3, outputPerMTok: 15 })
+    // Erring high: a premium model reaching a call site before its
+    // catalog entry must not be under-counted by the budget or settle.
+    expect(pricingForModel('claude-model-from-the-future')).toEqual({ inputPerMTok: 4, outputPerMTok: 20, cacheReadMultiplier: 0.05 })
   })
 })
 
@@ -75,7 +93,7 @@ describe('estimateMessageCredits', () => {
 
   it('caps a pathological turn at the plan ceiling — Pro/Enterprise at 60, Starter at 30', () => {
     const heavy = usage({
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       inputTokens: 2_000_000,
       outputTokens: 500_000,
     })

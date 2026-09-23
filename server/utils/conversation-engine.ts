@@ -13,12 +13,10 @@ import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../shared/utils/ai-models'
 import { estimateContentTokens, markMessageTail } from './conversation-history'
 import type { PromptEstimate, TurnBudget } from './turn-budget'
 import {
-  CLOSE_OUTPUT_TOKENS,
-  MIN_CLOSE_OUTPUT_TOKENS,
-  MIN_TOOL_CALL_OUTPUT_TOKENS,
   TurnUsageTracker,
   closeReserveUsd,
   nextPromptEstimate,
+  outputFloorsFor,
   planCall,
   usageCostUsd,
 } from './turn-budget'
@@ -336,6 +334,15 @@ export async function* runConversationLoop(
         case 'tool_use_input':
           tracker.addStreamedOutput(streamEvent.content)
           break
+        case 'thinking':
+          // Kept in order and unchanged: the next iteration (after the
+          // tool results) and the replayed history must send it back
+          // exactly as the model produced it. Its tokens reach the
+          // tracker with the call's `message_end` (the visible text is
+          // usually empty).
+          flushText()
+          if (streamEvent.thinking) assistantBlocks.push(streamEvent.thinking)
+          break
         case 'tool_use_start':
           flushText()
           yield { type: 'tool_use', id: streamEvent.toolId, name: streamEvent.toolName }
@@ -396,6 +403,10 @@ export async function* runConversationLoop(
     }
   }
 
+  // Output floors for this model — thinking models carry headroom so a
+  // budget-lowered ceiling is not spent entirely on reasoning.
+  const floors = outputFloorsFor(config.model)
+
   try {
     while (iteration < maxIterations) {
       if (config.abortSignal?.aborted) break
@@ -415,7 +426,7 @@ export async function* runConversationLoop(
           model: config.model,
           prompt: nextPrompt,
           maxOutputTokens,
-          minOutputTokens: MIN_TOOL_CALL_OUTPUT_TOKENS,
+          minOutputTokens: floors.minToolCall,
           // Leave room for the closing summary, so a cut turn still ends
           // with a proper answer rather than the fallback message.
           reserveUsd: closeReserveUsd(config.model, nextPrompt, maxOutputTokens),
@@ -429,7 +440,7 @@ export async function* runConversationLoop(
           break
         }
         else {
-          callMaxTokens = Math.min(maxOutputTokens, MIN_TOOL_CALL_OUTPUT_TOKENS)
+          callMaxTokens = Math.min(maxOutputTokens, floors.minToolCall)
           budgetLimited = callMaxTokens < maxOutputTokens
         }
       }
@@ -556,8 +567,8 @@ export async function* runConversationLoop(
         spentUsd: usageCostUsd(config.model, tracker.snapshot()),
         model: config.model,
         prompt: nextPrompt,
-        maxOutputTokens: stoppedByBudget ? Math.min(maxOutputTokens, CLOSE_OUTPUT_TOKENS) : maxOutputTokens,
-        minOutputTokens: MIN_CLOSE_OUTPUT_TOKENS,
+        maxOutputTokens: stoppedByBudget ? Math.min(maxOutputTokens, floors.close) : maxOutputTokens,
+        minOutputTokens: floors.minClose,
       })
       wrapAffordable = plan.ok
       if (plan.ok) wrapMaxTokens = plan.maxTokens

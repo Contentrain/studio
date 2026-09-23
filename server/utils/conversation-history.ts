@@ -275,6 +275,8 @@ export function markMessageTail(message: AIMessage): AIMessage {
   for (let i = message.content.length - 1; i >= 0; i--) {
     const block = message.content[i]!
     if (block.type === 'text' && !block.text.trim()) continue
+    // The provider rejects a cache marker on a thinking block.
+    if (block.type === 'thinking' || block.type === 'redacted_thinking') continue
     const content = message.content.slice()
     content[i] = { ...block, cacheControl: PROMPT_CACHE_CONTROL }
     return { role: message.role, content }
@@ -425,6 +427,12 @@ function estimateBlockTokens(block: AIContentBlock): number {
       return 16 + estimateTextTokens(block.name) + estimateTextTokens(JSON.stringify(block.input))
     case 'tool_result':
       return 16 + estimateTextTokens(block.content)
+    case 'thinking':
+      // The signature carries the (encrypted) reasoning, which is what a
+      // replayed block is billed for — the visible text is often empty.
+      return estimateTextTokens(block.thinking) + Math.ceil(block.signature.length / 4)
+    case 'redacted_thinking':
+      return Math.ceil(block.data.length / 4)
     default:
       return 0
   }

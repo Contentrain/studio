@@ -3,7 +3,8 @@ import type { AIMessage, AIProvider } from '../../server/providers/ai'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext, ProjectPhase } from '../../server/utils/agent-types'
 import { estimateMessageCostUsd, settleTurnCredits } from '../../shared/utils/ai-credits'
-import { TurnUsageTracker, nextPromptEstimate, planCall } from '../../server/utils/turn-budget'
+import { THINKING_HEADROOM_TOKENS, TurnUsageTracker, nextPromptEstimate, outputFloorsFor, planCall, promptCostUsd } from '../../server/utils/turn-budget'
+import { pricingForModel } from '../../shared/utils/ai-credits'
 
 // The loop tests import the whole conversation engine; its first import
 // takes several seconds when the suite runs in parallel.
@@ -17,6 +18,7 @@ vi.setConfig({ testTimeout: 30_000 })
  */
 
 const HAIKU = 'claude-haiku-4-5-20251001'
+const OPUS = 'claude-opus-5-5'
 const ZERO = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
 
 describe('planCall', () => {
@@ -46,6 +48,22 @@ describe('planCall', () => {
   it('prices cached prompt at the cache-read rate and new prompt at the cache-write rate', () => {
     const next = nextPromptEstimate({ inputTokens: 1000, outputTokens: 500, cacheCreationInputTokens: 4000, cacheReadInputTokens: 30_000 }, 2000)
     expect(next).toEqual({ cached: 34_000, fresh: 3500 })
+  })
+})
+
+describe('thinking models under the budget (QA-4 F1)', () => {
+  it('gives thinking models headroom on every floor, others the plain floors', () => {
+    expect(outputFloorsFor(HAIKU)).toEqual({ minToolCall: 1024, close: 1024, minClose: 256 })
+    expect(outputFloorsFor(OPUS)).toEqual({
+      minToolCall: 1024 + THINKING_HEADROOM_TOKENS,
+      close: 1024 + THINKING_HEADROOM_TOKENS,
+      minClose: 256 + THINKING_HEADROOM_TOKENS,
+    })
+  })
+
+  it('prices cached prompt at the model\'s own cache-read rate (Opus 5.5: 0.05x)', () => {
+    // 1M cached on Opus 5.5 = $4 × 0.05 = $0.20, not the flat 0.1x $0.40.
+    expect(promptCostUsd({ cached: 1_000_000, fresh: 0 }, pricingForModel(OPUS))).toBeCloseTo(0.2, 6)
   })
 })
 
@@ -144,13 +162,13 @@ function heavyModel(opts: { promptPerCall: number, outputPerCall: number }) {
   return { provider, requests }
 }
 
-async function runLoop(provider: Partial<AIProvider>, budget?: { maxUsd: number, limitedBy?: 'turn' | 'credits' }) {
+async function runLoop(provider: Partial<AIProvider>, budget?: { maxUsd: number, limitedBy?: 'turn' | 'credits' }, model: string = HAIKU) {
   stubLoopGlobals(provider)
   const { runConversationLoop } = await import('../../server/utils/conversation-engine')
   const events: Array<Record<string, unknown>> = []
   for await (const evt of runConversationLoop(
     {
-      model: HAIKU,
+      model,
       apiKey: 'sk-test',
       systemPrompt: 'system',
       messages: [{ role: 'user', content: 'rewrite every entry' } as AIMessage],
@@ -189,6 +207,37 @@ describe('conversation loop — turn budget', () => {
     expect(text).toContain('Summary:')
     // No "split your operation" truncation error on a budget stop.
     expect(events.some(e => e.type === 'error')).toBe(false)
+  })
+
+  it('an Opus 5.5 turn stays inside the $1.80 ceiling and never calls with less room than thinking needs (F1/F2)', async () => {
+    // Pro ceiling: 60 credits = $1.80. Opus wants 60K prompt + 12K output
+    // per iteration ($0.48 at worst); 32K output ceiling as in the catalog.
+    const { provider, requests } = heavyModel({ promptPerCall: 60_000, outputPerCall: 12_000 })
+    stubLoopGlobals(provider)
+    const { runConversationLoop } = await import('../../server/utils/conversation-engine')
+    const events: Array<Record<string, unknown>> = []
+    for await (const evt of runConversationLoop(
+      {
+        model: OPUS,
+        apiKey: 'sk-test',
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'rewrite every entry' } as AIMessage],
+        tools: [{ name: 'test_tool', description: 'test', inputSchema: { type: 'object' } }],
+        maxOutputTokens: 32_000,
+        budget: { maxUsd: 1.8 },
+      },
+      toolContext(),
+    )) events.push(evt)
+
+    const done = events.at(-1)!
+    expect(estimateMessageCostUsd({ model: OPUS, ...(done.usage as typeof ZERO) })).toBeLessThanOrEqual(1.8)
+    expect(done.stoppedBy).toBe('budget')
+    const floors = outputFloorsFor(OPUS)
+    for (const r of requests) {
+      if (r.tools > 0) expect(r.maxTokens).toBeGreaterThanOrEqual(floors.minToolCall)
+      else expect(r.maxTokens).toBeGreaterThanOrEqual(floors.minClose)
+    }
+    expect(events.filter(e => e.type === 'text').map(e => e.content).join('')).toContain('Summary:')
   })
 
   it('without a budget the same turn runs all 8 iterations and the wrap', async () => {
