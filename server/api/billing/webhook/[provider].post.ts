@@ -15,6 +15,63 @@ import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payme
 import type { PaymentPluginConfig } from '../../../providers/payment'
 import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
 import { emailTemplate } from '../../../utils/content-strings'
+import { BILLABLE_METERS_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
+import type { OverageLockAccount } from '../../../utils/overage-lock'
+
+type Db = ReturnType<typeof useDatabaseProvider>
+
+/**
+ * Line the workspace's overage toggles up with what the subscription can
+ * bill (`server/utils/overage-lock.ts`): a toggle the subscription cannot
+ * invoice is turned off and remembered, and turned back on by the event
+ * that lifts the lock — trial end, or the subscription moving to current
+ * prices. Returns the `plugin_metadata` to store with the upsert
+ * (undefined = keep the stored value) and a `commit` that writes the
+ * toggles once the account row is in place.
+ *
+ * Public routes (forms, MCP Cloud, comments, media API) read
+ * `overage_settings` straight from the workspace row, so the lock is
+ * written there, not only applied where the billing middleware runs.
+ */
+async function planOverageLock(db: Db, input: {
+  workspaceId: string
+  billableMeters?: string[]
+  storedPluginMetadata: unknown
+  account: Omit<OverageLockAccount, 'plugin_metadata'>
+}): Promise<{ pluginMetadata: Record<string, unknown> | undefined, commit: () => Promise<void> }> {
+  let settings: Record<string, boolean> | null = null
+  try {
+    const workspace = await db.getWorkspaceById(input.workspaceId, 'id, overage_settings')
+    settings = (workspace?.overage_settings as Record<string, boolean> | null) ?? {}
+  }
+  catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[billing] overage settings unreadable for ${input.workspaceId}:`, err)
+  }
+  if (settings === null) {
+    // Toggles unreadable: record the prices, leave toggles and the
+    // suspended list alone. The billing middleware still applies the lock
+    // to the chat and media routes at read time.
+    const stored = (input.storedPluginMetadata as Record<string, unknown> | null) ?? {}
+    return {
+      pluginMetadata: input.billableMeters ? { ...stored, [BILLABLE_METERS_KEY]: input.billableMeters } : undefined,
+      commit: async () => {},
+    }
+  }
+  const plan = reconcileOverageLock({
+    settings,
+    pluginMetadata: input.storedPluginMetadata,
+    billableMeters: input.billableMeters,
+    account: input.account,
+  })
+  return {
+    pluginMetadata: plan.pluginMetadata,
+    commit: async () => {
+      if (plan.settings)
+        await db.updateWorkspace('', input.workspaceId, { overage_settings: plan.settings })
+    },
+  }
+}
 
 /** Extract every request header as a plain `{[key]: string | undefined}` object. */
 function readAllHeaders(event: Parameters<typeof getRequestHeaders>[0]): Record<string, string | undefined> {
@@ -129,6 +186,16 @@ export default defineEventHandler(async (event) => {
     case 'subscription.created': {
       // Fresh subscription — upsert the active account for this workspace.
       if (!result.workspaceId || !result.customerId) break
+      const overageLock = await planOverageLock(db, {
+        workspaceId: result.workspaceId,
+        billableMeters: result.billableMeters,
+        storedPluginMetadata: null,
+        account: {
+          subscription_status: result.subscriptionStatus ?? 'trialing',
+          trial_ends_at: result.trialEndsAt ?? null,
+          current_period_end: result.currentPeriodEnd ?? null,
+        },
+      })
       await db.upsertPaymentAccount({
         workspaceId: result.workspaceId,
         provider: plugin.key,
@@ -142,8 +209,10 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: null,
         plan: result.plan ?? null,
+        pluginMetadata: overageLock.pluginMetadata,
         isActive: true,
       })
+      await overageLock.commit()
       // First 'trialing' observation consumes the workspace's one-time
       // trial, so a later re-checkout (after cancel/expiry) gets a paid
       // checkout with no new trial. Idempotent (set once, never moved).
@@ -173,6 +242,16 @@ export default defineEventHandler(async (event) => {
       if (result.subscriptionStatus === 'trialing') {
         await db.markWorkspaceTrialConsumed(result.workspaceId)
       }
+      const overageLock = await planOverageLock(db, {
+        workspaceId: result.workspaceId,
+        billableMeters: result.billableMeters,
+        storedPluginMetadata: existingAccount?.plugin_metadata ?? null,
+        account: {
+          subscription_status: result.subscriptionStatus ?? null,
+          trial_ends_at: result.trialEndsAt ?? (existingAccount?.trial_ends_at as string | null) ?? null,
+          current_period_end: result.currentPeriodEnd ?? null,
+        },
+      })
       await db.upsertPaymentAccount({
         workspaceId: result.workspaceId,
         provider: plugin.key,
@@ -192,8 +271,10 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: becameActive ? null : undefined,
         plan: result.plan ?? null,
+        pluginMetadata: overageLock.pluginMetadata,
         isActive: true,
       })
+      await overageLock.commit()
 
       const workspaceUpdate: Record<string, unknown> = {}
       if (result.plan) workspaceUpdate.plan = result.plan

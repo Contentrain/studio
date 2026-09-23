@@ -80,6 +80,21 @@ interface PolarSubscriptionLike {
   trialEnd: Date | string | null
   cancelAtPeriodEnd: boolean
   metadata?: Record<string, unknown>
+  prices?: Array<{ amountType?: string, meter?: { name?: string } | null }>
+}
+
+/**
+ * Meters the subscription itself prices. Polar keeps a subscription on the
+ * prices it was created with, so a catalogue change does not reach it —
+ * this is the list overage may be sold against.
+ */
+function billableMetersOf(sub: PolarSubscriptionLike): string[] | undefined {
+  if (!Array.isArray(sub.prices)) return undefined
+  const names = sub.prices
+    .filter(p => p.amountType === 'metered_unit')
+    .map(p => p.meter?.name)
+    .filter((n): n is string => typeof n === 'string' && n.length > 0)
+  return [...new Set(names)].toSorted()
 }
 
 function subscriptionToResult(
@@ -101,6 +116,7 @@ function subscriptionToResult(
     currentPeriodEnd: isoOrUndefined(sub.currentPeriodEnd),
     trialEndsAt: sub.status === 'trialing' ? isoOrUndefined(sub.trialEnd) : undefined,
     cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),
+    billableMeters: billableMetersOf(sub),
   }
 }
 

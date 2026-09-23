@@ -108,7 +108,8 @@ export default defineEventHandler(async (event) => {
   // Counted in the workspace's billing period, not the calendar month —
   // otherwise the quota resets on the 1st while the invoice runs from the
   // subscription anniversary (`server/utils/usage-period.ts`).
-  const usageMonth = (await resolveUsagePeriod(workspaceId)).key
+  const usagePeriod = await resolveUsagePeriod(workspaceId)
+  const usageMonth = usagePeriod.key
 
   // Billing semantic: a message is billable only once Anthropic streams
   // its first real provider event (text or tool_use). Pre-AI failures
@@ -147,7 +148,16 @@ export default defineEventHandler(async (event) => {
         limit: monthlyLimit,
       })
       if (!allowed)
-        throw createError({ statusCode: 429, message: errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit }) })
+        throw createError({
+          statusCode: 429,
+          message: errorMessage('chat.monthly_limit_reached', {
+            limit: basePlanLimit,
+            date: new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+          }),
+          // The client turns this into a notice that links to Usage, where
+          // overage and upgrades live.
+          data: { code: 'ai_credits_exhausted', resetsAt: usagePeriod.resetsAt },
+        })
       reserved = true
     }
 

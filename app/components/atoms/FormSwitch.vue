@@ -5,10 +5,13 @@ const {
   modelValue = false,
   label,
   disabled = false,
+  describedBy,
 } = defineProps<{
   modelValue?: boolean
   label?: string
   disabled?: boolean
+  /** Id of text that explains the switch's state (e.g. why it is disabled). */
+  describedBy?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +24,7 @@ const emit = defineEmits<{
     <SwitchRoot
       :checked="modelValue"
       :disabled="disabled"
+      :aria-describedby="describedBy"
       class="relative h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary-600 data-[state=unchecked]:bg-secondary-200 dark:data-[state=unchecked]:bg-secondary-700"
       @update:checked="emit('update:modelValue', $event)"
     >

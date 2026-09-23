@@ -246,6 +246,164 @@ describe('billing webhook integration', () => {
     }))
   })
 
+  describe('trial end and overage the subscription cannot bill', () => {
+    const getWorkspaceById = vi.fn()
+    const LEGACY_PRICES = ['ai_messages', 'api_messages', 'cdn_bandwidth_bytes', 'form_submissions', 'mcp_calls', 'media_storage_byte_hours']
+    const CURRENT_PRICES = ['ai_credits', 'api_credits', 'form_submissions', 'mcp_calls']
+
+    beforeEach(() => {
+      getWorkspaceById.mockReset().mockResolvedValue({ id: 'ws-1', overage_settings: {} })
+      vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue(null))
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        upsertPaymentAccount,
+        archiveActivePaymentAccount,
+        updateWorkspace,
+        getActivePaymentAccount,
+        markWorkspaceTrialConsumed,
+        getWorkspaceById,
+      }))
+    })
+
+    it('moves the usage window to the paid period when the trial ends', async () => {
+      // Pro trial 15 → 29 Sep; the provider renews into 29 Sep → 29 Oct.
+      getActivePaymentAccount.mockResolvedValue({
+        subscription_status: 'trialing',
+        current_period_start: '2026-09-15T07:36:51.653Z',
+        current_period_end: '2026-09-29T07:36:51.653Z',
+        trial_ends_at: '2026-09-29T07:36:51.653Z',
+        plugin_metadata: {},
+      })
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.updated',
+        workspaceId: 'ws-1',
+        plan: 'pro',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        subscriptionStatus: 'active',
+        currentPeriodStart: '2026-09-29T07:36:51.653Z',
+        currentPeriodEnd: '2026-10-29T07:36:51.653Z',
+        billableMeters: CURRENT_PRICES,
+      })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        subscriptionStatus: 'active',
+        currentPeriodStart: '2026-09-29T07:36:51.653Z',
+        currentPeriodEnd: '2026-10-29T07:36:51.653Z',
+        trialEndsAt: null,
+      }))
+
+      // The quota key the gates count in follows the stored row: the trial's
+      // window before, the first paid period after — so the paid period
+      // starts from zero.
+      const { usagePeriodFrom } = await import('../../server/utils/usage-period')
+      const written = upsertPaymentAccount.mock.calls[0]![0] as { currentPeriodStart: string, currentPeriodEnd: string, subscriptionStatus: string }
+      const now = new Date('2026-09-30T12:00:00.000Z')
+      expect(usagePeriodFrom({
+        subscription_status: 'trialing',
+        current_period_start: '2026-09-15T07:36:51.653Z',
+        current_period_end: '2026-09-29T07:36:51.653Z',
+      }, new Date('2026-09-20T00:00:00.000Z')).key).toBe('2026-09-15')
+      expect(usagePeriodFrom({
+        subscription_status: written.subscriptionStatus,
+        current_period_start: written.currentPeriodStart,
+        current_period_end: written.currentPeriodEnd,
+      }, now).key).toBe('2026-09-29')
+    })
+
+    it('turns off and remembers overage a legacy-priced subscription cannot bill', async () => {
+      getWorkspaceById.mockResolvedValue({ id: 'ws-1', overage_settings: { ai_messages: true, mcp_calls: true } })
+      getActivePaymentAccount.mockResolvedValue({ subscription_status: 'trialing', plugin_metadata: {} })
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.updated',
+        workspaceId: 'ws-1',
+        plan: 'pro',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        subscriptionStatus: 'active',
+        currentPeriodStart: '2026-09-29T07:36:51.653Z',
+        currentPeriodEnd: '2026-10-29T07:36:51.653Z',
+        billableMeters: LEGACY_PRICES,
+      })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        pluginMetadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'] },
+      }))
+      expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { ai_messages: false, mcp_calls: true } })
+    })
+
+    it('turns suspended overage back on once the subscription is on current prices', async () => {
+      getWorkspaceById.mockResolvedValue({ id: 'ws-1', overage_settings: { ai_messages: false, mcp_calls: true } })
+      getActivePaymentAccount.mockResolvedValue({
+        subscription_status: 'active',
+        plugin_metadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'] },
+      })
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.updated',
+        workspaceId: 'ws-1',
+        plan: 'pro',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        subscriptionStatus: 'active',
+        currentPeriodStart: '2026-09-29T07:36:51.653Z',
+        currentPeriodEnd: '2026-10-29T07:36:51.653Z',
+        billableMeters: CURRENT_PRICES,
+      })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        pluginMetadata: { billable_meters: CURRENT_PRICES },
+      }))
+      expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { ai_messages: true, mcp_calls: true } })
+    })
+
+    it('suspends overage on a new trial', async () => {
+      getWorkspaceById.mockResolvedValue({ id: 'ws-1', overage_settings: { api_messages: true } })
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.created',
+        workspaceId: 'ws-1',
+        plan: 'starter',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        subscriptionStatus: 'trialing',
+        trialEndsAt: '2026-10-05T08:06:40.869Z',
+        billableMeters: CURRENT_PRICES,
+      })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { api_messages: false } })
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+        pluginMetadata: { billable_meters: CURRENT_PRICES, overage_suspended: ['api_messages'] },
+      }))
+    })
+
+    it('keeps the stored price list on a payment event', async () => {
+      getActivePaymentAccount.mockResolvedValue({
+        provider: 'stripe',
+        customer_id: 'cus_123',
+        subscription_id: 'sub_123',
+        subscription_status: 'past_due',
+        plugin_metadata: { billable_meters: LEGACY_PRICES },
+      })
+      handleWebhookMock.mockResolvedValue({ event: 'invoice.paid', workspaceId: 'ws-1' })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+
+      // Omitted → the provider keeps the stored value (see DatabaseProvider).
+      expect(upsertPaymentAccount.mock.calls[0]![0]).not.toHaveProperty('pluginMetadata')
+    })
+  })
+
   it('returns 503 when provider is not configured', async () => {
     const handler = await mockPluginAndLoadHandler({ configured: false })
     await expect(handler({ context: {} } as never)).rejects.toMatchObject({

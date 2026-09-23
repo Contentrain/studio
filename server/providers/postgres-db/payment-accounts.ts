@@ -89,7 +89,7 @@ export function paymentAccountMethods(): PaymentAccountMethods {
                 cancel_at_period_end: payload.cancel_at_period_end,
                 grace_period_ends_at: payload.grace_period_ends_at,
                 plan: payload.plan,
-                plugin_metadata: payload.plugin_metadata,
+                ...(input.pluginMetadata === undefined ? {} : { plugin_metadata: payload.plugin_metadata }),
                 is_active: payload.is_active,
                 ...(nowActive ? { archived_at: null } : { archived_at: new Date().toISOString() }),
               } as never))

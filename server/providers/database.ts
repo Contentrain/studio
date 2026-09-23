@@ -952,6 +952,10 @@ export interface DatabaseProvider {
    * account on the same workspace is archived (`is_active=false`,
    * `archived_at=now()`). This preserves history while enforcing the
    * one-active-per-workspace invariant.
+   *
+   * `pluginMetadata` omitted keeps the stored value on an update (a new row
+   * gets `{}`). Payment events that only move the status must not wipe what
+   * the subscription event recorded there (e.g. `billable_meters`).
    */
   upsertPaymentAccount: (input: {
     workspaceId: string

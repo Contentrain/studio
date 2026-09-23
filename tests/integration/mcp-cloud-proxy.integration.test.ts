@@ -329,6 +329,23 @@ describe('MCP Cloud proxy gating', () => {
     expect(state.proxyRequest).not.toHaveBeenCalled()
   })
 
+  it('tells the client when the monthly quota resets', async () => {
+    // No billing period on record → the calendar month; the quota resets on
+    // the 1st, 8 days after 23 Sep 00:00 UTC.
+    vi.useFakeTimers({ now: new Date('2026-09-23T00:00:00.000Z'), toFake: ['Date'] })
+    try {
+      state.quota = { allowed: false, used: 1000 }
+      const handler = await loadHandler()
+      const event = makeEvent({ __body: toolCallBody('contentrain_content_save') })
+
+      await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 429 })
+      expect(state.setResponseHeader).toHaveBeenCalledWith(expect.anything(), 'Retry-After', 8 * 24 * 60 * 60)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('invalidates brain cache and reconciles auto-merge on write tools', async () => {
     state.reconcile.mockResolvedValue(undefined)
     const handler = await loadHandler()

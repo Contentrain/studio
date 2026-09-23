@@ -22,6 +22,8 @@ import { getEffectivePlan, isBillingLocked, resolveBillingState, WORKSPACE_BILLI
 import type { PaymentAccountState, WorkspaceBillingRow } from '../utils/billing'
 import { getWorkspacePlan } from '../utils/license'
 import { resolveDeployment } from '../utils/deployment'
+import { resolveOverageLocks, withoutLockedOverage } from '../utils/overage-lock'
+import type { OverageLockAccount } from '../utils/overage-lock'
 
 const WORKSPACE_ROUTE_PREFIX = '/api/workspaces/'
 
@@ -88,7 +90,14 @@ export default defineEventHandler(async (event) => {
   const state = resolveBillingState(billingRow)
   const effectivePlan = getEffectivePlan(billingRow)
 
-  event.context.billing = { state, effectivePlan, overageSettings: billingRow.overage_settings ?? {} }
+  // A stored toggle the subscription cannot bill (trial, or a meter it has
+  // no price for) is off here, whatever the row says — the webhook turns it
+  // off in the row too, this covers the time before it does.
+  const overageSettings = withoutLockedOverage(
+    billingRow.overage_settings,
+    resolveOverageLocks(account as OverageLockAccount | null),
+  )
+  event.context.billing = { state, effectivePlan, overageSettings }
 
   if (isBillingLocked(state)) {
     throw createError({

@@ -70,6 +70,14 @@ export interface WebhookResult {
   cancelAtPeriodEnd?: boolean
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
+  /**
+   * Meter names the subscription carries a metered price for. A
+   * subscription keeps the prices it was created with, so this is what the
+   * provider can actually invoice — not what the product sells today.
+   * Omitted when the provider does not report prices; overage is then only
+   * gated by the trial (`server/utils/overage-lock.ts`).
+   */
+  billableMeters?: string[]
 }
 
 export interface UsageEventInput {

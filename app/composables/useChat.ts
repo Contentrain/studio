@@ -268,6 +268,12 @@ export function useChat(options?: {
   const conversations = useState<ConversationSummary[]>('chat-conversations', () => [])
   const isStreaming = useState('chat-streaming', () => false)
   const error = useState<string | null>('chat-error', () => null)
+  /**
+   * Set when a turn was refused because the workspace's AI credits for the
+   * period are used up. Rendered as a persistent notice with a link to Usage
+   * (overage, upgrade) instead of a toast that disappears.
+   */
+  const creditsExhausted = useState<{ message: string, resetsAt: string | null } | null>('chat-credits-exhausted', () => null)
   const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
   useModelPersistence(selectedModel)
   // Plan-gated model list. Pro-tier models (Sonnet/Opus) need the
@@ -421,6 +427,7 @@ export function useChat(options?: {
     if (!text.trim() || isStreaming.value) return
 
     error.value = null
+    creditsExhausted.value = null
 
     // Only ready attachments carry blocks; uploading/errored ones are ignored.
     const readyAttachments = (attachments ?? []).filter(a => a.status === 'ready' && a.blocks?.length)
@@ -481,8 +488,16 @@ export function useChat(options?: {
       )
 
       if (!response.ok) {
-        const errBody = await response.json().catch(() => ({})) as { message?: string, statusCode?: number }
+        const errBody = await response.json().catch(() => ({})) as {
+          message?: string
+          statusCode?: number
+          data?: { code?: string, resetsAt?: string }
+        }
         const status = errBody.statusCode ?? response.status
+        if (status === 429 && errBody.data?.code === 'ai_credits_exhausted' && errBody.message) {
+          creditsExhausted.value = { message: errBody.message, resetsAt: errBody.data.resetsAt ?? null }
+          throw Object.assign(new Error(errBody.message), { statusCode: status, creditsExhausted: true })
+        }
         // 4xx errors have user-friendly messages from backend; 5xx use fallback
         if (status >= 400 && status < 500 && errBody.message) {
           throw Object.assign(new Error(errBody.message), { statusCode: status })
@@ -533,7 +548,9 @@ export function useChat(options?: {
       }
       else {
         const { t } = useContent()
-        error.value = resolveApiError(e, t('chat.send_error'))
+        // Credits used up: the notice says so and stays; no toast on top.
+        if (!(e as { creditsExhausted?: boolean })?.creditsExhausted)
+          error.value = resolveApiError(e, t('chat.send_error'))
         // Remove empty assistant message on error
         if (!hasVisibleContent(assistantMsg)) {
           messages.value.pop()
@@ -640,6 +657,11 @@ export function useChat(options?: {
     messages.value = []
     conversationId.value = null
     error.value = null
+    creditsExhausted.value = null
+  }
+
+  function dismissCreditsExhausted() {
+    creditsExhausted.value = null
   }
 
   return {
@@ -648,6 +670,8 @@ export function useChat(options?: {
     conversations: readonly(conversations),
     isStreaming: readonly(isStreaming),
     error: readonly(error),
+    creditsExhausted: readonly(creditsExhausted),
+    dismissCreditsExhausted,
     streamTick: readonly(streamTick),
     selectedModel,
     allowedModels,

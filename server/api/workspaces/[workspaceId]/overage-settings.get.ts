@@ -7,6 +7,8 @@
 
 import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../../shared/utils/license'
 import { isOverageSellable } from '../../../../server/utils/overage'
+import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import type { OverageLockAccount } from '../../../../server/utils/overage-lock'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -34,15 +36,19 @@ export default defineEventHandler(async (event) => {
   const accountStatus = (account?.subscription_status as string | null) ?? null
   const hasActiveSubscription = ['trialing', 'active', 'past_due'].includes(accountStatus ?? '')
 
+  const locks = resolveOverageLocks(account as OverageLockAccount | null)
+
   const categories = Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => ({
     limitKey,
     settingsKey: pricing.settingsKey,
     unit: pricing.unit,
     unitPrice: pricing.price,
     planLimit: getPlanLimitForPlan(plan, limitKey),
-    enabled: isOverageSellable(limitKey) && overageSettings[pricing.settingsKey] === true,
+    enabled: isOverageSellable(limitKey) && !locks[pricing.settingsKey] && overageSettings[pricing.settingsKey] === true,
     /** False → hard cap; the client hides or disables the toggle. */
     sellable: isOverageSellable(limitKey),
+    /** Set → the toggle is off and cannot be turned on yet (why, and until when). */
+    lock: locks[pricing.settingsKey] ?? null,
   }))
 
   return {

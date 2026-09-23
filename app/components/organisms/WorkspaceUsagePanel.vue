@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { UsageCategory } from '~/composables/useUsage'
+
 const { t } = useContent()
 const { usage, loading, fetchUsage, toggleOverage } = useUsage()
 const { billingState, billingEnabled } = useBilling()
@@ -20,6 +22,15 @@ const canToggleOverage = computed(() => hasSubscription.value && billingEnabled.
 onMounted(() => {
   fetchUsage()
 })
+
+function overageLockText(lock: NonNullable<UsageCategory['overageLock']>): string {
+  if (lock.reason === 'trialing') {
+    return lock.until
+      ? t('billing.overage_locked_trial', { date: new Date(lock.until).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) })
+      : t('billing.overage_locked_trial_undated')
+  }
+  return t('billing.overage_locked_subscription')
+}
 
 async function handleToggle(settingsKey: string, enabled: boolean) {
   togglingKey.value = settingsKey
@@ -118,13 +129,23 @@ function categoryIcon(key: string): string {
           >
             {{ t('billing.overage_hard_limit') }}
           </span>
-          <div v-else-if="category.limit !== -1 && category.limit > 0">
+          <div v-else-if="category.limit !== -1 && category.limit > 0" class="flex flex-col items-end gap-1">
             <AtomsFormSwitch
               :model-value="category.overageEnabled"
-              :disabled="!canToggleOverage || togglingKey !== null"
+              :disabled="!canToggleOverage || togglingKey !== null || !!category.overageLock"
               :label="t('billing.allow_overage')"
+              :described-by="category.overageLock ? `overage-lock-${category.key}` : undefined"
               @update:model-value="handleToggle(category.key, $event)"
             />
+            <!-- Why the switch is off and when it can be on. The plan's
+                 included usage is unaffected either way. -->
+            <span
+              v-if="category.overageLock"
+              :id="`overage-lock-${category.key}`"
+              class="text-right text-xs text-muted"
+            >
+              {{ overageLockText(category.overageLock) }}
+            </span>
           </div>
           <span v-else class="text-xs text-success-600 dark:text-success-400">
             {{ t('billing.usage_unlimited') }}

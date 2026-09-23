@@ -15,11 +15,15 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useContent()
-const { messages, conversationId, conversations, isStreaming, error, streamTick, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
+const { messages, conversationId, conversations, isStreaming, error, creditsExhausted, dismissCreditsExhausted, streamTick, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
   onContentChanged: (affected) => {
     emit('contentChanged', affected)
   },
 })
+
+// Where overage and upgrades live — the credits-exhausted notice links here.
+const route = useRoute()
+const usageSettingsPath = computed(() => `/w/${route.params.slug as string}/settings?tab=billing`)
 
 /**
  * The welcome state of a ready project — the one empty branch that centres
@@ -377,20 +381,32 @@ function formatConversationDate(dateStr: string): string {
         </div>
       </div>
 
-      <!-- Limit reached banner -->
+      <!-- AI credits used up — stays until dismissed or the next send -->
       <div
-        v-if="error && error.includes('limit')"
+        v-if="creditsExhausted"
+        role="status"
         class="flex items-center gap-3 border-t border-warning-200 bg-warning-50 px-4 py-3 dark:border-warning-500/20 dark:bg-warning-500/10"
       >
         <NuxtImg src="/illustrations/limit-reached.png" alt="" class="h-10 w-auto shrink-0" loading="lazy" />
         <div class="min-w-0 flex-1">
           <p class="text-xs font-medium text-warning-700 dark:text-warning-400">
-            {{ error }}
+            {{ creditsExhausted.message }}
           </p>
         </div>
-        <AtomsBadge variant="warning" size="sm">
-          {{ t('common.upgrade') }}
-        </AtomsBadge>
+        <NuxtLink
+          :to="usageSettingsPath"
+          class="shrink-0 rounded text-xs font-semibold text-warning-700 underline underline-offset-2 hover:text-warning-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-warning-400"
+        >
+          {{ t('chat.credits_exhausted_action') }}
+        </NuxtLink>
+        <button
+          type="button"
+          class="shrink-0 rounded p-1 text-warning-600 hover:bg-warning-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-warning-400 dark:hover:bg-warning-500/20"
+          :aria-label="t('common.dismiss')"
+          @click="dismissCreditsExhausted"
+        >
+          <span class="icon-[annon--cross] size-4" aria-hidden="true" />
+        </button>
       </div>
 
       <!-- Context bar (pinned items + drop zone) -->
@@ -399,7 +415,7 @@ function formatConversationDate(dateStr: string): string {
       <!-- Input -->
       <MoleculesChatInput
         ref="chatInputRef"
-        :disabled="!!error && error.includes('limit')"
+        :disabled="!!creditsExhausted"
         :streaming="isStreaming"
         :workspace-id="workspaceId"
         :project-id="projectId"

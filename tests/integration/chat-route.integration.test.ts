@@ -114,8 +114,11 @@ describe('chat route integration', () => {
       })
 
       expect(response.status).toBe(429)
+      // The client shows a notice linking to Usage from this code, with
+      // the date the credits come back.
       await expect(response.json()).resolves.toMatchObject({
         statusCode: 429,
+        data: { code: 'ai_credits_exhausted', resetsAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
       })
     })
   })
