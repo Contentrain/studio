@@ -206,6 +206,55 @@ describe('billing webhook integration', () => {
     expect(written.pluginMetadata?.trial_origin).toBeUndefined()
   })
 
+  it('a claimed Migrate trial reaches the credit cap: webhook mark → billing state → Starter allowance', async () => {
+    // QA-5 F1: the whole chain, not each link on its own. The webhook
+    // writes the payment account; the billing resolution reads that row;
+    // the cap follows.
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      archiveActivePaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      markWorkspaceTrialConsumed,
+      markMigrateGrantRedeemed: vi.fn().mockResolvedValue(undefined),
+    }))
+    const trialEndsAt = new Date(Date.now() + 30 * 86_400_000).toISOString()
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.created',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_123',
+      subscriptionStatus: 'trialing',
+      trialEndsAt,
+      cancelAtPeriodEnd: false,
+      migrateGrantId: 'grant-1',
+    })
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+
+    const written = upsertPaymentAccount.mock.calls.at(-1)![0] as { subscriptionId: string, subscriptionStatus: string, trialEndsAt: string, pluginMetadata: Record<string, unknown> }
+    // The row as the database hands it back to the billing resolution.
+    const account = {
+      subscription_id: written.subscriptionId,
+      subscription_status: written.subscriptionStatus,
+      trial_ends_at: written.trialEndsAt,
+      current_period_end: null,
+      grace_period_ends_at: null,
+      plugin_metadata: written.pluginMetadata,
+    }
+    const { resolveBillingState, resolveTrialContext } = await import('../../server/utils/billing')
+    const { applyTrialCap, PLAN_LIMITS } = await import('../../shared/utils/license')
+    const state = resolveBillingState({ type: 'primary', plan: 'pro', payment_account: account })
+    const trial = resolveTrialContext(state, account)
+
+    expect(trial).toEqual({ trialing: true, origin: 'migrate' })
+    const pro = PLAN_LIMITS['ai.messages_per_month']!.values.pro
+    expect(applyTrialCap(pro, 'ai.messages_per_month', trial)).toBe(PLAN_LIMITS['ai.messages_per_month']!.values.starter)
+    expect(applyTrialCap(PLAN_LIMITS['api.messages_per_month']!.values.pro, 'api.messages_per_month', trial))
+      .toBe(PLAN_LIMITS['api.messages_per_month']!.values.starter)
+  })
+
   it('keeps the Migrate mark next to what the account already records', async () => {
     getActivePaymentAccount.mockResolvedValue({
       subscription_id: 'sub_123',

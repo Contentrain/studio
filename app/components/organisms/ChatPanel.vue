@@ -397,7 +397,7 @@ function formatConversationDate(dateStr: string): string {
           :to="usageSettingsPath"
           class="shrink-0 rounded text-xs font-semibold text-warning-700 underline underline-offset-2 hover:text-warning-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-warning-400"
         >
-          {{ t('chat.credits_exhausted_action') }}
+          {{ creditsExhausted.trialCap ? t('chat.trial_cap_action') : t('chat.credits_exhausted_action') }}
         </NuxtLink>
         <button
           type="button"

@@ -3,7 +3,7 @@
  * conversation history, and model selection.
  */
 
-import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '~~/shared/utils/ai-models'
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, premiumModelsAllowed } from '~~/shared/utils/ai-models'
 
 export interface ToolCall {
   id: string
@@ -260,6 +260,42 @@ function useModelPersistence(selectedModel: Ref<string>) {
   })
 }
 
+/**
+ * Whether the current user has their own AI key on the active workspace.
+ * Only asked during a trial, where it decides whether premium models are
+ * open; fetched once per workspace and shared across `useChat` callers.
+ */
+function useOwnAiKey(billingState: Ref<string>) {
+  const state = useState<{ workspaceId: string | null, has: boolean, loaded: boolean }>('chat-own-ai-key', () => ({ workspaceId: null, has: false, loaded: false }))
+  const { activeWorkspace } = useWorkspaces()
+  const byoa = useFeature('ai.byoa')
+  if (import.meta.client) {
+    watch([() => activeWorkspace.value?.id, billingState, byoa], async ([id, billing, canByoa]) => {
+      if (!id || billing !== 'trial_active' || !canByoa || state.value.workspaceId === id) return
+      state.value = { workspaceId: id, has: false, loaded: false }
+      let has = false
+      try {
+        const keys = await $fetch<unknown[]>(`/api/workspaces/${id}/ai-keys`)
+        has = Array.isArray(keys) && keys.length > 0
+      }
+      catch {
+        // No key info: treated as no key; the server decides anyway.
+      }
+      if (state.value.workspaceId === id) state.value = { workspaceId: id, has, loaded: true }
+    }, { immediate: true })
+  }
+  return {
+    has: computed(() => state.value.has),
+    /**
+     * Whether the answer is known. Outside a trial, or without BYOA, it is
+     * (no key can change anything); in a trial it is once the key list for
+     * this workspace has come back.
+     */
+    known: computed(() => billingState.value !== 'trial_active' || !byoa.value
+      || (state.value.loaded && state.value.workspaceId === (activeWorkspace.value?.id ?? null))),
+  }
+}
+
 export function useChat(options?: {
   onContentChanged?: (affected: AffectedResources) => void
 }) {
@@ -273,7 +309,7 @@ export function useChat(options?: {
    * period are used up. Rendered as a persistent notice with a link to Usage
    * (overage, upgrade) instead of a toast that disappears.
    */
-  const creditsExhausted = useState<{ message: string, resetsAt: string | null } | null>('chat-credits-exhausted', () => null)
+  const creditsExhausted = useState<{ message: string, resetsAt: string | null, trialCap?: boolean } | null>('chat-credits-exhausted', () => null)
   const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
   useModelPersistence(selectedModel)
   // Plan-gated model list. Pro-tier models (Sonnet/Opus) need the
@@ -284,6 +320,26 @@ export function useChat(options?: {
   // command palette honest.
   const hasProModels = useFeature('ai.pro_models')
   const allowedModels = computed(() => CHAT_MODELS.filter(m => m.tier === 'starter' || hasProModels.value))
+  // Premium models (Opus) stay in the list during a trial on the Studio
+  // key, but locked with the reason — hiding them would leave the user
+  // guessing. The server applies the same rule (`premiumModelsAllowed`);
+  // a BYOA key lifts it.
+  const { billingState } = useBilling()
+  const ownAiKey = useOwnAiKey(billingState)
+  // Nothing is locked until the key question is answered: locking first
+  // would move a BYOA user's persisted Opus pick to the default on every
+  // load, before the key list says they may keep it.
+  const lockedModelIds = computed(() => !ownAiKey.known.value || premiumModelsAllowed({
+    billingState: billingState.value,
+    usageSource: ownAiKey.has.value ? 'byoa' : 'studio',
+  })
+    ? []
+    : allowedModels.value.filter(m => m.premium).map(m => m.id))
+  // A locked model left selected (restored from storage) would show a label
+  // the server silently replaces — move to the default instead.
+  watch(lockedModelIds, (locked) => {
+    if (locked.includes(selectedModel.value)) selectedModel.value = DEFAULT_CHAT_MODEL
+  }, { immediate: true })
   // Monotonic counter bumped on every content-bearing SSE event. The
   // panel watches it for scroll-follow — cheaper than deep-watching the
   // whole message tree.
@@ -491,11 +547,11 @@ export function useChat(options?: {
         const errBody = await response.json().catch(() => ({})) as {
           message?: string
           statusCode?: number
-          data?: { code?: string, resetsAt?: string }
+          data?: { code?: string, resetsAt?: string, reason?: string }
         }
         const status = errBody.statusCode ?? response.status
         if (status === 429 && errBody.data?.code === 'ai_credits_exhausted' && errBody.message) {
-          creditsExhausted.value = { message: errBody.message, resetsAt: errBody.data.resetsAt ?? null }
+          creditsExhausted.value = { message: errBody.message, resetsAt: errBody.data.resetsAt ?? null, trialCap: errBody.data.reason === 'trial_cap' }
           throw Object.assign(new Error(errBody.message), { statusCode: status, creditsExhausted: true })
         }
         // 4xx errors have user-friendly messages from backend; 5xx use fallback
@@ -680,6 +736,7 @@ export function useChat(options?: {
     streamTick: readonly(streamTick),
     selectedModel,
     allowedModels,
+    lockedModelIds,
     sendMessage,
     stopStreaming,
     clearChat,

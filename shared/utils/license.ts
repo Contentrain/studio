@@ -86,6 +86,8 @@ interface PlanFeatureContent {
   overage_price?: number
   overage_unit?: string
   overage_settings_key?: string
+  trial_cap_plan?: string
+  trial_cap_origins?: string
   sort_order: number
 }
 
@@ -176,6 +178,14 @@ export const FEATURE_MATRIX: Record<string, FeatureMatrixEntry> = (() => {
 export interface LimitMatrixEntry {
   values: Record<StudioPlan, number>
   requires_ee: boolean
+  /** See `applyTrialCap`. */
+  trialCap?: { plan: StudioPlan, origins: 'migrate' | 'all' }
+}
+
+function parseTrialCap(row: PlanFeatureContent): LimitMatrixEntry['trialCap'] {
+  const plan = row.trial_cap_plan as StudioPlan | undefined
+  if (!plan || !PLAN_SLUGS.includes(plan)) return undefined
+  return { plan, origins: row.trial_cap_origins === 'all' ? 'all' : 'migrate' }
 }
 
 export const PLAN_LIMITS: Record<string, LimitMatrixEntry> = (() => {
@@ -191,10 +201,51 @@ export const PLAN_LIMITS: Record<string, LimitMatrixEntry> = (() => {
         enterprise: parseLimitValue(row.enterprise_value),
       },
       requires_ee: parseBoolValue(row.requires_ee),
+      trialCap: parseTrialCap(row),
     }
   }
   return limits
 })()
+
+/**
+ * Where a trial came from. `migrate` = started from a Migrate order
+ * (the webhook records it as `plugin_metadata.trial_origin`).
+ */
+export type TrialOrigin = 'migrate' | 'standard'
+
+export interface TrialContext {
+  /** The workspace is in an active trial (`trial_active`). */
+  trialing: boolean
+  origin: TrialOrigin
+}
+
+/**
+ * The allowance a trialing workspace actually gets for a limit.
+ *
+ * Metered usage during a trial is never billed, so a limit whose catalog
+ * row sets `trial_cap_plan` is held at that plan's value for the length
+ * of the trial — every Pro feature stays on, only the included credits
+ * wait for the first payment. `trial_cap_origins` picks which trials:
+ * `migrate` (today) or `all` (one content change). Outside a trial, or
+ * for an origin the row does not cover, the limit is returned as is.
+ * The cap never raises a limit.
+ */
+export function applyTrialCap(limit: number, limitKey: string, trial: TrialContext | null | undefined): number {
+  const plan = trialCapPlan(limitKey, trial)
+  return plan ? Math.min(limit, PLAN_LIMITS[limitKey]!.values[plan]) : limit
+}
+
+/**
+ * The plan a trial is capped to for this limit, or null when no cap
+ * applies. Per-message ceilings follow it too (a capped Pro trial settles
+ * at Starter's per-message ceiling, not Pro's).
+ */
+export function trialCapPlan(limitKey: string, trial: TrialContext | null | undefined): StudioPlan | null {
+  const cap = PLAN_LIMITS[limitKey]?.trialCap
+  if (!cap || !trial?.trialing) return null
+  if (cap.origins === 'migrate' && trial.origin !== 'migrate') return null
+  return cap.plan
+}
 
 /**
  * Overage pricing for limits that allow paid overflow. Derived from

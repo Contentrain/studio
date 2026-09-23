@@ -25,6 +25,8 @@ import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
 import type { getWorkspacePlan } from '../../server/utils/license'
 import { getPlanLimit, hasFeature } from '../../server/utils/license'
+import { applyTrialCap, trialCapPlan } from '../../shared/utils/license'
+import type { TrialContext } from '../../shared/utils/license'
 import { getEffectiveLimit } from '../../server/utils/overage'
 import { checkRateLimit } from '../../server/utils/rate-limit'
 import { useDatabaseProvider, useGitProvider } from '../../server/utils/providers'
@@ -79,6 +81,8 @@ interface ConversationApiContext {
   plan: ReturnType<typeof getWorkspacePlan>
   /** `overage_settings` with every toggle the subscription cannot bill turned off. */
   overageSettings: Record<string, boolean>
+  /** Trial state and origin — a capped trial gets the lower API allowance. */
+  trial: TrialContext
 }
 
 function parseConversationContext(context: Partial<ChatUIContext> | undefined): ChatUIContext {
@@ -146,6 +150,7 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
     workspace: workspace as ConversationApiContext['workspace'],
     plan,
     overageSettings: billing.overageSettings,
+    trial: billing.trial,
   }
 }
 
@@ -183,7 +188,7 @@ async function runConversationMessage(
   event: H3Event,
   body: { message: string, conversationId?: string, context?: Partial<ChatUIContext> },
 ) {
-  const { db, keyData, project, workspace, plan, overageSettings } = await resolveConversationApiContext(event)
+  const { db, keyData, project, workspace, plan, overageSettings, trial } = await resolveConversationApiContext(event)
 
   if (!body.message?.trim())
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
@@ -202,9 +207,13 @@ async function runConversationMessage(
   // the meter outbox below.
   // Billing-period keyed, same rule as the chat route (`server/utils/usage-period.ts`).
   const usageMonth = (await resolveUsagePeriod(keyData.workspaceId)).key
-  const workspacePlanLimit = getPlanLimit(plan, 'api.messages_per_month')
-  const workspaceLimit = getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
-  const keyLimit = getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)
+  // A capped trial (`applyTrialCap`) gets the lower allowance and never
+  // overage — nothing metered in a trial is billed.
+  const planApiLimit = getPlanLimit(plan, 'api.messages_per_month')
+  const workspacePlanLimit = applyTrialCap(planApiLimit, 'api.messages_per_month', trial)
+  const trialCapped = workspacePlanLimit < planApiLimit
+  const workspaceLimit = trialCapped ? workspacePlanLimit : getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
+  const keyLimit = trialCapped ? keyData.monthlyMessageLimit : getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)
 
   // Billing semantic mirrors the Studio chat path: reservation is made
   // up front for race-free cap enforcement, but a message only becomes
@@ -455,7 +464,7 @@ async function runConversationMessage(
           outputTokens: totalOutputTokens,
           cacheCreationInputTokens: totalCacheCreationInputTokens,
           cacheReadInputTokens: totalCacheReadInputTokens,
-        }, plan)
+        }, trialCapPlan('api.messages_per_month', trial) ?? plan)
       : 1
     const extraCredits = credits - 1
     if (extraCredits > 0)

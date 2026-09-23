@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   /** Billing locked (trial ended unpaid, grace over, cancellation effective). */
   locked: false,
   billingOverage: {} as Record<string, boolean>,
+  trial: undefined as { trialing: boolean, origin: 'migrate' | 'standard' } | undefined,
   workspaceRow: { id: 'ws-1', github_installation_id: 42, type: 'primary', plan: 'pro', overage_settings: { api_messages: true } },
   incrementAPIUsageIfAllowed: vi.fn(),
   getEffectiveLimit: vi.fn((limit: number) => limit),
@@ -54,7 +55,7 @@ vi.mock('../../server/utils/providers', () => ({
 vi.mock('../../server/utils/workspace-billing', () => ({
   resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
     if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', requiresCheckout: true } })
-    return { state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: state.billingOverage }
+    return { state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: state.billingOverage, trial: state.trial }
   }),
 }))
 vi.mock('../../server/utils/license', () => ({
@@ -77,6 +78,7 @@ describe('Conversation API — plan and overage come from billing', () => {
     state.effectivePlan = 'pro'
     state.locked = false
     state.billingOverage = {}
+    state.trial = undefined
     state.hasFeature.mockClear()
     state.getEffectiveLimit.mockClear()
     state.incrementAPIUsageIfAllowed.mockReset().mockResolvedValue({ allowed: false, reason: 'workspace_limit' })
@@ -107,5 +109,23 @@ describe('Conversation API — plan and overage come from billing', () => {
     state.billingOverage = { api_messages: false }
     await expect(send()).rejects.toMatchObject({ statusCode: 429 })
     expect(state.getEffectiveLimit).toHaveBeenCalledWith(140, 'api.messages_per_month', { api_messages: false })
+  })
+
+  it('a Migrate trial reserves API credits against the Starter allowance, never overage', async () => {
+    // 140 is the Pro limit this file's getPlanLimit mock returns; the cap
+    // comes from the real catalog (`applyTrialCap`, shared/utils/license).
+    const { PLAN_LIMITS } = await import('../../shared/utils/license')
+    const starter = PLAN_LIMITS['api.messages_per_month']!.values.starter
+    state.trial = { trialing: true, origin: 'migrate' }
+    state.billingOverage = { api_messages: true }
+    await expect(send()).rejects.toMatchObject({ statusCode: 429 })
+    expect(state.incrementAPIUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ workspaceLimit: starter, keyLimit: 1000 }))
+    expect(state.getEffectiveLimit).not.toHaveBeenCalled()
+  })
+
+  it('the API cap lifts once the trial is paid for', async () => {
+    state.trial = { trialing: false, origin: 'migrate' }
+    await expect(send()).rejects.toMatchObject({ statusCode: 429 })
+    expect(state.incrementAPIUsageIfAllowed).toHaveBeenCalledWith(expect.objectContaining({ workspaceLimit: 140 }))
   })
 })

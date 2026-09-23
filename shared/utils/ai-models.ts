@@ -172,10 +172,24 @@ export const DEFAULT_CHAT_MODEL = 'claude-sonnet-5'
  * Model IDs available to a plan, given whether it has the
  * `ai.pro_models` feature (resolved via `hasFeature` by the caller).
  * Starter-tier models are always included — every plan that can chat
- * at all can use them.
+ * at all can use them. `premium: false` also leaves out premium models
+ * (a trial on the Studio-funded key, see `premiumModelsAllowed`).
  */
-export function chatModelIdsFor(hasProModels: boolean): string[] {
-  return CHAT_MODELS.filter(m => hasProModels || m.tier === 'starter').map(m => m.id)
+export function chatModelIdsFor(hasProModels: boolean, opts: { premium?: boolean } = {}): string[] {
+  return CHAT_MODELS
+    .filter(m => hasProModels || m.tier === 'starter')
+    .filter(m => opts.premium !== false || !m.premium)
+    .map(m => m.id)
+}
+
+/**
+ * Premium models are closed during a trial when Studio pays for the
+ * tokens: trial usage is never billed, and an Opus turn costs about
+ * twice a Sonnet one. A BYOA key pays for itself, so it keeps them, and
+ * so does every paid state.
+ */
+export function premiumModelsAllowed(input: { billingState?: string | null, usageSource: 'byoa' | 'studio' }): boolean {
+  return !(input.billingState === 'trial_active' && input.usageSource === 'studio')
 }
 
 /**
