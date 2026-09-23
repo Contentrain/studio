@@ -7,6 +7,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '../../shared/utils/ai-models'
 
 const KEY_PREFIX = 'crn_conv_'
 const RANDOM_BYTES = 32
@@ -52,11 +53,16 @@ export interface ConversationKeyData {
   monthlyMessageLimit: number
 }
 
-/** Models a Conversation API key may run on. */
-export const CONVERSATION_API_MODELS: readonly string[] = ['claude-sonnet-5', 'claude-sonnet-4-5', 'claude-haiku-4-5-20251001']
+/**
+ * Models a Conversation API key may run on: the chat catalog's current,
+ * non-premium models (Haiku 4.5, Sonnet 5). Retired models leave the list
+ * with the catalog — `claude-sonnet-4-5` ($3/$15) runs on Sonnet 5 now —
+ * and a premium model never reaches a public API key.
+ */
+export const CONVERSATION_API_MODELS: readonly string[] = CHAT_MODELS.filter(m => !m.premium).map(m => m.id)
 
 /** The model a key gets when none (or no longer an allowed one) is set. */
-export const DEFAULT_CONVERSATION_API_MODEL = 'claude-sonnet-5'
+export const DEFAULT_CONVERSATION_API_MODEL = DEFAULT_CHAT_MODEL
 
 /**
  * The model to run a key on. A key stored with a model that has since been
