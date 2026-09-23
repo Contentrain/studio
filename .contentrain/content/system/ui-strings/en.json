@@ -58,7 +58,7 @@
   "ai_keys.delete_success": "API key deleted",
   "ai_keys.description": "Use your own Anthropic API key for chat. Your key is encrypted and never stored in plaintext.",
   "ai_keys.hint": "Key ending in",
-  "ai_keys.key_info": "Your API key is encrypted before storage. It's used for chat requests when BYOA is enabled on Pro+ plans.",
+  "ai_keys.key_info": "Your API key is encrypted before storage. It's used for chat requests made with your own key.",
   "ai_keys.no_keys": "No API keys configured",
   "ai_keys.no_keys_description": "Add your own API key to use advanced models.",
   "ai_keys.placeholder": "sk-ant-api03-...",

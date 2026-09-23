@@ -9,10 +9,14 @@
 
 import { dictionary, query } from '#contentrain'
 import { wrapEmailHtml } from './email-layout'
+import { featurePlanParams } from '../../shared/utils/license'
 
 type Params = Record<string, string | number>
 
 function interpolate(template: string, params?: Params): string {
+  // `{plans:<feature>}` — which plans grant a feature, from the catalog, so
+  // no string hard-codes plan availability (BG-1 P1-14). Explicit params win.
+  if (template.includes('{plans:')) params = { ...featurePlanParams(), ...params }
   if (!params) return template
   let result = template
   for (const [k, v] of Object.entries(params)) {

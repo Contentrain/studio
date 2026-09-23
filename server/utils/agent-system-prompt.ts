@@ -6,6 +6,7 @@ import type { AgentPermissions } from './agent-permissions'
 import type { ChatUIContext, ClassifiedIntent, ProjectPhase } from './agent-types'
 import { extractMediaStoragePath } from './media-rewrite'
 import type { PageResolution } from './page-resolution'
+import { featuresMissingOnPlan, gatedFeaturesOnPlan, planGatedFeaturesLabel } from '../../shared/utils/license'
 
 /**
  * Bounded Task Executor system prompt.
@@ -694,7 +695,13 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
   }
   else {
     // Plan-aware rules — inform agent about available features and guide user
-    const planParams = getPlanParams(effectivePlan)
+    // Which shipped features the plan has or lacks comes from the catalog,
+    // so the agent never promises what the plan does not grant (BG-1 P1-14).
+    const planParams = {
+      ...getPlanParams(effectivePlan),
+      missingFeatures: featuresMissingOnPlan(effectivePlan).join(', ') || 'nothing',
+      includedFeatures: gatedFeaturesOnPlan(effectivePlan).join(', ') || 'every shipped feature',
+    }
     if (effectivePlan === 'starter') {
       const upgradeParams = getUpgradeParams('starter', 'pro')
       rules.push(agentPrompt('plan.starter', planParams))
@@ -709,12 +716,14 @@ function buildBaseRulesSection(config: ContentrainConfig | null, permissions: Ag
     }
 
     // Feature upgrade guidance — when a tool returns a plan-gated error, help the user understand
-    rules.push(agentPrompt('upgrade.guidance'))
+    const gatedFeatures = planGatedFeaturesLabel()
+    rules.push(agentPrompt('upgrade.guidance', { gatedFeatures }))
     const tierParams = {
       starterPrice: PLAN_PRICING.starter.priceMonthly ? `$${PLAN_PRICING.starter.priceMonthly}` : 'free',
       starterSeats: PLAN_PRICING.starter.seatsIncluded,
       proPrice: `$${PLAN_PRICING.pro.priceMonthly}`,
       proSeats: PLAN_PRICING.pro.seatsIncluded,
+      gatedFeatures,
     }
     rules.push(agentPrompt('plan.tiers', tierParams))
   }
