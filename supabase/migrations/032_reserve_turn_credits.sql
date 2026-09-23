@@ -1,4 +1,4 @@
--- 031: reserve a whole turn's credits up front (AI-8).
+-- 032: reserve a whole turn's credits up front (AI-8).
 --
 -- `increment_agent_usage_if_allowed` (027/030) reserves 1 credit and the
 -- turn-end settle adds `credits - 1`. Every turn that starts below the
