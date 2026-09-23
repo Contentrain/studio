@@ -11,6 +11,7 @@ const claim = {
   trial_days: 60,
   repo: { provider: 'github', owner: 'acme', name: 'blog' },
   capabilities: [{ key: 'comments', scale: '1 240 comments' }],
+  plan_evidence: [{ limit_key: 'comments.per_month', measured: 3200, limit: 500, capability: 'comments' }],
 }
 
 let privateKey: CryptoKey
@@ -103,5 +104,8 @@ describe('isMigrateStudioClaim', () => {
     expect(isMigrateStudioClaim({ ...claim, trial_days: 1.5 })).toBe(false)
     expect(isMigrateStudioClaim({ ...claim, repo: { provider: 'gitlab', owner: 'a', name: 'b' } })).toBe(false)
     expect(isMigrateStudioClaim({ ...claim, order_id: ' ' })).toBe(false)
+    expect(isMigrateStudioClaim({ ...claim, plan_evidence: [] })).toBe(true)
+    expect(isMigrateStudioClaim({ ...claim, plan_evidence: undefined })).toBe(false)
+    expect(isMigrateStudioClaim({ ...claim, plan_evidence: [{ limit_key: 'x', measured: 'lots', limit: 1 }] })).toBe(false)
   })
 })

@@ -6,8 +6,8 @@
  * Migrate's public key (`server/utils/migrate-claim.ts`) and records one
  * grant per order. The shape is the contract between the two products.
  *
- * TEMPORARY LOCAL COPY — the canonical type is being added to
- * `@contentrain/types` (XS-1a). Once published, import it from there and
+ * TEMPORARY LOCAL COPY — the canonical type is in `@contentrain/types`
+ * (Contentrain/ai #233, XS-1a). Once published, import it from there and
  * delete this file; the names and fields are kept identical on purpose.
  */
 
@@ -32,6 +32,20 @@ export interface MigrateStudioClaim {
   repo: { provider: 'github', owner: string, name: string }
   /** What discovery found, for the claim screen. Optional. */
   capabilities?: Array<{ key: string, scale?: string | null }>
+  /**
+   * Why this plan: each limit the site's measured use needs (e.g. 3 200
+   * comments a month against Starter's 500). Required, may be empty.
+   */
+  plan_evidence: Array<{ limit_key: string, measured: number, limit: number, capability?: string }>
+}
+
+function isPlanEvidence(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const e = value as Record<string, unknown>
+  return isNonEmptyString(e.limit_key)
+    && typeof e.measured === 'number' && Number.isFinite(e.measured)
+    && typeof e.limit === 'number' && Number.isFinite(e.limit)
+    && (e.capability === undefined || typeof e.capability === 'string')
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -55,4 +69,5 @@ export function isMigrateStudioClaim(value: unknown): value is MigrateStudioClai
     && isNonEmptyString(repo.owner)
     && isNonEmptyString(repo.name)
     && (c.capabilities === undefined || Array.isArray(c.capabilities))
+    && Array.isArray(c.plan_evidence) && c.plan_evidence.every(isPlanEvidence)
 }

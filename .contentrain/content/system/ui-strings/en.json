@@ -787,6 +787,8 @@
   "migrate_claim.kicker": "Included with your migration",
   "migrate_claim.load_failed": "We couldn’t load your Studio offer.",
   "migrate_claim.loading": "Loading your Studio offer…",
+  "migrate_claim.plan_reason": "{what}: {measured} measured on your site — more than the {limit} a smaller plan includes",
+  "migrate_claim.plan_reason_label": "Why {plan}",
   "migrate_claim.repo_line": "For the site delivered to {repo}. Manage its content, comments, forms and media in one place.",
   "migrate_claim.select_workspace": "Start it on workspace",
   "migrate_claim.start": "Start {days}-day Studio trial — $0 today",

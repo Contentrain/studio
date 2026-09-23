@@ -73,6 +73,23 @@ async function planOverageLock(db: Db, input: {
   }
 }
 
+/**
+ * Mark a subscription started from a Migrate grant in its account's
+ * `plugin_metadata` (`trial_origin: 'migrate'`), on top of whatever the
+ * overage lock is writing. The trial cap reads it (`resolveTrialContext`).
+ * Returns undefined when nothing needs writing (the stored value is kept).
+ */
+function withTrialOrigin(
+  planned: Record<string, unknown> | undefined,
+  stored: unknown,
+  migrateGrantId: string | undefined,
+): Record<string, unknown> | undefined {
+  if (!migrateGrantId) return planned
+  const base = planned ?? ((stored && typeof stored === 'object') ? stored as Record<string, unknown> : {})
+  if (base.trial_origin === 'migrate') return planned
+  return { ...base, trial_origin: 'migrate' }
+}
+
 /** Extract every request header as a plain `{[key]: string | undefined}` object. */
 function readAllHeaders(event: Parameters<typeof getRequestHeaders>[0]): Record<string, string | undefined> {
   const raw = getRequestHeaders(event)
@@ -222,7 +239,7 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: null,
         plan: result.plan ?? null,
-        pluginMetadata: overageLock.pluginMetadata,
+        pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId),
         isActive: true,
       })
       await overageLock.commit()
@@ -306,7 +323,7 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: gracePeriodEnd,
         plan: result.plan ?? null,
-        pluginMetadata: overageLock.pluginMetadata,
+        pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, existingAccount?.plugin_metadata, result.migrateGrantId),
         isActive: true,
       })
       await overageLock.commit()

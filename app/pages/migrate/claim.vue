@@ -37,6 +37,8 @@ const { workspaces, fetchWorkspaces } = useWorkspaces()
 useHead({ title: () => t('migrate_claim.title') })
 
 const grant = ref<GrantView | null>(null)
+/** Why this plan — only present when opened from the claim link. */
+const planEvidence = ref<Array<{ limit_key: string, measured: number, limit: number, capability?: string }>>([])
 const loadError = ref('')
 const submitting = ref(false)
 const submitError = ref('')
@@ -75,13 +77,14 @@ onMounted(async () => {
   try {
     const [result] = await Promise.all([
       token
-        ? $fetch<{ grant: GrantView }>('/api/migrate/claim', { method: 'POST', body: { token } })
+        ? $fetch<{ grant: GrantView, planEvidence?: typeof planEvidence.value }>('/api/migrate/claim', { method: 'POST', body: { token } })
         : grantId
           ? $fetch<{ grant: GrantView }>(`/api/migrate/grants/${encodeURIComponent(grantId)}`)
           : Promise.reject(new Error('missing')),
       fetchWorkspaces(),
     ])
     grant.value = result.grant
+    planEvidence.value = ('planEvidence' in result && Array.isArray(result.planEvidence)) ? result.planEvidence : []
     if (token) await router.replace({ query: { grant: result.grant.id } })
 
     const eligible = options.value.filter(o => o.eligible)
@@ -135,6 +138,12 @@ async function startTrial() {
         <p class="mt-2 text-sm text-body dark:text-secondary-300">
           {{ t('migrate_claim.repo_line', { repo: `${grant.repo.owner}/${grant.repo.name}` }) }}
         </p>
+        <ul v-if="planEvidence.length" class="mt-3 space-y-1" :aria-label="t('migrate_claim.plan_reason_label', { plan: planPricing.name })">
+          <li v-for="item in planEvidence" :key="item.limit_key" class="flex gap-2 text-xs text-body dark:text-secondary-300">
+            <span class="icon-[annon--info] mt-0.5 size-3.5 shrink-0 text-info-500" aria-hidden="true" />
+            {{ t('migrate_claim.plan_reason', { what: item.capability ?? item.limit_key, measured: item.measured.toLocaleString('en-US'), limit: item.limit.toLocaleString('en-US') }) }}
+          </li>
+        </ul>
 
         <div v-if="grant.state === 'redeemed'" class="mt-6 rounded-lg bg-secondary-50 px-4 py-3 text-sm text-body dark:bg-secondary-800 dark:text-secondary-300">
           {{ t('migrate_claim.already_used') }}

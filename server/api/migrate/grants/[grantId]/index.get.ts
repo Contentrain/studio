@@ -15,5 +15,5 @@ export default defineEventHandler(async (event) => {
   const grant = grantId ? await useDatabaseProvider().getMigrateGrantForUser(grantId, session.user.id) : null
   if (!grant) throw createError({ statusCode: 404, message: errorMessage('migrate.grant_not_found') })
 
-  return { grant: migrateGrantView(grant), capabilities: [] }
+  return { grant: migrateGrantView(grant), capabilities: [], planEvidence: [] }
 })

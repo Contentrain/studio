@@ -51,5 +51,5 @@ export default defineEventHandler(async (event) => {
   if (grant.user_id !== session.user.id)
     throw createError({ statusCode: 409, message: errorMessage('migrate.claim_taken') })
 
-  return { grant: migrateGrantView(grant), capabilities: claim.capabilities ?? [] }
+  return { grant: migrateGrantView(grant), capabilities: claim.capabilities ?? [], planEvidence: claim.plan_evidence }
 })
