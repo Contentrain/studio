@@ -11,6 +11,7 @@
  * panel rendered nothing at all.
  */
 
+import { resolveCreditUnit } from '../../../../server/utils/billing'
 import { normalizePlan } from '../../../../shared/utils/license'
 import { resolveUsagePeriod } from '../../../../server/utils/usage-period'
 import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
@@ -45,8 +46,10 @@ export default defineEventHandler(async (event) => {
   // Toggles the subscription cannot bill (trial, or a meter it has no price
   // for) show as locked, with why and until when — never as on.
   let overageLocks: Record<string, OverageLock> = {}
+  let account: unknown = null
   try {
-    overageLocks = resolveOverageLocks(await db.getActivePaymentAccount(workspaceId) as OverageLockAccount | null)
+    account = await db.getActivePaymentAccount(workspaceId)
+    overageLocks = resolveOverageLocks(account as OverageLockAccount | null)
   }
   catch {
     // Billing metadata unreadable: show the toggles as stored.
@@ -63,6 +66,8 @@ export default defineEventHandler(async (event) => {
     overageLocks,
     // A meter that cannot be read shows as unavailable, never as 0.
     readErrors: 'unavailable',
+    // Limits and prices in the unit the account is billed in (`credit-unit.ts`).
+    creditUnit: event.context?.billing?.creditUnit ?? resolveCreditUnit(account as { credit_unit?: unknown } | null),
   })
 
   // CLI-compatible flat format: ?format=simple

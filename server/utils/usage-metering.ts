@@ -18,6 +18,8 @@
  */
 
 import { USAGE_METERS } from '../../shared/utils/usage-meters'
+import { creditTermsFor } from '../../shared/utils/credit-unit'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 import { reportBillingRisk } from './alert'
 import { isBillingConfigured } from './license'
 
@@ -63,10 +65,12 @@ export function recordAIUsage(input: {
   count: number
   userId: string
   month: string
+  /** The account's credit unit — picks the meter its subscription is priced on. */
+  creditUnit: CreditUnit
 }): Promise<void> {
   return recordUsage({
     workspaceId: input.workspaceId,
-    meterName: USAGE_METERS.AI_MESSAGES.name,
+    meterName: creditTermsFor(input.creditUnit).meters.ai,
     value: input.count,
     idempotencyKey: `ai:${input.workspaceId}:${input.userId}:${input.month}:${Date.now()}`,
     metadata: { source: 'studio', user_id: input.userId, month: input.month },
@@ -78,10 +82,12 @@ export function recordAPIUsage(input: {
   count: number
   apiKeyId: string
   month: string
+  /** The account's credit unit — picks the meter its subscription is priced on. */
+  creditUnit: CreditUnit
 }): Promise<void> {
   return recordUsage({
     workspaceId: input.workspaceId,
-    meterName: USAGE_METERS.API_MESSAGES.name,
+    meterName: creditTermsFor(input.creditUnit).meters.api,
     value: input.count,
     idempotencyKey: `api:${input.workspaceId}:${input.apiKeyId}:${input.month}:${Date.now()}`,
     metadata: { source: 'api', api_key_id: input.apiKeyId, month: input.month },

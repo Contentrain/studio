@@ -1035,7 +1035,26 @@ export interface DatabaseProvider {
     pluginMetadata?: Record<string, unknown>
     preserveMetadataKeys?: string[]
     isActive?: boolean
+    /**
+     * The credit unit the subscription is billed in (`credit-unit.ts`).
+     * Omitted → an update keeps the stored value, an insert gets the column
+     * default (the current unit).
+     */
+    creditUnit?: '0.03' | '0.01'
   }) => Promise<DatabaseRow>
+
+  /**
+   * Change the active payment account's credit unit (`credit-unit.ts`) and,
+   * in the same transaction, convert the credit counters of `periodKey` —
+   * the period being consumed — so its usage keeps its dollar worth (×3 into
+   * $0.01 credits, ÷3 rounded up back). A no-op returning false when the
+   * unit is already `unit` or there is no active account.
+   */
+  setPaymentAccountCreditUnit: (input: {
+    workspaceId: string
+    unit: '0.03' | '0.01'
+    periodKey: string
+  }) => Promise<boolean>
 
   /**
    * Set one `plugin_metadata` key on the workspace's active payment account,

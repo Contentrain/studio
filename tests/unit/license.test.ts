@@ -121,8 +121,9 @@ describe('license utilities', () => {
     expect(getAvailableFeatures('free')).not.toContain('cdn.delivery')
     expect(getPlanLimit('starter', 'cdn.api_keys')).toBe(3)
     expect(getPlanLimit('pro', 'team.members')).toBe(25)
-    expect(getPlanLimit('starter', 'ai.messages_per_month')).toBe(60)
-    expect(getPlanLimit('pro', 'ai.messages_per_month')).toBe(350)
+    // Catalog v2 credits ($0.01); pre-v2 accounts read theirs through credit-unit.ts.
+    expect(getPlanLimit('starter', 'ai.messages_per_month')).toBe(300)
+    expect(getPlanLimit('pro', 'ai.messages_per_month')).toBe(1600)
   })
 
   it('Community Edition force-disables requires_ee features regardless of plan', () => {

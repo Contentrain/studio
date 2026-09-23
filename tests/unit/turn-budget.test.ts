@@ -88,13 +88,13 @@ describe('TurnUsageTracker', () => {
 
 describe('settleTurnCredits', () => {
   it('is 0 for a turn that never reached the model, so the reservation is refunded', () => {
-    expect(settleTurnCredits({ model: HAIKU, ...ZERO }, 30)).toBe(0)
+    expect(settleTurnCredits({ model: HAIKU, ...ZERO }, 30, '0.03')).toBe(0)
   })
 
   it('is at least 1 once any token was spent, and never more than was reserved', () => {
-    expect(settleTurnCredits({ model: HAIKU, ...ZERO, inputTokens: 10 }, 30)).toBe(1)
-    expect(settleTurnCredits({ model: HAIKU, ...ZERO, inputTokens: 300_000 }, 30)).toBe(10)
-    expect(settleTurnCredits({ model: HAIKU, ...ZERO, inputTokens: 3_000_000 }, 30)).toBe(30)
+    expect(settleTurnCredits({ model: HAIKU, ...ZERO, inputTokens: 10 }, 30, '0.03')).toBe(1)
+    expect(settleTurnCredits({ model: HAIKU, ...ZERO, inputTokens: 300_000 }, 30, '0.03')).toBe(10)
+    expect(settleTurnCredits({ model: HAIKU, ...ZERO, inputTokens: 3_000_000 }, 30, '0.03')).toBe(30)
   })
 })
 

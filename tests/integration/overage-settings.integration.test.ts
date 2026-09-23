@@ -46,8 +46,8 @@ describe('overage settings API', () => {
   })
 
   describe('GET /overage-settings', () => {
-    it('returns overage settings with pricing for each category', async () => {
-      mockDb({ workspace: { overage_settings: { ai_messages: true, cdn_bandwidth: false } } })
+    it('returns overage settings with pricing for each category, in a pre-v2 account\'s own terms', async () => {
+      mockDb({ workspace: { overage_settings: { ai_messages: true, cdn_bandwidth: false } }, paymentAccount: { credit_unit: '0.03' } })
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
       const result = await handler({} as never)
@@ -64,6 +64,16 @@ describe('overage settings API', () => {
         planLimit: 350, // pro plan
         enabled: true,
       })
+    })
+
+    it('shows a v2 account the catalog v2 credit price and quota', async () => {
+      mockDb({ workspace: { overage_settings: { ai_messages: true } }, paymentAccount: { credit_unit: '0.01' } })
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
+      const result = await handler({} as never)
+      const ai = result.categories.find((c: { settingsKey: string }) => c.settingsKey === 'ai_messages')
+      expect(ai).toMatchObject({ unitPrice: 0.025, planLimit: 1600 })
+      const mcp = result.categories.find((c: { settingsKey: string }) => c.settingsKey === 'mcp_calls')
+      expect(mcp).toMatchObject({ unitPrice: 0.001 })
     })
 
     it('returns canEnableOverage=true when subscription active with payment method', async () => {

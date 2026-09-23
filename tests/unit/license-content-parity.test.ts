@@ -238,50 +238,34 @@ describe('license ↔ content parity', () => {
       expect(PLAN_LIMITS[key]).toBeDefined()
     })
 
-    it('pins Pro canonical AI message limit', () => {
-      // P1 applies to the SUM of every platform-cost-bearing pool, not
-      // per meter — Conversation API also runs on the Studio key with
-      // no BYOA fallback (ee/enterprise/conversation-api.ts), so a Pro
-      // workspace can draw AI (350) + API (140) = 490 credits in one
-      // month. 490 × $0.03 = $14.70 ≈ 30% of the $49 Pro price. A first
-      // cut that set each pool to 500 (SO-14 B-1) let the two pools sum
-      // to $30 — 61% of price — before the pooled-budget correction.
-      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(350)
+    /**
+     * Catalog v2 (PRC-3, R30): with the credit pools full, an international
+     * card and the upper fixed-cost estimate, profit stays ≥ 30 % of revenue.
+     * The pools are summed — Conversation API runs on the Studio key too.
+     * Costs counted here: credits at $0.01, Polar at 6.5 % + 50¢, fixed
+     * $1.44/subscription (Railway at 50 subscribers, PRC-3 §3).
+     * Pre-v2 subscriptions keep their own frozen numbers (credit-unit.ts).
+     */
+    const r30Holds = (plan: 'starter' | 'pro', price: number) => {
+      const pooled = PLAN_LIMITS['ai.messages_per_month']!.values[plan] + PLAN_LIMITS['api.messages_per_month']!.values[plan]
+      const cost = pooled * AI_CREDIT_UNIT_USD + price * 0.065 + 0.5 + 1.44
+      return { pooled, profitShare: (price - cost) / price }
+    }
+
+    it('pins the v2 credit pools (PRC-3)', () => {
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(300)
+      expect(PLAN_LIMITS['ai.messages_per_month']!.values.pro).toBe(1600)
+      // Starter has no Conversation API keys, so its API pool is 0 by design.
+      expect(PLAN_LIMITS['api.messages_per_month']!.values.starter).toBe(0)
+      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(450)
     })
 
-    it('pins Pro canonical API message limit', () => {
-      // Same pooled 30%-of-price budget as the chat credit limit above
-      // — see the comment there. Was 3000 (~184% of the $49 Pro price
-      // on its own) before the 2026-09 unit-economics fix.
-      expect(PLAN_LIMITS['api.messages_per_month']!.values.pro).toBe(140)
+    it('keeps Pro at ≥ 30 % profit with both credit pools full (R30)', () => {
+      expect(r30Holds('pro', 49).profitShare).toBeGreaterThanOrEqual(0.3)
     })
 
-    it('pins the pooled Pro AI+API budget under the P1 policy', () => {
-      // Regression guard for the pooled-vs-per-meter mistake above:
-      // the combined spend across both platform-cost-bearing pools
-      // must stay at or under 30% of plan price, not just each pool
-      // in isolation.
-      const pooledCredits = PLAN_LIMITS['ai.messages_per_month']!.values.pro
-        + PLAN_LIMITS['api.messages_per_month']!.values.pro
-      const proPrice = 49
-      expect(pooledCredits * AI_CREDIT_UNIT_USD).toBeLessThanOrEqual(proPrice * 0.3)
-    })
-
-    it('pins Starter AI message limit', () => {
-      // 60 credits × $0.03 = $1.80 = 30% of the pooled Starter budget
-      // (AI 60 + API 30 = 90 credits × $0.03 = $2.70 = 30% of $9).
-      expect(PLAN_LIMITS['ai.messages_per_month']!.values.starter).toBe(60)
-    })
-
-    it('pins Starter canonical API message limit', () => {
-      expect(PLAN_LIMITS['api.messages_per_month']!.values.starter).toBe(30)
-    })
-
-    it('pins the pooled Starter AI+API budget under the P1 policy', () => {
-      const pooledCredits = PLAN_LIMITS['ai.messages_per_month']!.values.starter
-        + PLAN_LIMITS['api.messages_per_month']!.values.starter
-      const starterPrice = 9
-      expect(pooledCredits * AI_CREDIT_UNIT_USD).toBeLessThanOrEqual(starterPrice * 0.3)
+    it('keeps Starter at ≥ 30 % profit with both credit pools full (R30)', () => {
+      expect(r30Holds('starter', 9).profitShare).toBeGreaterThanOrEqual(0.3)
     })
 
     it('team.members keeps the structural owner seat on free', () => {
@@ -317,7 +301,7 @@ describe('license ↔ content parity', () => {
       expect(OVERAGE_PRICING[key]).toBeDefined()
     })
 
-    it('pins canonical unit prices', () => {
+    it('pins canonical unit prices (catalog v2; pre-v2 products keep theirs, credit-unit.ts)', () => {
       // $0.08 ≈ 2.7x AI_CREDIT_UNIT_USD ($0.03) — above the SS-14
       // profit-policy floor (overage price >= 2x marginal cost) with
       // headroom: SO-14 B-4 measured real cost per credit at $0.069 on
@@ -326,10 +310,11 @@ describe('license ↔ content parity', () => {
       // straight 2x ($0.06) would have priced overage below what a
       // credit actually costs once the per-message cap moved 30→60.
       // Was 0.05 (1.67x, loss-making) before the 2026-09 fix.
-      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.08)
-      expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.08)
-      expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.price).toBe(0.005)
-      expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price).toBe(0.10)
+      // $0.025 per $0.01 credit: 2.5× the unit (P2 ≥ 2×).
+      expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.025)
+      expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.025)
+      expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.price).toBe(0.001)
+      expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price).toBe(0.15)
       expect(OVERAGE_PRICING['forms.submissions_per_month']!.price).toBe(0.01)
       expect(OVERAGE_PRICING['media.storage_gb']!.price).toBe(0.25)
     })

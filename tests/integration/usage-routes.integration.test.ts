@@ -19,6 +19,8 @@ describe('usage API', () => {
   describe('GET /usage', () => {
     it('returns usage metrics for all categories', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        // A pre-v2 ($0.03-credit) account: Pro 350 / Starter 60, overage $0.08.
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ credit_unit: '0.03' }),
         getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
@@ -67,19 +69,20 @@ describe('usage API', () => {
       expect(forms.percentage).toBeGreaterThanOrEqual(2)
       expect(forms.percentage).toBeLessThanOrEqual(3)
 
-      // Media storage: 2GB/15GB ≈ 13%
+      // Media storage: 2GB/25GB = 8% — v2 raised it for every account, pre-v2 ones included.
       const storage = result.categories.find((c: { key: string }) => c.key === 'media_storage')
       expect(storage).toMatchObject({
         key: 'media_storage',
         current: 2,
-        limit: 15,
+        limit: 25,
       })
-      expect(storage.percentage).toBeGreaterThanOrEqual(13)
-      expect(storage.percentage).toBeLessThanOrEqual(14)
+      expect(storage.percentage).toBe(8)
     })
 
     it('calculates overage units when usage exceeds limit', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        // A pre-v2 ($0.03-credit) account: Pro 350 / Starter 60, overage $0.08.
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ credit_unit: '0.03' }),
         getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
@@ -113,6 +116,8 @@ describe('usage API', () => {
 
     it('returns -1 for unlimited limits (enterprise)', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        // A pre-v2 ($0.03-credit) account: Pro 350 / Starter 60, overage $0.08.
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ credit_unit: '0.03' }),
         getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
@@ -141,6 +146,8 @@ describe('usage API', () => {
 
     it('returns zero usage for fresh workspace', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        // A pre-v2 ($0.03-credit) account: Pro 350 / Starter 60, overage $0.08.
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ credit_unit: '0.03' }),
         getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({
           id: 'ws-1',
@@ -170,6 +177,8 @@ describe('usage API', () => {
       // Comments have no meter and no overage price. Offering the switch
       // only produced a 400 from the settings route (no such key).
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        // A pre-v2 ($0.03-credit) account: Pro 350 / Starter 60, overage $0.08.
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ credit_unit: '0.03' }),
         getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, media_storage_bytes: 0 }),
         getWorkspaceMonthlyAIUsage: vi.fn().mockResolvedValue(0),
@@ -189,6 +198,8 @@ describe('usage API', () => {
 
     it('rejects non-owner/admin', async () => {
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        // A pre-v2 ($0.03-credit) account: Pro 350 / Starter 60, overage $0.08.
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ credit_unit: '0.03' }),
         getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
         getWorkspaceForUser: vi.fn().mockResolvedValue(null),
       }))
@@ -208,6 +219,8 @@ describe('usage API — what the billing screen may claim (BR-12)', () => {
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: {}, media_storage_bytes: 0 }),
       // Billed from the 15th: AI, API and MCP reset on the 15th, forms/comments/CDN on the 1st.
       getActivePaymentAccount: vi.fn().mockResolvedValue({
+        // A pre-v2 subscription: Pro 350 credits of $0.03 (credit-unit.ts).
+        credit_unit: '0.03',
         subscription_status: 'active',
         current_period_start: '2026-09-15T00:00:00Z',
         current_period_end: '2026-10-15T00:00:00Z',

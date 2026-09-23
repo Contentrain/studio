@@ -21,12 +21,13 @@ vi.mock('../../server/utils/enterprise', async importOriginal => ({
   resolveEnterpriseChatApiKey: async () => ({ apiKey: 'sk-studio', usageSource: 'studio' }),
 }))
 
-async function sendTurn(pool: ReturnType<typeof createCreditPool>, opts: { overage?: boolean } = {}): Promise<number> {
+async function sendTurn(pool: ReturnType<typeof createCreditPool>, opts: { overage?: boolean, creditUnit?: '0.03' | '0.01' } = {}): Promise<number> {
   let status = 0
   // The billing middleware's context, as `03.billing.ts` sets it: the
   // route reads the workspace's overage toggles from here.
   const billing = defineEventHandler((event) => {
-    event.context.billing = { overageSettings: { ai_messages: opts.overage === true } }
+    // These cases are a pre-v2 ($0.03-credit) Pro account unless a test says otherwise.
+    event.context.billing = { overageSettings: { ai_messages: opts.overage === true }, creditUnit: opts.creditUnit ?? '0.03' }
   })
   await withTestServer({ middleware: [billing], routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
     const response = await request(CHAT_PATH, {
@@ -68,5 +69,23 @@ describe('chat route — the payment meter respects overage off (BR-11 P0-1)', (
 
     expect(await sendTurn(pool, { overage: true })).toBe(200)
     expect(sum(meter)).toBe(45)
+  })
+
+  it('a v2 account meters the same turn in $0.01 credits on its own meter; a pre-v2 one in $0.03 credits on its own', async () => {
+    const v2 = createCreditPool(2000)
+    const current = stubChatRoute(v2, { plan: 'pro', limit: 1600, stream: heavyTurn })
+    expect(await sendTurn(v2, { overage: true, creditUnit: '0.01' })).toBe(200)
+    const v2Credits = sum(current.meter)
+    expect(current.meterUnits.every(u => u === '0.01')).toBe(true)
+
+    const legacyPool = createCreditPool(400)
+    const legacy = stubChatRoute(legacyPool, { plan: 'pro', limit: 350, stream: heavyTurn })
+    expect(await sendTurn(legacyPool, { overage: true })).toBe(200)
+    expect(sum(legacy.meter)).toBe(45)
+    expect(legacy.meterUnits.every(u => u === '0.03')).toBe(true)
+
+    // Same dollars, three times the credits — never the legacy count read as $0.01.
+    expect(v2Credits).toBeGreaterThanOrEqual(45 * 3 - 3)
+    expect(v2Credits).toBeLessThanOrEqual(45 * 3 + 3)
   })
 })

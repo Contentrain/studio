@@ -101,6 +101,35 @@ describe('postgres-db payment-accounts (contract)', () => {
     expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'k', value: 'v', when: 'absent' })).toBe(false)
   })
 
+  it('credit unit: a change converts the period\'s credit counters in the same transaction (QA-12 B3)', async () => {
+    const { getDb, sql } = await import('./helpers')
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    await methods.upsertPaymentAccount({ workspaceId: user.workspaceId, provider: 'polar', customerId: `cus_unit_${randomUUID()}`, subscriptionStatus: 'active', creditUnit: '0.03' })
+    const PERIOD = '2026-09-15'
+    await sql`INSERT INTO public.agent_usage (workspace_id, user_id, month, source, message_count) VALUES (${user.workspaceId}, ${user.userId}, ${PERIOD}, 'studio', 100)`.execute(getDb())
+    await sql`INSERT INTO public.agent_usage (workspace_id, user_id, month, source, message_count) VALUES (${user.workspaceId}, ${user.userId}, ${PERIOD}, 'byoa', 7)`.execute(getDb())
+    await sql`INSERT INTO public.agent_usage (workspace_id, user_id, month, source, message_count) VALUES (${user.workspaceId}, ${user.userId}, '2026-08-15', 'studio', 50)`.execute(getDb())
+    const count = async (month: string, source: string) => Number((await sql<{ c: number }>`SELECT message_count AS c FROM public.agent_usage WHERE workspace_id = ${user.workspaceId} AND month = ${month} AND source = ${source}`.execute(getDb())).rows[0]!.c)
+
+    // Same unit: nothing changes.
+    expect(await methods.setPaymentAccountCreditUnit({ workspaceId: user.workspaceId, unit: '0.03', periodKey: PERIOD })).toBe(false)
+    expect(await count(PERIOD, 'studio')).toBe(100)
+
+    // Into $0.01 credits: 100 × $0.03 = 300 × $0.01 — the period keeps its worth.
+    expect(await methods.setPaymentAccountCreditUnit({ workspaceId: user.workspaceId, unit: '0.01', periodKey: PERIOD })).toBe(true)
+    expect(await count(PERIOD, 'studio')).toBe(300)
+    // BYOA turns and other periods are untouched.
+    expect(await count(PERIOD, 'byoa')).toBe(7)
+    expect(await count('2026-08-15', 'studio')).toBe(50)
+    const account = await methods.getActivePaymentAccount(user.workspaceId)
+    expect(account?.credit_unit).toBe('0.01')
+
+    // And back, rounded up.
+    await sql`UPDATE public.agent_usage SET message_count = 301 WHERE workspace_id = ${user.workspaceId} AND month = ${PERIOD} AND source = 'studio'`.execute(getDb())
+    expect(await methods.setPaymentAccountCreditUnit({ workspaceId: user.workspaceId, unit: '0.03', periodKey: PERIOD })).toBe(true)
+    expect(await count(PERIOD, 'studio')).toBe(101)
+  })
+
   it('usage outbox: idempotent enqueue, FIFO pending list, ingest/failure bookkeeping', async () => {
     const idempotencyKey = `evt-${randomUUID()}`
 

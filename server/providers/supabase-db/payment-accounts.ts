@@ -14,6 +14,7 @@ type PaymentAccountMethods = Pick<
   | 'getActivePaymentAccount'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
+  | 'setPaymentAccountCreditUnit'
   | 'archiveActivePaymentAccount'
   | 'enqueueUsageEvent'
   | 'listPendingUsageEvents'
@@ -69,6 +70,8 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         plan: input.plan ?? null,
         is_active: nowActive,
       }
+      // Omitted → an update keeps the stored unit, an insert gets the default.
+      if (input.creditUnit) payload.credit_unit = input.creditUnit
       // Omitted → an update keeps the stored value, an insert gets the
       // column default `{}` (see the DatabaseProvider contract).
       if (input.pluginMetadata !== undefined) {
@@ -105,6 +108,16 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         throw createError({ statusCode: 500, message: `Failed to upsert payment account: ${error.message}` })
       }
       return data as DatabaseRow
+    },
+
+    async setPaymentAccountCreditUnit({ workspaceId, unit, periodKey }) {
+      const { data, error } = await getAdmin().rpc('set_payment_account_credit_unit', {
+        p_workspace_id: workspaceId,
+        p_unit: unit,
+        p_period_key: periodKey,
+      })
+      if (error) throw createError({ statusCode: 500, message: `Failed to set credit unit: ${error.message}` })
+      return data === true
     },
 
     async setPaymentAccountMetadataKey({ workspaceId, key, value, when }) {

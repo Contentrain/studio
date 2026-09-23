@@ -41,6 +41,15 @@ describe('resolveOverageLocks', () => {
     expect(locks.api_messages).toBeUndefined()
   })
 
+  it('checks a v2 subscription against its own $0.01 credit meters', () => {
+    const v2 = resolveOverageLocks({ subscription_status: 'active', plugin_metadata: { billable_meters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls'] } })
+    expect(v2.ai_messages).toBeUndefined()
+    expect(v2.api_messages).toBeUndefined()
+    // A v2 product without the API credit price cannot sell API overage.
+    const noApi = resolveOverageLocks({ subscription_status: 'active', plugin_metadata: { billable_meters: ['ai_credits_1c', 'mcp_calls'] } })
+    expect(noApi.api_messages).toEqual({ reason: 'not_in_subscription', until: null })
+  })
+
   it('applies only the trial rule when the provider never reported prices', () => {
     expect(resolveOverageLocks({ subscription_status: 'active', plugin_metadata: {} })).toEqual({})
     expect(resolveOverageLocks({ subscription_status: 'past_due', plugin_metadata: null })).toEqual({})

@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
+import { defineEventHandler } from 'h3'
 import { withTestServer } from '../helpers/http'
 import { CHAT_PATH, createCreditPool, loadChatHandler, stubChatRoute, waitFor } from '../helpers/chat-credit-pool'
+
+/**
+ * The figures in this file are $0.03 credits: the billing middleware's
+ * context for a pre-v2 account (`credit-unit.ts`).
+ */
+const legacyAccount = defineEventHandler((event) => {
+  event.context.billing = { overageSettings: {}, creditUnit: '0.03' }
+})
 
 /**
  * AI-8 — the chat route's credit accounting under concurrency, client
@@ -50,7 +59,7 @@ describe('chat route — turn credits (AI-8)', () => {
       },
     })
 
-    await withTestServer({ routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
+    await withTestServer({ middleware: [legacyAccount], routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
       const send = () => request(CHAT_PATH, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -89,7 +98,7 @@ describe('chat route — turn credits (AI-8)', () => {
       },
     })
 
-    await withTestServer({ routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
+    await withTestServer({ middleware: [legacyAccount], routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
       const controller = new AbortController()
       const response = await request(CHAT_PATH, {
         method: 'POST',
@@ -126,7 +135,7 @@ describe('chat route — turn credits (AI-8)', () => {
       },
     })
 
-    await withTestServer({ routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
+    await withTestServer({ middleware: [legacyAccount], routes: [{ path: CHAT_PATH, handler: await loadChatHandler() }] }, async ({ request }) => {
       const response = await request(CHAT_PATH, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

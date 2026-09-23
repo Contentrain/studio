@@ -12,6 +12,8 @@
  * to `resolveDeployment()`.
  */
 
+import { creditTermsFor } from '../../shared/utils/credit-unit'
+import type { CreditLimitKey, CreditUnit } from '../../shared/utils/credit-unit'
 import {
   FEATURE_MATRIX,
   getPlanLimitForPlan,
@@ -103,4 +105,13 @@ export function getAvailableFeatures(plan: Plan): string[] {
 
 export function getPlanLimit(plan: Plan | string | null | undefined, limit: string): number {
   return getPlanLimitForPlan(plan, limit, { edition: getEdition() })
+}
+
+/**
+ * A credit limit (`ai.messages_per_month`, `api.messages_per_month`) in the
+ * unit the account is billed in — the frozen pre-v2 quota for a $0.03
+ * account, the catalog's for a $0.01 one (`shared/utils/credit-unit.ts`).
+ */
+export function getCreditLimit(plan: Plan | string | null | undefined, limit: CreditLimitKey, unit: CreditUnit): number {
+  return creditTermsFor(unit).creditLimit(plan, limit, { edition: getEdition() })
 }

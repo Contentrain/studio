@@ -59,6 +59,7 @@ export interface PaymentAccountsTable {
   grace_period_ends_at: string | null
   plan: string | null
   plugin_metadata: Generated<unknown>
+  credit_unit: Generated<string>
   is_active: Generated<boolean>
   archived_at: string | null
   created_at: Generated<string>

@@ -25,8 +25,10 @@ describe('usage meter manifest', () => {
   it('carries the corrected credit meter names', () => {
     // The old `ai_messages` / `api_messages` meters count events and
     // cannot be re-aggregated under recorded history.
-    expect(USAGE_METERS.AI_MESSAGES.name).toBe('ai_credits')
-    expect(USAGE_METERS.API_MESSAGES.name).toBe('api_credits')
+    // Catalog v2 sells $0.01 credits on meters of their own; the $0.03
+    // meters stay in Polar for pre-v2 subscriptions (credit-unit.ts).
+    expect(USAGE_METERS.AI_MESSAGES.name).toBe('ai_credits_1c')
+    expect(USAGE_METERS.API_MESSAGES.name).toBe('api_credits_1c')
   })
 
   it('converts a gigabyte limit into the byte unit the storage meter sums', () => {

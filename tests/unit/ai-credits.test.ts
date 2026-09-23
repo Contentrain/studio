@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   AI_CREDIT_UNIT_USD,
-  DEFAULT_MAX_CREDITS_PER_MESSAGE,
   estimateMessageCostUsd,
   estimateMessageCredits,
   getMaxCreditsPerMessage,
-  STARTER_MAX_CREDITS_PER_MESSAGE,
   cacheReadMultiplierFor,
   pricingForModel,
 } from '../../shared/utils/ai-credits'
@@ -67,8 +65,12 @@ describe('estimateMessageCostUsd', () => {
 
 describe('estimateMessageCredits', () => {
   it('floors at 1 credit — a light message never costs more than its reservation', () => {
-    expect(estimateMessageCredits(usage(), 'pro')).toBe(1)
-    expect(estimateMessageCredits(usage({ inputTokens: 2_000, outputTokens: 300, cacheReadInputTokens: 20_000 }), 'pro')).toBe(1)
+    // Legacy $0.03 credits: a light message rounds to the 1-credit floor.
+    expect(estimateMessageCredits(usage(), 'pro', '0.03')).toBe(1)
+    expect(estimateMessageCredits(usage({ inputTokens: 2_000, outputTokens: 300, cacheReadInputTokens: 20_000 }), 'pro', '0.03')).toBe(1)
+    // $0.01 credits round up: the same ~$0.011 message is 2 credits, never less than its cost.
+    expect(estimateMessageCredits(usage(), 'pro', '0.01')).toBe(1)
+    expect(estimateMessageCredits(usage({ inputTokens: 2_000, outputTokens: 300, cacheReadInputTokens: 20_000 }), 'pro', '0.01')).toBe(2)
   })
 
   it('weighs a heavy editorial turn by its real cost', () => {
@@ -79,27 +81,36 @@ describe('estimateMessageCredits', () => {
       cacheCreationInputTokens: 50_000,
       cacheReadInputTokens: 180_000,
       outputTokens: 6_000,
-    }), 'pro')
+    }), 'pro', '0.03')
     const cost = estimateMessageCostUsd(usage({
       inputTokens: 10_000,
       cacheCreationInputTokens: 50_000,
       cacheReadInputTokens: 180_000,
       outputTokens: 6_000,
     }))
-    expect(credits).toBe(Math.round(cost / AI_CREDIT_UNIT_USD))
+    // Legacy unit ($0.03, nearest).
+    expect(credits).toBe(Math.round(cost / 0.03))
     expect(credits).toBeGreaterThanOrEqual(9)
     expect(credits).toBeLessThanOrEqual(12)
+    // Current unit ($0.01, up): about three times as many credits for the same dollars.
+    const current = estimateMessageCredits(usage({ inputTokens: 10_000, cacheCreationInputTokens: 50_000, cacheReadInputTokens: 180_000, outputTokens: 6_000 }), 'pro', '0.01')
+    expect(current).toBe(Math.ceil(cost / AI_CREDIT_UNIT_USD - 1e-9))
+    expect(AI_CREDIT_UNIT_USD).toBe(0.01)
   })
 
-  it('caps a pathological turn at the plan ceiling — Pro/Enterprise at 60, Starter at 30', () => {
+  it('caps a pathological turn at the plan ceiling of its unit', () => {
     const heavy = usage({
       model: 'claude-opus-5-5',
       inputTokens: 2_000_000,
       outputTokens: 500_000,
     })
-    expect(estimateMessageCredits(heavy, 'pro')).toBe(DEFAULT_MAX_CREDITS_PER_MESSAGE)
-    expect(estimateMessageCredits(heavy, 'enterprise')).toBe(DEFAULT_MAX_CREDITS_PER_MESSAGE)
-    expect(estimateMessageCredits(heavy, 'starter')).toBe(STARTER_MAX_CREDITS_PER_MESSAGE)
+    // Legacy: Pro/Enterprise 60, Starter 30 ($1.80 / $0.90).
+    expect(estimateMessageCredits(heavy, 'pro', '0.03')).toBe(60)
+    expect(estimateMessageCredits(heavy, 'enterprise', '0.03')).toBe(60)
+    expect(estimateMessageCredits(heavy, 'starter', '0.03')).toBe(30)
+    // Current: Pro/Enterprise 150, Starter 75 ($1.50 / $0.75).
+    expect(estimateMessageCredits(heavy, 'pro', '0.01')).toBe(150)
+    expect(estimateMessageCredits(heavy, 'starter', '0.01')).toBe(75)
   })
 
   it('getMaxCreditsPerMessage: Starter is lower — its quota is small enough that the default 60 cap could burn it in one turn', () => {
@@ -107,10 +118,12 @@ describe('estimateMessageCredits', () => {
     // the ceiling 30→60 (SO-14 B-3): a 60-credit turn would be 100% of
     // the Starter quota instead of 12% of Pro's. Starter keeps the old
     // per-message ceiling; Pro/Enterprise take the raised one.
-    expect(getMaxCreditsPerMessage('starter')).toBe(30)
-    expect(getMaxCreditsPerMessage('pro')).toBe(60)
-    expect(getMaxCreditsPerMessage('enterprise')).toBe(60)
-    expect(getMaxCreditsPerMessage('community')).toBe(60)
+    expect(getMaxCreditsPerMessage('starter', '0.03')).toBe(30)
+    expect(getMaxCreditsPerMessage('pro', '0.03')).toBe(60)
+    expect(getMaxCreditsPerMessage('enterprise', '0.03')).toBe(60)
+    expect(getMaxCreditsPerMessage('community', '0.03')).toBe(60)
+    expect(getMaxCreditsPerMessage('starter', '0.01')).toBe(75)
+    expect(getMaxCreditsPerMessage('community', '0.01')).toBe(150)
   })
 
   it('a Haiku turn costs a fraction of the same Sonnet turn (the starter-tier economics)', () => {

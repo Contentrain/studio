@@ -130,11 +130,13 @@ describe('chat route — BYOA turns are outside the AI credit quota and never me
     await runTurn()
 
     // The whole Pro turn ceiling (60) is reserved up front.
-    expect(reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', limit: 350, amount: 60 }))
+    // No billing context: the current unit ($0.01) — Pro ceiling 150.
+    expect(reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', limit: 350, amount: 150 }))
     // 400K in + 60K out on Haiku 4.5 = $0.70 = 23 credits; the other 37 are refunded.
-    expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', messageCountDelta: 23 - 60 }))
+    // 400K in + 60K out on Haiku = $0.70 → 70 credits of $0.01.
+    expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', messageCountDelta: 70 - 150 }))
     expect(recordAIUsage).toHaveBeenCalledTimes(1)
-    expect(recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 23 }))
+    expect(recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 70, creditUnit: '0.01' }))
   })
 
   it('on an unlimited plan only Studio-key turns are metered', async () => {
@@ -146,6 +148,6 @@ describe('chat route — BYOA turns are outside the AI credit quota and never me
     resolveEnterpriseChatApiKey.mockResolvedValue({ apiKey: 'sk-studio', usageSource: 'studio' })
     const studio = stubTurn({ plan: 'enterprise', monthlyLimit: Infinity })
     await runTurn()
-    expect(studio.recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 23 }))
+    expect(studio.recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 70 }))
   })
 })

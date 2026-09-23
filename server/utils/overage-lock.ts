@@ -29,7 +29,8 @@
  */
 
 import { OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
-import { USAGE_METER_LIST } from '../../shared/utils/usage-meters'
+import { USAGE_METERS, USAGE_METER_LIST } from '../../shared/utils/usage-meters'
+import { CURRENT_CREDIT_UNIT, creditTermsFor, creditUnitFromMeters } from '../../shared/utils/credit-unit'
 
 export type OverageLockReason = 'trialing' | 'not_in_subscription'
 
@@ -81,8 +82,13 @@ export function resolveOverageLocks(account: OverageLockAccount | null | undefin
 
   const billable = readBillableMeters(account.plugin_metadata)
   if (!billable) return locks
+  // Credit overage is priced on the meters of the subscription's own unit:
+  // a pre-v2 subscription prices `ai_credits`, a v2 one `ai_credits_1c`.
+  const creditMeters = creditTermsFor(creditUnitFromMeters(billable) ?? CURRENT_CREDIT_UNIT).meters
   for (const key of OVERAGE_SETTINGS_KEYS) {
-    const meter = METER_NAME_BY_SETTINGS_KEY[key]
+    const meter = key === USAGE_METERS.AI_MESSAGES.settingsKey
+      ? creditMeters.ai
+      : key === USAGE_METERS.API_MESSAGES.settingsKey ? creditMeters.api : METER_NAME_BY_SETTINGS_KEY[key]
     if (!meter || !billable.includes(meter)) locks[key] = { reason: 'not_in_subscription', until: null }
   }
   return locks

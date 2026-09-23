@@ -65,6 +65,8 @@ export function stubChatRoute(pool: CreditPool, opts: {
   stream: StreamFn
 }) {
   const meter: number[] = []
+  /** The credit unit each meter event was sent in (picks the Polar meter). */
+  const meterUnits: Array<string | undefined> = []
   vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
     if (key === 'workspaceId') return 'workspace-1'
     if (key === 'projectId') return 'project-1'
@@ -108,11 +110,12 @@ export function stubChatRoute(pool: CreditPool, opts: {
   vi.stubGlobal('filterToolsByPermissions', vi.fn().mockReturnValue([]))
   vi.stubGlobal('STUDIO_TOOLS', [])
   vi.stubGlobal('reportBillingRisk', vi.fn())
-  vi.stubGlobal('recordAIUsage', vi.fn(async (input: { count: number }) => {
+  vi.stubGlobal('recordAIUsage', vi.fn(async (input: { count: number, creditUnit?: string }) => {
     meter.push(input.count)
+    meterUnits.push(input.creditUnit)
   }))
   vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({ streamCompletion: opts.stream }))
-  return { meter }
+  return { meter, meterUnits }
 }
 
 export async function waitFor(check: () => boolean, ms = 3000): Promise<void> {

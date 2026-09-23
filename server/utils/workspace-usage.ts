@@ -24,6 +24,8 @@
  * is reported, and the other meters are unaffected.
  */
 import { OVERAGE_PRICING, getPlanLimitForPlan } from '../../shared/utils/license'
+import { CURRENT_CREDIT_UNIT, creditTermsFor, isCreditLimitKey } from '../../shared/utils/credit-unit'
+import type { CreditUnit } from '../../shared/utils/credit-unit'
 import type { DatabaseProvider } from '../providers/database'
 import { calculateOverageUnits, isOverageSellable } from './overage'
 import type { OverageLock } from './overage-lock'
@@ -90,8 +92,14 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
    * `unavailable`: that meter is marked `unavailable` and the rest still show.
    */
   readErrors?: 'throw' | 'unavailable'
+  /**
+   * The credit unit the account is billed in. Credit limits and every
+   * overage price are read in it (`credit-unit.ts`); absent = current unit.
+   */
+  creditUnit?: CreditUnit
 }): Promise<WorkspaceUsage> {
   const { workspaceId, plan, overageSettings, period } = input
+  const terms = creditTermsFor(input.creditUnit ?? CURRENT_CREDIT_UNIT)
   const now = input.now ?? new Date()
   // Forms, comments and CDN keep the calendar month: their rows are written
   // by date-range aggregators, and the CDN reader expands a `YYYY-MM` key into
@@ -137,7 +145,7 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
   let projectedOverageAmount = 0
 
   for (const m of meters) {
-    const planLimit = getPlanLimitForPlan(plan, m.limitKey)
+    const planLimit = isCreditLimitKey(m.limitKey) ? terms.creditLimit(plan, m.limitKey) : getPlanLimitForPlan(plan, m.limitKey)
     const unavailable = m.current === null
     const current = m.current ?? 0
     const pricing = OVERAGE_PRICING[m.limitKey]
@@ -148,7 +156,8 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
     const sellable = !!pricing && isOverageSellable(m.limitKey)
     const overageLock = pricing ? input.overageLocks?.[pricing.settingsKey] ?? null : null
     const overageEnabled = sellable && pricing && !overageLock ? (overageSettings[pricing.settingsKey] === true) : false
-    const overageUnitPrice = sellable ? pricing?.price ?? 0 : 0
+    // The price the account's own product sells overage at.
+    const overageUnitPrice = sellable ? terms.overagePrice(m.limitKey) ?? 0 : 0
     const overageUnits = overageEnabled && !unavailable ? calculateOverageUnits(current, planLimit) : 0
     const overageAmount = overageUnits * overageUnitPrice
 

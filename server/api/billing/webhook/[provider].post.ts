@@ -11,6 +11,8 @@
  * carried through `handleWebhook`'s headers param.
  */
 
+import { creditUnitFromMeters } from '../../../../shared/utils/credit-unit'
+import { usagePeriodFrom } from '../../../utils/usage-period'
 import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payment'
 import type { PaymentPluginConfig } from '../../../providers/payment'
 import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
@@ -287,6 +289,7 @@ export default defineEventHandler(async (event) => {
           current_period_end: result.currentPeriodEnd ?? null,
         },
       })
+      const createdUnit = creditUnitFromMeters(result.billableMeters)
       await db.upsertPaymentAccount({
         workspaceId: result.workspaceId,
         provider: plugin.key,
@@ -306,6 +309,10 @@ export default defineEventHandler(async (event) => {
         pluginMetadata: result.subscriptionStatus === 'active'
           ? { ...metadataObject(withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId)), [ACTIVATION_EMAIL_KEY]: 'sent' }
           : withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId),
+        // The credit unit follows the meters the subscription is priced on:
+        // a v2 product meters `_1c` credits, a pre-v2 one $0.03 credits. No
+        // credit meter in the list says nothing: the stored unit stays.
+        ...(createdUnit ? { creditUnit: createdUnit } : {}),
         isActive: true,
       })
       await overageLock.commit()
@@ -405,6 +412,18 @@ export default defineEventHandler(async (event) => {
         preserveMetadataKeys: CLAIMED_METADATA_KEYS,
         isActive: true,
       })
+      // The credit unit follows the subscription's meters (a plan change to a
+      // v2 product, or back). A change converts the counters of the period
+      // being consumed in the same transaction, so its usage keeps its worth.
+      const updatedUnit = creditUnitFromMeters(result.billableMeters)
+      if (updatedUnit) {
+        const periodKey = usagePeriodFrom({
+          subscription_status: result.subscriptionStatus ?? null,
+          current_period_start: result.currentPeriodStart ?? null,
+          current_period_end: result.currentPeriodEnd ?? null,
+        }).key
+        await db.setPaymentAccountCreditUnit({ workspaceId: result.workspaceId, unit: updatedUnit, periodKey })
+      }
       await overageLock.commit()
       // A subscription started from a Migrate grant's checkout uses the
       // grant up: no second included trial after cancel-and-resubscribe.

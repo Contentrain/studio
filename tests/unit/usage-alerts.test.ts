@@ -20,6 +20,8 @@ function fakeDb(usage: Partial<Record<'ai' | 'api' | 'forms' | 'comments' | 'cdn
       overage_settings: {}, media_storage_bytes: 0, ...workspace,
     }]),
     getActivePaymentAccount: vi.fn().mockResolvedValue({
+      // A pre-v2 subscription: $0.03 credits, Pro 350 AI (credit-unit.ts).
+      credit_unit: '0.03',
       subscription_id: 'sub_1', subscription_status: 'active',
       current_period_start: '2026-09-15T00:00:00Z', current_period_end: '2026-10-15T00:00:00Z',
       trial_ends_at: null, grace_period_ends_at: null,
@@ -132,7 +134,7 @@ describe('usage alerts', () => {
   })
 
   it('storage alerts once per threshold, not every month, and does not promise a reset', async () => {
-    const db = fakeDb({}, { media_storage_bytes: 16 * 1024 ** 3 }) // Pro: 15 GB
+    const db = fakeDb({}, { media_storage_bytes: 26 * 1024 ** 3 }) // Pro: 25 GB (catalog v2, for every account)
     const sendEmail = vi.fn().mockResolvedValue(undefined)
     const first = await runUsageAlerts(deps(db, sendEmail))
     expect(first).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 100, periodKey: 'level' })])
@@ -168,7 +170,7 @@ describe('usage alerts', () => {
   })
 
   it('the storage warning says storage does not reset, with no empty date', async () => {
-    const db = fakeDb({}, { media_storage_bytes: 12.5 * 1024 ** 3 }) // 83 % of 15 GB
+    const db = fakeDb({}, { media_storage_bytes: 21 * 1024 ** 3 }) // 84 % of 25 GB
     const sendEmail = vi.fn().mockResolvedValue(undefined)
     await runUsageAlerts(deps(db, sendEmail))
     const html = (sendEmail.mock.calls[0]![0] as { html: string }).html
@@ -191,5 +193,19 @@ describe('usage alerts', () => {
     const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, unit: 'credits', percentage: 120, resetsAt: null, periodKey: '2026-09-15' }
     expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420, unavailable: true }])).toEqual([])
     expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420 }])).toHaveLength(1)
+  })
+
+  it('reads a v2 account in its own unit: 1 036 credits are 65 % of Pro\'s 1 600, no alert', async () => {
+    const db = fakeDb({ ai: 1036 })
+    db.getActivePaymentAccount.mockResolvedValue({
+      credit_unit: '0.01',
+      subscription_id: 'sub_2', subscription_status: 'active',
+      current_period_start: '2026-09-15T00:00:00Z', current_period_end: '2026-10-15T00:00:00Z',
+      trial_ends_at: null, grace_period_ends_at: null,
+    })
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
+    // The same count on a pre-v2 account is past its 350.
+    expect(await runUsageAlerts(deps(fakeDb({ ai: 1036 }), sendEmail))).toEqual([expect.objectContaining({ meter: 'ai_messages', threshold: 100 })])
   })
 })

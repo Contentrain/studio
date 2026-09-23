@@ -27,7 +27,7 @@ import { PLAN_PRICING, normalizePlan } from '../../shared/utils/license'
 import { CDN_ORIGIN_HARD_STOP_RATIO } from '../../shared/utils/cdn-limit'
 import type { DatabaseProvider, UsageAlertKey } from '../providers/database'
 import { emailTemplate, errorMessage } from './content-strings'
-import { getEffectivePlan, isBillingLocked, resolveBillingState } from './billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveCreditUnit } from './billing'
 import type { PaymentAccountState, WorkspaceBillingRow } from './billing'
 import { resolveOverageLocks } from './overage-lock'
 import type { OverageLockAccount } from './overage-lock'
@@ -137,6 +137,7 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
         // An unreadable meter is skipped (reported, never alerted on as 0);
         // the meters that were read still alert.
         readErrors: 'unavailable',
+        creditUnit: resolveCreditUnit(account as { credit_unit?: unknown } | null),
       })
 
       const alerts = planUsageAlerts(usage.categories)
