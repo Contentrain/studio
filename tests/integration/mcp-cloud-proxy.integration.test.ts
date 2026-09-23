@@ -98,7 +98,7 @@ vi.mock('~~/server/utils/rate-limit', () => ({
 // it is the billing-derived answer the route must gate on.
 vi.mock('~~/server/utils/workspace-billing', () => ({
   resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }, opts?: { requireAccess?: boolean }) => {
-    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', requiresCheckout: true } })
     return ({
       state: 'subscribed',
       effectivePlan: state.effectivePlan,

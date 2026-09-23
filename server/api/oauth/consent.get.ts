@@ -10,6 +10,7 @@
 import { requireAuth } from '~~/server/utils/auth'
 import { authzFlowSession } from '~~/server/utils/oauth-server/flow'
 import { errorMessage } from '~~/server/utils/content-strings'
+import { isBillingLocked } from '~~/server/utils/billing'
 import { hasFeature } from '~~/server/utils/license'
 import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { useDatabaseProvider } from '~~/server/utils/providers'
@@ -51,13 +52,17 @@ export default defineEventHandler(async (event) => {
   const workspaces: ConsentWorkspace[] = []
   for (const row of workspaceRows) {
     const role = ((row.workspace_members as Array<{ role?: string }> | undefined)?.[0]?.role) ?? 'member'
-    // Billing-derived, the same answer the MCP OAuth route gates on.
-    const plan = (await resolveWorkspaceBilling(db, row as { id: string })).effectivePlan
-    const planOk = hasFeature(plan, 'api.mcp_cloud_oauth')
+    // Billing-derived, the same answer the MCP OAuth route gates on. A
+    // locked workspace is refused by the approve step with 402, so it says
+    // payment required here too, not "upgrade".
+    const billing = await resolveWorkspaceBilling(db, row as { id: string })
+    const planOk = hasFeature(billing.effectivePlan, 'api.mcp_cloud_oauth')
     const installOk = !!row.github_installation_id
     const workspaceReason = !installOk
       ? 'ineligible_no_installation'
-      : (!planOk ? 'ineligible_plan' : null)
+      : isBillingLocked(billing.state)
+        ? 'ineligible_payment_required'
+        : (!planOk ? 'ineligible_plan' : null)
 
     const projectRows = role === 'member'
       ? (assignedProjectIds.length > 0

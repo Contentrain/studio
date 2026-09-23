@@ -1028,7 +1028,8 @@ export interface DatabaseProvider {
    * Set one `plugin_metadata` key on the workspace's active payment account,
    * atomically and only if its current value allows it: `when: 'absent'`
    * sets it only when the key is missing, `when: { equals }` only when it
-   * holds that value. Other keys and columns are untouched.
+   * holds that value, `when: 'different'` whenever it does not already hold
+   * `value`. Other keys and columns are untouched.
    * Returns whether the row was changed, so two concurrent callers can
    * claim a one-time action (e.g. an email) and exactly one wins.
    */
@@ -1036,7 +1037,7 @@ export interface DatabaseProvider {
     workspaceId: string
     key: string
     value: string
-    when: 'absent' | { equals: string }
+    when: 'absent' | 'different' | { equals: string }
   }) => Promise<boolean>
 
   /** Archive the active payment account for a workspace (no-op if none). */

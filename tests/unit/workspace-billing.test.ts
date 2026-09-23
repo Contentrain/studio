@@ -41,8 +41,17 @@ describe('resolveWorkspaceBilling', () => {
       .rejects.toMatchObject({
         statusCode: 402,
         message: 'billing.payment_required',
-        data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true },
+        data: { code: 'payment_required', requiresCheckout: true },
       })
+  })
+
+  it('does not tell a public caller which billing state locked the workspace', async () => {
+    // Site visitors and agents get the code only; whether the trial ended,
+    // the grace ran out or a cancellation took effect is the owner's business.
+    const expired = dbWith({ subscription_status: 'trialing', subscription_id: 'sub_1', trial_ends_at: '2020-01-01T00:00:00Z' })
+    const error = await resolveWorkspaceBilling(expired, { id: 'ws-1', type: 'primary', plan: 'pro' }, { requireAccess: true })
+      .catch((e: { data?: unknown }) => e)
+    expect((error as { data?: unknown }).data).toEqual({ code: 'payment_required', requiresCheckout: true })
   })
 
   it('lets an accessible workspace through when access is required', async () => {

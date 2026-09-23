@@ -18,6 +18,7 @@
 
 import { Polar } from '@polar-sh/sdk'
 import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks'
+import { billingReasonOf } from '../billing-reason'
 import type {
   CanonicalWebhookEvent,
   CheckoutInput,
@@ -252,6 +253,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
             customerId: string
             subscriptionId: string | null
             totalAmount?: number
+            billingReason?: string
             metadata?: Record<string, unknown>
             subscription?: { metadata?: Record<string, unknown> } | null
             customer?: { externalId?: string | null } | null
@@ -272,6 +274,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
             customerId: order.customerId,
             invoiceId: order.id,
             ...(typeof order.totalAmount === 'number' ? { amountPaid: order.totalAmount } : {}),
+            ...(order.billingReason ? { billingReason: billingReasonOf(order.billingReason) } : {}),
           }
         }
 

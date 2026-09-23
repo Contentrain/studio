@@ -131,7 +131,9 @@ export function paymentAccountMethods(): PaymentAccountMethods {
       // condition against this write, so only one of them changes the row.
       const condition = when === 'absent'
         ? sql`(coalesce(plugin_metadata, '{}'::jsonb) -> ${key}::text) IS NULL`
-        : sql`(plugin_metadata ->> ${key}::text) = ${when.equals}::text`
+        : when === 'different'
+          ? sql`(plugin_metadata ->> ${key}::text) IS DISTINCT FROM ${value}::text`
+          : sql`(plugin_metadata ->> ${key}::text) = ${when.equals}::text`
       try {
         const result = await sql<{ id: string }>`
           UPDATE payment_accounts

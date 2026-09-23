@@ -15,7 +15,10 @@ describe('billing webhook integration', () => {
   const updateWorkspace = vi.fn().mockResolvedValue({})
   const getActivePaymentAccount = vi.fn().mockResolvedValue(null)
   const markWorkspaceTrialConsumed = vi.fn().mockResolvedValue(undefined)
-  const setPaymentAccountMetadataKey = vi.fn().mockResolvedValue(false)
+  // No marker is stored: activation claims (pending → sent) find nothing,
+  // a recovery claim (new episode) wins. The activation tests use a store.
+  const claimDefault = async ({ when }: { when: unknown }) => when === 'different'
+  const setPaymentAccountMetadataKey = vi.fn(claimDefault)
 
   let handleWebhookMock: ReturnType<typeof vi.fn>
 
@@ -45,7 +48,7 @@ describe('billing webhook integration', () => {
     updateWorkspace.mockReset().mockResolvedValue({})
     getActivePaymentAccount.mockReset().mockResolvedValue(null)
     markWorkspaceTrialConsumed.mockReset().mockResolvedValue(undefined)
-    setPaymentAccountMetadataKey.mockReset().mockResolvedValue(false)
+    setPaymentAccountMetadataKey.mockReset().mockImplementation(claimDefault)
   })
 
   async function mockPluginAndLoadHandler(options: { configured?: boolean } = {}) {
@@ -413,7 +416,7 @@ describe('billing webhook integration', () => {
 
       expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
         pluginMetadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'] },
-        preserveMetadataKeys: ['activation_email'],
+        preserveMetadataKeys: ['activation_email', 'recovery_email'],
       }))
       // Trial → active also marks the activation email owed (it goes out on the first paid order).
       expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'activation_email', value: 'pending', when: 'absent' })
@@ -604,9 +607,12 @@ describe('billing webhook integration', () => {
             }
             return row
           }),
-          setPaymentAccountMetadataKey: vi.fn(async ({ key, value, when }: { key: string, value: string, when: 'absent' | { equals: string } }) => {
+          setPaymentAccountMetadataKey: vi.fn(async ({ key, value, when }: { key: string, value: string, when: 'absent' | 'different' | { equals: string } }) => {
             const metadata = (row.plugin_metadata ?? {}) as Record<string, unknown>
-            if (when === 'absent' ? key in metadata : metadata[key] !== when.equals) return false
+            const allowed = when === 'absent'
+              ? !(key in metadata)
+              : when === 'different' ? metadata[key] !== value : metadata[key] === when.equals
+            if (!allowed) return false
             row = { ...row, plugin_metadata: { ...metadata, [key]: value } }
             return true
           }),
@@ -737,6 +743,39 @@ describe('billing webhook integration', () => {
 
         expect(subjects()).not.toContain(ACTIVATED)
         expect(subjects().some(s => s.startsWith(RECOVERED_PREFIX))).toBe(true)
+      })
+
+      it('an ordinary recovery whose update and order arrive together says "payment received" once — and again for the next problem', async () => {
+        const pastDue = { ...activeAccount, subscription_status: 'past_due', grace_period_ends_at: '2026-09-30T12:00:00.000Z', plugin_metadata: { activation_email: 'sent' } }
+        const store = accountStore(pastDue)
+        useStore(store)
+
+        store.readBarrier(2)
+        await deliver(update({}), paidOrder(4900))
+
+        expect(subjects().filter(s => s.startsWith(RECOVERED_PREFIX))).toHaveLength(1)
+        expect(store.row().subscription_status).toBe('active')
+
+        // A later renewal fails and recovers: a new episode, a new email.
+        await deliver(update({ subscriptionStatus: 'past_due' }))
+        const nextGrace = store.row().grace_period_ends_at
+        expect(nextGrace).not.toBe(pastDue.grace_period_ends_at)
+        await deliver(paidOrder(4900))
+        expect(subjects().filter(s => s.startsWith(RECOVERED_PREFIX))).toHaveLength(2)
+      })
+
+      it('a conversion order discounted to $0 that beats the update still says activated — the trial\'s own $0 order does not', async () => {
+        const store = accountStore(trialingAccount)
+        useStore(store)
+
+        await deliver({ ...paidOrder(0), billingReason: 'subscription_create' })
+        expect(subjects()).toEqual([])
+
+        await deliver({ ...paidOrder(0), billingReason: 'subscription_cycle' })
+        await deliver(update({}))
+
+        expect(subjects()).toEqual([ACTIVATED])
+        expect(meta(store).activation_email).toBe('sent')
       })
     })
 

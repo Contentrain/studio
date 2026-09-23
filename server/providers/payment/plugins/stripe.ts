@@ -13,6 +13,7 @@
  */
 
 import Stripe from 'stripe'
+import { billingReasonOf } from '../billing-reason'
 import type {
   CanonicalWebhookEvent,
   CheckoutInput,
@@ -215,6 +216,7 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
             customerId: custId,
             invoiceId: raw.id as string,
             ...(typeof raw.amount_paid === 'number' ? { amountPaid: raw.amount_paid } : {}),
+            ...(typeof raw.billing_reason === 'string' ? { billingReason: billingReasonOf(raw.billing_reason) } : {}),
           }
         }
 

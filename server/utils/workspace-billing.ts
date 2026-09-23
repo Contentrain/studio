@@ -33,9 +33,11 @@ export interface WorkspaceBilling {
 
 /**
  * `requireAccess`: refuse a workspace whose billing is locked (trial ended
- * unpaid, grace period over, cancellation took effect) with 402 — the same
- * status and `data` shape as the billing middleware's paywall, so every
- * surface says "payment required", not "upgrade". Without it such a
+ * unpaid, grace period over, cancellation took effect) with 402 and the
+ * billing middleware's `code`, so every surface says "payment required", not
+ * "upgrade". Unlike the in-app paywall it leaves out `billingState`: these
+ * callers are site visitors and agents (a form, a comment box, a CDN key
+ * shipped in a page), and which of the three ended is the owner's business. Without it such a
  * workspace resolved to the free plan, and a public surface answered with
  * its own feature gate: a 403 "upgrade" to a caller who cannot upgrade
  * anything (a site visitor, an agent) and that no client treats as a billing
@@ -70,7 +72,7 @@ export async function resolveWorkspaceBilling(
     throw createError({
       statusCode: 402,
       message: errorMessage('billing.payment_required'),
-      data: { code: 'payment_required', billingState: state, requiresCheckout: true },
+      data: { code: 'payment_required', requiresCheckout: true },
     })
   }
   return {

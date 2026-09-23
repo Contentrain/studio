@@ -5,7 +5,7 @@ const billing = vi.hoisted(() => ({ effectivePlan: 'pro' as string, overageSetti
 const lock = vi.hoisted(() => ({ locked: false }))
 vi.mock('../../server/utils/workspace-billing', () => ({
   resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
-    if (lock.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    if (lock.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', requiresCheckout: true } })
     return { state: 'subscribed', ...billing }
   }),
 }))
