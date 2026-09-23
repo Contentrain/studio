@@ -21,7 +21,8 @@ import { errorMessage } from '~~/server/utils/content-strings'
 import { validateMcpCloudKey } from '~~/server/utils/mcp-cloud-keys'
 import { getInternalMcpUrl } from '~~/server/utils/mcp-cloud-runtime'
 import { useDatabaseProvider } from '~~/server/utils/providers'
-import { getWorkspacePlan, hasFeature } from '~~/server/utils/license'
+import { hasFeature } from '~~/server/utils/license'
+import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { runMcpCloudProxy } from '~~/server/utils/mcp-cloud-proxy'
 
 export default defineEventHandler(async (event) => {
@@ -50,13 +51,18 @@ export default defineEventHandler(async (event) => {
 
   const workspace = await db.getWorkspaceById(
     keyData.workspaceId,
-    'id, github_installation_id, plan, overage_settings, owner_id',
+    'id, github_installation_id, type, plan, overage_settings, owner_id',
   )
   if (!workspace?.github_installation_id) {
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
   }
 
-  const plan = getWorkspacePlan(workspace)
+  // Billing-derived, like every `/api/workspaces/*` route (the billing
+  // middleware does not cover this path): an expired trial or grace period
+  // loses its plan here too, and a toggle the subscription cannot bill does
+  // not raise the MCP cap.
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const plan = billing.effectivePlan
   if (!hasFeature(plan, 'api.mcp_cloud')) {
     throw createError({ statusCode: 403, message: errorMessage('mcp_cloud.upgrade') })
   }
@@ -65,7 +71,7 @@ export default defineEventHandler(async (event) => {
     projectId: keyData.projectId,
     workspaceId: keyData.workspaceId,
     plan,
-    overageSettings: (workspace.overage_settings as Record<string, boolean> | null) ?? {},
+    overageSettings: billing.overageSettings,
     installationId: workspace.github_installation_id as number,
     repoFullName: project.repo_full_name as string,
     contentRoot: (project.content_root as string | null) ?? '',

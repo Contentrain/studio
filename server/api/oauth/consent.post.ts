@@ -15,7 +15,8 @@ import { requireAuth } from '~~/server/utils/auth'
 import { authzFlowSession } from '~~/server/utils/oauth-server/flow'
 import { createAuthorizationCode } from '~~/server/utils/oauth-server/store'
 import { errorMessage } from '~~/server/utils/content-strings'
-import { getWorkspacePlan, hasFeature } from '~~/server/utils/license'
+import { hasFeature } from '~~/server/utils/license'
+import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 import { requireProjectAccess } from '~~/server/utils/db'
 import { canonicalSiteUrl } from '~~/server/utils/oauth-server/metadata'
@@ -74,11 +75,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('oauth.project_ineligible') })
   }
 
-  const workspace = await db.getWorkspaceById(body.workspaceId, 'id, github_installation_id, plan, overage_settings')
+  const workspace = await db.getWorkspaceById(body.workspaceId, 'id, github_installation_id, type, plan, overage_settings')
   if (!workspace?.github_installation_id) {
     throw createError({ statusCode: 400, message: errorMessage('oauth.project_ineligible') })
   }
-  if (!hasFeature(getWorkspacePlan(workspace), 'api.mcp_cloud_oauth')) {
+  // Same billing-derived plan the MCP OAuth route gates on — consent must
+  // not grant what the route will then refuse.
+  if (!hasFeature((await resolveWorkspaceBilling(db, workspace as { id: string })).effectivePlan, 'api.mcp_cloud_oauth')) {
     throw createError({ statusCode: 403, message: errorMessage('oauth.plan_required') })
   }
 

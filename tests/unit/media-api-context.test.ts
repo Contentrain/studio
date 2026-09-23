@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Plan + overage come from billing (its own suite); here, what it answers.
+const billing = vi.hoisted(() => ({ effectivePlan: 'pro' as string, overageSettings: {} as Record<string, boolean> }))
+vi.mock('../../server/utils/workspace-billing', () => ({
+  resolveWorkspaceBilling: vi.fn(async () => ({ state: 'subscribed', ...billing })),
+}))
+
 /**
  * Gate logic for the public media API. `resolveMediaApiContext` is the
  * single choke point every `/api/media/v1/...` route runs through, so its

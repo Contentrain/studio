@@ -1,6 +1,7 @@
 import type { DatabaseProvider } from '../../server/providers/database'
 import { useDatabaseProvider, useEmailProvider } from '../../server/utils/providers'
-import { getWorkspacePlan, hasFeature } from '../../server/utils/license'
+import { hasFeature } from '../../server/utils/license'
+import { resolveWorkspaceBilling } from '../../server/utils/workspace-billing'
 import { isAllowedWebhookUrl, signPayload } from '../../server/utils/webhook-engine'
 import { checkRateLimit } from '../../server/utils/rate-limit'
 import { emailTemplate } from '../../server/utils/content-strings'
@@ -40,9 +41,11 @@ export async function emitWebhookEvent(
 ): Promise<void> {
   const db = useDatabaseProvider()
 
-  const workspace = await db.getWorkspaceById(workspaceId, 'plan')
+  const workspace = await db.getWorkspaceById(workspaceId, 'id, type, plan')
 
-  if (!workspace || !hasFeature(getWorkspacePlan(workspace), 'api.webhooks_outbound'))
+  // Billing-derived: an expired trial stops outbound webhooks like it stops
+  // every other paid feature.
+  if (!workspace || !hasFeature((await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId })).effectivePlan, 'api.webhooks_outbound'))
     return
 
   const webhooks = await db.listActiveProjectWebhooks(workspaceId, projectId)

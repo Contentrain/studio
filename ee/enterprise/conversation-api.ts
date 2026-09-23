@@ -8,6 +8,7 @@ import type { ChatUIContext } from '../../server/utils/agent-types'
 import { toAITools } from '../../server/utils/agent-types'
 import { classifyIntent } from '../../server/utils/agent-context'
 import { resolveUsagePeriod } from '../../server/utils/usage-period'
+import { resolveWorkspaceBilling } from '../../server/utils/workspace-billing'
 import { deriveProjectPhase } from '../../server/utils/agent-state-machine'
 import { buildRequestContext, buildSystemPromptBlocks, toSystemBlocks } from '../../server/utils/agent-system-prompt'
 import { STUDIO_TOOLS, filterToolsByPermissions } from '../../server/utils/agent-tools'
@@ -22,7 +23,8 @@ import { estimateMessageCredits } from '../../shared/utils/ai-credits'
 import { maxOutputTokensFor } from '../../shared/utils/ai-models'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
-import { getPlanLimit, getWorkspacePlan, hasFeature } from '../../server/utils/license'
+import type { getWorkspacePlan } from '../../server/utils/license'
+import { getPlanLimit, hasFeature } from '../../server/utils/license'
 import { getEffectiveLimit } from '../../server/utils/overage'
 import { checkRateLimit } from '../../server/utils/rate-limit'
 import { useDatabaseProvider, useGitProvider } from '../../server/utils/providers'
@@ -72,7 +74,10 @@ interface ConversationApiContext {
     name: string | null
     owner_id: string | null
   }
+  /** The plan limits are enforced against — billing-derived, not the raw column. */
   plan: ReturnType<typeof getWorkspacePlan>
+  /** `overage_settings` with every toggle the subscription cannot bill turned off. */
+  overageSettings: Record<string, boolean>
 }
 
 function parseConversationContext(context: Partial<ChatUIContext> | undefined): ChatUIContext {
@@ -119,16 +124,28 @@ async function resolveConversationApiContext(event: H3Event): Promise<Conversati
   if (!project || project.workspace_id !== keyData.workspaceId)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
-  const workspace = await db.getWorkspaceById(keyData.workspaceId, 'id, github_installation_id, plan, slug, name, owner_id')
+  const workspace = await db.getWorkspaceById(keyData.workspaceId, 'id, github_installation_id, type, plan, overage_settings, slug, name, owner_id')
 
   if (!workspace?.github_installation_id)
     throw createError({ statusCode: 400, message: errorMessage('github.installation_missing') })
 
-  const plan = getWorkspacePlan(workspace)
+  // The billing middleware does not run on this route (it only covers
+  // `/api/workspaces/*`): resolve the plan and overage the same way it does,
+  // so an expired trial loses Pro limits here too and a toggle the
+  // subscription cannot bill never raises the cap.
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const plan = billing.effectivePlan
   if (!hasFeature(plan, 'api.conversation'))
     throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
 
-  return { db, keyData, project: project as ConversationApiContext['project'], workspace: workspace as ConversationApiContext['workspace'], plan }
+  return {
+    db,
+    keyData,
+    project: project as ConversationApiContext['project'],
+    workspace: workspace as ConversationApiContext['workspace'],
+    plan,
+    overageSettings: billing.overageSettings,
+  }
 }
 
 /**
@@ -165,7 +182,7 @@ async function runConversationMessage(
   event: H3Event,
   body: { message: string, conversationId?: string, context?: Partial<ChatUIContext> },
 ) {
-  const { db, keyData, project, workspace, plan } = await resolveConversationApiContext(event)
+  const { db, keyData, project, workspace, plan, overageSettings } = await resolveConversationApiContext(event)
 
   if (!body.message?.trim())
     throw createError({ statusCode: 400, message: errorMessage('validation.message_required') })
@@ -184,7 +201,6 @@ async function runConversationMessage(
   // the meter outbox below.
   // Billing-period keyed, same rule as the chat route (`server/utils/usage-period.ts`).
   const usageMonth = (await resolveUsagePeriod(keyData.workspaceId)).key
-  const overageSettings = (event.context as { billing?: { overageSettings?: Record<string, boolean> } }).billing?.overageSettings
   const workspacePlanLimit = getPlanLimit(plan, 'api.messages_per_month')
   const workspaceLimit = getEffectiveLimit(workspacePlanLimit, 'api.messages_per_month', overageSettings)
   const keyLimit = getEffectiveLimit(keyData.monthlyMessageLimit, 'api.messages_per_month', overageSettings)

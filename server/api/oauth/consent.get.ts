@@ -10,7 +10,8 @@
 import { requireAuth } from '~~/server/utils/auth'
 import { authzFlowSession } from '~~/server/utils/oauth-server/flow'
 import { errorMessage } from '~~/server/utils/content-strings'
-import { getWorkspacePlan, hasFeature } from '~~/server/utils/license'
+import { hasFeature } from '~~/server/utils/license'
+import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 
 interface ConsentProject {
@@ -50,7 +51,8 @@ export default defineEventHandler(async (event) => {
   const workspaces: ConsentWorkspace[] = []
   for (const row of workspaceRows) {
     const role = ((row.workspace_members as Array<{ role?: string }> | undefined)?.[0]?.role) ?? 'member'
-    const plan = getWorkspacePlan(row)
+    // Billing-derived, the same answer the MCP OAuth route gates on.
+    const plan = (await resolveWorkspaceBilling(db, row as { id: string })).effectivePlan
     const planOk = hasFeature(plan, 'api.mcp_cloud_oauth')
     const installOk = !!row.github_installation_id
     const workspaceReason = !installOk

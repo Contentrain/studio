@@ -9,6 +9,7 @@
  */
 
 import { getFormConfig, getClientIp, countFormEnabledModels, resolveProjectDefaultLocale } from '~~/server/utils/form-types'
+import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -34,12 +35,14 @@ export default defineEventHandler(async (event) => {
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, type, plan, github_installation_id')
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('forms.not_found') })
 
   // Plan check
-  const plan = getWorkspacePlan(workspace)
+  // Billing-derived (this public route is outside the billing middleware):
+  // an expired trial or grace period loses its plan here too.
+  const plan = (await resolveWorkspaceBilling(db, workspace as { id: string })).effectivePlan
   if (!hasFeature(plan, 'forms.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('forms.upgrade') })
 

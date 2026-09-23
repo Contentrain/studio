@@ -52,6 +52,21 @@ export interface ConversationKeyData {
   monthlyMessageLimit: number
 }
 
+/** Models a Conversation API key may run on. */
+export const CONVERSATION_API_MODELS: readonly string[] = ['claude-sonnet-5', 'claude-sonnet-4-5', 'claude-haiku-4-5-20251001']
+
+/** The model a key gets when none (or no longer an allowed one) is set. */
+export const DEFAULT_CONVERSATION_API_MODEL = 'claude-sonnet-5'
+
+/**
+ * The model to run a key on. A key stored with a model that has since been
+ * retired (e.g. `claude-sonnet-4-20250514`) would fail every request at the
+ * provider, so it runs on the default until its owner picks another.
+ */
+export function resolveConversationModel(stored: string | null | undefined): string {
+  return stored && CONVERSATION_API_MODELS.includes(stored) ? stored : DEFAULT_CONVERSATION_API_MODEL
+}
+
 /** Validate a Conversation API key. Returns key config or throws 401. */
 export async function validateConversationKey(
   authHeader: string | undefined,
@@ -81,7 +96,7 @@ export async function validateConversationKey(
     allowedTools: (apiKey.allowed_tools as string[]) ?? [],
     allowedLocales: (apiKey.allowed_locales as string[]) ?? [],
     customInstructions: (apiKey.custom_instructions as string) ?? null,
-    aiModel: (apiKey.ai_model as string) ?? 'claude-sonnet-4-5',
+    aiModel: resolveConversationModel(apiKey.ai_model as string | null),
     rateLimitPerMinute: (apiKey.rate_limit_per_minute as number) ?? 10,
     monthlyMessageLimit: (apiKey.monthly_message_limit as number) ?? 1000,
   }

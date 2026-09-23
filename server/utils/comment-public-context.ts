@@ -8,6 +8,7 @@
 
 import type { CommentsConfig } from './comment-types'
 import { countCommentEnabledModels, getCommentsConfig, modelSupportsComments } from './comment-types'
+import { resolveWorkspaceBilling } from './workspace-billing'
 
 export interface PublicCommentContext {
   projectId: string
@@ -27,11 +28,13 @@ export async function resolvePublicCommentContext(projectId: string, modelId: st
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('comments.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, plan, github_installation_id, overage_settings')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, type, plan, github_installation_id, overage_settings')
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('comments.not_found') })
 
-  const plan = getWorkspacePlan(workspace)
+  // Billing-derived (this public route is outside the billing middleware):
+  // an expired trial or grace period loses its plan here too.
+  const plan = (await resolveWorkspaceBilling(db, workspace as { id: string })).effectivePlan
   if (!hasFeature(plan, 'comments.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('comments.upgrade') })
 
