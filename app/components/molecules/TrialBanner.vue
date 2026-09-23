@@ -64,7 +64,17 @@ function dismiss() {
   }
 }
 
+/**
+ * A payment that failed past its grace window pauses the workspace — that is
+ * not an expired trial, and the way back is fixing the card, not a new plan.
+ */
+const isGraceExpired = computed(() => billingState.value === 'grace_expired')
+/** Payment problems are fixed in the billing portal, not by choosing a plan. */
+const needsPaymentFix = computed(() => isPastDue.value || isGraceExpired.value)
+
 const bannerText = computed(() => {
+  if (isGraceExpired.value) return t('billing.subscription_paused')
+  if (billingState.value === 'canceled_expired') return t('billing.subscription_ended')
   if (isExpired.value) return t('trial.expired_text')
   if (isPastDue.value) return t('billing.payment_failed')
   if (isFree.value) return t('billing.upgrade_to_connect')
@@ -74,13 +84,13 @@ const bannerText = computed(() => {
 })
 
 const ctaText = computed(() => {
-  if (isPastDue.value) return t('billing.update_payment')
+  if (needsPaymentFix.value) return t('billing.update_payment')
   if (isFree.value) return t('billing.upgrade')
   return t('trial.choose_plan')
 })
 
 function handleCta() {
-  if (isPastDue.value) emit('manageBilling')
+  if (needsPaymentFix.value) emit('manageBilling')
   else emit('choosePlan')
 }
 </script>

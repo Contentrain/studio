@@ -174,6 +174,22 @@ export function useBilling() {
   /**
    * Refresh workspace data after billing changes (e.g., returning from checkout).
    */
+  /**
+   * When a cancellation the customer scheduled takes effect, or null.
+   *
+   * A cancel from the portal keeps the subscription running to the end of the
+   * period (or trial) with `cancel_at_period_end` set. Nothing in Studio said
+   * so: the plan looked the same until the day it was gone.
+   */
+  const cancelsAt = computed<string | null>(() => {
+    const account = activeAccount.value
+    if (!account?.cancel_at_period_end) return null
+    if (!['subscribed', 'trial_active', 'past_due'].includes(billingState.value)) return null
+    const end = account.subscription_status === 'trialing' ? account.trial_ends_at ?? account.current_period_end : account.current_period_end
+    if (!end || new Date(end).getTime() <= Date.now()) return null
+    return end
+  })
+
   async function refreshBilling() {
     await fetchWorkspaces()
   }
@@ -188,6 +204,7 @@ export function useBilling() {
     isTrialing,
     trialConsumed,
     trialDaysLeft,
+    cancelsAt,
     activeAccount,
     startCheckout,
     openPortal,

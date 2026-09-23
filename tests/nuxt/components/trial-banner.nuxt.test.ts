@@ -111,4 +111,29 @@ describe('TrialBanner', () => {
     expect(wrapper.text()).toContain('Ask a workspace owner or admin.')
     expect(wrapper.text()).not.toContain('Choose a plan')
   })
+
+  it('says a payment-paused workspace is paused and sends the owner to fix the payment, not to a new plan', async () => {
+    billing.state = 'grace_expired'
+    const wrapper = await mountSuspended(TrialBanner)
+    expect(wrapper.text()).toContain('Subscription paused — update your payment method to continue.')
+    expect(wrapper.text()).not.toContain('trial')
+    const cta = wrapper.findAll('button').find(b => b.text() === 'Update Payment')!
+    await cta.trigger('click')
+    expect(wrapper.emitted('manageBilling')).toHaveLength(1)
+    expect(wrapper.emitted('choosePlan')).toBeUndefined()
+  })
+
+  it('tells a member of a paused workspace who to ask', async () => {
+    billing.state = 'grace_expired'
+    who.role = 'member'
+    const wrapper = await mountSuspended(TrialBanner)
+    expect(wrapper.text()).toContain('Subscription paused')
+    expect(wrapper.text()).toContain('Ask a workspace owner or admin.')
+    expect(wrapper.text()).not.toContain('Update Payment')
+  })
+
+  it('says an ended subscription has ended, not that a trial expired', async () => {
+    billing.state = 'canceled_expired'
+    expect((await mountSuspended(TrialBanner)).text()).toContain('Your subscription has ended.')
+  })
 })
