@@ -14,6 +14,7 @@
 
 import type { StudioPlan } from '../../shared/utils/license'
 import { normalizePlan } from '../../shared/utils/license'
+import { isTrialOver } from '../../shared/utils/trial-end'
 import type { Workspace, WorkspacePaymentAccount } from './useWorkspaces'
 
 export type BillingState
@@ -37,7 +38,8 @@ function resolveState(ws: Workspace | null): BillingState {
     if (subscription_status === 'active' && subscription_id) return 'subscribed'
 
     if (subscription_status === 'trialing' && subscription_id) {
-      if (trial_ends_at && new Date(trial_ends_at).getTime() <= now) return 'trial_expired'
+      // Same tolerance as the server (`shared/utils/trial-end.ts`).
+      if (isTrialOver(trial_ends_at, now)) return 'trial_expired'
       return 'trial_active'
     }
 
