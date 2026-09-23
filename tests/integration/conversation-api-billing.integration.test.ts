@@ -53,7 +53,7 @@ vi.mock('../../server/utils/providers', () => ({
 }))
 vi.mock('../../server/utils/workspace-billing', () => ({
   resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
-    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', requiresCheckout: true } })
     return { state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: state.billingOverage }
   }),
 }))

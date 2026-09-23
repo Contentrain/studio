@@ -61,8 +61,8 @@ vi.mock('~~/server/utils/db', () => ({
 // `resolveWorkspaceBilling`'s own suite; here only its answer matters.
 vi.mock('~~/server/utils/workspace-billing', () => ({
   resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
-    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
-    return { state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: {} }
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', requiresCheckout: true } })
+    return { state: state.locked ? 'trial_expired' : 'subscribed', effectivePlan: state.effectivePlan, overageSettings: {} }
   }),
 }))
 
@@ -265,6 +265,23 @@ describe('OAuth consent flow', () => {
       })
       expect(response.status).toBe(402)
       expect(state.createdCodes).toHaveLength(0)
+    })
+  })
+
+  it('lists a locked workspace as payment required, the answer approve gives, not as an upgrade', async () => {
+    await withConsentServer(async ({ request }) => {
+      const jar = await startDance(request)
+      // A locked workspace resolves to the free plan, which lacks the feature.
+      state.locked = true
+      state.planOk = false
+
+      const json = await (await request('/api/oauth/consent', { headers: { cookie: jar.header() } })).json()
+
+      const ws1 = json.workspaces.find((w: { id: string }) => w.id === 'ws-1')
+      expect(ws1).toMatchObject({ eligible: false, reason: 'ineligible_payment_required' })
+      expect(ws1.projects.every((p: { eligible: boolean }) => !p.eligible)).toBe(true)
+      // A missing installation is still the first thing to fix.
+      expect(json.workspaces.find((w: { id: string }) => w.id === 'ws-2')).toMatchObject({ reason: 'ineligible_no_installation' })
     })
   })
 

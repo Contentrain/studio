@@ -10,7 +10,7 @@ vi.mock('../../server/utils/workspace-billing', async (importOriginal) => {
   return {
     ...actual,
     resolveWorkspaceBilling: async (...args: Parameters<typeof actual.resolveWorkspaceBilling>) => {
-      if (billingLock.locked && args[2]?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+      if (billingLock.locked && args[2]?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', requiresCheckout: true } })
       return actual.resolveWorkspaceBilling(...args)
     },
   }

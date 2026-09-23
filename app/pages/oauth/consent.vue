@@ -80,6 +80,7 @@ function selectWorkspace(workspace: ConsentWorkspace) {
 }
 
 function ineligibleLabel(reason: string | null): string {
+  if (reason === 'ineligible_payment_required') return t('oauth_consent.ineligible_payment_required')
   if (reason === 'ineligible_plan') return t('oauth_consent.ineligible_plan')
   if (reason === 'ineligible_no_repo') return t('oauth_consent.ineligible_no_repo')
   return t('oauth_consent.ineligible_no_installation')
