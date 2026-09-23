@@ -26,6 +26,7 @@ import { getPlanLimit, hasFeature } from '~~/server/utils/license'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { reconcileMcpCloudAutoMerge } from '~~/server/utils/mcp-cloud-automerge'
 import { incrementOauthUsageIfAllowed } from '~~/server/utils/oauth-server/store'
+import { mcpWriteRetryAfterSeconds } from '~~/server/utils/mcp-github-budget'
 
 /**
  * Headers the proxy itself injects — any incoming value is discarded.
@@ -191,6 +192,20 @@ export async function runMcpCloudProxy(
       statusCode: 403,
       message: errorMessage('mcp_cloud.tool_not_allowed', { tool: denied }),
     })
+  }
+
+  // GitHub budget guard: write tools stop before the installation's hourly
+  // budget reaches the share kept for the UI. Checked before the quota so a
+  // refused write consumes nothing.
+  if (toolCalls.some(name => WRITE_TOOL_NAMES.has(name))) {
+    const waitSeconds = mcpWriteRetryAfterSeconds(ctx.installationId)
+    if (waitSeconds !== null) {
+      setResponseHeader(event, 'Retry-After', waitSeconds)
+      throw createError({
+        statusCode: 429,
+        message: errorMessage('mcp_cloud.github_budget_low', { seconds: waitSeconds }),
+      })
+    }
   }
 
   // Only tool calls consume the monthly quota and produce meter events.

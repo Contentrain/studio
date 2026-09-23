@@ -110,6 +110,11 @@ export default defineNuxtConfig({
       proProductId: '', // NUXT_POLAR_PRO_PRODUCT_ID
       server: 'production', // NUXT_POLAR_SERVER — 'sandbox' | 'production'
     },
+    migrate: {
+      // NUXT_MIGRATE_CLAIM_PUBLIC_KEY — Contentrain Migrate's Ed25519 public key
+      // (SPKI PEM, "\n" escapes allowed). Empty = Migrate claim links are off.
+      claimPublicKey: '',
+    },
     stripe: {
       secretKey: '', // NUXT_STRIPE_SECRET_KEY (optional — legacy Stripe plugin)
       webhookSecret: '', // NUXT_STRIPE_WEBHOOK_SECRET

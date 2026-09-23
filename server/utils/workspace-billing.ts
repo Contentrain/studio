@@ -11,7 +11,8 @@
  * raised the cap. This is the same resolution, callable from a route.
  */
 
-import { getEffectivePlan, resolveBillingState } from './billing'
+import { createError } from 'h3'
+import { getEffectivePlan, isBillingLocked, resolveBillingState } from './billing'
 import type { BillingState, PaymentAccountState, WorkspaceBillingRow } from './billing'
 import { getWorkspacePlan } from './license'
 import { resolveDeployment } from './deployment'
@@ -30,9 +31,20 @@ export interface WorkspaceBilling {
   overageSettings: Record<string, boolean>
 }
 
+/**
+ * `requireAccess`: refuse a workspace whose billing is locked (trial ended
+ * unpaid, grace period over, cancellation took effect) with 402 — the same
+ * status and `data` shape as the billing middleware's paywall, so every
+ * surface says "payment required", not "upgrade". Without it such a
+ * workspace resolved to the free plan, and a public surface answered with
+ * its own feature gate: a 403 "upgrade" to a caller who cannot upgrade
+ * anything (a site visitor, an agent) and that no client treats as a billing
+ * state.
+ */
 export async function resolveWorkspaceBilling(
   db: Pick<ReturnType<typeof useDatabaseProvider>, 'getActivePaymentAccount'>,
   workspace: { id: string, type?: unknown, plan?: unknown, overage_settings?: unknown },
+  options: { requireAccess?: boolean } = {},
 ): Promise<WorkspaceBilling> {
   const storedOverage = (workspace.overage_settings as Record<string, boolean> | null | undefined) ?? {}
 
@@ -53,8 +65,16 @@ export async function resolveWorkspaceBilling(
     payment_account: (account as unknown as PaymentAccountState | null) ?? null,
     overage_settings: storedOverage,
   }
+  const state = resolveBillingState(row)
+  if (options.requireAccess && isBillingLocked(state)) {
+    throw createError({
+      statusCode: 402,
+      message: errorMessage('billing.payment_required'),
+      data: { code: 'payment_required', billingState: state, requiresCheckout: true },
+    })
+  }
   return {
-    state: resolveBillingState(row),
+    state,
     effectivePlan: getEffectivePlan(row),
     overageSettings: withoutLockedOverage(storedOverage, resolveOverageLocks(account as OverageLockAccount | null)),
   }

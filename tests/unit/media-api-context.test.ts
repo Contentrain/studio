@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Plan + overage come from billing (its own suite); here, what it answers.
 const billing = vi.hoisted(() => ({ effectivePlan: 'pro' as string, overageSettings: {} as Record<string, boolean> }))
+const lock = vi.hoisted(() => ({ locked: false }))
 vi.mock('../../server/utils/workspace-billing', () => ({
-  resolveWorkspaceBilling: vi.fn(async () => ({ state: 'subscribed', ...billing })),
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
+    if (lock.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    return { state: 'subscribed', ...billing }
+  }),
 }))
 
 /**
@@ -58,6 +62,17 @@ describe('resolveMediaApiContext', () => {
     const ctx = await resolveMediaApiContext({} as never, opts)
     expect(ctx).toMatchObject({ projectId: 'proj-1', workspaceId: 'ws-1', plan: 'pro', keyId: 'key-1', ownerId: 'owner-1' })
     expect(ctx.media).toBeTruthy()
+  })
+
+  it('answers a locked workspace with 402 payment required, not a 403 upgrade', async () => {
+    lock.locked = true
+    try {
+      const { resolveMediaApiContext } = await import('../../server/utils/media-api')
+      await expect(resolveMediaApiContext({} as never, opts)).rejects.toMatchObject({ statusCode: 402, data: { code: 'payment_required' } })
+    }
+    finally {
+      lock.locked = false
+    }
   })
 
   it('403s when CDN is not activated for the project', async () => {

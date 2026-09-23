@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
   // middleware does not cover this path): an expired trial or grace period
   // loses its plan here too, and a toggle the subscription cannot bill does
   // not raise the MCP cap.
-  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })
   const plan = billing.effectivePlan
   if (!hasFeature(plan, 'api.mcp_cloud')) {
     throw createError({ statusCode: 403, message: errorMessage('mcp_cloud.upgrade') })

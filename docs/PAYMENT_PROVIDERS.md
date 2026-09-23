@@ -94,6 +94,26 @@ NUXT_POLAR_SERVER=sandbox   # or production
 
 Note: `NUXT_PUBLIC_BILLING_ENABLED` is derived automatically at boot by the `server/plugins/00.billing-flag.ts` Nitro plugin — when the Polar access token resolves the plugin registry's `isConfigured()` gate, the public flag flips to `true`. You only need to set it explicitly to override (e.g. staging with Polar configured but checkout intentionally hidden).
 
+## Studio included with a Migrate order (managed)
+
+A paid Contentrain Migrate order can include N days of a Studio plan. Migrate
+signs a claim token (EdDSA / Ed25519, single use per order, at most 30 minutes
+old) and links to `/migrate/claim?token=…`. Studio verifies it with Migrate's
+public key and records a grant (`migrate_grants`, migration 031):
+
+1. `POST /api/migrate/claim` — the signed-in user owns the order's grant.
+2. `POST /api/migrate/grants/:id/checkout` — binds the grant to one workspace
+   (owner/admin, no running subscription) and opens the plan's regular
+   checkout with the grant's trial length (`trialDays` → Polar
+   `trial_interval_count`, Stripe `trial_period_days`) and
+   `migrate_grant_id` metadata. $0 today, regular price after the trial.
+3. The billing webhook marks the grant redeemed when that subscription
+   arrives; a redeemed grant opens no further checkout.
+
+Set `NUXT_MIGRATE_CLAIM_PUBLIC_KEY` (SPKI PEM) to turn it on; empty, or a
+deployment that does not sell subscriptions, answers 404. No Polar products,
+prices or discounts are involved — the trial length is per checkout.
+
 ## Adding a new provider
 
 1. Implement `PaymentProviderPlugin` under

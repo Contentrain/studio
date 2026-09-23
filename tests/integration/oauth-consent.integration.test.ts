@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   auth: { user: { id: 'user-1', email: 'u@example.test' }, accessToken: 'jwt-1' } as Record<string, unknown> | null,
   planOk: true,
   effectivePlan: 'pro' as string,
+  locked: false,
   dcrClient: {
     clientId: 'dcr_test1234',
     kind: 'dcr' as const,
@@ -59,7 +60,10 @@ vi.mock('~~/server/utils/db', () => ({
 // The billing-derived plan the MCP OAuth route also gates on — resolved in
 // `resolveWorkspaceBilling`'s own suite; here only its answer matters.
 vi.mock('~~/server/utils/workspace-billing', () => ({
-  resolveWorkspaceBilling: vi.fn(async () => ({ state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: {} })),
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, _ws: unknown, opts?: { requireAccess?: boolean }) => {
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    return { state: 'subscribed', effectivePlan: state.effectivePlan, overageSettings: {} }
+  }),
 }))
 
 vi.mock('~~/server/utils/license', () => ({
@@ -131,6 +135,7 @@ describe('OAuth consent flow', () => {
     state.auth = { user: { id: 'user-1', email: 'u@example.test' }, accessToken: 'jwt-1' }
     state.planOk = true
     state.effectivePlan = 'pro'
+    state.locked = false
     state.createdCodes = []
     state.db = {
       listUserWorkspaces: vi.fn(async () => [
@@ -244,6 +249,21 @@ describe('OAuth consent flow', () => {
         body: JSON.stringify({ decision: 'approve', workspaceId: 'ws-1', projectId: 'proj-1' }),
       })
       expect(response.status).toBe(403)
+      expect(state.createdCodes).toHaveLength(0)
+    })
+  })
+
+  it('approve answers a locked workspace with 402 payment required', async () => {
+    await withConsentServer(async ({ request }) => {
+      const jar = await startDance(request)
+      state.locked = true
+
+      const response = await request('/api/oauth/consent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cookie': jar.header(), 'origin': 'http://localhost:3000' },
+        body: JSON.stringify({ decision: 'approve', workspaceId: 'ws-1', projectId: 'proj-1' }),
+      })
+      expect(response.status).toBe(402)
       expect(state.createdCodes).toHaveLength(0)
     })
   })

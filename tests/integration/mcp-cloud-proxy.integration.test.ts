@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   mediaFeature: true,
   /** What `resolveWorkspaceBilling` answers — the billing-derived plan. */
   effectivePlan: 'pro' as string,
+  /** Billing locked (trial ended unpaid, grace over, cancellation effective). */
+  locked: false,
   /** Overrides the overage the billing resolution returns; null = the row's. */
   billingOverage: null as Record<string, boolean> | null,
   db: {
@@ -95,11 +97,14 @@ vi.mock('~~/server/utils/rate-limit', () => ({
 // Plan + overage resolution is `resolveWorkspaceBilling`'s own suite; here
 // it is the billing-derived answer the route must gate on.
 vi.mock('~~/server/utils/workspace-billing', () => ({
-  resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }) => ({
-    state: 'subscribed',
-    effectivePlan: state.effectivePlan,
-    overageSettings: state.billingOverage ?? workspace.overage_settings ?? {},
-  })),
+  resolveWorkspaceBilling: vi.fn(async (_db: unknown, workspace: { overage_settings?: Record<string, boolean> | null }, opts?: { requireAccess?: boolean }) => {
+    if (state.locked && opts?.requireAccess) throw Object.assign(new Error('billing.payment_required'), { statusCode: 402, data: { code: 'payment_required', billingState: 'trial_expired', requiresCheckout: true } })
+    return ({
+      state: 'subscribed',
+      effectivePlan: state.effectivePlan,
+      overageSettings: state.billingOverage ?? workspace.overage_settings ?? {},
+    })
+  }),
 }))
 
 vi.mock('~~/server/utils/license', () => ({
@@ -161,6 +166,7 @@ describe('MCP Cloud proxy gating', () => {
     state.mediaProvider = null
     state.mediaFeature = true
     state.effectivePlan = 'pro'
+    state.locked = false
     state.billingOverage = null
 
     state.db.getProjectById.mockResolvedValue({
@@ -345,6 +351,13 @@ describe('MCP Cloud proxy gating', () => {
     expect(state.proxyRequest).not.toHaveBeenCalled()
   })
 
+  it('answers a locked workspace with 402 payment required, not a 403 upgrade', async () => {
+    state.locked = true
+    const handler = await loadHandler()
+    await expect(handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)).rejects.toMatchObject({ statusCode: 402, data: { code: 'payment_required' } })
+    expect(state.proxyRequest).not.toHaveBeenCalled()
+  })
+
   it('gates on the billing-derived plan, not the workspace column', async () => {
     // `workspaces.plan` still says pro (the row fixture), but the trial
     // expired: billing resolves the workspace to free.
@@ -383,6 +396,54 @@ describe('MCP Cloud proxy gating', () => {
     finally {
       vi.useRealTimers()
     }
+  })
+
+  describe('GitHub budget guard (ST-5 c)', () => {
+    // Installation 42 is the workspace fixture's `github_installation_id`.
+    async function seedBudget(remaining: number, resetInSeconds = 600) {
+      const { __resetInstallationOctokitCache, recordGitHubRateBudget } = await import('../../server/providers/github-app')
+      __resetInstallationOctokitCache()
+      recordGitHubRateBudget(42, {
+        'x-ratelimit-remaining': String(remaining),
+        'x-ratelimit-limit': '5000',
+        'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + resetInSeconds),
+      })
+    }
+
+    it('refuses a write tool with 429 + Retry-After once the budget is inside the UI reserve, consuming nothing', async () => {
+      await seedBudget(900)
+      const handler = await loadHandler()
+      const event = makeEvent({ __body: toolCallBody('contentrain_content_save') })
+
+      await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 429, message: 'mcp_cloud.github_budget_low' })
+      const retryAfter = state.setResponseHeader.mock.calls.find(c => c[1] === 'Retry-After')?.[2] as number
+      expect(retryAfter).toBeGreaterThan(590)
+      expect(retryAfter).toBeLessThanOrEqual(600)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).not.toHaveBeenCalled()
+      expect(state.recordMCPCallUsage).not.toHaveBeenCalled()
+      expect(state.upstreamFetch).not.toHaveBeenCalled()
+    })
+
+    it('keeps read tools working on the reserve', async () => {
+      await seedBudget(900)
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
+    })
+
+    it('lets writes through while the budget is above the reserve', async () => {
+      await seedBudget(1500)
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
+    })
+
+    it('ignores a budget whose window has already reset', async () => {
+      await seedBudget(10, -5)
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.db.incrementMcpCloudUsageIfAllowed).toHaveBeenCalled()
+    })
   })
 
   it('invalidates brain cache and reconciles auto-merge on write tools', async () => {

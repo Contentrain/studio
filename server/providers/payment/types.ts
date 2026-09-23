@@ -24,6 +24,14 @@ export interface CheckoutInput {
    * subscription with no new trial.
    */
   withTrial?: boolean
+  /**
+   * Trial length in days, overriding the product's own trial. Only a
+   * server-verified entitlement sets it (a Migrate grant); never taken from
+   * a client. Ignored when `withTrial` is false.
+   */
+  trialDays?: number
+  /** Extra metadata copied onto the checkout and the subscription. */
+  metadata?: Record<string, string>
 }
 
 export interface CheckoutResult {
@@ -73,6 +81,12 @@ export interface WebhookResult {
    * for (or of the trial). Set only while `cancelAtPeriodEnd` is true.
    */
   accessEndsAt?: string
+  /**
+   * The Migrate grant whose checkout created this subscription (checkout
+   * metadata `migrate_grant_id`, copied to the subscription). Lets the
+   * webhook mark the grant used.
+   */
+  migrateGrantId?: string
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
   /**

@@ -114,6 +114,23 @@ async function planOverageLock(db: Db, input: {
   }
 }
 
+/**
+ * Mark a subscription started from a Migrate grant in its account's
+ * `plugin_metadata` (`trial_origin: 'migrate'`), on top of whatever the
+ * overage lock is writing. The trial cap reads it (`resolveTrialContext`).
+ * Returns undefined when nothing needs writing (the stored value is kept).
+ */
+function withTrialOrigin(
+  planned: Record<string, unknown> | undefined,
+  stored: unknown,
+  migrateGrantId: string | undefined,
+): Record<string, unknown> | undefined {
+  if (!migrateGrantId) return planned
+  const base = planned ?? ((stored && typeof stored === 'object') ? stored as Record<string, unknown> : {})
+  if (base.trial_origin === 'migrate') return planned
+  return { ...base, trial_origin: 'migrate' }
+}
+
 /** Extract every request header as a plain `{[key]: string | undefined}` object. */
 function readAllHeaders(event: Parameters<typeof getRequestHeaders>[0]): Record<string, string | undefined> {
   const raw = getRequestHeaders(event)
@@ -267,11 +284,17 @@ export default defineEventHandler(async (event) => {
         // activation email goes out below, and is recorded as sent so the
         // first order's `invoice.paid` does not send it again.
         pluginMetadata: result.subscriptionStatus === 'active'
-          ? { ...metadataObject(overageLock.pluginMetadata), [ACTIVATION_EMAIL_KEY]: 'sent' }
-          : overageLock.pluginMetadata,
+          ? { ...metadataObject(withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId)), [ACTIVATION_EMAIL_KEY]: 'sent' }
+          : withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId),
         isActive: true,
       })
       await overageLock.commit()
+      // A subscription started from a Migrate grant's checkout uses the
+      // grant up: no second included trial after cancel-and-resubscribe.
+      // Idempotent — whichever of created/updated arrives first marks it.
+      if (result.migrateGrantId) {
+        await db.markMigrateGrantRedeemed(result.migrateGrantId, result.subscriptionId ?? null)
+      }
       // First 'trialing' observation consumes the workspace's one-time
       // trial, so a later re-checkout (after cancel/expiry) gets a paid
       // checkout with no new trial. Idempotent (set once, never moved).
@@ -356,13 +379,19 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: gracePeriodEnd,
         plan: result.plan ?? null,
-        pluginMetadata: overageLock.pluginMetadata,
+        pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, existingAccount?.plugin_metadata, result.migrateGrantId),
         // Written only through `setPaymentAccountMetadataKey`: this write is
         // built from a read an `invoice.paid` may have overtaken.
         preserveMetadataKeys: [ACTIVATION_EMAIL_KEY],
         isActive: true,
       })
       await overageLock.commit()
+      // A subscription started from a Migrate grant's checkout uses the
+      // grant up: no second included trial after cancel-and-resubscribe.
+      // Idempotent — whichever of created/updated arrives first marks it.
+      if (result.migrateGrantId) {
+        await db.markMigrateGrantRedeemed(result.migrateGrantId, result.subscriptionId ?? null)
+      }
 
       const workspaceUpdate: Record<string, unknown> = {}
       if (result.plan) workspaceUpdate.plan = result.plan

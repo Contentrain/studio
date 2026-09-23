@@ -61,7 +61,7 @@ export async function resolveMediaApiContext(
 
   // Billing-derived (this public route is outside the billing middleware):
   // an expired trial or grace period loses its plan here too.
-  const billing = await resolveWorkspaceBilling(db, workspace as { id: string })
+  const billing = await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })
   const plan = billing.effectivePlan
   if (!hasFeature(plan, opts.feature))
     throw createError({ statusCode: 403, message: errorMessage(opts.upgradeKey, getUpgradeParams(plan)) })

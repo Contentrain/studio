@@ -34,7 +34,7 @@ export async function resolvePublicCommentContext(projectId: string, modelId: st
 
   // Billing-derived (this public route is outside the billing middleware):
   // an expired trial or grace period loses its plan here too.
-  const plan = (await resolveWorkspaceBilling(db, workspace as { id: string })).effectivePlan
+  const plan = (await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })).effectivePlan
   if (!hasFeature(plan, 'comments.enabled'))
     throw createError({ statusCode: 403, message: errorMessage('comments.upgrade') })
 

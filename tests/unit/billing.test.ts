@@ -63,6 +63,34 @@ describe('resolveBillingState', () => {
     }))).toBe('trial_expired')
   })
 
+  it('keeps a trial running while the conversion webhook is late, with its plan', () => {
+    // Trial ended a minute ago; the provider's "now active" event has not
+    // landed. The live site must not drop to free in the meantime.
+    const workspace = makeWorkspace({
+      payment_account: makeAccount({
+        subscription_status: 'trialing',
+        subscription_id: 'sub_123',
+        trial_ends_at: new Date(Date.now() - 60 * 1000).toISOString(),
+      }),
+      plan: 'pro',
+    })
+    expect(resolveBillingState(workspace)).toBe('trial_active')
+    expect(getEffectivePlan(workspace)).toBe('pro')
+  })
+
+  it('expires the trial once the tolerance has passed with no word from the provider', () => {
+    const workspace = makeWorkspace({
+      payment_account: makeAccount({
+        subscription_status: 'trialing',
+        subscription_id: 'sub_123',
+        trial_ends_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      }),
+      plan: 'pro',
+    })
+    expect(resolveBillingState(workspace)).toBe('trial_expired')
+    expect(getEffectivePlan(workspace)).toBe('free')
+  })
+
   it('returns "past_due" during grace period', () => {
     expect(resolveBillingState(makeWorkspace({
       payment_account: makeAccount({
