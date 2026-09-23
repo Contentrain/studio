@@ -18,7 +18,7 @@
  *                 in hasFeature().
  */
 
-import { getEffectivePlan, isBillingLocked, resolveBillingState, WORKSPACE_BILLING_SELECT_FIELDS } from '../utils/billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveTrialContext, WORKSPACE_BILLING_SELECT_FIELDS } from '../utils/billing'
 import type { PaymentAccountState, WorkspaceBillingRow } from '../utils/billing'
 import { getWorkspacePlan } from '../utils/license'
 import { resolveDeployment } from '../utils/deployment'
@@ -97,7 +97,8 @@ export default defineEventHandler(async (event) => {
     billingRow.overage_settings,
     resolveOverageLocks(account as OverageLockAccount | null),
   )
-  event.context.billing = { state, effectivePlan, overageSettings }
+  const trial = resolveTrialContext(state, account)
+  event.context.billing = { state, effectivePlan, overageSettings, trial }
 
   if (isBillingLocked(state)) {
     throw createError({

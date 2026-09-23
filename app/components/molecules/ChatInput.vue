@@ -21,8 +21,10 @@ const toast = useToast()
 const canUploadMedia = useFeature('media.upload')
 // The picker lives in the composer's action strip; the command palette writes
 // to the same state, so both stay in sync without prop drilling.
-const { selectedModel, allowedModels } = useChat()
-const modelOptions = computed(() => allowedModels.value.map(m => ({ value: m.id, label: m.label })))
+const { selectedModel, allowedModels, lockedModelIds } = useChat()
+const modelOptions = computed(() => allowedModels.value.map(m => lockedModelIds.value.includes(m.id)
+  ? { value: m.id, label: m.label, disabled: true, hint: t('chat.model_locked_in_trial') }
+  : { value: m.id, label: m.label }))
 
 const input = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)

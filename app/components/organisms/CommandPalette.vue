@@ -5,7 +5,7 @@ import type { ResultItem } from '~/composables/useCommandPalette'
 const { t } = useContent()
 const { models, snapshot } = useSnapshot()
 const { branches } = useBranches()
-const { conversations, clearChat, selectedModel, allowedModels } = useChat()
+const { conversations, clearChat, selectedModel, allowedModels, lockedModelIds } = useChat()
 const { activeWorkspace, workspaces } = useWorkspaces()
 const { projects } = useProjects()
 const { isDark, toggle: toggleTheme } = useTheme()
@@ -151,7 +151,7 @@ const baseResults = computed<ResultItem[]>(() => {
     isInProject: isInProject.value,
     isDark: isDark.value,
     currentModelId: selectedModel.value,
-    allowedModelIds: allowedModels.value.map(m => m.id),
+    allowedModelIds: allowedModels.value.map(m => m.id).filter(id => !lockedModelIds.value.includes(id)),
     t,
     models: models.value,
     branches: branches.value,
@@ -194,7 +194,7 @@ function handleAction(actionKey: string, payload?: Record<string, unknown>) {
     const modelId = actionKey.slice(SET_MODEL_ACTION_PREFIX.length)
     // The command list is already plan-filtered; this guards the raw
     // action key (data, not trust) against stale or forged entries.
-    if (allowedModels.value.some(m => m.id === modelId)) selectedModel.value = modelId
+    if (allowedModels.value.some(m => m.id === modelId) && !lockedModelIds.value.includes(modelId)) selectedModel.value = modelId
     open.value = false
     return
   }

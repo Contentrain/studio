@@ -80,6 +80,7 @@
   "chat.no_permissions": "You do not have permission to use chat in this project.",
   "chat.rate_limited": "Rate limit exceeded. Try again in {seconds}s",
   "chat.tool_forbidden": "Your role is not permitted to use the \"{tool}\" tool.",
+  "chat.trial_credit_cap_reached": "You've used the {limit} AI credits included in your trial. Activate your subscription to unlock the full {fullLimit} credits now.",
   "comments.author_required": "A name is required",
   "comments.body_required": "A comment body is required",
   "comments.body_too_long": "Comment is too long",

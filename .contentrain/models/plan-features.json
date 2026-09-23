@@ -84,6 +84,14 @@
       "required": true,
       "type": "string"
     },
+    "trial_cap_origins": {
+      "description": "Which trials the trial cap applies to: 'migrate' (trials started from a Migrate order) or 'all' (every trial). Only read when trial_cap_plan is set.",
+      "type": "string"
+    },
+    "trial_cap_plan": {
+      "description": "During a trial, this limit is capped at the named plan's value (e.g. 'starter'). Metered usage in a trial is not billed, so the trial gets the lower allowance and the plan's own value opens with the first payment. Overage stays off while trialing.",
+      "type": "string"
+    },
     "type": {
       "description": "Whether this entry is a boolean feature flag or a numeric limit",
       "options": [

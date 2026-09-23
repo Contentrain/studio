@@ -10,7 +10,7 @@
  * the state machine via the middleware fast-path.
  */
 
-import type { StudioPlan } from '../../shared/utils/license'
+import type { StudioPlan, TrialContext } from '../../shared/utils/license'
 import { normalizePlan } from '../../shared/utils/license'
 import { isTrialOver } from '../../shared/utils/trial-end'
 
@@ -148,5 +148,22 @@ export function getEffectivePlan(workspace: WorkspaceBillingRow): StudioPlan {
     case 'grace_expired':
     case 'canceled_expired':
       return 'free'
+  }
+}
+
+/**
+ * Trial context for `applyTrialCap`. A trial started from a Migrate order
+ * carries `plugin_metadata.trial_origin = 'migrate'` on its payment
+ * account (written by the webhook from the subscription's metadata);
+ * anything else is a standard trial.
+ */
+export function resolveTrialContext(
+  state: BillingState,
+  account: { plugin_metadata?: unknown } | null | undefined,
+): TrialContext {
+  const meta = (account?.plugin_metadata ?? null) as { trial_origin?: unknown } | null
+  return {
+    trialing: state === 'trial_active',
+    origin: meta?.trial_origin === 'migrate' ? 'migrate' : 'standard',
   }
 }

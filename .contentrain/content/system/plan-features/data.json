@@ -26,6 +26,8 @@
     "requires_ee": "false",
     "sort_order": 1,
     "starter_value": "60",
+    "trial_cap_origins": "migrate",
+    "trial_cap_plan": "starter",
     "type": "limit"
   },
   "ai-pro-models": {
@@ -191,6 +193,8 @@
     "requires_ee": "false",
     "sort_order": 2,
     "starter_value": "30",
+    "trial_cap_origins": "migrate",
+    "trial_cap_plan": "starter",
     "type": "limit"
   },
   "api-webhooks": {

@@ -10,7 +10,8 @@ const {
   label = undefined,
 } = defineProps<{
   modelValue?: string
-  options: Array<string | { value: string, label: string }>
+  /** `disabled` options stay visible with their `hint` saying why. */
+  options: Array<string | { value: string, label: string, disabled?: boolean, hint?: string }>
   placeholder?: string
   size?: 'sm' | 'md'
   /** `ghost` drops the chrome — for selects that sit inside another card. */
@@ -25,7 +26,7 @@ const emit = defineEmits<{
 
 const normalizedOptions = computed(() =>
   options.map(opt =>
-    typeof opt === 'string' ? { value: opt, label: opt } : opt,
+    typeof opt === 'string' ? { value: opt, label: opt } as { value: string, label: string, disabled?: boolean, hint?: string } : opt,
   ),
 )
 
@@ -57,10 +58,14 @@ const variantClasses: Record<string, string> = {
       >
         <SelectViewport class="p-1">
           <SelectItem
-            v-for="opt in normalizedOptions" :key="opt.value" :value="opt.value"
-            class="flex items-center rounded-md px-2 py-1.5 text-sm text-heading outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
+            v-for="opt in normalizedOptions" :key="opt.value" :value="opt.value" :disabled="opt.disabled"
+            class="flex flex-col items-start rounded-md px-2 py-1.5 text-sm text-heading outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 data-disabled:cursor-not-allowed data-disabled:text-disabled data-highlighted:bg-secondary-50 dark:text-secondary-100 dark:data-highlighted:bg-secondary-900"
           >
             <SelectItemText>{{ opt.label }}</SelectItemText>
+            <span v-if="opt.hint" class="flex items-center gap-1 text-xs text-muted">
+              <span class="icon-[annon--lock] size-3" aria-hidden="true" />
+              {{ opt.hint }}
+            </span>
           </SelectItem>
         </SelectViewport>
       </SelectContent>

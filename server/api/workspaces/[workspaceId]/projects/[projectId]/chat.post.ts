@@ -11,8 +11,10 @@ import { buildRequestContext } from '~~/server/utils/agent-system-prompt'
 import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/server/utils/migration-handoff'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '~~/server/utils/conversation-history'
-import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor } from '../../../../../../shared/utils/ai-models'
+import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor, premiumModelsAllowed } from '../../../../../../shared/utils/ai-models'
 import { AI_CREDIT_UNIT_USD, getMaxCreditsPerMessage, settleTurnCredits } from '../../../../../../shared/utils/ai-credits'
+import { applyTrialCap, trialCapPlan } from '../../../../../../shared/utils/license'
+import type { TrialContext } from '../../../../../../shared/utils/license'
 import { TurnUsageTracker } from '../../../../../utils/turn-budget'
 import { validateAttachmentBlocks } from '../../../../../utils/attachment-ingest'
 import { extractPageUrls, resolvePageUrl } from '../../../../../utils/page-resolution'
@@ -103,9 +105,15 @@ export default defineEventHandler(async (event) => {
   // === MONTHLY LIMIT — atomic check + reserve (prevents race conditions) ===
   // When overage is enabled, the effective limit is raised so requests aren't blocked.
   // Overage cost is computed later from (actual_usage - plan_limit) * overage_price.
-  const basePlanLimit = getMonthlyMessageLimit(plan)
+  //
+  // Trial cap (`applyTrialCap`): a trial the catalog caps gets the lower
+  // allowance until the first payment, and never overage — a hard cap
+  // regardless of the toggle, since nothing metered in a trial is billed.
+  const planLimit = getMonthlyMessageLimit(plan)
+  const basePlanLimit = applyTrialCap(planLimit, 'ai.messages_per_month', event.context.billing?.trial as TrialContext | undefined)
+  const trialCapped = basePlanLimit < planLimit
   const overageSettings = event.context.billing?.overageSettings as Record<string, boolean> | undefined
-  const monthlyLimit = getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
+  const monthlyLimit = trialCapped ? basePlanLimit : getEffectiveLimit(basePlanLimit, 'ai.messages_per_month', overageSettings)
   // Counted in the workspace's billing period, not the calendar month —
   // otherwise the quota resets on the 1st while the invoice runs from the
   // subscription anniversary (`server/utils/usage-period.ts`).
@@ -121,7 +129,10 @@ export default defineEventHandler(async (event) => {
   // failure), from the tracker's real token totals, and refunds what the
   // turn did not use. A BYOA turn books 1 and is never refused (migration
   // 030/031) — the user's own key pays for it.
-  const turnCeiling = usageSource === 'studio' ? getMaxCreditsPerMessage(plan) : 1
+  // A capped trial also takes the capped plan's per-message ceiling: Pro's
+  // 60 against a 60-credit trial allowance would be the whole trial in one turn.
+  const ceilingPlan = trialCapped ? (trialCapPlan('ai.messages_per_month', event.context.billing?.trial as TrialContext | undefined) ?? plan) : plan
+  const turnCeiling = usageSource === 'studio' ? getMaxCreditsPerMessage(ceilingPlan) : 1
   const tracker = new TurnUsageTracker()
   let turnModel: string = DEFAULT_CHAT_MODEL
   let reservedCredits = 0
@@ -168,17 +179,20 @@ export default defineEventHandler(async (event) => {
       limit: Number.isFinite(monthlyLimit) ? monthlyLimit : 2_147_483_647,
       amount: turnCeiling,
     })
-    if (!allowed)
+    if (!allowed) {
+      const date = new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
       throw createError({
         statusCode: 429,
-        message: errorMessage('chat.monthly_limit_reached', {
-          limit: basePlanLimit,
-          date: new Date(usagePeriod.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
-        }),
+        // A capped trial says why and how to lift it: the full allowance
+        // opens with the first payment, not at the period reset.
+        message: trialCapped
+          ? errorMessage('chat.trial_credit_cap_reached', { limit: basePlanLimit, fullLimit: planLimit })
+          : errorMessage('chat.monthly_limit_reached', { limit: basePlanLimit, date }),
         // The client turns this into a notice that links to Usage, where
-        // overage and upgrades live.
-        data: { code: 'ai_credits_exhausted', resetsAt: usagePeriod.resetsAt },
+        // overage and upgrades live (and, for a trial, activation).
+        data: { code: 'ai_credits_exhausted', resetsAt: usagePeriod.resetsAt, ...(trialCapped ? { reason: 'trial_cap' } : {}) },
       })
+    }
     reservedCredits = granted
 
     // === CONVERSATION ===
@@ -204,7 +218,12 @@ export default defineEventHandler(async (event) => {
     // keeps Sonnet/Opus off the starter tier: a Sonnet message costs
     // 3-10x a Haiku one, and the $9 plan's unit economics only close
     // on the starter-tier models.
-    const availableModels = chatModelIdsFor(hasFeature(plan, 'ai.pro_models'))
+    // Premium models (Opus) are closed in a trial on the Studio key —
+    // BYOA keeps them (`premiumModelsAllowed`). A request for one falls
+    // back to the default like any other model the plan does not grant.
+    const availableModels = chatModelIdsFor(hasFeature(plan, 'ai.pro_models'), {
+      premium: premiumModelsAllowed({ billingState: event.context.billing?.state, usageSource }),
+    })
     const requestedModel = body.model as string | undefined
     const model = (requestedModel && availableModels.includes(requestedModel))
       ? requestedModel
