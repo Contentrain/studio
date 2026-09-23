@@ -86,6 +86,7 @@ Content-Type: application/json
 |---|---|
 | `200 { success: true, message }` | Stored (or auto-approved). `message` is the model's `successMessage` |
 | `200 { success: false, errors: [{ field, message }] }` | Validation against the exposed fields, or `captcha` |
+| `402 { data: { code: "payment_required" } }` | The workspace's billing is locked (trial ended unpaid, grace period over, cancellation took effect). Also on `GET`, and for an unknown model id (checked before the model lookup); only an unknown project (`404`), a missing `data` body (`400`) and the per-IP config limit (`429`) answer first. Don't retry; hide the widget or show a neutral message — the `message` addresses the owner, not a visitor |
 | `403` | Plan lacks `forms.enabled`, or the model is beyond the `forms.models` cap |
 | `404` | Unknown project/model, or the form is disabled / not public |
 | `429` | Per-IP rate limit, the form's `limits.maxPerMonth`, or the workspace's monthly `forms.submissions_per_month` quota |

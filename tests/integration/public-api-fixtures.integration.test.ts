@@ -12,6 +12,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { validateContent } from '../../server/utils/content-validation'
 import { withTestServer } from '../helpers/http'
 
+// A locked workspace needs the subscription state machine, which the test
+// environment's deployment profile does not run; switch it on per test.
+const subscriptionBilling = { on: false }
+vi.mock('../../server/utils/deployment', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../server/utils/deployment')>()
+  return {
+    ...actual,
+    resolveDeployment: () => subscriptionBilling.on
+      ? { ...actual.resolveDeployment(), planSource: 'subscription' as const }
+      : actual.resolveDeployment(),
+  }
+})
+
 const FIXTURES = new URL('../fixtures/public-api/', import.meta.url)
 function fixture<T = Record<string, unknown>>(name: string): T {
   return JSON.parse(readFileSync(new URL(name, FIXTURES), 'utf8')) as T
@@ -425,5 +438,53 @@ describe('public API fixtures — CORS and errors', () => {
     await withTestServer({ routes: [{ path: `/api/comments/v1/${PROJECT}/posts/hello-world`, handler: await loadCommentsGet() }] }, async ({ request }) => {
       expect((await request(`/api/comments/v1/${PROJECT}/posts/hello-world`)).status).toBe(expectStatus(catalogue.comments, 'comments.not_found'))
     })
+  })
+
+  it('a locked workspace answers every public route with the 402 in errors.json', async () => {
+    const catalogue = fixture<Record<'forms' | 'comments', Array<{ statusCode: number, key: string, message: string, data?: Record<string, unknown> }>>>('errors.json')
+    const expected = (list: typeof catalogue.forms) => list.find(e => e.key === 'billing.payment_required')!
+    // A trial that ended unpaid, well past the conversion tolerance.
+    const lockedDb = () => db({
+      getActivePaymentAccount: vi.fn().mockResolvedValue({
+        subscription_id: 'sub_1',
+        subscription_status: 'trialing',
+        trial_ends_at: '2026-01-01T00:00:00.000Z',
+        plan: 'pro',
+      }),
+    })
+    const assertLocked = async (response: Response, entry: ReturnType<typeof expected>) => {
+      expect(response.status).toBe(entry.statusCode)
+      // The bare h3 test server leaves `message` out of error bodies (Nitro
+      // includes it); the catalogue test above pins it to the dictionary.
+      expect(await response.json()).toMatchObject({ statusCode: entry.statusCode, data: entry.data })
+    }
+
+    subscriptionBilling.on = true
+    try {
+      stubCommon({ model: contactModel, modelId: 'contact' })
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(lockedDb()))
+      await withTestServer({
+        routes: [
+          { path: `/api/forms/v1/${PROJECT}/contact/config`, handler: await loadFormConfig() },
+          { path: `/api/forms/v1/${PROJECT}/contact/submit`, handler: await loadFormSubmit() },
+        ],
+      }, async ({ request }) => {
+        await assertLocked(await request(`/api/forms/v1/${PROJECT}/contact/config`), expected(catalogue.forms))
+        await assertLocked(await request(`/api/forms/v1/${PROJECT}/contact/submit`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(fixture('forms.submit.request.json')) }), expected(catalogue.forms))
+      })
+
+      stubCommon({ model: postsModel, modelId: 'posts', entryId: 'hello-world' })
+      vi.stubGlobal('checkRateLimit', vi.fn().mockResolvedValue({ allowed: true, retryAfterMs: 0 }))
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(lockedDb()))
+      await withTestServer({
+        routes: [{ path: `/api/comments/v1/${PROJECT}/posts/hello-world`, handler: defineEventHandler(async event => event.method === 'GET' ? (await loadCommentsGet())(event) : (await loadCommentsPost())(event)) }],
+      }, async ({ request }) => {
+        await assertLocked(await request(`/api/comments/v1/${PROJECT}/posts/hello-world`), expected(catalogue.comments))
+        await assertLocked(await request(`/api/comments/v1/${PROJECT}/posts/hello-world`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(fixture('comments.submit.request.json')) }), expected(catalogue.comments))
+      })
+    }
+    finally {
+      subscriptionBilling.on = false
+    }
   })
 })

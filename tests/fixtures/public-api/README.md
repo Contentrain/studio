@@ -38,6 +38,12 @@ fixture and the docs (`docs/FORMS.md`, `docs/COMMENTS.md`) in the same PR.
 - **Errors.** `success: false` + `errors[]` is a `200` (validation, captcha,
   bad parent). Plan, disabled, unknown, closed and quota conditions are
   `403` / `404` / `429` with `{ statusCode, message }` — see `errors.json`.
+  A workspace whose billing is locked answers `402` with
+  `data.code: "payment_required"` on every route, reads included. It is
+  checked right after the project lookup, so an unknown model id answers
+  `402` too; only an unknown project (`404`), a missing body (`400`) and the
+  per-IP read limit (`429`) come first. Don't retry, and don't show its
+  `message` to a visitor.
 - **Privacy.** The read endpoint never returns an email, IP address, user
   agent or referrer; `body` is plain text and must be rendered escaped.
 - **Locale.** Forms: validated against `locale` from the config response.
