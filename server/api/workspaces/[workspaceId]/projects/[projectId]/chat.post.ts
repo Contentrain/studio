@@ -314,6 +314,7 @@ export default defineEventHandler(async (event) => {
       attachmentSummary,
       getEdition(),
       linkedPages,
+      creditUnit,
     )
     const systemPrompt = toSystemBlocks(promptBlocks)
     // The content index rides in the request context only when it

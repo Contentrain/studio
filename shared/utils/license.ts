@@ -343,7 +343,10 @@ export function getPlanLimitForPlan(
 
 function formatLimit(value: number): string {
   if (value === Infinity) return 'unlimited'
-  if (value >= 1000) return `${(value / 1000).toFixed(0).replace(/\.0$/, '')}K`
+  // Whole thousands read as "3K"; anything else is spelled out — 1 600 as
+  // "2K" would tell a v2 Pro workspace (and the agent) 400 credits too many.
+  if (value >= 1000 && value % 1000 === 0) return `${value / 1000}K`
+  if (value >= 1000) return value.toLocaleString('en-US')
   return String(value)
 }
 
@@ -360,11 +363,21 @@ function formatFileSize(mb: number): string {
  * Build interpolation params for a given plan.
  * Use with t() / agentMessage() / agentPrompt() / errorMessage().
  */
-export function getPlanParams(plan: StudioPlan | string | null | undefined): Record<string, string | number> {
+export function getPlanParams(
+  plan: StudioPlan | string | null | undefined,
+  /**
+   * Credit limits in the account's own unit (`creditLimitsFor` in
+   * credit-unit.ts). Absent = the catalog's — right for a new subscription,
+   * wrong for a pre-v2 one, which keeps the quotas it was sold with.
+   */
+  creditLimits?: Partial<Record<'ai.messages_per_month' | 'api.messages_per_month', number>>,
+): Record<string, string | number> {
   const p = normalizePlan(plan)
   const pricing = PLAN_PRICING[p]
 
   function limit(key: string): number {
+    const own = creditLimits?.[key as 'ai.messages_per_month' | 'api.messages_per_month']
+    if (own !== undefined) return own
     return PLAN_LIMITS[key]?.values[p] ?? 0
   }
 

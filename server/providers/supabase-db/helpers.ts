@@ -102,7 +102,7 @@ export async function fetchWorkspaceById(
 
 /** Columns from payment_accounts returned to clients (no server-only fields). */
 const PAYMENT_ACCOUNT_PUBLIC_SELECT
-  = 'provider, customer_id, subscription_id, subscription_status, current_period_end, trial_ends_at, cancel_at_period_end, grace_period_ends_at, plan'
+  = 'provider, customer_id, subscription_id, subscription_status, current_period_end, trial_ends_at, cancel_at_period_end, grace_period_ends_at, plan, credit_unit'
 
 /**
  * Attach the active `payment_account` field to each workspace row.

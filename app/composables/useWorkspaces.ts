@@ -14,6 +14,8 @@ export interface WorkspacePaymentAccount {
   cancel_at_period_end: boolean
   grace_period_ends_at: string | null
   plan: string | null
+  /** '0.03' for a subscription sold before catalog v2 (it keeps those terms), '0.01' after. */
+  credit_unit?: '0.03' | '0.01'
 }
 
 export interface Workspace {
