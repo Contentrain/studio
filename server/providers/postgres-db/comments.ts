@@ -247,20 +247,15 @@ export function commentMethods(): CommentMethods {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      try {
-        const row = await getAdmin()
-          .selectFrom('comments')
-          .select(eb => eb.fn.countAll().as('count'))
-          .where('workspace_id', '=', workspaceId)
-          .where('source', '=', 'web')
-          .where('created_at', '>=', monthStart.toISOString())
-          .executeTakeFirst()
+      const row = await getAdmin()
+        .selectFrom('comments')
+        .select(eb => eb.fn.countAll().as('count'))
+        .where('workspace_id', '=', workspaceId)
+        .where('source', '=', 'web')
+        .where('created_at', '>=', monthStart.toISOString())
+        .executeTakeFirst()
 
-        return Number(row?.count ?? 0)
-      }
-      catch {
-        return 0
-      }
+      return Number(row?.count ?? 0)
     },
 
     async countCommentsByStatus(projectId, modelId) {

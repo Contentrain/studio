@@ -969,8 +969,14 @@ export interface DatabaseProvider {
   releaseUsageAlert: (alert: UsageAlertKey) => Promise<void>
 
   // ═══════════════════════════════════════════════════
-  // USAGE AGGREGATION (billing dashboard)
+  // USAGE AGGREGATION (billing dashboard, quota checks)
   // ═══════════════════════════════════════════════════
+  //
+  // These readers, and the other usage counts (countMonthlySubmissions*,
+  // countMonthlyComments, getProjectMediaStorageSum,
+  // getMonthlyProjectCDNUsage), THROW when the read fails. A 0 in place of
+  // an error lets a quota path through; callers decide: quota and metering
+  // paths fail closed, display paths show the meter as unavailable (AI-15).
 
   /**
    * Sum AI usage across all users in workspace for a month. `studio`

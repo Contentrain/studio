@@ -170,41 +170,30 @@ export function formMethods(): FormMethods {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      // Failure reads as 0 (the Supabase impl never checks the error).
-      try {
-        const row = await getAdmin()
-          .selectFrom('form_submissions')
-          .select(eb => eb.fn.countAll().as('count'))
-          .where('workspace_id', '=', workspaceId)
-          .where('created_at', '>=', monthStart.toISOString())
-          .executeTakeFirst()
+      const row = await getAdmin()
+        .selectFrom('form_submissions')
+        .select(eb => eb.fn.countAll().as('count'))
+        .where('workspace_id', '=', workspaceId)
+        .where('created_at', '>=', monthStart.toISOString())
+        .executeTakeFirst()
 
-        return Number(row?.count ?? 0)
-      }
-      catch {
-        return 0
-      }
+      return Number(row?.count ?? 0)
     },
 
     async countMonthlySubmissionsForModel(workspaceId, projectId, modelId) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      try {
-        const row = await getAdmin()
-          .selectFrom('form_submissions')
-          .select(eb => eb.fn.countAll().as('count'))
-          .where('workspace_id', '=', workspaceId)
-          .where('project_id', '=', projectId)
-          .where('model_id', '=', modelId)
-          .where('created_at', '>=', monthStart.toISOString())
-          .executeTakeFirst()
+      const row = await getAdmin()
+        .selectFrom('form_submissions')
+        .select(eb => eb.fn.countAll().as('count'))
+        .where('workspace_id', '=', workspaceId)
+        .where('project_id', '=', projectId)
+        .where('model_id', '=', modelId)
+        .where('created_at', '>=', monthStart.toISOString())
+        .executeTakeFirst()
 
-        return Number(row?.count ?? 0)
-      }
-      catch {
-        return 0
-      }
+      return Number(row?.count ?? 0)
     },
 
     async listWorkspaceNotificationRecipients(workspaceId) {

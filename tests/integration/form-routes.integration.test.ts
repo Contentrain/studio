@@ -192,6 +192,28 @@ describe('public form routes', () => {
       expect(listWorkspaceNotificationRecipients).not.toHaveBeenCalled()
     })
   })
+  it('refuses with 503 when the per-form count cannot be read, instead of reading it as 0 (AI-15)', async () => {
+    stubFormGlobals({ form: { limits: { maxPerMonth: 5 } } })
+    const createFormSubmissionIfAllowed = vi.fn()
+    const countMonthlySubmissionsForModel = vi.fn().mockRejectedValue(new Error('connection reset'))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub({ createFormSubmissionIfAllowed, countMonthlySubmissionsForModel })))
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail: vi.fn() }))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await withTestServer({
+      routes: [{ path: '/api/forms/v1/project-1/contact/submit', handler: await loadSubmit() }],
+    }, async ({ request }) => {
+      const res = await request('/api/forms/v1/project-1/contact/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ data: { name: 'Ada', email: 'ada@example.com' } }),
+      })
+      expect(res.status).toBe(503)
+      expect(createFormSubmissionIfAllowed).not.toHaveBeenCalled()
+      expect(error.mock.calls.some(([line]) => String(line).includes('[billing-risk] forms.model-cap-read'))).toBe(true)
+    })
+    error.mockRestore()
+  })
 })
 
 describe('public form routes — abuse controls', () => {

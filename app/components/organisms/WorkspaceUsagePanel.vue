@@ -139,7 +139,13 @@ function categoryIcon(key: string): string {
                all: offering a switch that cannot take effect is worse
                than saying the limit is fixed. -->
           <span
-            v-if="category.overageSellable === false"
+            v-if="category.unavailable"
+            class="text-xs text-muted"
+          >
+            {{ t('billing.usage_unavailable_badge') }}
+          </span>
+          <span
+            v-else-if="category.overageSellable === false"
             class="text-xs text-muted"
             :title="t('billing.overage_not_available')"
           >
@@ -176,7 +182,12 @@ function categoryIcon(key: string): string {
           </span>
         </div>
 
+        <!-- The read failed: no number is better than a wrong 0. -->
+        <p v-if="category.unavailable" class="text-sm text-muted" role="status">
+          {{ t('billing.usage_unavailable') }}
+        </p>
         <AtomsUsageMeter
+          v-else
           :current="category.current"
           :limit="category.limit"
           :unit="category.unit"

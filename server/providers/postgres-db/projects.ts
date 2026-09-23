@@ -232,20 +232,13 @@ export function projectMethods(): ProjectMethods {
     },
 
     async getProjectMediaStorageSum(projectId) {
-      // The Supabase impl swallows read errors (destructures data only) and
-      // returns 0 — keep the same contract.
-      try {
-        const row = await getAdmin()
-          .selectFrom('media_assets')
-          .select(eb => eb.fn.coalesce(eb.fn.sum('size_bytes'), eb.lit(0)).as('total'))
-          .where('project_id', '=', projectId)
-          .executeTakeFirst()
+      const row = await getAdmin()
+        .selectFrom('media_assets')
+        .select(eb => eb.fn.coalesce(eb.fn.sum('size_bytes'), eb.lit(0)).as('total'))
+        .where('project_id', '=', projectId)
+        .executeTakeFirst()
 
-        return Number(row?.total ?? 0)
-      }
-      catch {
-        return 0
-      }
+      return Number(row?.total ?? 0)
     },
 
     async listWorkspaceProjects(accessToken, workspaceId) {

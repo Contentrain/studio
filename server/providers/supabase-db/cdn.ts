@@ -208,12 +208,13 @@ export function cdnMethods(): CDNMethods {
     },
 
     async getMonthlyProjectCDNUsage(projectId, startDate, endDate) {
-      const { data } = await getAdmin()
+      const { data, error } = await getAdmin()
         .from('cdn_usage')
         .select('request_count, bandwidth_bytes')
         .eq('project_id', projectId)
         .gte('period_start', startDate)
         .lte('period_start', endDate)
+      if (error) throw createError({ statusCode: 500, message: error.message })
 
       const totals = (data ?? []).reduce(
         (acc: { requestCount: number, bandwidthBytes: number }, row: Record<string, unknown>) => ({

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runUsageAlerts } from '../../server/utils/usage-alerts'
+import { planUsageAlerts, runUsageAlerts } from '../../server/utils/usage-alerts'
 import type { UsageAlertKey } from '../../server/providers/database'
 
 /**
@@ -161,5 +161,22 @@ describe('usage alerts', () => {
     const html = (sendEmail.mock.calls[0]![0] as { html: string }).html
     expect(html).toContain('Storage does not reset each month')
     expect(html).not.toContain('resets on <strong></strong>')
+  })
+
+  it('skips a meter it cannot read instead of counting it as 0, and still alerts on the others (AI-15)', async () => {
+    const db = fakeDb({ ai: 1036 })
+    db.countMonthlySubmissions.mockRejectedValue(new Error('connection reset'))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    const sent = await runUsageAlerts(deps(db, sendEmail))
+    expect(sent.map(s => `${s.meter}:${s.threshold}`)).toEqual(['ai_messages:100'])
+    expect(error.mock.calls.some(([line]) => String(line).includes('[billing-risk] usage-read.form_submissions'))).toBe(true)
+    error.mockRestore()
+  })
+
+  it('never plans an alert for an unavailable meter, whatever its numbers say', () => {
+    const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, unit: 'credits', percentage: 120, resetsAt: null, periodKey: '2026-09-15' }
+    expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420, unavailable: true }])).toEqual([])
+    expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420 }])).toHaveLength(1)
   })
 })

@@ -5,7 +5,8 @@
  * render current-period consumption. These queries read from existing
  * usage tables (`agent_usage`, `cdn_usage`) and are independent of the
  * outbox pipeline — the outbox handles provider ingestion while these
- * queries power the UI.
+ * queries power the UI and the quota checks. A failed read throws rather
+ * than reading as 0, which would let a quota path through (AI-15).
  */
 import type { DatabaseProvider } from '../database'
 import { getAdmin } from './helpers'
@@ -20,12 +21,13 @@ type UsageMethods = Pick<
 export function usageMethods(): UsageMethods {
   return {
     async getWorkspaceMonthlyAIUsage(workspaceId, month, source = 'studio') {
-      const { data } = await getAdmin()
+      const { data, error } = await getAdmin()
         .from('agent_usage')
         .select('message_count')
         .eq('workspace_id', workspaceId)
         .eq('month', month)
         .eq('source', source)
+      if (error) throw createError({ statusCode: 500, message: error.message })
 
       return (data ?? []).reduce(
         (sum: number, r: Record<string, unknown>) => sum + ((r.message_count as number) ?? 0),
@@ -36,11 +38,12 @@ export function usageMethods(): UsageMethods {
     async getWorkspaceMonthlyAPIUsage(workspaceId, month) {
       // Conversation API usage is keyed by `api_key_id`, not `user_id`,
       // and lives in its own aggregate table — see migration 006.
-      const { data } = await getAdmin()
+      const { data, error } = await getAdmin()
         .from('api_message_usage')
         .select('message_count')
         .eq('workspace_id', workspaceId)
         .eq('month', month)
+      if (error) throw createError({ statusCode: 500, message: error.message })
 
       return (data ?? []).reduce(
         (sum: number, r: Record<string, unknown>) => sum + ((r.message_count as number) ?? 0),
@@ -51,10 +54,11 @@ export function usageMethods(): UsageMethods {
     async getWorkspaceMonthlyCDNBandwidth(workspaceId, month) {
       const admin = getAdmin()
 
-      const { data: projects } = await admin
+      const { data: projects, error } = await admin
         .from('projects')
         .select('id')
         .eq('workspace_id', workspaceId)
+      if (error) throw createError({ statusCode: 500, message: error.message })
 
       if (!projects || projects.length === 0) return 0
 
@@ -65,12 +69,13 @@ export function usageMethods(): UsageMethods {
       nextMonth.setMonth(nextMonth.getMonth() + 1)
       const monthEnd = nextMonth.toISOString().substring(0, 10)
 
-      const { data } = await admin
+      const { data, error: usageError } = await admin
         .from('cdn_usage')
         .select('bandwidth_bytes')
         .in('project_id', projectIds)
         .gte('period_start', monthStart)
         .lt('period_start', monthEnd)
+      if (usageError) throw createError({ statusCode: 500, message: usageError.message })
 
       return (data ?? []).reduce(
         (sum: number, r: Record<string, unknown>) => sum + ((r.bandwidth_bytes as number) ?? 0),

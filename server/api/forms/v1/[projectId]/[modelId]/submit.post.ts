@@ -17,6 +17,7 @@ import { getEffectiveLimit } from '~~/server/utils/overage'
 import { createContentEngine } from '~~/server/utils/content-engine'
 import { generateEntryId } from '@contentrain/types'
 import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
+import { reportBillingRisk } from '~~/server/utils/alert'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -182,7 +183,16 @@ export default defineEventHandler(async (event) => {
   // Per-model cap from the form config (below the workspace plan limit).
   const modelCap = formConfig.limits?.maxPerMonth
   if (typeof modelCap === 'number' && modelCap > 0) {
-    const used = await db.countMonthlySubmissionsForModel(workspace.id as string, projectId, modelId)
+    // A count that cannot be read refuses the submission: reading it as 0
+    // would let every submission past the cap (AI-15).
+    let used: number
+    try {
+      used = await db.countMonthlySubmissionsForModel(workspace.id as string, projectId, modelId)
+    }
+    catch (err) {
+      reportBillingRisk(err, { op: 'forms.model-cap-read', workspaceId: workspace.id as string })
+      throw createError({ statusCode: 503, message: errorMessage('forms.usage_unavailable') })
+    }
     if (used >= modelCap)
       throw createError({ statusCode: 429, message: errorMessage('forms.model_monthly_limit') })
   }

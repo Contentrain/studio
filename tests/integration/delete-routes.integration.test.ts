@@ -263,4 +263,38 @@ describe('workspace and project delete route integration', () => {
       expect(incrementWorkspaceStorageBytes).toHaveBeenCalledWith('workspace-1', -2048)
     })
   })
+  it('stops before removing anything when the media total cannot be read (AI-15)', async () => {
+    const deletePrefix = vi.fn().mockResolvedValue(undefined)
+    const deleteProject = vi.fn().mockResolvedValue(undefined)
+    const incrementWorkspaceStorageBytes = vi.fn().mockResolvedValue(undefined)
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'admin-1' }, accessToken: 'token-1' }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ deletePrefix }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      requireWorkspaceRole: vi.fn().mockResolvedValue('admin'),
+      getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
+      deleteProject,
+      incrementWorkspaceStorageBytes,
+      getProjectMediaStorageSum: vi.fn().mockRejectedValue(new Error('connection reset')),
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1', handler: await loadProjectDeleteHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1', { method: 'DELETE' })
+
+      expect(response.status).toBe(500)
+      // Files, counter and project are all untouched: the delete can simply be retried.
+      expect(deletePrefix).not.toHaveBeenCalled()
+      expect(incrementWorkspaceStorageBytes).not.toHaveBeenCalled()
+      expect(deleteProject).not.toHaveBeenCalled()
+    })
+  })
 })

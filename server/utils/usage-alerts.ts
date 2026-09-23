@@ -52,6 +52,8 @@ export function planUsageAlerts(categories: WorkspaceUsageCategory[]): PlannedAl
   const planned: PlannedAlert[] = []
   for (const category of categories) {
     if (!ALERTING_METERS.has(category.key)) continue
+    // A meter that could not be read has no number to alert on (AI-15).
+    if (category.unavailable) continue
     // Unlimited (-1) or not included at all (0): nothing to warn about.
     if (category.limit <= 0) continue
     // Raw values, not the rounded percentage: 995 / 1000 rounds to 100 % but nothing has stopped,
@@ -127,6 +129,9 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
         period: usagePeriodFrom(account as UsagePeriodAccount | null, now),
         overageLocks: resolveOverageLocks(account as OverageLockAccount | null),
         now,
+        // An unreadable meter is skipped (reported, never alerted on as 0);
+        // the meters that were read still alert.
+        readErrors: 'unavailable',
       })
 
       const alerts = planUsageAlerts(usage.categories)
