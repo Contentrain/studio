@@ -157,7 +157,9 @@ describe('usage alerts', () => {
     expect(comments).not.toContain('allow overage')
   })
 
-  it('does not mail a workspace that is locked behind the paywall', async () => {
+  it('does not mail a workspace that is locked behind the paywall — it is not even measured', async () => {
+    // Free limits are all 0, so a usage fixture cannot sit "above" them: what proves the skip is
+    // that a locked workspace's usage is never read. The old code measured it (against free limits).
     const db = fakeDb({ ai: 1036 })
     db.getActivePaymentAccount.mockResolvedValue({
       subscription_id: 'sub_1', subscription_status: 'past_due',
@@ -167,6 +169,8 @@ describe('usage alerts', () => {
     const sendEmail = vi.fn()
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
     expect(sendEmail).not.toHaveBeenCalled()
+    expect(db.getWorkspaceMonthlyAIUsage).not.toHaveBeenCalled()
+    expect(db.claimUsageAlert).not.toHaveBeenCalled()
   })
 
   it('the storage warning says storage does not reset, with no empty date', async () => {
@@ -207,5 +211,18 @@ describe('usage alerts', () => {
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
     // The same count on a pre-v2 account is past its 350.
     expect(await runUsageAlerts(deps(fakeDb({ ai: 1036 }), sendEmail))).toEqual([expect.objectContaining({ meter: 'ai_messages', threshold: 100 })])
+  })
+
+  it('storage is re-armed when files are removed: crossing the limit again alerts again', async () => {
+    const db = fakeDb({}, { media_storage_bytes: 16 * 1024 ** 3 }) // over Pro's 15 GB
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    expect(await runUsageAlerts(deps(db, sendEmail))).toHaveLength(1)
+    // Files removed: 5 GB, below both thresholds.
+    db.listWorkspacesForUsageAlerts.mockResolvedValue([{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: {}, media_storage_bytes: 5 * 1024 ** 3 }])
+    expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
+    expect(db.releaseUsageAlert).toHaveBeenCalledWith({ workspaceId: 'ws-1', meter: 'media_storage', periodKey: 'level', threshold: 100 })
+    // Over again: a new mail.
+    db.listWorkspacesForUsageAlerts.mockResolvedValue([{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: {}, media_storage_bytes: 16 * 1024 ** 3 }])
+    expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 100 })])
   })
 })

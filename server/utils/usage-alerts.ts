@@ -103,6 +103,17 @@ function formatAmount(value: number, unit: string): string {
   return unit === 'GB' ? `${value.toFixed(1)} GB` : `${Math.round(value).toLocaleString('en-US')} ${unit}`
 }
 
+/** Releases the storage `level` claims of thresholds the workspace is now back below. */
+async function rearmStorageAlerts(db: AlertDatabase, workspaceId: string, categories: WorkspaceUsageCategory[]): Promise<void> {
+  const storage = categories.find(c => c.key === 'media_storage')
+  if (!storage || storage.limit <= 0) return
+  const below: Array<80 | 100> = []
+  if (storage.current < storage.limit) below.push(100)
+  if (storage.current < storage.limit * 0.8) below.push(80)
+  for (const threshold of below)
+    await db.releaseUsageAlert({ workspaceId, meter: 'media_storage', periodKey: STORAGE_PERIOD_KEY, threshold })
+}
+
 /** One sweep over every subscribed workspace. Returns what was sent. */
 export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageAlertKey & { template: string }>> {
   const { db } = deps
@@ -139,6 +150,10 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
         readErrors: 'unavailable',
         creditUnit: resolveCreditUnit(account as { credit_unit?: unknown } | null),
       })
+
+      // Storage has no period to reset its alerts, so a threshold is re-armed when usage falls back
+      // below it (files removed): the next time it is crossed, the owner hears about it again.
+      await rearmStorageAlerts(db, workspaceId, usage.categories)
 
       const alerts = planUsageAlerts(usage.categories)
       if (alerts.length === 0) continue
