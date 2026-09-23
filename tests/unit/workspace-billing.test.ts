@@ -72,8 +72,17 @@ describe('resolveWorkspaceBilling', () => {
     deployment.planSource = 'operator'
     const db = dbWith(null)
     const billing = await resolveWorkspaceBilling(db, { id: 'ws-1', plan: 'enterprise', overage_settings: { api_messages: true } })
-    expect(billing).toEqual({ state: 'subscribed', effectivePlan: 'enterprise', overageSettings: { api_messages: true } })
+    expect(billing).toEqual({ state: 'subscribed', effectivePlan: 'enterprise', overageSettings: { api_messages: true }, trial: { trialing: false, origin: 'standard' } })
     expect(db.getActivePaymentAccount).not.toHaveBeenCalled()
+  })
+
+  it('carries the trial origin the Migrate webhook records, for the trial cap', async () => {
+    const future = new Date(Date.now() + 7 * 86_400_000).toISOString()
+    const billing = await resolveWorkspaceBilling(
+      dbWith({ subscription_status: 'trialing', subscription_id: 'sub_1', trial_ends_at: future, plugin_metadata: { trial_origin: 'migrate' } }),
+      { id: 'ws-1', plan: 'pro' },
+    )
+    expect(billing.trial).toEqual({ trialing: true, origin: 'migrate' })
   })
 })
 

@@ -12,13 +12,13 @@
  */
 
 import { createError } from 'h3'
-import { getEffectivePlan, isBillingLocked, resolveBillingState } from './billing'
+import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveTrialContext } from './billing'
 import type { BillingState, PaymentAccountState, WorkspaceBillingRow } from './billing'
 import { getWorkspacePlan } from './license'
 import { resolveDeployment } from './deployment'
 import { resolveOverageLocks, withoutLockedOverage } from './overage-lock'
 import type { OverageLockAccount } from './overage-lock'
-import type { StudioPlan } from '../../shared/utils/license'
+import type { StudioPlan, TrialContext } from '../../shared/utils/license'
 
 /** Workspace columns `resolveWorkspaceBilling` reads. Select them with the rest. */
 export const WORKSPACE_BILLING_COLUMNS = ['type', 'plan', 'overage_settings'] as const
@@ -29,6 +29,8 @@ export interface WorkspaceBilling {
   effectivePlan: StudioPlan
   /** `overage_settings` with every toggle the subscription cannot bill turned off. */
   overageSettings: Record<string, boolean>
+  /** Trial state and origin, for `applyTrialCap`. */
+  trial: TrialContext
 }
 
 /**
@@ -57,6 +59,7 @@ export async function resolveWorkspaceBilling(
       state: 'subscribed',
       effectivePlan: getWorkspacePlan({ plan: (workspace.plan as string | null) ?? null }),
       overageSettings: storedOverage,
+      trial: { trialing: false, origin: 'standard' },
     }
   }
 
@@ -79,5 +82,6 @@ export async function resolveWorkspaceBilling(
     state,
     effectivePlan: getEffectivePlan(row),
     overageSettings: withoutLockedOverage(storedOverage, resolveOverageLocks(account as OverageLockAccount | null)),
+    trial: resolveTrialContext(state, account as { plugin_metadata?: unknown } | null),
   }
 }
