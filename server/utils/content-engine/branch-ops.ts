@@ -49,7 +49,7 @@ export function createBranchGuard(ctx: EngineInternalContext) {
       // Advance main to include any migrated content
       if (oldBranches.length > 0) {
         try {
-          await ctx.git.mergeBranch(CONTENT_BRANCH, defaultBranch)
+          await mergeOrFastForward(ctx, CONTENT_BRANCH, defaultBranch, { levelSource: true })
         }
         catch { /* branch protection may block — acceptable */ }
       }
@@ -58,7 +58,9 @@ export function createBranchGuard(ctx: EngineInternalContext) {
       // Sync: merge main -> contentrain (spec Step 2)
       const defaultBranch = await ctx.git.getDefaultBranch()
       try {
-        await ctx.git.mergeBranch(defaultBranch, CONTENT_BRANCH)
+        // A fast-forward when contentrain has nothing main lacks — no merge
+        // commit on the content branch for a sync that changes no file.
+        await mergeOrFastForward(ctx, defaultBranch, CONTENT_BRANCH)
       }
       catch (e: unknown) {
         // A conflict here means the branches have DIVERGED: something touched
@@ -82,6 +84,51 @@ export function createBranchGuard(ctx: EngineInternalContext) {
 
     ensured = true
   }
+}
+
+type MergeOutcome = Awaited<ReturnType<EngineInternalContext['git']['mergeBranch']>>
+
+/**
+ * Bring `into` up to `from`: a fast-forward when `into` is an ancestor of
+ * `from`, a merge commit otherwise.
+ *
+ * GitHub's merge API always writes a merge commit, even when a fast-forward
+ * would do. Advancing `main` to `contentrain` through it after every save
+ * left `main` one commit ahead with the same tree; the next save's sync
+ * merged that back into `contentrain` (a second merge commit), and the sync
+ * banner reported `main` as having changes the content branch did not — on
+ * every save, with nothing to sync (ST-8).
+ *
+ * `levelSource` (the advance direction only): after a real merge commit,
+ * `from` is its ancestor, so `from` is fast-forwarded to it too and both tips
+ * end on the same commit. Never on the sync direction — that would move
+ * `main` from a sync.
+ *
+ * Errors from the merge path propagate unchanged: callers classify them
+ * (conflict → reconcile, protected → PR) exactly as before. A refused
+ * fast-forward is not an error; it falls through to the merge.
+ */
+export async function mergeOrFastForward(
+  ctx: EngineInternalContext,
+  from: string,
+  into: string,
+  options: { levelSource?: boolean } = {},
+): Promise<MergeOutcome> {
+  const git = ctx.git
+  if (git.fastForwardBranch) {
+    // One read for both tips. Equal tips: nothing to bring over, no write.
+    const tips = await git.listBranches().catch(() => null)
+    const fromSha = tips?.find(b => b.name === from)?.sha ?? null
+    const intoSha = tips?.find(b => b.name === into)?.sha ?? null
+    if (fromSha && fromSha === intoSha)
+      return { merged: true, sha: null, pullRequestUrl: null }
+    if (fromSha && await git.fastForwardBranch(into, fromSha).catch(() => false))
+      return { merged: true, sha: fromSha, pullRequestUrl: null }
+  }
+  const merged = await git.mergeBranch(from, into)
+  if (options.levelSource && merged.merged && merged.sha && git.fastForwardBranch)
+    await git.fastForwardBranch(from, merged.sha).catch(() => false)
+  return merged
 }
 
 /**
@@ -114,7 +161,8 @@ export async function mergeToContentrain(
   ctx: EngineInternalContext,
   branch: string,
 ): Promise<{ merged: boolean, sha: string | null }> {
-  const step1 = await ctx.git.mergeBranch(branch, CONTENT_BRANCH)
+  // The branch forked from contentrain: usually a fast-forward, no merge commit.
+  const step1 = await mergeOrFastForward(ctx, branch, CONTENT_BRANCH)
   if (!step1.merged) {
     return { merged: false, sha: null }
   }
@@ -161,7 +209,7 @@ export async function finalizeContentrain(
   // Step 2: advance contentrain -> main
   const defaultBranch = await ctx.git.getDefaultBranch()
   try {
-    const advanced = await ctx.git.mergeBranch(CONTENT_BRANCH, defaultBranch)
+    const advanced = await mergeOrFastForward(ctx, CONTENT_BRANCH, defaultBranch, { levelSource: true })
     return { ...advanced, mainAdvance: 'advanced' }
   }
   catch (e: unknown) {
@@ -305,8 +353,9 @@ async function tryReconcileAdvance(
   // readers must not serve the pre-reconcile snapshot.
   if (ctx.projectId) invalidateBrainCache(ctx.projectId)
 
-  // theirs is now an ancestor of contentrain — the advance is a fast-forward.
-  const advanced = await ctx.git.mergeBranch(CONTENT_BRANCH, defaultBranch)
+  // theirs is now an ancestor of contentrain — the advance is a fast-forward
+  // (the merge API alone would still write a merge commit; see mergeOrFastForward).
+  const advanced = await mergeOrFastForward(ctx, CONTENT_BRANCH, defaultBranch, { levelSource: true })
   return { ...advanced, mainAdvance: 'advanced' }
 }
 

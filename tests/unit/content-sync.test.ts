@@ -55,6 +55,25 @@ describe('content sync', () => {
     expect(report.fastForward).toBe(true)
   })
 
+  it('calls a base tip with the same tree in sync — a merge commit is not a change (ST-8)', async () => {
+    // What GitHub's merge API left after every advance: main one commit
+    // ahead of contentrain, both commits pointing at the same tree.
+    const report = await checkContentSync(git({
+      getMergeBase: vi.fn().mockResolvedValue('content-sha'),
+      getCommitTreeSha: vi.fn().mockResolvedValue('tree-a41e48f'),
+    }))
+    expect(report.state).toBe('in_sync')
+  })
+
+  it('still calls base ahead when the trees differ', async () => {
+    const trees: Record<string, string> = { 'content-sha': 'tree-1', 'base-sha': 'tree-2' }
+    const report = await checkContentSync(git({
+      getMergeBase: vi.fn().mockResolvedValue('content-sha'),
+      getCommitTreeSha: vi.fn(async (sha: string) => trees[sha] ?? null),
+    }))
+    expect(report.state).toBe('base_ahead')
+  })
+
   it('calls it diverged when neither tip is the merge base', async () => {
     const report = await checkContentSync(git({ getMergeBase: vi.fn().mockResolvedValue('older-sha') }))
     expect(report.state).toBe('diverged')

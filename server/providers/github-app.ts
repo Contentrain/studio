@@ -197,6 +197,33 @@ export function createGitHubExtensions(octokit: Octokit, owner: string, repo: st
       }
     },
 
+    async fastForwardBranch(branch: string, sha: string): Promise<boolean> {
+      // `force: false` makes GitHub refuse anything that is not a
+      // fast-forward (422), so this can never drop a commit. A protected
+      // branch refuses too — the caller falls back to its merge path, which
+      // opens a PR where a merge is not allowed either.
+      try {
+        await octokit.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha, force: false })
+        return true
+      }
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        if (status === 422 || status === 403 || status === 409) return false
+        throw err
+      }
+    },
+
+    async getCommitTreeSha(sha: string): Promise<string | null> {
+      try {
+        const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: sha })
+        return data.tree.sha
+      }
+      catch (err: unknown) {
+        if ((err as { status?: number }).status === 404) return null
+        throw err
+      }
+    },
+
     async getTree(ref?: string): Promise<TreeEntry[]> {
       let sha = ref
       if (!sha) {
