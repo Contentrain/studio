@@ -6,8 +6,6 @@ vi.mock('../../server/utils/license', () => ({
   getWorkspacePlan: (w: { plan?: string | null }) => w.plan ?? 'community',
 }))
 
-vi.mock('../../server/utils/content-strings', () => ({ errorMessage: (key: string) => key }))
-
 const { resolveWorkspaceBilling } = await import('../../server/utils/workspace-billing')
 
 function dbWith(account: Record<string, unknown> | null) {
