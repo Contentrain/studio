@@ -5,7 +5,7 @@ import { formatRelativeTime } from '~/utils/relative-time'
 const { t } = useContent()
 const { state: authState, signOut } = useAuth()
 const { activeWorkspace } = useWorkspaces()
-const { projects } = useProjects()
+const { projects, ensureProjects } = useProjects()
 const { models, hasContentrain, snapshot, loading: snapshotLoading, fetchSnapshot, invalidateCache } = useSnapshot()
 const { branches, contentSync, fetchBranches } = useBranches()
 const route = useRoute()
@@ -95,6 +95,16 @@ watch(
     if (id && workspaceId) {
       await fetchBranches(workspaceId, id)
     }
+  },
+  { immediate: true },
+)
+
+// The list belongs to the workspace, not to the page: settings, CDN and
+// assets are opened directly too, and none of them load it.
+watch(
+  () => activeWorkspace.value?.id,
+  (workspaceId) => {
+    if (workspaceId) ensureProjects(workspaceId).catch(() => {})
   },
   { immediate: true },
 )
