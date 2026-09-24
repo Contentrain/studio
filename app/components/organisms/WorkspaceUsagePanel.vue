@@ -56,12 +56,16 @@ function formatDate(iso: string): string {
 /**
  * When this meter goes back to zero. Each meter carries its own date: AI,
  * API and MCP follow the billing period, forms, comments and CDN the
- * calendar month. One date for all of them was wrong for half of them.
+ * calendar month. One date for all of them was wrong for half of them, and
+ * two dates with no reason read as a bug, so the label names which one.
  */
 function resetLabel(category: UsageCategory): string | null {
   if (category.resetsAt === null) return t('billing.usage_level_note')
   if (!category.resetsAt) return null
-  return t('billing.usage_resets_on', { date: formatDate(category.resetsAt) })
+  const date = formatDate(category.resetsAt)
+  if (category.resetBasis === 'billing') return t('billing.usage_resets_on_billing', { date })
+  if (category.resetBasis === 'calendar') return t('billing.usage_resets_on_calendar', { date })
+  return t('billing.usage_resets_on', { date })
 }
 
 /** The price of a unit past the limit, shown before the switch is turned on. */

@@ -27,6 +27,8 @@ export interface UsageCategory {
   percentage: number
   /** When this meter resets; null for a level that does not (storage). Absent from an older server. */
   resetsAt?: string | null
+  /** Whether `resetsAt` follows the billing period or the calendar month. Absent from an older server. */
+  resetBasis?: 'billing' | 'calendar' | null
   /** The server could not read this meter: show it as unavailable, not as a number. */
   unavailable?: boolean
 }
