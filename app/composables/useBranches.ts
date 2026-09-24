@@ -108,10 +108,16 @@ export function useBranches() {
         // editor "merge failed" for a blocked advance is how an Approve on a
         // diverged repo used to read as a lost save.
         if (result.mainAdvance === 'blocked_diverged') {
-          toast.warning(t('branch.merge_publish_pending'))
+          // The editor thinks an approve means the site changes. Here it does
+          // not until a person merges the advance PR — say so, with the PR.
+          toast.warning(
+            t('branch.merge_publish_pending'),
+            undefined,
+            result.pullRequestUrl ? { href: result.pullRequestUrl, label: t('branch.merge_open_pr') } : undefined,
+          )
         }
         else {
-          toast.success(t('branch.merge_success'))
+          toast.success(t('branch.merge_success'), t('branch.merge_site_updates'))
         }
         branches.value = branches.value.filter(b => b.name !== branch)
         return true

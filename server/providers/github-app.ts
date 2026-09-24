@@ -320,6 +320,12 @@ export function createGitHubExtensions(octokit: Octokit, owner: string, repo: st
       await octokit.pulls.merge({ owner, repo, pull_number: Number(id) })
     },
 
+    async findOpenPR(head: string, base: string): Promise<{ id: string, url: string } | null> {
+      const { data } = await octokit.pulls.list({ owner, repo, state: 'open', head: `${owner}:${head}`, base, per_page: 1 })
+      const pr = data[0]
+      return pr ? { id: String(pr.number), url: pr.html_url } : null
+    },
+
     async detectFramework(): Promise<FrameworkDetection> {
       const result: FrameworkDetection = {
         stack: 'unknown',
