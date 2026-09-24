@@ -147,6 +147,8 @@
   "billing.usage_period_calendar": "Calendar month",
   "billing.usage_period_resets": "Resets {date}",
   "billing.usage_resets_on": "Resets {date}",
+  "billing.usage_resets_on_billing": "Resets {date}, with your billing period",
+  "billing.usage_resets_on_calendar": "Resets {date}, counted per calendar month",
   "billing.usage_title": "Usage this period",
   "billing.usage_unavailable": "Usage could not be loaded right now. Try again in a moment.",
   "billing.usage_unavailable_badge": "Unavailable",

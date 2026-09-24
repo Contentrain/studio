@@ -55,6 +55,12 @@ export interface WorkspaceUsageCategory {
   resetsAt: string | null
   /** The window this meter is counted in — also the dedupe key for usage alerts. */
   periodKey: string
+  /**
+   * What `resetsAt` follows: the billing period or the calendar month. A
+   * subscribed workspace has both on one screen, so the date alone reads as
+   * a mistake. Null for a meter that does not reset.
+   */
+  resetBasis: UsagePeriod['source'] | null
   /** The read failed: `current`, `percentage` and the overage fields are 0 and mean nothing. */
   unavailable?: boolean
 }
@@ -191,6 +197,7 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
       percentage: unavailable || planLimit === Infinity || planLimit === 0 ? 0 : Math.round((current / planLimit) * 100),
       resetsAt: m.window?.resetsAt ?? null,
       periodKey: (m.window ?? calendar).key,
+      resetBasis: m.window?.source ?? null,
       ...(unavailable ? { unavailable: true } : {}),
     })
   }

@@ -27,9 +27,9 @@ function staging(canManage: boolean): UsageData {
     billingPeriod: '2026-09-15',
     canManage,
     categories: [
-      category('ai_messages', 'ai.messages_per_month', 'AI Credits', 1036, 350, 'credits', '2026-10-15T00:00:00.000Z', { overageUnitPrice: canManage ? 0.08 : 0 }),
-      category('form_submissions', 'forms.submissions_per_month', 'Form Submissions', 1, 3000, 'submissions', '2026-10-01T00:00:00.000Z', { overageUnitPrice: canManage ? 0.01 : 0 }),
-      category('cdn_bandwidth', 'cdn.bandwidth_gb', 'CDN Bandwidth', 5.3, 60, 'GB', '2026-10-01T00:00:00.000Z', { overageSellable: false }),
+      category('ai_messages', 'ai.messages_per_month', 'AI Credits', 1036, 350, 'credits', '2026-10-15T00:00:00.000Z', { overageUnitPrice: canManage ? 0.08 : 0, resetBasis: 'billing' }),
+      category('form_submissions', 'forms.submissions_per_month', 'Form Submissions', 1, 3000, 'submissions', '2026-10-01T00:00:00.000Z', { overageUnitPrice: canManage ? 0.01 : 0, resetBasis: 'calendar' }),
+      category('cdn_bandwidth', 'cdn.bandwidth_gb', 'CDN Bandwidth', 5.3, 60, 'GB', '2026-10-01T00:00:00.000Z', { overageSellable: false, resetBasis: 'calendar' }),
       category('media_storage', 'media.storage_gb', 'Media Storage', 1.9, 15, 'GB', null, { overageSellable: false }),
     ],
     totalOverageAmount: 0,
@@ -50,10 +50,17 @@ describe('WorkspaceUsagePanel', () => {
 
   it('gives each meter its own reset date instead of one for all', async () => {
     const text = (await mountSuspended(WorkspaceUsagePanel, { props: { workspaceId: 'ws-1' } })).text()
-    expect(text).toContain('Resets October 15')
-    expect(text).toContain('Resets October 1')
+    expect(text).toContain('Resets October 15, with your billing period')
+    expect(text).toContain('Resets October 1, counted per calendar month')
     expect(text).toContain('Current total — does not reset')
     expect(text).not.toContain('September 2026')
+  })
+
+  it('keeps the bare date for a meter from an older server that does not say what it resets with', async () => {
+    state.usage = { ...staging(true), categories: [category('ai_messages', 'ai.messages_per_month', 'AI Credits', 10, 350, 'credits', '2026-10-15T00:00:00.000Z')] }
+    const text = (await mountSuspended(WorkspaceUsagePanel, { props: { workspaceId: 'ws-1' } })).text()
+    expect(text).toContain('Resets October 15')
+    expect(text).not.toContain('billing period')
   })
 
   it('prints a unit once: "60 GB", not "60 GB GB"', async () => {

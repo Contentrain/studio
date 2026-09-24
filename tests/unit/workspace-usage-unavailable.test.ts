@@ -58,3 +58,16 @@ describe('computeWorkspaceUsage with a failed read', () => {
     expect(usage.categories.find(c => c.key === 'form_submissions')!.overageUnits).toBeGreaterThan(0)
   })
 })
+
+describe('computeWorkspaceUsage reset dates', () => {
+  it('names what each meter resets with, so two dates on one screen read as intended', async () => {
+    const period = usagePeriodFrom({ subscription_status: 'active', current_period_start: '2026-09-10T00:00:00Z', current_period_end: '2026-10-10T00:00:00Z' }, NOW)
+    const usage = await computeWorkspaceUsage(db() as never, { ...input, period, storageBytes: 1 })
+    const reset = Object.fromEntries(usage.categories.map(c => [c.key, [c.resetBasis, c.resetsAt]]))
+    for (const key of ['ai_messages', 'api_messages', 'mcp_calls'])
+      expect(reset[key]).toEqual(['billing', '2026-10-10T00:00:00.000Z'])
+    for (const key of ['form_submissions', 'comments', 'cdn_bandwidth'])
+      expect(reset[key]).toEqual(['calendar', '2026-10-01T00:00:00.000Z'])
+    expect(reset.media_storage).toEqual([null, null])
+  })
+})
