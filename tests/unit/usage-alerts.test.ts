@@ -214,7 +214,7 @@ describe('usage alerts', () => {
   })
 
   it('storage is re-armed when files are removed: crossing the limit again alerts again', async () => {
-    const db = fakeDb({}, { media_storage_bytes: 16 * 1024 ** 3 }) // over Pro's 15 GB
+    const db = fakeDb({}, { media_storage_bytes: 26 * 1024 ** 3 }) // over Pro's 25 GB
     const sendEmail = vi.fn().mockResolvedValue(undefined)
     expect(await runUsageAlerts(deps(db, sendEmail))).toHaveLength(1)
     // Files removed: 5 GB, below both thresholds.
@@ -222,40 +222,40 @@ describe('usage alerts', () => {
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
     expect(db.releaseUsageAlert).toHaveBeenCalledWith({ workspaceId: 'ws-1', meter: 'media_storage', periodKey: 'level', threshold: 100 })
     // Over again: a new mail.
-    db.listWorkspacesForUsageAlerts.mockResolvedValue([{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: {}, media_storage_bytes: 16 * 1024 ** 3 }])
+    db.listWorkspacesForUsageAlerts.mockResolvedValue([{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: {}, media_storage_bytes: 26 * 1024 ** 3 }])
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 100 })])
   })
 
   it('storage hovering around a threshold mails once: re-armed only well below it (70 % for 80, 90 % for 100)', async () => {
     const at = (gb: number) => [{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: {}, media_storage_bytes: gb * 1024 ** 3 }]
-    const db = fakeDb({}, { media_storage_bytes: 12.3 * 1024 ** 3 }) // 82 % of Pro's 15 GB
+    const db = fakeDb({}, { media_storage_bytes: 20.5 * 1024 ** 3 }) // 82 % of Pro's 25 GB
     const sendEmail = vi.fn().mockResolvedValue(undefined)
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 80 })])
     // 78 %, then 82 % again, sweep after sweep: under 80 but not under 70, so no second mail.
-    for (const gb of [11.7, 12.3, 11.7, 12.3]) {
+    for (const gb of [19.5, 20.5, 19.5, 20.5]) {
       db.listWorkspacesForUsageAlerts.mockResolvedValue(at(gb))
       expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
     }
     expect(db.releaseUsageAlert).not.toHaveBeenCalledWith(expect.objectContaining({ meter: 'media_storage', threshold: 80 }))
     // 65 %: re-armed; crossing 80 % again mails again.
-    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(9.75))
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(16.25))
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
-    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(12.3))
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(20.5))
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 80 })])
     expect(sendEmail).toHaveBeenCalledTimes(2)
   })
 
   it('the 100 % storage alert is re-armed below 90 %, not just under the limit', async () => {
     const at = (gb: number) => [{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: {}, media_storage_bytes: gb * 1024 ** 3 }]
-    const db = fakeDb({}, { media_storage_bytes: 15.2 * 1024 ** 3 })
+    const db = fakeDb({}, { media_storage_bytes: 25.5 * 1024 ** 3 })
     const sendEmail = vi.fn().mockResolvedValue(undefined)
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([expect.objectContaining({ threshold: 100 })])
-    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(14.4)) // 96 %: under the limit, above 90 %
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(24)) // 96 %: under the limit, above 90 %
     await runUsageAlerts(deps(db, sendEmail))
     expect(db.releaseUsageAlert).not.toHaveBeenCalledWith(expect.objectContaining({ threshold: 100 }))
-    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(15.2))
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(25.5))
     expect(await runUsageAlerts(deps(db, sendEmail))).toEqual([])
-    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(13)) // 87 %
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(21.75)) // 87 %
     await runUsageAlerts(deps(db, sendEmail))
     expect(db.releaseUsageAlert).toHaveBeenCalledWith({ workspaceId: 'ws-1', meter: 'media_storage', periodKey: 'level', threshold: 100 })
   })
