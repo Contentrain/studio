@@ -1,6 +1,86 @@
 # Changelog
 
 
+## v0.4.4
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.3...v0.4.4)
+
+### ⚠️ Upgrade notes
+
+**1. Five migrations run before the new image serves: 031, 032, 033, 034, 035.**
+managed+postgres: the Railway pre-deploy runs them; plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. 031 adds `migrate_grants` (one Studio trial per Migrate order); 032 replaces `reserve_agent_credits` in place (a chat turn reserves its whole credit budget up front and settles when it ends); 033 adds `usage_alerts`, the 80 % / 100 % email send log; 034 lets it hold the 120 % CDN level; 035 adds `payment_accounts.credit_unit`, sets every existing row to `'0.03'` and defaults new rows to `'0.01'`. Nothing is dropped, so rolling back the image alone is safe.
+
+**2. Catalog v2: $0.01 credits for new subscriptions; existing subscriptions are unchanged.**
+New subscriptions are priced on v2 products and the `ai_credits_1c` / `api_credits_1c` meters: Starter $9 with 300 AI credits, Pro $49 with 1,600 AI and 450 API credits, $0.025 per credit past the allowance. A subscription sold before v2 keeps its product, its $0.03 credits, its quotas (Starter 60 / 30, Pro 350 / 140) and its prices; nothing migrates it, and every credit figure (quota, turn ceiling, meter, overage price, the agent's and the plan card's wording) is read through the account's `credit_unit`. The non-credit limits rise for every account: media 5 / 25 GB, files 10 / 50 MB, CDN 3 / 60 GB.
+
+**3. Polar operators: roll v2 out in this order on each plane — deploy, apply, switch the product env.**
+The app must understand the `_1c` meters before a subscription can carry them. (1) Deploy this release. (2) `pnpm polar:sync` (dry run: it must only *create* the `_1c` and `cdn_origin_gb` meters and the two v2 products, never update an existing product), then `pnpm polar:sync --apply`. (3) Set `NUXT_POLAR_STARTER_PRODUCT_ID` / `NUXT_POLAR_PRO_PRODUCT_ID` to the v2 product ids it prints. Until step 3 new checkouts still sell the pre-v2 products, which the app bills correctly in their own unit.
+
+**4. CDN origin transfer is enforced by default: `NUXT_CDN_ORIGIN_LIMIT=enforce`.**
+Past the plan's `cdn.bandwidth_gb`, delivery continues and the owner is emailed; at 120 % the origin answers 429 + `Retry-After` until the month resets, unless overage is on. 304s and Cloudflare cache hits do not count. `observe` counts and logs without refusing (self-hosted instances that want no cap), `off` disables it. The daily `cdn_origin_gb` meter stays off (`NUXT_CDN_ORIGIN_METER=false`) until the meter exists in the payment provider. A separate CDN host (`NUXT_PUBLIC_CDN_URL`, `NUXT_CDN_EDGE_SECRET`) is optional; setup is in `docs/CDN_EDGE.md`.
+
+**5. Locked workspaces answer public callers with `402 payment_required`.**
+Forms, comments, the Conversation API, MCP Cloud and the public media API answer a workspace whose trial ended unpaid, grace ran out or cancellation took effect with 402 and `{ code: 'payment_required', requiresCheckout: true }`, where they used to answer 403 `*.upgrade`. Sites built with `@contentrain/emitter-astro` 0.15+ hide the form or thread on it; `@contentrain/query` 7.5+ exposes `isPaymentRequired()`.
+
+**6. Models: Opus 5.5 replaces Opus 4.8, Sonnet 4.6 is retired.**
+A saved pick of a retired model moves to the default; turns that already ran on them still settle at their own price. An unknown model id is budgeted at the dearest catalog model. Trials on the Studio key cannot use Opus (BYOA and paid plans can).
+
+**7. Usage alert emails** go out at 80 % and 100 % of each meter (and 120 % for CDN), once per meter, period and level. Configure the email provider on every environment that runs the job.
+
+### ✨ Highlights
+
+- New plans: $0.01 AI credits — Starter 300, Pro 1,600 plus 450 API credits — with existing subscriptions keeping their terms, shown to them everywhere they are quoted (#355, #356)
+- Chat turns reserve their credits up front and stop inside their budget; a turn cut by the month's last credits says so and when credits come back (#335)
+- With overage off nothing past the plan's allowance reaches the payment meter, in chat or in the Conversation API; a usage count that cannot be read refuses the call instead of reading as 0, and the billing screen shows it as unavailable (#335, #354)
+- Canceling keeps paid access until the period ends, a failed renewal starts the grace period with an email, and a trial keeps running for a day while the provider's conversion is late (#336, #340)
+- "Subscription activated" is sent on the first paid order, not before the charge (#345, #352)
+- Public forms, comments, the Conversation API and MCP Cloud follow the billing plan and the overage lock; a locked workspace answers `402 payment_required` (#337, #341, #349, #352)
+- Overage cannot be turned on for a subscription that cannot bill it, and limit messages show credits and the reset date (#334)
+- Usage alerts by email; each meter shows its own reset date and overage price; members see usage read-only; cancel and pause notices (#343)
+- New: a paid Migrate order includes a Studio trial, claimed with a signed token, one grant per order; Migrate trials are capped at Starter credits (#342, #344, #350)
+- New: Opus 5.5; Studio-key trials keep to the non-premium models (#339, #344)
+- New: media on a separate CDN host, an origin-transfer limit per plan with a 20 % grace, and a daily GB meter (#351)
+- MCP Cloud write tools pause before the GitHub App's hourly budget runs out, so the editor keeps working (#346)
+- URL imports reserve workspace storage like every other upload path (#348)
+- Plan texts come from the catalog, so the agent no longer promises features a plan does not have (#347)
+- A save fast-forwards the content branch instead of writing a merge commit each time (#338)
+
+### 🚀 Enhancements
+
+- **billing:** Claim the Studio trial a Migrate order includes, one grant per order ([#342](https://github.com/Contentrain/studio/pull/342))
+- **ai:** Add Opus 5.5 in place of Opus 4.8, retire Sonnet 4.6, price cache reads per model ([#339](https://github.com/Contentrain/studio/pull/339))
+- **billing:** Close premium models in a Studio-key trial and cap Migrate trials at Starter credits ([#344](https://github.com/Contentrain/studio/pull/344))
+- **cdn:** Separate CDN host, origin-transfer limit and daily GB meter ([#351](https://github.com/Contentrain/studio/pull/351))
+- **billing:** Catalog v2 — $0.01 credits per account, PRC-3 numbers, pre-v2 subscriptions untouched ([#355](https://github.com/Contentrain/studio/pull/355))
+
+### 🩹 Fixes
+
+- **billing:** Never sell overage the subscription cannot bill, and say when credits come back ([#334](https://github.com/Contentrain/studio/pull/334))
+- **billing:** No metering past the allowance with overage off; bound each chat turn by its reserved credits ([#335](https://github.com/Contentrain/studio/pull/335))
+- **billing:** Keep paid access until a cancellation takes effect, and start grace when a renewal fails ([#336](https://github.com/Contentrain/studio/pull/336))
+- **billing:** Public APIs gate on the billing plan and honour the overage lock ([#337](https://github.com/Contentrain/studio/pull/337))
+- **git:** Fast-forward the content advance instead of writing a merge commit per save ([#338](https://github.com/Contentrain/studio/pull/338))
+- **billing:** Keep a trial running for a day past its end while the conversion webhook is late ([#340](https://github.com/Contentrain/studio/pull/340))
+- **billing:** Public surfaces answer a locked workspace with 402 payment required ([#341](https://github.com/Contentrain/studio/pull/341))
+- **billing:** Usage alerts, per-meter resets, overage prices, member read-only, cancel/paused notices ([#343](https://github.com/Contentrain/studio/pull/343))
+- **billing:** Send "subscription activated" on the first paid order, not on the status change ([#345](https://github.com/Contentrain/studio/pull/345))
+- **mcp-cloud:** Hold write tools back once the GitHub installation budget reaches the UI reserve ([#346](https://github.com/Contentrain/studio/pull/346))
+- **plans:** State plan availability from the catalog, not hard-coded text ([#347](https://github.com/Contentrain/studio/pull/347))
+- **media:** Reserve workspace storage before a URL import ([#348](https://github.com/Contentrain/studio/pull/348))
+- **billing:** Public 402 without billing state, consent payment-required, one recovery email, $0 conversion activates ([#352](https://github.com/Contentrain/studio/pull/352))
+- **billing:** Re-arm storage alerts once usage falls back below the threshold; prove the locked-workspace skip ([#353](https://github.com/Contentrain/studio/pull/353))
+- **billing:** Usage readers throw on a failed read; quota paths fail closed ([#354](https://github.com/Contentrain/studio/pull/354))
+- **billing:** Quote pre-v2 subscribers their own credit terms in the agent, plan card and key caps ([#356](https://github.com/Contentrain/studio/pull/356))
+
+### 🏡 Chore
+
+- **public-api:** Pin the 402 `payment_required` answer in the wire contract fixtures ([#349](https://github.com/Contentrain/studio/pull/349))
+- **migrate:** Verify the claim against `@contentrain/types` instead of a local copy ([#350](https://github.com/Contentrain/studio/pull/350))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.3
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.2...v0.4.3)
