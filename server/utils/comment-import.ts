@@ -1,8 +1,8 @@
 /**
  * Shared core of the WordPress comment import — used by the upload route
  * (`comments/import.post.ts`) and by the migration handoff intake, which
- * finds the same `contentrain-comments@1` export inside
- * `contentrain-handoff.json` (inline or by URL).
+ * finds the same `contentrain-comments@1` export inside the
+ * migration handoff (inline or by URL).
  */
 
 import type { CommentsExport, RawComment } from '@contentrain/types'

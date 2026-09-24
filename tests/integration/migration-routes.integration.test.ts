@@ -84,7 +84,7 @@ describe('migration handoff routes', () => {
     })
   })
 
-  it('sync reads contentrain-handoff.json from the repo, enriches repository, and stores it', async () => {
+  it('sync reads a legacy root contentrain-handoff.json from the repo, enriches repository, and stores it', async () => {
     const base = stubSession()
     const setProjectMigrationHandoff = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, setProjectMigrationHandoff }))
@@ -116,6 +116,50 @@ describe('migration handoff routes', () => {
         source: { path: 'contentrain-handoff.json', ref: 'contentrain' },
         comments: { kind: 'inline', bytes: expect.any(Number) },
       })
+    })
+  })
+
+  it('sync reads .contentrain/migrate/handoff.json first, and import-comments lands its inline export from there', async () => {
+    const base = stubSession()
+    const setProjectMigrationHandoff = vi.fn().mockResolvedValue(undefined)
+    const importComments = vi.fn().mockResolvedValue({ inserted: 2, skippedExisting: 0, orphanCount: 0, orphanParents: [], maxDepth: 1, threadsClosed: 0 })
+    const getProjectById = vi.fn()
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, setProjectMigrationHandoff, getProjectById, importComments }))
+    // A repo migrated before the move still has the root file; the new one wins.
+    const readFile = vi.fn(async (path: string, ref: string) => {
+      if (path === 'site/.contentrain/migrate/handoff.json' && ref === 'contentrain') return JSON.stringify(handoff)
+      if (path === 'contentrain-handoff.json') return JSON.stringify({ ...handoff, site_url: 'https://stale.example' })
+      throw new Error('404')
+    })
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
+      git: { readFile },
+      contentRoot: 'site',
+      project: { repo_full_name: 'acme/site', default_branch: 'main' },
+      workspace: { id: WORKSPACE },
+    }))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { locales: { default: 'en' } }, models: new Map() }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/migration/sync', handler: await loadSync() },
+        { path: '/api/workspaces/workspace-1/projects/project-1/migration/import-comments', handler: await loadImportComments() },
+      ],
+    }, async ({ request }) => {
+      const synced = await request('/api/workspaces/workspace-1/projects/project-1/migration/sync', { method: 'POST' })
+      expect(synced.status).toBe(200)
+      await expect(synced.json()).resolves.toMatchObject({ found: true, source: { path: 'site/.contentrain/migrate/handoff.json', ref: 'contentrain' } })
+      const stored = setProjectMigrationHandoff.mock.calls[0]![1] as StoredMigrationHandoff
+      expect(stored.site_url).toBe('https://carriedils.com')
+      expect(stored.comments).toEqual({ total: 2, export: { format: COMMENTS_EXPORT_FORMAT } })
+      expect(stored.studio_intake?.source).toEqual({ path: 'site/.contentrain/migrate/handoff.json', ref: 'contentrain' })
+
+      getProjectById.mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, migration_handoff: stored })
+      readFile.mockClear()
+      const imported = await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })
+      expect(imported.status).toBe(200)
+      await expect(imported.json()).resolves.toMatchObject({ received: 2, inserted: 2 })
+      expect(readFile.mock.calls).toEqual([['site/.contentrain/migrate/handoff.json', 'contentrain']])
+      expect(importComments).toHaveBeenCalledTimes(1)
     })
   })
 
