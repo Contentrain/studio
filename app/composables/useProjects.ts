@@ -27,22 +27,29 @@ export function useProjects() {
   /** The workspace `projects` was loaded for; null until the first load. */
   const loadedFor = useState<string | null>('projects-workspace', () => null)
 
-  async function fetchProjects(workspaceId: string) {
-    if (inflight?.workspaceId === workspaceId) return inflight.promise
+  /**
+   * `force`: always send a fresh request. A refresh after a write (a project
+   * just connected) must not join a request that started before the write —
+   * its answer would not have the new project.
+   */
+  async function fetchProjects(workspaceId: string, options: { force?: boolean } = {}) {
+    if (!options.force && inflight?.workspaceId === workspaceId) return inflight.promise
     loading.value = true
-    const request = (async () => {
+    // The token is what a later request replaces; checking it after the await
+    // keeps a slower answer for the workspace just left from replacing this one.
+    const token: { workspaceId: string, promise: Promise<void> } = { workspaceId, promise: Promise.resolve() }
+    inflight = token
+    token.promise = (async () => {
       const list = await $fetch<Project[]>(`/api/workspaces/${workspaceId}/projects`)
-      // A slower answer for the workspace we just left must not replace this one.
-      if (inflight?.promise !== request) return
+      if (inflight !== token) return
       projects.value = list
       loadedFor.value = workspaceId
     })()
-    inflight = { workspaceId, promise: request }
     try {
-      await request
+      await token.promise
     }
     finally {
-      if (inflight?.promise === request) {
+      if (inflight === token) {
         inflight = null
         loading.value = false
       }

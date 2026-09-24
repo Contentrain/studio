@@ -141,7 +141,7 @@ async function connectRepo() {
     })
 
     const { fetchProjects } = useProjects()
-    await fetchProjects(activeWorkspace.value.id)
+    await fetchProjects(activeWorkspace.value.id, { force: true })
 
     toast.success(t('projects.connected_success'))
     open.value = false

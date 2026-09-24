@@ -108,6 +108,23 @@ describe('useProjects', () => {
       expect(projects.loading.value).toBe(false)
     })
 
+    it('a forced refresh after a write sends its own request, and its answer wins', async () => {
+      const pending: Array<(v: unknown) => void> = []
+      vi.stubGlobal('$fetch', vi.fn(() => new Promise((r) => {
+        pending.push(r)
+      })))
+      const projects = useProjects()
+      const before = projects.ensureProjects('ws-1')
+      const after = projects.fetchProjects('ws-1', { force: true })
+      expect(pending).toHaveLength(2)
+      pending[1]!([row('new', 'ws-1'), row('p1', 'ws-1')])
+      await after
+      pending[0]!([row('p1', 'ws-1')])
+      await before
+      expect(projects.projects.value.map(p => p.id)).toEqual(['new', 'p1'])
+      expect(projects.loading.value).toBe(false)
+    })
+
     it('tries again after a failed load', async () => {
       const fetch = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue([row('p1', 'ws-1')])
       vi.stubGlobal('$fetch', fetch)
