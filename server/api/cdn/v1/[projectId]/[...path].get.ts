@@ -28,6 +28,9 @@ import { getEffectiveLimit } from '../../../../utils/overage'
  * shared/edge cache can never replay keyed content to keyless clients;
  * only keyless public media is shared-cacheable.
  */
+/** Inert: no script, no network, no navigation, no plugins — only the file's own inline styles and data images. */
+const MEDIA_CSP = 'default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; sandbox'
+
 export default defineEventHandler(async (event) => {
   const routeProjectId = getRouterParam(event, 'projectId')
   if (!routeProjectId)
@@ -179,6 +182,12 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'Content-Type', result.contentType)
   setResponseHeader(event, 'Cache-Control', cacheControl)
   setResponseHeader(event, 'ETag', result.etag)
+  // A media file is served as exactly the type it was stored as, and never runs as a document: an SVG opened
+  // directly from this host would otherwise execute on it. Sanitizing on the way in (svg-sanitize.ts) is the
+  // first line; this is the one that also covers files stored before it.
+  setResponseHeader(event, 'X-Content-Type-Options', 'nosniff')
+  if (isMediaBinary)
+    setResponseHeader(event, 'Content-Security-Policy', MEDIA_CSP)
   if (keyId)
     setResponseHeader(event, 'X-Contentrain-Key', keyId.substring(0, 8))
 

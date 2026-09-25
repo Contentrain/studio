@@ -287,6 +287,15 @@ export function createGitHubExtensions(octokit: Octokit, owner: string, repo: st
         }))
     },
 
+    async readBlob(sha: string): Promise<Buffer> {
+      // The git data API answers any blob up to GitHub's 100 MB ceiling, base64-encoded;
+      // the contents API would refuse past 1 MB and follow symlinks.
+      const { data } = await octokit.git.getBlob({ owner, repo, file_sha: sha })
+      if (data.encoding !== 'base64')
+        throw createError({ statusCode: 502, message: errorMessage('github.blob_encoding_unsupported', { encoding: data.encoding }) })
+      return Buffer.from(data.content, 'base64')
+    },
+
     async getPermissions(): Promise<RepoPermissions> {
       const { data } = await octokit.repos.get({ owner, repo })
       return {

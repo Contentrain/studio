@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
     status: body.hasContentrain === false ? 'setup' : 'active',
   })
 
-  // A repository produced by Contentrain Migrate carries `contentrain-handoff.json`;
+  // A repository produced by Contentrain Migrate carries a migration handoff;
   // pick it up now so the overview card and the agent see the migration on the
   // very first visit. Best-effort — a missing or malformed file never blocks the
   // connect (the project can re-sync from the overview card).
