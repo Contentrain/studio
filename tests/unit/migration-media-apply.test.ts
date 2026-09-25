@@ -87,8 +87,11 @@ describe('planMigrationMediaApply', () => {
     const same = await plan({ files: repo({ 'studio.json': contentOf(written.changes, 'studio.json')! }) })
     expect(same.counts.studioBinding).toBe('unchanged')
     expect(contentOf(same.changes, 'studio.json')).toBeUndefined()
-    const cdn = await plan({ mediaBaseUrl: 'https://cdn.studio.test' })
-    expect(JSON.parse(contentOf(cdn.changes, 'studio.json')!)).toEqual({ baseUrl: 'https://studio.test', mediaBaseUrl: 'https://cdn.studio.test', projectId: 'p-1' })
+    // mediaBaseUrl is the project's full delivery base; written only when media is served from another host.
+    const cdn = await plan({ mediaBaseUrl: 'https://cdn.studio.test/api/cdn/v1/p-1/' })
+    expect(JSON.parse(contentOf(cdn.changes, 'studio.json')!)).toEqual({ baseUrl: 'https://studio.test', mediaBaseUrl: 'https://cdn.studio.test/api/cdn/v1/p-1', projectId: 'p-1' })
+    const sameHost = await plan({ mediaBaseUrl: 'https://studio.test/api/cdn/v1/p-1' })
+    expect(JSON.parse(contentOf(sameHost.changes, 'studio.json')!)).toEqual({ baseUrl: 'https://studio.test', projectId: 'p-1' })
   })
 
   it('a value edited since the migration is reported as drifted and left as it is', async () => {

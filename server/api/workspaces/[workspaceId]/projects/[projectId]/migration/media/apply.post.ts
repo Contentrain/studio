@@ -25,6 +25,7 @@ import { createFeatureBranch, openWriteSnapshot, writeBase } from '~~/server/uti
 import { effectiveWorkflow } from '~~/server/utils/branch-approval'
 import { planMigrationMediaApply } from '~~/server/utils/migration-media-apply'
 import { readMigrationMediaManifest } from '~~/server/utils/migration-media'
+import { publicMediaBase } from '~~/server/utils/media-url'
 
 /** Every imported item in one read — a migration's media, not an unbounded list. */
 const IMPORTED_LIMIT = 50_000
@@ -71,7 +72,7 @@ export default defineEventHandler(async (event) => {
     root: found.root,
     imported,
     read: path => snapshot.reader.readFile(path).catch(() => null),
-    studio: { baseUrl: String(pub.siteUrl ?? ''), projectId, ...(pub.cdnUrl ? { mediaBaseUrl: String(pub.cdnUrl) } : {}) },
+    studio: { baseUrl: String(pub.siteUrl ?? ''), projectId, mediaBaseUrl: publicMediaBase(projectId) },
     deleteLocal,
   })
 

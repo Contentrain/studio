@@ -38,7 +38,12 @@ export interface MigrationMediaApplyInput {
   imported: ReadonlyMap<string, string>
   /** Reads a repository file at the write snapshot; null when absent. */
   read: (path: string) => Promise<string | null>
-  /** `mediaBaseUrl` only when media is served from another host than the Studio API (`cdnUrl`). */
+  /**
+   * `baseUrl`: the Studio API origin (forms, comments). `mediaBaseUrl`: the project's FULL media delivery
+   * base (`publicMediaBase`, e.g. `https://cdn.example/api/cdn/v1/<projectId>`), which the starter builds its
+   * image `remotePatterns` from (`<its path>/media/**`); written only when it is not the default derived from
+   * `baseUrl`, i.e. when media is served from a separate CDN host.
+   */
   studio: { baseUrl: string, projectId: string, mediaBaseUrl?: string }
   deleteLocal: boolean
 }
@@ -234,9 +239,11 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
   const bindingPath = projectPath(input.root, STUDIO_BINDING_FILE)
   const baseUrl = input.studio.baseUrl.replace(/\/+$/, '')
   const mediaBaseUrl = input.studio.mediaBaseUrl?.replace(/\/+$/, '')
+  // Written only when it differs from what the starter derives by default (`${baseUrl}/api/cdn/v1/${projectId}`).
+  const derived = `${baseUrl}/api/cdn/v1/${input.studio.projectId}`
   const binding = canonicalStringify({
     baseUrl,
-    ...(mediaBaseUrl && mediaBaseUrl !== baseUrl ? { mediaBaseUrl } : {}),
+    ...(mediaBaseUrl && mediaBaseUrl !== derived ? { mediaBaseUrl } : {}),
     projectId: input.studio.projectId,
   })
   if ((await input.read(bindingPath)) !== binding) {
