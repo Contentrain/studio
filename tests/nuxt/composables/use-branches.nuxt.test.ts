@@ -57,7 +57,7 @@ describe('useBranches', () => {
     const merged = await store.mergeBranch('workspace-1', 'project-1', 'cr/content/faq/en/1234567890-abcd')
 
     expect(merged).toBe(true)
-    expect(success).toHaveBeenCalledWith('Change merged')
+    expect(success).toHaveBeenCalledWith('Change merged', 'Your site picks it up on its next deploy.')
     expect(store.branches.value.map(branch => branch.name)).toEqual(['cr/content/blog/en/1234567890-efgh'])
   })
 
@@ -101,8 +101,14 @@ describe('useBranches', () => {
     // Merged from the editor's point of view: the branch leaves the list.
     expect(merged).toBe(true)
     expect(store.branches.value).toEqual([])
-    // But the publish state is said out loud, as a warning — not a success.
+    // But the publish state is said out loud, as a warning — not a success —
+    // with the pull request that has to be merged for the site to change.
     expect(warning).toHaveBeenCalledTimes(1)
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('not on your site yet'),
+      undefined,
+      { href: 'https://example.com/pr/7', label: 'Open the pull request' },
+    )
     expect(success).not.toHaveBeenCalled()
   })
 

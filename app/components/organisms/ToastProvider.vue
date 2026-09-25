@@ -53,6 +53,7 @@ function getStyle(variant: string): VariantStyle {
       :key="toast.id"
       class="group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-lg border border-secondary-200 bg-white p-4 shadow-lg before:absolute before:inset-y-0 before:left-0 before:w-1 dark:border-secondary-800 dark:bg-secondary-900"
       :class="getStyle(toast.variant).accent"
+      :duration="toast.link ? 12000 : undefined"
       @update:open="(open: boolean) => { if (!open) dismiss(toast.id) }"
     >
       <span
@@ -67,6 +68,16 @@ function getStyle(variant: string): VariantStyle {
         <ToastDescription v-if="toast.description" class="mt-0.5 text-sm text-muted">
           {{ toast.description }}
         </ToastDescription>
+        <a
+          v-if="toast.link"
+          :href="toast.link.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mt-1 inline-flex items-center gap-1 rounded text-sm font-medium text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-400"
+        >
+          {{ toast.link.label }}
+          <span class="icon-[annon--external-link] size-3.5" aria-hidden="true" />
+        </a>
       </div>
       <ToastClose
         class="shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-secondary-900 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:hover:text-secondary-100"

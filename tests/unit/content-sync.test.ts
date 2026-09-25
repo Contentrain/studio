@@ -80,6 +80,37 @@ describe('content sync', () => {
     expect(report.fastForward).toBe(false)
   })
 
+  it('carries the open advance PR on diverged and on content ahead (a protected base)', async () => {
+    const findOpenPR = vi.fn().mockResolvedValue({ id: '7', url: 'https://github.com/acme/site/pull/7' })
+    const diverged = await checkContentSync(git({ getMergeBase: vi.fn().mockResolvedValue('older-sha'), findOpenPR }))
+    expect(diverged).toMatchObject({ state: 'diverged', advancePullRequestUrl: 'https://github.com/acme/site/pull/7' })
+
+    const protectedBase = await checkContentSync(git({ getMergeBase: vi.fn().mockResolvedValue('base-sha'), findOpenPR }))
+    expect(protectedBase).toMatchObject({ state: 'content_ahead', advancePullRequestUrl: 'https://github.com/acme/site/pull/7' })
+    expect(findOpenPR).toHaveBeenCalledWith('contentrain', 'main')
+  })
+
+  it('reports no advance PR when none is open, when the lookup fails, or without the capability', async () => {
+    const none = await checkContentSync(git({ getMergeBase: vi.fn().mockResolvedValue('older-sha'), findOpenPR: vi.fn().mockResolvedValue(null) }))
+    expect(none.advancePullRequestUrl).toBeNull()
+    const failing = await checkContentSync(git({ getMergeBase: vi.fn().mockResolvedValue('older-sha'), findOpenPR: vi.fn().mockRejectedValue(new Error('403')) }))
+    expect(failing).toMatchObject({ state: 'diverged', advancePullRequestUrl: null })
+    const without = await checkContentSync(git({ getMergeBase: vi.fn().mockResolvedValue('base-sha') }))
+    expect(without.advancePullRequestUrl).toBeNull()
+  })
+
+  it('does not look for an advance PR when the branches agree', async () => {
+    const findOpenPR = vi.fn()
+    await checkContentSync(git({
+      listBranches: vi.fn().mockResolvedValue([
+        { name: 'contentrain', sha: 'same', protected: false },
+        { name: 'main', sha: 'same', protected: false },
+      ]),
+      findOpenPR,
+    }))
+    expect(findOpenPR).not.toHaveBeenCalled()
+  })
+
   it('says unknown rather than guessing', async () => {
     // A provider without the optional merge-base capability…
     const noCapability = await checkContentSync(git({ getMergeBase: undefined }))

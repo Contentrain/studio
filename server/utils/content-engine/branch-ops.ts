@@ -194,10 +194,22 @@ export async function finalizeContentrain(
 ): Promise<EngineMergeResult> {
   // Whatever the advance does next — succeed, reconcile, or fall back to a
   // PR — the standing content-sync reading is about to be wrong. Dropped
-  // before rather than after, so a read that races the advance re-derives
-  // instead of serving the answer from before the merge.
+  // before, so a read that races the advance re-derives instead of serving
+  // the answer from before the merge, and again after, so what that racing
+  // read cached mid-advance is not what the sidebar shows once it is done.
   if (ctx.projectId) await invalidateContentSync(ctx.projectId).catch(() => {})
+  try {
+    return await advanceContentrain(ctx, mergedBranches)
+  }
+  finally {
+    if (ctx.projectId) await invalidateContentSync(ctx.projectId).catch(() => {})
+  }
+}
 
+async function advanceContentrain(
+  ctx: EngineInternalContext,
+  mergedBranches: string[],
+): Promise<EngineMergeResult> {
   const lastBranch = mergedBranches.at(-1)
   if (lastBranch) {
     // Regenerate context.json on contentrain now that the content has
@@ -263,13 +275,17 @@ export async function finalizeContentrain(
     }
     catch (prError: unknown) {
       // GitHub answers 422 when a PR for this head/base already exists — the
-      // previous blocked advance opened it. Any other PR failure is logged,
-      // not thrown: the content landed, and turning a bookkeeping failure
-      // into a 500 would repeat the exact lie this function stopped telling.
+      // previous blocked advance opened it; point at that one, since the
+      // editor's next step is the same. Any other PR failure is logged, not
+      // thrown: the content landed, and turning a bookkeeping failure into a
+      // 500 would repeat the exact lie this function stopped telling.
       const prMsg = prError instanceof Error ? prError.message : String(prError)
       if (!prMsg.includes('already exists')) {
         // eslint-disable-next-line no-console
         console.warn(`[contentrain] could not open the ${CONTENT_BRANCH} → ${defaultBranch} PR:`, prMsg)
+      }
+      else if (ctx.git.findOpenPR) {
+        pullRequestUrl = (await ctx.git.findOpenPR(CONTENT_BRANCH, defaultBranch).catch(() => null))?.url ?? null
       }
     }
 
