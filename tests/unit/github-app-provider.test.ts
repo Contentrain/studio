@@ -20,6 +20,7 @@ const githubState = vi.hoisted(() => {
     },
     git: {
       getTree: vi.fn(),
+      getBlob: vi.fn(),
     },
     repos: {
       get: vi.fn(),
@@ -130,6 +131,26 @@ describe('github extensions (Studio-specific)', () => {
         hasI18n: false,
         suggestedContentPaths: { default: '.contentrain/content/{domain}/{model}/' },
       })
+    })
+  })
+
+  describe('createGitHubExtensions — readBlob', () => {
+    it('returns a blob\'s raw bytes by sha — binary-safe, unlike readFile', async () => {
+      const bytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF])
+      githubState.octokit.git.getBlob.mockResolvedValue({ data: { encoding: 'base64', content: bytes.toString('base64') } })
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+      await expect(ext.readBlob('abc123')).resolves.toEqual(bytes)
+      expect(githubState.octokit.git.getBlob).toHaveBeenCalledWith({ owner: 'contentrain', repo: 'studio', file_sha: 'abc123' })
+    })
+
+    it('an encoding it cannot decode is an error, never mangled bytes', async () => {
+      vi.stubGlobal('errorMessage', (key: string) => key)
+      vi.stubGlobal('createError', (input: { statusCode: number, message: string }) => Object.assign(new Error(input.message), { statusCode: input.statusCode }))
+      githubState.octokit.git.getBlob.mockResolvedValue({ data: { encoding: 'utf-8', content: 'x' } })
+      const { createGitHubExtensions } = await import('../../server/providers/github-app')
+      const ext = createGitHubExtensions(githubState.octokit as never, 'contentrain', 'studio')
+      await expect(ext.readBlob('abc123')).rejects.toMatchObject({ statusCode: 502, message: 'github.blob_encoding_unsupported' })
     })
   })
 
