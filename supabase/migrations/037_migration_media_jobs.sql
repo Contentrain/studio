@@ -16,8 +16,11 @@
 --             after an upgrade picks them up), or back to `running` with the
 --             lease released when a batch ends with work left.
 --
--- One open job per project (queued / running / paused_quota): a second start
--- returns the open one. Service-role only: RLS on, no policies.
+-- One open job per project (preparing / queued / running / paused_quota): a
+-- second start returns the open one. A job is written as `preparing` and only
+-- becomes `queued` once all its items are in, so a worker can never claim a
+-- job whose items are still arriving (and find it empty). Service-role only:
+-- RLS on, no policies.
 
 CREATE TABLE public.migration_media_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -28,7 +31,7 @@ CREATE TABLE public.migration_media_jobs (
   manifest_ref text NOT NULL,
   manifest_commit text,
   status text NOT NULL DEFAULT 'queued'
-    CHECK (status IN ('queued', 'running', 'paused_quota', 'done', 'failed', 'canceled')),
+    CHECK (status IN ('preparing', 'queued', 'running', 'paused_quota', 'done', 'failed', 'canceled')),
   total integer NOT NULL CHECK (total >= 0),
   done integer NOT NULL DEFAULT 0,
   failed integer NOT NULL DEFAULT 0,
@@ -44,7 +47,7 @@ CREATE TABLE public.migration_media_jobs (
 
 CREATE UNIQUE INDEX migration_media_jobs_one_open
   ON public.migration_media_jobs (project_id)
-  WHERE status IN ('queued', 'running', 'paused_quota');
+  WHERE status IN ('preparing', 'queued', 'running', 'paused_quota');
 CREATE INDEX idx_migration_media_jobs_claimable
   ON public.migration_media_jobs (created_at)
   WHERE status IN ('queued', 'running');

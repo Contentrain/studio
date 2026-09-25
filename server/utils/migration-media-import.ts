@@ -102,7 +102,7 @@ export function toMigrationMediaJobView(job: Record<string, unknown>, failures: 
   const failed = Number(job.failed ?? 0)
   return {
     id: String(job.id),
-    status: String(job.status) as 'queued' | 'running' | 'paused_quota' | 'done' | 'failed' | 'canceled',
+    status: String(job.status) as 'preparing' | 'queued' | 'running' | 'paused_quota' | 'done' | 'failed' | 'canceled',
     total,
     done,
     failed,

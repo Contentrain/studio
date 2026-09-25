@@ -23,7 +23,7 @@ type MigrationMediaMethods = Pick<
   | 'resumeMigrationMediaJob'
 >
 
-const OPEN = ['queued', 'running', 'paused_quota']
+const OPEN = ['preparing', 'queued', 'running', 'paused_quota']
 /** Rows per insert statement — well under Postgres's parameter ceiling. */
 const ITEM_CHUNK = 500
 

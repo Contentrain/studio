@@ -22,8 +22,10 @@ type MigrationMediaMethods = Pick<
   | 'resumeMigrationMediaJob'
 >
 
-const OPEN = ['queued', 'running', 'paused_quota']
+const OPEN = ['preparing', 'queued', 'running', 'paused_quota']
 const ITEM_CHUNK = 500
+/** A `preparing` job older than this was left by a start that did not finish. */
+const PREPARING_STALE_MS = 10 * 60_000
 
 function fail(message: string): never {
   throw createError({ statusCode: 500, message })
@@ -44,7 +46,10 @@ export function migrationMediaMethods(): MigrationMediaMethods {
   return {
     async createMigrationMediaJob(input) {
       const existing = await openJob(input.projectId)
-      if (existing) return { job: existing, created: false }
+      // A job left `preparing` by a start that died mid-insert would hold the project's one open slot forever.
+      const abandoned = existing?.status === 'preparing' && Date.parse(String(existing.updated_at)) < Date.now() - PREPARING_STALE_MS
+      if (existing && !abandoned) return { job: existing, created: false }
+      if (existing) await getAdmin().from('migration_media_jobs').delete().eq('id', existing.id).eq('status', 'preparing')
 
       const admin = getAdmin()
       const { data: job, error } = await admin
@@ -56,7 +61,8 @@ export function migrationMediaMethods(): MigrationMediaMethods {
           manifest_ref: input.manifestRef,
           manifest_commit: input.manifestCommit,
           total: input.items.length,
-          status: input.items.length === 0 ? 'done' : 'queued',
+          // Not claimable until every item is in: the worker only takes queued/running jobs.
+          status: input.items.length === 0 ? 'done' : 'preparing',
         })
         .select()
         .single()
@@ -88,7 +94,16 @@ export function migrationMediaMethods(): MigrationMediaMethods {
           fail(itemsError.message)
         }
       }
-      return { job: job as DatabaseRow, created: true }
+      if (input.items.length === 0) return { job: job as DatabaseRow, created: true }
+      const { data: queued, error: queueError } = await admin
+        .from('migration_media_jobs')
+        .update({ status: 'queued', updated_at: new Date().toISOString() })
+        .eq('id', job.id)
+        .eq('status', 'preparing')
+        .select()
+        .single()
+      if (queueError) fail(queueError.message)
+      return { job: queued as DatabaseRow, created: true }
     },
 
     async getMigrationMediaJob(projectId, jobId) {
