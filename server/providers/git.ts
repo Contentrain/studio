@@ -228,6 +228,11 @@ export interface GitProvider extends RepoProvider {
   /** Open a PR — merge fallback when direct merge is blocked by branch protection. */
   createPR: (head: string, base: string, title: string, body: string) => Promise<{ id: string, url: string }>
   mergePR: (id: string) => Promise<void>
+  /**
+   * The open PR from `head` into `base`, or null. Optional: without it Studio
+   * cannot point at an advance PR it did not open in this request.
+   */
+  findOpenPR?: (head: string, base: string) => Promise<{ id: string, url: string } | null>
 
   getPermissions: () => Promise<RepoPermissions>
   getBranchProtection: (branch: string) => Promise<BranchProtection | null>

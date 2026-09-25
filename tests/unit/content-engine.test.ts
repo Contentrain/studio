@@ -1751,6 +1751,23 @@ describe('mergeBranch split halves (W4)', () => {
     expect(result).toEqual({ merged: true, sha: null, pullRequestUrl: null, mainAdvance: 'blocked_diverged' })
   })
 
+  it('points at the advance PR that is already open, so the editor still gets the link', async () => {
+    const conflict = Object.assign(new Error('Merge conflict'), { status: 409 })
+    const git = createGitProvider({
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      mergeBranch: vi.fn().mockRejectedValue(conflict),
+      applyPlan: vi.fn().mockResolvedValue(defaultCommit),
+      createPR: vi.fn().mockRejectedValue(new Error('Validation Failed: A pull request already exists for contentrain.')),
+      findOpenPR: vi.fn().mockResolvedValue({ id: '7', url: 'https://github.com/acme/site/pull/7' }),
+    })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    const result = await engine.finalizeContentrain(['cr/content/faq/en/1234567890-abcd'])
+
+    expect(result).toEqual({ merged: true, sha: null, pullRequestUrl: 'https://github.com/acme/site/pull/7', mainAdvance: 'blocked_diverged' })
+    expect(git.findOpenPR).toHaveBeenCalledWith('contentrain', 'main')
+  })
+
   it('treats a second approve of an already-landed branch as success, not a 500', async () => {
     // Retry chain from the incident: step 1 landed and deleted the cr/*
     // branch, the advance failed, the user clicked Approve again — and the

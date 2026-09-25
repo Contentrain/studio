@@ -17,6 +17,14 @@ export interface ContentSyncReport {
   baseSha: string | null
   /** True only for `base_ahead`: syncing is a fast-forward, with nothing to decide. */
   fastForward: boolean
+  /**
+   * The open pull request that carries the content branch into the base one,
+   * when there is one. Its presence means the advance is waiting on a person —
+   * the base branch is protected or has diverged — so approved content is not
+   * on the site's branch until it is merged. Absent on readings cached before
+   * the field existed.
+   */
+  advancePullRequestUrl?: string | null
   checkedAt: string
 }
 

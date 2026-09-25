@@ -148,8 +148,12 @@ function selectModel(modelId: string) {
 const syncNote = computed(() => {
   const report = contentSync.value
   if (!isSyncNoteworthy(report) || !report) return null
+  if (report.advancePullRequestUrl) return t('sync.advance_pending', { base: report.baseBranch })
   return t(`sync.${report.state}`, { base: report.baseBranch })
 })
+
+/** Approved content waiting on a person (protected or diverged base) — warn, not inform. */
+const syncWarns = computed(() => contentSync.value?.state === 'diverged' || !!contentSync.value?.advancePullRequestUrl)
 
 function selectBranch(branchName: string) {
   const query: Record<string, string> = { branch: encodeURIComponent(branchName) }
@@ -310,17 +314,26 @@ function onProjectDeleted() {
         <div
           v-if="syncNote"
           class="mt-3 flex items-start gap-1.5 rounded-lg border px-2 py-1.5 text-[11px]"
-          :class="contentSync?.state === 'diverged'
+          :class="syncWarns
             ? 'border-warning-300 bg-warning-50 text-warning-700 dark:border-warning-800 dark:bg-warning-900/20 dark:text-warning-400'
             : 'border-secondary-200 text-muted dark:border-secondary-800'"
           role="status"
         >
           <span
             class="mt-px size-3 shrink-0"
-            :class="contentSync?.state === 'diverged' ? 'icon-[annon--alert-triangle]' : 'icon-[annon--arrow-swap]'"
+            :class="syncWarns ? 'icon-[annon--alert-triangle]' : 'icon-[annon--arrow-swap]'"
             aria-hidden="true"
           />
-          <span class="min-w-0">{{ syncNote }}</span>
+          <span class="min-w-0">
+            {{ syncNote }}
+            <a
+              v-if="contentSync?.advancePullRequestUrl"
+              :href="contentSync.advancePullRequestUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="mt-0.5 block rounded font-medium underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            >{{ t('sync.advance_pr_link') }}</a>
+          </span>
         </div>
 
         <!-- Pending branches -->

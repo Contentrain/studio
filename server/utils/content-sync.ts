@@ -156,7 +156,9 @@ export async function checkContentSync(git: GitProvider): Promise<ContentSyncRep
   const mergeBase = await git.getMergeBase(CONTENTRAIN_BRANCH, baseBranch).catch(() => null)
   if (!mergeBase) return unknown(baseBranch, contentSha, baseSha)
 
-  if (mergeBase === baseSha) return { ...base, state: 'content_ahead', fastForward: false }
+  // Content ahead is ordinary mid-turn, but with the advance PR open it is a
+  // base branch the advance could not move (protected) — waiting on a person.
+  if (mergeBase === baseSha) return { ...base, state: 'content_ahead', fastForward: false, advancePullRequestUrl: await openAdvancePR(git, baseBranch) }
 
   // The two states that warn the user are about CHANGES the content branch
   // lacks. A base tip that differs only by commits — a merge commit with the
@@ -165,7 +167,13 @@ export async function checkContentSync(git: GitProvider): Promise<ContentSyncRep
   if (await sameTree(git, contentSha, baseSha)) return { ...base, state: 'in_sync', fastForward: false }
 
   if (mergeBase === contentSha) return { ...base, state: 'base_ahead', fastForward: true }
-  return { ...base, state: 'diverged', fastForward: false }
+  return { ...base, state: 'diverged', fastForward: false, advancePullRequestUrl: await openAdvancePR(git, baseBranch) }
+}
+
+/** The advance PR a blocked merge opened (`finalizeContentrain`), if it is still open. */
+async function openAdvancePR(git: GitProvider, baseBranch: string): Promise<string | null> {
+  if (!git.findOpenPR) return null
+  return (await git.findOpenPR(CONTENTRAIN_BRANCH, baseBranch).catch(() => null))?.url ?? null
 }
 
 async function sameTree(git: GitProvider, a: string, b: string): Promise<boolean> {
