@@ -175,4 +175,33 @@ describe('planMigrationMediaApply', () => {
       'site/public/media/2024/a.png', 'site/public/media/2024/b.png', 'site/studio.json',
     ])
   })
+  it('files fetched from the old site: their old address is rewritten the same way; one not imported keeps it and is listed; their drift keeps no local file', async () => {
+    const OLD = 'https://old.example.com/wp-content/uploads/2024/big.mp4'
+    const GONE = 'https://old.example.com/wp-content/uploads/2024/other.mp4'
+    const VIDEO = `${STUDIO}/big.mp4`
+    const m = parseMigrationMediaManifest({
+      version: 1,
+      origin: 'https://old.example.com',
+      assets: manifest().assets,
+      studioRecommended: [
+        { url: OLD, reason: 'file-too-large', refs: [{ file: 'content/blog/en.json', pointer: '/post-1/video', match: 'exact' }, { file: 'content/blog/en.json', pointer: '/post-1/embed', match: 'contains' }, { file: 'content/blog/en.json', pointer: '/post-1/gone', match: 'exact' }] },
+        { url: GONE, reason: 'count-cap', refs: [{ file: 'content/blog/en.json', pointer: '/post-1/other', match: 'exact' }] },
+      ],
+    })
+    const post = { ...blog['post-1'], video: OLD, embed: `<!-- wp:video {"src":"${OLD.replace(/\//g, '\\/')}"} --><video src="${OLD}"></video>`, other: GONE, gone: 'edited' }
+    const { changes, counts } = await plan({
+      m,
+      deleteLocal: true,
+      files: repo({ 'content/blog/en.json': canonicalStringify({ 'post-1': post }) }),
+      imported: new Map([...imported, [OLD, VIDEO]]),
+    })
+    const written = JSON.parse(contentOf(changes, 'content/blog/en.json')!)['post-1']
+    expect(written.video).toBe(VIDEO)
+    expect(written.embed).toBe(`<!-- wp:video {"src":"${VIDEO.replace(/\//g, '\\/')}"} --><video src="${VIDEO}"></video>`)
+    expect(written.other).toBe(GONE)
+    expect(counts.originNotImported).toEqual([GONE])
+    expect(counts.drifted).toEqual([{ file: 'content/blog/en.json', pointer: '/post-1/gone', repoPath: OLD }])
+    // The local files' own references all moved: they go, whatever happened to an old-site reference.
+    expect(counts).toMatchObject({ keptBecause: null, deleted: 2 })
+  })
 })

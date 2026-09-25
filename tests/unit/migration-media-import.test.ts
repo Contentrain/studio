@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createServer } from 'node:http'
+import type { Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runMigrationMediaTick, startMigrationMediaImport, toMigrationMediaJobView } from '../../server/utils/migration-media-import'
 
 /**
@@ -12,8 +15,8 @@ import { runMigrationMediaTick, startMigrationMediaImport, toMigrationMediaJobVi
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4b00000000049454e44ae426082', 'hex')
 const svg = (n: number) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 ${n}"/></svg>`)
 
-interface Job { id: string, project_id: string, workspace_id: string, created_by: string, status: string, total: number, done: number, failed: number, deduped: number, bytes_done: number, error: string | null, claim_token: string | null, lease_until: number | null, created_at: string, finished_at: string | null }
-interface Item { job_id: string, repo_path: string, blob_sha: string, bytes: number, mime: string, width: number | null, height: number | null, alt: string | null, state: string, asset_id: string | null, delivery_url: string | null, deduped: boolean, error: string | null, status_code: number | null }
+interface Job { id: string, project_id: string, workspace_id: string, created_by: string, origin: string | null, status: string, total: number, done: number, failed: number, deduped: number, bytes_done: number, error: string | null, claim_token: string | null, lease_until: number | null, created_at: string, finished_at: string | null }
+interface Item { job_id: string, repo_path: string, blob_sha: string | null, source_url: string | null, attempts: number, retry_at: number | null, bytes: number, mime: string, width: number | null, height: number | null, alt: string | null, state: string, asset_id: string | null, delivery_url: string | null, deduped: boolean, error: string | null, status_code: number | null }
 
 function memoryStore() {
   const jobs: Job[] = []
@@ -23,12 +26,12 @@ function memoryStore() {
   return {
     jobs,
     items,
-    async createMigrationMediaJob(input: { projectId: string, workspaceId: string, createdBy: string, items: Array<{ repoPath: string, blobSha: string, bytes: number, mime: string, width?: number, height?: number, alt?: string }> }) {
+    async createMigrationMediaJob(input: { projectId: string, workspaceId: string, createdBy: string, origin?: string | null, items: Array<{ repoPath: string, blobSha?: string | null, sourceUrl?: string | null, bytes: number, mime: string, width?: number, height?: number, alt?: string }> }) {
       const existing = open(input.projectId)
       if (existing) return { job: existing, created: false }
-      const job: Job = { id: `job-${++n}`, project_id: input.projectId, workspace_id: input.workspaceId, created_by: input.createdBy, status: input.items.length ? 'queued' : 'done', total: input.items.length, done: 0, failed: 0, deduped: 0, bytes_done: 0, error: null, claim_token: null, lease_until: null, created_at: new Date().toISOString(), finished_at: null }
+      const job: Job = { id: `job-${++n}`, project_id: input.projectId, workspace_id: input.workspaceId, created_by: input.createdBy, origin: input.origin ?? null, status: input.items.length ? 'queued' : 'done', total: input.items.length, done: 0, failed: 0, deduped: 0, bytes_done: 0, error: null, claim_token: null, lease_until: null, created_at: new Date().toISOString(), finished_at: null }
       jobs.push(job)
-      for (const i of input.items) items.push({ job_id: job.id, repo_path: i.repoPath, blob_sha: i.blobSha, bytes: i.bytes, mime: i.mime, width: i.width ?? null, height: i.height ?? null, alt: i.alt ?? null, state: 'pending', asset_id: null, delivery_url: null, deduped: false, error: null, status_code: null })
+      for (const i of input.items) items.push({ job_id: job.id, repo_path: i.repoPath, blob_sha: i.blobSha ?? null, source_url: i.sourceUrl ?? null, attempts: 0, retry_at: null, bytes: i.bytes, mime: i.mime, width: i.width ?? null, height: i.height ?? null, alt: i.alt ?? null, state: 'pending', asset_id: null, delivery_url: null, deduped: false, error: null, status_code: null })
       return { job, created: true }
     },
     async claimMigrationMediaJob(now: Date, leaseSeconds: number) {
@@ -37,19 +40,28 @@ function memoryStore() {
       Object.assign(job, { status: 'running', claim_token: `tok-${++n}`, lease_until: now.getTime() + leaseSeconds * 1000 })
       return { ...job }
     },
-    async listPendingMigrationMediaItems(jobId: string, limit: number) {
-      return items.filter(i => i.job_id === jobId && i.state === 'pending').sort((a, b) => a.repo_path.localeCompare(b.repo_path)).slice(0, limit)
+    async listPendingMigrationMediaItems(jobId: string, limit: number, readyAt?: Date) {
+      return items.filter(i => i.job_id === jobId && i.state === 'pending' && (!readyAt || i.retry_at === null || i.retry_at <= readyAt.getTime())).sort((a, b) => a.repo_path.localeCompare(b.repo_path)).slice(0, limit)
     },
-    async settleMigrationMediaItem(input: { jobId: string, token: string, repoPath: string, ok: boolean, assetId?: string | null, deliveryUrl?: string | null, deduped?: boolean, error?: string | null, statusCode?: number | null }) {
+    async settleMigrationMediaItem(input: { jobId: string, token: string, repoPath: string, ok: boolean, assetId?: string | null, deliveryUrl?: string | null, deduped?: boolean, error?: string | null, statusCode?: number | null, bytes?: number | null }) {
       const job = jobs.find(j => j.id === input.jobId && j.claim_token === input.token)
       const item = items.find(i => i.job_id === input.jobId && i.repo_path === input.repoPath && i.state === 'pending')
       if (!job || !item) return false
+      if (input.ok && typeof input.bytes === 'number') item.bytes = input.bytes
+      item.retry_at = null
       Object.assign(item, { state: input.ok ? 'done' : 'failed', asset_id: input.assetId ?? null, delivery_url: input.deliveryUrl ?? null, deduped: !!input.deduped, error: input.error ?? null, status_code: input.statusCode ?? null })
       if (input.ok) job.done++
       else job.failed++
       if (input.ok && input.deduped) job.deduped++
       if (input.ok && !input.deduped) job.bytes_done += item.bytes
       return true
+    },
+    async deferMigrationMediaItem(input: { jobId: string, token: string, repoPath: string, error: string, statusCode?: number | null, retryAt: Date }) {
+      const job = jobs.find(j => j.id === input.jobId && j.claim_token === input.token)
+      const item = items.find(i => i.job_id === input.jobId && i.repo_path === input.repoPath && i.state === 'pending')
+      if (!job || !item) return null
+      Object.assign(item, { attempts: item.attempts + 1, retry_at: input.retryAt.getTime(), error: input.error, status_code: input.statusCode ?? null })
+      return item.attempts
     },
     async finishMigrationMediaJob(jobId: string, token: string, status: string, error: string | null) {
       const job = jobs.find(j => j.id === jobId && j.claim_token === token)
@@ -141,7 +153,7 @@ describe('migration media import', () => {
     const first = await start()
     expect(first.created).toBe(true)
     expect(store.items.map(i => i.repo_path)).toEqual(['public/media/a.png', 'public/media/b.svg', 'public/media/c.svg'])
-    expect(first.skipped).toEqual({ overSize: [], missing: [{ repoPath: 'public/media/gone.png', reason: 'not_in_repo' }], fontsKept: 1 })
+    expect(first.skipped).toEqual({ overSize: [], missing: [{ repoPath: 'public/media/gone.png', reason: 'not_in_repo' }], fontsKept: 1, onOrigin: { overSize: [], offOrigin: 0 } })
     const second = await start()
     expect(second).toMatchObject({ created: false, job: { id: first.job.id } })
   })
@@ -214,5 +226,122 @@ describe('migration media import', () => {
     await expect(start(noManifest as never)).rejects.toMatchObject({ statusCode: 404 })
     const noBlob = { ...fakeGit(files, manifest), readBlob: undefined }
     await expect(start(noBlob as never)).rejects.toMatchObject({ statusCode: 501 })
+  })
+})
+
+describe('migration media import — files still at the old site', () => {
+  let server: Server
+  let port: number
+  const hits: string[] = []
+  let busy = 0
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      hits.push(req.url ?? '')
+      if (req.url === '/wp-content/uploads/big.png') return res.writeHead(200, { 'content-type': 'image/png' }).end(PNG)
+      if (req.url === '/wp-content/uploads/flaky.png') {
+        if (busy-- > 0) return res.writeHead(503).end()
+        return res.writeHead(200, { 'content-type': 'image/png' }).end(PNG)
+      }
+      if (req.url === '/wp-content/uploads/page.png') return res.writeHead(200, { 'content-type': 'text/html' }).end('<html>')
+      res.writeHead(404).end()
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    port = (server.address() as AddressInfo).port
+  })
+  afterAll(() => new Promise<void>(resolve => server.close(() => resolve())))
+  beforeEach(() => {
+    hits.length = 0
+    busy = 0
+  })
+
+  const origin = () => `http://old.test:${port}`
+  const url = (name: string) => `${origin()}/wp-content/uploads/${name}`
+  const refTo = [{ file: 'content/blog/en.json', pointer: '/p1/body', match: 'contains' }]
+  const withOrigin = (onOrigin: Array<Record<string, unknown>>) => ({
+    version: 1,
+    origin: origin(),
+    assets: [asset('public/media/a.png', PNG, 'image/png')],
+    studioRecommended: onOrigin,
+  })
+  /** The old site is this test's local server: only here may `old.test` resolve to loopback and be reached. */
+  const originDeps = (git: ReturnType<typeof fakeGit>, extra: Record<string, unknown> = {}) => ({
+    ...deps(git),
+    originFetch: { resolve: async () => [{ address: '127.0.0.1', family: 4 }], isBlocked: (a: string) => a !== '127.0.0.1' },
+    ...extra,
+  })
+
+  it('queues the files on the origin\'s host (not another host, not over the file cap) and imports them by fetch', async () => {
+    const git = fakeGit({ 'public/media/a.png': PNG }, withOrigin([
+      { url: url('big.png'), reason: 'file-too-large', refs: refTo },
+      { url: 'https://cdn.elsewhere.test/x.png', reason: 'count-cap', refs: refTo },
+      { url: url('huge.mp4'), reason: 'file-too-large', bytes: 50 * 1024 * 1024, refs: refTo },
+    ]))
+    const { skipped } = await start(git)
+    expect(skipped.onOrigin).toEqual({ overSize: [{ url: url('huge.mp4'), bytes: 50 * 1024 * 1024 }], offOrigin: 1 })
+    expect(store.jobs[0]!.origin).toBe(origin())
+    expect(store.items.map(i => [i.repo_path, i.source_url])).toEqual([['public/media/a.png', null], [url('big.png'), url('big.png')]])
+
+    const tick = await runMigrationMediaTick(new Date(), originDeps(git))
+    expect(tick).toMatchObject({ settled: 2, deferred: 0, status: 'done' })
+    const fetched = store.items.find(i => i.source_url)!
+    expect(fetched).toMatchObject({ state: 'done', bytes: PNG.length })
+    expect(fetched.delivery_url).toMatch(/^https:\/\/studio\.test\/api\/cdn\/v1\/p-1\/media\/original\//)
+    expect(hits).toEqual(['/wp-content/uploads/big.png'])
+  })
+
+  it('a fetch that may pass is parked and retried; one that will not, fails the file', async () => {
+    busy = 1
+    const git = fakeGit({ 'public/media/a.png': PNG }, withOrigin([
+      { url: url('flaky.png'), reason: 'total-cap', refs: refTo },
+      { url: url('page.png'), reason: 'total-cap', refs: refTo },
+    ]))
+    await start(git)
+    const t0 = new Date()
+    const first = await runMigrationMediaTick(t0, originDeps(git))
+    expect(first).toMatchObject({ settled: 2, deferred: 1, status: 'running' })
+    const flaky = store.items.find(i => i.repo_path === url('flaky.png'))!
+    expect(flaky).toMatchObject({ state: 'pending', attempts: 1, status_code: 503, error: 'media.origin_fetch_failed' })
+    expect(store.items.find(i => i.repo_path === url('page.png'))).toMatchObject({ state: 'failed', error: 'media.origin_fetch_failed' })
+
+    // Before its retry time the parked file is not taken; after it, it is.
+    const early = await runMigrationMediaTick(t0, originDeps(git))
+    expect(early).toMatchObject({ settled: 0, deferred: 0, status: 'running' })
+    const later = await runMigrationMediaTick(new Date(flaky.retry_at! + 1), originDeps(git))
+    expect(later).toMatchObject({ settled: 1, status: 'done' })
+    expect(flaky.state).toBe('done')
+  })
+
+  it('after the last retry the file fails', async () => {
+    busy = 99
+    const git = fakeGit({}, { ...withOrigin([{ url: url('flaky.png'), reason: 'total-cap', refs: refTo }]), assets: [] })
+    await start(git)
+    for (let i = 0; i < 3; i++) {
+      const item = store.items[0]!
+      await runMigrationMediaTick(new Date((item.retry_at ?? Date.now()) + 1), originDeps(git))
+      expect(store.items[0]).toMatchObject({ state: 'pending', attempts: i + 1 })
+    }
+    await runMigrationMediaTick(new Date(store.items[0]!.retry_at! + 1), originDeps(git))
+    expect(store.items[0]).toMatchObject({ state: 'failed', status_code: 503 })
+    expect(store.jobs[0]).toMatchObject({ status: 'done', failed: 1 })
+  })
+
+  it('never fetches from an internal address with the real rule', async () => {
+    const git = fakeGit({}, { ...withOrigin([{ url: url('big.png'), reason: 'file-too-large', refs: refTo }]), assets: [] })
+    await start(git)
+    await runMigrationMediaTick(new Date(), { ...deps(git), originFetch: { resolve: async () => [{ address: '127.0.0.1', family: 4 }] } })
+    expect(store.items[0]).toMatchObject({ state: 'failed', error: 'media.origin_fetch_failed' })
+    expect(hits).toEqual([])
+  })
+
+  it('a batch takes no new file once half the lease is spent', async () => {
+    const git = fakeGit({}, { ...withOrigin([
+      { url: url('big.png'), reason: 'count-cap', refs: refTo },
+      { url: `${url('big.png')}?v=2`, reason: 'count-cap', refs: refTo },
+    ]), assets: [] })
+    await start(git)
+    let t = 0
+    const tick = await runMigrationMediaTick(new Date(), originDeps(git, { clock: () => (t += 100_000) }))
+    expect(tick).toMatchObject({ settled: 1, status: 'running' })
+    expect(store.items.filter(i => i.state === 'pending')).toHaveLength(1)
   })
 })

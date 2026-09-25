@@ -39,7 +39,8 @@ export async function runMigrationMediaRound(budgetMs = ROUND_BUDGET_MS): Promis
   let ticks = 0
   while (Date.now() - started < budgetMs) {
     const result = await runMigrationMediaTick()
-    if (!result.claimed) break
+    // Nothing to claim, or a job whose remaining files are all parked for a retry: wait for the next round.
+    if (!result.claimed || result.settled + result.deferred === 0) break
     ticks++
   }
   return ticks

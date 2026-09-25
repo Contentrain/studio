@@ -16,6 +16,15 @@
  * resuming after an upgrade continues from there. A crash mid-batch leaves the
  * lease to expire; the next tick takes the job over, and only still-pending
  * items are touched, so nothing is imported twice.
+ *
+ * Files Migrate left at the old site (`studioRecommended`, migration 038) are
+ * items too: fetched from the manifest's origin only (`fetchFromOrigin` —
+ * host-locked, private addresses refused at connect, no redirect elsewhere,
+ * size cap while streaming), then the same checks and ingest. A fetch that may
+ * pass (timeout, 5xx, 429, connection) parks the file for a retry
+ * (`MIGRATION_MEDIA_RETRY_DELAYS`) instead of failing it, and a batch stops
+ * taking files once half the lease is spent, so a slow origin never outlives
+ * the claim.
  */
 
 import type { GitProvider } from '~~/server/providers/git'
@@ -24,12 +33,20 @@ import type { Plan } from './license'
 import { createMediaIngestContext, ingestMediaBytes } from './media-bulk-ingest'
 import { inspectRepoMedia } from './media-ingest'
 import type { MigrationMediaPreflight } from './migration-media'
-import { planMigrationMediaPreflight, projectPath, readMigrationMediaManifest } from './migration-media'
+import { fetchableFromOrigin, planMigrationMediaPreflight, projectPath, readMigrationMediaManifest } from './migration-media'
+import { fetchFromOrigin, OriginFetchError } from './origin-fetch'
+import type { OriginFetchOptions } from './origin-fetch'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
 /** Files per claim: small enough to finish well inside the lease on a slow optimizer. */
 export const MIGRATION_MEDIA_BATCH = 25
 export const MIGRATION_MEDIA_LEASE_SECONDS = 5 * 60
+/** A batch takes no new file past this: with one fetch's deadline after it, still inside the lease. */
+export const MIGRATION_MEDIA_BATCH_BUDGET_MS = MIGRATION_MEDIA_LEASE_SECONDS * 1000 / 2
+/** One fetch from the old site, redirects included. */
+export const MIGRATION_MEDIA_FETCH_DEADLINE_MS = 60_000
+/** Waits before each retry of a fetch that may pass; after the last, the file fails. */
+export const MIGRATION_MEDIA_RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000]
 
 export interface StartMigrationMediaInput {
   projectId: string
@@ -46,7 +63,10 @@ export interface StartMigrationMediaInput {
 export interface StartMigrationMediaResult {
   job: Record<string, unknown>
   created: boolean
-  skipped: Pick<MigrationMediaPreflight, 'overSize' | 'missing' | 'fontsKept'>
+  skipped: Pick<MigrationMediaPreflight, 'overSize' | 'missing' | 'fontsKept'> & {
+    /** Files at the old site that are not fetched: over the file cap, or on another host. */
+    onOrigin: Pick<MigrationMediaPreflight['onOrigin'], 'overSize' | 'offOrigin'>
+  }
 }
 
 export async function startMigrationMediaImport(input: StartMigrationMediaInput): Promise<StartMigrationMediaResult> {
@@ -68,7 +88,7 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
   })
   const blobs = new Map(tree.filter(e => e.type === 'blob').map(e => [e.path, e]))
   const blocked = new Set([...preflight.overSize.map(a => a.repoPath), ...preflight.missing.map(a => a.repoPath)])
-  const items = found.manifest.assets
+  const items: Parameters<ReturnType<typeof useDatabaseProvider>['createMigrationMediaJob']>[0]['items'] = found.manifest.assets
     .filter(a => a.role === 'media' && !blocked.has(a.repoPath))
     .map(a => ({
       // Items carry the repository path — what the tree, the blob and a later deletion all use.
@@ -80,6 +100,12 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
       ...(a.height ? { height: Math.round(a.height) } : {}),
       ...(a.alt ? { alt: a.alt } : {}),
     }))
+  const originOverSize = new Set(preflight.onOrigin.overSize.map(f => f.url))
+  for (const file of found.manifest.onOrigin) {
+    if (!fetchableFromOrigin(found.manifest, file.url) || originOverSize.has(file.url)) continue
+    // Keyed by its address: that is what content refers to it by, and what the rewrite looks for.
+    items.push({ repoPath: file.url, sourceUrl: file.url, bytes: file.bytes ?? 0, mime: 'application/octet-stream' })
+  }
 
   const manifestCommit = await input.git.getBranchSha?.(found.ref).catch(() => null) ?? null
   const { job, created } = await db.createMigrationMediaJob({
@@ -88,12 +114,18 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
     createdBy: input.userId,
     manifestRef: found.ref,
     manifestCommit,
+    origin: found.manifest.origin ?? null,
     items,
   })
   return {
     job,
     created,
-    skipped: { overSize: preflight.overSize, missing: preflight.missing, fontsKept: preflight.fontsKept },
+    skipped: {
+      overSize: preflight.overSize,
+      missing: preflight.missing,
+      fontsKept: preflight.fontsKept,
+      onOrigin: { overSize: preflight.onOrigin.overSize, offOrigin: preflight.onOrigin.offOrigin },
+    },
   }
 }
 
@@ -123,11 +155,15 @@ export interface MigrationMediaTickDeps {
   resolveGit?: (workspaceId: string, projectId: string) => Promise<GitProvider>
   media?: MediaProvider | null
   resolvePlan?: (workspaceId: string) => Promise<Plan | null>
+  /** The fetch from the old site — only its resolver and address rule, for tests on a local server. */
+  originFetch?: Pick<OriginFetchOptions, 'resolve' | 'isBlocked' | 'idleMs'> & { deadlineMs?: number }
+  /** Clock for the batch budget. */
+  clock?: () => number
 }
 
 export type MigrationMediaTickResult
   = | { claimed: false }
-    | { claimed: true, jobId: string, settled: number, status: 'running' | 'paused_quota' | 'done' | 'failed' }
+    | { claimed: true, jobId: string, settled: number, deferred: number, status: 'running' | 'paused_quota' | 'done' | 'failed' }
 
 async function effectivePlan(workspaceId: string): Promise<Plan | null> {
   const db = useDatabaseProvider()
@@ -149,9 +185,10 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
   const token = String(job.claim_token)
   const projectId = String(job.project_id)
   const workspaceId = String(job.workspace_id)
+  let deferred = 0
   const finish = async (status: 'running' | 'paused_quota' | 'done' | 'failed', error: string | null, settled: number): Promise<MigrationMediaTickResult> => {
     await db.finishMigrationMediaJob(jobId, token, status, error, new Date())
-    return { claimed: true, jobId, settled, status }
+    return { claimed: true, jobId, settled, deferred, status }
   }
 
   const plan = await (deps.resolvePlan ?? effectivePlan)(workspaceId)
@@ -165,31 +202,73 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
   catch (error) {
     return finish('failed', (error as Error)?.message ?? 'git_unavailable', 0)
   }
-  if (typeof git.readBlob !== 'function')
-    return finish('failed', errorMessage('migration.media_repo_unsupported'), 0)
-
-  const ctx = await createMediaIngestContext({ projectId, workspaceId, plan, uploadedBy: String(job.created_by ?? ''), source: 'repo', media })
-  const items = await db.listPendingMigrationMediaItems(jobId, MIGRATION_MEDIA_BATCH)
+  const readBlob = git.readBlob?.bind(git)
+  const uploadedBy = String(job.created_by ?? '')
+  const ctx = await createMediaIngestContext({ projectId, workspaceId, plan, uploadedBy, source: 'repo', media })
+  // A fetched file is recorded as fetched from a URL, like any other.
+  const urlCtx = { ...ctx, source: 'url' as const }
+  const origin = typeof job.origin === 'string' ? job.origin : null
+  const clock = deps.clock ?? Date.now
+  const started = clock()
+  const items = await db.listPendingMigrationMediaItems(jobId, MIGRATION_MEDIA_BATCH, now)
   let settled = 0
 
   for (const item of items) {
+    // Past half the lease: leave the rest for the next claim rather than risk outliving this one.
+    if (clock() - started > MIGRATION_MEDIA_BATCH_BUDGET_MS) break
     const repoPath = String(item.repo_path)
+    const sourceUrl = typeof item.source_url === 'string' ? item.source_url : null
     let result
+    let stored: number | null = null
     try {
-      const buffer = await git.readBlob(String(item.blob_sha))
-      const remote = await inspectRepoMedia({
-        buffer,
-        repoPath,
-        declaredMime: String(item.mime),
-        maxBytes: ctx.maxBytes,
-        ...(item.width ? { width: Number(item.width) } : {}),
-        ...(item.height ? { height: Number(item.height) } : {}),
-      })
-      result = await ingestMediaBytes(ctx, { ref: repoPath, remote, ...(item.alt ? { alt: String(item.alt) } : {}) })
+      if (sourceUrl) {
+        if (!origin) throw createError({ statusCode: 400, message: errorMessage('media.origin_fetch_failed', { reason: 'off_origin' }) })
+        const fetched = await fetchFromOrigin(sourceUrl, origin, {
+          maxBytes: ctx.maxBytes,
+          deadlineMs: deps.originFetch?.deadlineMs ?? MIGRATION_MEDIA_FETCH_DEADLINE_MS,
+          ...deps.originFetch,
+        })
+        const remote = await inspectRepoMedia({ buffer: fetched.buffer, repoPath: new URL(fetched.url).pathname, maxBytes: ctx.maxBytes })
+        stored = remote.buffer.length
+        result = await ingestMediaBytes(urlCtx, { ref: sourceUrl, remote })
+      }
+      else {
+        if (!readBlob) throw createError({ statusCode: 501, message: errorMessage('migration.media_repo_unsupported') })
+        const buffer = await readBlob(String(item.blob_sha))
+        const remote = await inspectRepoMedia({
+          buffer,
+          repoPath,
+          declaredMime: String(item.mime),
+          maxBytes: ctx.maxBytes,
+          ...(item.width ? { width: Number(item.width) } : {}),
+          ...(item.height ? { height: Number(item.height) } : {}),
+        })
+        result = await ingestMediaBytes(ctx, { ref: repoPath, remote, ...(item.alt ? { alt: String(item.alt) } : {}) })
+      }
     }
     catch (error) {
-      const e = error as { message?: string, statusCode?: number }
-      result = { url: repoPath, ok: false, error: e?.message ?? 'failed', statusCode: e?.statusCode }
+      if (error instanceof OriginFetchError) {
+        const reason = errorMessage('media.origin_fetch_failed', { reason: error.code })
+        const attempts = Number(item.attempts ?? 0)
+        if (error.retryable && attempts < MIGRATION_MEDIA_RETRY_DELAYS_MS.length) {
+          const tries = await db.deferMigrationMediaItem({
+            jobId,
+            token,
+            repoPath,
+            error: reason,
+            statusCode: error.status ?? null,
+            retryAt: new Date(Date.now() + MIGRATION_MEDIA_RETRY_DELAYS_MS[attempts]!),
+          }, new Date())
+          if (tries === null) return { claimed: true, jobId, settled, deferred, status: 'running' }
+          deferred++
+          continue
+        }
+        result = { url: repoPath, ok: false, error: reason, statusCode: error.status ?? 400 }
+      }
+      else {
+        const e = error as { message?: string, statusCode?: number }
+        result = { url: repoPath, ok: false, error: e?.message ?? 'failed', statusCode: e?.statusCode }
+      }
     }
 
     // Out of room: this file stays pending and the job waits for more storage — resumed, it retries this one first.
@@ -206,12 +285,14 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
       deduped: result.deduped ?? false,
       error: result.ok ? null : (result.error ?? 'failed'),
       statusCode: result.ok ? null : (result.statusCode ?? null),
+      ...(result.ok && stored !== null ? { bytes: stored } : {}),
     }, new Date())
     // The lease was taken over (this batch outlived it): stop without touching the job again.
-    if (!accepted) return { claimed: true, jobId, settled, status: 'running' }
+    if (!accepted) return { claimed: true, jobId, settled, deferred, status: 'running' }
     settled++
   }
 
+  // Pending includes files parked for a retry: the job stays open until they are fetched or fail.
   const more = await db.listPendingMigrationMediaItems(jobId, 1)
   return finish(more.length > 0 ? 'running' : 'done', null, settled)
 }

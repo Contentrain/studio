@@ -6,7 +6,9 @@
  * and writes this manifest beside the handoff: every asset with its repository
  * path, the exact bytes and hash of the file it wrote, and every place content
  * refers to it (a file and an RFC 6901 pointer). Studio reads the files from
- * Git, not the old WordPress URLs — the site may already be gone.
+ * Git, not the old WordPress URLs — the site may already be gone. Only the
+ * files Migrate could not commit (`studioRecommended`) are still at the old
+ * address; those are fetched from the manifest's origin, and nowhere else.
  *
  * The manifest's shape is Migrate's (`packages/media/src/localize.ts`,
  * `MediaManifest`); this is Studio's reading of it. Required fields are
@@ -18,6 +20,7 @@
 import type { GitProvider, TreeEntry } from '~~/server/providers/git'
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { Plan } from './license'
+import { isOnOrigin } from './origin-fetch'
 import { getEffectiveLimit } from './overage'
 
 export const MEDIA_MANIFEST_PATH = '.contentrain/migrate/media.json'
@@ -52,10 +55,26 @@ export interface MigrationMediaAsset {
   refs: MigrationMediaRef[]
 }
 
+/**
+ * A file Migrate could not commit (over its repo caps: one file too large, the
+ * total or the count reached) and left at the old site's address — Migrate's
+ * `studioRecommended`. Content refers to it by that address (`url`); the
+ * import fetches it from the manifest's origin only.
+ */
+export interface MigrationMediaOriginFile {
+  url: string
+  reason: string
+  /** Known when Migrate measured it (a file over its size cap); otherwise learned on fetch. */
+  bytes?: number
+  refs: MigrationMediaRef[]
+}
+
 export interface MigrationMediaManifest {
   version: 1
   origin?: string
   assets: MigrationMediaAsset[]
+  /** Files still at the old site (`studioRecommended`); empty when Migrate committed everything. */
+  onOrigin: MigrationMediaOriginFile[]
 }
 
 const MATCHES = new Set<MediaRefMatch>(['exact', 'contains', 'relation'])
@@ -80,6 +99,14 @@ export function parseMigrationMediaManifest(raw: unknown): MigrationMediaManifes
   if (doc.version !== 1) return fail(`unsupported version ${JSON.stringify(doc.version)}`)
   if (!Array.isArray(doc.assets)) return fail('assets is not a list')
 
+  const parseRefs = (list: unknown[], at: string): MigrationMediaRef[] => list.map((r, j): MigrationMediaRef => {
+    const ref = r as Record<string, unknown> | null
+    if (!ref || typeof ref.file !== 'string' || !safeRepoPath(ref.file)) return fail(`${at}.refs[${j}].file`)
+    if (typeof ref.pointer !== 'string' || (ref.pointer !== '' && !ref.pointer.startsWith('/'))) return fail(`${at}.refs[${j}].pointer`)
+    if (typeof ref.match !== 'string' || !MATCHES.has(ref.match as MediaRefMatch)) return fail(`${at}.refs[${j}].match`)
+    return { file: ref.file, pointer: ref.pointer, match: ref.match as MediaRefMatch }
+  })
+
   const seen = new Set<string>()
   const assets = doc.assets.map((value, i): MigrationMediaAsset => {
     const at = `assets[${i}]`
@@ -95,13 +122,7 @@ export function parseMigrationMediaManifest(raw: unknown): MigrationMediaManifes
     if (typeof a.bytes !== 'number' || !Number.isInteger(a.bytes) || a.bytes < 0) return fail(`${at}.bytes`)
     if (typeof a.mime !== 'string' || !a.mime) return fail(`${at}.mime`)
     if (!Array.isArray(a.refs)) return fail(`${at}.refs`)
-    const refs = a.refs.map((r, j): MigrationMediaRef => {
-      const ref = r as Record<string, unknown> | null
-      if (!ref || typeof ref.file !== 'string' || !safeRepoPath(ref.file)) return fail(`${at}.refs[${j}].file`)
-      if (typeof ref.pointer !== 'string' || (ref.pointer !== '' && !ref.pointer.startsWith('/'))) return fail(`${at}.refs[${j}].pointer`)
-      if (typeof ref.match !== 'string' || !MATCHES.has(ref.match as MediaRefMatch)) return fail(`${at}.refs[${j}].match`)
-      return { file: ref.file, pointer: ref.pointer, match: ref.match as MediaRefMatch }
-    })
+    const refs = parseRefs(a.refs, at)
     const dim = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined)
     return {
       id: typeof a.id === 'string' && a.id ? a.id : a.sha256.slice(0, 16),
@@ -119,7 +140,33 @@ export function parseMigrationMediaManifest(raw: unknown): MigrationMediaManifes
     }
   })
 
-  return { version: 1, ...(typeof doc.origin === 'string' ? { origin: doc.origin } : {}), assets }
+  const recommended = doc.studioRecommended ?? []
+  if (!Array.isArray(recommended)) return fail('studioRecommended is not a list')
+  const seenUrls = new Set<string>()
+  const onOrigin = recommended.map((value, i): MigrationMediaOriginFile => {
+    const at = `studioRecommended[${i}]`
+    if (!value || typeof value !== 'object') return fail(`${at} is not an object`)
+    const r = value as Record<string, unknown>
+    if (typeof r.url !== 'string' || r.url.length > 2048 || !/^https?:\/\//i.test(r.url) || !URL.canParse(r.url)) return fail(`${at}.url`)
+    if (seenUrls.has(r.url)) return fail(`${at}.url is listed twice`)
+    seenUrls.add(r.url)
+    if (r.bytes !== undefined && (typeof r.bytes !== 'number' || !Number.isInteger(r.bytes) || r.bytes < 0)) return fail(`${at}.bytes`)
+    if (!Array.isArray(r.refs)) return fail(`${at}.refs`)
+    return {
+      url: r.url,
+      reason: typeof r.reason === 'string' ? r.reason.slice(0, 64) : 'unknown',
+      ...(typeof r.bytes === 'number' ? { bytes: r.bytes } : {}),
+      refs: parseRefs(r.refs, at),
+    }
+  })
+
+  return { version: 1, ...(typeof doc.origin === 'string' ? { origin: doc.origin } : {}), assets, onOrigin }
+}
+
+/** Whether a file left at the old site can be fetched: on the manifest origin's host, over http(s). */
+export function fetchableFromOrigin(manifest: Pick<MigrationMediaManifest, 'origin'>, url: string): boolean {
+  if (!manifest.origin || !URL.canParse(manifest.origin) || !URL.canParse(url)) return false
+  return isOnOrigin(new URL(url), new URL(manifest.origin))
 }
 
 /** The manifest from the project's content branch (or default branch), or null when Migrate wrote none. */
@@ -173,6 +220,17 @@ export interface MigrationMediaPreflight {
   fontsKept: number
   /** How many content places refer to the assets — what a later rewrite touches. */
   refs: number
+  /** Files still at the old site's address, fetched from its origin by the same import. */
+  onOrigin: {
+    /** Fetchable: on the origin's host, and not over the plan's file cap as far as known. */
+    count: number
+    /** What Migrate measured of them; the rest is learned on fetch. */
+    knownBytes: number
+    overSize: Array<{ url: string, bytes: number }>
+    /** On another host (a CDN, another site): not fetched, left as they are. */
+    offOrigin: number
+    refs: number
+  }
   limits: {
     maxFileBytes: number | null
     storageBytes: number | null
@@ -235,15 +293,33 @@ export function planMigrationMediaPreflight(input: {
     movableBytes += asset.bytes
   }
 
+  const onOrigin: MigrationMediaPreflight['onOrigin'] = { count: 0, knownBytes: 0, overSize: [], offOrigin: 0, refs: 0 }
+  for (const file of input.manifest.onOrigin) {
+    if (!fetchableFromOrigin(input.manifest, file.url)) {
+      onOrigin.offOrigin++
+      continue
+    }
+    const bytes = file.bytes ?? 0
+    largest = Math.max(largest, bytes)
+    if (maxFileBytes !== null && bytes > maxFileBytes) {
+      onOrigin.overSize.push({ url: file.url, bytes })
+      continue
+    }
+    onOrigin.count++
+    onOrigin.knownBytes += bytes
+    onOrigin.refs += file.refs.length
+    movableBytes += bytes
+  }
+
   const usedBytes = Math.max(0, input.usedBytes)
   const remainingBytes = storageBytes === null ? null : Math.max(0, storageBytes - usedBytes)
   const fits = remainingBytes === null || movableBytes <= remainingBytes
   const totalBytes = media.reduce((sum, a) => sum + a.bytes, 0)
 
   let upgrade: MigrationMediaPreflight['upgrade'] = null
-  if (!fits || overSize.length > 0) {
+  if (!fits || overSize.length > 0 || onOrigin.overSize.length > 0) {
     const current = SOLD_PLANS.indexOf(input.plan as typeof SOLD_PLANS[number])
-    const need = usedBytes + movableBytes + overSize.reduce((sum, a) => sum + a.bytes, 0)
+    const need = usedBytes + movableBytes + [...overSize, ...onOrigin.overSize].reduce((sum, a) => sum + a.bytes, 0)
     for (const candidate of SOLD_PLANS.slice(current + 1)) {
       const file = limitBytes(getPlanLimitForPlan(candidate, 'media.max_file_size_mb'), MB)
       const storage = limitBytes(getPlanLimitForPlan(candidate, 'media.storage_gb'), GB)
@@ -261,6 +337,7 @@ export function planMigrationMediaPreflight(input: {
     missing,
     fontsKept: input.manifest.assets.length - media.length,
     refs: media.reduce((sum, a) => sum + a.refs.length, 0),
+    onOrigin,
     limits: { maxFileBytes, storageBytes },
     storage: { usedBytes, remainingBytes },
     fits,
