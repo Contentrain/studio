@@ -51,6 +51,7 @@ function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: st
     }),
     applyPlan,
     deleteBranch,
+    getTree: vi.fn(async () => Object.keys(files).map(path => ({ path, type: 'blob', sha: path, size: files[path]!.length }))),
   }
   helpers.openWriteSnapshot.mockResolvedValue({ baseSha: 'base-sha', reader: { readFile: async (path: string) => files[path] ?? Promise.reject(new Error('nf')) } })
   vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git, contentRoot: '', workspace: { plan: 'pro' }, project: { default_branch: 'main' } }))
@@ -95,6 +96,11 @@ describe('migration media apply route', () => {
       ['content/blog/en.json', false], ['public/media/a.png', true], ['studio.json', false],
     ])
     expect(mergeBranch).toHaveBeenCalledWith('cr/media/migration/1')
+    // What a reviewer reads on the branch names every site file it touches.
+    const message = (applyPlan.mock.calls[0]![0] as { message: string }).message
+    expect(message).toContain('Site file: studio.json')
+    expect(message).toContain('Removed 1 local media files')
+    expect(message).toContain('  - public/media/a.png')
   })
 
   it('review workflow: the branch is left pending for a reviewer', async () => {

@@ -19,6 +19,7 @@
  *   → 409 migration.media_import_not_done · migration.media_apply_conflict
  */
 
+import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { EngineMergeResult } from '~~/server/utils/content-engine/types'
 import { STUDIO_AUTHOR } from '~~/server/utils/content-engine/types'
 import { createFeatureBranch, openWriteSnapshot, writeBase } from '~~/server/utils/content-engine/helpers'
@@ -26,6 +27,30 @@ import { effectiveWorkflow } from '~~/server/utils/branch-approval'
 import { planMigrationMediaApply } from '~~/server/utils/migration-media-apply'
 import { readMigrationMediaManifest } from '~~/server/utils/migration-media'
 import { publicMediaBase } from '~~/server/utils/media-url'
+
+/** Files listed by name in the commit a reviewer reads; the rest are counted. */
+const LISTED = 50
+
+/**
+ * What a reviewer reads on the branch: the content rewrite in numbers, and every site file it touches by
+ * name — studio.json and each local file it removes — so nothing outside content changes unseen.
+ */
+function commitMessage(counts: Awaited<ReturnType<typeof planMigrationMediaApply>>['counts'], email: string): string {
+  const lines = [
+    'contentrain: move migrated media to Studio',
+    '',
+    `Content: ${counts.rewritten} references in ${counts.filesChanged} files now point at Studio Media.`,
+  ]
+  if (counts.drifted.length) lines.push(`Left as they are (changed since the migration): ${counts.drifted.length} references.`)
+  if (counts.studioBinding === 'written') lines.push('Site file: studio.json (Studio binding for images, forms and comments).')
+  if (counts.deletedPaths.length) {
+    lines.push(`Removed ${counts.deletedPaths.length} local media files (nothing in the project refers to them any more):`)
+    lines.push(...counts.deletedPaths.slice(0, LISTED).map(p => `  - ${p}`))
+    if (counts.deletedPaths.length > LISTED) lines.push(`  … and ${counts.deletedPaths.length - LISTED} more`)
+  }
+  lines.push('', `Co-Authored-By: ${email}`)
+  return lines.join('\n')
+}
 
 /** Every imported item in one read — a migration's media, not an unbounded list. */
 const IMPORTED_LIMIT = 50_000
@@ -74,6 +99,8 @@ export default defineEventHandler(async (event) => {
     read: path => snapshot.reader.readFile(path).catch(() => null),
     studio: { baseUrl: String(pub.siteUrl ?? ''), projectId, mediaBaseUrl: publicMediaBase(projectId) },
     deleteLocal,
+    // Read only when a deletion is otherwise allowed: the whole project is searched for the local URLs first.
+    listFiles: async () => (await git.getTree(snapshot.baseSha ?? CONTENTRAIN_BRANCH)).filter(e => e.type === 'blob'),
   })
 
   if (dryRun) return { status: 'dry_run', counts }
@@ -87,13 +114,7 @@ export default defineEventHandler(async (event) => {
   const commit = await git.applyPlan({
     branch: branchName,
     changes,
-    message: [
-      'contentrain: move migrated media to Studio',
-      '',
-      `${counts.rewritten} references in ${counts.filesChanged} files; studio.json ${counts.studioBinding}; ${counts.deleted} local files removed`,
-      '',
-      `Co-Authored-By: ${session.user.email ?? ''}`,
-    ].join('\n'),
+    message: commitMessage(counts, session.user.email ?? ''),
     author: STUDIO_AUTHOR,
     base: writeBase(snapshot),
   })

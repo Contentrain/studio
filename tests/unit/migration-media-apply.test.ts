@@ -53,7 +53,7 @@ const repo = (over: Record<string, string | null> = {}): Record<string, string |
 })
 const imported = new Map([['public/media/2024/a.png', A], ['public/media/2024/b.png', B]])
 
-async function plan(opts: { files?: Record<string, string | null>, imported?: Map<string, string>, deleteLocal?: boolean, root?: string, m?: ReturnType<typeof manifest>, mediaBaseUrl?: string } = {}) {
+async function plan(opts: { files?: Record<string, string | null>, imported?: Map<string, string>, deleteLocal?: boolean, root?: string, m?: ReturnType<typeof manifest>, mediaBaseUrl?: string, noList?: boolean } = {}) {
   const files = opts.files ?? repo()
   return planMigrationMediaApply({
     manifest: opts.m ?? manifest(),
@@ -62,6 +62,7 @@ async function plan(opts: { files?: Record<string, string | null>, imported?: Ma
     read: async path => files[path] ?? null,
     studio: { baseUrl: 'https://studio.test/', projectId: 'p-1', ...(opts.mediaBaseUrl ? { mediaBaseUrl: opts.mediaBaseUrl } : {}) },
     deleteLocal: opts.deleteLocal ?? false,
+    ...(opts.noList ? {} : { listFiles: async () => Object.keys(files).filter(k => files[k] !== null).map(path => ({ path, size: files[path]!.length })) }),
   })
 }
 
@@ -133,6 +134,34 @@ describe('planMigrationMediaApply', () => {
     const remaining = await plan({ deleteLocal: true, files: repo({ 'content/blog/en.json': extra }) })
     expect(remaining.counts.keptBecause).toBe('remaining_refs')
     expect(remaining.counts.remaining).toEqual([{ file: 'content/blog/en.json', url: '/media/2024/b.png' }])
+  })
+
+  it('before deleting, the site\'s own code, styles and config are searched too — not only the files the manifest lists', async () => {
+    const withSite = (extra: Record<string, string>) => repo({ '.contentrain/migrate/media.json': '{"assets":[{"localUrl":"/media/2024/a.png"}]}', ...extra })
+    // The manifest itself names every local URL; it is not a reference.
+    expect((await plan({ deleteLocal: true, files: withSite({}) })).counts.keptBecause).toBeNull()
+    for (const [path, text] of [
+      ['src/components/Hero.astro', '<img src="/media/2024/a.png" alt="">'],
+      ['src/styles/global.css', '.hero { background: url(/media/2024/b.png) }'],
+      ['public/_headers', '/media/2024/a.png\n  Cache-Control: max-age=31536000'],
+      ['astro.config.mjs', 'const logo = "/media/2024/b.png"'],
+    ] as const) {
+      const { counts, changes } = await plan({ deleteLocal: true, files: withSite({ [path]: text }) })
+      expect(counts.keptBecause, path).toBe('remaining_refs')
+      expect(counts.remaining.map(r => r.file), path).toEqual([path])
+      expect(changes.some(c => c.content === null), path).toBe(false)
+    }
+    // A look-alike name is not a reference.
+    expect((await plan({ deleteLocal: true, files: withSite({ 'src/x.astro': '<img src="/media/2024/a.png-300x200.png">' }) })).counts.keptBecause).toBeNull()
+  })
+
+  it('a project that cannot be searched (no file list, or too many files) keeps its local files', async () => {
+    expect((await plan({ deleteLocal: true, noList: true })).counts.keptBecause).toBe('too_large_to_verify')
+    const many: Record<string, string> = {}
+    for (let i = 0; i <= 1500; i++) many[`src/gen/f${i}.ts`] = 'export {}'
+    const { counts, changes } = await plan({ deleteLocal: true, files: repo(many) })
+    expect(counts.keptBecause).toBe('too_large_to_verify')
+    expect(changes.some(c => c.content === null)).toBe(false)
   })
 
   it('a project in a subdirectory: every path is under its root', async () => {

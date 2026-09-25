@@ -46,7 +46,21 @@ export interface MigrationMediaApplyInput {
    */
   studio: { baseUrl: string, projectId: string, mediaBaseUrl?: string }
   deleteLocal: boolean
+  /**
+   * Every file at the write snapshot (repository paths, with sizes). Before deleting, every text file in the
+   * project is searched for the local URLs — the site's own code, styles and config refer to media too
+   * (`<img src="/media/…">` in a component, `url(/media/…)` in CSS, `_headers`), and the manifest lists
+   * content references only. Without it nothing is deleted.
+   */
+  listFiles?: () => Promise<Array<{ path: string, size?: number }>>
 }
+
+/** Files a site can mention a media URL in. Binary files and the migration's own records are not read. */
+const TEXT_FILE = /\.(?:astro|[cm]?[jt]sx?|vue|svelte|css|scss|sass|less|html?|mdx?|json|ya?ml|toml|txt|xml|svg)$|(?:^|\/)_(?:headers|redirects)$/i
+const SKIP_DIR = /(?:^|\/)(?:node_modules|dist|\.astro|\.git|\.contentrain\/migrate|\.contentrain\/client)\//
+/** Past this many files, or files this large, the project is not searched and nothing is deleted. */
+export const DELETE_SCAN_MAX_FILES = 1500
+const DELETE_SCAN_MAX_BYTES = 2 * 1024 * 1024
 
 export interface MigrationMediaApplyCounts {
   filesChanged: number
@@ -60,7 +74,9 @@ export interface MigrationMediaApplyCounts {
   studioBinding: 'written' | 'unchanged'
   deleted: number
   /** Why local files were kept, when deletion was asked for. */
-  keptBecause: 'not_requested' | 'not_all_imported' | 'drifted' | 'remaining_refs' | null
+  keptBecause: 'not_requested' | 'not_all_imported' | 'drifted' | 'remaining_refs' | 'too_large_to_verify' | null
+  /** Files the deletion would remove (only when it goes ahead). */
+  deletedPaths: string[]
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -119,6 +135,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
     studioBinding: 'unchanged',
     deleted: 0,
     keptBecause: null,
+    deletedPaths: [],
   }
   const files = new Map<string, OpenFile | null>()
   const open = async (file: string): Promise<OpenFile | null> => {
@@ -260,10 +277,44 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
         : counts.remaining.length > 0
           ? 'remaining_refs'
           : null
+  if (counts.keptBecause === null)
+    counts.keptBecause = await scanProjectForLocalUrls(input, files, moved.map(m => m.localUrl), counts)
   if (counts.keptBecause === null) {
     for (const asset of media) changes.push({ path: projectPath(input.root, asset.repoPath), content: null })
     counts.deleted = media.length
+    counts.deletedPaths = media.map(a => projectPath(input.root, a.repoPath)).sort()
   }
 
   return { changes: changes.sort((a, b) => a.path.localeCompare(b.path)), counts }
+}
+
+/**
+ * The last guard before deleting: no text file anywhere in the project still
+ * names a local media URL. The referencing files were already checked after
+ * their rewrite; this reads the rest at the same snapshot.
+ */
+async function scanProjectForLocalUrls(
+  input: MigrationMediaApplyInput,
+  opened: Map<string, unknown>,
+  urls: string[],
+  counts: MigrationMediaApplyCounts,
+): Promise<MigrationMediaApplyCounts['keptBecause']> {
+  if (!input.listFiles) return 'too_large_to_verify'
+  const prefix = input.root ? `${input.root}/` : ''
+  const candidates = (await input.listFiles()).filter(f =>
+    f.path.startsWith(prefix)
+    && !opened.has(f.path)
+    && TEXT_FILE.test(f.path)
+    && !SKIP_DIR.test(`/${f.path.slice(prefix.length)}`)
+    && !f.path.slice(prefix.length).startsWith('public/media/'))
+  if (candidates.length > DELETE_SCAN_MAX_FILES || candidates.some(f => (f.size ?? 0) > DELETE_SCAN_MAX_BYTES))
+    return 'too_large_to_verify'
+  for (const file of candidates) {
+    const text = await input.read(file.path)
+    if (text === null) continue
+    for (const url of urls) {
+      if (hasOccurrence(text, url)) counts.remaining.push({ file: file.path, url })
+    }
+  }
+  return counts.remaining.length > 0 ? 'remaining_refs' : null
 }

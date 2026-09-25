@@ -846,6 +846,7 @@
   "migration.media_kept_drifted": "The repository copies stay: some references changed since the migration.",
   "migration.media_kept_not_all_imported": "The repository copies stay: not every file was moved.",
   "migration.media_kept_remaining_refs": "The repository copies stay: some content still points at them.",
+  "migration.media_kept_too_large_to_verify": "The repository copies stay: the project is too large to check that nothing points at them.",
   "migration.media_missing": "{count} listed files are not in the repository as listed and would be skipped",
   "migration.media_move": "Move {count} images ({size}) to Studio Media",
   "migration.media_needs_plan": "Moving media into Studio needs a plan with media storage.",
