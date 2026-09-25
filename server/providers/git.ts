@@ -185,6 +185,14 @@ export interface GitProvider extends RepoProvider {
   getTree: (ref?: string) => Promise<TreeEntry[]>
 
   /**
+   * A blob's raw bytes by its sha (from `getTree`). `readFile` is text-only —
+   * it decodes to a string — so a binary file (an image a migration committed)
+   * is read here. Optional: a provider without it cannot import media from the
+   * repository, and says so rather than corrupting the bytes.
+   */
+  readBlob?: (sha: string) => Promise<Buffer>
+
+  /**
    * Current commit sha of `branch`, or null when it does not exist. The
    * content write path pins its reads to this commit and passes it to
    * `applyPlan` as `base` (#285): a write rewrites whole files from what it

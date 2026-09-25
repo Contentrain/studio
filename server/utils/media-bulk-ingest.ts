@@ -114,24 +114,143 @@ function errorDetails(error: unknown): { message: string, statusCode?: number } 
   return { message: 'failed' }
 }
 
-export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkIngestReport> {
-  const resolved = input.media ?? useMediaProvider()
-  if (!resolved)
-    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
-  const media: MediaProvider = resolved
+/** What storing one file needs, resolved once per batch: provider, plan caps, the workspace's storage ceiling. */
+export interface MediaIngestContext {
+  projectId: string
+  workspaceId: string
+  uploadedBy: string
+  source: 'url' | 'agent' | 'repo'
+  media: MediaProvider
+  maxBytes: number
+  variants: ReturnType<typeof resolveVariantConfigWithPlan>
+  storageLimit: number
+  dedupe: boolean
+}
 
-  const fetchMedia = input.fetchMedia ?? fetchRemoteMedia
+export async function createMediaIngestContext(input: {
+  projectId: string
+  workspaceId: string
+  plan: Plan
+  uploadedBy: string
+  source: MediaIngestContext['source']
+  dedupe?: boolean
+  media?: MediaProvider
+}): Promise<MediaIngestContext> {
+  const media = input.media ?? useMediaProvider()
+  if (!media)
+    throw createError({ statusCode: 503, message: errorMessage('media.storage_not_configured') })
+
   const db = useDatabaseProvider()
-  const maxBytes = getPlanLimit(input.plan, 'media.max_file_size_mb') * 1024 * 1024
   const variants = resolveVariantConfigWithPlan(undefined, {
     hasCustomVariants: hasFeature(input.plan, 'media.custom_variants'),
     variantsPerFieldLimit: getPlanLimit(input.plan, 'media.variants_per_field'),
   })
-
   const workspace = await db.getWorkspaceById(input.workspaceId, 'id, overage_settings')
   const overageSettings = (workspace?.overage_settings as Record<string, boolean> | null) ?? {}
   const baseLimit = getPlanLimit(input.plan, 'media.storage_gb') * 1024 * 1024 * 1024
-  const storageLimit = getEffectiveLimit(baseLimit, 'media.storage_gb', overageSettings)
+
+  return {
+    projectId: input.projectId,
+    workspaceId: input.workspaceId,
+    uploadedBy: input.uploadedBy,
+    source: input.source,
+    media,
+    maxBytes: getPlanLimit(input.plan, 'media.max_file_size_mb') * 1024 * 1024,
+    variants,
+    storageLimit: getEffectiveLimit(baseLimit, 'media.storage_gb', overageSettings),
+    dedupe: input.dedupe !== false && typeof media.getAssetByContentHash === 'function',
+  }
+}
+
+/** What a caller gets back for an asset, whether it was just made or already there. */
+function describeAsset(projectId: string, ref: string, asset: { id: string, originalPath: string, variants?: Record<string, { path: string }> }, deduped: boolean): BulkIngestItemResult {
+  return {
+    url: ref,
+    ok: true,
+    assetId: asset.id,
+    path: asset.originalPath,
+    deliveryUrl: toDeliveryUrl(projectId, asset.originalPath),
+    variantUrls: Object.fromEntries(Object.entries(asset.variants ?? {}).map(([key, v]) => [key, toDeliveryUrl(projectId, v.path)])),
+    ...(deduped ? { deduped: true } : {}),
+  }
+}
+
+/**
+ * Store one already-validated file as an asset — the half of an ingest that
+ * does not care where the bytes came from (a URL fetch, a repository blob).
+ *
+ * Dedupe on the content hash first (no quota, no upload for bytes the project
+ * holds), then reserve this file's own bytes against the workspace's storage
+ * ceiling — per file, so a batch that runs out of room stops at the file that
+ * did not fit (`storage.quota_exceeded`, 403) instead of refusing up front —
+ * upload, reconcile the reservation to the optimised size, and emit
+ * `media.uploaded`. `ref` is what the caller calls this file (its URL or repo
+ * path); it is echoed back as the result's `url`.
+ */
+export async function ingestMediaBytes(ctx: MediaIngestContext, item: { ref: string, remote: RemoteMedia, alt?: string, tags?: string[], filename?: string }): Promise<BulkIngestItemResult> {
+  const { remote } = item
+  const db = useDatabaseProvider()
+
+  // Hashed before the storage reservation, so an asset the project already
+  // holds costs neither quota nor an upload. The hash is of the bytes as
+  // received — the same thing the provider hashes on the way in, before it
+  // optimises anything — so the two can never disagree about identity.
+  if (ctx.dedupe) {
+    const contentHash = createHash('sha256').update(remote.buffer).digest('hex')
+    const existing = await ctx.media.getAssetByContentHash!(ctx.projectId, contentHash).catch(() => null)
+    if (existing) return describeAsset(ctx.projectId, item.ref, existing, true)
+  }
+
+  let storageReserved = false
+  if (ctx.storageLimit > 0) {
+    const reservation = await db.reserveStorageIfAllowed(ctx.workspaceId, remote.buffer.length, ctx.storageLimit)
+    if (!reservation.allowed)
+      return { url: item.ref, ok: false, error: errorMessage('storage.quota_exceeded'), statusCode: 403 }
+    storageReserved = true
+  }
+
+  try {
+    const asset = await ctx.media.upload({
+      projectId: ctx.projectId,
+      workspaceId: ctx.workspaceId,
+      file: remote.buffer,
+      filename: item.filename?.trim() || remote.filename,
+      contentType: remote.contentType,
+      alt: item.alt,
+      tags: item.tags,
+      variants: ctx.variants,
+      uploadedBy: ctx.uploadedBy,
+      source: ctx.source,
+      skipStorageIncrement: storageReserved,
+    })
+
+    if (storageReserved) {
+      const actualBytes = typeof asset.size === 'number' ? asset.size : 0
+      const delta = actualBytes - remote.buffer.length
+      if (delta !== 0)
+        await db.incrementWorkspaceStorageBytes(ctx.workspaceId, delta).catch(() => {})
+    }
+
+    emitWebhookEvent(ctx.projectId, ctx.workspaceId, 'media.uploaded', {
+      assetId: asset.id,
+      filename: asset.filename,
+      contentType: asset.contentType,
+      sourceUrl: item.ref,
+    }).catch(() => {})
+
+    return describeAsset(ctx.projectId, item.ref, asset, false)
+  }
+  catch (error) {
+    if (storageReserved)
+      await db.incrementWorkspaceStorageBytes(ctx.workspaceId, -remote.buffer.length).catch(() => {})
+    const { message, statusCode } = errorDetails(error)
+    return { url: item.ref, ok: false, error: message, statusCode }
+  }
+}
+
+export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkIngestReport> {
+  const ctx = await createMediaIngestContext({ ...input, source: input.source ?? 'url' })
+  const fetchMedia = input.fetchMedia ?? fetchRemoteMedia
 
   // Collapse duplicates, keep first occurrence's alt/tags; invalid URLs are reported, not thrown.
   const results: BulkIngestItemResult[] = []
@@ -148,86 +267,16 @@ export async function ingestMediaUrls(input: BulkIngestInput): Promise<BulkInges
     queue.push({ ...item, url })
   }
 
-  const dedupe = input.dedupe !== false && typeof media.getAssetByContentHash === 'function'
-
-  /** What a caller gets back for an asset, whether it was just made or already there. */
-  function describe(url: string, asset: { id: string, originalPath: string, variants?: Record<string, { path: string }> }, deduped: boolean): BulkIngestItemResult {
-    return {
-      url,
-      ok: true,
-      assetId: asset.id,
-      path: asset.originalPath,
-      deliveryUrl: toDeliveryUrl(input.projectId, asset.originalPath),
-      variantUrls: Object.fromEntries(Object.entries(asset.variants ?? {}).map(([key, v]) => [key, toDeliveryUrl(input.projectId, v.path)])),
-      ...(deduped ? { deduped: true } : {}),
-    }
-  }
-
   async function ingestOne(item: BulkIngestItem & { url: string }): Promise<BulkIngestItemResult> {
     let remote: RemoteMedia
     try {
-      remote = await fetchMedia({ url: item.url, maxBytes })
+      remote = await fetchMedia({ url: item.url, maxBytes: ctx.maxBytes })
     }
     catch (error) {
       const { message, statusCode } = errorDetails(error)
       return { url: item.url, ok: false, error: message, statusCode }
     }
-
-    // Hashed before the storage reservation, so an asset the project already
-    // holds costs neither quota nor an upload. The hash is of the bytes as
-    // fetched — the same thing the provider hashes on the way in, before it
-    // optimises anything — so the two can never disagree about identity.
-    if (dedupe) {
-      const contentHash = createHash('sha256').update(remote.buffer).digest('hex')
-      const existing = await media.getAssetByContentHash!(input.projectId, contentHash).catch(() => null)
-      if (existing) return describe(item.url, existing, true)
-    }
-
-    let storageReserved = false
-    if (storageLimit > 0) {
-      const reservation = await db.reserveStorageIfAllowed(input.workspaceId, remote.buffer.length, storageLimit)
-      if (!reservation.allowed)
-        return { url: item.url, ok: false, error: errorMessage('storage.quota_exceeded'), statusCode: 403 }
-      storageReserved = true
-    }
-
-    try {
-      const asset = await media.upload({
-        projectId: input.projectId,
-        workspaceId: input.workspaceId,
-        file: remote.buffer,
-        filename: item.filename?.trim() || remote.filename,
-        contentType: remote.contentType,
-        alt: item.alt,
-        tags: item.tags,
-        variants,
-        uploadedBy: input.uploadedBy,
-        source: input.source ?? 'url',
-        skipStorageIncrement: storageReserved,
-      })
-
-      if (storageReserved) {
-        const actualBytes = typeof asset.size === 'number' ? asset.size : 0
-        const delta = actualBytes - remote.buffer.length
-        if (delta !== 0)
-          await db.incrementWorkspaceStorageBytes(input.workspaceId, delta).catch(() => {})
-      }
-
-      emitWebhookEvent(input.projectId, input.workspaceId, 'media.uploaded', {
-        assetId: asset.id,
-        filename: asset.filename,
-        contentType: asset.contentType,
-        sourceUrl: item.url,
-      }).catch(() => {})
-
-      return describe(item.url, asset, false)
-    }
-    catch (error) {
-      if (storageReserved)
-        await db.incrementWorkspaceStorageBytes(input.workspaceId, -remote.buffer.length).catch(() => {})
-      const { message, statusCode } = errorDetails(error)
-      return { url: item.url, ok: false, error: message, statusCode }
-    }
+    return ingestMediaBytes(ctx, { ref: item.url, remote, alt: item.alt, tags: item.tags, filename: item.filename })
   }
 
   // Bounded concurrency — remote hosts (and our own optimizer) are the limit.

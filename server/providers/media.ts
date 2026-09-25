@@ -28,7 +28,7 @@ export interface MediaAsset {
   variants: Record<string, MediaVariant>
   tags: string[]
   uploadedBy: string
-  source: 'upload' | 'url' | 'connector' | 'agent'
+  source: 'upload' | 'url' | 'connector' | 'agent' | 'repo'
   originalPath: string
   contentHash: string
   usedIn: MediaUsageRef[]
@@ -69,7 +69,7 @@ export interface UploadOptions {
   tags?: string[]
   variants: Record<string, VariantConfig>
   uploadedBy: string
-  source?: 'upload' | 'url' | 'connector' | 'agent'
+  source?: 'upload' | 'url' | 'connector' | 'agent' | 'repo'
   /** When true, caller manages storage quota (reserve/adjust pattern). */
   skipStorageIncrement?: boolean
 }
