@@ -26,6 +26,7 @@ import { mediaMethods } from './media'
 import { memberMethods } from './members'
 import { oauthTokenMethods } from './oauth-tokens'
 import { migrateGrantMethods } from './migrate-grants'
+import { migrationMediaMethods } from './migration-media'
 import { paymentAccountMethods } from './payment-accounts'
 import { profileMethods } from './profiles'
 import { projectMethods } from './projects'
@@ -61,5 +62,6 @@ export function createPostgresDatabaseProvider(): DatabaseProvider {
     ...webhookMethods(),
     ...paymentAccountMethods(),
     ...migrateGrantMethods(),
+    ...migrationMediaMethods(),
   }
 }

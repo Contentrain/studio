@@ -66,6 +66,45 @@ export interface PaymentAccountsTable {
   updated_at: Generated<string>
 }
 
+export interface MigrationMediaJobsTable {
+  id: Generated<string>
+  project_id: string
+  workspace_id: string
+  created_by: string | null
+  manifest_ref: string
+  manifest_commit: string | null
+  status: Generated<string>
+  total: number
+  done: Generated<number>
+  failed: Generated<number>
+  deduped: Generated<number>
+  bytes_done: Generated<number>
+  error: string | null
+  claim_token: string | null
+  lease_until: string | null
+  created_at: Generated<string>
+  updated_at: Generated<string>
+  finished_at: string | null
+}
+
+export interface MigrationMediaItemsTable {
+  job_id: string
+  repo_path: string
+  blob_sha: string
+  bytes: number
+  mime: string
+  width: number | null
+  height: number | null
+  alt: string | null
+  state: Generated<string>
+  asset_id: string | null
+  delivery_url: string | null
+  deduped: Generated<boolean>
+  error: string | null
+  status_code: number | null
+  updated_at: Generated<string>
+}
+
 export interface MigrateGrantsTable {
   id: Generated<string>
   order_id: string
@@ -620,6 +659,8 @@ export interface StudioDatabase {
   'audit_logs': AuditLogsTable
   'payment_accounts': PaymentAccountsTable
   'migrate_grants': MigrateGrantsTable
+  'migration_media_jobs': MigrationMediaJobsTable
+  'migration_media_items': MigrationMediaItemsTable
   'workspaces': WorkspacesTable
   'workspace_members': WorkspaceMembersTable
   'ai_keys': AiKeysTable
