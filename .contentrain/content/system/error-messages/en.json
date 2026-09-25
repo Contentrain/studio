@@ -208,6 +208,7 @@
   "media.library_upgrade": "Asset Manager is available on {plans:media.library}. {plan} includes {mediaStorage} storage. Upgrade to {toPlan} for {toMediaStorage} storage and custom variants.",
   "media.list_failed": "Failed to list media assets: {detail}",
   "media.no_file_provided": "No file was provided for upload.",
+  "media.origin_fetch_failed": "The file could not be fetched from the old site ({reason}).",
   "media.rehost_conflict": "Content changed while the addresses were being rewritten. Nothing was overwritten — run it again.",
   "media.rehost_copy_failed": "{count} files could not be copied from the previous project. Nothing was committed. Run it again.",
   "media.rehost_copy_other_instance": "Assets can only be copied from a project on this Studio instance. Move them to this instance first, then rewrite the addresses.",

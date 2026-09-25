@@ -1128,7 +1128,10 @@ export interface DatabaseProvider {
     createdBy: string
     manifestRef: string
     manifestCommit: string | null
-    items: Array<{ repoPath: string, blobSha: string, bytes: number, mime: string, width?: number, height?: number, alt?: string }>
+    /** The manifest's origin — the only host an item with `sourceUrl` may be fetched from (migration 038). */
+    origin?: string | null
+    /** A repository file (`blobSha`) or a file still at the old site (`sourceUrl`, which is then its `repoPath` too). */
+    items: Array<{ repoPath: string, blobSha?: string | null, sourceUrl?: string | null, bytes: number, mime: string, width?: number, height?: number, alt?: string }>
   }) => Promise<{ job: DatabaseRow, created: boolean }>
 
   /** A job, only through the project it belongs to. */
@@ -1140,8 +1143,8 @@ export interface DatabaseProvider {
   /** Atomically take the oldest claimable job (queued, or running with an expired lease) under a new lease. */
   claimMigrationMediaJob: (now: Date, leaseSeconds: number) => Promise<DatabaseRow | null>
 
-  /** The job's pending items, in path order. */
-  listPendingMigrationMediaItems: (jobId: string, limit: number) => Promise<DatabaseRow[]>
+  /** The job's pending items, in path order — with `readyAt`, only those not parked for a retry past it. */
+  listPendingMigrationMediaItems: (jobId: string, limit: number, readyAt?: Date) => Promise<DatabaseRow[]>
 
   /** The job's items in one state (failed ones for the report; done ones for the URL map). */
   listMigrationMediaItems: (jobId: string, state: 'done' | 'failed', limit: number) => Promise<DatabaseRow[]>
@@ -1161,7 +1164,23 @@ export interface DatabaseProvider {
     deduped?: boolean
     error?: string | null
     statusCode?: number | null
+    /** Bytes actually stored, when they differ from what the item was queued with (a fetched file). */
+    bytes?: number | null
   }, now: Date) => Promise<boolean>
+
+  /**
+   * A passing failure (timeout, 5xx, 429, connection): the item stays pending
+   * and is parked until `retryAt`. Returns its attempts so far, or null when
+   * the caller no longer holds the claim or the item is not pending.
+   */
+  deferMigrationMediaItem: (input: {
+    jobId: string
+    token: string
+    repoPath: string
+    error: string
+    statusCode?: number | null
+    retryAt: Date
+  }, now: Date) => Promise<number | null>
 
   /** End the claim: `done`/`failed`, `paused_quota`, or `running` (lease released, work left). Only the claim holder. */
   finishMigrationMediaJob: (jobId: string, token: string, status: 'running' | 'paused_quota' | 'done' | 'failed', error: string | null, now: Date) => Promise<boolean>

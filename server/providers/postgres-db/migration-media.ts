@@ -3,8 +3,8 @@
  * Behavior parity with supabase-db/migration-media.ts.
  *
  * Both tables are service-role only (RLS on, no policies), so every query runs
- * on the admin connection. Claim, settle and finish are the SQL functions of
- * migration 037, shared with the Supabase provider.
+ * on the admin connection. Claim, settle, defer and finish are the SQL
+ * functions of migrations 037/038, shared with the Supabase provider.
  */
 import { sql } from 'kysely'
 import type { DatabaseProvider, DatabaseRow } from '../database'
@@ -19,6 +19,7 @@ type MigrationMediaMethods = Pick<
   | 'listPendingMigrationMediaItems'
   | 'listMigrationMediaItems'
   | 'settleMigrationMediaItem'
+  | 'deferMigrationMediaItem'
   | 'finishMigrationMediaJob'
   | 'resumeMigrationMediaJob'
 >
@@ -52,6 +53,7 @@ export function migrationMediaMethods(): MigrationMediaMethods {
               created_by: input.createdBy,
               manifest_ref: input.manifestRef,
               manifest_commit: input.manifestCommit,
+              origin: input.origin ?? null,
               total: input.items.length,
               status: input.items.length === 0 ? 'done' : 'queued',
             } as never)
@@ -63,7 +65,8 @@ export function migrationMediaMethods(): MigrationMediaMethods {
               .values(input.items.slice(i, i + ITEM_CHUNK).map(item => ({
                 job_id: job.id,
                 repo_path: item.repoPath,
-                blob_sha: item.blobSha,
+                blob_sha: item.blobSha ?? null,
+                source_url: item.sourceUrl ?? null,
                 bytes: item.bytes,
                 mime: item.mime,
                 width: item.width ?? null,
@@ -131,13 +134,15 @@ export function migrationMediaMethods(): MigrationMediaMethods {
       }
     },
 
-    async listPendingMigrationMediaItems(jobId, limit) {
+    async listPendingMigrationMediaItems(jobId, limit, readyAt) {
       try {
-        const rows = await getAdmin()
+        let query = getAdmin()
           .selectFrom('migration_media_items')
           .selectAll()
           .where('job_id', '=', jobId)
           .where('state', '=', 'pending')
+        if (readyAt) query = query.where(eb => eb.or([eb('retry_at', 'is', null), eb('retry_at', '<=', readyAt.toISOString())]))
+        const rows = await query
           .orderBy('repo_path')
           .limit(limit)
           .execute()
@@ -170,10 +175,22 @@ export function migrationMediaMethods(): MigrationMediaMethods {
         SELECT public.settle_migration_media_item(
           ${input.jobId}::uuid, ${input.token}::uuid, ${input.repoPath}, ${input.ok},
           ${input.assetId ?? null}::uuid, ${input.deliveryUrl ?? null}, ${input.deduped ?? false},
-          ${input.error ?? null}, ${input.statusCode ?? null}::integer, ${now.toISOString()}::timestamptz
+          ${input.error ?? null}, ${input.statusCode ?? null}::integer, ${now.toISOString()}::timestamptz,
+          ${input.bytes ?? null}::bigint
         ) AS settled
       `.execute(getAdmin())
       return result.rows[0]?.settled === true
+    },
+
+    async deferMigrationMediaItem(input, now) {
+      const result = await sql<{ attempts: number | null }>`
+        SELECT public.defer_migration_media_item(
+          ${input.jobId}::uuid, ${input.token}::uuid, ${input.repoPath}, ${input.error},
+          ${input.statusCode ?? null}::integer, ${input.retryAt.toISOString()}::timestamptz, ${now.toISOString()}::timestamptz
+        ) AS attempts
+      `.execute(getAdmin())
+      const attempts = result.rows[0]?.attempts
+      return attempts === null || attempts === undefined ? null : Number(attempts)
     },
 
     async finishMigrationMediaJob(jobId, token, status, error, now) {

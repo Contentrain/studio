@@ -82,6 +82,7 @@ export interface MigrationMediaJobsTable {
   error: string | null
   claim_token: string | null
   lease_until: string | null
+  origin: string | null
   created_at: Generated<string>
   updated_at: Generated<string>
   finished_at: string | null
@@ -90,7 +91,8 @@ export interface MigrationMediaJobsTable {
 export interface MigrationMediaItemsTable {
   job_id: string
   repo_path: string
-  blob_sha: string
+  blob_sha: string | null
+  source_url: string | null
   bytes: number
   mime: string
   width: number | null
@@ -102,6 +104,8 @@ export interface MigrationMediaItemsTable {
   deduped: Generated<boolean>
   error: string | null
   status_code: number | null
+  attempts: Generated<number>
+  retry_at: string | null
   updated_at: Generated<string>
 }
 

@@ -13,6 +13,10 @@
  *              each occurrence, on its own boundaries, in that value only;
  * - `relation` the value is the media entry's id → nothing to rewrite.
  *
+ * Files Migrate left at the old site (`studioRecommended`) and the import
+ * fetched are rewritten the same way, from their old address to the delivery
+ * URL; one not imported keeps its old address and is listed.
+ *
  * A value that no longer holds what the manifest says (edited since the
  * migration) is left alone and reported as drifted. `studio.json` at the
  * project root gets `{ baseUrl, projectId }` — the starter builds its image
@@ -25,7 +29,7 @@
 
 import type { FileChange } from '@contentrain/types'
 import { canonicalStringify } from '@contentrain/types'
-import type { MigrationMediaManifest } from './migration-media'
+import type { MigrationMediaManifest, MigrationMediaRef } from './migration-media'
 import { projectPath } from './migration-media'
 
 export const STUDIO_BINDING_FILE = 'studio.json'
@@ -34,7 +38,7 @@ export interface MigrationMediaApplyInput {
   manifest: MigrationMediaManifest
   /** Project root the manifest's paths are relative to. */
   root: string
-  /** repository path (as imported) → delivery URL, for every imported asset. */
+  /** repository path (as imported) → delivery URL, for every imported asset; a fetched file is keyed by its old address. */
   imported: ReadonlyMap<string, string>
   /** Reads a repository file at the write snapshot; null when absent. */
   read: (path: string) => Promise<string | null>
@@ -67,8 +71,11 @@ export interface MigrationMediaApplyCounts {
   rewritten: number
   alreadyRewritten: number
   relations: number
+  /** `repoPath` is the old address for a file fetched from the old site. */
   drifted: Array<{ file: string, pointer: string, repoPath: string }>
   notImported: string[]
+  /** Files at the old site that were not imported: their references keep the old address. */
+  originNotImported: string[]
   /** Local URLs still found in referencing files after the rewrite. */
   remaining: Array<{ file: string, url: string }>
   studioBinding: 'written' | 'unchanged'
@@ -131,6 +138,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
     relations: 0,
     drifted: [],
     notImported: [],
+    originNotImported: [],
     remaining: [],
     studioBinding: 'unchanged',
     deleted: 0,
@@ -160,26 +168,15 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
     return opened
   }
 
-  const media = input.manifest.assets.filter(a => a.role === 'media')
-  const moved: Array<{ localUrl: string, deliveryUrl: string }> = []
-
-  for (const asset of media) {
-    const repoPath = projectPath(input.root, asset.repoPath)
-    const deliveryUrl = input.imported.get(repoPath)
-    if (!deliveryUrl) {
-      counts.notImported.push(asset.repoPath)
-      continue
-    }
-    const localUrl = asset.localUrl ?? `/${asset.repoPath.replace(/^public\//, '')}`
-    moved.push({ localUrl, deliveryUrl })
-
-    for (const ref of asset.refs) {
+  /** Rewrite every recorded reference from `from` to `to`, walking to each value. */
+  const rewrite = async (from: string, to: string, refs: MigrationMediaRef[], key: string): Promise<void> => {
+    for (const ref of refs) {
       if (ref.match === 'relation') {
         counts.relations++
         continue
       }
       const file = await open(ref.file)
-      const drift = () => counts.drifted.push({ file: ref.file, pointer: ref.pointer, repoPath: asset.repoPath })
+      const drift = () => counts.drifted.push({ file: ref.file, pointer: ref.pointer, repoPath: key })
       if (!file) {
         drift()
         continue
@@ -191,13 +188,13 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
           drift()
           continue
         }
-        const { text, count } = replaceIn(file.text, localUrl, deliveryUrl)
+        const { text, count } = replaceIn(file.text, from, to)
         if (count > 0) {
           file.text = text
           file.dirty = true
           counts.rewritten += count
         }
-        else if (file.text.includes(deliveryUrl)) {
+        else if (file.text.includes(to)) {
           counts.alreadyRewritten++
         }
         else {
@@ -213,12 +210,12 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
         continue
       }
       if (ref.match === 'exact') {
-        if (value === localUrl) {
-          (at.parent as Record<string, unknown>)[at.key] = deliveryUrl
+        if (value === from) {
+          (at.parent as Record<string, unknown>)[at.key] = to
           file.dirty = true
           counts.rewritten++
         }
-        else if (value === deliveryUrl) {
+        else if (value === to) {
           counts.alreadyRewritten++
         }
         else {
@@ -226,19 +223,45 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
         }
         continue
       }
-      const { text, count } = replaceIn(value, localUrl, deliveryUrl)
+      const { text, count } = replaceIn(value, from, to)
       if (count > 0) {
         (at.parent as Record<string, unknown>)[at.key] = text
         file.dirty = true
         counts.rewritten += count
       }
-      else if (value.includes(deliveryUrl)) {
+      else if (value.includes(to)) {
         counts.alreadyRewritten++
       }
       else {
         drift()
       }
     }
+  }
+
+  const media = input.manifest.assets.filter(a => a.role === 'media')
+  const moved: Array<{ localUrl: string, deliveryUrl: string }> = []
+
+  for (const asset of media) {
+    const repoPath = projectPath(input.root, asset.repoPath)
+    const deliveryUrl = input.imported.get(repoPath)
+    if (!deliveryUrl) {
+      counts.notImported.push(asset.repoPath)
+      continue
+    }
+    const localUrl = asset.localUrl ?? `/${asset.repoPath.replace(/^public\//, '')}`
+    moved.push({ localUrl, deliveryUrl })
+    await rewrite(localUrl, deliveryUrl, asset.refs, asset.repoPath)
+  }
+  // Drift in a reference to a local file is what keeps local files; one in an old-site reference is not.
+  const localDrifted = counts.drifted.length
+
+  for (const file of input.manifest.onOrigin) {
+    const deliveryUrl = input.imported.get(file.url)
+    if (!deliveryUrl) {
+      counts.originNotImported.push(file.url)
+      continue
+    }
+    await rewrite(file.url, deliveryUrl, file.refs, file.url)
   }
 
   const changes: FileChange[] = []
@@ -272,7 +295,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
     ? 'not_requested'
     : counts.notImported.length > 0
       ? 'not_all_imported'
-      : counts.drifted.length > 0
+      : localDrifted > 0
         ? 'drifted'
         : counts.remaining.length > 0
           ? 'remaining_refs'

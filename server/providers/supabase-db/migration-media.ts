@@ -3,8 +3,8 @@
  * Behavior parity with postgres-db/migration-media.ts.
  *
  * Both tables are service-role only (RLS on, no policies), so every query uses
- * the admin client. Claim, settle and finish are the SQL functions of
- * migration 037, shared with the plain-Postgres provider.
+ * the admin client. Claim, settle, defer and finish are the SQL functions of
+ * migrations 037/038, shared with the plain-Postgres provider.
  */
 import type { DatabaseProvider, DatabaseRow } from '../database'
 import { getAdmin } from './helpers'
@@ -18,6 +18,7 @@ type MigrationMediaMethods = Pick<
   | 'listPendingMigrationMediaItems'
   | 'listMigrationMediaItems'
   | 'settleMigrationMediaItem'
+  | 'deferMigrationMediaItem'
   | 'finishMigrationMediaJob'
   | 'resumeMigrationMediaJob'
 >
@@ -60,6 +61,7 @@ export function migrationMediaMethods(): MigrationMediaMethods {
           created_by: input.createdBy,
           manifest_ref: input.manifestRef,
           manifest_commit: input.manifestCommit,
+          origin: input.origin ?? null,
           total: input.items.length,
           // Not claimable until every item is in: the worker only takes queued/running jobs.
           status: input.items.length === 0 ? 'done' : 'preparing',
@@ -82,7 +84,8 @@ export function migrationMediaMethods(): MigrationMediaMethods {
           .insert(input.items.slice(i, i + ITEM_CHUNK).map(item => ({
             job_id: job.id,
             repo_path: item.repoPath,
-            blob_sha: item.blobSha,
+            blob_sha: item.blobSha ?? null,
+            source_url: item.sourceUrl ?? null,
             bytes: item.bytes,
             mime: item.mime,
             width: item.width ?? null,
@@ -138,12 +141,14 @@ export function migrationMediaMethods(): MigrationMediaMethods {
       return ((data ?? []) as DatabaseRow[])[0] ?? null
     },
 
-    async listPendingMigrationMediaItems(jobId, limit) {
-      const { data, error } = await getAdmin()
+    async listPendingMigrationMediaItems(jobId, limit, readyAt) {
+      let query = getAdmin()
         .from('migration_media_items')
         .select('*')
         .eq('job_id', jobId)
         .eq('state', 'pending')
+      if (readyAt) query = query.or(`retry_at.is.null,retry_at.lte.${readyAt.toISOString()}`)
+      const { data, error } = await query
         .order('repo_path')
         .limit(limit)
       if (error) fail(error.message)
@@ -174,9 +179,24 @@ export function migrationMediaMethods(): MigrationMediaMethods {
         p_error: input.error ?? null,
         p_status_code: input.statusCode ?? null,
         p_now: now.toISOString(),
+        p_bytes: input.bytes ?? null,
       })
       if (error) fail(error.message)
       return data === true
+    },
+
+    async deferMigrationMediaItem(input, now) {
+      const { data, error } = await getAdmin().rpc('defer_migration_media_item', {
+        p_job: input.jobId,
+        p_token: input.token,
+        p_path: input.repoPath,
+        p_error: input.error,
+        p_status_code: input.statusCode ?? null,
+        p_retry_at: input.retryAt.toISOString(),
+        p_now: now.toISOString(),
+      })
+      if (error) fail(error.message)
+      return data === null || data === undefined ? null : Number(data)
     },
 
     async finishMigrationMediaJob(jobId, token, status, reason, now) {

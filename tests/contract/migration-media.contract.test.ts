@@ -82,4 +82,50 @@ describe('postgres-db migration media jobs (contract)', () => {
     // Finished: a new start opens a new job.
     expect((await start()).created).toBe(true)
   })
+  it('files still at the old site (038): origin on the job, a source URL instead of a blob, parked for a retry, stored bytes on settle', async () => {
+    const other = await sql<{ id: string }>`INSERT INTO public.projects (workspace_id, repo_full_name)
+      VALUES (${user.workspaceId}, 'contentrain/migration-media-origin') RETURNING id`.execute(getDb())
+    const origin = 'https://old.example.com'
+    const url = `${origin}/wp-content/uploads/big.mp4`
+    const { job } = await db.createMigrationMediaJob({
+      projectId: other.rows[0]!.id,
+      workspaceId: user.workspaceId,
+      createdBy: user.userId,
+      manifestRef: 'contentrain',
+      manifestCommit: null,
+      origin,
+      items: [item('public/media/a.png', 100), { repoPath: url, sourceUrl: url, bytes: 0, mime: 'application/octet-stream' }],
+    })
+    expect(job).toMatchObject({ origin, status: 'queued', total: 2 })
+    const jobId = String(job.id)
+
+    // An item is a blob or a source URL — never both, never neither.
+    await expect(sql`INSERT INTO public.migration_media_items (job_id, repo_path, blob_sha, source_url, bytes, mime)
+      VALUES (${jobId}, 'x', 'sha', 'https://old.example.com/x', 0, 'image/png')`.execute(getDb())).rejects.toThrow(/one_source/)
+    await expect(sql`INSERT INTO public.migration_media_items (job_id, repo_path, bytes, mime)
+      VALUES (${jobId}, 'y', 0, 'image/png')`.execute(getDb())).rejects.toThrow(/one_source/)
+
+    // The first test leaves an open job behind; this one must be the job claimed.
+    await sql`UPDATE public.migration_media_jobs SET status = 'canceled'
+      WHERE workspace_id = ${user.workspaceId} AND id <> ${jobId} AND status IN ('queued', 'running')`.execute(getDb())
+    const t1 = new Date('2041-01-01T00:00:00Z')
+    const claim = (await db.claimMigrationMediaJob(t1, 300))!
+    expect(claim.id).toBe(jobId)
+    const token = String(claim.claim_token)
+
+    const retryAt = new Date(t1.getTime() + 60_000)
+    expect(await db.deferMigrationMediaItem({ jobId, token, repoPath: url, error: 'media.origin_fetch_failed', statusCode: 503, retryAt }, t1)).toBe(1)
+    expect(await db.deferMigrationMediaItem({ jobId, token: '00000000-0000-0000-0000-000000000000', repoPath: url, error: 'x', retryAt }, t1)).toBeNull()
+    // Parked: not ready before its time, ready after it, and still pending either way.
+    expect((await db.listPendingMigrationMediaItems(jobId, 10, t1)).map(r => r.repo_path)).toEqual(['public/media/a.png'])
+    expect((await db.listPendingMigrationMediaItems(jobId, 10, new Date(retryAt.getTime() + 1))).map(r => r.repo_path)).toEqual([url, 'public/media/a.png'])
+    expect(await db.listPendingMigrationMediaItems(jobId, 10)).toHaveLength(2)
+
+    expect(await db.settleMigrationMediaItem({ jobId, token, repoPath: url, ok: true, deliveryUrl: 'https://studio.test/big.mp4', bytes: 4096 }, t1)).toBe(true)
+    const settled = await sql<{ bytes: string, attempts: number, retry_at: string | null, source_url: string }>`SELECT bytes, attempts, retry_at, source_url FROM public.migration_media_items
+      WHERE job_id = ${jobId} AND repo_path = ${url}`.execute(getDb())
+    expect(settled.rows[0]).toMatchObject({ attempts: 1, retry_at: null, source_url: url })
+    expect(Number(settled.rows[0]!.bytes)).toBe(4096)
+    expect(Number((await db.getMigrationMediaJob(other.rows[0]!.id, jobId))?.bytes_done)).toBe(4096)
+  })
 })

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * A migration's media → Studio Media, inside the migration card: what is in
- * the repository and what the plan takes (preflight), the import's progress,
+ * the repository, what is still on the old site, and what the plan takes
+ * (preflight), the import's progress,
  * and — once every file is in — switching the site's addresses to Studio.
  *
  * Opened with `?focus=migration-media` (the claim screen's way here from
@@ -39,6 +40,8 @@ interface Preflight {
   missing: Array<{ repoPath: string, reason: string }>
   fontsKept: number
   refs: number
+  /** Files still at the old site's address, fetched from there by the same import. */
+  onOrigin?: { count: number, knownBytes: number, overSize: Array<{ url: string, bytes: number }>, offOrigin: number }
   limits: { maxFileBytes: number | null, storageBytes: number | null }
   storage: { usedBytes: number, remainingBytes: number | null }
   fits: boolean
@@ -55,6 +58,7 @@ interface ApplyCounts {
   rewritten: number
   drifted: unknown[]
   notImported: string[]
+  originNotImported?: string[]
   remaining: unknown[]
   deleted: number
   keptBecause: string | null
@@ -107,8 +111,9 @@ onBeforeUnmount(() => {
 })
 
 const preflight = computed(() => state.value?.preflight ?? null)
-const movable = computed(() => preflight.value ? preflight.value.count - preflight.value.overSize.length - preflight.value.missing.length : 0)
-const movableBytes = computed(() => (preflight.value?.totalBytes ?? 0) - (preflight.value?.overSize.reduce((s, a) => s + a.bytes, 0) ?? 0))
+const onOrigin = computed(() => preflight.value?.onOrigin ?? null)
+const movable = computed(() => preflight.value ? preflight.value.count - preflight.value.overSize.length - preflight.value.missing.length + (onOrigin.value?.count ?? 0) : 0)
+const movableBytes = computed(() => (preflight.value?.totalBytes ?? 0) - (preflight.value?.overSize.reduce((s, a) => s + a.bytes, 0) ?? 0) + (onOrigin.value?.knownBytes ?? 0))
 const needsUpgrade = computed(() => state.value?.uploadAllowed === false || !!preflight.value?.upgrade)
 const canStart = computed(() => props.editable && state.value?.uploadAllowed && movable.value > 0 && (!job.value || job.value.status === 'failed'))
 const progress = computed(() => (job.value && job.value.total > 0 ? Math.round(((job.value.done + job.value.failed) / job.value.total) * 100) : 0))
@@ -194,12 +199,24 @@ watch(deleteLocal, () => {
       {{ t('migration.media_public_note') }}
     </p>
 
-    <ul v-if="preflight.overSize.length || preflight.missing.length" class="mt-2 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300">
+    <ul v-if="onOrigin && (onOrigin.count || onOrigin.offOrigin)" class="mt-2 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300" data-testid="migration-media-origin">
+      <li v-if="onOrigin.count">
+        {{ t('migration.media_on_origin', { count: onOrigin.count }) }}
+      </li>
+      <li v-if="onOrigin.offOrigin">
+        {{ t('migration.media_off_origin', { count: onOrigin.offOrigin }) }}
+      </li>
+    </ul>
+
+    <ul v-if="preflight.overSize.length || preflight.missing.length || onOrigin?.overSize.length" class="mt-2 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300">
       <li v-if="preflight.overSize.length">
         {{ t('migration.media_over_size', { count: preflight.overSize.length, limit: preflight.limits.maxFileBytes ? size(preflight.limits.maxFileBytes) : '' }) }}
       </li>
       <li v-if="preflight.missing.length">
         {{ t('migration.media_missing', { count: preflight.missing.length }) }}
+      </li>
+      <li v-if="onOrigin?.overSize.length">
+        {{ t('migration.media_origin_over_size', { count: onOrigin.overSize.length, limit: preflight.limits.maxFileBytes ? size(preflight.limits.maxFileBytes) : '' }) }}
       </li>
     </ul>
 
@@ -247,6 +264,9 @@ watch(deleteLocal, () => {
           <p>{{ t('migration.media_apply_preview', { refs: applyPreview.rewritten, files: applyPreview.filesChanged }) }}</p>
           <p v-if="applyPreview.drifted.length" class="text-warning-700 dark:text-warning-300">
             {{ t('migration.media_apply_drifted', { count: applyPreview.drifted.length }) }}
+          </p>
+          <p v-if="applyPreview.originNotImported?.length" class="text-warning-700 dark:text-warning-300">
+            {{ t('migration.media_apply_origin_left', { count: applyPreview.originNotImported.length }) }}
           </p>
           <p v-if="deleteLocal && applyPreview.keptBecause && applyPreview.keptBecause !== 'not_requested'" class="text-muted">
             {{ t(`migration.media_kept_${applyPreview.keptBecause}`) }}
