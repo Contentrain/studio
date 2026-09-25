@@ -10,12 +10,13 @@
  *
  * GET /api/workspaces/{workspaceId}/projects/{projectId}/migration/media
  *   → 200 { present: false }
- *   → 200 { present: true, manifest: { path, ref }, uploadAllowed, upgradeParams?, preflight }
+ *   → 200 { present: true, manifest: { path, ref }, job (the latest import, or null), uploadAllowed, upgradeParams?, preflight }
  *   → 422 migration.media_manifest_invalid · 413 migration.media_manifest_too_large
  *   → 503 media.storage_not_configured (no media stack in this edition/deployment)
  */
 
 import { planMigrationMediaPreflight, readMigrationMediaManifest } from '~~/server/utils/migration-media'
+import { toMigrationMediaJobView } from '~~/server/utils/migration-media-import'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -45,10 +46,12 @@ export default defineEventHandler(async (event) => {
   const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
   const uploadAllowed = hasFeature(plan, 'media.upload')
   const tree = await ctx.git.getTree(found.ref)
+  const latest = await db.getLatestMigrationMediaJob(projectId)
 
   return {
     present: true,
     manifest: { path: found.path, ref: found.ref },
+    job: latest ? toMigrationMediaJobView(latest) : null,
     uploadAllowed,
     ...(uploadAllowed ? {} : { upgradeParams: getUpgradeParams(plan) }),
     preflight: planMigrationMediaPreflight({

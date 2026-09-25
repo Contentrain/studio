@@ -1114,6 +1114,62 @@ export interface DatabaseProvider {
   markMigrateGrantRedeemed: (grantId: string, subscriptionId: string | null) => Promise<void>
 
   // ═══════════════════════════════════════════════════
+  // MIGRATION MEDIA JOBS (a migration's media → Studio Media)
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Record an import job and its items, or return the project's open one
+   * (queued / running / paused_quota) untouched — `created` says which.
+   * Service-role only; see migration 037 for the lifecycle.
+   */
+  createMigrationMediaJob: (input: {
+    projectId: string
+    workspaceId: string
+    createdBy: string
+    manifestRef: string
+    manifestCommit: string | null
+    items: Array<{ repoPath: string, blobSha: string, bytes: number, mime: string, width?: number, height?: number, alt?: string }>
+  }) => Promise<{ job: DatabaseRow, created: boolean }>
+
+  /** A job, only through the project it belongs to. */
+  getMigrationMediaJob: (projectId: string, jobId: string) => Promise<DatabaseRow | null>
+
+  /** The project's most recent job, open or finished. */
+  getLatestMigrationMediaJob: (projectId: string) => Promise<DatabaseRow | null>
+
+  /** Atomically take the oldest claimable job (queued, or running with an expired lease) under a new lease. */
+  claimMigrationMediaJob: (now: Date, leaseSeconds: number) => Promise<DatabaseRow | null>
+
+  /** The job's pending items, in path order. */
+  listPendingMigrationMediaItems: (jobId: string, limit: number) => Promise<DatabaseRow[]>
+
+  /** The job's items in one state (failed ones for the report; done ones for the URL map). */
+  listMigrationMediaItems: (jobId: string, state: 'done' | 'failed', limit: number) => Promise<DatabaseRow[]>
+
+  /**
+   * Settle one pending item and move the job's counters — only by the holder
+   * of the job's claim token. False when the lease was taken over or the item
+   * was already settled.
+   */
+  settleMigrationMediaItem: (input: {
+    jobId: string
+    token: string
+    repoPath: string
+    ok: boolean
+    assetId?: string | null
+    deliveryUrl?: string | null
+    deduped?: boolean
+    error?: string | null
+    statusCode?: number | null
+  }, now: Date) => Promise<boolean>
+
+  /** End the claim: `done`/`failed`, `paused_quota`, or `running` (lease released, work left). Only the claim holder. */
+  finishMigrationMediaJob: (jobId: string, token: string, status: 'running' | 'paused_quota' | 'done' | 'failed', error: string | null, now: Date) => Promise<boolean>
+
+  /** A job paused for storage becomes claimable again; null when it was not paused. */
+  resumeMigrationMediaJob: (projectId: string, jobId: string) => Promise<DatabaseRow | null>
+
+  // ═══════════════════════════════════════════════════
   // USAGE EVENTS OUTBOX (provider-agnostic meter pipeline)
   // ═══════════════════════════════════════════════════
 
