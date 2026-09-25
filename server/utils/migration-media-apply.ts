@@ -56,7 +56,7 @@ export interface MigrationMediaApplyInput {
 }
 
 /** Files a site can mention a media URL in. Binary files and the migration's own records are not read. */
-const TEXT_FILE = /\.(?:astro|[cm]?[jt]sx?|vue|svelte|css|scss|sass|less|html?|mdx?|json|ya?ml|toml|txt|xml|svg)$|(?:^|\/)_(?:headers|redirects)$/i
+const TEXT_FILE = /\.(?:astro|[cm]?[jt]sx?|vue|svelte|css|scss|sass|less|html?|mdx?|json|ya?ml|toml|txt|xml|svg|webmanifest)$|(?:^|\/)_(?:headers|redirects)$/i
 const SKIP_DIR = /(?:^|\/)(?:node_modules|dist|\.astro|\.git|\.contentrain\/migrate|\.contentrain\/client)\//
 /** Past this many files, or files this large, the project is not searched and nothing is deleted. */
 export const DELETE_SCAN_MAX_FILES = 1500

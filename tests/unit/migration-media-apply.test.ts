@@ -145,6 +145,7 @@ describe('planMigrationMediaApply', () => {
       ['src/styles/global.css', '.hero { background: url(/media/2024/b.png) }'],
       ['public/_headers', '/media/2024/a.png\n  Cache-Control: max-age=31536000'],
       ['astro.config.mjs', 'const logo = "/media/2024/b.png"'],
+      ['public/site.webmanifest', '{"icons":[{"src":"/media/2024/a.png"}]}'],
     ] as const) {
       const { counts, changes } = await plan({ deleteLocal: true, files: withSite({ [path]: text }) })
       expect(counts.keptBecause, path).toBe('remaining_refs')
