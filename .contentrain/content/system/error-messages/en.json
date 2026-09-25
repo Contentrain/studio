@@ -250,6 +250,8 @@
   "migration.handoff_invalid": "contentrain-handoff.json is not a valid MigrationHandoff ({detail})",
   "migration.handoff_missing": "This project has no migration handoff",
   "migration.handoff_too_large": "contentrain-handoff.json is too large ({detail})",
+  "migration.media_apply_conflict": "Content changed while the addresses were being switched. Nothing was overwritten — run it again.",
+  "migration.media_import_not_done": "Move the media into Studio first; the addresses can be switched once every file is in.",
   "migration.media_import_rate_limited": "Too many media import requests, try again in a minute.",
   "migration.media_job_not_found": "That media import was not found for this project.",
   "migration.media_job_not_paused": "Only an import paused for storage can be resumed.",
