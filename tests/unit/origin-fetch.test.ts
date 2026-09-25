@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { fetchFromOrigin, isBlockedAddress, isOnOrigin, OriginFetchError } from '../../server/utils/origin-fetch'
+import { fetchFromOrigin, ipv6Groups, isBlockedAddress, isOnOrigin, OriginFetchError } from '../../server/utils/origin-fetch'
 
 /**
  * A migration's media still at the old site: fetched from that site only,
@@ -53,12 +53,40 @@ const fails = async (p: Promise<unknown>) => {
 }
 
 describe('isBlockedAddress', () => {
-  it('refuses loopback, private, link-local (metadata), CGNAT, unique-local, multicast and mapped ones; lets public addresses through', () => {
-    for (const a of ['127.0.0.1', '10.1.2.3', '172.16.5.4', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '224.0.0.1', '255.255.255.255',
-      '::1', '::', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'ff02::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '64:ff9b::a00:1', 'not-an-ip'])
+  it('refuses loopback, private, link-local (metadata), CGNAT, reserved and multicast IPv4', () => {
+    for (const a of ['127.0.0.1', '10.1.2.3', '172.16.5.4', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '224.0.0.1', '255.255.255.255', '192.88.99.1', '198.18.0.1'])
       expect(isBlockedAddress(a), a).toBe(true)
-    for (const a of ['93.184.216.34', '1.1.1.1', '2606:4700:4700::1111', '::ffff:93.184.216.34'])
+    for (const a of ['93.184.216.34', '1.1.1.1', '8.8.8.8'])
       expect(isBlockedAddress(a), a).toBe(false)
+  })
+
+  it('judges an IPv6 address that carries an IPv4 one by that IPv4 address — dotted or hex, mapped, compatible, NAT64, 6to4', () => {
+    for (const a of [
+      '::ffff:127.0.0.1', '::ffff:7f00:1', '::FFFF:7F00:0001', '0:0:0:0:0:ffff:7f00:1', '::ffff:a9fe:a9fe', '::ffff:169.254.169.254', '::ffff:a00:1', '::ffff:c0a8:101',
+      '::7f00:1', '::127.0.0.1', '::a9fe:a9fe', // IPv4-compatible (deprecated): refused whatever it carries
+      '64:ff9b::7f00:1', '64:ff9b::127.0.0.1', '64:ff9b::a9fe:a9fe', // NAT64
+      '2002:7f00:1::', '2002:a9fe:a9fe::1', '2002:c0a8:101::', // 6to4
+    ]) expect(isBlockedAddress(a), a).toBe(true)
+    for (const a of ['::ffff:93.184.216.34', '::ffff:5db8:d822', '64:ff9b::5db8:d822', '2002:5db8:d822::1'])
+      expect(isBlockedAddress(a), a).toBe(false)
+  })
+
+  it('lets only global unicast IPv6 through', () => {
+    for (const a of ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'fe80::1%en0', 'ff02::1', '100::1', '64:ff9b:1::1',
+      '2001::1', '2001:0:4136:e378::1', '2001:db8::1', '3fff::1', 'not-an-ip', ''])
+      expect(isBlockedAddress(a), a).toBe(true)
+    for (const a of ['2606:4700:4700::1111', '2a00:1450:4001:80b::200e', '2001:4860:4860::8888'])
+      expect(isBlockedAddress(a), a).toBe(false)
+  })
+
+  it('reads every IPv6 spelling into its eight groups', () => {
+    expect(ipv6Groups('::ffff:127.0.0.1')).toEqual([0, 0, 0, 0, 0, 0xFFFF, 0x7F00, 1])
+    expect(ipv6Groups('::ffff:7f00:1')).toEqual([0, 0, 0, 0, 0, 0xFFFF, 0x7F00, 1])
+    expect(ipv6Groups('2001:db8::')).toEqual([0x2001, 0xDB8, 0, 0, 0, 0, 0, 0])
+    expect(ipv6Groups('1:2:3:4:5:6:7:8')).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(ipv6Groups('::')).toEqual([0, 0, 0, 0, 0, 0, 0, 0])
+    expect(ipv6Groups('fe80::1%en0')).toBeNull()
+    expect(ipv6Groups('127.0.0.1')).toBeNull()
   })
 })
 
@@ -98,6 +126,14 @@ describe('fetchFromOrigin', () => {
     expect(literal.code).toBe('blocked_address')
     const metadata = await fails(fetchFromOrigin('http://169.254.169.254/latest/meta-data', 'http://169.254.169.254', { maxBytes: 1024 }))
     expect(metadata.code).toBe('blocked_address')
+    // IPv4 inside an IPv6 literal (WHATWG writes `[::ffff:127.0.0.1]` as `[::ffff:7f00:1]`).
+    for (const host of ['[::ffff:127.0.0.1]', '[::ffff:7f00:1]', '[::ffff:a9fe:a9fe]', '[64:ff9b::7f00:1]', '[2002:7f00:1::]', '[::1]']) {
+      const origin = `http://${host}:${port}`
+      expect((await fails(fetchFromOrigin(`${origin}/img.png`, origin, { maxBytes: 1024 }))).code, host).toBe('blocked_address')
+    }
+    // …and in a DNS answer.
+    const mappedAnswer = await fails(fetchFromOrigin(`${ORIGIN()}/img.png`, ORIGIN(), { maxBytes: 1024, resolve: async () => [{ address: '::ffff:7f00:1', family: 6 }] }))
+    expect(mappedAnswer.code).toBe('blocked_address')
   })
 
   it('refuses a page instead of media, and a file over the cap — declared, or found while streaming', async () => {

@@ -10,8 +10,10 @@
  * - every address the host resolves to is checked when the connection is
  *   made (a custom `lookup`, so the address checked is the address used — a
  *   DNS answer cannot change between the check and the connect; no pooled
- *   socket skips it), and an IP literal is checked before it: loopback, private, link-local (cloud
- *   metadata), CGNAT, unique-local, multicast and reserved ranges are refused;
+ *   socket skips it), and an IP literal is checked before it. Only public
+ *   addresses pass (`isBlockedAddress`): public unicast IPv4, global unicast
+ *   IPv6, and an IPv6 form that carries an IPv4 address is judged by that
+ *   address (mapped, compatible, NAT64, 6to4 — dotted or hex);
  * - redirects are not followed automatically: one to the same host is
  *   followed (at most 3), one to any other host is refused;
  * - the size cap is applied while the body streams (and to a declared
@@ -50,8 +52,8 @@ export class OriginFetchError extends Error {
   }
 }
 
-/** Addresses a fetch must never reach. */
-const BLOCKED = new BlockList()
+/** IPv4 ranges that are not public unicast: a fetch never reaches them. */
+const NOT_PUBLIC_V4 = new BlockList()
 for (const [net, prefix] of [
   ['0.0.0.0', 8], // "this network"
   ['10.0.0.0', 8],
@@ -61,34 +63,58 @@ for (const [net, prefix] of [
   ['172.16.0.0', 12],
   ['192.0.0.0', 24],
   ['192.0.2.0', 24],
+  ['192.88.99.0', 24], // 6to4 relay
   ['192.168.0.0', 16],
   ['198.18.0.0', 15],
   ['198.51.100.0', 24],
   ['203.0.113.0', 24],
   ['224.0.0.0', 4], // multicast
   ['240.0.0.0', 4], // reserved, broadcast
-] as const) BLOCKED.addSubnet(net, prefix, 'ipv4')
-for (const [net, prefix] of [
-  ['::', 128],
-  ['::1', 128],
-  ['64:ff9b::', 96], // NAT64 — embeds an IPv4 address
-  ['100::', 64],
-  ['2001:db8::', 32],
-  ['fc00::', 7], // unique-local
-  ['fe80::', 10], // link-local
-  ['ff00::', 8], // multicast
-] as const) BLOCKED.addSubnet(net, prefix, 'ipv6')
+] as const) NOT_PUBLIC_V4.addSubnet(net, prefix, 'ipv4')
 
-/** True when `address` is one a fetch must not reach. An IPv4-mapped IPv6 address is judged as its IPv4 address. */
+/** An IPv6 address as its eight 16-bit groups; null when it is not one (a zone id included). */
+export function ipv6Groups(address: string): number[] | null {
+  if (isIP(address) !== 6 || address.includes('%')) return null
+  let text = address.toLowerCase()
+  // A trailing dotted quad (`::ffff:127.0.0.1`) is two groups.
+  const quad = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text)
+  if (quad) {
+    const [a, b, c, d] = quad.slice(1).map(Number) as [number, number, number, number]
+    text = `${text.slice(0, quad.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`
+  }
+  const [head, tail] = text.includes('::') ? text.split('::') as [string, string] : [text, null]
+  const left = head ? head.split(':') : []
+  const right = tail ? tail.split(':') : []
+  const missing = 8 - left.length - right.length
+  if (tail === null ? missing !== 0 : missing < 1) return null
+  const groups = [...left, ...Array.from({ length: tail === null ? 0 : missing }, () => '0'), ...right].map(g => Number.parseInt(g, 16))
+  return groups.length === 8 && groups.every(g => Number.isInteger(g) && g >= 0 && g <= 0xFFFF) ? groups : null
+}
+
+const v4Of = (hi: number, lo: number): string => `${hi >> 8}.${hi & 0xFF}.${lo >> 8}.${lo & 0xFF}`
+
+/**
+ * True when a fetch must not reach `address`. Allowlist: an IPv4 address must be public unicast; an IPv6 address must be
+ * global unicast (2000::/3, less its special blocks). An IPv6 address that carries an IPv4 address — mapped
+ * (`::ffff:0:0/96`, dotted or hex), compatible (`::/96`), NAT64 (`64:ff9b::/96`) or 6to4 (`2002::/16`) — is judged
+ * by the IPv4 address it carries. Anything unparseable is refused.
+ */
 export function isBlockedAddress(address: string): boolean {
   const family = isIP(address)
-  if (family === 0) return true
-  if (family === 6) {
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)
-    if (mapped) return isBlockedAddress(mapped[1]!)
-    return BLOCKED.check(address, 'ipv6')
-  }
-  return BLOCKED.check(address, 'ipv4')
+  if (family === 4) return NOT_PUBLIC_V4.check(address, 'ipv4')
+  if (family !== 6) return true
+  const g = ipv6Groups(address)
+  if (!g) return true
+  const zeros = (n: number) => g.slice(0, n).every(x => x === 0)
+  if (zeros(5) && g[5] === 0xFFFF) return isBlockedAddress(v4Of(g[6]!, g[7]!)) // IPv4-mapped
+  if (zeros(6)) return true // ::, ::1 and the deprecated IPv4-compatible block
+  if (g[0] === 0x64 && g[1] === 0xFF9B && g.slice(2, 6).every(x => x === 0)) return isBlockedAddress(v4Of(g[6]!, g[7]!)) // NAT64
+  if (g[0] === 0x2002) return isBlockedAddress(v4Of(g[1]!, g[2]!)) // 6to4
+  if ((g[0]! & 0xE000) !== 0x2000) return true // not global unicast: ULA, link-local, multicast, 64:ff9b:1::/48, …
+  if (g[0] === 0x2001 && g[1]! < 0x0200) return true // 2001::/23 — IETF protocol assignments (Teredo, benchmarking, ORCHID)
+  if (g[0] === 0x2001 && g[1] === 0x0DB8) return true // documentation
+  if ((g[0]! & 0xFFF0) === 0x3FF0) return true // 3fff::/20 — documentation
+  return false
 }
 
 /** Response types a media file may arrive with. The bytes are sniffed afterwards; this only refuses pages early. */
