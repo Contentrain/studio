@@ -3,6 +3,9 @@
  * A migration's media → Studio Media, inside the migration card: what is in
  * the repository and what the plan takes (preflight), the import's progress,
  * and — once every file is in — switching the site's addresses to Studio.
+ *
+ * Opened with `?focus=migration-media` (the claim screen's way here from
+ * Migrate's "move the media to Studio"), the card scrolls into view.
  */
 const props = defineProps<{
   workspaceId: string
@@ -11,6 +14,8 @@ const props = defineProps<{
 }>()
 
 const { t } = useContent()
+const route = useRoute()
+const root = ref<HTMLElement | null>(null)
 const toast = useToast()
 const { show: showPlanModal } = usePlanModal()
 
@@ -74,6 +79,13 @@ async function load() {
   }
   schedule()
 }
+
+// Once, when the card first shows.
+const stopFocus = watch(root, (el) => {
+  if (!el) return
+  if (route.query.focus === 'migration-media') el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  stopFocus()
+}, { flush: 'post' })
 
 const active = computed(() => !!job.value && ['preparing', 'queued', 'running'].includes(job.value.status))
 
@@ -170,7 +182,7 @@ watch(deleteLocal, () => {
 </script>
 
 <template>
-  <div v-if="state?.present && preflight" class="mt-3 border-t border-secondary-200 pt-3 dark:border-secondary-800" data-testid="migration-media">
+  <div v-if="state?.present && preflight" id="migration-media" ref="root" class="mt-3 border-t border-secondary-200 pt-3 dark:border-secondary-800" data-testid="migration-media">
     <p class="text-xs font-medium text-heading dark:text-secondary-100">
       {{ t('migration.media_title') }}
     </p>

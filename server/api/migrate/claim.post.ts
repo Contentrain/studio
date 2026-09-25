@@ -11,7 +11,7 @@
  * workspace the user picks.
  */
 import { MigrateClaimError, verifyMigrateClaim } from '../../utils/migrate-claim'
-import { migrateClaimPublicKey, migrateGrantView } from '../../utils/migrate-grant'
+import { migrateClaimPublicKey, migrateGrantDestination, migrateGrantView } from '../../utils/migrate-grant'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -51,5 +51,10 @@ export default defineEventHandler(async (event) => {
   if (grant.user_id !== session.user.id)
     throw createError({ statusCode: 409, message: errorMessage('migrate.claim_taken') })
 
-  return { grant: migrateGrantView(grant), capabilities: claim.capabilities ?? [], planEvidence: claim.plan_evidence }
+  return {
+    grant: migrateGrantView(grant),
+    destination: await migrateGrantDestination(session, grant),
+    capabilities: claim.capabilities ?? [],
+    planEvidence: claim.plan_evidence,
+  }
 })

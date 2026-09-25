@@ -12,6 +12,11 @@
  * The visitor picks a workspace they own or administer that has no running
  * subscription; the provider checkout then starts the grant's trial at $0
  * today, and the plan's regular price applies after it unless canceled.
+ *
+ * Once the grant's trial has started, the screen is also the way back to
+ * the delivered site: its project once the repo is connected there (straight
+ * to the migration's media with `?focus=media`, Migrate's "move the media to
+ * Studio"), the workspace until then.
  */
 import { PLAN_PRICING } from '~~/shared/utils/license'
 
@@ -28,6 +33,7 @@ interface GrantView {
   workspaceId: string | null
   state: 'claimed' | 'bound' | 'redeemed'
 }
+interface Destination { workspaceSlug: string, projectId: string | null }
 
 const { t } = useContent()
 const route = useRoute()
@@ -37,6 +43,9 @@ const { workspaces, fetchWorkspaces } = useWorkspaces()
 useHead({ title: () => t('migrate_claim.title') })
 
 const grant = ref<GrantView | null>(null)
+const destination = ref<Destination | null>(null)
+/** Migrate's "move the media to Studio" opens the migration's media card. */
+const focusMedia = route.query.focus === 'media'
 /** Why this plan — only present when opened from the claim link. */
 const planEvidence = ref<Array<{ limit_key: string, measured: number, limit: number, capability?: string }>>([])
 const loadError = ref('')
@@ -45,6 +54,11 @@ const submitError = ref('')
 const selectedWorkspaceId = ref<string | null>(null)
 
 const planPricing = computed(() => (grant.value ? PLAN_PRICING[grant.value.plan] : null))
+const projectPath = computed(() => {
+  const d = destination.value
+  if (!d?.projectId) return null
+  return `/w/${d.workspaceSlug}/projects/${d.projectId}${focusMedia ? '?focus=migration-media' : ''}`
+})
 
 type WorkspaceItem = (typeof workspaces.value)[number]
 
@@ -77,15 +91,16 @@ onMounted(async () => {
   try {
     const [result] = await Promise.all([
       token
-        ? $fetch<{ grant: GrantView, planEvidence?: typeof planEvidence.value }>('/api/migrate/claim', { method: 'POST', body: { token } })
+        ? $fetch<{ grant: GrantView, destination?: Destination | null, planEvidence?: typeof planEvidence.value }>('/api/migrate/claim', { method: 'POST', body: { token } })
         : grantId
-          ? $fetch<{ grant: GrantView }>(`/api/migrate/grants/${encodeURIComponent(grantId)}`)
+          ? $fetch<{ grant: GrantView, destination?: Destination | null }>(`/api/migrate/grants/${encodeURIComponent(grantId)}`)
           : Promise.reject(new Error('missing')),
       fetchWorkspaces(),
     ])
     grant.value = result.grant
+    destination.value = result.destination ?? null
     planEvidence.value = ('planEvidence' in result && Array.isArray(result.planEvidence)) ? result.planEvidence : []
-    if (token) await router.replace({ query: { grant: result.grant.id } })
+    if (token) await router.replace({ query: { grant: result.grant.id, ...(focusMedia ? { focus: 'media' } : {}) } })
 
     const eligible = options.value.filter(o => o.eligible)
     if (grant.value.workspaceId) selectedWorkspaceId.value = grant.value.workspaceId
@@ -144,6 +159,20 @@ async function startTrial() {
             {{ t('migrate_claim.plan_reason', { what: item.capability ?? item.limit_key, measured: item.measured.toLocaleString('en-US'), limit: item.limit.toLocaleString('en-US') }) }}
           </li>
         </ul>
+
+        <div v-if="destination && grant.state === 'redeemed'" class="mt-6 flex flex-wrap items-center gap-3" data-testid="claim-destination">
+          <AtomsBaseButton v-if="projectPath" variant="primary" data-testid="claim-open-project" @click="navigateTo(projectPath)">
+            {{ focusMedia ? t('migrate_claim.open_media') : t('migrate_claim.open_project') }}
+          </AtomsBaseButton>
+          <template v-else>
+            <p class="text-sm text-body dark:text-secondary-300">
+              {{ t('migrate_claim.connect_repo', { repo: `${grant.repo.owner}/${grant.repo.name}` }) }}
+            </p>
+            <AtomsBaseButton variant="secondary" @click="navigateTo(`/w/${destination.workspaceSlug}`)">
+              {{ t('migrate_claim.open_workspace') }}
+            </AtomsBaseButton>
+          </template>
+        </div>
 
         <div v-if="grant.state === 'redeemed'" class="mt-6 rounded-lg bg-secondary-50 px-4 py-3 text-sm text-body dark:bg-secondary-800 dark:text-secondary-300">
           {{ t('migrate_claim.already_used') }}

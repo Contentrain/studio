@@ -1,7 +1,10 @@
 import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import MigrationMediaCard from '../../../app/components/organisms/MigrationMediaCard.vue'
+
+const routeQuery = vi.hoisted(() => ({ value: {} as Record<string, string> }))
+mockNuxtImport('useRoute', () => () => ({ query: routeQuery.value }))
 
 const MB = 1024 * 1024
 const preflight = (over: Record<string, unknown> = {}) => ({
@@ -28,8 +31,9 @@ function stubFetch(state: Record<string, unknown>) {
   return fetcher
 }
 
-async function mount(state: Record<string, unknown>) {
+async function mount(state: Record<string, unknown>, query: Record<string, string> = {}) {
   const fetcher = stubFetch(state)
+  routeQuery.value = query
   const wrapper = await mountSuspended(MigrationMediaCard, { props: { workspaceId: 'w', projectId: 'p', editable: true } })
   await flushPromises()
   return { wrapper, fetcher }
@@ -37,6 +41,7 @@ async function mount(state: Record<string, unknown>) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('MigrationMediaCard', () => {
@@ -69,5 +74,14 @@ describe('MigrationMediaCard', () => {
   it('no manifest: nothing rendered', async () => {
     const { wrapper } = await mount({ present: false })
     expect(wrapper.find('[data-testid="migration-media"]').exists()).toBe(false)
+  })
+
+  it('opened from the claim screen (?focus=migration-media), the card scrolls into view; otherwise it stays put', async () => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {})
+    await mount({ present: true, uploadAllowed: true, job: null, preflight: preflight() })
+    expect(scroll).not.toHaveBeenCalled()
+    const { wrapper } = await mount({ present: true, uploadAllowed: true, job: null, preflight: preflight() }, { focus: 'migration-media' })
+    expect(scroll).toHaveBeenCalledOnce()
+    expect(scroll.mock.contexts[0]).toBe(wrapper.find('#migration-media').element)
   })
 })
