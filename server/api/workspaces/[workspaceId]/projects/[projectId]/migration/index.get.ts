@@ -1,5 +1,5 @@
 /**
- * The project's migration handoff (`contentrain-handoff.json` as synced) plus
+ * The project's migration handoff (`.contentrain/migrate/handoff.json` as synced) plus
  * a summary and the comments import state, for the overview card.
  *
  * GET /api/workspaces/{workspaceId}/projects/{projectId}/migration

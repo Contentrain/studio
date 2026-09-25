@@ -95,7 +95,7 @@ describe('summarizeMigrationHandoff / renderMigrationHandoffForAgent', () => {
 })
 
 describe('readMigrationHandoffFromRepo', () => {
-  it('tries the content branch before the default branch and the content root before the repo root', async () => {
+  it('tries the content branch before the default branch, the new path before the legacy one, the content root before the repo root', async () => {
     const calls: Array<[string, string | undefined]> = []
     const git = {
       readFile: vi.fn(async (path: string, ref?: string) => {
@@ -109,11 +109,41 @@ describe('readMigrationHandoffFromRepo', () => {
     expect(found?.path).toBe('contentrain-handoff.json')
     expect(found?.bytes).toBe(Buffer.byteLength(JSON.stringify(makeHandoff())))
     expect(calls).toEqual([
+      ['site/.contentrain/migrate/handoff.json', 'contentrain'],
+      ['.contentrain/migrate/handoff.json', 'contentrain'],
       ['site/contentrain-handoff.json', 'contentrain'],
       ['contentrain-handoff.json', 'contentrain'],
+      ['site/.contentrain/migrate/handoff.json', 'main'],
+      ['.contentrain/migrate/handoff.json', 'main'],
       ['site/contentrain-handoff.json', 'main'],
       ['contentrain-handoff.json', 'main'],
     ])
+  })
+
+  it('reads .contentrain/migrate/handoff.json, and prefers it to a legacy root file on the same branch', async () => {
+    const current = makeHandoff({ site_url: 'https://new.example' })
+    const git = {
+      readFile: vi.fn(async (path: string) => {
+        if (path === '.contentrain/migrate/handoff.json') return JSON.stringify(current)
+        if (path === 'contentrain-handoff.json') return JSON.stringify(makeHandoff())
+        throw new Error('not found')
+      }),
+    }
+    const found = await readMigrationHandoffFromRepo(git as never, '', 'main')
+    expect(found).toMatchObject({ path: '.contentrain/migrate/handoff.json', ref: 'contentrain', handoff: current })
+    expect(git.readFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('still finds a legacy root contentrain-handoff.json when the new path is absent', async () => {
+    const git = {
+      readFile: vi.fn(async (path: string, ref?: string) => {
+        if (path === 'contentrain-handoff.json' && ref === 'contentrain') return JSON.stringify(makeHandoff())
+        throw new Error('not found')
+      }),
+    }
+    const found = await readMigrationHandoffFromRepo(git as never, '', 'main')
+    expect(found).toMatchObject({ path: 'contentrain-handoff.json', ref: 'contentrain' })
+    expect(git.readFile.mock.calls.map(([path]) => path)).toEqual(['.contentrain/migrate/handoff.json', 'contentrain-handoff.json'])
   })
 
   it('returns null when no branch carries the file', async () => {
@@ -135,12 +165,12 @@ describe('readMigrationHandoffFromRepo — content_root in a subdirectory', () =
     return { getContent, client: { rest: { repos: { getContent } } } }
   }
 
-  it('reads {content_root}/contentrain-handoff.json exactly once-prefixed', async () => {
-    const { getContent, client } = fakeOctokit({ 'contentrain:apps/web/contentrain-handoff.json': JSON.stringify(makeHandoff()) })
+  it('reads {content_root}/.contentrain/migrate/handoff.json exactly once-prefixed', async () => {
+    const { getContent, client } = fakeOctokit({ 'contentrain:apps/web/.contentrain/migrate/handoff.json': JSON.stringify(makeHandoff()) })
     const git = new GitHubProvider(client as never, { owner: 'acme', name: 'mono' })
     const found = await readMigrationHandoffFromRepo(git as never, 'apps/web', 'main')
-    expect(found?.path).toBe('apps/web/contentrain-handoff.json')
-    expect(getContent.mock.calls.map(([arg]) => arg.path)).toEqual(['apps/web/contentrain-handoff.json'])
+    expect(found?.path).toBe('apps/web/.contentrain/migrate/handoff.json')
+    expect(getContent.mock.calls.map(([arg]) => arg.path)).toEqual(['apps/web/.contentrain/migrate/handoff.json'])
   })
 
   it('falls back to the repository root, never to a doubled prefix', async () => {
@@ -149,7 +179,8 @@ describe('readMigrationHandoffFromRepo — content_root in a subdirectory', () =
     const found = await readMigrationHandoffFromRepo(git as never, 'apps/web', 'main')
     expect(found).toMatchObject({ path: 'contentrain-handoff.json', ref: 'main' })
     const paths = getContent.mock.calls.map(([arg]) => arg.path)
-    expect(paths).toEqual(['apps/web/contentrain-handoff.json', 'contentrain-handoff.json', 'apps/web/contentrain-handoff.json', 'contentrain-handoff.json'])
+    const perRef = ['apps/web/.contentrain/migrate/handoff.json', '.contentrain/migrate/handoff.json', 'apps/web/contentrain-handoff.json', 'contentrain-handoff.json']
+    expect(paths).toEqual([...perRef, ...perRef])
     expect(paths.some(p => p.includes('apps/web/apps/web'))).toBe(false)
   })
 })

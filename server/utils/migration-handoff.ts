@@ -1,9 +1,9 @@
 /**
  * Migration handoff intake (S-09).
  *
- * Contentrain Migrate ends every run by writing `contentrain-handoff.json`
- * (the `MigrationHandoff` contract from @contentrain/types) at the project
- * root: what the source site used, what happened to each capability, the
+ * Contentrain Migrate ends every run by writing `.contentrain/migrate/handoff.json`
+ * (the `MigrationHandoff` contract from @contentrain/types; runs before that
+ * wrote `contentrain-handoff.json` at the project root): what the source site used, what happened to each capability, the
  * open runtime offers (comments, forms, …), and — when the source had
  * comments — the `contentrain-comments@1` export inline or by URL.
  *
@@ -26,7 +26,9 @@ import type { CommentsImportReport } from './comment-import'
 import { runCommentsImportChunked } from './comment-import'
 import { isAllowedWebhookUrl } from './webhook-engine'
 
-export const HANDOFF_FILENAME = 'contentrain-handoff.json'
+export const HANDOFF_PATH = '.contentrain/migrate/handoff.json'
+/** Where Migrate wrote the handoff before `HANDOFF_PATH`; still read for repos migrated then. */
+export const LEGACY_HANDOFF_FILENAME = 'contentrain-handoff.json'
 /** GitHub's own blob ceiling — past this the file cannot be read, let alone parsed. */
 export const HANDOFF_FILE_MAX_BYTES = 100 * 1024 * 1024
 /**
@@ -312,9 +314,11 @@ async function readJsonIfPresent(git: GitProvider, path: string, ref: string): P
 }
 
 /**
- * Find `contentrain-handoff.json` — Migrate writes it at the project root, so
- * try `{contentRoot}/` (when the content lives in a subdirectory) and the
- * repository root, on the content branch first and the default branch second.
+ * Find the handoff — `.contentrain/migrate/handoff.json`, or the root-level
+ * `contentrain-handoff.json` older Migrate runs wrote. Each is tried under
+ * `{contentRoot}/` (when the content lives in a subdirectory) and at the
+ * repository root, new location before legacy, on the content branch first
+ * and the default branch second.
  *
  * Paths are repository-relative: `git` must be an un-rooted provider (built
  * without `contentRoot`, as `resolveProjectContext` builds it). A rooted one
@@ -325,7 +329,8 @@ export async function readMigrationHandoffFromRepo(
   contentRoot: string,
   defaultBranch: string,
 ): Promise<{ handoff: unknown, path: string, ref: string, bytes: number } | null> {
-  const paths = [...new Set([contentRoot ? `${contentRoot}/${HANDOFF_FILENAME}` : HANDOFF_FILENAME, HANDOFF_FILENAME])]
+  const underRoot = (file: string) => contentRoot ? [`${contentRoot}/${file}`, file] : [file]
+  const paths = [...new Set([...underRoot(HANDOFF_PATH), ...underRoot(LEGACY_HANDOFF_FILENAME)])]
   const refs = [...new Set([CONTENTRAIN_BRANCH, defaultBranch || 'main'])]
   for (const ref of refs) {
     for (const path of paths) {

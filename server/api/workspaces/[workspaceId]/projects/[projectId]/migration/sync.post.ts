@@ -1,5 +1,5 @@
 /**
- * Re-read `contentrain-handoff.json` from the repository and store it on the
+ * Re-read the migration handoff from the repository and store it on the
  * project. Workspace owners/admins only.
  *
  * POST /api/workspaces/{workspaceId}/projects/{projectId}/migration/sync
