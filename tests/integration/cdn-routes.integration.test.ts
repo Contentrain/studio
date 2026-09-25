@@ -300,6 +300,10 @@ describe('CDN route integration', () => {
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'ETag', 'etag-binary')
     // Keyed media is still keyed — private cache only.
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'Cache-Control', 'private, max-age=60')
+    // Never sniffed into another type, never run as a document (an SVG opened on this host).
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'X-Content-Type-Options', 'nosniff')
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Content-Security-Policy', expect.stringContaining('sandbox'))
+    expect(setResponseHeader).toHaveBeenCalledWith(event, 'Content-Security-Policy', expect.stringContaining('default-src \'none\''))
   })
 
   it('serves a media binary without a key when cdn_public_media is enabled', async () => {

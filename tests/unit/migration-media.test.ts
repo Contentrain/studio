@@ -48,6 +48,42 @@ describe('SVG sanitizing (Migrate\'s rules)', () => {
     })
   }
 
+  // The review's gaps in a blocklist (t6, S1) — an allow-list closes them by construction.
+  const BYPASSES: Array<[string, string]> = [
+    ['XHTML meta refresh (open redirect on the media host)', `<svg ${NS}><meta xmlns="http://www.w3.org/1999/xhtml" http-equiv="refresh" content="0;url=https://evil.test"/><path d="M0 0"/></svg>`],
+    ['XHTML img beacon', `<svg ${NS}><img xmlns="http://www.w3.org/1999/xhtml" src="https://evil.test/p.gif"/></svg>`],
+    ['html-prefixed element', `<svg ${NS} xmlns:h="http://www.w3.org/1999/xhtml"><h:iframe src="https://evil.test"></h:iframe></svg>`],
+    ['CSS-escaped url(', `<svg ${NS}><style>.a{fill:\\75 rl(https://evil.test/p.svg#g)}</style><rect class="a" width="1"/></svg>`],
+    ['comment-split url(', `<svg ${NS}><rect style="fill:ur/**/l(https://evil.test/p.svg#g)" width="1"/></svg>`],
+    ['escaped @import', `<svg ${NS}><style>\\@import 'https://evil.test/a.css';</style></svg>`],
+    ['external url in a presentation attribute', `<svg ${NS}><rect fill="url(https://evil.test/p.svg#g)" width="1"/></svg>`],
+    ['image-set beacon', `<svg ${NS}><rect style="fill:image-set('https://evil.test/a.png' 1x)" width="1"/></svg>`],
+    ['entity-encoded href animation', `<svg ${NS}><a href="#x"><set attributeName="xlink:h&#114;ef" to="javascript:alert(1)"/><text>x</text></a></svg>`],
+  ]
+  for (const [name, svg] of BYPASSES) {
+    it(`closes: ${name}`, () => {
+      const out = sanitizeSvg(Buffer.from(svg))
+      expect(out.ok).toBe(true)
+      if (!out.ok) return
+      const text = out.bytes.toString('utf8')
+      expect(svgProblems(out.bytes)).toBeNull()
+      expect(text).not.toMatch(/evil\.test|<meta|<img|iframe|javascript/i)
+    })
+  }
+
+  it('the independent check refuses anything outside the allow-list, whatever put it there', () => {
+    expect(svgProblems(Buffer.from(`<svg ${NS}><meta http-equiv="refresh"/></svg>`))).toBe('<meta>')
+    expect(svgProblems(Buffer.from(`<svg ${NS}><style>.a{fill:\\75 rl(https://evil.test)}</style></svg>`))).toBe('url()')
+  })
+
+  it('editor metadata goes with its content; the drawing and an svg: prefix stay', () => {
+    const svg = `<svg ${NS} xmlns:sodipodi="http://sodipodi" xmlns:inkscape="http://inkscape"><sodipodi:namedview inkscape:zoom="1"><inkscape:grid/></sodipodi:namedview><metadata><rdf:RDF/></metadata><svg:g><path d="M0 0"/></svg:g><a href="#p"><text>t</text></a></svg>`
+    const out = sanitizeSvg(Buffer.from(svg))
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.bytes.toString('utf8')).toBe(`<svg ${NS} xmlns:sodipodi="http://sodipodi" xmlns:inkscape="http://inkscape"><svg:g><path d="M0 0"/></svg:g><a href="#p"><text>t</text></a></svg>`)
+  })
+
   it('leaves a harmless SVG byte-identical: in-document refs, gradients, raster data', () => {
     const svg = `<svg ${NS} viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0"/></linearGradient></defs><rect fill="url(#g)" width="10" height="10"/><use xlink:href="#g"/><image href="data:image/png;base64,AAAA"/></svg>`
     const out = sanitizeSvg(Buffer.from(svg))
