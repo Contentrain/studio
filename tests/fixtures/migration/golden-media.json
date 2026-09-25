@@ -1,0 +1,778 @@
+{
+  "assets": [
+    {
+      "alt": "Abstract cover 1",
+      "bytes": 4401,
+      "height": 683,
+      "id": "7507df10735ec5b5",
+      "localUrl": "/media/2026/01/golden-cover-1-1024x683.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/d82cc7523a618eccebc7a6e9/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-1-1024x683.png",
+      "role": "media",
+      "sha256": "271b482511402c9b2f56e1d2eb8c34f4ac926da9ea9838b7dab0231817af3a14",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-1-1024x683.png",
+      "width": 1024
+    },
+    {
+      "alt": "Abstract cover 1",
+      "bytes": 774,
+      "height": 200,
+      "id": "c00e1db7449df879",
+      "localUrl": "/media/2026/01/golden-cover-1-300x200.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/d82cc7523a618eccebc7a6e9/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-1-300x200.png",
+      "role": "media",
+      "sha256": "7cb41f92f1e5659e6b86f8abfe5ac5dbd10f74aea032fdc9e0183f65be1644df",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-1-300x200.png",
+      "width": 300
+    },
+    {
+      "alt": "Abstract cover 1",
+      "bytes": 2756,
+      "height": 512,
+      "id": "bafc1b2a887bc050",
+      "localUrl": "/media/2026/01/golden-cover-1-768x512.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/d82cc7523a618eccebc7a6e9/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-1-768x512.png",
+      "role": "media",
+      "sha256": "5c4e8aea0f213259a820b5fc6bb634fddf0a81f6c16604ad78a5d852ba1c8871",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-1-768x512.png",
+      "width": 768
+    },
+    {
+      "alt": "Abstract cover 1",
+      "bytes": 4621,
+      "height": 800,
+      "id": "ba98bd746e0926b1",
+      "localUrl": "/media/2026/01/golden-cover-1.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/f35f84c1282286c56653b724/url"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/d82cc7523a618eccebc7a6e9/body"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "relation",
+          "pointer": "/d82cc7523a618eccebc7a6e9/cover"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-1.png",
+      "role": "media",
+      "sha256": "2f6cee15422e66faac81aee75dad30a3f9988b4bc556d3883978c1199709ca55",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-1.png",
+      "width": 1200
+    },
+    {
+      "alt": "Abstract cover 2",
+      "bytes": 4401,
+      "height": 683,
+      "id": "24e87e74d8dd2e83",
+      "localUrl": "/media/2026/01/golden-cover-2-1024x683.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/7a9c49551cf49cfd7bc89819/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-2-1024x683.png",
+      "role": "media",
+      "sha256": "ef25829227f81abfc628d4fc7c96b8411c202987a0699c97a627d1a14ab4e150",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-2-1024x683.png",
+      "width": 1024
+    },
+    {
+      "alt": "Abstract cover 2",
+      "bytes": 773,
+      "height": 200,
+      "id": "ff767a4217286861",
+      "localUrl": "/media/2026/01/golden-cover-2-300x200.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/7a9c49551cf49cfd7bc89819/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-2-300x200.png",
+      "role": "media",
+      "sha256": "8d2822581732ff4d55f4ac2ec1dffc30149943e8342dafb0b93fc18d7fe251cc",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-2-300x200.png",
+      "width": 300
+    },
+    {
+      "alt": "Abstract cover 2",
+      "bytes": 2754,
+      "height": 512,
+      "id": "de00f776997ba1a3",
+      "localUrl": "/media/2026/01/golden-cover-2-768x512.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/7a9c49551cf49cfd7bc89819/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-2-768x512.png",
+      "role": "media",
+      "sha256": "f65c3039c7351b6ee3f464be24abebefd9711fa4c165bbc5033afb64dc810a9a",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-2-768x512.png",
+      "width": 768
+    },
+    {
+      "alt": "Abstract cover 2",
+      "bytes": 4620,
+      "height": 800,
+      "id": "0a9027a13d66e9d1",
+      "localUrl": "/media/2026/01/golden-cover-2.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/1fa29c6fd09cc39cc1253df5/url"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/7a9c49551cf49cfd7bc89819/body"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "relation",
+          "pointer": "/7a9c49551cf49cfd7bc89819/cover"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-2.png",
+      "role": "media",
+      "sha256": "aa32db335b5a119ef3bd3d7ca275ff387fba675bd858faf2d0fe3fde717d8bc4",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-2.png",
+      "width": 1200
+    },
+    {
+      "alt": "Abstract cover 3",
+      "bytes": 4401,
+      "height": 683,
+      "id": "ab2f6844b2e3c418",
+      "localUrl": "/media/2026/01/golden-cover-3-1024x683.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/e8ae24f175c65b74e81cefc6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-3-1024x683.png",
+      "role": "media",
+      "sha256": "92976940070282908d29e0f6107445e99d57ae4f31fcd457a5081db9b2471f7f",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-3-1024x683.png",
+      "width": 1024
+    },
+    {
+      "alt": "Abstract cover 3",
+      "bytes": 774,
+      "height": 200,
+      "id": "a2f9aadd681d1d79",
+      "localUrl": "/media/2026/01/golden-cover-3-300x200.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/e8ae24f175c65b74e81cefc6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-3-300x200.png",
+      "role": "media",
+      "sha256": "166bd86f3753e1cbad9e0e6caa0d9ba6a95cba5bd2aaa5ff9a0c2cbf73eec436",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-3-300x200.png",
+      "width": 300
+    },
+    {
+      "alt": "Abstract cover 3",
+      "bytes": 2755,
+      "height": 512,
+      "id": "aa215b62f78891a1",
+      "localUrl": "/media/2026/01/golden-cover-3-768x512.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/e8ae24f175c65b74e81cefc6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-3-768x512.png",
+      "role": "media",
+      "sha256": "d5488a68d0ae8ae379e95a4051ba0ad7b1fae14ad92e2fb362abe3f2fd3e8978",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-3-768x512.png",
+      "width": 768
+    },
+    {
+      "alt": "Abstract cover 3",
+      "bytes": 4621,
+      "height": 800,
+      "id": "77a3e0036e75ecf1",
+      "localUrl": "/media/2026/01/golden-cover-3.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/515d59b52886eeddb9276511/url"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/e8ae24f175c65b74e81cefc6/body"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "relation",
+          "pointer": "/e8ae24f175c65b74e81cefc6/cover"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-3.png",
+      "role": "media",
+      "sha256": "d0b76bd45bd200a92493e8766bd333fe1a27ef2048030cd0f3634274a1b350a9",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-3.png",
+      "width": 1200
+    },
+    {
+      "alt": "Abstract cover 4",
+      "bytes": 4401,
+      "height": 683,
+      "id": "83d7407c223a920a",
+      "localUrl": "/media/2026/01/golden-cover-4-1024x683.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/79caedfbd7faec21dee9389c/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-4-1024x683.png",
+      "role": "media",
+      "sha256": "bf66859e249f1bdeac8264633326a70a5374d4b638b8041c5b5feeea4eac4824",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-4-1024x683.png",
+      "width": 1024
+    },
+    {
+      "alt": "Abstract cover 4",
+      "bytes": 774,
+      "height": 200,
+      "id": "a82c576582d72c32",
+      "localUrl": "/media/2026/01/golden-cover-4-300x200.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/79caedfbd7faec21dee9389c/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-4-300x200.png",
+      "role": "media",
+      "sha256": "a4fc6a1ddfde0f207e06d4deb3caf0d01a1fd6a36ec5591b5e16dbfcfb15cf73",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-4-300x200.png",
+      "width": 300
+    },
+    {
+      "alt": "Abstract cover 4",
+      "bytes": 2756,
+      "height": 512,
+      "id": "2cb1d4f8fc884c56",
+      "localUrl": "/media/2026/01/golden-cover-4-768x512.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/79caedfbd7faec21dee9389c/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-4-768x512.png",
+      "role": "media",
+      "sha256": "13a2457f66bea1ef632765f37718a43c8a2da2a6b26dc1c6f5a5b648267e5de7",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-4-768x512.png",
+      "width": 768
+    },
+    {
+      "alt": "Abstract cover 4",
+      "bytes": 4621,
+      "height": 800,
+      "id": "001d04cb988f4dec",
+      "localUrl": "/media/2026/01/golden-cover-4.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/a7a6958f208839f15d37b6c0/url"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/79caedfbd7faec21dee9389c/body"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "relation",
+          "pointer": "/79caedfbd7faec21dee9389c/cover"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-4.png",
+      "role": "media",
+      "sha256": "c752170e4b508393c8421e6b10eab1acf3fa816fc7943f795ffa66518b9e5bfc",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-4.png",
+      "width": 1200
+    },
+    {
+      "alt": "Abstract cover 5",
+      "bytes": 4400,
+      "height": 683,
+      "id": "1c84452452a82251",
+      "localUrl": "/media/2026/01/golden-cover-5-1024x683.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/a8920fd2cfd91e59628077e7/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-5-1024x683.png",
+      "role": "media",
+      "sha256": "cf0bea1c98e22bea8cca5b746651e0ab4f268a2e6386a9cf3c217deb54474426",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-5-1024x683.png",
+      "width": 1024
+    },
+    {
+      "alt": "Abstract cover 5",
+      "bytes": 774,
+      "height": 200,
+      "id": "608481a84cb114e3",
+      "localUrl": "/media/2026/01/golden-cover-5-300x200.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/a8920fd2cfd91e59628077e7/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-5-300x200.png",
+      "role": "media",
+      "sha256": "a1d5f255587f5a2f15251d416b0b6770f05315f24469cfad20ed3c44b905c5bd",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-5-300x200.png",
+      "width": 300
+    },
+    {
+      "alt": "Abstract cover 5",
+      "bytes": 2756,
+      "height": 512,
+      "id": "ceaab038889ce4a1",
+      "localUrl": "/media/2026/01/golden-cover-5-768x512.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/a8920fd2cfd91e59628077e7/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-5-768x512.png",
+      "role": "media",
+      "sha256": "d26a8d01a9e77bad59ac45f7d9b50f61b33986156e4bd2aa87281dcacb8e3fb6",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-5-768x512.png",
+      "width": 768
+    },
+    {
+      "alt": "Abstract cover 5",
+      "bytes": 4621,
+      "height": 800,
+      "id": "5f25e2977e2c77cc",
+      "localUrl": "/media/2026/01/golden-cover-5.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/d1d661b8797be85967b8ab5a/url"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/a8920fd2cfd91e59628077e7/body"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "relation",
+          "pointer": "/a8920fd2cfd91e59628077e7/cover"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-5.png",
+      "role": "media",
+      "sha256": "0d0007bf0a534cc4c5fcbcb504a63fb7a3742dad805a4d0697c581f618f3e083",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-5.png",
+      "width": 1200
+    },
+    {
+      "alt": "Abstract cover 6",
+      "bytes": 4400,
+      "height": 683,
+      "id": "ff6cb8ad36912f99",
+      "localUrl": "/media/2026/01/golden-cover-6-1024x683.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/42b1fb490b8c65477045f45f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-6-1024x683.png",
+      "role": "media",
+      "sha256": "de944846869298d9880bc54d29f982a020a40ca013fa673a60b7ee07dc448ca2",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-6-1024x683.png",
+      "width": 1024
+    },
+    {
+      "alt": "Abstract cover 6",
+      "bytes": 774,
+      "height": 200,
+      "id": "ffebb31694aa658e",
+      "localUrl": "/media/2026/01/golden-cover-6-300x200.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/42b1fb490b8c65477045f45f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-6-300x200.png",
+      "role": "media",
+      "sha256": "d7a9b17c9b9b44a0ce09658ccfd5ca8907bb1224cf4550c0e382870402c26b31",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-6-300x200.png",
+      "width": 300
+    },
+    {
+      "alt": "Abstract cover 6",
+      "bytes": 2755,
+      "height": 512,
+      "id": "92b556dcb375a24a",
+      "localUrl": "/media/2026/01/golden-cover-6-768x512.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/42b1fb490b8c65477045f45f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-6-768x512.png",
+      "role": "media",
+      "sha256": "110809289d13e2153941fa2c72e641a421a72c37e5b6dd92574fc04488e06a0e",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-6-768x512.png",
+      "width": 768
+    },
+    {
+      "alt": "Abstract cover 6",
+      "bytes": 4621,
+      "height": 800,
+      "id": "2d82cbcd698cf219",
+      "localUrl": "/media/2026/01/golden-cover-6.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/ab7131c4ecbb1a17e8cf444e/url"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "contains",
+          "pointer": "/42b1fb490b8c65477045f45f/body"
+        },
+        {
+          "file": ".contentrain/content/blog/posts/data.json",
+          "match": "relation",
+          "pointer": "/42b1fb490b8c65477045f45f/cover"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-cover-6.png",
+      "role": "media",
+      "sha256": "ce1ac730d48fb3f56dce9c4ad5431079cf15a8b545f154c644d3746f0c264dc3",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-cover-6.png",
+      "width": 1200
+    },
+    {
+      "alt": "The team around a table",
+      "bytes": 3727,
+      "height": 576,
+      "id": "515148658378b864",
+      "localUrl": "/media/2026/01/golden-team-1024x576.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/c37048726fff28506bef97e6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-team-1024x576.png",
+      "role": "media",
+      "sha256": "0af279c01e7078ec4b9404f7c73375ff8235f2f9c367a9d6cf52b09511334673",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-team-1024x576.png",
+      "width": 1024
+    },
+    {
+      "alt": "The team around a table",
+      "bytes": 7246,
+      "height": 864,
+      "id": "4895497392042728",
+      "localUrl": "/media/2026/01/golden-team-1536x864.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/c37048726fff28506bef97e6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-team-1536x864.png",
+      "role": "media",
+      "sha256": "c8b55596ef4504b5e30488e8441606fede9d07f0db0188bda311c0184f933e7d",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-team-1536x864.png",
+      "width": 1536
+    },
+    {
+      "alt": "The team around a table",
+      "bytes": 676,
+      "height": 169,
+      "id": "9a630aa645e92f96",
+      "localUrl": "/media/2026/01/golden-team-300x169.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/c37048726fff28506bef97e6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-team-300x169.png",
+      "role": "media",
+      "sha256": "5141ebbb2ddf202ee6442fa1d69455f1d710ce91519e519ec775950d23935932",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-team-300x169.png",
+      "width": 300
+    },
+    {
+      "alt": "The team around a table",
+      "bytes": 2340,
+      "height": 432,
+      "id": "4d92215af2dad136",
+      "localUrl": "/media/2026/01/golden-team-768x432.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/c37048726fff28506bef97e6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-team-768x432.png",
+      "role": "media",
+      "sha256": "1f7f6303def0c0f2875004e4bb65bc072f0ae2bc5d0f18fce5b6611c99a663f8",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-team-768x432.png",
+      "width": 768
+    },
+    {
+      "alt": "The team around a table",
+      "bytes": 6429,
+      "height": 900,
+      "id": "e6ccd5ebccf2fd2d",
+      "localUrl": "/media/2026/01/golden-team.png",
+      "mime": "image/png",
+      "refs": [
+        {
+          "file": ".contentrain/content/assets/media/data.json",
+          "match": "exact",
+          "pointer": "/afa06d753e14d746e81cea2b/url"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/c37048726fff28506bef97e6/body"
+        },
+        {
+          "file": ".contentrain/content/site/pages/data.json",
+          "match": "contains",
+          "pointer": "/fce0c0d4c8696729815e644f/body"
+        }
+      ],
+      "repoPath": "public/media/2026/01/golden-team.png",
+      "role": "media",
+      "sha256": "b09bdfc3c844e77877f57c42019f5c7701bc03c0c136be4399c6fc19606a2a75",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/uploads/2026/01/golden-team.png",
+      "width": 1600
+    },
+    {
+      "bytes": 106112,
+      "id": "0b655fd978fae15c",
+      "mime": "font/woff2",
+      "refs": [],
+      "repoPath": "src/assets/fonts/site/fira-code-300-700-normal.woff2",
+      "role": "font",
+      "sha256": "b6e7adca884c51549c66384fec54747fa2967ac6ad5655ed02c5da5b682a9ba2",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/themes/twentytwentyfive/assets/fonts/fira-code/FiraCode-VariableFont_wght.woff2"
+    },
+    {
+      "bytes": 53600,
+      "id": "65ed4afa57913c33",
+      "mime": "font/woff2",
+      "refs": [],
+      "repoPath": "src/assets/fonts/site/manrope-200-800-normal.woff2",
+      "role": "font",
+      "sha256": "ce340d48531930f3f2c8b7c47d149f82c9f4413548dd216e0f4d9af94a87c374",
+      "sourceUrl": "http://127.0.0.1:9410/wp-content/themes/twentytwentyfive/assets/fonts/manrope/Manrope-VariableFont_wght.woff2"
+    }
+  ],
+  "origin": "http://127.0.0.1:9410",
+  "studioRecommended": [],
+  "version": 1,
+  "withheld": []
+}
