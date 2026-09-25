@@ -24,7 +24,7 @@ import type { Plan } from './license'
 import { createMediaIngestContext, ingestMediaBytes } from './media-bulk-ingest'
 import { inspectRepoMedia } from './media-ingest'
 import type { MigrationMediaPreflight } from './migration-media'
-import { planMigrationMediaPreflight, readMigrationMediaManifest } from './migration-media'
+import { planMigrationMediaPreflight, projectPath, readMigrationMediaManifest } from './migration-media'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
 /** Files per claim: small enough to finish well inside the lease on a slow optimizer. */
@@ -64,14 +64,16 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
     plan: input.plan,
     usedBytes: input.usedBytes,
     overageSettings: input.overageSettings,
+    root: found.root,
   })
   const blobs = new Map(tree.filter(e => e.type === 'blob').map(e => [e.path, e]))
   const blocked = new Set([...preflight.overSize.map(a => a.repoPath), ...preflight.missing.map(a => a.repoPath)])
   const items = found.manifest.assets
     .filter(a => a.role === 'media' && !blocked.has(a.repoPath))
     .map(a => ({
-      repoPath: a.repoPath,
-      blobSha: blobs.get(a.repoPath)!.sha,
+      // Items carry the repository path — what the tree, the blob and a later deletion all use.
+      repoPath: projectPath(found.root, a.repoPath),
+      blobSha: blobs.get(projectPath(found.root, a.repoPath))!.sha,
       bytes: a.bytes,
       mime: a.mime,
       ...(a.width ? { width: Math.round(a.width) } : {}),

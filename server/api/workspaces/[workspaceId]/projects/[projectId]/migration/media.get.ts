@@ -60,6 +60,7 @@ export default defineEventHandler(async (event) => {
       plan,
       usedBytes: Number(ws?.media_storage_bytes ?? 0),
       overageSettings: (ws?.overage_settings as Record<string, boolean> | null) ?? {},
+      root: found.root,
     }),
   }
 })

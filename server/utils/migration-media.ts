@@ -123,7 +123,16 @@ export function parseMigrationMediaManifest(raw: unknown): MigrationMediaManifes
 }
 
 /** The manifest from the project's content branch (or default branch), or null when Migrate wrote none. */
-export async function readMigrationMediaManifest(git: GitProvider, contentRoot: string, defaultBranch: string): Promise<{ manifest: MigrationMediaManifest, ref: string, path: string } | null> {
+/**
+ * Paths in the manifest are relative to the project root — the repository root,
+ * or the content root when the project lives in a subdirectory. `root` is that
+ * prefix ('' or 'site/'), as the manifest was found.
+ */
+export function projectPath(root: string, path: string): string {
+  return root ? `${root}/${path}` : path
+}
+
+export async function readMigrationMediaManifest(git: GitProvider, contentRoot: string, defaultBranch: string): Promise<{ manifest: MigrationMediaManifest, ref: string, path: string, root: string } | null> {
   const paths = [...new Set([contentRoot ? `${contentRoot}/${MEDIA_MANIFEST_PATH}` : MEDIA_MANIFEST_PATH, MEDIA_MANIFEST_PATH])]
   for (const ref of [...new Set([CONTENTRAIN_BRANCH, defaultBranch || 'main'])]) {
     for (const path of paths) {
@@ -144,7 +153,7 @@ export async function readMigrationMediaManifest(git: GitProvider, contentRoot: 
       catch {
         throw createError({ statusCode: 422, message: errorMessage('migration.media_manifest_invalid', { detail: 'not JSON' }) })
       }
-      return { manifest: parseMigrationMediaManifest(raw), ref, path }
+      return { manifest: parseMigrationMediaManifest(raw), ref, path, root: path === MEDIA_MANIFEST_PATH ? '' : contentRoot }
     }
   }
   return null
@@ -194,6 +203,8 @@ export function planMigrationMediaPreflight(input: {
   plan: Plan
   usedBytes: number
   overageSettings?: Record<string, boolean>
+  /** The project root the manifest's paths are relative to (`readMigrationMediaManifest`). */
+  root?: string
 }): MigrationMediaPreflight {
   const blobs = new Map(input.tree.filter(e => e.type === 'blob').map(e => [e.path, e]))
   const media = input.manifest.assets.filter(a => a.role === 'media')
@@ -207,7 +218,7 @@ export function planMigrationMediaPreflight(input: {
   let movableBytes = 0
   let largest = 0
   for (const asset of media) {
-    const blob = blobs.get(asset.repoPath)
+    const blob = blobs.get(projectPath(input.root ?? '', asset.repoPath))
     if (!blob) {
       missing.push({ repoPath: asset.repoPath, reason: 'not_in_repo' })
       continue

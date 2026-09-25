@@ -203,6 +203,8 @@ async function importComments() {
       </AtomsBaseButton>
     </div>
 
+    <OrganismsMigrationMediaCard :workspace-id="workspaceId" :project-id="projectId" :editable="editable" />
+
     <ul v-if="state.summary.notes.length" class="mt-3 list-disc space-y-0.5 pl-5 text-xs text-muted">
       <li v-for="note in state.summary.notes" :key="note">
         {{ note }}
