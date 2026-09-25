@@ -47,6 +47,7 @@ describe('Migrate grant routes', () => {
       bindMigrateGrantWorkspace: vi.fn().mockResolvedValue({ ...grantRow, workspace_id: 'ws-1', bound_at: '2026-09-23T12:00:00Z' }),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', name: 'Acme', trial_consumed_at: '2026-01-01T00:00:00Z' }),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
+      listWorkspaceProjects: vi.fn().mockResolvedValue([]),
     }
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('createError', createErrorLike)
@@ -69,6 +70,7 @@ describe('Migrate grant routes', () => {
 
   const claimRoute = async () => (await import('../../server/api/migrate/claim.post')).default
   const checkoutRoute = async () => (await import('../../server/api/migrate/grants/[grantId]/checkout.post')).default
+  const grantRoute = async () => (await import('../../server/api/migrate/grants/[grantId]/index.get')).default
 
   describe('POST /api/migrate/claim', () => {
     it('records the grant on the signed-in account and returns what it includes', async () => {
@@ -109,6 +111,35 @@ describe('Migrate grant routes', () => {
       planSource.value = 'operator'
       await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 404 })
       expect(verifyMigrateClaim).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the way to the delivered site', () => {
+    const bound = { ...grantRow, workspace_id: 'ws-1', bound_at: '2026-09-23T12:00:00Z', redeemed_at: '2026-09-23T12:05:00Z' }
+
+    it('none before the grant is tied to a workspace', async () => {
+      expect(await (await claimRoute())({} as never)).toMatchObject({ destination: null })
+      expect(db.listWorkspaceProjects).not.toHaveBeenCalled()
+    })
+
+    it('the project connected to the grant\'s repo in its workspace (repo names compared without case)', async () => {
+      db.claimMigrateGrant!.mockResolvedValue({ grant: bound, created: false })
+      db.getMigrateGrantForUser!.mockResolvedValue(bound)
+      db.listWorkspaceProjects!.mockResolvedValue([
+        { id: 'p-other', repo_full_name: 'acme/docs' },
+        { id: 'p-1', repo_full_name: 'Acme/Blog' },
+      ])
+      expect(await (await claimRoute())({} as never)).toMatchObject({ grant: { state: 'redeemed' }, destination: { workspaceSlug: 'acme', projectId: 'p-1' } })
+      expect(await (await grantRoute())({} as never)).toMatchObject({ destination: { workspaceSlug: 'acme', projectId: 'p-1' } })
+      expect(db.getWorkspaceForUser).toHaveBeenCalledWith('token-1', 'user-1', 'ws-1', ['owner', 'admin'], 'id, slug')
+    })
+
+    it('the workspace alone until the repo is connected there; nothing once the caller no longer administers it', async () => {
+      db.getMigrateGrantForUser!.mockResolvedValue(bound)
+      db.listWorkspaceProjects!.mockResolvedValue([{ id: 'p-other', repo_full_name: 'acme/docs' }])
+      expect(await (await grantRoute())({} as never)).toMatchObject({ destination: { workspaceSlug: 'acme', projectId: null } })
+      db.getWorkspaceForUser!.mockResolvedValue(null)
+      expect(await (await grantRoute())({} as never)).toMatchObject({ destination: null })
     })
   })
 

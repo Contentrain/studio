@@ -44,3 +44,27 @@ export function migrateGrantView(row: DatabaseRow): MigrateGrantView {
     state,
   }
 }
+
+/** Where the delivered site is in Studio: the grant's workspace, and the project connected to its repo there. */
+export interface MigrateGrantDestination {
+  workspaceSlug: string
+  projectId: string | null
+}
+
+/**
+ * The way from the claim screen to the delivered site, once the grant is
+ * tied to a workspace: that workspace, and the project whose repository is
+ * the grant's — null until the repo is connected. Read as the caller (a
+ * workspace they no longer administer gives nothing).
+ */
+export async function migrateGrantDestination(session: { accessToken: string, user: { id: string } }, row: DatabaseRow): Promise<MigrateGrantDestination | null> {
+  const workspaceId = row.workspace_id as string | null
+  if (!workspaceId) return null
+  const db = useDatabaseProvider()
+  const workspace = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'id, slug')
+  if (!workspace) return null
+  const repo = `${row.repo_owner as string}/${row.repo_name as string}`.toLowerCase()
+  const projects = await db.listWorkspaceProjects(session.accessToken, workspaceId)
+  const project = projects.find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === repo)
+  return { workspaceSlug: workspace.slug as string, projectId: (project?.id as string | undefined) ?? null }
+}
