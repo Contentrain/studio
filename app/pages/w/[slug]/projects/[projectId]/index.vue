@@ -14,7 +14,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, primeSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, followTreeChanges, clearContent } = useModelContent()
-const { branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
+const { branches, branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -86,12 +86,23 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
     clearSnapshot()
   }
 
+  // Leaving for a route without a project (the workspace switcher goes to
+  // `/w/:slug`): this page is on its way out. Bootstrapping here would boot a
+  // brain for `undefined` and, once its round trips land, redirect to a
+  // workspace the user may already have left for a project of it.
+  if (!newProjectId) return
+
+  // A newer navigation owns the page once one starts; whatever this run
+  // awaited must not redirect or load over it.
+  const superseded = () => projectId.value !== newProjectId || slug.value !== newSlug
+
   // The worker needs only the project id: it reads this browser's cache while
   // the workspace round trip is still in flight, and the screen shows it.
   primeSnapshot(newProjectId)
 
   if (workspaces.value.length === 0)
     await fetchWorkspaces()
+  if (superseded()) return
 
   const ws = workspaces.value.find(w => w.slug === newSlug)
   if (!ws) {
@@ -113,6 +124,7 @@ watch([projectId, slug], async ([newProjectId, newSlug], old) => {
     fetchSnapshot(ws.id, newProjectId),
     activeBranch.value ? fetchBranchReview(ws.id, newProjectId, activeBranch.value) : undefined,
   ])
+  if (superseded()) return
 
   // Verify project exists in this workspace
   const projectExists = projects.value.some(p => p.id === newProjectId)
@@ -216,6 +228,23 @@ async function handleBranchLoadRaw() {
   await fetchBranchRaw(ws.id, projectId.value, activeBranch.value)
 }
 
+/**
+ * A branch can leave while its review is open — the chat agent merged it, a
+ * teammate did, or our own merge landed but its response never made it back.
+ * Refetch the list and, if the open branch is gone, close its review so no
+ * Approve button is left standing for work that is already on main.
+ */
+async function refreshBranchesAndDropVanished(workspaceId: string): Promise<boolean> {
+  const listed = await fetchBranches(workspaceId, projectId.value)
+  const open = activeBranch.value
+  if (!listed || !open || branches.value.some(b => b.name === open)) return false
+  const query = { ...route.query }
+  delete query.branch
+  router.replace({ query })
+  clearBranchReview()
+  return true
+}
+
 // Branch merge/reject handlers
 async function handleBranchMerge() {
   const ws = workspaces.value.find(w => w.slug === slug.value)
@@ -229,6 +258,14 @@ async function handleBranchMerge() {
     clearBranchReview()
     await fetchBranches(ws.id, projectId.value)
     // Refresh snapshot + content since merged content changed main
+    const { invalidateCache } = useSnapshot()
+    await invalidateCache(projectId.value)
+    await fetchSnapshot(ws.id, projectId.value)
+    return
+  }
+  // A failed request may still have merged server-side (a timeout after the
+  // push); the branch list is the truth.
+  if (await refreshBranchesAndDropVanished(ws.id)) {
     const { invalidateCache } = useSnapshot()
     await invalidateCache(projectId.value)
     await fetchSnapshot(ws.id, projectId.value)
@@ -294,7 +331,7 @@ async function handleContentChanged(affected: { models: string[], locales: strin
 
   // Refresh branch list when branches change
   if (affected.branchesChanged) {
-    await fetchBranches(ws.id, projectId.value)
+    await refreshBranchesAndDropVanished(ws.id)
   }
 }
 

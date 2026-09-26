@@ -45,6 +45,17 @@ describe('useBranches', () => {
     expect(store.branchReview.value?.branch).toBe('cr/content/faq/en/1234567890-abcd')
   })
 
+  it('says whether the branch list was actually read, so an empty list after a failure is not taken as "merged"', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({ branches: [{ name: 'cr/content/faq/en/1-a', sha: 's', protected: false }] }))
+    const store = useBranches()
+    expect(await store.fetchBranches('workspace-1', 'project-1')).toBe(true)
+    expect(store.branches.value.map(b => b.name)).toEqual(['cr/content/faq/en/1-a'])
+
+    vi.stubGlobal('$fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    expect(await store.fetchBranches('workspace-1', 'project-1')).toBe(false)
+    expect(store.branches.value).toEqual([])
+  })
+
   it('removes merged branches from local state and shows a success toast', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ merged: true })
     vi.stubGlobal('$fetch', fetchMock)

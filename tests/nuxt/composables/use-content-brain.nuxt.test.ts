@@ -164,6 +164,32 @@ describe('useContentBrain sync', () => {
     expect(syncQuery(fetchMock)).toBe('')
     expect(brain.syncing.value).toBe(false)
   })
+
+  it('drops the answer of a sync the user switched away from', async () => {
+    // S8: open a project, switch workspace and open one of its projects while
+    // the first sync is still in flight. The old answer landing last painted
+    // the old project over the new one.
+    let answerOld!: (value: unknown) => void
+    const fetchMock = vi.fn((url: string) => url.includes('/projects/old/')
+      ? new Promise((resolve) => { answerOld = resolve })
+      : Promise.resolve({ ...FULL_RESPONSE, config: { locales: { default: 'tr', supported: ['tr'] } } }))
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const { useContentBrain } = await import('../../../app/composables/useContentBrain')
+    const brain = useContentBrain()
+    brain.initBrain('old')
+    const stale = brain.sync('workspace-a', 'old')
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    brain.initBrain('new')
+    await brain.sync('workspace-b', 'new')
+    answerOld({ ...FULL_RESPONSE, treeSha: 'f'.repeat(64) })
+    await stale
+
+    expect(brain.config.value?.locales?.default).toBe('tr')
+    expect(brain.treeSha.value).toBe(DIGEST)
+    expect(brain.syncing.value).toBe(false)
+  })
 })
 
 /** What a worker reads out of a populated IndexedDB: 12 models, as on staging. */
