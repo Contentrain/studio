@@ -4,8 +4,8 @@ import type { FieldDef } from '@contentrain/types'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 import type { BranchReview } from '~~/shared/utils/branch-review'
 import type { BranchRawDiff } from '~/composables/useBranches'
-import { fieldLabel, orderedFieldIds } from '~~/shared/utils/field-label'
-import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { fieldLabel, nestedFieldLabels, orderedFieldIds } from '~~/shared/utils/field-label'
+import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getNestedFieldLabelsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 interface SnapshotModel {
   readonly id: string
@@ -233,6 +233,12 @@ function getFieldLabel(fieldId: string): string {
   })
 }
 
+/** The same rule, one level down: `image.alt`, `actions[].newTab`. */
+function getNestedFieldLabels(fieldId: string): Record<string, string> | undefined {
+  const fields = (activeModel.value?.fields ?? {}) as Record<string, FieldDef>
+  return nestedFieldLabels(fields[fieldId], { locale: currentLocale.value })
+}
+
 // Provide utilities to child components
 function arrayToObjectMap(arr: Record<string, unknown>[]): Record<string, Record<string, unknown>> {
   const map: Record<string, Record<string, unknown>> = {}
@@ -275,6 +281,7 @@ provide(getFieldTypeKey, getFieldType)
 provide(getEntryTitleKey, getEntryTitle)
 provide(getUserFieldIdsKey, getUserFieldIds)
 provide(getFieldLabelKey, getFieldLabel)
+provide(getNestedFieldLabelsKey, getNestedFieldLabels)
 provide(activeModelMetaKey, activeModelMeta)
 provide(getModelFieldsKey, getModelFields)
 provide(relationLabelsKey, relationLabels)

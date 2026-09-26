@@ -14,14 +14,18 @@ import type { FieldDef } from '@contentrain/types'
 import { orderedFieldNames, resolveFieldLabel } from '@contentrain/types'
 
 /**
- * A field id turned into something readable: `body_public` → `Body public`.
+ * A field id turned into something readable: `body_public` → `Body public`,
+ * `newTab` → `New tab`.
  *
  * The last resort, for a field whose model declares no label. It is wrong for
  * ids that are not words — a dictionary's keys are `branch.reject`, not a name
  * — which is why callers opt out for those.
  */
 export function humanizeFieldId(fieldId: string): string {
-  const spaced = fieldId.replace(/[_-]+/g, ' ').trim()
+  const spaced = fieldId
+    .replace(/([a-z\d])([A-Z])/g, (_, a: string, b: string) => `${a} ${b.toLowerCase()}`)
+    .replace(/[_-]+/g, ' ')
+    .trim()
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
@@ -51,6 +55,27 @@ export function fieldLabel(
   const declared = resolveFieldLabel(fieldId, def ?? {}, locale, defaultLocale)
   if (declared !== fieldId) return declared
   return humanize ? humanizeFieldId(fieldId) : fieldId
+}
+
+/**
+ * Labels for the fields nested one level inside `def` — an object's own
+ * `fields`, or those of the objects an array holds — keyed by nested id.
+ *
+ * Nested keys used to be printed as the raw id (`href`, `newTab`, `src`) while
+ * the field around them had a proper label; they follow the same rule now.
+ * Undefined when `def` has no nested fields to name.
+ */
+export function nestedFieldLabels(
+  def: FieldDef | undefined | null,
+  options: FieldLabelOptions = {},
+): Record<string, string> | undefined {
+  const items = def?.items
+  const nested = def?.fields ?? (items && typeof items === 'object' ? items.fields : undefined)
+  if (!nested || Object.keys(nested).length === 0) return undefined
+  const labels: Record<string, string> = {}
+  for (const [id, nestedDef] of Object.entries(nested))
+    labels[id] = fieldLabel(id, nestedDef, options)
+  return labels
 }
 
 /**

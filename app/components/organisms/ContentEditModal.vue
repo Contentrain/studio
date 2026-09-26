@@ -274,7 +274,7 @@ function confirmDiscard() {
                 <AtomsContentFieldEditor
                   :type="mergedFields[fieldId]?.type ?? 'string'" :model-value="batchEditData[fieldId]"
                   :field-id="fieldId" :field-def="mergedFields[fieldId]" :options="mergedFields[fieldId]?.options"
-                  :related-entries="relationEntriesMap[fieldId]" :standalone="false"
+                  :related-entries="relationEntriesMap[fieldId]" :standalone="false" :locale="locale"
                   @update:model-value="updateBatchField(fieldId, $event)"
                 />
               </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { isSyncNoteworthy } from '~~/shared/utils/content-sync'
 import { formatRelativeTime } from '~/utils/relative-time'
+import { reviewScopeKey } from '~/utils/review-scope'
 
 const { t } = useContent()
 const { state: authState, signOut } = useAuth()
@@ -19,7 +20,7 @@ const { isOwnerOrAdmin } = useWorkspaceRole()
  * name, locale and age come resolved from the branches endpoint.
  */
 function branchLabel(branch: { modelName: string | null, scope: string, locale: string | null, changesRequested?: boolean }): string {
-  const base = branch.modelName ?? t(`review.scope_${branch.scope || 'other'}`)
+  const base = branch.modelName ?? t(reviewScopeKey(branch.scope))
   const label = branch.locale ? `${base} · ${branch.locale.toUpperCase()}` : base
   return branch.changesRequested ? `${label} · ${t('branch.changes_requested_badge')}` : label
 }

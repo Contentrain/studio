@@ -183,6 +183,10 @@ export function useContentBrain() {
     workerAvailable.value = false
     sharedProjectId = null
     networkApplied = false
+    // A sync still in flight for this project will not report back (see
+    // `sync`), so it must not leave the next project looking busy.
+    syncing.value = false
+    syncError.value = null
     // Release anyone still waiting on the worker we just terminated, then drop
     // the gate so the next `initBrain` installs a fresh one.
     resolveWorkerReady?.()
@@ -289,6 +293,13 @@ export function useContentBrain() {
     // already held that exact content and the delta answer was 4.5 KB.
     if (import.meta.client && workerReady) await workerReady
 
+    // The brain belongs to one project at a time. A sync started for the
+    // project on screen before a switch (another workspace, another project)
+    // still resolves after it — and a full answer applied then paints the old
+    // project over the new one, and leaves its key behind for the next sync.
+    const superseded = () => import.meta.client && sharedProjectId !== projectId
+    if (superseded()) return
+
     try {
       const params = new URLSearchParams()
       const key = usableTreeSha(treeSha.value)
@@ -297,6 +308,7 @@ export function useContentBrain() {
       const response = await $fetch<BrainSyncResponse>(
         `/api/workspaces/${workspaceId}/projects/${projectId}/brain/sync?${params}`,
       )
+      if (superseded()) return
 
       // Send sync payload to worker
       if (sharedWorker) {
@@ -332,6 +344,7 @@ export function useContentBrain() {
       syncing.value = false
     }
     catch {
+      if (superseded()) return
       const { t } = useContent()
       syncError.value = t('content.sync_error')
       syncing.value = false

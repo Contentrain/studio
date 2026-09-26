@@ -2,6 +2,7 @@
 import type { BranchReview } from '~~/shared/utils/branch-review'
 import type { BranchRawDiff } from '~/composables/useBranches'
 import { formatRelativeTime } from '~/utils/relative-time'
+import { reviewScopeKey } from '~/utils/review-scope'
 import { shortPlanHash } from '~~/shared/utils/approval'
 
 /**
@@ -140,7 +141,7 @@ function stripPrefix(path: string): string {
       <div class="flex items-start gap-2">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-heading dark:text-secondary-100">
-            {{ review.info.modelName ?? t(`review.scope_${review.info.scope || 'other'}`) }}
+            {{ review.info.modelName ?? t(reviewScopeKey(review.info.scope)) }}
             <span v-if="review.info.locale" class="text-muted">· {{ review.info.locale.toUpperCase() }}</span>
           </p>
           <p v-if="authored.by || authored.when" class="mt-0.5 truncate text-[11px] text-muted">

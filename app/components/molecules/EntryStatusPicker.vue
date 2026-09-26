@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { EntrySchedule } from '~~/shared/utils/entry-schedule'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
+import { parseScheduleTime, schedulePhase } from '~~/shared/utils/entry-schedule'
 
 /**
  * Status badge + inline picker for a single content entry, shared by the
@@ -10,6 +12,8 @@ import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenu
  */
 const props = defineProps<{
   status: string | null
+  /** The entry's meta, for its `publish_at` / `expire_at`. */
+  schedule?: EntrySchedule | null
   entryId: string
   workspaceId?: string
   projectId?: string
@@ -37,6 +41,25 @@ const statusVariants: Record<string, { variant: 'success' | 'warning' | 'primary
   rejected: { variant: 'danger', label: 'rejected' },
   archived: { variant: 'secondary', label: 'archived' },
 }
+
+/**
+ * A published entry before its `publish_at` is not live yet, and one past its
+ * `expire_at` is no longer served. Scheduling never changes `status`, so the
+ * badge says what a reader of the site sees instead; the picker still sets the
+ * stored status.
+ */
+const badge = computed(() => {
+  const phase = props.status === 'published' ? schedulePhase(props.schedule, Date.now()) : null
+  if (!phase) {
+    const known = props.status ? statusVariants[props.status] : undefined
+    return { variant: known?.variant ?? 'secondary', label: known?.label ?? props.status ?? '', title: undefined }
+  }
+  const raw = phase === 'scheduled' ? props.schedule?.publish_at : props.schedule?.expire_at
+  const date = new Date(parseScheduleTime(raw) as number).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return phase === 'scheduled'
+    ? { variant: 'info' as const, label: t('content.badge_scheduled'), title: t('content.scheduled_hint', { date }) }
+    : { variant: 'secondary' as const, label: t('content.badge_expired'), title: t('content.expired_hint', { date }) }
+})
 
 const saving = ref(false)
 
@@ -76,10 +99,10 @@ async function setStatus(newStatus: string) {
       <button
         type="button" :disabled="saving"
         class="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 disabled:cursor-wait"
-        :title="t('content.change_status')" :aria-label="t('content.change_status')"
+        :title="badge.title ?? t('content.change_status')" :aria-label="badge.title ? `${badge.title} · ${t('content.change_status')}` : t('content.change_status')"
       >
-        <AtomsBadge :variant="statusVariants[status!]?.variant ?? 'secondary'" size="sm" class="gap-1">
-          {{ statusVariants[status!]?.label ?? status }}
+        <AtomsBadge :variant="badge.variant" size="sm" class="gap-1" data-testid="entry-status-badge">
+          {{ badge.label }}
           <span v-if="saving" class="icon-[annon--loader] size-2.5 animate-spin" aria-hidden="true" />
           <span v-else class="icon-[annon--chevron-down] size-2.5 opacity-60" aria-hidden="true" />
         </AtomsBadge>
@@ -105,9 +128,9 @@ async function setStatus(newStatus: string) {
   <!-- Read-only badge (no edit rights) -->
   <AtomsBadge
     v-else-if="status"
-    :variant="statusVariants[status]?.variant ?? 'secondary'" size="sm"
-    class="shrink-0"
+    :variant="badge.variant" size="sm"
+    class="shrink-0" :title="badge.title" data-testid="entry-status-badge"
   >
-    {{ statusVariants[status]?.label ?? status }}
+    {{ badge.label }}
   </AtomsBadge>
 </template>

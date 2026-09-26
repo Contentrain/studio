@@ -45,7 +45,7 @@ import {
   REVIEW_REF_LABEL_LIMIT,
   REVIEW_VALUE_LIMIT,
 } from '../../shared/utils/branch-review'
-import { fieldLabel } from '../../shared/utils/field-label'
+import { fieldLabel, nestedFieldLabels } from '../../shared/utils/field-label'
 import { resolveEntryTitle } from '../../shared/utils/entry-title'
 import { findRelationLabel, inferFieldType, toSelectableRefs } from '../../shared/utils/content-relations'
 import {
@@ -245,13 +245,16 @@ function buildFieldChange(
 ): ReviewFieldChange {
   const clippedBefore = clipValue(before)
   const clippedAfter = clipValue(after)
+  const labelOptions = { locale: ctx.locale, defaultLocale: ctx.defaultLocale, humanize: ctx.humanize }
+  const subLabels = nestedFieldLabels(def, labelOptions)
   return {
     fieldId,
-    label: fieldLabel(fieldId, def, { locale: ctx.locale, defaultLocale: ctx.defaultLocale, humanize: ctx.humanize }),
+    label: fieldLabel(fieldId, def, labelOptions),
     type: def?.type ?? ctx.fallbackType ?? inferFieldType(after ?? before),
     before: clippedBefore.value,
     after: clippedAfter.value,
     ...(clippedBefore.truncated || clippedAfter.truncated ? { truncated: true } : {}),
+    ...(subLabels ? { subLabels } : {}),
   }
 }
 

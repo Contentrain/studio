@@ -27,7 +27,8 @@ export function useBranches() {
     return `/api/workspaces/${workspaceId}/projects/${projectId}/branches/${encodeURIComponent(branch)}`
   }
 
-  async function fetchBranches(workspaceId: string, projectId: string) {
+  /** Resolves false when the list could not be read — an empty list then says nothing about which branches exist. */
+  async function fetchBranches(workspaceId: string, projectId: string): Promise<boolean> {
     loading.value = true
     try {
       const result = await $fetch<{ branches: BranchListItem[], sync?: ContentSyncReport | null }>(
@@ -35,10 +36,12 @@ export function useBranches() {
       )
       branches.value = result.branches
       contentSync.value = result.sync ?? null
+      return true
     }
     catch {
       branches.value = []
       contentSync.value = null
+      return false
     }
     finally {
       loading.value = false

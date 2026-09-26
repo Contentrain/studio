@@ -11,6 +11,8 @@ export const getEntryTitleKey: InjectionKey<(entry: Record<string, unknown>, fal
 export const getUserFieldIdsKey: InjectionKey<() => string[]> = Symbol('getUserFieldIds')
 /** A field's display label — `FieldDef.label` for the locale, else the id. */
 export const getFieldLabelKey: InjectionKey<(fieldId: string) => string> = Symbol('getFieldLabel')
+/** Labels for the fields nested inside a field (object keys, list-item keys). */
+export const getNestedFieldLabelsKey: InjectionKey<(fieldId: string) => Record<string, string> | undefined> = Symbol('getNestedFieldLabels')
 export const activeModelMetaKey: InjectionKey<ComputedRef<{ id: string, name: string, kind: string } | null>> = Symbol('activeModelMeta')
 export const getModelFieldsKey: InjectionKey<() => Record<string, unknown>> = Symbol('getModelFields')
 /**

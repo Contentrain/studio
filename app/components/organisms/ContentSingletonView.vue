@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { RelationLabelMap } from '~/composables/useRelationLabels'
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, relationLabelsKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getNestedFieldLabelsKey, getUserFieldIdsKey, relationLabelsKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   content: Record<string, unknown>
@@ -18,6 +18,7 @@ const emit = defineEmits<{
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
 const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
+const getNestedFieldLabels = inject(getNestedFieldLabelsKey, () => undefined)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const relationLabels = inject(relationLabelsKey, ref<RelationLabelMap>({}))
 
@@ -113,7 +114,7 @@ function onFieldDragStart(e: DragEvent, fieldId: string, value: unknown) {
           </AtomsTooltip>
         </div>
         <div class="mt-1">
-          <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" />
+          <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="content[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" :sub-labels="getNestedFieldLabels(fieldId)" />
         </div>
       </div>
     </template>

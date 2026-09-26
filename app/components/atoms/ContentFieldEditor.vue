@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { FieldDef as SchemaFieldDef } from '@contentrain/types'
+import { fieldLabel } from '~~/shared/utils/field-label'
 import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~~/shared/utils/content-relations'
 
 interface FieldDef {
@@ -12,6 +14,7 @@ interface FieldDef {
   items?: string | FieldDef
   fields?: Record<string, FieldDef>
   description?: string
+  label?: string | Record<string, string>
 }
 
 const { t } = useContent()
@@ -31,6 +34,7 @@ const {
   fieldDef,
   relatedEntries,
   depth = 0,
+  locale,
 } = defineProps<{
   type: string
   modelValue: unknown
@@ -41,7 +45,14 @@ const {
   fieldDef?: FieldDef
   relatedEntries?: Array<{ value: string, label: string }>
   depth?: number
+  /** Resolves a nested field's localised `label`; the editor's own locale. */
+  locale?: string
 }>()
+
+/** A nested field's label, by the rule the top-level form labels use. */
+function nestedLabel(key: string, def: FieldDef | undefined): string {
+  return fieldLabel(key, def as SchemaFieldDef | undefined, { locale })
+}
 
 const emit = defineEmits<{
   'update:modelValue': [value: unknown]
@@ -530,7 +541,7 @@ function getRelationLabel(key: string): string {
          placeholder, which says the schema defines no fields. -->
     <div v-else-if="type === 'object' && objectFieldIds.length > 0 && depth < 2" class="space-y-3 rounded-lg border border-secondary-200 p-3 dark:border-secondary-800">
       <div v-for="key in objectFieldIds" :key="key">
-        <AtomsFormLabel :text="key" size="xs" :required="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.required" />
+        <AtomsFormLabel :text="nestedLabel(key, ((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key])" size="xs" :required="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.required" />
         <div class="mt-1">
           <AtomsContentFieldEditor
             :type="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.type ?? 'string'"
@@ -540,6 +551,7 @@ function getRelationLabel(key: string): string {
             :options="((fieldDef?.fields ?? {}) as Record<string, FieldDef>)[key]?.options"
             :standalone="false"
             :depth="depth + 1"
+            :locale="locale"
             @update:model-value="updateObjectField(key, $event)"
           />
         </div>
@@ -565,7 +577,7 @@ function getRelationLabel(key: string): string {
           </button>
         </div>
         <div v-for="key in arrayItemFieldIds" :key="key">
-          <AtomsFormLabel :text="key" size="xs" :required="arrayItemFields[key]?.required" />
+          <AtomsFormLabel :text="nestedLabel(key, arrayItemFields[key])" size="xs" :required="arrayItemFields[key]?.required" />
           <div class="mt-1">
             <AtomsContentFieldEditor
               :type="arrayItemFields[key]?.type ?? 'string'"
@@ -575,6 +587,7 @@ function getRelationLabel(key: string): string {
               :options="arrayItemFields[key]?.options"
               :standalone="false"
               :depth="depth + 1"
+              :locale="locale"
               @update:model-value="updateArrayObjectField(idx, key, $event)"
             />
           </div>
