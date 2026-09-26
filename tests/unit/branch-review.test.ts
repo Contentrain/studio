@@ -87,6 +87,32 @@ describe('buildBranchReview — collections', () => {
     expect(review.summary).toEqual({ added: 0, updated: 1, removed: 0 })
   })
 
+  it('names the keys inside an object field, not just the field', async () => {
+    const hero: ModelDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      kind: 'collection',
+      domain: 'system',
+      i18n: true,
+      fields: {
+        image: { type: 'object', fields: { src: { type: 'image' }, alt: { type: 'string', label: 'Alt text' } } },
+      },
+    }
+    const path = '.contentrain/content/system/hero/en.json'
+    const review = await run({
+      models: new Map([['hero', hero]]),
+      files: [{ path, status: 'modified' }],
+      read: reader({
+        [`contentrain:${path}`]: JSON.stringify({ about: { image: { src: '/a.png', alt: '' } } }),
+        [`cr/content/plans/en/1755612345-a3f2:${path}`]: JSON.stringify({ about: { image: { src: '/a.png', alt: 'Team' } } }),
+      }),
+    })
+
+    expect(review.groups[0]!.entries[0]!.fields[0]).toEqual(
+      expect.objectContaining({ fieldId: 'image', label: 'Image', subLabels: { src: 'Src', alt: 'Alt text' } }),
+    )
+  })
+
   it('orders fields by the model, not alphabetically', async () => {
     const branchRef = 'cr/content/plans/en/1755612345-a3f2'
     const review = await run({

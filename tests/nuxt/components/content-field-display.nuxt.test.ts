@@ -212,3 +212,24 @@ describe('ContentFieldDisplay relations', () => {
     expect(wrapper.text()).toBe('—')
   })
 })
+
+describe('ContentFieldDisplay nested labels', () => {
+  it('labels object keys from the model, humanising the ones it does not name', async () => {
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: { fieldId: 'image', type: 'object', value: { alt: 'Team', src: '/a.png' }, subLabels: { alt: 'Alt text' } },
+    })
+
+    expect(wrapper.text()).toContain('Alt text')
+    expect(wrapper.text()).toContain('Src')
+    expect(wrapper.text()).not.toMatch(/\balt\b/)
+  })
+
+  it('does the same for each object of a list', async () => {
+    const wrapper = await mountSuspended(ContentFieldDisplay, {
+      props: { fieldId: 'actions', type: 'array', value: [{ href: '/', newTab: true }] },
+    })
+
+    expect(wrapper.text()).toContain('Href')
+    expect(wrapper.text()).toContain('New tab')
+  })
+})

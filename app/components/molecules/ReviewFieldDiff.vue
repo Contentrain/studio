@@ -152,6 +152,7 @@ const afterLabel = computed(() => relationLabel(props.change.after))
           :type="change.type"
           :value="change.before"
           :field-id="change.fieldId"
+          :sub-labels="change.subLabels"
         />
       </div>
       <span v-if="!isAdded && !isCleared" class="shrink-0 pt-0.5 text-muted" aria-hidden="true">→</span>
@@ -162,6 +163,7 @@ const afterLabel = computed(() => relationLabel(props.change.after))
           :type="change.type"
           :value="change.after"
           :field-id="change.fieldId"
+          :sub-labels="change.subLabels"
         />
       </div>
     </div>

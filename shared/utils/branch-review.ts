@@ -42,6 +42,12 @@ export interface ReviewFieldChange {
    * titles they already see in the entry list.
    */
   refLabels?: Record<string, string>
+  /**
+   * Labels for the keys inside an object value (or the objects of a list),
+   * keyed by nested field id. Absent when the model names none; the panel
+   * then humanises the keys itself.
+   */
+  subLabels?: Record<string, string>
 }
 
 /** One entry (collection row, singleton, dictionary key, document). */

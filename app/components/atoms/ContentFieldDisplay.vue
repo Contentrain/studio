@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import { relationItemKey } from '~~/shared/utils/content-relations'
+import { humanizeFieldId } from '~~/shared/utils/field-label'
 
 const { sanitize } = useSanitize()
 const { t } = useContent()
@@ -21,7 +22,18 @@ const props = defineProps<{
    * (a standalone mount) every ref shows as itself.
    */
   relationLabels?: Record<string, string>
+  /**
+   * Labels for the keys inside an object value (or each object of a list),
+   * resolved by the caller from the model (`nestedFieldLabels`). A key the map
+   * does not name is humanised, as a top-level field without a label is.
+   */
+  subLabels?: Record<string, string>
 }>()
+
+function subLabel(key: string | number): string {
+  const id = String(key)
+  return props.subLabels?.[id] ?? humanizeFieldId(id)
+}
 
 const displayValue = computed(() => {
   if (props.value === null || props.value === undefined) return null
@@ -300,7 +312,7 @@ const ratingStars = computed(() => {
         class="rounded-lg border border-secondary-200 p-2 dark:border-secondary-800"
       >
         <div v-for="(val, key) in item" :key="String(key)" class="flex min-w-0 items-start gap-2 py-0.5">
-          <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ String(key) }}</span>
+          <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ subLabel(key) }}</span>
           <AtomsContentObjectValue
             v-if="val !== null && typeof val === 'object'"
             :value="val as object"
@@ -338,7 +350,7 @@ const ratingStars = computed(() => {
     <!-- Nested object (e.g. frontmatter hero: { title, subtitle }) -->
     <div v-else-if="isObject" class="space-y-1 rounded-lg border border-secondary-200 p-2.5 dark:border-secondary-800">
       <div v-for="(val, key) in (displayValue as Record<string, unknown>)" :key="String(key)" class="flex min-w-0 items-start gap-2 py-0.5">
-        <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ String(key) }}</span>
+        <span class="shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted">{{ subLabel(key) }}</span>
         <AtomsContentObjectValue
           v-if="val !== null && typeof val === 'object'"
           :value="val as object"

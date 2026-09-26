@@ -72,6 +72,23 @@ describe('ContentFieldEditor composite fields', () => {
     expect(wrapper.find('input').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('nests deeper')
   })
+
+  it('labels nested fields as the form labels top-level ones', async () => {
+    const wrapper = await mountSuspended(ContentFieldEditor, {
+      props: {
+        ...base,
+        type: 'array',
+        modelValue: [{ href: '/', newTab: false }],
+        locale: 'tr',
+        fieldDef: { type: 'array', items: { type: 'object', fields: { href: { type: 'url' }, newTab: { type: 'boolean', label: { en: 'Open in new tab', tr: 'Yeni sekmede aç' } } } } },
+      },
+    })
+
+    const labels = wrapper.findAll('label').map(l => l.text())
+    expect(labels.some(l => l.startsWith('Href'))).toBe(true)
+    expect(labels.some(l => l.startsWith('Yeni sekmede aç'))).toBe(true)
+    expect(labels).not.toContain('newTab')
+  })
 })
 
 describe('ContentFieldEditor relation ordering', () => {

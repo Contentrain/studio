@@ -14,7 +14,7 @@ import {
   relationRefs,
   sortIds,
 } from '../../app/utils/content-filters'
-import { fieldLabel, humanizeFieldId } from '../../shared/utils/field-label'
+import { fieldLabel, humanizeFieldId, nestedFieldLabels } from '../../shared/utils/field-label'
 
 const t = (key: string, params?: Record<string, string | number>) =>
   params ? `${key}:${Object.values(params).join(',')}` : key
@@ -113,6 +113,17 @@ describe('deriveFilterAxes', () => {
   it('reads a field id as a label', () => {
     expect(humanizeFieldId('is_category_hero')).toBe('Is category hero')
     expect(humanizeFieldId('sort-order')).toBe('Sort order')
+    expect(humanizeFieldId('newTab')).toBe('New tab')
+    expect(humanizeFieldId('src')).toBe('Src')
+  })
+
+  it('labels the fields nested in an object or a list of objects by the same rule', () => {
+    expect(nestedFieldLabels({ type: 'object', fields: { src: { type: 'image' }, alt: { type: 'string', label: 'Alt text' } } }))
+      .toEqual({ src: 'Src', alt: 'Alt text' })
+    expect(nestedFieldLabels({ type: 'array', items: { type: 'object', fields: { href: { type: 'url' }, newTab: { type: 'boolean', label: { en: 'Open in new tab', tr: 'Yeni sekmede aç' } } } } }, { locale: 'tr' }))
+      .toEqual({ href: 'Href', newTab: 'Yeni sekmede aç' })
+    expect(nestedFieldLabels({ type: 'string' })).toBeUndefined()
+    expect(nestedFieldLabels({ type: 'array', items: 'string' })).toBeUndefined()
   })
 
   it('prefers a label the model declares over the humanised id', () => {
