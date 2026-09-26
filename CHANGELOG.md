@@ -1,6 +1,29 @@
 # Changelog
 
 
+## v0.4.6
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.5...v0.4.6)
+
+### ⚠️ Upgrade notes
+
+**1. One migration runs before the new image serves: 039.**
+managed+postgres: the Railway pre-deploy runs it (expect "1 applied" in its log, then `pnpm db:verify:pg`); plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. 039 adds `migrate_grants.origin text`, the old-site origin Migrate signs into the claim token. Nothing is dropped, so rolling back the image alone is safe. No new environment variables.
+
+**2. Old-site files are fetched only from the origin Migrate signed.**
+A media job no longer takes its fetch origin from the repository's `media.json`; it uses the `origin` in the signed claim, and the manifest can only confirm it. A grant without a signed origin (an order claimed before Migrate signed one, or an origin Migrate could not vouch for) queues no old-site file: the preflight and the job count them as `onOrigin.unverified`, and the media card says so. Files already in the repository import as before.
+
+**3. Migrate turns its `STUDIO_MEDIA_IMPORT` switch on once this release is live in production.**
+That is a Migrate change, not a Studio one.
+
+### 🚀 Enhancements
+
+- **migration:** Fetch old-site media only from the origin Migrate signed ([#368](https://github.com/Contentrain/studio/pull/368))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.5
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.4...v0.4.5)
