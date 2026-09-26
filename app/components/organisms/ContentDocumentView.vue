@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { RelationLabelMap } from '~/composables/useRelationLabels'
+import type { EntrySchedule } from '~~/shared/utils/entry-schedule'
 import { marked } from 'marked'
-import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
+import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getNestedFieldLabelsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const props = defineProps<{
   entries: Array<{ slug: string, frontmatter: Record<string, unknown>, body: string }>
@@ -31,6 +32,7 @@ const { sanitize } = useSanitize()
 const getFieldType = inject(getFieldTypeKey, () => 'string')
 const getUserFieldIds = inject(getUserFieldIdsKey, () => [])
 const getFieldLabel = inject(getFieldLabelKey, (fieldId: string) => fieldId)
+const getNestedFieldLabels = inject(getNestedFieldLabelsKey, () => undefined)
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const getModelFields = inject(getModelFieldsKey, () => ({}))
 const sendChatPrompt = inject(sendChatPromptKey, () => {})
@@ -193,6 +195,7 @@ function handleModalSaved() {
           <!-- Status badge + picker (shared with the collection view) -->
           <MoleculesEntryStatusPicker
             :status="getEntryStatus(doc.slug)"
+            :schedule="(meta?.[doc.slug] as EntrySchedule | undefined)"
             :entry-id="doc.slug"
             :workspace-id="workspaceId" :project-id="projectId" :model-id="modelId"
             :locale="locale" :editable="editable" @saved="emit('saved')"
@@ -227,7 +230,7 @@ function handleModalSaved() {
                 </AtomsTooltip>
               </div>
               <div class="mt-0.5">
-                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="doc.frontmatter[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" />
+                <AtomsContentFieldDisplay :type="getFieldType(fieldId)" :value="doc.frontmatter[fieldId]" :field-id="fieldId" :relation-labels="relationLabels[fieldId]" :sub-labels="getNestedFieldLabels(fieldId)" />
               </div>
             </div>
           </template>

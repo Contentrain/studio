@@ -127,5 +127,7 @@ describe('MigrationMediaCard', () => {
     const notice = wrapper.find('[data-testid=migration-media-delivery]')
     expect(notice.text()).toContain('ask them to turn it on')
     expect(notice.findAll('button')).toHaveLength(0)
+    // "served from public addresses" would contradict the notice right below it.
+    expect(wrapper.find('[data-testid=migration-media-public-note]').exists()).toBe(false)
   })
 })

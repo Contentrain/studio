@@ -214,7 +214,8 @@ watch(deleteLocal, () => {
       {{ t('migration.media_summary', { count: preflight.count, size: size(preflight.totalBytes) }) }}
       <span v-if="preflight.fontsKept"> · {{ t('migration.media_fonts_kept', { count: preflight.fontsKept }) }}</span>
     </p>
-    <p class="mt-1 text-xs text-muted">
+    <!-- With public media off the files are not served publicly; the warning below says so instead. -->
+    <p v-if="deliveryBlocked !== 'public_media_off'" class="mt-1 text-xs text-muted" data-testid="migration-media-public-note">
       {{ t('migration.media_public_note') }}
     </p>
 

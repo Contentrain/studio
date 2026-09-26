@@ -54,3 +54,18 @@ export function isWithinSchedule(schedule: EntrySchedule | null | undefined, at:
   if (expireAt === null || (expireAt !== undefined && expireAt <= at)) return false
   return true
 }
+
+/**
+ * Where `at` falls against the window, as a reader of a *published* entry
+ * sees it: `scheduled` before `publish_at`, `expired` from `expire_at` on,
+ * `null` inside the window or with none. An unreadable value answers `null`
+ * here — `invalidScheduleKeys` is what reports it.
+ */
+export function schedulePhase(schedule: EntrySchedule | null | undefined, at: number): 'scheduled' | 'expired' | null {
+  if (!schedule || typeof schedule !== 'object') return null
+  const publishAt = parseScheduleTime((schedule as Record<string, unknown>).publish_at)
+  if (typeof publishAt === 'number' && publishAt > at) return 'scheduled'
+  const expireAt = parseScheduleTime((schedule as Record<string, unknown>).expire_at)
+  if (typeof expireAt === 'number' && expireAt <= at) return 'expired'
+  return null
+}
