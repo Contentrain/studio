@@ -196,6 +196,12 @@ export default defineNuxtConfig({
     },
   },
 
+  // nuxt-mcp-dev (dev only) writes its server into every editor config it
+  // finds, including ones in the home directory (~/.codeium/windsurf, …). The
+  // tracked `.mcp.json` already lists `nuxt` and `nuxt-docs`, so nothing needs
+  // writing, and a dev server has no business editing files outside the repo.
+  mcp: { updateConfig: false },
+
   // Sentry build-time options (module). Runtime behaviour (DSN, environment,
   // sample rate) lives in runtimeConfig.public.sentry and is read by the
   // sentry.client.config.ts / sentry.server.config.ts entry files.
