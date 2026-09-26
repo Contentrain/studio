@@ -113,7 +113,7 @@ export function isBlockedAddress(address: string): boolean {
   if ((g[0]! & 0xE000) !== 0x2000) return true // not global unicast: ULA, link-local, multicast, 64:ff9b:1::/48, …
   if (g[0] === 0x2001 && g[1]! < 0x0200) return true // 2001::/23 — IETF protocol assignments (Teredo, benchmarking, ORCHID)
   if (g[0] === 0x2001 && g[1] === 0x0DB8) return true // documentation
-  if ((g[0]! & 0xFFF0) === 0x3FF0) return true // 3fff::/20 — documentation
+  if (g[0] === 0x3FFF && g[1]! < 0x1000) return true // 3fff::/20 — documentation
   return false
 }
 

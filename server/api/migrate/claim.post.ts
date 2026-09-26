@@ -46,6 +46,8 @@ export default defineEventHandler(async (event) => {
     repoOwner: claim.repo.owner,
     repoName: claim.repo.name,
     email: claim.email,
+    // Signed by Migrate: the only host media import will fetch old-site files from.
+    origin: claim.origin ?? null,
   })
 
   if (grant.user_id !== session.user.id)

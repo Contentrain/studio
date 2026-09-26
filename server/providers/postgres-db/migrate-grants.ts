@@ -13,6 +13,7 @@ type MigrateGrantMethods = Pick<
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
+  | 'getMigrateGrantOrigin'
 >
 
 export function migrateGrantMethods(): MigrateGrantMethods {
@@ -30,12 +31,22 @@ export function migrateGrantMethods(): MigrateGrantMethods {
             repo_owner: input.repoOwner,
             repo_name: input.repoName,
             email: input.email,
+            origin: input.origin ?? null,
           })
           .onConflict(oc => oc.column('order_id').doNothing())
           .returningAll()
           .executeTakeFirst()
         if (inserted) return { grant: inserted as DatabaseRow, created: true }
 
+        // A grant recorded before claims carried an origin takes it now; one it has is never replaced.
+        if (input.origin) {
+          await getAdmin()
+            .updateTable('migrate_grants')
+            .set({ origin: input.origin })
+            .where('order_id', '=', input.orderId)
+            .where('origin', 'is', null)
+            .execute()
+        }
         const existing = await getAdmin()
           .selectFrom('migrate_grants')
           .selectAll()
@@ -95,6 +106,27 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .where('id', '=', grantId)
           .where('redeemed_at', 'is', null)
           .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getMigrateGrantOrigin(workspaceId, repoFullName) {
+      const [owner, name] = repoFullName.toLowerCase().split('/')
+      if (!owner || !name) return null
+      try {
+        const row = await getAdmin()
+          .selectFrom('migrate_grants')
+          .select('origin')
+          .where('workspace_id', '=', workspaceId)
+          .where(eb => eb.fn('lower', ['repo_owner']), '=', owner)
+          .where(eb => eb.fn('lower', ['repo_name']), '=', name)
+          .where('origin', 'is not', null)
+          .orderBy('created_at', 'desc')
+          .limit(1)
+          .executeTakeFirst()
+        return row?.origin ?? null
       }
       catch (error) {
         throwDbError(error)

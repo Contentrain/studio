@@ -73,7 +73,7 @@ describe('isBlockedAddress', () => {
 
   it('lets only global unicast IPv6 through', () => {
     for (const a of ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'fe80::1%en0', 'ff02::1', '100::1', '64:ff9b:1::1',
-      '2001::1', '2001:0:4136:e378::1', '2001:db8::1', '3fff::1', 'not-an-ip', ''])
+      '2001::1', '2001:0:4136:e378::1', '2001:db8::1', '3fff::1', '3fff:fff:ffff::1', 'not-an-ip', ''])
       expect(isBlockedAddress(a), a).toBe(true)
     for (const a of ['2606:4700:4700::1111', '2a00:1450:4001:80b::200e', '2001:4860:4860::8888'])
       expect(isBlockedAddress(a), a).toBe(false)

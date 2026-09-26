@@ -142,8 +142,8 @@ const manifest = {
   ],
 }
 
-async function start(git = fakeGit(files, manifest)) {
-  return startMigrationMediaImport({ projectId: 'p-1', workspaceId: 'ws-1', userId: 'u-1', plan: 'starter', usedBytes: 0, git: git as never, contentRoot: '', defaultBranch: 'main' })
+async function start(git = fakeGit(files, manifest), signedOrigin: string | null = null) {
+  return startMigrationMediaImport({ projectId: 'p-1', workspaceId: 'ws-1', userId: 'u-1', plan: 'starter', usedBytes: 0, git: git as never, contentRoot: '', defaultBranch: 'main', signedOrigin })
 }
 
 const deps = (git: ReturnType<typeof fakeGit>) => ({ resolveGit: async () => git as never, resolvePlan: async () => 'starter' as const })
@@ -153,7 +153,7 @@ describe('migration media import', () => {
     const first = await start()
     expect(first.created).toBe(true)
     expect(store.items.map(i => i.repo_path)).toEqual(['public/media/a.png', 'public/media/b.svg', 'public/media/c.svg'])
-    expect(first.skipped).toEqual({ overSize: [], missing: [{ repoPath: 'public/media/gone.png', reason: 'not_in_repo' }], fontsKept: 1, onOrigin: { overSize: [], offOrigin: 0 } })
+    expect(first.skipped).toEqual({ overSize: [], missing: [{ repoPath: 'public/media/gone.png', reason: 'not_in_repo' }], fontsKept: 1, onOrigin: { overSize: [], offOrigin: 0, unverified: 0 } })
     const second = await start()
     expect(second).toMatchObject({ created: false, job: { id: first.job.id } })
   })
@@ -276,8 +276,8 @@ describe('migration media import — files still at the old site', () => {
       { url: 'https://cdn.elsewhere.test/x.png', reason: 'count-cap', refs: refTo },
       { url: url('huge.mp4'), reason: 'file-too-large', bytes: 50 * 1024 * 1024, refs: refTo },
     ]))
-    const { skipped } = await start(git)
-    expect(skipped.onOrigin).toEqual({ overSize: [{ url: url('huge.mp4'), bytes: 50 * 1024 * 1024 }], offOrigin: 1 })
+    const { skipped } = await start(git, origin())
+    expect(skipped.onOrigin).toEqual({ overSize: [{ url: url('huge.mp4'), bytes: 50 * 1024 * 1024 }], offOrigin: 1, unverified: 0 })
     expect(store.jobs[0]!.origin).toBe(origin())
     expect(store.items.map(i => [i.repo_path, i.source_url])).toEqual([['public/media/a.png', null], [url('big.png'), url('big.png')]])
 
@@ -289,13 +289,30 @@ describe('migration media import — files still at the old site', () => {
     expect(hits).toEqual(['/wp-content/uploads/big.png'])
   })
 
+  it('queues nothing from the old site without a signed origin, or when the manifest names another site', async () => {
+    const onOrigin = [{ url: url('big.png'), reason: 'file-too-large', refs: refTo }]
+    for (const signed of [null, 'https://other.test', `http://old.test:${port + 1}`]) {
+      store = memoryStore()
+      const { skipped } = await start(fakeGit({ 'public/media/a.png': PNG }, withOrigin(onOrigin)), signed)
+      expect(skipped.onOrigin, String(signed)).toEqual({ overSize: [], offOrigin: 0, unverified: 1 })
+      expect(store.jobs[0]!.origin).toBeNull()
+      expect(store.items.map(i => i.repo_path)).toEqual(['public/media/a.png'])
+    }
+    // The manifest can narrow the fetch but never widen it: a repo that names another host gets nothing from it.
+    store = memoryStore()
+    const moved = { ...withOrigin([{ url: 'https://attacker.test/x.png', reason: 'count-cap', refs: refTo }]), origin: 'https://attacker.test' }
+    const { skipped } = await start(fakeGit({ 'public/media/a.png': PNG }, moved), origin())
+    expect(skipped.onOrigin).toEqual({ overSize: [], offOrigin: 0, unverified: 1 })
+    expect(store.items.some(i => i.source_url)).toBe(false)
+  })
+
   it('a fetch that may pass is parked and retried; one that will not, fails the file', async () => {
     busy = 1
     const git = fakeGit({ 'public/media/a.png': PNG }, withOrigin([
       { url: url('flaky.png'), reason: 'total-cap', refs: refTo },
       { url: url('page.png'), reason: 'total-cap', refs: refTo },
     ]))
-    await start(git)
+    await start(git, origin())
     const t0 = new Date()
     const first = await runMigrationMediaTick(t0, originDeps(git))
     expect(first).toMatchObject({ settled: 2, deferred: 1, status: 'running' })
@@ -314,7 +331,7 @@ describe('migration media import — files still at the old site', () => {
   it('after the last retry the file fails', async () => {
     busy = 99
     const git = fakeGit({}, { ...withOrigin([{ url: url('flaky.png'), reason: 'total-cap', refs: refTo }]), assets: [] })
-    await start(git)
+    await start(git, origin())
     for (let i = 0; i < 3; i++) {
       const item = store.items[0]!
       await runMigrationMediaTick(new Date((item.retry_at ?? Date.now()) + 1), originDeps(git))
@@ -327,7 +344,7 @@ describe('migration media import — files still at the old site', () => {
 
   it('never fetches from an internal address with the real rule', async () => {
     const git = fakeGit({}, { ...withOrigin([{ url: url('big.png'), reason: 'file-too-large', refs: refTo }]), assets: [] })
-    await start(git)
+    await start(git, origin())
     await runMigrationMediaTick(new Date(), { ...deps(git), originFetch: { resolve: async () => [{ address: '127.0.0.1', family: 4 }] } })
     expect(store.items[0]).toMatchObject({ state: 'failed', error: 'media.origin_fetch_failed' })
     expect(hits).toEqual([])
@@ -338,7 +355,7 @@ describe('migration media import — files still at the old site', () => {
       { url: url('big.png'), reason: 'count-cap', refs: refTo },
       { url: `${url('big.png')}?v=2`, reason: 'count-cap', refs: refTo },
     ]), assets: [] })
-    await start(git)
+    await start(git, origin())
     let t = 0
     const tick = await runMigrationMediaTick(new Date(), originDeps(git, { clock: () => (t += 100_000) }))
     expect(tick).toMatchObject({ settled: 1, status: 'running' })

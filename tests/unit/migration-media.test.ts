@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMediaIngestContext, ingestMediaBytes } from '../../server/utils/media-bulk-ingest'
 import { inspectRepoMedia, normalizeRepoFilename, REPO_MEDIA_MAX_PIXELS } from '../../server/utils/media-ingest'
-import { parseMigrationMediaManifest, planMigrationMediaPreflight, readMigrationMediaManifest } from '../../server/utils/migration-media'
+import { parseMigrationMediaManifest, planMigrationMediaPreflight, readMigrationMediaManifest, verifiedMediaOrigin } from '../../server/utils/migration-media'
 import { sanitizeSvg, svgProblems } from '../../server/utils/svg-sanitize'
 
 /**
@@ -240,6 +240,21 @@ describe('preflight — what a move would take on this plan', () => {
   it('a plan with no storage ceiling always fits', () => {
     const p = planMigrationMediaPreflight({ manifest: manifest([asset()]), tree: tree([['public/media/a.png', 100]]), plan: 'community' as never, usedBytes: 10 * GB })
     expect(p).toMatchObject({ fits: true, upgrade: null, limits: { maxFileBytes: null, storageBytes: null }, storage: { remainingBytes: null } })
+  })
+})
+
+describe('verifiedMediaOrigin — the signed origin, only when the manifest names that site', () => {
+  it('takes the origin Migrate signed when the manifest names the same site', () => {
+    expect(verifiedMediaOrigin({ origin: 'https://old.example' }, 'https://old.example')).toBe('https://old.example')
+    // Compared as origins: a trailing slash or default port in the manifest is the same site.
+    expect(verifiedMediaOrigin({ origin: 'https://Old.Example:443/' }, 'https://old.example')).toBe('https://old.example')
+  })
+
+  it('gives nothing without a signed origin, without a manifest origin, or when they differ', () => {
+    expect(verifiedMediaOrigin({ origin: 'https://old.example' }, null)).toBeNull()
+    expect(verifiedMediaOrigin({}, 'https://old.example')).toBeNull()
+    for (const other of ['https://evil.example', 'http://old.example', 'https://old.example:8443', 'https://sub.old.example', 'not a url'])
+      expect(verifiedMediaOrigin({ origin: other }, 'https://old.example'), other).toBeNull()
   })
 })
 

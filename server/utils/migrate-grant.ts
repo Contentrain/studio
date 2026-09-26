@@ -68,3 +68,13 @@ export async function migrateGrantDestination(session: { accessToken: string, us
   const project = projects.find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === repo)
   return { workspaceSlug: workspace.slug as string, projectId: (project?.id as string | undefined) ?? null }
 }
+
+/**
+ * The origin Migrate signed for a project's site: from the grant bound to the
+ * project's workspace for its repository. Null for a project no grant covers.
+ */
+export async function migrationSignedOrigin(workspaceId: string, project: { repo_full_name?: unknown }): Promise<string | null> {
+  const repo = typeof project.repo_full_name === 'string' ? project.repo_full_name : ''
+  if (!repo.includes('/')) return null
+  return useDatabaseProvider().getMigrateGrantOrigin(workspaceId, repo)
+}

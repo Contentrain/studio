@@ -8,7 +8,8 @@
  * refers to it (a file and an RFC 6901 pointer). Studio reads the files from
  * Git, not the old WordPress URLs — the site may already be gone. Only the
  * files Migrate could not commit (`studioRecommended`) are still at the old
- * address; those are fetched from the manifest's origin, and nowhere else.
+ * address; those are fetched from the origin Migrate signed into the order's
+ * claim, when the manifest names that same site, and nowhere else.
  *
  * The manifest's shape is Migrate's (`packages/media/src/localize.ts`,
  * `MediaManifest`); this is Studio's reading of it. Required fields are
@@ -59,7 +60,7 @@ export interface MigrationMediaAsset {
  * A file Migrate could not commit (over its repo caps: one file too large, the
  * total or the count reached) and left at the old site's address — Migrate's
  * `studioRecommended`. Content refers to it by that address (`url`); the
- * import fetches it from the manifest's origin only.
+ * import fetches it from the signed origin only (`verifiedMediaOrigin`).
  */
 export interface MigrationMediaOriginFile {
   url: string
@@ -163,10 +164,22 @@ export function parseMigrationMediaManifest(raw: unknown): MigrationMediaManifes
   return { version: 1, ...(typeof doc.origin === 'string' ? { origin: doc.origin } : {}), assets, onOrigin }
 }
 
-/** Whether a file left at the old site can be fetched: on the manifest origin's host, over http(s). */
-export function fetchableFromOrigin(manifest: Pick<MigrationMediaManifest, 'origin'>, url: string): boolean {
-  if (!manifest.origin || !URL.canParse(manifest.origin) || !URL.canParse(url)) return false
-  return isOnOrigin(new URL(url), new URL(manifest.origin))
+/**
+ * The origin old-site files may be fetched from: the one Migrate signed into
+ * the order's claim (`getMigrateGrantOrigin`), and only when the manifest names
+ * the same site. The manifest lives in the customer's repository, so it can
+ * narrow the fetch to nothing but never point it at another host.
+ */
+export function verifiedMediaOrigin(manifest: Pick<MigrationMediaManifest, 'origin'>, signed: string | null | undefined): string | null {
+  if (!signed || !manifest.origin || !URL.canParse(manifest.origin) || !URL.canParse(signed)) return null
+  const origin = new URL(signed).origin
+  return new URL(manifest.origin).origin === origin ? origin : null
+}
+
+/** Whether a file left at the old site can be fetched: on the verified origin's host, over http(s). */
+export function fetchableFromOrigin(origin: string | null, url: string): boolean {
+  if (!origin || !URL.canParse(origin) || !URL.canParse(url)) return false
+  return isOnOrigin(new URL(url), new URL(origin))
 }
 
 /** The manifest from the project's content branch (or default branch), or null when Migrate wrote none. */
@@ -229,6 +242,8 @@ export interface MigrationMediaPreflight {
     overSize: Array<{ url: string, bytes: number }>
     /** On another host (a CDN, another site): not fetched, left as they are. */
     offOrigin: number
+    /** No signed origin matches the manifest's (`verifiedMediaOrigin`): none are fetched, all stay where they are. */
+    unverified: number
     refs: number
   }
   limits: {
@@ -263,6 +278,8 @@ export function planMigrationMediaPreflight(input: {
   overageSettings?: Record<string, boolean>
   /** The project root the manifest's paths are relative to (`readMigrationMediaManifest`). */
   root?: string
+  /** The origin Migrate signed for this site (`getMigrateGrantOrigin`). */
+  signedOrigin?: string | null
 }): MigrationMediaPreflight {
   const blobs = new Map(input.tree.filter(e => e.type === 'blob').map(e => [e.path, e]))
   const media = input.manifest.assets.filter(a => a.role === 'media')
@@ -293,9 +310,14 @@ export function planMigrationMediaPreflight(input: {
     movableBytes += asset.bytes
   }
 
-  const onOrigin: MigrationMediaPreflight['onOrigin'] = { count: 0, knownBytes: 0, overSize: [], offOrigin: 0, refs: 0 }
+  const onOrigin: MigrationMediaPreflight['onOrigin'] = { count: 0, knownBytes: 0, overSize: [], offOrigin: 0, unverified: 0, refs: 0 }
+  const origin = verifiedMediaOrigin(input.manifest, input.signedOrigin)
   for (const file of input.manifest.onOrigin) {
-    if (!fetchableFromOrigin(input.manifest, file.url)) {
+    if (!origin) {
+      onOrigin.unverified++
+      continue
+    }
+    if (!fetchableFromOrigin(origin, file.url)) {
       onOrigin.offOrigin++
       continue
     }

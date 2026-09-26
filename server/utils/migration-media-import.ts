@@ -18,7 +18,8 @@
  * items are touched, so nothing is imported twice.
  *
  * Files Migrate left at the old site (`studioRecommended`, migration 038) are
- * items too: fetched from the manifest's origin only (`fetchFromOrigin` —
+ * items too: fetched only from the origin Migrate signed into the order's claim,
+ * and only when the manifest names that site (`verifiedMediaOrigin`; `fetchFromOrigin` —
  * host-locked, private addresses refused at connect, no redirect elsewhere,
  * size cap while streaming), then the same checks and ingest. A fetch that may
  * pass (timeout, 5xx, 429, connection) parks the file for a retry
@@ -33,7 +34,7 @@ import type { Plan } from './license'
 import { createMediaIngestContext, ingestMediaBytes } from './media-bulk-ingest'
 import { inspectRepoMedia } from './media-ingest'
 import type { MigrationMediaPreflight } from './migration-media'
-import { fetchableFromOrigin, planMigrationMediaPreflight, projectPath, readMigrationMediaManifest } from './migration-media'
+import { fetchableFromOrigin, planMigrationMediaPreflight, projectPath, readMigrationMediaManifest, verifiedMediaOrigin } from './migration-media'
 import { fetchFromOrigin, OriginFetchError } from './origin-fetch'
 import type { OriginFetchOptions } from './origin-fetch'
 import { resolveWorkspaceBilling } from './workspace-billing'
@@ -58,14 +59,16 @@ export interface StartMigrationMediaInput {
   git: GitProvider
   contentRoot: string
   defaultBranch: string
+  /** The origin Migrate signed for this site (`getMigrateGrantOrigin`); without one no old-site file is queued. */
+  signedOrigin: string | null
 }
 
 export interface StartMigrationMediaResult {
   job: Record<string, unknown>
   created: boolean
   skipped: Pick<MigrationMediaPreflight, 'overSize' | 'missing' | 'fontsKept'> & {
-    /** Files at the old site that are not fetched: over the file cap, or on another host. */
-    onOrigin: Pick<MigrationMediaPreflight['onOrigin'], 'overSize' | 'offOrigin'>
+    /** Files at the old site that are not fetched: over the file cap, on another host, or with no signed origin. */
+    onOrigin: Pick<MigrationMediaPreflight['onOrigin'], 'overSize' | 'offOrigin' | 'unverified'>
   }
 }
 
@@ -85,7 +88,9 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
     usedBytes: input.usedBytes,
     overageSettings: input.overageSettings,
     root: found.root,
+    signedOrigin: input.signedOrigin,
   })
+  const origin = verifiedMediaOrigin(found.manifest, input.signedOrigin)
   const blobs = new Map(tree.filter(e => e.type === 'blob').map(e => [e.path, e]))
   const blocked = new Set([...preflight.overSize.map(a => a.repoPath), ...preflight.missing.map(a => a.repoPath)])
   const items: Parameters<ReturnType<typeof useDatabaseProvider>['createMigrationMediaJob']>[0]['items'] = found.manifest.assets
@@ -102,7 +107,7 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
     }))
   const originOverSize = new Set(preflight.onOrigin.overSize.map(f => f.url))
   for (const file of found.manifest.onOrigin) {
-    if (!fetchableFromOrigin(found.manifest, file.url) || originOverSize.has(file.url)) continue
+    if (!fetchableFromOrigin(origin, file.url) || originOverSize.has(file.url)) continue
     // Keyed by its address: that is what content refers to it by, and what the rewrite looks for.
     items.push({ repoPath: file.url, sourceUrl: file.url, bytes: file.bytes ?? 0, mime: 'application/octet-stream' })
   }
@@ -114,7 +119,7 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
     createdBy: input.userId,
     manifestRef: found.ref,
     manifestCommit,
-    origin: found.manifest.origin ?? null,
+    origin,
     items,
   })
   return {
@@ -124,7 +129,7 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
       overSize: preflight.overSize,
       missing: preflight.missing,
       fontsKept: preflight.fontsKept,
-      onOrigin: { overSize: preflight.onOrigin.overSize, offOrigin: preflight.onOrigin.offOrigin },
+      onOrigin: { overSize: preflight.onOrigin.overSize, offOrigin: preflight.onOrigin.offOrigin, unverified: preflight.onOrigin.unverified },
     },
   }
 }

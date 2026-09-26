@@ -26,7 +26,7 @@ describe('postgres-db migrate-grants (contract)', () => {
   })
 
   afterAll(async () => {
-    await sql`DELETE FROM public.migrate_grants WHERE order_id = ${orderId}`.execute(getDb())
+    await sql`DELETE FROM public.migrate_grants WHERE order_id LIKE ${`${orderId}%`}`.execute(getDb())
     for (const user of [owner, other]) await deleteSeededUser(user.userId)
   })
 
@@ -68,6 +68,35 @@ describe('postgres-db migrate-grants (contract)', () => {
     const row = await methods.getMigrateGrantForUser(grant.id as string, owner.userId)
     expect(row!.redeemed_at).not.toBeNull()
     expect(row!.redeemed_subscription_id).toBe('sub_first')
+  })
+
+  it('keeps the signed origin: taken once, never replaced, found by workspace and repo', async () => {
+    const order = `${orderId}-origin`
+    const claimSite = (origin?: string) => methods.claimMigrateGrant({
+      orderId: order,
+      claimJti: 'jti-origin',
+      userId: owner.userId,
+      plan: 'pro',
+      trialDays: 60,
+      repoOwner: 'Acme',
+      repoName: 'Site',
+      email: 'owner@example.com',
+      origin,
+    })
+    const first = await claimSite()
+    expect(first.grant.origin).toBeNull()
+    // A grant recorded before claims carried an origin takes it from the next claim for the order…
+    expect((await claimSite('https://old.example')).grant.origin).toBe('https://old.example')
+    // …and a later claim cannot move it.
+    expect((await claimSite('https://other.example')).grant.origin).toBe('https://old.example')
+
+    // Only a grant bound to the workspace counts.
+    expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme/site')).toBeNull()
+    await methods.bindMigrateGrantWorkspace(first.grant.id as string, owner.workspaceId)
+    expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'ACME/site')).toBe('https://old.example')
+    expect(await methods.getMigrateGrantOrigin(other.workspaceId, 'acme/site')).toBeNull()
+    expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme/blog')).toBeNull()
+    expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme')).toBeNull()
   })
 
   it('refuses a trial longer than the contract allows', async () => {

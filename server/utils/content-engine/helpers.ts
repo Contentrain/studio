@@ -1,8 +1,21 @@
 import { canonicalStringify, CONTENTRAIN_BRANCH } from '@contentrain/types'
-import type { EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import type { ContentEntry } from '@contentrain/mcp/core/content-manager'
+import type { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, GitProvider, EntrySchedule } from './types'
 import { checkBranchHealth, getHealthStatus } from '../branch-health'
+
+type McpPlanConfig = Parameters<typeof planContentSave>[1]['config']
+
+/**
+ * The project config as MCP's plan helpers type it. MCP 3.6.1 pins
+ * `@contentrain/types` 1.19, where `repository`'s fields are required; newer
+ * types make them optional. MCP reads only `repository?.default_branch`, so
+ * the same object passes unchanged. Drop this with the MCP upgrade.
+ */
+export function asMcpConfig(config: ContentrainConfig): McpPlanConfig {
+  return config as McpPlanConfig
+}
 
 /**
  * Generate a v2 branch name following git-architecture.md §2.3:

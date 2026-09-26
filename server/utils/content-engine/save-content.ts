@@ -5,6 +5,7 @@ import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
 import {
   applyStudioMetaOverrides,
+  asMcpConfig,
   openWriteSnapshot,
   plannedStatuses,
   createFeatureBranch,
@@ -213,7 +214,7 @@ export async function saveContent(
 
   let plan
   try {
-    plan = await planContentSave(reader, { model: modelDef, entries, config, vocabulary })
+    plan = await planContentSave(reader, { model: modelDef, entries, config: asMcpConfig(config), vocabulary })
   }
   catch (err) {
     return {

@@ -13,6 +13,7 @@ type MigrateGrantMethods = Pick<
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
+  | 'getMigrateGrantOrigin'
 >
 
 function fail(message: string): never {
@@ -34,10 +35,21 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           repo_owner: input.repoOwner,
           repo_name: input.repoName,
           email: input.email,
+          origin: input.origin ?? null,
         }, { onConflict: 'order_id', ignoreDuplicates: true })
         .select()
       if (error) fail(error.message)
       if (inserted && inserted.length > 0) return { grant: inserted[0] as DatabaseRow, created: true }
+
+      // A grant recorded before claims carried an origin takes it now; one it has is never replaced.
+      if (input.origin) {
+        const { error: originError } = await admin
+          .from('migrate_grants')
+          .update({ origin: input.origin })
+          .eq('order_id', input.orderId)
+          .is('origin', null)
+        if (originError) fail(originError.message)
+      }
 
       const { data: existing, error: readError } = await admin
         .from('migrate_grants')
@@ -89,6 +101,23 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .eq('id', grantId)
         .is('redeemed_at', null)
       if (error) fail(error.message)
+    },
+
+    async getMigrateGrantOrigin(workspaceId, repoFullName) {
+      const [owner, name] = repoFullName.split('/')
+      if (!owner || !name) return null
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('origin')
+        .eq('workspace_id', workspaceId)
+        .ilike('repo_owner', owner.replace(/[\\%_]/g, '\\$&'))
+        .ilike('repo_name', name.replace(/[\\%_]/g, '\\$&'))
+        .not('origin', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) fail(error.message)
+      return (data?.origin as string | null | undefined) ?? null
     },
   }
 }

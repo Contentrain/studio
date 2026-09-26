@@ -861,6 +861,7 @@
   "migration.media_off_origin": "{count} files are on another host and stay where they are",
   "migration.media_on_origin": "{count} files are still on the old site, too large for the repository; they move from there",
   "migration.media_origin_over_size": "{count} files on the old site are over this plan's {limit} file limit and would not be moved",
+  "migration.media_origin_unverified": "{count} files are still on the old site, but the Migrate order behind this project does not confirm that site, so they stay where they are",
   "migration.media_over_size": "{count} files are over this plan's {limit} file limit and would not be moved",
   "migration.media_progress_label": "Media move progress",
   "migration.media_public_note": "Moved to Studio Media, these files are served from public addresses, like any media in Studio.",

@@ -88,10 +88,15 @@ describe('verifyMigrateClaim', () => {
       { ...claim, plan_evidence: undefined },
       { ...claim, plan_evidence: [{ limit_key: 'x', measured: 'lots', limit: 1 }] },
       { ...claim, capabilities: [{ key: 'teleport' }] },
+      // The origin media import will trust: a bare https origin, nothing else.
+      { ...claim, origin: 'https://old-blog.example/wp' },
+      { ...claim, origin: 'http://old-blog.example' },
     ]
     for (const body of refused)
       expect(await reason(verifyMigrateClaim(await sign(body), publicPem))).toBe('invalid')
     expect(await reason(verifyMigrateClaim(await sign({ ...claim, plan_evidence: [] }), publicPem))).toBe('accepted')
+    const withOrigin = await verifyMigrateClaim(await sign({ ...claim, origin: 'https://old-blog.example' }), publicPem)
+    expect(withOrigin.claim.origin).toBe('https://old-blog.example')
   })
 
   it('allows the contract\'s clock skew, and no more', async () => {

@@ -3,7 +3,7 @@ import { parseMarkdownFrontmatter, validateSlug } from '@contentrain/types'
 import { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, SaveOptions, WriteResult } from './types'
 import { STUDIO_AUTHOR, CONTENT_BRANCH } from './types'
-import { applyStudioMetaOverrides, openWriteSnapshot, createFeatureBranch, plannedStatuses, planMatchesCurrent, splitEntrySchedule, validateSchedule, writeBase } from './helpers'
+import { applyStudioMetaOverrides, asMcpConfig, openWriteSnapshot, createFeatureBranch, plannedStatuses, planMatchesCurrent, splitEntrySchedule, validateSchedule, writeBase } from './helpers'
 import { rewriteEntryMedia, rewriteMarkdownMedia } from '../media-rewrite'
 import { entryModeErrors } from './entry-mode'
 import { mergeEntryFields } from './field-merge'
@@ -281,7 +281,7 @@ async function planDocumentWrite(args: {
     plan = await planContentSave(reader, {
       model: modelDef,
       entries: [{ slug: safeSlug, locale, data: entryData, ...lifted.schedule }, ...fanOut.entries],
-      config,
+      config: asMcpConfig(config),
       vocabulary,
     })
   }
