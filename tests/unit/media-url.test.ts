@@ -72,3 +72,15 @@ describe('media URL helpers', () => {
     expect(mediaStoragePathUnder(base, null)).toBeNull()
   })
 })
+
+describe('publicMediaBlock', () => {
+  it('names the first CDN gate a keyless <img src> would hit, in the delivery route\'s order', async () => {
+    const { publicMediaBlock } = await import('../../server/utils/media-url')
+    const open = { cdn_enabled: true, cdn_public_media: true }
+    expect(publicMediaBlock(open, true)).toBeNull()
+    expect(publicMediaBlock({ ...open, cdn_enabled: false }, false)).toBe('cdn_disabled')
+    expect(publicMediaBlock({ cdn_public_media: true }, true)).toBe('cdn_disabled')
+    expect(publicMediaBlock({ ...open, cdn_public_media: false }, false)).toBe('public_media_off')
+    expect(publicMediaBlock(open, false)).toBe('plan')
+  })
+})

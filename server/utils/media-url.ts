@@ -112,3 +112,24 @@ export function withMediaUrls(projectId: string, asset: MediaAsset): MediaAsset 
     ),
   }
 }
+
+/** Why a browser cannot load this project's keyless media URLs right now. */
+export type PublicMediaBlock = 'cdn_disabled' | 'public_media_off' | 'plan'
+
+/**
+ * The CDN route's gates for a keyless `<img src>` (`/api/cdn/v1/…/media/…`),
+ * in the order it applies them: `cdn_enabled`, `cdn_public_media`, then the
+ * plan's `cdn.delivery`. Null when the URLs `toDeliveryUrl` builds load. A
+ * write that points a site's content at those URLs checks this first — with
+ * any gate closed the addresses 403/401 and the site's images (and a build
+ * that fetches them) break.
+ */
+export function publicMediaBlock(
+  project: { cdn_enabled?: unknown, cdn_public_media?: unknown },
+  planDelivers: boolean,
+): PublicMediaBlock | null {
+  if (project.cdn_enabled !== true) return 'cdn_disabled'
+  if (project.cdn_public_media !== true) return 'public_media_off'
+  if (!planDelivers) return 'plan'
+  return null
+}

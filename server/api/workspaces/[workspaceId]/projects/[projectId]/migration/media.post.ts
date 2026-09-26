@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
   await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
-  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id, repo_full_name')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 

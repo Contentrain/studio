@@ -91,4 +91,34 @@ describe('MigrationMediaCard', () => {
     expect(origin).toContain('1 files are on another host')
     expect(wrapper.findAll('button').some(b => b.text().includes('Move 15 files (40.0 MB)'))).toBe(true)
   })
+
+  it('CDN delivery off: says the images would not load, links to CDN delivery, and holds the switch back', async () => {
+    const done = { id: 'job-1', status: 'done', total: 12, done: 12, failed: 0, deduped: 0, pending: 0, bytesDone: 0, error: null }
+    const routerReplace = vi.spyOn(useRouter(), 'replace').mockResolvedValue(undefined)
+    const { wrapper, fetcher } = await mount({ present: true, uploadAllowed: true, deliveryBlocked: 'cdn_disabled', job: done, preflight: preflight() })
+    const notice = wrapper.find('[data-testid=migration-media-delivery]')
+    expect(notice.text()).toContain('CDN delivery, which is off')
+    await notice.findAll('button').find(b => b.text() === 'Open CDN delivery')!.trigger('click')
+    expect(routerReplace).toHaveBeenCalledWith({ query: { cdn: 'true' } })
+
+    fetcher.mockImplementation(async () => ({ status: 'dry_run', blocked: 'cdn_disabled', counts: { filesChanged: 2, rewritten: 12, drifted: [], notImported: [], remaining: [], deleted: 0, keptBecause: 'not_requested' } }))
+    await wrapper.findAll('button').find(b => b.text() === 'Check the addresses')!.trigger('click')
+    await flushPromises()
+    const switchButton = wrapper.findAll('button').find(b => b.text() === 'Switch to Studio addresses')!
+    expect(switchButton.attributes('disabled')).toBeDefined()
+
+    // CDN turned on in the meantime: the next check clears the notice and frees the switch.
+    fetcher.mockImplementation(async () => ({ status: 'dry_run', counts: { filesChanged: 2, rewritten: 12, drifted: [], notImported: [], remaining: [], deleted: 0, keptBecause: 'not_requested' } }))
+    await wrapper.findAll('button').find(b => b.text() === 'Check the addresses')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid=migration-media-delivery]').exists()).toBe(false)
+    expect(wrapper.findAll('button').find(b => b.text() === 'Switch to Studio addresses')!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('a plan without CDN delivery: the notice offers the plans, not the CDN panel', async () => {
+    const { wrapper } = await mount({ present: true, uploadAllowed: true, deliveryBlocked: 'plan', job: null, preflight: preflight() })
+    const notice = wrapper.find('[data-testid=migration-media-delivery]')
+    expect(notice.text()).toContain('needs a plan with CDN delivery')
+    expect(notice.findAll('button').map(b => b.text())).toEqual(['See plans'])
+  })
 })

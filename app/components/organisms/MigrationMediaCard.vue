@@ -5,6 +5,10 @@
  * (preflight), the import's progress,
  * and — once every file is in — switching the site's addresses to Studio.
  *
+ * The switch writes Studio's keyless CDN delivery URLs into the site, so when
+ * the CDN would not serve them (off, public media off, or no `cdn.delivery`
+ * on the plan) the card says so and holds the switch back until it is open.
+ *
  * Opened with `?focus=migration-media` (the claim screen's way here from
  * Migrate's "move the media to Studio"), the card scrolls into view.
  */
@@ -16,6 +20,7 @@ const props = defineProps<{
 
 const { t } = useContent()
 const route = useRoute()
+const router = useRouter()
 const root = ref<HTMLElement | null>(null)
 const toast = useToast()
 const { show: showPlanModal } = usePlanModal()
@@ -47,10 +52,13 @@ interface Preflight {
   fits: boolean
   upgrade: { plan: string } | null
 }
+/** Which CDN gate would make the switched addresses fail to load (`publicMediaBlock`). */
+type DeliveryBlock = 'cdn_disabled' | 'public_media_off' | 'plan'
 interface MediaState {
   present: boolean
   job?: JobView | null
   uploadAllowed?: boolean
+  deliveryBlocked?: DeliveryBlock
   preflight?: Preflight
 }
 interface ApplyCounts {
@@ -69,6 +77,8 @@ const job = ref<JobView | null>(null)
 const busy = ref<'start' | 'resume' | 'preview' | 'apply' | null>(null)
 const applyPreview = ref<ApplyCounts | null>(null)
 const deleteLocal = ref(false)
+/** From the preflight, then from each check or refused switch — whichever read the project last. */
+const deliveryBlocked = ref<DeliveryBlock | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const base = () => `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/migration/media`
@@ -77,6 +87,7 @@ async function load() {
   try {
     state.value = await $fetch<MediaState>(base())
     job.value = state.value.job ?? null
+    deliveryBlocked.value = state.value.deliveryBlocked ?? null
   }
   catch {
     state.value = null
@@ -118,6 +129,10 @@ const needsUpgrade = computed(() => state.value?.uploadAllowed === false || !!pr
 const canStart = computed(() => props.editable && state.value?.uploadAllowed && movable.value > 0 && (!job.value || job.value.status === 'failed'))
 const progress = computed(() => (job.value && job.value.total > 0 ? Math.round(((job.value.done + job.value.failed) / job.value.total) * 100) : 0))
 
+function openCdn() {
+  router.replace({ query: { cdn: 'true' } })
+}
+
 function size(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -156,7 +171,9 @@ async function resume() {
 async function preview() {
   busy.value = 'preview'
   try {
-    applyPreview.value = (await $fetch<{ counts: ApplyCounts }>(`${base()}/apply`, { method: 'POST', body: { dryRun: true, deleteLocal: deleteLocal.value } })).counts
+    const result = await $fetch<{ counts: ApplyCounts, blocked?: DeliveryBlock }>(`${base()}/apply`, { method: 'POST', body: { dryRun: true, deleteLocal: deleteLocal.value } })
+    applyPreview.value = result.counts
+    deliveryBlocked.value = result.blocked ?? null
   }
   catch {
     toast.error(t('migration.media_apply_failed'))
@@ -173,8 +190,10 @@ async function apply() {
     toast.success(t(result.status === 'pending_review' ? 'migration.media_apply_pending' : result.status === 'nothing_to_do' ? 'migration.media_apply_nothing' : 'migration.media_apply_done'))
     applyPreview.value = null
   }
-  catch {
-    toast.error(t('migration.media_apply_failed'))
+  catch (error) {
+    const blocked = (error as { data?: { data?: { blocked?: DeliveryBlock } } }).data?.data?.blocked
+    if (blocked) deliveryBlocked.value = blocked
+    else toast.error(t('migration.media_apply_failed'))
   }
   finally {
     busy.value = null
@@ -232,6 +251,18 @@ watch(deleteLocal, () => {
       </AtomsBaseButton>
     </div>
 
+    <div v-if="deliveryBlocked" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 dark:border-warning-800 dark:bg-warning-900/20" data-testid="migration-media-delivery">
+      <span class="text-xs text-body dark:text-secondary-300">
+        {{ t(`migration.media_blocked_${deliveryBlocked}`) }}
+      </span>
+      <AtomsBaseButton v-if="editable && deliveryBlocked === 'cdn_disabled'" type="button" variant="secondary" size="sm" class="ml-auto" @click="openCdn">
+        {{ t('migration.media_open_cdn') }}
+      </AtomsBaseButton>
+      <AtomsBaseButton v-else-if="editable && deliveryBlocked === 'plan'" type="button" variant="secondary" size="sm" class="ml-auto" @click="showPlanModal()">
+        {{ t('migration.media_upgrade') }}
+      </AtomsBaseButton>
+    </div>
+
     <div v-if="canStart" class="mt-2 flex">
       <AtomsBaseButton type="button" variant="primary" size="sm" :disabled="busy !== null" @click="start">
         {{ busy === 'start' ? t('common.loading') : t('migration.media_move', { count: movable, size: size(movableBytes) }) }}
@@ -279,7 +310,7 @@ watch(deleteLocal, () => {
           <AtomsBaseButton type="button" variant="secondary" size="sm" :disabled="busy !== null" @click="preview">
             {{ busy === 'preview' ? t('common.loading') : t('migration.media_apply_check') }}
           </AtomsBaseButton>
-          <AtomsBaseButton v-if="applyPreview" type="button" variant="primary" size="sm" :disabled="busy !== null" @click="apply">
+          <AtomsBaseButton v-if="applyPreview" type="button" variant="primary" size="sm" :disabled="busy !== null || !!deliveryBlocked" @click="apply">
             {{ busy === 'apply' ? t('common.loading') : t('migration.media_apply') }}
           </AtomsBaseButton>
         </div>
