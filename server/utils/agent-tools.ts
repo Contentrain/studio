@@ -166,7 +166,7 @@ FIELD DEF FORMAT: { "fieldId": { type, required?, unique?, min?, max?, pattern?,
   label: human-readable name shown in the editor instead of the field id — a string, or { "tr": "...", "en": "..." } per locale
   order: display position in the edit form, ascending; fields without one come last, alphabetically
 
-TITLE FIELD: title_field names the field shown as an entry's title (must be string/text/slug/email/url/code/markdown/richtext; "key" for dictionaries). Declare it when creating a model; an update keeps the existing value when omitted.
+TITLE FIELD: title_field names the field shown as an entry's title (must be string/text/slug/email/url/code/markdown/richtext; "key" for dictionaries; a dotted path like "hero.heading" names a field one level inside an object field, for a singleton built from sections). Declare it when creating a model; an update keeps the existing value when omitted.
 
 RELATION FIELDS: Include "model" property with target model ID(s).
   Single target: { "type": "relation", "model": "team-members" }

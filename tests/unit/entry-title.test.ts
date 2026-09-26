@@ -3,7 +3,9 @@ import {
   DICTIONARY_TITLE_FIELD,
   resolveEntryTitle,
   resolveTitleFieldId,
+  titleFieldDef,
   titleFieldOptions,
+  titleFieldValue,
 } from '../../shared/utils/entry-title'
 
 // The three reported cases, as models.
@@ -171,5 +173,47 @@ describe('resolveEntryTitle', () => {
 
   it('returns the fallback for an absent entry', () => {
     expect(resolveEntryTitle(null, integrationGroups, 'fallback')).toBe('fallback')
+  })
+})
+
+// A page singleton built from sections holds only section objects at the top;
+// its title is a section's heading, named by a dotted path (MCP validates the same rule).
+const aboutPage = {
+  kind: 'singleton',
+  title_field: 'hero.heading',
+  fields: {
+    hero: { type: 'object', required: true, fields: { heading: { type: 'string', required: true }, image: { type: 'image' } } },
+    story: { type: 'object', fields: { heading: { type: 'string' }, body: { type: 'markdown' } } },
+    work: { type: 'array', items: { type: 'object', fields: { caption: { type: 'string' } } } },
+  },
+}
+
+describe('title_field — a dotted path into a section object', () => {
+  it('resolves one level into an object field, and nothing deeper or through an array', () => {
+    expect(titleFieldDef(aboutPage, 'hero.heading')).toEqual({ type: 'string', required: true })
+    expect(titleFieldDef(aboutPage, 'hero.title')).toBeUndefined()
+    expect(titleFieldDef(aboutPage, 'work.caption')).toBeUndefined()
+    expect(titleFieldDef(aboutPage, 'hero.heading.text')).toBeUndefined()
+    expect(titleFieldDef(aboutPage, 'toString')).toBeUndefined()
+  })
+
+  it('keeps the declared path', () => {
+    expect(resolveTitleFieldId(aboutPage)).toBe('hero.heading')
+  })
+
+  it('ignores a declared path that does not resolve', () => {
+    expect(resolveTitleFieldId({ ...aboutPage, title_field: 'work.caption' })).not.toBe('work.caption')
+  })
+
+  it('reads the entry title at the path', () => {
+    const entry = { hero: { heading: 'We build calm software' }, story: { heading: 'How we work' } }
+    expect(titleFieldValue(entry, 'hero.heading')).toBe('We build calm software')
+    expect(titleFieldValue({ hero: null }, 'hero.heading')).toBeUndefined()
+    expect(resolveEntryTitle(entry, aboutPage, 'About')).toBe('We build calm software')
+    expect(resolveEntryTitle({ hero: {} }, aboutPage, 'About')).toBe('About')
+  })
+
+  it('offers text fields inside objects after the top-level ones', () => {
+    expect(titleFieldOptions({ fields: { label: { type: 'string' }, ...aboutPage.fields } })).toEqual(['label', 'hero.heading', 'story.heading', 'story.body'])
   })
 })

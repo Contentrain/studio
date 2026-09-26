@@ -123,6 +123,27 @@ describe('model title_field PATCH', () => {
     expect(res.status).toBe(400)
   })
 
+  // A page singleton built from sections: its title is a section's heading.
+  it('accepts a dotted path one level into an object field', async () => {
+    const page = {
+      ...MODEL,
+      kind: 'singleton' as const,
+      title_field: 'hero.heading',
+      fields: {
+        hero: { type: 'object', required: true, fields: { heading: { type: 'string', required: true }, image: { type: 'image' } } },
+        work: { type: 'array', items: { type: 'object', fields: { caption: { type: 'string' } } } },
+      },
+    }
+    const { saveModel } = stubRoute({ model: page })
+
+    const res = await patch({ titleField: 'hero.heading' })
+
+    expect(res.status).toBe(200)
+    expect((saveModel.mock.calls[0]?.[0] as { title_field?: string }).title_field).toBe('hero.heading')
+    for (const bad of ['hero.image', 'hero.title', 'work.caption', 'hero.heading.text'])
+      expect((await patch({ titleField: bad })).status, bad).toBe(400)
+  })
+
   it('allows only `key` on a dictionary, which declares no fields', async () => {
     stubRoute({ model: { ...MODEL, kind: 'dictionary', fields: {} } })
 

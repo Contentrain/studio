@@ -14,7 +14,7 @@
 // Imported explicitly rather than relying on Nuxt's auto-import: this module is
 // exercised by the plain node suite, which has no auto-imports.
 import type { TitleFieldModel } from './entry-title'
-import { resolveTitleFieldId } from './entry-title'
+import { resolveTitleFieldId, titleFieldValue } from './entry-title'
 
 /** A relation reference as stored on disk. */
 export type RelationRef = string | { model: string, ref: string }
@@ -105,7 +105,7 @@ export function findRelationLabel(
 ): string | null {
   const declared = targetModel ? resolveTitleFieldId(targetModel) : null
   if (declared) {
-    const value = entry[declared]
+    const value = titleFieldValue(entry, declared)
     if (typeof value === 'string' && value) return value
   }
 
