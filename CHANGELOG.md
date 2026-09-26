@@ -1,6 +1,47 @@
 # Changelog
 
 
+## v0.4.5
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.4...v0.4.5)
+
+### ⚠️ Upgrade notes
+
+**1. Three migrations run before the new image serves: 036, 037, 038.**
+managed+postgres: the Railway pre-deploy runs them (expect "3 applied" in its log, then `pnpm db:verify:pg`); plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. 036 widens `media_assets.source` with `'repo'` (an asset read from the project's own repository); 037 adds `migration_media_jobs` and `migration_media_items` (service-role only, RLS on, no policies) with the claim/settle/finish functions; 038 adds `migration_media_jobs.origin` and the origin-fetch columns on items, and replaces 037's settle function. Nothing existing is dropped, so rolling back the image alone is safe (an open media job then waits until the image comes back).
+
+**2. Moving a migration's media into Studio needs the media stack.**
+No new environment variables. The import runs in the web process (`server/plugins/migration-media-worker.ts`, a 10 s tick with a lease), so there is no extra service. It needs R2 (`NUXT_CDN_R2_*`; without it the media card answers 503 `media.storage_not_configured`), the `media.upload` plan feature (Starter and up) and owner/admin. Rewritten media URLs are built from `NUXT_PUBLIC_CDN_URL`, falling back to `NUXT_PUBLIC_SITE_URL`: both must be the production host.
+
+**3. Migrate's offer copy follows this release.**
+Migrate keeps its `STUDIO_MEDIA_IMPORT` switch off until this release is live in production; turning it on is a Migrate change, not a Studio one.
+
+### ✨ Highlights
+
+- New: a site migrated with Contentrain Migrate moves its media into Studio Media — a resumable job reads the files from the repository and fetches the ones left at the old site, then one commit points the site at them (#362, #363, #364, #366)
+- The Migrate claim screen leads to the delivered site and its media (#365)
+- The handoff is read from `.contentrain/migrate/handoff.json` first (#360)
+- Branches say when approved content is waiting on the advance PR, and link it (#361)
+
+### 🚀 Enhancements
+
+- **migration:** Media preflight — read a migration's media.json and the repo's blobs (media → Studio, part a) ([#362](https://github.com/Contentrain/studio/pull/362))
+- **migration:** Import a migration's media into Studio Media as a resumable job (media → Studio, part b) ([#363](https://github.com/Contentrain/studio/pull/363))
+- **migration:** Point the migrated site at its media in Studio + media card (media → Studio, part c) ([#364](https://github.com/Contentrain/studio/pull/364))
+- **migration:** Claim screen leads to the delivered site and its media (media → Studio, part d1) ([#365](https://github.com/Contentrain/studio/pull/365))
+- **migration:** Fetch the files migrate left at the old site into the media job (media → Studio, part d2) ([#366](https://github.com/Contentrain/studio/pull/366))
+
+### 🩹 Fixes
+
+- **billing:** Say which reset each usage meter follows ([#358](https://github.com/Contentrain/studio/pull/358))
+- **sidebar:** Load the project list on pages that do not load it ([#359](https://github.com/Contentrain/studio/pull/359))
+- **migration:** Read the handoff from .contentrain/migrate/handoff.json first ([#360](https://github.com/Contentrain/studio/pull/360))
+- **branches:** Say when approved content is waiting on the advance PR, and link it ([#361](https://github.com/Contentrain/studio/pull/361))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.4
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.3...v0.4.4)
