@@ -162,6 +162,9 @@ describe('migration media preflight route', () => {
     expect((await call()).body).toMatchObject({ deliveryBlocked: 'public_media_off' })
     stub({ features: { 'cdn.delivery': false } })
     expect((await call()).body).toMatchObject({ deliveryBlocked: 'plan' })
+    // CDN off on a plan without delivery: the plan is the way out, the CDN panel would not open.
+    stub({ project: { cdn_enabled: false }, features: { 'cdn.delivery': false } })
+    expect((await call()).body).toMatchObject({ deliveryBlocked: 'plan' })
   })
 
   it('POST starts an import of what can move (the 6 MB file on Starter is skipped, the font stays)', async () => {

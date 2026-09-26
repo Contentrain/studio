@@ -124,6 +124,7 @@ describe('migration media apply route', () => {
     [{ project: { cdn_enabled: false } }, 409, 'cdn_disabled'],
     [{ project: { cdn_public_media: false } }, 409, 'public_media_off'],
     [{ cdnDelivery: false }, 403, 'plan'],
+    [{ cdnDelivery: false, project: { cdn_enabled: false } }, 403, 'plan'],
   ] as const)('the addresses would not load (%o): refused, nothing written; the dry run names why', async (opts, status, blocked) => {
     stub(opts)
     const refused = await call({ dryRun: false })

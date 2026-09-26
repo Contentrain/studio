@@ -849,7 +849,7 @@
   "migration.media_apply_preview": "{refs} references in {files} files will point at Studio.",
   "migration.media_blocked_cdn_disabled": "The site's images will load from Studio's CDN delivery, which is off for this project. Turn it on before switching the addresses.",
   "migration.media_blocked_plan": "Serving the site's images from Studio needs a plan with CDN delivery.",
-  "migration.media_blocked_public_media_off": "Public media delivery is off for this project, so a browser cannot load these images. Turn it back on before switching the addresses.",
+  "migration.media_blocked_public_media_off": "Public media delivery is off for this project, so a browser cannot load these images. It is set by the Studio operator; ask them to turn it on before switching the addresses.",
   "migration.media_delete_local": "Remove the copies in the repository once nothing points at them",
   "migration.media_done": "{done} files are in Studio Media ({deduped} were already there, {failed} could not be moved).",
   "migration.media_fonts_kept": "{count} font files stay in the repository",

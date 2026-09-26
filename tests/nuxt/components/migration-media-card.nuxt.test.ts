@@ -121,4 +121,11 @@ describe('MigrationMediaCard', () => {
     expect(notice.text()).toContain('needs a plan with CDN delivery')
     expect(notice.findAll('button').map(b => b.text())).toEqual(['See plans'])
   })
+
+  it('public media off: says who can turn it on, offers no button the user could not follow', async () => {
+    const { wrapper } = await mount({ present: true, uploadAllowed: true, deliveryBlocked: 'public_media_off', job: null, preflight: preflight() })
+    const notice = wrapper.find('[data-testid=migration-media-delivery]')
+    expect(notice.text()).toContain('ask them to turn it on')
+    expect(notice.findAll('button')).toHaveLength(0)
+  })
 })

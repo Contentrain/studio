@@ -306,7 +306,7 @@ watch(deleteLocal, () => {
             {{ t(`migration.media_kept_${applyPreview.keptBecause}`) }}
           </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
           <AtomsBaseButton type="button" variant="secondary" size="sm" :disabled="busy !== null" @click="preview">
             {{ busy === 'preview' ? t('common.loading') : t('migration.media_apply_check') }}
           </AtomsBaseButton>
