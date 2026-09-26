@@ -27,7 +27,7 @@ const grantRow = {
 }
 
 const verified = {
-  claim: { v: 1, order_id: 'ord_123', email: 'owner@example.com', plan: 'pro', trial_days: 60, repo: { provider: 'github', owner: 'acme', name: 'blog' } },
+  claim: { v: 1, order_id: 'ord_123', email: 'owner@example.com', plan: 'pro', trial_days: 60, repo: { provider: 'github', owner: 'acme', name: 'blog' }, origin: 'https://old-blog.example' },
   jti: 'jti-1',
   subject: 'migrate-user-1',
 }
@@ -85,6 +85,8 @@ describe('Migrate grant routes', () => {
         trialDays: 60,
         repoOwner: 'acme',
         repoName: 'blog',
+        // The signed site: media import fetches old-site files from here only.
+        origin: 'https://old-blog.example',
       }))
       expect(result).toMatchObject({ grant: { id: 'grant-1', plan: 'pro', trialDays: 60, state: 'claimed', repo: { owner: 'acme', name: 'blog' } } })
     })

@@ -123,6 +123,7 @@ export interface MigrateGrantsTable {
   bound_at: string | null
   redeemed_at: string | null
   redeemed_subscription_id: string | null
+  origin: string | null
   created_at: Generated<string>
 }
 

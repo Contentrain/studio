@@ -1094,6 +1094,11 @@ export interface DatabaseProvider {
     repoOwner: string
     repoName: string
     email: string
+    /**
+     * The migrated site, as the claim signed it (migration 039). A grant
+     * recorded without one takes it from a later claim for the same order.
+     */
+    origin?: string | null
   }) => Promise<{ grant: DatabaseRow, created: boolean }>
 
   /** A grant, only if `userId` owns it. */
@@ -1113,6 +1118,14 @@ export interface DatabaseProvider {
    */
   markMigrateGrantRedeemed: (grantId: string, subscriptionId: string | null) => Promise<void>
 
+  /**
+   * The signed origin of the grant behind a workspace's project: the newest
+   * grant bound to `workspaceId` for `repoFullName` (owner/name, any case)
+   * that carries one. Null when there is none — media import then fetches
+   * nothing from the old site.
+   */
+  getMigrateGrantOrigin: (workspaceId: string, repoFullName: string) => Promise<string | null>
+
   // ═══════════════════════════════════════════════════
   // MIGRATION MEDIA JOBS (a migration's media → Studio Media)
   // ═══════════════════════════════════════════════════
@@ -1128,7 +1141,7 @@ export interface DatabaseProvider {
     createdBy: string
     manifestRef: string
     manifestCommit: string | null
-    /** The manifest's origin — the only host an item with `sourceUrl` may be fetched from (migration 038). */
+    /** The signed origin the manifest matched — the only host an item with `sourceUrl` may be fetched from (migrations 038, 039). */
     origin?: string | null
     /** A repository file (`blobSha`) or a file still at the old site (`sourceUrl`, which is then its `repoPath` too). */
     items: Array<{ repoPath: string, blobSha?: string | null, sourceUrl?: string | null, bytes: number, mime: string, width?: number, height?: number, alt?: string }>

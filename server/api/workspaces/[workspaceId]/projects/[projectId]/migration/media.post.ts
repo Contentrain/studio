@@ -13,6 +13,7 @@
  *   → 422 migration.media_manifest_invalid · 429 · 503 media.storage_not_configured
  */
 
+import { migrationSignedOrigin } from '~~/server/utils/migrate-grant'
 import { startMigrationMediaImport, toMigrationMediaJobView } from '~~/server/utils/migration-media-import'
 
 export default defineEventHandler(async (event) => {
@@ -51,6 +52,7 @@ export default defineEventHandler(async (event) => {
     git: ctx.git,
     contentRoot: ctx.contentRoot,
     defaultBranch: ctx.project.default_branch ?? 'main',
+    signedOrigin: await migrationSignedOrigin(workspaceId, project),
   })
   return { job: toMigrationMediaJobView(result.job), created: result.created, skipped: result.skipped }
 })

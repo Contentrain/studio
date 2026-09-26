@@ -15,6 +15,7 @@
  *   → 503 media.storage_not_configured (no media stack in this edition/deployment)
  */
 
+import { migrationSignedOrigin } from '~~/server/utils/migrate-grant'
 import { planMigrationMediaPreflight, readMigrationMediaManifest } from '~~/server/utils/migration-media'
 import { toMigrationMediaJobView } from '~~/server/utils/migration-media-import'
 
@@ -61,6 +62,7 @@ export default defineEventHandler(async (event) => {
       usedBytes: Number(ws?.media_storage_bytes ?? 0),
       overageSettings: (ws?.overage_settings as Record<string, boolean> | null) ?? {},
       root: found.root,
+      signedOrigin: await migrationSignedOrigin(workspaceId, project),
     }),
   }
 })

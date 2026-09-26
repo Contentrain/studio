@@ -41,7 +41,7 @@ interface Preflight {
   fontsKept: number
   refs: number
   /** Files still at the old site's address, fetched from there by the same import. */
-  onOrigin?: { count: number, knownBytes: number, overSize: Array<{ url: string, bytes: number }>, offOrigin: number }
+  onOrigin?: { count: number, knownBytes: number, overSize: Array<{ url: string, bytes: number }>, offOrigin: number, unverified?: number }
   limits: { maxFileBytes: number | null, storageBytes: number | null }
   storage: { usedBytes: number, remainingBytes: number | null }
   fits: boolean
@@ -199,12 +199,15 @@ watch(deleteLocal, () => {
       {{ t('migration.media_public_note') }}
     </p>
 
-    <ul v-if="onOrigin && (onOrigin.count || onOrigin.offOrigin)" class="mt-2 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300" data-testid="migration-media-origin">
+    <ul v-if="onOrigin && (onOrigin.count || onOrigin.offOrigin || onOrigin.unverified)" class="mt-2 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300" data-testid="migration-media-origin">
       <li v-if="onOrigin.count">
         {{ t('migration.media_on_origin', { count: onOrigin.count }) }}
       </li>
       <li v-if="onOrigin.offOrigin">
         {{ t('migration.media_off_origin', { count: onOrigin.offOrigin }) }}
+      </li>
+      <li v-if="onOrigin.unverified">
+        {{ t('migration.media_origin_unverified', { count: onOrigin.unverified }) }}
       </li>
     </ul>
 
