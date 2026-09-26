@@ -10,11 +10,15 @@
  *
  * GET /api/workspaces/{workspaceId}/projects/{projectId}/migration/media
  *   → 200 { present: false }
- *   → 200 { present: true, manifest: { path, ref }, job (the latest import, or null), uploadAllowed, upgradeParams?, preflight }
+ *   → 200 { present: true, manifest: { path, ref }, job (the latest import, or null), uploadAllowed, upgradeParams?, deliveryBlocked?, preflight }
+ *
+ * `deliveryBlocked` (`publicMediaBlock`) names the CDN gate that would make the
+ * switched addresses fail to load; the apply refuses until it is open.
  *   → 422 migration.media_manifest_invalid · 413 migration.media_manifest_too_large
  *   → 503 media.storage_not_configured (no media stack in this edition/deployment)
  */
 
+import { publicMediaBlock } from '~~/server/utils/media-url'
 import { migrationSignedOrigin } from '~~/server/utils/migrate-grant'
 import { planMigrationMediaPreflight, readMigrationMediaManifest } from '~~/server/utils/migration-media'
 import { toMigrationMediaJobView } from '~~/server/utils/migration-media-import'
@@ -28,7 +32,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
   const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
-  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id, repo_full_name, cdn_enabled, cdn_public_media')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
   if (role === 'member') {
@@ -46,6 +50,7 @@ export default defineEventHandler(async (event) => {
   const ws = await db.getWorkspaceById(workspaceId, 'plan, overage_settings, media_storage_bytes')
   const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
   const uploadAllowed = hasFeature(plan, 'media.upload')
+  const deliveryBlocked = publicMediaBlock(project, hasFeature(plan, 'cdn.delivery'))
   const tree = await ctx.git.getTree(found.ref)
   const latest = await db.getLatestMigrationMediaJob(projectId)
 
@@ -55,6 +60,7 @@ export default defineEventHandler(async (event) => {
     job: latest ? toMigrationMediaJobView(latest) : null,
     uploadAllowed,
     ...(uploadAllowed ? {} : { upgradeParams: getUpgradeParams(plan) }),
+    ...(deliveryBlocked ? { deliveryBlocked } : {}),
     preflight: planMigrationMediaPreflight({
       manifest: found.manifest,
       tree,

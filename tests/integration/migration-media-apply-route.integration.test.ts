@@ -25,12 +25,13 @@ let applyPlan: ReturnType<typeof vi.fn>
 let mergeBranch: ReturnType<typeof vi.fn>
 let deleteBranch: ReturnType<typeof vi.fn>
 
-function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: string, mergeResult?: unknown, mergeThrows?: boolean } = {}) {
+function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: string, mergeResult?: unknown, mergeThrows?: boolean, project?: Record<string, unknown>, cdnDelivery?: boolean } = {}) {
   vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => (key === 'workspaceId' ? 'workspace-1' : key === 'projectId' ? 'project-1' : undefined)))
   vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'user-1', email: 'owner@acme.dev' }, accessToken: 't' }))
   vi.stubGlobal('checkRateLimit', vi.fn().mockResolvedValue({ allowed: true }))
   vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
-  vi.stubGlobal('hasFeature', vi.fn((_: string, f: string) => f === 'workflow.review' ? (opts.reviewFeature ?? true) : true))
+  vi.stubGlobal('hasFeature', vi.fn((_: string, f: string) => f === 'workflow.review' ? (opts.reviewFeature ?? true) : f === 'cdn.delivery' ? (opts.cdnDelivery ?? true) : true))
+  vi.stubGlobal('getUpgradeParams', (plan: string) => ({ plan, toPlan: 'next' }))
   vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://studio.test' } }))
   vi.stubGlobal('invalidateBrainCache', vi.fn())
   vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: opts.workflow ?? 'auto-merge' } }))
@@ -58,7 +59,10 @@ function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: st
   vi.stubGlobal('createContentEngine', vi.fn(() => ({ ensureContentBranch: vi.fn(async () => {}), mergeBranch })))
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
     requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
-    getProjectForWorkspace: vi.fn().mockResolvedValue({ id: 'project-1' }),
+    getProjectForWorkspace: vi.fn(async (_t: string, _w: string, _p: string, fields = 'id') => {
+      const row: Record<string, unknown> = { id: 'project-1', cdn_enabled: true, cdn_public_media: true, ...opts.project }
+      return Object.fromEntries(fields.split(',').map(f => f.trim()).map(f => [f, row[f]]))
+    }),
     getLatestMigrationMediaJob: vi.fn().mockResolvedValue({ id: 'job-1', status: opts.jobStatus ?? 'done' }),
     listMigrationMediaItems: vi.fn().mockResolvedValue([{ repo_path: 'public/media/a.png', delivery_url: DELIVERY }]),
   }))
@@ -83,6 +87,7 @@ describe('migration media apply route', () => {
     stub()
     const { body } = await call({})
     expect(body).toMatchObject({ status: 'dry_run', counts: { rewritten: 1, studioBinding: 'written', keptBecause: 'not_requested' } })
+    expect(body).not.toHaveProperty('blocked')
     expect(applyPlan).not.toHaveBeenCalled()
   })
 
@@ -113,6 +118,22 @@ describe('migration media apply route', () => {
   it('review configured but not on the plan: auto-merge, like every other write', async () => {
     stub({ workflow: 'review', reviewFeature: false })
     expect((await call({ dryRun: false })).body.status).toBe('merged')
+  })
+
+  it.each([
+    [{ project: { cdn_enabled: false } }, 409, 'cdn_disabled'],
+    [{ project: { cdn_public_media: false } }, 409, 'public_media_off'],
+    [{ cdnDelivery: false }, 403, 'plan'],
+    [{ cdnDelivery: false, project: { cdn_enabled: false } }, 403, 'plan'],
+  ] as const)('the addresses would not load (%o): refused, nothing written; the dry run names why', async (opts, status, blocked) => {
+    stub(opts)
+    const refused = await call({ dryRun: false })
+    expect(refused.status).toBe(status)
+    expect(refused.body).toMatchObject({ data: { blocked } })
+    expect(applyPlan).not.toHaveBeenCalled()
+    expect(helpers.createFeatureBranch).not.toHaveBeenCalled()
+    stub(opts)
+    expect((await call({})).body).toMatchObject({ status: 'dry_run', blocked, counts: { rewritten: 1 } })
   })
 
   it('import not finished: 409, nothing read', async () => {

@@ -72,3 +72,18 @@ describe('media URL helpers', () => {
     expect(mediaStoragePathUnder(base, null)).toBeNull()
   })
 })
+
+describe('publicMediaBlock', () => {
+  it('names the first CDN gate to open, the plan first: without it CDN delivery cannot be turned on', async () => {
+    const { publicMediaBlock } = await import('../../server/utils/media-url')
+    const open = { cdn_enabled: true, cdn_public_media: true }
+    expect(publicMediaBlock(open, true)).toBeNull()
+    expect(publicMediaBlock({ ...open, cdn_enabled: false }, false)).toBe('plan')
+    expect(publicMediaBlock({ ...open, cdn_public_media: false }, false)).toBe('plan')
+    expect(publicMediaBlock(open, false)).toBe('plan')
+    expect(publicMediaBlock({ ...open, cdn_enabled: false }, true)).toBe('cdn_disabled')
+    expect(publicMediaBlock({ cdn_public_media: true }, true)).toBe('cdn_disabled')
+    expect(publicMediaBlock({ cdn_enabled: false, cdn_public_media: false }, true)).toBe('cdn_disabled')
+    expect(publicMediaBlock({ ...open, cdn_public_media: false }, true)).toBe('public_media_off')
+  })
+})

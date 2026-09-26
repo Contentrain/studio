@@ -30,11 +30,17 @@ const manifest = {
   ],
 }
 
-function stub(opts: { role?: string, plan?: string, media?: boolean, manifestText?: string | null, upload?: boolean, jobStatus?: string } = {}) {
+const PROJECT_ROW: Record<string, unknown> = { id: PROJECT, repo_full_name: 'acme/site', cdn_enabled: true, cdn_public_media: true }
+/** Only the columns a route asks for, like the providers (`pickColumns`): a column it forgets reads undefined. */
+function pick(row: Record<string, unknown>, fields = 'id'): Record<string, unknown> {
+  return Object.fromEntries(fields.split(',').map(f => f.trim()).map(f => [f, row[f]]))
+}
+
+function stub(opts: { role?: string, plan?: string, media?: boolean, manifestText?: string | null, upload?: boolean, jobStatus?: string, project?: Record<string, unknown>, features?: Record<string, boolean>, signedOrigin?: string | null } = {}) {
   vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => (key === 'workspaceId' ? WORKSPACE : key === 'projectId' ? PROJECT : undefined)))
   vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'user-1' }, accessToken: 'token-1' }))
   vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue(opts.plan ?? 'starter'))
-  vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(opts.upload ?? true))
+  vi.stubGlobal('hasFeature', vi.fn((_: string, f: string) => opts.features?.[f] ?? opts.upload ?? true))
   vi.stubGlobal('getPlanLimit', (plan: string, key: string) => LIMITS[plan]?.[key] ?? 0)
   vi.stubGlobal('getPlanLimitForPlan', (plan: string, key: string) => LIMITS[plan]?.[key] ?? 0)
   vi.stubGlobal('getUpgradeParams', (from: string, to?: string) => ({ plan: from, toPlan: to ?? 'next' }))
@@ -55,7 +61,8 @@ function stub(opts: { role?: string, plan?: string, media?: boolean, manifestTex
       if (!allowed.includes(role)) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
       return role
     }),
-    getProjectForWorkspace: vi.fn().mockResolvedValue({ id: PROJECT }),
+    getProjectForWorkspace: vi.fn(async (_t: string, _w: string, _p: string, fields?: string) => pick({ ...PROJECT_ROW, ...opts.project }, fields)),
+    getMigrateGrantOrigin: vi.fn(async (_w: string, repo: string) => (repo === 'acme/site' ? (opts.signedOrigin === undefined ? 'https://old.example' : opts.signedOrigin) : null)),
     getProjectMember: vi.fn().mockResolvedValue(null),
     getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, plan: opts.plan ?? 'starter', overage_settings: null, media_storage_bytes: 1000 }),
     getLatestMigrationMediaJob: vi.fn().mockResolvedValue(null),
@@ -138,12 +145,42 @@ describe('migration media preflight route', () => {
     expect(body).toMatchObject({ present: true, uploadAllowed: false, upgradeParams: { plan: 'starter' } })
   })
 
+  it('files still on the old site count once the origin is the one Migrate signed for this repository', async () => {
+    const withOrigin = { ...manifest, studioRecommended: [{ url: 'https://old.example/wp-content/uploads/film.mp4', bytes: 2000, refs: [] }] }
+    stub({ plan: 'pro', manifestText: JSON.stringify(withOrigin) })
+    expect((await call()).body.preflight).toMatchObject({ onOrigin: { count: 1, knownBytes: 2000, unverified: 0 } })
+    stub({ plan: 'pro', manifestText: JSON.stringify(withOrigin), signedOrigin: null })
+    expect((await call()).body.preflight).toMatchObject({ onOrigin: { count: 0, unverified: 1 } })
+  })
+
+  it('names the CDN gate that would break the switched addresses', async () => {
+    stub()
+    expect((await call()).body).not.toHaveProperty('deliveryBlocked')
+    stub({ project: { cdn_enabled: false } })
+    expect((await call()).body).toMatchObject({ deliveryBlocked: 'cdn_disabled' })
+    stub({ project: { cdn_public_media: false } })
+    expect((await call()).body).toMatchObject({ deliveryBlocked: 'public_media_off' })
+    stub({ features: { 'cdn.delivery': false } })
+    expect((await call()).body).toMatchObject({ deliveryBlocked: 'plan' })
+    // CDN off on a plan without delivery: the plan is the way out, the CDN panel would not open.
+    stub({ project: { cdn_enabled: false }, features: { 'cdn.delivery': false } })
+    expect((await call()).body).toMatchObject({ deliveryBlocked: 'plan' })
+  })
+
   it('POST starts an import of what can move (the 6 MB file on Starter is skipped, the font stays)', async () => {
     const { db } = stub()
     const { status, body } = await send('POST', BASE, 'media.post')
     expect(status).toBe(200)
     expect(body).toMatchObject({ created: true, job: { id: 'job-1', status: 'queued', total: 1, pending: 1 }, skipped: { overSize: [{ repoPath: 'public/media/a.png' }], fontsKept: 1 } })
     expect(db.createMigrationMediaJob.mock.calls[0]![0]).toMatchObject({ manifestRef: 'contentrain', items: [{ repoPath: 'public/media/b.svg', blobSha: 's2', bytes: 1000 }] })
+  })
+
+  it('POST imports the old site\'s files from the origin Migrate signed', async () => {
+    const withOrigin = { ...manifest, studioRecommended: [{ url: 'https://old.example/wp-content/uploads/film.mp4', bytes: 2000, refs: [] }] }
+    const { db } = stub({ plan: 'pro', manifestText: JSON.stringify(withOrigin) })
+    expect((await send('POST', BASE, 'media.post')).status).toBe(200)
+    const items = (db.createMigrationMediaJob.mock.calls[0]![0] as { items: Array<Record<string, unknown>> }).items
+    expect(items.some(item => JSON.stringify(item).includes('https://old.example/wp-content/uploads/film.mp4'))).toBe(true)
   })
 
   it('POST is owner/admin only, and refused without media upload', async () => {

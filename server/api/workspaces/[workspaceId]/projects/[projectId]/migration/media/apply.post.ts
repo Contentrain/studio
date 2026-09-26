@@ -13,10 +13,17 @@
  *
  * Owner/admin only. `dryRun` defaults to true: the counts, nothing written.
  *
+ * The new addresses are keyless CDN delivery URLs, so the switch is refused
+ * while the CDN route would not serve them (`publicMediaBlock`: CDN off,
+ * public media off, plan without `cdn.delivery`) — written anyway, every
+ * image 403s and a site build that fetches them fails. The dry run reports
+ * the same reason as `blocked` so the card can say what to turn on first.
+ *
  * POST /api/workspaces/{workspaceId}/projects/{projectId}/migration/media/apply
  *   { dryRun?: boolean, deleteLocal?: boolean }
- *   → 200 { status: 'dry_run' | 'nothing_to_do' | 'merged' | 'pending_review', counts, branch?, pullRequestUrl? }
+ *   → 200 { status: 'dry_run' | 'nothing_to_do' | 'merged' | 'pending_review', counts, blocked?, branch?, pullRequestUrl? }
  *   → 409 migration.media_import_not_done · migration.media_apply_conflict
+ *   → 409 migration.media_cdn_disabled · migration.media_public_off · 403 cdn.upgrade
  */
 
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
@@ -26,7 +33,7 @@ import { createFeatureBranch, openWriteSnapshot, writeBase } from '~~/server/uti
 import { effectiveWorkflow } from '~~/server/utils/branch-approval'
 import { planMigrationMediaApply } from '~~/server/utils/migration-media-apply'
 import { readMigrationMediaManifest } from '~~/server/utils/migration-media'
-import { publicMediaBase } from '~~/server/utils/media-url'
+import { publicMediaBase, publicMediaBlock } from '~~/server/utils/media-url'
 
 /** Files listed by name in the commit a reviewer reads; the rest are counted. */
 const LISTED = 50
@@ -64,7 +71,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
   await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
-  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
+  const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id, cdn_enabled, cdn_public_media')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
 
@@ -81,6 +88,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: errorMessage('migration.media_import_rate_limited') })
 
   const { git, contentRoot, workspace, project: row } = await resolveProjectContext(workspaceId, projectId)
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
+  const blocked = publicMediaBlock(project, hasFeature(plan, 'cdn.delivery'))
+  if (blocked && !dryRun) {
+    if (blocked === 'plan')
+      throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)), data: { blocked } })
+    throw createError({ statusCode: 409, message: errorMessage(blocked === 'cdn_disabled' ? 'migration.media_cdn_disabled' : 'migration.media_public_off'), data: { blocked } })
+  }
   const found = await readMigrationMediaManifest(git, contentRoot, row.default_branch ?? 'main')
   if (!found)
     throw createError({ statusCode: 404, message: errorMessage('migration.media_manifest_missing') })
@@ -103,7 +117,7 @@ export default defineEventHandler(async (event) => {
     listFiles: async () => (await git.getTree(snapshot.baseSha ?? CONTENTRAIN_BRANCH)).filter(e => e.type === 'blob'),
   })
 
-  if (dryRun) return { status: 'dry_run', counts }
+  if (dryRun) return { status: 'dry_run', counts, ...(blocked ? { blocked } : {}) }
   if (changes.length === 0) return { status: 'nothing_to_do', counts }
 
   const { branchName } = await createFeatureBranch(
@@ -119,7 +133,6 @@ export default defineEventHandler(async (event) => {
     base: writeBase(snapshot),
   })
 
-  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
   // Review projects hold it like any other change: it rewrites content and touches site files.
   if (effectiveWorkflow(brain.config?.workflow, hasFeature(plan, 'workflow.review')) === 'review')
