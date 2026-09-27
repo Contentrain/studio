@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Unreleased
+
+### ⚠️ Upgrade notes
+
+**Policy change: emptying a field makes a content write `bulk_content`.**
+A field counts as emptied when it had a value before the change and is empty after it (`''`, `null`, `[]`, `{}` or removed), and that includes sub-fields of objects and fields inside lists of objects. It is read from the branch's before/after, so the save and the Merge button give the same answer. Under the default policy nothing changes: `bulk_content` asks for the same single review. A policy that sets `low_risk_content` to `auto` now holds these writes, and the panel Merge holds them too. A blank optional sub-field that was already empty no longer lifts a save.
+
 ## v0.4.7
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.6...v0.4.7)

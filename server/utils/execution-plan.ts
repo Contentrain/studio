@@ -43,7 +43,8 @@ export function actorFromEmail(email: string | null | undefined, role?: string):
  * - a schema or project-settings change is `destructive_schema` — the model
  *   contract is what every reader depends on, and a removal or retype can
  *   outlive the content that fit it;
- * - a removal, or more than one entry in one branch, is `bulk_content`;
+ * - a removal, more than one entry in one branch, or a field that had a value
+ *   and no longer does ({@link emptiedFieldCount}) is `bulk_content`;
  * - anything else is `low_risk_content`.
  */
 export function branchRisk(review: BranchReview): RiskClass {
@@ -51,7 +52,67 @@ export function branchRisk(review: BranchReview): RiskClass {
   if (review.settings.some(s => s.area === 'locales' || s.area === 'workflow' || s.area === 'project')) return 'destructive_schema'
   const entries = review.summary.added + review.summary.updated + review.summary.removed
   if (review.summary.removed > 0 || entries > 1) return 'bulk_content'
+  if (emptiedFieldCount(review) > 0) return 'bulk_content'
   return 'low_risk_content'
+}
+
+/** A value a reader would see: anything but absent, `null`, `''`, or a list/object holding none. */
+function hasContent(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false
+  if (Array.isArray(value)) return value.some(hasContent)
+  if (typeof value === 'object') return Object.values(value as object).some(hasContent)
+  return true
+}
+
+function isContainer(value: unknown): value is Record<string, unknown> | unknown[] {
+  return value !== null && typeof value === 'object'
+}
+
+/**
+ * How many values went from something to nothing between `before` and `after`.
+ *
+ * A value that was already empty never counts — an optional sub-field left
+ * blank is not being emptied by a save that happens to carry it. Objects are
+ * walked key by key and lists of objects item by item, so clearing `seo.title`
+ * counts as one emptied field, not as an unchanged `seo`. A container that
+ * empties as a whole counts once, not once per leaf.
+ */
+function emptiedValues(before: unknown, after: unknown): number {
+  if (!hasContent(before)) return 0
+  if (!hasContent(after)) return 1
+  if (Array.isArray(before) && Array.isArray(after)) {
+    let count = 0
+    for (let i = 0; i < Math.min(before.length, after.length); i++) count += emptiedValues(before[i], after[i])
+    return count
+  }
+  if (isContainer(before) && isContainer(after) && !Array.isArray(before) && !Array.isArray(after)) {
+    let count = 0
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) count += emptiedValues(before[key], after[key])
+    return count
+  }
+  return 0
+}
+
+/**
+ * Fields — nested ones and those inside lists of objects included — that had
+ * a value on the base and are empty (`''`, `null`, `[]`, `{}` or gone) on the
+ * branch.
+ *
+ * Read from the review's before/after rather than from a write's payload, so
+ * the save that made the branch and the merge that lands it count the same
+ * thing: a payload cannot tell a sub-field someone cleared from one that was
+ * never filled. A removed entry is skipped — it is bulk already — and a new
+ * one has no before to lose.
+ */
+export function emptiedFieldCount(review: BranchReview): number {
+  let count = 0
+  for (const group of review.groups) {
+    for (const entry of group.entries) {
+      if (entry.kind === 'removed') continue
+      for (const field of entry.fields) count += emptiedValues(field.before, field.after)
+    }
+  }
+  return count
 }
 
 function branchScope(review: BranchReview): ExecutionScope {

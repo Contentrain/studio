@@ -17,16 +17,20 @@ describe('write signals', () => {
     expect(writeSignals('update_status', { status: 'published', entryIds: ['a'] })).toEqual({ targetStatus: 'published' })
   })
 
-  it('counts emptied fields and text across an entry map, a document and a singleton', () => {
+  it('counts text across an entry map, a document and a singleton', () => {
     expect(writeSignals('save_content', { data: { a: { title: '', tags: [], body: 'hello' } } }))
-      .toEqual({ emptiedFields: 2, textChars: 5 })
+      .toEqual({ textChars: 5 })
     expect(writeSignals('save_content', { slug: 'post', data: { body: 'x'.repeat(10), cover: null } }))
-      .toEqual({ emptiedFields: 1, textChars: 10 })
+      .toEqual({ textChars: 10 })
     expect(writeSignals('save_content', { data: { site_name: 'Acme', count: 3 } }))
-      .toEqual({ emptiedFields: 0, textChars: 4 })
-    // An object field cleared to `{}` is as empty as a blanked string.
+      .toEqual({ textChars: 4 })
+  })
+
+  it('does not read emptied fields off the payload', () => {
+    // A blank value in a payload may be a sub-field that was never filled; only
+    // the branch's before/after can say it was cleared (see emptiedFieldCount).
     expect(writeSignals('save_content', { data: { a: { seo: {}, title: 'x' } } }))
-      .toEqual({ emptiedFields: 1, textChars: 1 })
+      .not.toHaveProperty('emptiedFields')
   })
 
   it('reads nothing from other tools', () => {
