@@ -45,6 +45,7 @@
   --color-primary-700: #021D97;
   --color-primary-800: #011465;
   --color-primary-900: #010A32;
+  --color-primary-950: #000519;
 
   /* Secondary (slate — all neutral UI) */
   --color-secondary-50: #f8fafc;
@@ -70,6 +71,7 @@
   --color-success-700: #15803d;
   --color-success-800: #166534;
   --color-success-900: #14532d;
+  --color-success-950: #052e16;
 
   /* Warning (amber) */
   --color-warning-50: #fffbeb;
@@ -82,6 +84,7 @@
   --color-warning-700: #b45309;
   --color-warning-800: #92400e;
   --color-warning-900: #78350f;
+  --color-warning-950: #451a03;
 
   /* Danger (red) */
   --color-danger-50: #fef2f2;
@@ -94,6 +97,7 @@
   --color-danger-700: #b91c1c;
   --color-danger-800: #991b1b;
   --color-danger-900: #7f1d1d;
+  --color-danger-950: #450a0a;
 
   /* Info (purple) */
   --color-info-50: #EEECF9;
@@ -106,6 +110,7 @@
   --color-info-700: #322574;
   --color-info-800: #22184E;
   --color-info-900: #110C27;
+  --color-info-950: #080614;
 
   /*
    * Semantic single-value colors (exact match of old CMS)
