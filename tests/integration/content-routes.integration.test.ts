@@ -179,10 +179,23 @@ describe('content route integration', () => {
     })
   })
 
-  // Whether a write empties a field is read off the branch it wrote, and the
+  // Whether a write empties a field or drops list items is read off the branch it wrote, and the
   // merge reads the same branch the same way — so a project that trusts
   // content edits holds this save, and holds it again at the Merge button.
-  it('holds an editor save that empties a nested sub-field, at save and again at merge', async () => {
+  it.each([
+    {
+      name: 'empties a nested sub-field',
+      before: { title: 'Hello', seo: { title: 'Hello', description: 'A post' } },
+      after: { title: 'Hello', seo: { title: 'Hello', description: '' } },
+      reason: 'empties 1 field',
+    },
+    {
+      name: 'removes two of three FAQ items',
+      before: { title: 'Hello', faq: [{ id: 'q1', q: 'Why?' }, { id: 'q2', q: 'How?' }, { id: 'q3', q: 'When?' }] },
+      after: { title: 'Hello', faq: [{ id: 'q2', q: 'How?' }] },
+      reason: 'removes 2 list items',
+    },
+  ])('holds an editor save that $name, at save and again at merge', async ({ before, after, reason }) => {
     const autoLow: ApprovalPolicyFile = {
       version: 1,
       rules: [
@@ -190,12 +203,12 @@ describe('content route integration', () => {
         { risk: 'bulk_content', gate: 'change', mode: 'single' },
       ],
     }
-    const posts = { id: 'posts', name: 'Posts', kind: 'collection', domain: 'blog', i18n: true, fields: { title: { type: 'string' }, seo: { type: 'object' } } }
+    const posts = { id: 'posts', name: 'Posts', kind: 'collection', domain: 'blog', i18n: true, fields: { title: { type: 'string' }, seo: { type: 'object' }, faq: { type: 'array' } } }
     const branch = 'cr/content/posts/en/1234567890-abcd'
     const path = resolveContentPath({ contentRoot: '' }, posts as never, 'en')
     const files: Record<string, unknown> = {
-      contentrain: { entry1: { title: 'Hello', seo: { title: 'Hello', description: 'A post' } } },
-      [branch]: { entry1: { title: 'Hello', seo: { title: 'Hello', description: '' } } },
+      contentrain: { entry1: before },
+      [branch]: { entry1: after },
     }
     const git = {
       getBranchDiff: vi.fn().mockResolvedValue([{ path, status: 'modified' }]),
@@ -240,14 +253,14 @@ describe('content route integration', () => {
       const response = await request('/api/workspaces/workspace-1/projects/project-1/content/posts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ locale: 'en', data: { entry1: { title: 'Hello', seo: { title: 'Hello', description: '' } } } }),
+        body: JSON.stringify({ locale: 'en', data: { entry1: after } }),
       })
 
       expect(response.status).toBe(200)
       const payload = await response.json()
       expect(payload.merged).toBe(false)
       expect(payload.approval.risk).toBe('bulk_content')
-      expect(payload.approval.reasons[0]).toContain('empties 1 field')
+      expect(payload.approval.reasons[0]).toContain(reason)
       expect(mergeBranch).not.toHaveBeenCalled()
     })
 

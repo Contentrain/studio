@@ -156,6 +156,25 @@ describe('save_content with status in a review workflow (#297)', () => {
     expect((result as { approval: { reasons: string[] } }).approval.reasons[0]).toContain('empties 1 field')
   })
 
+  it('holds a save that removes FAQ items, and merges one that only reorders them', async () => {
+    const faq = [{ id: 'q1', q: 'Why?' }, { id: 'q2', q: 'How?' }, { id: 'q3', q: 'When?' }]
+    const removing = await runSaveInReview(
+      { model: 'articles', locale: 'tr', mode: 'update', data: { a: { faq: [faq[0]] } } },
+      { before: { a: { title: 'x', faq } }, after: { a: { title: 'x', faq: [faq[0]] } } },
+    )
+    expect(removing.engine.mergeBranch).not.toHaveBeenCalled()
+    expect(removing.result).toMatchObject({ merged: false, approval: { risk: 'bulk_content' } })
+    expect((removing.result as { approval: { reasons: string[] } }).approval.reasons[0]).toContain('removes 2 list items')
+
+    vi.resetModules()
+    const reordering = await runSaveInReview(
+      { model: 'articles', locale: 'tr', mode: 'update', data: { a: { faq: [faq[2], faq[0], faq[1]] } } },
+      { before: { a: { title: 'x', faq } }, after: { a: { title: 'x', faq: [faq[2], faq[0], faq[1]] } } },
+    )
+    expect(reordering.engine.mergeBranch).toHaveBeenCalled()
+    expect(reordering.result).toMatchObject({ merged: true })
+  })
+
   it('merges a save whose already-empty sub-field only rides along', async () => {
     // The object is written whole, so the payload carries `description: ''` —
     // it was empty before too, which the payload alone could not tell.

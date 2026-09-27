@@ -17,7 +17,7 @@ import type { BranchReview } from '../../shared/utils/branch-review'
 import type { PlanDecision } from '../../shared/utils/approval'
 import type { WriteSignals } from './approval-gate'
 import { evaluatePlan } from './approval-gate'
-import { buildBranchPlan, buildReceipt, emptiedFieldCount, grantFromRow } from './execution-plan'
+import { buildBranchPlan, buildReceipt, contentLoss, grantFromRow } from './execution-plan'
 
 export interface BranchApproval {
   plan: ExecutionPlan
@@ -114,9 +114,10 @@ export async function loadBranchReview(input: {
  *
  * A save is gated right after it commits, before the branch is ever merged,
  * and the merge is gated later from the review of the same branch. Counting
- * emptied fields from that same review here is what keeps the two answers
- * from drifting: a save that clears `seo.title` is `bulk_content` when it is
- * written and again when someone presses Merge.
+ * emptied fields and dropped list items from that same review here is what
+ * keeps the two answers from drifting: a save that clears `seo.title` or
+ * deletes two FAQ items is `bulk_content` when it is written and again when
+ * someone presses Merge.
  *
  * A branch that cannot be read back reports `unreadBranch` rather than zero —
  * an unanswered question lifts the write, it does not let it through.
@@ -126,10 +127,10 @@ export async function branchWriteSignals(input: {
   contentRoot: string
   projectId: string
   branch: string
-}): Promise<Pick<WriteSignals, 'emptiedFields' | 'unreadBranch'>> {
+}): Promise<Pick<WriteSignals, 'emptiedFields' | 'removedItems' | 'unreadBranch'>> {
   try {
     const review = await loadBranchReview({ ...input, canMerge: false, canReject: false })
-    return { emptiedFields: emptiedFieldCount(review) }
+    return contentLoss(review)
   }
   catch {
     return { unreadBranch: true }

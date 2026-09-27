@@ -43,8 +43,9 @@ export function actorFromEmail(email: string | null | undefined, role?: string):
  * - a schema or project-settings change is `destructive_schema` — the model
  *   contract is what every reader depends on, and a removal or retype can
  *   outlive the content that fit it;
- * - a removal, more than one entry in one branch, or a field that had a value
- *   and no longer does ({@link emptiedFieldCount}) is `bulk_content`;
+ * - a removal, more than one entry in one branch, a field that had a value
+ *   and no longer does, or a list item that is gone ({@link contentLoss}) is
+ *   `bulk_content`;
  * - anything else is `low_risk_content`.
  */
 export function branchRisk(review: BranchReview): RiskClass {
@@ -52,7 +53,8 @@ export function branchRisk(review: BranchReview): RiskClass {
   if (review.settings.some(s => s.area === 'locales' || s.area === 'workflow' || s.area === 'project')) return 'destructive_schema'
   const entries = review.summary.added + review.summary.updated + review.summary.removed
   if (review.summary.removed > 0 || entries > 1) return 'bulk_content'
-  if (emptiedFieldCount(review) > 0) return 'bulk_content'
+  const loss = contentLoss(review)
+  if (loss.emptiedFields > 0 || loss.removedItems > 0) return 'bulk_content'
   return 'low_risk_content'
 }
 
@@ -68,51 +70,111 @@ function isContainer(value: unknown): value is Record<string, unknown> | unknown
   return value !== null && typeof value === 'object'
 }
 
-/**
- * How many values went from something to nothing between `before` and `after`.
- *
- * A value that was already empty never counts — an optional sub-field left
- * blank is not being emptied by a save that happens to carry it. Objects are
- * walked key by key and lists of objects item by item, so clearing `seo.title`
- * counts as one emptied field, not as an unchanged `seo`. A container that
- * empties as a whole counts once, not once per leaf.
- */
-function emptiedValues(before: unknown, after: unknown): number {
-  if (!hasContent(before)) return 0
-  if (!hasContent(after)) return 1
-  if (Array.isArray(before) && Array.isArray(after)) {
-    let count = 0
-    for (let i = 0; i < Math.min(before.length, after.length); i++) count += emptiedValues(before[i], after[i])
-    return count
-  }
-  if (isContainer(before) && isContainer(after) && !Array.isArray(before) && !Array.isArray(after)) {
-    let count = 0
-    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) count += emptiedValues(before[key], after[key])
-    return count
-  }
-  return 0
+/** What a change took away: values emptied, and list items dropped. */
+export interface ContentLoss {
+  emptiedFields: number
+  removedItems: number
+}
+
+/** Keys that name a list item, tried in this order. */
+const ITEM_KEYS = ['id', 'key', 'slug', 'ref'] as const
+
+function itemKey(item: unknown, key: string): string | null {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+  const value = (item as Record<string, unknown>)[key]
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : null
 }
 
 /**
- * Fields — nested ones and those inside lists of objects included — that had
- * a value on the base and are empty (`''`, `null`, `[]`, `{}` or gone) on the
- * branch.
+ * Pair the items of two lists by the key every item carries, or `null` when
+ * they cannot be: no key shared by every item on both sides, a key repeated
+ * within a side, or no key surviving the change at all (every item rewritten).
+ */
+function matchItems(before: unknown[], after: unknown[]): Array<[unknown, unknown | undefined]> | null {
+  for (const key of ITEM_KEYS) {
+    const index = (items: unknown[]): Map<string, unknown> | null => {
+      const map = new Map<string, unknown>()
+      for (const item of items) {
+        const id = itemKey(item, key)
+        if (id === null || map.has(id)) return null
+        map.set(id, item)
+      }
+      return map
+    }
+    const was = index(before.filter(hasContent))
+    const now = index(after.filter(hasContent))
+    if (!was || !now || was.size === 0) continue
+    if (![...was.keys()].some(id => now.has(id))) return null
+    return [...was].map(([id, item]) => [item, now.get(id)])
+  }
+  return null
+}
+
+/**
+ * What went from something to nothing between `before` and `after`.
+ *
+ * A value that was already empty never counts — an optional sub-field left
+ * blank is not being emptied by a save that happens to carry it. Objects are
+ * walked key by key and lists item by item, so clearing `seo.title` counts as
+ * one emptied field, not as an unchanged `seo`, and a container that empties
+ * as a whole counts once, not once per leaf.
+ *
+ * A list item that is gone counts as removed. Items are matched by their
+ * `id`/`key`/`slug`/`ref` when every item has one, so reordering or adding
+ * never counts; a list that cannot be matched that way — plain values, or
+ * every item rewritten — counts only the drop in how many items it holds.
+ */
+function lossBetween(before: unknown, after: unknown, loss: ContentLoss): void {
+  if (!hasContent(before)) return
+  if (!hasContent(after)) {
+    loss.emptiedFields++
+    return
+  }
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const pairs = matchItems(before, after)
+    if (pairs) {
+      for (const [was, now] of pairs) {
+        if (now === undefined) loss.removedItems++
+        else lossBetween(was, now, loss)
+      }
+      return
+    }
+    loss.removedItems += Math.max(0, before.filter(hasContent).length - after.filter(hasContent).length)
+    for (let i = 0; i < Math.min(before.length, after.length); i++) lossBetween(before[i], after[i], loss)
+    return
+  }
+  if (isContainer(before) && isContainer(after) && !Array.isArray(before) && !Array.isArray(after)) {
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) lossBetween(before[key], after[key], loss)
+  }
+}
+
+/**
+ * What a branch takes away from content that stays: fields — nested ones and
+ * those inside lists of objects included — that had a value on the base and
+ * are empty (`''`, `null`, `[]`, `{}` or gone) on the branch, and list items
+ * the branch drops.
  *
  * Read from the review's before/after rather than from a write's payload, so
  * the save that made the branch and the merge that lands it count the same
  * thing: a payload cannot tell a sub-field someone cleared from one that was
- * never filled. A removed entry is skipped — it is bulk already — and a new
- * one has no before to lose.
+ * never filled, nor a list that lost items from one that was only reordered.
+ * A removed entry is skipped — it is bulk already — and a new one has no
+ * before to lose.
  */
-export function emptiedFieldCount(review: BranchReview): number {
-  let count = 0
+export function contentLoss(review: BranchReview): ContentLoss {
+  const loss: ContentLoss = { emptiedFields: 0, removedItems: 0 }
   for (const group of review.groups) {
     for (const entry of group.entries) {
       if (entry.kind === 'removed') continue
-      for (const field of entry.fields) count += emptiedValues(field.before, field.after)
+      for (const field of entry.fields) lossBetween(field.before, field.after, loss)
     }
   }
-  return count
+  return loss
+}
+
+/** Fields the branch empties — see {@link contentLoss}. */
+export function emptiedFieldCount(review: BranchReview): number {
+  return contentLoss(review).emptiedFields
 }
 
 function branchScope(review: BranchReview): ExecutionScope {
