@@ -1,4 +1,6 @@
 import { clearBranchRequestSafe } from './branch-requests'
+import { recordMergeReceipt, resolveMergeApproval } from './branch-approval'
+import { actorFromEmail } from './execution-plan'
 import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
 import { decideMerge, savedEntryIds, writeSignals } from './approval-gate'
@@ -1404,8 +1406,31 @@ export async function executeToolWithAutoMerge(
           result = { error: agentMessage('branch.contentrain_only_merge') }
           break
         }
+        // The same approval the Merge button answers to. Without it the agent
+        // merged a branch the panel showed at 0/1 — the review was a suggestion.
+        const startedAt = new Date().toISOString()
+        const brain = getBrainCache(projectId) ?? await getOrBuildBrainCache(git, contentRoot, projectId)
+        const approval = await resolveMergeApproval({ git, contentRoot, projectId, branch: branchToMerge, workflow, policy: brain.approvalPolicy })
+        if (approval && !approval.decision.allowed) {
+          result = {
+            error: agentMessage('branch.approval_required', { reasons: approval.decision.reasons.join(' ') }),
+            merged: false,
+            approval: approval.decision,
+          }
+          break
+        }
         const mergeResult = await engine.mergeBranch(branchToMerge)
         if (mergeResult.merged) clearBranchRequestSafe(projectId, branchToMerge)
+        if (approval && mergeResult.merged) {
+          await recordMergeReceipt({
+            projectId,
+            workspaceId,
+            branch: branchToMerge,
+            approval,
+            actor: actorFromEmail(userEmail, permissions.workspaceRole),
+            startedAt,
+          })
+        }
         affected.snapshotChanged = true
         affected.branchesChanged = true
         result = mergeResult

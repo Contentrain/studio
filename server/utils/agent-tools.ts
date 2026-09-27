@@ -224,7 +224,7 @@ DICTIONARY: kind="dictionary" requires NO fields property. All content is free k
   },
   {
     name: 'merge_branch',
-    description: 'Approve and merge a cr/* content branch into the contentrain SSOT branch. context.json is regenerated on contentrain automatically after the merge. The default branch (main/master) is NOT touched — it is informational only.',
+    description: 'Merge a cr/* content branch into the contentrain SSOT branch. On a review-workflow project the branch must first collect the approvals its policy asks for in the review panel; until then the merge is refused and the branch stays pending — calling this is not an approval. context.json is regenerated on contentrain automatically after the merge. The default branch (main/master) is NOT touched — it is informational only.',
     inputSchema: {
       type: 'object',
       properties: { branch: { type: 'string', description: 'Branch name (e.g., cr/content/blog-post/en/1774800862-27c1)' } },

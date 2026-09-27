@@ -9,14 +9,14 @@
  * assembly lives here once.
  */
 
-import type { ApprovalGrant, ApprovalPolicyFile, ExecutionPlan } from '@contentrain/types'
+import type { ActorRef, ApprovalGrant, ApprovalPolicyFile, ExecutionPlan } from '@contentrain/types'
 import type { H3Event } from 'h3'
 import type { GitProvider } from '../providers/git'
 import { buildBranchReview } from './branch-review'
 import type { BranchReview } from '../../shared/utils/branch-review'
 import type { PlanDecision } from '../../shared/utils/approval'
 import { evaluatePlan } from './approval-gate'
-import { buildBranchPlan, grantFromRow } from './execution-plan'
+import { buildBranchPlan, buildReceipt, grantFromRow } from './execution-plan'
 
 export interface BranchApproval {
   plan: ExecutionPlan
@@ -116,6 +116,72 @@ export async function branchTip(git: GitProvider, branch: string): Promise<strin
   catch {
     return undefined
   }
+}
+
+/**
+ * The approval a merge of a pending branch has to honour, or null on a project
+ * that asks for none.
+ *
+ * Every merge of someone's pending branch answers to this — the Merge button
+ * and the chat agent's `merge_branch` alike. The agent once merged a branch
+ * the panel showed at 0/1 because it asked nothing at all; a second way to
+ * merge that skips the question is a way around the review.
+ */
+export async function resolveMergeApproval(input: {
+  git: GitProvider
+  contentRoot: string
+  projectId: string
+  branch: string
+  workflow: string
+  policy: ApprovalPolicyFile | null
+}): Promise<BranchApproval | null> {
+  // An auto-merge project asks nobody's permission — building the review and
+  // reading the grants to answer a question it never poses would only make the
+  // merge slower.
+  if (input.workflow !== 'review') return null
+  const review = await loadBranchReview({ git: input.git, contentRoot: input.contentRoot, projectId: input.projectId, branch: input.branch, canMerge: true, canReject: true })
+  const commitSha = await branchTip(input.git, input.branch)
+  return resolveBranchApproval({
+    projectId: input.projectId,
+    review,
+    workflow: input.workflow,
+    policy: input.policy,
+    ...(commitSha ? { commitSha } : {}),
+  })
+}
+
+/**
+ * Keep the receipt of a merge an approval allowed, then clear its grants.
+ *
+ * The receipt outlives the grants: they are cleared with the branch, and an
+ * audit record whose evidence can be deleted out from under it is not one.
+ * The merge already happened, so a failure to record must not undo it.
+ */
+export async function recordMergeReceipt(input: {
+  projectId: string
+  workspaceId: string
+  branch: string
+  approval: BranchApproval
+  actor: ActorRef
+  startedAt: string
+}): Promise<void> {
+  const db = useDatabaseProvider()
+  const receipt = buildReceipt({
+    plan: input.approval.plan,
+    grants: input.approval.grants,
+    actor: input.actor,
+    status: 'completed',
+    startedAt: input.startedAt,
+    finishedAt: new Date().toISOString(),
+  })
+  await db.recordReceipt({
+    projectId: input.projectId,
+    workspaceId: input.workspaceId,
+    target: input.branch,
+    planHash: input.approval.plan.plan_hash,
+    receipt: receipt as unknown as Record<string, unknown>,
+  }).catch(() => {})
+  await db.clearApprovals(input.projectId, input.branch).catch(() => {})
 }
 
 /**

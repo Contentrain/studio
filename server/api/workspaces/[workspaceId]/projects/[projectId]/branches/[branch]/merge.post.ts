@@ -9,8 +9,8 @@
  * nothing recorded that a review had happened.
  */
 import { clearBranchRequestSafe } from '~~/server/utils/branch-requests'
-import { branchTip, effectiveWorkflow, loadBranchReview, resolveBranchApproval } from '~~/server/utils/branch-approval'
-import { actorFromEmail, buildReceipt } from '~~/server/utils/execution-plan'
+import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from '~~/server/utils/branch-approval'
+import { actorFromEmail } from '~~/server/utils/execution-plan'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -38,54 +38,30 @@ export default defineEventHandler(async (event) => {
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
   const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(plan, 'workflow.review'))
 
-  const db = useDatabaseProvider()
   const engine = createContentEngine({ git, contentRoot, projectId })
   const startedAt = new Date().toISOString()
 
-  // An auto-merge project asks nobody's permission — building the review and
-  // reading the grants to answer a question it never poses would only make the
-  // merge slower.
-  let approval: Awaited<ReturnType<typeof resolveBranchApproval>> | null = null
-  if (workflow === 'review') {
-    const review = await loadBranchReview({ git, contentRoot, projectId, branch, canMerge: true, canReject: true })
-    approval = await resolveBranchApproval({
-      projectId,
-      review,
-      workflow,
-      policy: brain.approvalPolicy,
-      commitSha: await branchTip(git, branch),
+  const approval = await resolveMergeApproval({ git, contentRoot, projectId, branch, workflow, policy: brain.approvalPolicy })
+  if (approval && !approval.decision.allowed) {
+    throw createError({
+      statusCode: 403,
+      message: errorMessage('branches.approval_required'),
+      data: { approval: approval.decision },
     })
-    if (!approval.decision.allowed) {
-      throw createError({
-        statusCode: 403,
-        message: errorMessage('branches.approval_required'),
-        data: { approval: approval.decision },
-      })
-    }
   }
 
   const mergeResult = await engine.mergeBranch(branch)
   if (mergeResult.merged) clearBranchRequestSafe(projectId, branch)
 
-  // The receipt outlives the grants: they are cleared with the branch, and an
-  // audit record whose evidence can be deleted out from under it is not one.
   if (approval && mergeResult.merged) {
-    const receipt = buildReceipt({
-      plan: approval.plan,
-      grants: approval.grants,
-      actor: actorFromEmail(session.user.email, permissions.workspaceRole),
-      status: 'completed',
-      startedAt,
-      finishedAt: new Date().toISOString(),
-    })
-    await db.recordReceipt({
+    await recordMergeReceipt({
       projectId,
       workspaceId,
-      target: branch,
-      planHash: approval.plan.plan_hash,
-      receipt: receipt as unknown as Record<string, unknown>,
-    }).catch(() => { /* the merge happened; losing the record must not undo it */ })
-    await db.clearApprovals(projectId, branch).catch(() => {})
+      branch,
+      approval,
+      actor: actorFromEmail(session.user.email, permissions.workspaceRole),
+      startedAt,
+    })
   }
 
   // Emit webhook event (fire-and-forget)
