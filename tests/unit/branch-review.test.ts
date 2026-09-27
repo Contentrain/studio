@@ -165,6 +165,30 @@ describe('buildBranchReview — collections', () => {
     expect(entry.statusAfter).toBe('published')
   })
 
+  it('shows a schedule-only write as the dates it moved, not an empty diff', async () => {
+    // Approving a branch that only set publish_at showed "No changes found" and
+    // left the Approve button disabled — the date is what the reviewer decides.
+    const branchRef = 'cr/content/plans/en/1755612345-a3f2'
+    const body = JSON.stringify({ free: { name: 'Free', price_monthly: 0 } })
+    const review = await run({
+      files: CONTENT_FILES,
+      read: reader({
+        [`contentrain:${CONTENT_PATH}`]: body,
+        [`${branchRef}:${CONTENT_PATH}`]: body,
+        [`contentrain:${META_PATH}`]: JSON.stringify({ free: { status: 'published', expire_at: '2027-06-01T00:00:00Z', updated_at: '2026-08-01T00:00:00.000Z' } }),
+        [`${branchRef}:${META_PATH}`]: JSON.stringify({ free: { status: 'published', publish_at: '2027-01-15T09:00:00Z', updated_at: '2026-08-19T10:00:00.000Z' } }),
+      }),
+    })
+
+    const entry = review.groups[0]!.entries[0]!
+    expect(entry.kind).toBe('updated')
+    expect(entry.statusAfter).toBeNull()
+    expect(entry.fields).toEqual([
+      expect.objectContaining({ fieldId: 'publish_at', label: 'Publish at', type: 'datetime', before: null, after: '2027-01-15T09:00:00Z' }),
+      expect.objectContaining({ fieldId: 'expire_at', label: 'Expire at', type: 'datetime', before: '2027-06-01T00:00:00Z', after: null }),
+    ])
+  })
+
   it('classifies a new entry as added and a deleted one as removed', async () => {
     const branchRef = 'cr/content/plans/en/1755612345-a3f2'
     const review = await run({

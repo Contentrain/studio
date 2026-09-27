@@ -271,6 +271,9 @@ interface GroupBucket {
 type EntryTable = Map<string, Record<string, unknown>>
 type MetaTable = Map<string, Partial<EntryMeta>>
 
+/** The meta keys that gate delivery — reviewed like fields, not bookkeeping. */
+const SCHEDULE_KEYS = ['publish_at', 'expire_at'] as const
+
 /** Parse one content file into entries keyed the way the model keys them. */
 function readEntries(model: ModelDefinition, raw: string | null, slug?: string): EntryTable {
   if (raw === null) return new Map()
@@ -406,6 +409,16 @@ async function buildGroup(
           defaultLocale,
         }))
       }
+    }
+
+    // A schedule lives in meta, but it decides when readers see the entry — a
+    // reviewer approving a schedule-only branch has to see the date, or they
+    // are asked to approve an empty diff (and the panel would not let them).
+    for (const key of SCHEDULE_KEYS) {
+      const whenBefore = metaBefore.get(entryId)?.[key] ?? null
+      const whenAfter = metaAfter.get(entryId)?.[key] ?? null
+      if (whenBefore === whenAfter) continue
+      changed.push(buildFieldChange(key, { type: 'datetime' } as FieldDef, whenBefore, whenAfter, { locale, defaultLocale }))
     }
 
     // A meta record that moved nothing but its own timestamp is bookkeeping,
