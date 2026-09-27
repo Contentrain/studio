@@ -296,6 +296,17 @@ function useOwnAiKey(billingState: Ref<string>) {
   }
 }
 
+/** Everything needed to send a failed turn again, as the user sent it. */
+export interface FailedTurn {
+  workspaceId: string
+  projectId: string
+  text: string
+  context?: ChatUIContext
+  attachedChips?: Array<{ type: 'model' | 'entry' | 'field' | 'asset', label: string, sublabel?: string }>
+  attachments?: UIAttachment[]
+  userMessageId: string
+}
+
 export function useChat(options?: {
   onContentChanged?: (affected: AffectedResources) => void
 }) {
@@ -310,6 +321,15 @@ export function useChat(options?: {
    * (overage, upgrade) instead of a toast that disappears.
    */
   const creditsExhausted = useState<{ message: string, resetsAt: string | null, trialCap?: boolean } | null>('chat-credits-exhausted', () => null)
+  /**
+   * The last turn that failed — a non-2xx from /chat (a 503 from the proxy, a
+   * 5xx from the route) or an `error` event mid-stream. The panel renders it as
+   * an inline error with Retry: a toast alone vanished and left the question
+   * sitting there with no answer, which reads as a hang. A failed turn is never
+   * persisted (the route saves only a finished one), so resending the same
+   * text does not duplicate it server-side.
+   */
+  const failedTurn = useState<FailedTurn | null>('chat-failed-turn', () => null)
   const selectedModel = useState('chat-model', () => DEFAULT_CHAT_MODEL)
   useModelPersistence(selectedModel)
   // Plan-gated model list. Pro-tier models (Sonnet/Opus) need the
@@ -346,6 +366,8 @@ export function useChat(options?: {
   const streamTick = useState('chat-stream-tick', () => 0)
   // Module-instance abort handle so the composer can stop a stream mid-flight.
   let abortController: AbortController | null = null
+  // Set by an `error` SSE event; read once the stream closes.
+  let streamErrored = false
 
   function stopStreaming() {
     abortController?.abort()
@@ -446,6 +468,7 @@ export function useChat(options?: {
         })
       }
       messages.value = grouped
+      failedTurn.value = null
 
       conversationId.value = convId
     }
@@ -484,6 +507,8 @@ export function useChat(options?: {
 
     error.value = null
     creditsExhausted.value = null
+    failedTurn.value = null
+    streamErrored = false
 
     // Only ready attachments carry blocks; uploading/errored ones are ignored.
     const readyAttachments = (attachments ?? []).filter(a => a.status === 'ready' && a.blocks?.length)
@@ -592,6 +617,14 @@ export function useChat(options?: {
         }
       }
 
+      if (streamErrored) {
+        // The route closes the stream after an `error` event; nothing more is
+        // coming. Keep what already streamed, drop an empty placeholder.
+        if (!hasVisibleContent(assistantMsg)) messages.value.pop()
+        failedTurn.value = { workspaceId, projectId, text, context, attachedChips, attachments, userMessageId: userMsg.id }
+        return
+      }
+
       // After successful send, refresh conversation list
       fetchConversations(workspaceId, projectId)
     }
@@ -604,9 +637,12 @@ export function useChat(options?: {
       }
       else {
         const { t } = useContent()
-        // Credits used up: the notice says so and stays; no toast on top.
-        if (!(e as { creditsExhausted?: boolean })?.creditsExhausted)
+        // Credits used up: the notice says so and stays; no toast on top, and
+        // no Retry — resending would be refused the same way.
+        if (!(e as { creditsExhausted?: boolean })?.creditsExhausted) {
+          failedTurn.value = { workspaceId, projectId, text, context, attachedChips, attachments, userMessageId: userMsg.id }
           error.value = resolveApiError(e, t('chat.send_error'))
+        }
         // Remove empty assistant message on error
         if (!hasVisibleContent(assistantMsg)) {
           messages.value.pop()
@@ -708,10 +744,25 @@ export function useChat(options?: {
           ? t('chat.output_truncated')
           // Other SSE error events may carry raw backend messages — use fallback
           : t('chat.send_error')
+        streamErrored = true
         streamTick.value++
         break
       }
     }
+  }
+
+  /**
+   * Send the failed turn again. Its messages leave the list first — the server
+   * never saved them — so the retry reads as the same question, asked once.
+   */
+  async function retryFailedTurn() {
+    const turn = failedTurn.value
+    if (!turn || isStreaming.value) return
+    const index = messages.value.findIndex(m => m.id === turn.userMessageId)
+    if (index !== -1) messages.value.splice(index)
+    failedTurn.value = null
+    error.value = null
+    await sendMessage(turn.workspaceId, turn.projectId, turn.text, turn.context, turn.attachedChips, turn.attachments)
   }
 
   function clearChat() {
@@ -719,6 +770,7 @@ export function useChat(options?: {
     conversationId.value = null
     error.value = null
     creditsExhausted.value = null
+    failedTurn.value = null
   }
 
   function dismissCreditsExhausted() {
@@ -731,6 +783,8 @@ export function useChat(options?: {
     conversations: readonly(conversations),
     isStreaming: readonly(isStreaming),
     error: readonly(error),
+    failedTurn: readonly(failedTurn),
+    retryFailedTurn,
     creditsExhausted: readonly(creditsExhausted),
     dismissCreditsExhausted,
     streamTick: readonly(streamTick),
