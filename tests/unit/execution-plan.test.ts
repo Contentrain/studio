@@ -2,7 +2,7 @@ import type { ApprovalGrant, ApprovalPolicyFile } from '@contentrain/types'
 import type { BranchReview } from '../../shared/utils/branch-review'
 import { describe, expect, it } from 'vitest'
 import { evaluatePlan } from '../../server/utils/approval-gate'
-import { actorFromEmail, branchRisk, buildBranchPlan, buildReceipt, grantFromRow } from '../../server/utils/execution-plan'
+import { actorFromEmail, branchRisk, buildBranchPlan, buildReceipt, emptiedFieldCount, grantFromRow } from '../../server/utils/execution-plan'
 
 /**
  * The plan a pending branch stands for is derived, not stored — which is what
@@ -149,6 +149,77 @@ describe('deciding a branch', () => {
     const decision = evaluatePlan({ workflow: 'auto-merge', plan, policy: null, grants: [] })
     expect(decision.allowed).toBe(true)
     expect(decision.requirements).toEqual([])
+  })
+})
+
+/** One updated entry whose single field moved from `before` to `after`. */
+function fieldChange(fieldId: string, before: unknown, after: unknown): BranchReview {
+  const base = review()
+  return review({
+    groups: [{
+      ...base.groups[0]!,
+      entries: [{ ...base.groups[0]!.entries[0]!, kind: 'updated', fields: [{ fieldId, label: fieldId, type: 'object', before, after }] }],
+    }],
+  })
+}
+
+describe('emptied fields', () => {
+  it('does not count an optional sub-field that was already empty', () => {
+    // The save carries `description: ''` because the object is written whole;
+    // nothing was cleared, so nothing lifts.
+    const untouched = fieldChange('seo', { title: 'Old', description: '' }, { title: 'New', description: '' })
+    expect(emptiedFieldCount(untouched)).toBe(0)
+    expect(branchRisk(untouched)).toBe('low_risk_content')
+
+    const filledIn = fieldChange('seo', { title: 'Old' }, { title: 'New', description: '', image: null, tags: [] })
+    expect(emptiedFieldCount(filledIn)).toBe(0)
+    expect(branchRisk(filledIn)).toBe('low_risk_content')
+  })
+
+  it('counts a nested sub-field, a field of a list item, and a key that went away', () => {
+    expect(emptiedFieldCount(fieldChange('seo', { title: 'T', description: 'D' }, { title: 'T', description: '' }))).toBe(1)
+    expect(emptiedFieldCount(fieldChange('faq', [{ q: 'Why?', a: 'Because' }], [{ q: 'Why?', a: null }]))).toBe(1)
+    expect(emptiedFieldCount(fieldChange('seo', { title: 'T', description: 'D' }, { title: 'T' }))).toBe(1)
+    // A container emptied as a whole is one field, not one per leaf.
+    expect(emptiedFieldCount(fieldChange('seo', { title: 'T', description: 'D' }, {}))).toBe(1)
+    // Changing a value, or zero/false, is not emptying it.
+    expect(emptiedFieldCount(fieldChange('stats', { count: 3, live: true }, { count: 0, live: false }))).toBe(0)
+  })
+
+  it('lifts a one-entry branch that empties a nested sub-field to bulk', () => {
+    expect(branchRisk(fieldChange('seo', { title: 'T', description: 'D' }, { title: 'T', description: '' }))).toBe('bulk_content')
+  })
+
+  it('holds the panel merge under a policy that trusts content edits', async () => {
+    const autoLow: ApprovalPolicyFile = {
+      version: 1,
+      rules: [
+        { risk: 'low_risk_content', gate: 'change', mode: 'auto' },
+        { risk: 'bulk_content', gate: 'change', mode: 'single' },
+      ],
+    }
+    const edit = await buildBranchPlan(fieldChange('seo', { title: 'Old', description: 'D' }, { title: 'New', description: 'D' }))
+    expect(evaluatePlan({ workflow: 'review', plan: edit, policy: autoLow, grants: [] }).allowed).toBe(true)
+
+    const emptying = await buildBranchPlan(fieldChange('seo', { title: 'T', description: 'D' }, { title: 'T', description: '' }))
+    const held = evaluatePlan({ workflow: 'review', plan: emptying, policy: autoLow, grants: [] })
+    expect(held.allowed).toBe(false)
+    expect(held.risk).toBe('bulk_content')
+  })
+
+  it('asks the default policy for the same number of approvals either way', async () => {
+    // Under the default the lift renames the rung; it must not raise the bar.
+    const edit = await buildBranchPlan(fieldChange('seo', { title: 'Old', description: 'D' }, { title: 'New', description: 'D' }))
+    const emptying = await buildBranchPlan(fieldChange('seo', { title: 'T', description: 'D' }, { title: 'T', description: '' }))
+    const low = evaluatePlan({ workflow: 'review', plan: edit, policy: null, grants: [] })
+    const bulk = evaluatePlan({ workflow: 'review', plan: emptying, policy: null, grants: [] })
+    expect([low.risk, bulk.risk]).toEqual(['low_risk_content', 'bulk_content'])
+    const asked = (d: typeof low) => d.requirements.map(r => ({ gate: r.gate, remaining: r.remaining }))
+    expect(asked(bulk)).toEqual(asked(low))
+
+    const signedLow = evaluatePlan({ workflow: 'review', plan: edit, policy: null, grants: [grant({ plan_hash: edit.plan_hash })] })
+    const signedBulk = evaluatePlan({ workflow: 'review', plan: emptying, policy: null, grants: [grant({ plan_hash: emptying.plan_hash })] })
+    expect([signedLow.allowed, signedBulk.allowed]).toEqual([true, true])
   })
 })
 

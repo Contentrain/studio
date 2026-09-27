@@ -1,9 +1,9 @@
 import { clearBranchRequestSafe } from './branch-requests'
-import { recordMergeReceipt, resolveMergeApproval } from './branch-approval'
+import { branchWriteSignals, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
 import { actorFromEmail } from './execution-plan'
 import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
-import { decideMerge, savedEntryIds, writeSignals } from './approval-gate'
+import { decideMerge, savedEntryIds, toolRisk, writeSignals } from './approval-gate'
 import { getBrainCache } from './brain-cache'
 import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '~~/server/providers/ai'
@@ -758,15 +758,23 @@ export async function executeToolWithAutoMerge(
    * re-read the whole project to answer a question about a file the agent
    * cannot write. The cached entry is the one the turn was built from, which is
    * the policy that was in force when the user asked.
+   *
+   * `branch` is the branch the write just made. While the payload leaves the
+   * write on the lowest rung, that branch's review is read to see whether it
+   * empties a field — the same count the merge will be judged by later.
    */
-  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string, kind?: string } = {}): Promise<MergeDecision> => {
+  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string, kind?: string, branch?: string } = {}): Promise<MergeDecision> => {
     if (workflow !== 'review') return { allowed: true, review: {} }
     const cached = getBrainCache(projectId) ?? await getOrBuildBrainCache(git, contentRoot, projectId)
+    const payloadSignals = writeSignals(name, params, opts.kind)
+    const signals = opts.branch && toolRisk(name, opts.scope, payloadSignals) === 'low_risk_content'
+      ? { ...payloadSignals, ...await branchWriteSignals({ git, contentRoot, projectId, branch: opts.branch }) }
+      : payloadSignals
     return decideMerge({
       workflow,
       tool: name,
       ...(opts.scope ? { scope: opts.scope } : {}),
-      signals: writeSignals(name, params, opts.kind),
+      signals,
       policy: cached.approvalPolicy,
       ...(opts.commitSha ? { commitSha: opts.commitSha } : {}),
     })
@@ -996,7 +1004,7 @@ export async function executeToolWithAutoMerge(
 
         // Role-aware auto-merge
         const saveKind = relBrain.models.get(modelId)?.kind
-        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params, { id: modelId, kind: saveKind }) }, commitSha: writeResult.commit?.sha, kind: saveKind })
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params, { id: modelId, kind: saveKind }) }, commitSha: writeResult.commit?.sha, kind: saveKind, branch: writeResult.branch })
         if (gate.allowed && writeResult.branch) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), workflow }
@@ -1048,7 +1056,7 @@ export async function executeToolWithAutoMerge(
         invalidateBrainCache(projectId)
 
         const entries = [...new Set(edits.map(e => e?.entry).filter((e): e is string => typeof e === 'string' && e.length > 0))]
-        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries }, commitSha: writeResult.commit?.sha })
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries }, commitSha: writeResult.commit?.sha, branch: writeResult.branch })
         if (gate.allowed && writeResult.branch) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), workflow, replacements }
@@ -1248,7 +1256,7 @@ export async function executeToolWithAutoMerge(
         // to be able to say which — "approved" alone reads as published.
         let held: { reviewBranch?: string } & MergeDecision['review'] = {}
         if (writeResult.branch) {
-          const gate = await gateMerge({ scope: { models: [subModelId], locales: [subLocale], entries: [entryId] }, commitSha: writeResult.commit?.sha })
+          const gate = await gateMerge({ scope: { models: [subModelId], locales: [subLocale], entries: [entryId] }, commitSha: writeResult.commit?.sha, branch: writeResult.branch })
           if (gate.allowed) {
             await mergeForTool(engine, writeResult.branch, turnMerge)
           }

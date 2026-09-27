@@ -105,15 +105,28 @@ export interface ToolScope {
  * The tool's rung says what kind of thing changes; these say how much of it a
  * reader would notice. Three shapes of a one-entry write are not low risk even
  * though the tool is: it changes whether the entry is visible, it empties a
- * field, or it rewrites a large body of text. All three are read from the
- * payload alone — never from the content's meaning — so the same write always
- * lands on the same rung.
+ * field, or it rewrites a large body of text. Status and text size are read
+ * from the payload ({@link writeSignals}); an emptied field is read from the
+ * written branch's review ({@link emptiedFieldCount}), the same account the
+ * merge is judged by, because a payload cannot tell a field someone cleared
+ * from one that was never filled. None of them reads the content's meaning, so
+ * the same write always lands on the same rung.
  */
 export interface WriteSignals {
   /** The status the write moves entries to — `update_status`, or a `save_content` that sets one. */
   targetStatus?: string
-  /** Fields the write sets to an empty value (`''`, `null`, `[]`, `{}`). */
+  /**
+   * Fields — nested and list-of-object ones included — that had a value before
+   * the write and are empty after it. From the written branch's review, never
+   * from the payload: see {@link branchWriteSignals}.
+   */
   emptiedFields?: number
+  /**
+   * The written branch could not be read back, so whether it empties anything
+   * is unknown. Treated as though it did: a check that cannot run must not
+   * wave the write through.
+   */
+  unreadBranch?: boolean
   /** Total characters of the string values written. */
   textChars?: number
 }
@@ -130,6 +143,8 @@ export function contentSignalReason(signals: WriteSignals = {}): string | null {
     return `it moves content to \`${signals.targetStatus}\``
   if ((signals.emptiedFields ?? 0) > 0)
     return `it empties ${signals.emptiedFields} field${signals.emptiedFields === 1 ? '' : 's'}`
+  if (signals.unreadBranch)
+    return 'its branch could not be read back to check for emptied fields'
   if ((signals.textChars ?? 0) >= LARGE_TEXT_CHANGE_CHARS)
     return `it writes ${signals.textChars} characters of text`
   return null
@@ -149,12 +164,6 @@ export function toolRisk(tool: string, scope: ToolScope = {}, signals?: WriteSig
   return floor
 }
 
-function isEmptyValue(value: unknown): boolean {
-  if (value === '' || value === null) return true
-  if (Array.isArray(value)) return value.length === 0
-  return typeof value === 'object' && Object.keys(value as object).length === 0
-}
-
 /**
  * The {@link WriteSignals} of a tool call, from the same params the tool ran with.
  *
@@ -162,6 +171,8 @@ function isEmptyValue(value: unknown): boolean {
  * singleton/dictionary `data`) or a map of entry id → fields; the map is
  * walked one level down so a field of an entry counts, not the entry itself.
  * `kind` tells the two apart — without it a keyless payload is read as a map.
+ *
+ * Emptied fields are not counted here: see {@link WriteSignals.emptiedFields}.
  */
 export function writeSignals(tool: string, params: Record<string, unknown>, kind?: string): WriteSignals {
   if (tool === 'update_status' && typeof params.status === 'string')
@@ -199,13 +210,11 @@ export function writeSignals(tool: string, params: Record<string, unknown>, kind
       else values.push(value)
     }
   }
-  let emptiedFields = 0
   let textChars = 0
   for (const value of values) {
-    if (isEmptyValue(value)) emptiedFields++
-    else if (typeof value === 'string') textChars += value.length
+    if (typeof value === 'string') textChars += value.length
   }
-  return { ...targetStatus, emptiedFields, textChars }
+  return { ...targetStatus, textChars }
 }
 
 /**
@@ -286,7 +295,7 @@ export interface MergeDecisionInput {
   workflow: string
   tool: string
   scope?: ToolScope
-  /** What the write does, from its payload — see {@link writeSignals}. */
+  /** What the write does — {@link writeSignals} plus {@link branchWriteSignals}. */
   signals?: WriteSignals
   /** The project's parsed policy, or `null` to fall back to the default. */
   policy?: ApprovalPolicyFile | null

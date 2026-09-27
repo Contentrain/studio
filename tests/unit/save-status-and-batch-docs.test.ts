@@ -54,7 +54,7 @@ describe('approval gate sees a save that publishes (#297)', () => {
 
   it('counts every document of a batch, and names every slug', () => {
     const params = { mode: 'update', documents: [{ slug: 'one', data: { title: 'A' }, body: 'x'.repeat(10) }, { slug: 'two', data: { title: '' } }] }
-    expect(writeSignals('save_content', params)).toEqual({ emptiedFields: 1, textChars: 11 })
+    expect(writeSignals('save_content', params)).toEqual({ textChars: 11 })
     expect(savedEntryIds(params)).toEqual(['one', 'two'])
   })
 })
@@ -71,18 +71,36 @@ const PERMISSIONS: AgentPermissions = {
 }
 const UI: ChatUIContext = { activeModelId: null, activeLocale: 'tr', activeEntryId: null, panelState: 'overview', activeBranch: null }
 
-async function runSaveInReview(params: Record<string, unknown>) {
+/**
+ * The branch the save wrote, as the gate reads it back: the `articles` file on
+ * `contentrain` and on the branch. Absent, the branch diff is empty.
+ */
+interface WrittenBranch { before: Record<string, unknown>, after: Record<string, unknown> }
+
+function branchGit(written?: WrittenBranch): GitProvider {
+  const path = resolveContentPath({ contentRoot: 'content' }, articles as never, 'tr')
+  return {
+    getBranchDiff: vi.fn().mockResolvedValue(written ? [{ path, status: 'modified' }] : []),
+    readFile: vi.fn(async (file: string, ref: string) => {
+      if (!written || file !== path) throw new Error('not found')
+      return JSON.stringify(ref === 'contentrain' ? written.before : written.after)
+    }),
+  } as unknown as GitProvider
+}
+
+async function runSaveInReview(params: Record<string, unknown>, written?: WrittenBranch) {
   const { emptyAffected } = await import('../../server/utils/agent-types')
   vi.stubGlobal('emptyAffected', emptyAffected)
   vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
   vi.stubGlobal('errorMessage', vi.fn((key: string) => key))
   vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
   vi.stubGlobal('invalidateBrainCache', vi.fn())
+  vi.stubGlobal('findBrokenRelations', vi.fn().mockReturnValue([]))
   vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
     config: { locales: { default: 'tr' } },
     content: new Map(),
     meta: new Map(),
-    models: new Map([['articles', { id: 'articles', kind: 'collection' }]]),
+    models: new Map([['articles', articles]]),
     approvalPolicy: AUTO_CONTENT,
   }))
   const engine = {
@@ -97,7 +115,7 @@ async function runSaveInReview(params: Record<string, unknown>) {
   }
   const { executeToolWithAutoMerge } = await import('../../server/utils/conversation-engine')
   const out = await executeToolWithAutoMerge(
-    'save_content', params, engine as never, {} as GitProvider, 'e@x.io', 'u1', 'content', 'review', PERMISSIONS, 'pro', 'p1', 'w1', UI,
+    'save_content', params, engine as never, branchGit(written), 'e@x.io', 'u1', 'content', 'review', PERMISSIONS, 'pro', 'p1', 'w1', UI,
   )
   return { ...out, engine }
 }
@@ -123,6 +141,33 @@ describe('save_content with status in a review workflow (#297)', () => {
     expect(engine.saveContent.mock.calls[0]![4]).toMatchObject({ status: 'published' })
     expect(engine.mergeBranch).not.toHaveBeenCalled()
     expect(result).toMatchObject({ merged: false, reviewBranch: 'cr/content/articles/tr/1' })
+  })
+
+  it('holds a save that empties a nested sub-field, and says why', async () => {
+    const { result, engine } = await runSaveInReview(
+      { model: 'articles', locale: 'tr', mode: 'update', data: { a: { title: 'x', seo: { title: 'T', description: '' } } } },
+      {
+        before: { a: { title: 'x', seo: { title: 'T', description: 'D' } } },
+        after: { a: { title: 'x', seo: { title: 'T', description: '' } } },
+      },
+    )
+    expect(engine.mergeBranch).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ merged: false, approval: { risk: 'bulk_content' } })
+    expect((result as { approval: { reasons: string[] } }).approval.reasons[0]).toContain('empties 1 field')
+  })
+
+  it('merges a save whose already-empty sub-field only rides along', async () => {
+    // The object is written whole, so the payload carries `description: ''` —
+    // it was empty before too, which the payload alone could not tell.
+    const { result, engine } = await runSaveInReview(
+      { model: 'articles', locale: 'tr', mode: 'update', data: { a: { title: 'y', seo: { title: 'T', description: '' } } } },
+      {
+        before: { a: { title: 'x', seo: { title: 'T', description: '' } } },
+        after: { a: { title: 'y', seo: { title: 'T', description: '' } } },
+      },
+    )
+    expect(engine.mergeBranch).toHaveBeenCalled()
+    expect(result).toMatchObject({ merged: true })
   })
 })
 
