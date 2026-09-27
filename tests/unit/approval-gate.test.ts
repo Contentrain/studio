@@ -1,6 +1,6 @@
 import type { ApprovalPolicyFile } from '@contentrain/types'
 import { describe, expect, it } from 'vitest'
-import { CLASSIFIED_WRITE_TOOLS, decideMerge, parseApprovalPolicy, savedEntryIds, toolRisk } from '../../server/utils/approval-gate'
+import { CLASSIFIED_WRITE_TOOLS, decideMerge, parseApprovalPolicy, savedEntryIds, toolRisk, writeSignals } from '../../server/utils/approval-gate'
 
 /** Auto-approve content edits, nothing else. The shape a project writes to keep the old behaviour. */
 const autoContent: ApprovalPolicyFile = {
@@ -33,6 +33,38 @@ describe('tool risk', () => {
     expect(savedEntryIds({ slug: 'field-notes' })).toEqual(['field-notes'])
     expect(savedEntryIds({ data: { a: {}, b: {} } })).toEqual(['a', 'b'])
     expect(savedEntryIds({})).toEqual([])
+  })
+
+  it('counts a singleton or a dictionary save as one record, like the branch review does', () => {
+    // The editor sends a singleton's fields as `data`; read as a map they were
+    // three "entries" and the save was judged bulk while the branch it made was
+    // judged low risk at approve time.
+    const fields = { title: 'Hi', tagline: 'Short', cta: 'Go' }
+    expect(savedEntryIds({ data: fields }, { id: 'site', kind: 'singleton' })).toEqual(['site'])
+    expect(savedEntryIds({ data: { 'nav.home': 'Home', 'nav.blog': 'Blog' } }, { id: 'ui', kind: 'dictionary' })).toEqual(['ui'])
+    // A collection is still keyed by entry.
+    expect(savedEntryIds({ data: { a: {}, b: {} } }, { id: 'posts', kind: 'collection' })).toEqual(['a', 'b'])
+  })
+
+  it('keeps a multi-field singleton save at the content rung through the whole gate', async () => {
+    const data = { title: 'Hi', tagline: 'Short', cta: 'Go' }
+    const model = { id: 'site', kind: 'singleton' }
+    const decision = await decideMerge({
+      workflow: 'review',
+      tool: 'save_content',
+      scope: { models: ['site'], entries: savedEntryIds({ data }, model) },
+      signals: writeSignals('save_content', { data }, model.kind),
+    })
+    expect(decision.review.approval?.risk).toBe('low_risk_content')
+  })
+
+  it('reads a singleton\'s field values as values, not as entries', () => {
+    // An object field on a singleton is a value; descending into it would read
+    // its keys' values as if they were the singleton's fields.
+    const data = { hero: { heading: 'Hi' }, tagline: 'Short' }
+    const asSingleton = writeSignals('save_content', { data }, 'singleton')
+    const asCollection = writeSignals('save_content', { data: { a: data } }, 'collection')
+    expect(asSingleton).toEqual(asCollection)
   })
 })
 

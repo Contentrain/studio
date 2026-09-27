@@ -15,7 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useContent()
-const { messages, conversationId, conversations, isStreaming, error, creditsExhausted, dismissCreditsExhausted, streamTick, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
+const { messages, conversationId, conversations, isStreaming, error, failedTurn, retryFailedTurn, creditsExhausted, dismissCreditsExhausted, streamTick, sendMessage, stopStreaming, clearChat, fetchConversations, loadConversation, deleteConversation } = useChat({
   onContentChanged: (affected) => {
     emit('contentChanged', affected)
   },
@@ -144,9 +144,10 @@ watch(streamTick, () => {
   })
 })
 
-// Show error toast
+// Show error toast — except for a failed turn, which gets the inline error
+// with Retry under the question instead.
 watch(error, (err) => {
-  if (err) toast.error(err)
+  if (err && !failedTurn.value) toast.error(err)
 })
 
 function handleNewConversation() {
@@ -366,6 +367,26 @@ function formatConversationDate(dateStr: string): string {
                 </template>
               </div>
             </div>
+          </div>
+
+          <!-- Failed turn: stays under the question until retried or replaced -->
+          <div
+            v-if="failedTurn && !isStreaming"
+            role="alert"
+            class="ml-10 flex items-center gap-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 dark:border-danger-500/20 dark:bg-danger-500/10"
+            data-testid="chat-failed-turn"
+          >
+            <span class="icon-[annon--alert-triangle] size-4 shrink-0 text-danger-500" aria-hidden="true" />
+            <p class="min-w-0 flex-1 text-xs text-danger-700 dark:text-danger-400">
+              {{ error ?? t('chat.send_error') }}
+            </p>
+            <button
+              type="button"
+              class="shrink-0 rounded text-xs font-semibold text-danger-700 underline underline-offset-2 hover:text-danger-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-danger-400"
+              @click="retryFailedTurn"
+            >
+              {{ t('chat.retry') }}
+            </button>
           </div>
 
           <!-- Streaming indicator -->

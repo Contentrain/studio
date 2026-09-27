@@ -759,14 +759,14 @@ export async function executeToolWithAutoMerge(
    * cannot write. The cached entry is the one the turn was built from, which is
    * the policy that was in force when the user asked.
    */
-  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string } = {}): Promise<MergeDecision> => {
+  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string, kind?: string } = {}): Promise<MergeDecision> => {
     if (workflow !== 'review') return { allowed: true, review: {} }
     const cached = getBrainCache(projectId) ?? await getOrBuildBrainCache(git, contentRoot, projectId)
     return decideMerge({
       workflow,
       tool: name,
       ...(opts.scope ? { scope: opts.scope } : {}),
-      signals: writeSignals(name, params),
+      signals: writeSignals(name, params, opts.kind),
       policy: cached.approvalPolicy,
       ...(opts.commitSha ? { commitSha: opts.commitSha } : {}),
     })
@@ -995,7 +995,8 @@ export async function executeToolWithAutoMerge(
         invalidateBrainCache(projectId)
 
         // Role-aware auto-merge
-        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params) }, commitSha: writeResult.commit?.sha })
+        const saveKind = relBrain.models.get(modelId)?.kind
+        const gate = await gateMerge({ scope: { models: [modelId], locales: [locale], entries: savedEntryIds(params, { id: modelId, kind: saveKind }) }, commitSha: writeResult.commit?.sha, kind: saveKind })
         if (gate.allowed && writeResult.branch) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), workflow }

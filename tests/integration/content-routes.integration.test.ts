@@ -48,7 +48,10 @@ describe('content route integration', () => {
     }))
     vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('starter'))
     vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
-    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow: 'auto-merge' } }))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: { workflow: 'auto-merge' },
+      models: new Map([['posts', { id: 'posts', kind: 'collection' }]]),
+    }))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent, mergeBranch }))
     vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({ getAssetByPath }))
@@ -99,7 +102,13 @@ describe('content route integration', () => {
     })
   })
 
-  it('holds an owner\'s editor save on a review project and says what it is waiting for', async () => {
+  // The route counts entries by the model's kind, the way approve/merge reads
+  // the branch: a singleton's fields are one record, not one entry each.
+  it.each([
+    { name: 'one collection entry', modelId: 'posts', kind: 'collection', data: { entry1: { title: 'Hello world' } }, risk: 'low_risk_content' },
+    { name: 'a three-field singleton', modelId: 'site', kind: 'singleton', data: { title: 'Hi', tagline: 'Short', cta: 'Go' }, risk: 'low_risk_content' },
+    { name: 'two collection entries', modelId: 'posts', kind: 'collection', data: { a: { title: 'A' }, b: { title: 'B' } }, risk: 'bulk_content' },
+  ])('holds an owner\'s editor save on a review project and says what it is waiting for ($name)', async ({ modelId, kind, data, risk }) => {
     // Same gate as the chat handler: the role of whoever saved is not the
     // question any more, so an owner is held by the policy like anyone else.
     const mergeBranch = vi.fn().mockResolvedValue({ merged: true, sha: 'merge-sha', pullRequestUrl: null })
@@ -113,7 +122,7 @@ describe('content route integration', () => {
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-1'
-      if (key === 'modelId') return 'posts'
+      if (key === 'modelId') return modelId
       return undefined
     }))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
@@ -138,6 +147,7 @@ describe('content route integration', () => {
     vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
       config: { workflow: 'review' },
       approvalPolicy: null,
+      models: new Map([[modelId, { id: modelId, kind }]]),
     }))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ saveContent, mergeBranch }))
@@ -147,20 +157,20 @@ describe('content route integration', () => {
 
     await withTestServer({
       routes: [
-        { path: '/api/workspaces/workspace-1/projects/project-1/content/posts', handler: await loadContentPostHandler() },
+        { path: `/api/workspaces/workspace-1/projects/project-1/content/${modelId}`, handler: await loadContentPostHandler() },
       ],
     }, async ({ request }) => {
-      const response = await request('/api/workspaces/workspace-1/projects/project-1/content/posts', {
+      const response = await request(`/api/workspaces/workspace-1/projects/project-1/content/${modelId}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ locale: 'en', data: { entry1: { title: 'Hello world' } } }),
+        body: JSON.stringify({ locale: 'en', data }),
       })
 
       expect(response.status).toBe(200)
       const payload = await response.json()
       expect(payload.merged).toBe(false)
       expect(payload.workflow).toBe('review')
-      expect(payload.approval.risk).toBe('low_risk_content')
+      expect(payload.approval.risk).toBe(risk)
       expect(payload.approval.reasons.length).toBeGreaterThan(0)
       expect(mergeBranch).not.toHaveBeenCalled()
     })
