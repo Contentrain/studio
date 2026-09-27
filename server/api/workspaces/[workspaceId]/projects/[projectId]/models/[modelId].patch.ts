@@ -11,6 +11,7 @@ import type { FormConfig } from '~~/server/utils/form-types'
 import { countFormEnabledModels, getFormConfig } from '~~/server/utils/form-types'
 import type { CommentsConfig } from '~~/server/utils/comment-types'
 import { countCommentEnabledModels, getCommentsConfig, modelSupportsComments, normalizeCommentsConfig } from '~~/server/utils/comment-types'
+import { titleFieldDef } from '~~/shared/utils/entry-title'
 
 /**
  * Mirrors the `title_field` rule in `@contentrain/mcp`'s validator so a bad
@@ -69,7 +70,9 @@ export default defineEventHandler(async (event) => {
       if (titleField !== 'key')
         throw createError({ statusCode: 400, message: errorMessage('model.title_field_dictionary') })
     }
-    else if (!fields[titleField] || !TITLE_FIELD_TYPES.has(fields[titleField].type ?? '')) {
+    // A dotted path (`hero.heading`) reaches one level into an object field — a
+    // page singleton built from sections is titled by a section's heading.
+    else if (!TITLE_FIELD_TYPES.has(titleFieldDef({ fields }, titleField)?.type ?? '')) {
       throw createError({
         statusCode: 400,
         message: errorMessage('model.title_field_invalid', { field: titleField }),

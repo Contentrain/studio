@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withTestServer } from '../helpers/http'
 import { getPlanLimit, hasFeature } from '../../server/utils/license'
+import { createContentEngine } from '../../server/utils/content-engine'
+import { validateContent } from '../../server/utils/content-validation'
+import {
+  resolveConfigPath,
+  resolveContentPath,
+  resolveContextPath,
+  resolveMetaPath,
+  resolveModelPath,
+  resolveModelsDir,
+  resolveVocabularyPath,
+} from '../../server/utils/content-paths'
 
 async function loadModelPatchHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/models/[modelId].patch')).default
@@ -121,6 +132,75 @@ describe('model title_field PATCH', () => {
     stubRoute()
     const res = await patch({ titleField: 'icon' })
     expect(res.status).toBe(400)
+  })
+
+  // A page singleton built from sections: its title is a section's heading.
+  it('accepts a dotted path one level into an object field', async () => {
+    const page = {
+      ...MODEL,
+      kind: 'singleton' as const,
+      title_field: 'hero.heading',
+      fields: {
+        hero: { type: 'object', required: true, fields: { heading: { type: 'string', required: true }, image: { type: 'image' } } },
+        work: { type: 'array', items: { type: 'object', fields: { caption: { type: 'string' } } } },
+      },
+    }
+    const { saveModel } = stubRoute({ model: page })
+
+    const res = await patch({ titleField: 'hero.heading' })
+
+    expect(res.status).toBe(200)
+    expect((saveModel.mock.calls[0]?.[0] as { title_field?: string }).title_field).toBe('hero.heading')
+    for (const bad of ['hero.image', 'hero.title', 'work.caption', 'hero.heading.text'])
+      expect((await patch({ titleField: bad })).status, bad).toBe(400)
+  })
+
+  // Through the real engine: saveModel runs its own title check, and the model is read back from what it wrote.
+  it('saves a dotted title_field through the content engine and reads it back', async () => {
+    const page = {
+      ...MODEL,
+      kind: 'singleton' as const,
+      title_field: 'title',
+      fields: {
+        title: { type: 'string' },
+        hero: { type: 'object', fields: { heading: { type: 'string', required: true } } },
+      },
+    }
+    const files = new Map<string, string>([
+      ['.contentrain/config.json', JSON.stringify({ version: 1, stack: 'nuxt', workflow: 'auto-merge', locales: { default: 'en', supported: ['en'] }, domains: ['marketing'] })],
+      ['.contentrain/models/integration-groups.json', JSON.stringify(page)],
+    ])
+    const commit = { sha: 'sha-1', message: '', author: { name: 'bot', email: 'bot@example.com' }, timestamp: '' }
+    const git = {
+      readFile: vi.fn(async (path: string) => {
+        const text = files.get(path)
+        if (text === undefined) throw new Error(`Missing file: ${path}`)
+        return text
+      }),
+      listDirectory: vi.fn().mockResolvedValue([]),
+      fileExists: vi.fn(async (path: string) => files.has(path)),
+      listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'abc', protected: false }]),
+      createBranch: vi.fn(),
+      getBranchDiff: vi.fn().mockResolvedValue([]),
+      getDefaultBranch: vi.fn().mockResolvedValue('main'),
+      mergeBranch: vi.fn().mockResolvedValue({ merged: true, sha: 'merge-sha', pullRequestUrl: null }),
+      applyPlan: vi.fn(async ({ changes }: { changes: Array<{ path: string, content: string | null }> }) => {
+        for (const change of changes) if (change.content !== null) files.set(change.path, change.content)
+        return commit
+      }),
+      commitFiles: vi.fn().mockResolvedValue(commit),
+    }
+    for (const [name, fn] of Object.entries({ resolveConfigPath, resolveContentPath, resolveContextPath, resolveMetaPath, resolveModelPath, resolveModelsDir, resolveVocabularyPath, validateContent }))
+      vi.stubGlobal(name, fn)
+    const engine = createContentEngine({ git: git as never, contentRoot: '' })
+    const saveModel = vi.fn((model: never, email: string) => engine.saveModel(model, email))
+    stubRoute({ model: page, saveModel })
+
+    const res = await patch({ titleField: 'hero.heading' })
+
+    expect(res.status).toBe(200)
+    const written = [...files].find(([path]) => path.endsWith('/models/integration-groups.json'))!
+    expect(JSON.parse(written[1]).title_field).toBe('hero.heading')
   })
 
   it('allows only `key` on a dictionary, which declares no fields', async () => {

@@ -1431,6 +1431,47 @@ describe('content engine', () => {
       })
     })
 
+    it('saves an unrelated change to a model whose title_field is a dotted path', async () => {
+      // A model MCP 3.9 wrote: the title is a field of an object field. Every save runs the title check.
+      const dotted = { ...homePage, title_field: 'pricing_preview.headline' }
+      const { git, applyPlan } = gitWith({}, {
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/config.json')) return JSON.stringify(config)
+          if (path.endsWith('/models/home-page.json')) return JSON.stringify(dotted)
+          throw new Error(`Missing file: ${path}`)
+        }),
+      })
+      const engine = createContentEngine({ git, contentRoot: '' })
+
+      const result = await engine.saveModel({
+        id: 'home-page',
+        name: 'Home Page',
+        kind: 'singleton',
+        domain: 'marketing',
+        i18n: true,
+        fields: { hero_background_image: { type: 'image' } },
+      } as never, 'user@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      const saved = savedModel(applyPlan)
+      expect(saved.title_field).toBe('pricing_preview.headline')
+      expect(saved.fields.hero_background_image).toEqual({ type: 'image' })
+    })
+
+    it('sets a dotted title_field and refuses one that goes through a non-object', async () => {
+      const { git, applyPlan } = gitWith({})
+      const engine = createContentEngine({ git, contentRoot: '' })
+      const base = { id: 'home-page', name: 'Home Page', kind: 'singleton', domain: 'marketing', i18n: true }
+
+      const refused = await engine.saveModel({ ...base, title_field: 'hero_title.text' } as never, 'user@example.com')
+      expect(refused.validation.valid).toBe(false)
+      expect(applyPlan).not.toHaveBeenCalled()
+
+      const result = await engine.saveModel({ ...base, title_field: 'pricing_preview.headline' } as never, 'user@example.com')
+      expect(result.validation.valid).toBe(true)
+      expect(savedModel(applyPlan).title_field).toBe('pricing_preview.headline')
+    })
+
     it('refuses to drop a field that entries still carry, and says how many', async () => {
       const { git, applyPlan } = gitWith({
         '/home-page/tr.json': { hero_title: 'Merhaba', pricing_preview: { headline: 'Fiyatlar' } },

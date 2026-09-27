@@ -1,4 +1,7 @@
 import type { FieldDef } from '@contentrain/types'
+import { titleFieldTarget, titleFieldValue } from '@contentrain/types'
+
+export { titleFieldValue }
 
 /**
  * Which field titles an entry.
@@ -88,18 +91,33 @@ function fieldEntries(model: TitleFieldModel | null | undefined): [string, Field
   return Object.entries(model.fields as Record<string, FieldDef>)
 }
 
-/** Fields a model may legally declare as its `title_field`, for the picker. */
+/**
+ * The field a `title_field` path names, or undefined. A plain name is a top-level
+ * field; a dotted path (`hero.heading`) reaches one level into an `object` field —
+ * a page singleton built from sections is titled by a section's heading. Deeper
+ * paths and paths through arrays do not resolve. `titleFieldTarget` is the rule
+ * MCP's validator applies, so Studio and MCP cannot disagree.
+ */
+export function titleFieldDef(model: TitleFieldModel | null | undefined, path: string): FieldDef | undefined {
+  const target = titleFieldTarget((model?.fields ?? undefined) as Record<string, FieldDef> | undefined, path)
+  return target.kind === 'field' ? target.def : undefined
+}
+
+/** Fields a model may legally declare as its `title_field`, for the picker — top-level first, then one level into objects. */
 export function titleFieldOptions(model: TitleFieldModel | null | undefined): string[] {
   if (model?.kind === 'dictionary') return [DICTIONARY_TITLE_FIELD]
-  return fieldEntries(model)
-    .filter(([, def]) => TITLE_FIELD_TYPES.includes(def?.type ?? ''))
-    .map(([key]) => key)
+  const titled = (entries: [string, FieldDef][]) => entries.filter(([, def]) => TITLE_FIELD_TYPES.includes(def?.type ?? '')).map(([key]) => key)
+  const entries = fieldEntries(model)
+  const nested = entries.flatMap(([key, def]) =>
+    def?.type === 'object' && def.fields ? titled(Object.entries(def.fields)).map(leaf => `${key}.${leaf}`) : [])
+  return [...titled(entries), ...nested]
 }
 
 /**
  * Resolve which field to read an entry's title from.
  *
- * 1. what the model declares — the contract
+ * 1. what the model declares — the contract; a dotted path (`hero.heading`)
+ *    reaches one level into an object field
  * 2. a name-like key (`title`, `name`, `label`, `heading`, or a key carrying
  *    one as a token), required ones first — `authors` with an optional
  *    `title` (the job title) and a required `name` is titled by `name`
@@ -114,7 +132,7 @@ export function titleFieldOptions(model: TitleFieldModel | null | undefined): st
  */
 export function resolveTitleFieldId(model: TitleFieldModel | null | undefined): string | null {
   const declared = model?.title_field
-  if (declared && (declared === DICTIONARY_TITLE_FIELD || fieldEntries(model).some(([key]) => key === declared)))
+  if (declared && (declared === DICTIONARY_TITLE_FIELD || titleFieldDef(model, declared)))
     return declared
 
   const entries = fieldEntries(model)
@@ -153,7 +171,7 @@ export function resolveEntryTitle(
 
   const fieldId = resolveTitleFieldId(model)
   if (fieldId) {
-    const value = entry[fieldId]
+    const value = titleFieldValue(entry, fieldId)
     if (typeof value === 'string' && value.length > 0) return value
   }
 

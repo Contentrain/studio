@@ -163,4 +163,14 @@ describe('validateTitleField', () => {
     expect(validateTitleField({ ...homePage, title_field: 'pricing_preview' })).toContain('has type "object"')
     expect(validateTitleField({ id: 'ui', name: 'UI', kind: 'dictionary', domain: 'system', i18n: true, title_field: 'title' })).toContain('must be "key"')
   })
+
+  it('accepts a dotted path to a text field one object deep', () => {
+    expect(validateTitleField({ ...homePage, title_field: 'pricing_preview.headline' })).toBeNull()
+  })
+
+  it('says why a dotted path does not resolve', () => {
+    expect(validateTitleField({ ...homePage, title_field: 'pricing_preview.nope' })).toContain('does not name a field')
+    expect(validateTitleField({ ...homePage, title_field: 'hero_title.x' })).toContain('not an object')
+    expect(validateTitleField({ ...homePage, title_field: 'pricing_preview.headline.x' })).toContain('more than one object deep')
+  })
 })

@@ -1,5 +1,5 @@
 import type { FieldDef, ModelDefinition } from '@contentrain/types'
-import { canonicalStringify } from '@contentrain/types'
+import { canonicalStringify, titleFieldTarget } from '@contentrain/types'
 import { DICTIONARY_TITLE_FIELD, TITLE_FIELD_TYPES } from '../../../shared/utils/entry-title'
 
 /**
@@ -174,6 +174,7 @@ export function describeBreakingChange(change: BreakingModelChange): string {
 
 /**
  * `title_field` must name a field of this model that can render as text —
+ * a top-level field or, by a dotted path, a field of an object field —
  * the same rule MCP's validator and the model PATCH route apply, so a bad
  * pick is refused here with a message rather than inside a git write.
  * Absent is allowed: models predate the field and the readers fall back.
@@ -184,8 +185,12 @@ export function validateTitleField(model: ModelDefinition): string | null {
   if (model.kind === 'dictionary') {
     return titleField === DICTIONARY_TITLE_FIELD ? null : `title_field must be "${DICTIONARY_TITLE_FIELD}" on a dictionary model`
   }
-  const def = model.fields?.[titleField]
-  if (!def) return `title_field "${titleField}" does not name a field of model "${model.id}"`
+  // `seo.title` names a field one object deep (MCP 3.9); types resolves the path for Studio and MCP alike.
+  const target = titleFieldTarget(model.fields ?? undefined, titleField)
+  if (target.kind === 'missing') return `title_field "${titleField}" does not name a field of model "${model.id}" (no "${target.at}")`
+  if (target.kind === 'not-object') return `title_field "${titleField}" goes through "${target.at}", which has type "${target.type}", not an object`
+  if (target.kind === 'too-deep') return `title_field "${titleField}" reaches more than one object deep; name a field or one field of an object field ("seo.title")`
+  const def = target.def
   if (!TITLE_FIELD_TYPES.includes(def.type)) return `title_field "${titleField}" has type "${def.type}", which cannot render as a title (needs one of ${TITLE_FIELD_TYPES.join(', ')})`
   return null
 }

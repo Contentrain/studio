@@ -113,6 +113,11 @@ describe('findRelationLabel', () => {
     expect(findRelationLabel({ name: 'Ahmet' }, null)).toBe('Ahmet')
   })
 
+  it('reads a dotted title_field one level into an object', () => {
+    const page = { kind: 'collection', title_field: 'hero.heading', fields: { hero: { type: 'object', fields: { heading: { type: 'string' } } } } }
+    expect(findRelationLabel({ hero: { heading: 'Web design' } }, page)).toBe('Web design')
+  })
+
   it('does not use the declared field when the entry leaves it empty', () => {
     const article = { kind: 'collection', title_field: 'headline', fields: { headline: { type: 'string' } } }
     expect(findRelationLabel({ headline: '', slug: 'ship-it' }, article)).toBe('ship-it')
