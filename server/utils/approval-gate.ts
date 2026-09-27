@@ -159,10 +159,11 @@ function isEmptyValue(value: unknown): boolean {
  * The {@link WriteSignals} of a tool call, from the same params the tool ran with.
  *
  * `save_content` carries either one entry's fields (`slug` + `data`, or a
- * singleton/dictionary `data`) or a map of entry id → fields; both are walked
- * one level down so a field of an entry counts, not the entry itself.
+ * singleton/dictionary `data`) or a map of entry id → fields; the map is
+ * walked one level down so a field of an entry counts, not the entry itself.
+ * `kind` tells the two apart — without it a keyless payload is read as a map.
  */
-export function writeSignals(tool: string, params: Record<string, unknown>): WriteSignals {
+export function writeSignals(tool: string, params: Record<string, unknown>, kind?: string): WriteSignals {
   if (tool === 'update_status' && typeof params.status === 'string')
     return { targetStatus: params.status }
   if (tool === 'replace_in_field') {
@@ -190,8 +191,11 @@ export function writeSignals(tool: string, params: Record<string, unknown>): Wri
   else {
     const data = params.data
     if (!data || typeof data !== 'object' || Array.isArray(data)) return targetStatus
+    // Only a collection payload is keyed by entry; a singleton's or a
+    // dictionary's keys are already its fields (see savedEntryIds).
+    const byEntry = !params.slug && kind !== 'singleton' && kind !== 'dictionary'
     for (const value of Object.values(data as Record<string, unknown>)) {
-      if (!params.slug && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
+      if (byEntry && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
       else values.push(value)
     }
   }
@@ -250,12 +254,25 @@ export function parseApprovalPolicy(raw: string): { policy: ApprovalPolicyFile |
   return { policy: parsed as ApprovalPolicyFile, error: null }
 }
 
+/** The model a save writes to, as far as counting its entries needs. */
+export interface SavedModel {
+  id: string
+  kind?: string
+}
+
 /**
  * The entries one `save_content` call addresses: a document's slug, or the
  * keys of a collection payload. Used only to tell one entry from many —
  * {@link toolRisk} lifts a multi-entry write a rung.
+ *
+ * A singleton or a dictionary IS one record, so its payload keys are fields or
+ * dictionary keys, not entries. Counting them as entries put a three-field
+ * singleton save on `bulk_content` while the branch it produced — judged by
+ * `branchRisk` over the review, which already counts it as one record — sat
+ * on `low_risk_content`. The editor and the agent both count through here.
  */
-export function savedEntryIds(params: Record<string, unknown>): string[] {
+export function savedEntryIds(params: Record<string, unknown>, model?: SavedModel): string[] {
+  if (model && (model.kind === 'singleton' || model.kind === 'dictionary')) return [model.id]
   if (Array.isArray(params.documents))
     return (params.documents as Array<{ slug?: unknown }>).map(d => String(d?.slug ?? '')).filter(Boolean)
   if (typeof params.slug === 'string' && params.slug) return [params.slug]
