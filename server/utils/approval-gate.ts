@@ -103,13 +103,14 @@ export interface ToolScope {
  * What a single-entry content write does, read from its payload.
  *
  * The tool's rung says what kind of thing changes; these say how much of it a
- * reader would notice. Three shapes of a one-entry write are not low risk even
+ * reader would notice. Four shapes of a one-entry write are not low risk even
  * though the tool is: it changes whether the entry is visible, it empties a
- * field, or it rewrites a large body of text. Status and text size are read
- * from the payload ({@link writeSignals}); an emptied field is read from the
- * written branch's review ({@link emptiedFieldCount}), the same account the
- * merge is judged by, because a payload cannot tell a field someone cleared
- * from one that was never filled. None of them reads the content's meaning, so
+ * field, it drops list items, or it rewrites a large body of text. Status and
+ * text size are read from the payload ({@link writeSignals}); emptied fields
+ * and dropped items are read from the written branch's review
+ * ({@link contentLoss}), the same account the merge is judged by, because a
+ * payload cannot tell a field someone cleared from one that was never filled,
+ * nor a list that lost items from one that was only reordered. None of them reads the content's meaning, so
  * the same write always lands on the same rung.
  */
 export interface WriteSignals {
@@ -121,6 +122,11 @@ export interface WriteSignals {
    * from the payload: see {@link branchWriteSignals}.
    */
   emptiedFields?: number
+  /**
+   * List items — nested lists included — the write drops. Adding or reordering
+   * never counts. From the written branch's review: see {@link branchWriteSignals}.
+   */
+  removedItems?: number
   /**
    * The written branch could not be read back, so whether it empties anything
    * is unknown. Treated as though it did: a check that cannot run must not
@@ -143,8 +149,10 @@ export function contentSignalReason(signals: WriteSignals = {}): string | null {
     return `it moves content to \`${signals.targetStatus}\``
   if ((signals.emptiedFields ?? 0) > 0)
     return `it empties ${signals.emptiedFields} field${signals.emptiedFields === 1 ? '' : 's'}`
+  if ((signals.removedItems ?? 0) > 0)
+    return `it removes ${signals.removedItems} list item${signals.removedItems === 1 ? '' : 's'}`
   if (signals.unreadBranch)
-    return 'its branch could not be read back to check for emptied fields'
+    return 'its branch could not be read back to check for emptied fields or removed list items'
   if ((signals.textChars ?? 0) >= LARGE_TEXT_CHANGE_CHARS)
     return `it writes ${signals.textChars} characters of text`
   return null

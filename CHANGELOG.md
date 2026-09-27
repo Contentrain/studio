@@ -8,6 +8,9 @@
 **Policy change: emptying a field makes a content write `bulk_content`.**
 A field counts as emptied when it had a value before the change and is empty after it (`''`, `null`, `[]`, `{}` or removed), and that includes sub-fields of objects and fields inside lists of objects. It is read from the branch's before/after, so the save and the Merge button give the same answer. Under the default policy nothing changes: `bulk_content` asks for the same single review. A policy that sets `low_risk_content` to `auto` now holds these writes, and the panel Merge holds them too. A blank optional sub-field that was already empty no longer lifts a save.
 
+**Policy change: removing list items makes a content write `bulk_content`.**
+This applies to lists at any depth, nested ones included. Items are matched by `id`/`key`/`slug`/`ref` when every item carries one. A list that can't be matched that way (plain values, or every item rewritten) counts only the drop in item count. Adding items or reordering them never counts. The count comes from the branch's before/after, so a save and its merge give the same answer. Under the default policy the approval count is unchanged. A policy that sets `low_risk_content` to `auto` now holds these writes, at save and at merge.
+
 ## v0.4.7
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.6...v0.4.7)

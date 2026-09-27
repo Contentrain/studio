@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
   const kind = brain.models.get(modelId)?.kind
   const scope = { models: [modelId], locales: [body.locale ?? 'en'], entries: savedEntryIds({ data: body.data }, { id: modelId, kind }) }
   const payloadSignals = writeSignals('save_content', { data: body.data }, kind)
-  // Whether the save empties a field is read off the branch it just wrote —
+  // Whether the save empties a field or drops list items is read off the branch it just wrote —
   // the same review the merge will be judged by — and only when it could
   // still change the answer.
   const signals = workflow === 'review' && result.branch && toolRisk('save_content', scope, payloadSignals) === 'low_risk_content'

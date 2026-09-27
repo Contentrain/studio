@@ -761,7 +761,7 @@ export async function executeToolWithAutoMerge(
    *
    * `branch` is the branch the write just made. While the payload leaves the
    * write on the lowest rung, that branch's review is read to see whether it
-   * empties a field — the same count the merge will be judged by later.
+   * empties a field or drops list items — the same count the merge will be judged by later.
    */
   const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string, kind?: string, branch?: string } = {}): Promise<MergeDecision> => {
     if (workflow !== 'review') return { allowed: true, review: {} }
