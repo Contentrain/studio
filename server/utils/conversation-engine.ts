@@ -1,5 +1,6 @@
 import { clearBranchRequestSafe } from './branch-requests'
 import { recordMergeReceipt, resolveMergeApproval } from './branch-approval'
+import { isBranchMoved } from './content-engine/errors'
 import { actorFromEmail } from './execution-plan'
 import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
@@ -1409,17 +1410,31 @@ export async function executeToolWithAutoMerge(
         // The same approval the Merge button answers to. Without it the agent
         // merged a branch the panel showed at 0/1 — the review was a suggestion.
         const startedAt = new Date().toISOString()
-        const brain = getBrainCache(projectId) ?? await getOrBuildBrainCache(git, contentRoot, projectId)
-        const approval = await resolveMergeApproval({ git, contentRoot, projectId, branch: branchToMerge, workflow, policy: brain.approvalPolicy })
-        if (approval && !approval.decision.allowed) {
-          result = {
-            error: agentMessage('branch.approval_required', { reasons: approval.decision.reasons.join(' ') }),
-            merged: false,
-            approval: approval.decision,
+        // A fresh read, like the Merge button's: a policy changed since the
+        // turn began is the one this merge answers to.
+        const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+        let mergeResult: Awaited<ReturnType<typeof engine.mergeBranch>>
+        let approval: Awaited<ReturnType<typeof resolveMergeApproval>>
+        try {
+          approval = await resolveMergeApproval({ git, contentRoot, projectId, branch: branchToMerge, workflow, policy: brain.approvalPolicy })
+          if (approval && !approval.decision.allowed) {
+            result = {
+              error: agentMessage('branch.approval_required', { reasons: approval.decision.reasons.join(' ') }),
+              merged: false,
+              approval: approval.decision,
+            }
+            break
           }
+          // Pinned to the approved tip — a commit pushed after the approval
+          // is not what the approver saw.
+          mergeResult = await engine.mergeBranch(branchToMerge, approval?.commitSha ? { expectedHead: approval.commitSha } : {})
+        }
+        catch (e) {
+          if (!isBranchMoved(e)) throw e
+          result = { error: agentMessage('branch.moved_since_approval'), merged: false }
+          affected.branchesChanged = true
           break
         }
-        const mergeResult = await engine.mergeBranch(branchToMerge)
         if (mergeResult.merged) clearBranchRequestSafe(projectId, branchToMerge)
         if (approval && mergeResult.merged) {
           await recordMergeReceipt({

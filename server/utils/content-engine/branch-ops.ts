@@ -7,6 +7,7 @@ import { STUDIO_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain } from './helpers'
 import { buildContextChangeFromBrain } from './context-build'
 import { getOrBuildBrainCache, invalidateBrainCache } from '../brain-cache'
+import { BranchMovedError } from './errors'
 
 /**
  * Ensure the dedicated `contentrain` branch exists and is synced with main.
@@ -112,9 +113,24 @@ export async function mergeOrFastForward(
   ctx: EngineInternalContext,
   from: string,
   into: string,
-  options: { levelSource?: boolean } = {},
+  options: { levelSource?: boolean, expectedFrom?: string } = {},
 ): Promise<MergeOutcome> {
   const git = ctx.git
+  if (options.expectedFrom) {
+    // Pinned: land exactly the approved commit or nothing. The fast-forward
+    // moves `into` to that SHA, never to whatever the branch points at now.
+    const tips = await git.listBranches()
+    const fromSha = tips.find(b => b.name === from)?.sha ?? null
+    if (fromSha !== options.expectedFrom) throw new BranchMovedError(from, options.expectedFrom, fromSha)
+    const intoSha = tips.find(b => b.name === into)?.sha ?? null
+    if (fromSha === intoSha) return { merged: true, sha: null, pullRequestUrl: null }
+    if (git.fastForwardBranch && await git.fastForwardBranch(into, fromSha).catch(() => false))
+      return { merged: true, sha: fromSha, pullRequestUrl: null }
+    // A merge commit goes through the provider by branch name (GitLab merges
+    // through a merge request, so a bare SHA is not portable). The window left
+    // is this one call; the tip was just checked.
+    return git.mergeBranch(from, into)
+  }
   if (git.fastForwardBranch) {
     // One read for both tips. Equal tips: nothing to bring over, no write.
     const tips = await git.listBranches().catch(() => null)
@@ -160,9 +176,10 @@ export async function listContentBranches(ctx: EngineInternalContext): Promise<B
 export async function mergeToContentrain(
   ctx: EngineInternalContext,
   branch: string,
+  options: { expectedHead?: string } = {},
 ): Promise<{ merged: boolean, sha: string | null }> {
   // The branch forked from contentrain: usually a fast-forward, no merge commit.
-  const step1 = await mergeOrFastForward(ctx, branch, CONTENT_BRANCH)
+  const step1 = await mergeOrFastForward(ctx, branch, CONTENT_BRANCH, options.expectedHead ? { expectedFrom: options.expectedHead } : {})
   if (!step1.merged) {
     return { merged: false, sha: null }
   }
@@ -467,10 +484,10 @@ async function composeCodeDelta(
  * exactly this behavior. The agent tool loop calls the two halves
  * separately so a multi-save turn finalizes once at turn end.
  */
-export async function mergeBranch(ctx: EngineInternalContext, branch: string): Promise<EngineMergeResult> {
+export async function mergeBranch(ctx: EngineInternalContext, branch: string, options: { expectedHead?: string } = {}): Promise<EngineMergeResult> {
   let step1: { merged: boolean, sha: string | null }
   try {
-    step1 = await mergeToContentrain(ctx, branch)
+    step1 = await mergeToContentrain(ctx, branch, options)
   }
   catch (e: unknown) {
     switch (classifyMergeFailure(e)) {
