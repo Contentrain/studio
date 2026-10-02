@@ -1,4 +1,4 @@
--- 040: the bytes an image upload arrived as are kept, privately.
+-- 041: the bytes an image upload arrived as are kept, privately.
 --
 -- `original_path` is the delivery master: the re-encoded, metadata-stripped WebP the site serves (`media/original/…`).
 -- Its name stays — content fields store that path. The uploaded file itself, byte for byte, is stored apart from
