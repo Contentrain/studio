@@ -23,7 +23,8 @@ export function parseScheduleTime(value: unknown): number | null | undefined {
   return Number.isFinite(time) ? time : null
 }
 
-export interface EntrySchedule {
+/** An entry's meta dates as stored, unvalidated. The write-side shape is the server's `EntrySchedule`. */
+export interface ScheduleWindow {
   publish_at?: unknown
   expire_at?: unknown
 }
@@ -32,7 +33,7 @@ export interface EntrySchedule {
  * The schedule keys whose value is present but unreadable. Empty when the
  * entry has no schedule or every value parses.
  */
-export function invalidScheduleKeys(schedule: EntrySchedule | null | undefined): Array<'publish_at' | 'expire_at'> {
+export function invalidScheduleKeys(schedule: ScheduleWindow | null | undefined): Array<'publish_at' | 'expire_at'> {
   if (!schedule || typeof schedule !== 'object') return []
   const invalid: Array<'publish_at' | 'expire_at'> = []
   for (const key of ['publish_at', 'expire_at'] as const) {
@@ -46,7 +47,7 @@ export function invalidScheduleKeys(schedule: EntrySchedule | null | undefined):
  * window that cannot be read is not a window an entry can be delivered
  * through, and `invalidScheduleKeys` is what makes that visible.
  */
-export function isWithinSchedule(schedule: EntrySchedule | null | undefined, at: number): boolean {
+export function isWithinSchedule(schedule: ScheduleWindow | null | undefined, at: number): boolean {
   if (!schedule || typeof schedule !== 'object') return true
   const publishAt = parseScheduleTime((schedule as Record<string, unknown>).publish_at)
   if (publishAt === null || (publishAt !== undefined && publishAt > at)) return false
@@ -61,7 +62,7 @@ export function isWithinSchedule(schedule: EntrySchedule | null | undefined, at:
  * `null` inside the window or with none. An unreadable value answers `null`
  * here — `invalidScheduleKeys` is what reports it.
  */
-export function schedulePhase(schedule: EntrySchedule | null | undefined, at: number): 'scheduled' | 'expired' | null {
+export function schedulePhase(schedule: ScheduleWindow | null | undefined, at: number): 'scheduled' | 'expired' | null {
   if (!schedule || typeof schedule !== 'object') return null
   const publishAt = parseScheduleTime((schedule as Record<string, unknown>).publish_at)
   if (typeof publishAt === 'number' && publishAt > at) return 'scheduled'

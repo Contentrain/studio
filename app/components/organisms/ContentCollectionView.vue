@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { RelationLabelMap } from '~/composables/useRelationLabels'
-import type { EntrySchedule } from '~~/shared/utils/entry-schedule'
+import type { ScheduleWindow } from '~~/shared/utils/entry-schedule'
 import { activeModelMetaKey, getEntryTitleKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getNestedFieldLabelsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
 const { t } = useContent()
@@ -404,7 +404,7 @@ function onFieldDragStart(e: DragEvent, entryId: string, fieldId: string, value:
           <!-- Status badge + picker (shared with the document view) -->
           <MoleculesEntryStatusPicker
             :status="getEntryStatus(String(entryId), meta)"
-            :schedule="(meta?.[String(entryId)] as EntrySchedule | undefined)"
+            :schedule="(meta?.[String(entryId)] as ScheduleWindow | undefined)"
             :entry-id="String(entryId)"
             :workspace-id="workspaceId" :project-id="projectId" :model-id="modelId"
             :locale="locale" :editable="editable" @saved="emit('saved')"
