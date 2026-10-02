@@ -1,6 +1,6 @@
 import { clearBranchRequestSafe } from './branch-requests'
 import { branchWriteSignals, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
-import { isBranchMoved } from './content-engine/errors'
+import { isBranchMoved, isBranchTipUnreadable } from './content-engine/errors'
 import { actorFromEmail } from './execution-plan'
 import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
@@ -1439,6 +1439,10 @@ export async function executeToolWithAutoMerge(
           mergeResult = await engine.mergeBranch(branchToMerge, approval?.commitSha ? { expectedHead: approval.commitSha } : {})
         }
         catch (e) {
+          if (isBranchTipUnreadable(e)) {
+            result = { error: agentMessage('branch.tip_unreadable'), merged: false }
+            break
+          }
           if (!isBranchMoved(e)) throw e
           result = { error: agentMessage('branch.moved_since_approval'), merged: false }
           affected.branchesChanged = true
