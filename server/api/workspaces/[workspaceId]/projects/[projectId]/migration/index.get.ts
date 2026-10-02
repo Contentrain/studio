@@ -2,6 +2,10 @@
  * The project's migration handoff (`.contentrain/migrate/handoff.json` as synced) plus
  * a summary and the comments import state, for the overview card.
  *
+ * `claimExport` is the comments export held on this repository's Migrate grant
+ * (İP-2c) — status and count only, never the payload. It can exist before any
+ * handoff reaches the repository.
+ *
  * GET /api/workspaces/{workspaceId}/projects/{projectId}/migration
  */
 
@@ -25,7 +29,7 @@ export default defineEventHandler(async (event) => {
     if (!pm) throw createError({ statusCode: 403, message: errorMessage('project.access_denied') })
   }
 
-  const row = await db.getProjectById(projectId, 'id, migration_handoff, migration_handoff_synced_at')
+  const row = await db.getProjectById(projectId, 'id, repo_full_name, migration_handoff, migration_handoff_synced_at')
   let handoff = (row?.migration_handoff ?? null) as StoredMigrationHandoff | null
   let syncedAt = (row?.migration_handoff_synced_at ?? null) as string | null
 
@@ -55,14 +59,23 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  if (!handoff)
-    return { present: false, syncedAt: null, summary: null, commentsImported: 0 }
+  const repoFullName = typeof row?.repo_full_name === 'string' ? row.repo_full_name : ''
+  const held = repoFullName ? await db.getMigrateCommentsExport(workspaceId, repoFullName) : null
+  const claimExport = held ? { status: held.status, count: held.comments } : null
+
+  if (!handoff && !claimExport)
+    return { present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null }
 
   const counts = await db.countCommentsByStatus(projectId)
+  const commentsImported = counts.pending + counts.approved + counts.spam + counts.rejected
+  if (!handoff)
+    return { present: false, syncedAt: null, summary: null, commentsImported, claimExport }
+
   return {
     present: true,
     syncedAt,
     summary: summarizeMigrationHandoff(handoff),
-    commentsImported: counts.pending + counts.approved + counts.spam + counts.rejected,
+    commentsImported,
+    claimExport,
   }
 })

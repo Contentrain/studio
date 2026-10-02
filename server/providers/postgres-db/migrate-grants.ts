@@ -4,7 +4,7 @@
  * `migrate_grants` is service-role only (RLS on, no policies), so every
  * query runs on the admin connection. See migration 031 for the lifecycle.
  */
-import type { DatabaseProvider, DatabaseRow } from '../database'
+import type { DatabaseProvider, DatabaseRow, MigrateCommentsExportRow } from '../database'
 import { getAdmin, throwDbError } from './helpers'
 
 type MigrateGrantMethods = Pick<
@@ -14,7 +14,36 @@ type MigrateGrantMethods = Pick<
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
   | 'getMigrateGrantOrigin'
+  | 'saveMigrateCommentsExport'
+  | 'getMigrateCommentsExport'
+  | 'getMigrateCommentsExportState'
+  | 'markMigrateCommentsExportImported'
 >
+
+type ExportRow = { grant_id: string, status: string, comments: number, expires_at: unknown, imported_at: unknown, payload?: unknown }
+
+const iso = (value: unknown): string => (value instanceof Date ? value.toISOString() : String(value))
+
+function exportView(row: ExportRow, withPayload: boolean): MigrateCommentsExportRow {
+  return {
+    grantId: row.grant_id,
+    status: row.status as MigrateCommentsExportRow['status'],
+    comments: row.comments,
+    expiresAt: iso(row.expires_at),
+    importedAt: row.imported_at == null ? null : iso(row.imported_at),
+    ...(withPayload ? { payload: row.payload ?? null } : {}),
+  }
+}
+
+/** Exports never imported within their window give up their payload (lazy cleanup). */
+async function expireCommentExports(): Promise<void> {
+  await getAdmin()
+    .updateTable('migrate_comment_exports')
+    .set({ status: 'expired', payload: null })
+    .where('payload', 'is not', null)
+    .where('expires_at', '<', new Date().toISOString())
+    .execute()
+}
 
 export function migrateGrantMethods(): MigrateGrantMethods {
   return {
@@ -127,6 +156,80 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .limit(1)
           .executeTakeFirst()
         return row?.origin ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async saveMigrateCommentsExport(grantId, input) {
+      try {
+        const values = {
+          status: input.status,
+          payload: input.status === 'ready' ? JSON.stringify(input.payload) : null,
+          comments: input.comments,
+          expires_at: input.expiresAt,
+        }
+        await getAdmin()
+          .insertInto('migrate_comment_exports')
+          .values({ grant_id: grantId, ...values })
+          .onConflict(oc => oc.column('grant_id')
+            .doUpdateSet({ ...values, fetched_at: new Date().toISOString() })
+            // An imported export is final.
+            .where('migrate_comment_exports.status', '<>', 'imported'))
+          .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getMigrateCommentsExport(workspaceId, repoFullName, options = {}) {
+      const [owner, name] = repoFullName.toLowerCase().split('/')
+      if (!owner || !name) return null
+      try {
+        await expireCommentExports()
+        const row = await getAdmin()
+          .selectFrom('migrate_comment_exports as e')
+          .innerJoin('migrate_grants as g', 'g.id', 'e.grant_id')
+          .select(['e.grant_id', 'e.status', 'e.comments', 'e.expires_at', 'e.imported_at'])
+          .$if(options.withPayload === true, qb => qb.select('e.payload'))
+          .where('g.workspace_id', '=', workspaceId)
+          .where(eb => eb.fn('lower', ['g.repo_owner']), '=', owner)
+          .where(eb => eb.fn('lower', ['g.repo_name']), '=', name)
+          .orderBy('g.created_at', 'desc')
+          .limit(1)
+          .executeTakeFirst()
+        return row ? exportView(row as ExportRow, options.withPayload === true) : null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getMigrateCommentsExportState(grantId) {
+      try {
+        await expireCommentExports()
+        const row = await getAdmin()
+          .selectFrom('migrate_comment_exports')
+          .select(['grant_id', 'status', 'comments', 'expires_at', 'imported_at'])
+          .where('grant_id', '=', grantId)
+          .executeTakeFirst()
+        return row ? exportView(row as ExportRow, false) : null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async markMigrateCommentsExportImported(grantId) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_comment_exports')
+          .set({ status: 'imported', payload: null, imported_at: new Date().toISOString() })
+          .where('grant_id', '=', grantId)
+          .where('status', '=', 'ready')
+          .execute()
       }
       catch (error) {
         throwDbError(error)

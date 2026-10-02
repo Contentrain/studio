@@ -5,7 +5,7 @@
  * without a token (e.g. back from an abandoned checkout), and the way to
  * the delivered site once the grant is tied to a workspace.
  */
-import { migrateClaimPublicKey, migrateGrantDestination, migrateGrantView } from '../../../../utils/migrate-grant'
+import { claimCommentsView, migrateClaimPublicKey, migrateGrantDestination, migrateGrantView } from '../../../../utils/migrate-grant'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -16,5 +16,6 @@ export default defineEventHandler(async (event) => {
   const grant = grantId ? await useDatabaseProvider().getMigrateGrantForUser(grantId, session.user.id) : null
   if (!grant) throw createError({ statusCode: 404, message: errorMessage('migrate.grant_not_found') })
 
-  return { grant: migrateGrantView(grant), destination: await migrateGrantDestination(session, grant), capabilities: [], planEvidence: [] }
+  const comments = claimCommentsView(await useDatabaseProvider().getMigrateCommentsExportState(grant.id as string))
+  return { grant: migrateGrantView(grant), destination: await migrateGrantDestination(session, grant), capabilities: [], planEvidence: [], comments }
 })
