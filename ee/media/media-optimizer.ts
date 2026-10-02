@@ -23,8 +23,8 @@ export interface OptimizeResult {
 /**
  * Optimize an uploaded image:
  * 1. Auto-orient (EXIF rotation)
- * 2. Strip metadata (GPS, camera info — privacy)
- * 3. Normalize color profile to sRGB
+ * 2. Strip all metadata (EXIF/GPS/camera, XMP, IPTC — privacy); nothing is carried over from the input
+ * 3. Convert to sRGB pixels (no profile embedded)
  * 4. Cap dimensions to MAX_ORIGINAL_DIMENSION
  * 5. Convert to WebP (lossy for photos, lossless for PNGs with alpha)
  */
@@ -49,9 +49,12 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     return { buffer: input, width: svgWidth, height: svgHeight, format: 'svg', size: input.length }
   }
 
+  // No `withMetadata()`/`keepMetadata()` here: sharp then writes none of the input's EXIF/XMP/IPTC (GPS, camera, owner)
+  // and no embedded profile. `.rotate()` applies the EXIF orientation to the pixels first; the sRGB conversion is explicit
+  // so the pixels stay right once the input's own profile is gone.
   let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT })
-    .rotate() // Auto-orient from EXIF
-    .withMetadata({ orientation: undefined }) // Strip EXIF but keep color profile
+    .rotate()
+    .toColourspace('srgb')
 
   // Get original metadata
   const metadata = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
