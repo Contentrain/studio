@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BranchMovedError } from '../../server/utils/content-engine/errors'
 
 /**
  * The Merge button's route and the chat agent's merge_branch answer to one
@@ -64,15 +65,28 @@ describe('merge route approval', () => {
   it('merges an approved branch and records the receipt', async () => {
     const mergeBranch = vi.fn().mockResolvedValue({ merged: true })
     stubGlobals(mergeBranch)
-    const approval = { plan: {}, grants: [], decision: { allowed: true, reasons: [] } }
+    const approval = { plan: {}, grants: [], decision: { allowed: true, reasons: [] }, commitSha: 'approved-tip' }
     resolveMergeApproval.mockResolvedValue(approval)
 
     await expect((await handler())({ context: {} } as never)).resolves.toEqual({ merged: true })
-    expect(mergeBranch).toHaveBeenCalledWith(BRANCH)
+    // Pinned: the commit the approval covered, not whatever the branch holds by then.
+    expect(mergeBranch).toHaveBeenCalledWith(BRANCH, { expectedHead: 'approved-tip' })
     expect(recordMergeReceipt).toHaveBeenCalledWith(expect.objectContaining({
       branch: BRANCH,
       approval,
       actor: expect.objectContaining({ id: 'owner@x.io', role: 'owner' }),
     }))
+  })
+
+  it('answers 409 when the branch moved after it was approved, and records nothing', async () => {
+    const mergeBranch = vi.fn().mockRejectedValue(new BranchMovedError(BRANCH, 'approved-tip', 'pushed-later'))
+    stubGlobals(mergeBranch)
+    resolveMergeApproval.mockResolvedValue({ plan: {}, grants: [], decision: { allowed: true, reasons: [] }, commitSha: 'approved-tip' })
+
+    await expect((await handler())({ context: {} } as never)).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'branches.moved_since_approval',
+    })
+    expect(recordMergeReceipt).not.toHaveBeenCalled()
   })
 })

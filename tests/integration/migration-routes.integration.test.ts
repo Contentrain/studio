@@ -74,7 +74,7 @@ describe('migration handoff routes', () => {
     await withTestServer({
       routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
     }, async ({ request }) => {
-      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0 })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null })
 
       const second = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as Record<string, unknown>
       expect(second.present).toBe(true)
@@ -381,7 +381,7 @@ describe('migration handoff — pushed after the project was connected', () => {
     await withTestServer({
       routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
     }, async ({ request }) => {
-      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0 })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null })
       expect(resolveProjectContext).not.toHaveBeenCalled()
     })
 
@@ -390,9 +390,129 @@ describe('migration handoff — pushed after the project was connected', () => {
     await withTestServer({
       routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
     }, async ({ request }) => {
-      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0 })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null })
       expect(resolveProjectContext).toHaveBeenCalledTimes(1)
       expect(setProjectMigrationHandoff).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('migration comments — the export held on the Migrate grant (İP-2c)', () => {
+  const exportPayload = (handoff.comments.export as { inline: unknown }).inline
+
+  /** A grant row as migration 040 keeps it, and a comments table that skips what it already has. */
+  function heldExportDb(status: 'ready' | 'unavailable' | 'expired' = 'ready') {
+    const held = {
+      grantId: 'grant-1',
+      status: status as 'ready' | 'unavailable' | 'imported' | 'expired',
+      comments: 2,
+      expiresAt: '2026-10-27T00:00:00.000Z',
+      importedAt: null as string | null,
+      payload: (status === 'ready' ? exportPayload : null) as unknown,
+    }
+    const landed = new Set<string>()
+    return {
+      held,
+      landed,
+      getMigrateCommentsExport: vi.fn(async (workspaceId: string, repo: string, options?: { withPayload?: boolean }) => {
+        if (workspaceId !== WORKSPACE || repo.toLowerCase() !== 'acme/site') return null
+        const { payload, ...rest } = held
+        return options?.withPayload ? { ...rest, payload } : rest
+      }),
+      markMigrateCommentsExportImported: vi.fn(async (grantId: string) => {
+        if (grantId === held.grantId && held.status === 'ready') Object.assign(held, { status: 'imported', payload: null, importedAt: '2026-09-27T12:00:00.000Z' })
+      }),
+      importComments: vi.fn(async (_p: string, _w: string, input: { comments: Array<{ source_id: string }> }) => {
+        let inserted = 0
+        for (const row of input.comments) {
+          if (landed.has(row.source_id)) continue
+          landed.add(row.source_id)
+          inserted++
+        }
+        return { inserted, skippedExisting: input.comments.length - inserted, orphanCount: 0, orphanParents: [], maxDepth: 1, threadsClosed: 0 }
+      }),
+      countCommentsByStatus: vi.fn(async () => ({ pending: 0, approved: landed.size, spam: 0, rejected: 0 })),
+    }
+  }
+
+  function stubContext() {
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git: { readFile: vi.fn().mockRejectedValue(new Error('404')) }, contentRoot: '', project: { repo_full_name: 'acme/site', default_branch: 'main' }, workspace: {} }))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { locales: { default: 'en' } }, models: new Map() }))
+  }
+
+  // The test server matches by prefix: the longer path first.
+  const routes = async () => [
+    { path: '/api/workspaces/workspace-1/projects/project-1/migration/import-comments', handler: await loadImportComments() },
+    { path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() },
+  ]
+
+  it('imports the held export without any handoff, clears it at once, and a second run neither duplicates nor refetches', async () => {
+    const base = stubSession()
+    const fake = heldExportDb()
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'Acme/Site', migration_handoff: null, migration_handoff_synced_at: null })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, ...fake, getProjectById }))
+    stubContext()
+
+    await withTestServer({ routes: await routes() }, async ({ request }) => {
+      const before = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as Record<string, unknown>
+      expect(before).toMatchObject({ present: false, claimExport: { status: 'ready', count: 2 }, commentsImported: 0 })
+
+      const first = await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })
+      expect(first.status).toBe(200)
+      await expect(first.json()).resolves.toMatchObject({ received: 2, inserted: 2, skippedExisting: 0 })
+      expect(fake.markMigrateCommentsExportImported).toHaveBeenCalledWith('grant-1')
+      // Data minimisation: nothing of the export is kept once it has landed.
+      expect(fake.held).toMatchObject({ status: 'imported', payload: null })
+
+      const after = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as Record<string, unknown>
+      expect(after).toMatchObject({ claimExport: { status: 'imported', count: 2 }, commentsImported: 2 })
+
+      // Nothing is held any more and there is no handoff: nothing to import.
+      expect((await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })).status).toBe(404)
+      expect(fake.importComments).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('a second import of the same comments (the handoff\'s copy) skips every one of them', async () => {
+    const base = stubSession()
+    const fake = heldExportDb()
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', migration_handoff: handoff })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, ...fake, getProjectById }))
+    stubContext()
+
+    await withTestServer({ routes: await routes() }, async ({ request }) => {
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })).json()).resolves.toMatchObject({ inserted: 2 })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })).json()).resolves.toMatchObject({ inserted: 0, skippedExisting: 2 })
+      expect(fake.landed.size).toBe(2)
+    })
+  })
+
+  it('shows an unavailable export so the card can point at the file upload, and imports nothing for it', async () => {
+    const base = stubSession()
+    const fake = heldExportDb('unavailable')
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', migration_handoff: null, migration_handoff_synced_at: null })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, ...fake, getProjectById }))
+    stubContext()
+
+    await withTestServer({ routes: await routes() }, async ({ request }) => {
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toMatchObject({ present: false, claimExport: { status: 'unavailable', count: 2 } })
+      expect((await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })).status).toBe(404)
+      expect(fake.importComments).not.toHaveBeenCalled()
+      expect(fake.markMigrateCommentsExportImported).not.toHaveBeenCalled()
+    })
+  })
+
+  it('never reaches another workspace\'s export, or a project of another workspace', async () => {
+    const base = stubSession()
+    const fake = heldExportDb()
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: 'workspace-2', repo_full_name: 'acme/site', migration_handoff: null })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, ...fake, getProjectById }))
+    stubContext()
+
+    await withTestServer({ routes: await routes() }, async ({ request }) => {
+      expect((await request('/api/workspaces/workspace-1/projects/project-1/migration/import-comments', { method: 'POST' })).status).toBe(404)
+      expect(fake.getMigrateCommentsExport).not.toHaveBeenCalled()
+      expect(fake.importComments).not.toHaveBeenCalled()
     })
   })
 })

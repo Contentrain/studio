@@ -99,6 +99,79 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme')).toBeNull()
   })
 
+  describe('comments export held on the grant (migration 040)', () => {
+    const payload = { format: 'contentrain-comments@1', comments: [{ id: 1 }] }
+    const future = () => new Date(Date.now() + 3600_000).toISOString()
+    const grantFor = async (suffix: string, repoName = `Site-${suffix}`) => {
+      const { grant } = await methods.claimMigrateGrant({
+        orderId: `${orderId}-ce-${suffix}`,
+        claimJti: `jti-ce-${suffix}`,
+        userId: owner.userId,
+        plan: 'pro',
+        trialDays: 60,
+        repoOwner: 'Acme',
+        repoName,
+        email: 'owner@example.com',
+      })
+      await methods.bindMigrateGrantWorkspace(grant.id as string, owner.workspaceId)
+      return { id: grant.id as string, repo: `acme/${repoName.toLowerCase()}` }
+    }
+
+    it('holds a ready export, finds it by workspace and repo only, and shows the payload only on request', async () => {
+      const g = await grantFor('ready')
+      await methods.saveMigrateCommentsExport(g.id, { status: 'ready', payload, comments: 1, expiresAt: future() })
+
+      const view = await methods.getMigrateCommentsExport(owner.workspaceId, g.repo)
+      expect(view).toMatchObject({ grantId: g.id, status: 'ready', comments: 1, importedAt: null })
+      expect(view).not.toHaveProperty('payload')
+      expect(await methods.getMigrateCommentsExport(owner.workspaceId, g.repo, { withPayload: true })).toMatchObject({ payload })
+      expect(await methods.getMigrateCommentsExport(other.workspaceId, g.repo)).toBeNull()
+      expect(await methods.getMigrateCommentsExport(owner.workspaceId, 'acme/nothing')).toBeNull()
+      expect(await methods.getMigrateCommentsExportState(g.id)).toMatchObject({ status: 'ready' })
+    })
+
+    it('marking it imported clears the payload at once and keeps the count; it cannot be marked twice or overwritten', async () => {
+      const g = await grantFor('imported')
+      await methods.saveMigrateCommentsExport(g.id, { status: 'ready', payload, comments: 1, expiresAt: future() })
+      await methods.markMigrateCommentsExportImported(g.id)
+
+      const done = await methods.getMigrateCommentsExport(owner.workspaceId, g.repo, { withPayload: true })
+      expect(done).toMatchObject({ status: 'imported', comments: 1 })
+      expect(done?.payload ?? null).toBeNull()
+      expect(done?.importedAt).not.toBeNull()
+      const at = done?.importedAt
+
+      await methods.markMigrateCommentsExportImported(g.id)
+      expect((await methods.getMigrateCommentsExportState(g.id))?.importedAt).toBe(at)
+
+      // A later claim for the order never brings an imported export back.
+      await methods.saveMigrateCommentsExport(g.id, { status: 'ready', payload, comments: 9, expiresAt: future() })
+      expect(await methods.getMigrateCommentsExportState(g.id)).toMatchObject({ status: 'imported', comments: 1 })
+    })
+
+    it('an unavailable export is recorded without a payload and can still become ready', async () => {
+      const g = await grantFor('unavailable')
+      await methods.saveMigrateCommentsExport(g.id, { status: 'unavailable', payload: null, comments: 4, expiresAt: future() })
+      expect(await methods.getMigrateCommentsExportState(g.id)).toMatchObject({ status: 'unavailable', comments: 4 })
+      await methods.markMigrateCommentsExportImported(g.id)
+      expect(await methods.getMigrateCommentsExportState(g.id)).toMatchObject({ status: 'unavailable' })
+
+      await methods.saveMigrateCommentsExport(g.id, { status: 'ready', payload, comments: 1, expiresAt: future() })
+      expect(await methods.getMigrateCommentsExportState(g.id)).toMatchObject({ status: 'ready' })
+    })
+
+    it('an export never imported is cleared when its window ends', async () => {
+      const g = await grantFor('expired')
+      await methods.saveMigrateCommentsExport(g.id, { status: 'ready', payload, comments: 1, expiresAt: new Date(Date.now() - 1000).toISOString() })
+
+      const view = await methods.getMigrateCommentsExport(owner.workspaceId, g.repo, { withPayload: true })
+      expect(view).toMatchObject({ status: 'expired', comments: 1 })
+      expect(view?.payload ?? null).toBeNull()
+      const stored = await sql<{ payload: unknown }>`SELECT payload FROM public.migrate_comment_exports WHERE grant_id = ${g.id}`.execute(getDb())
+      expect(stored.rows[0]?.payload).toBeNull()
+    })
+  })
+
   it('refuses a trial longer than the contract allows', async () => {
     await expect(methods.claimMigrateGrant({
       orderId: `${orderId}-long`,

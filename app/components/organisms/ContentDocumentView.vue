@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { RelationLabelMap } from '~/composables/useRelationLabels'
-import type { EntrySchedule } from '~~/shared/utils/entry-schedule'
+import type { ScheduleWindow } from '~~/shared/utils/entry-schedule'
 import { marked } from 'marked'
 import { activeModelMetaKey, getFieldTypeKey, getModelFieldsKey, getFieldLabelKey, getNestedFieldLabelsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
@@ -195,7 +195,7 @@ function handleModalSaved() {
           <!-- Status badge + picker (shared with the collection view) -->
           <MoleculesEntryStatusPicker
             :status="getEntryStatus(doc.slug)"
-            :schedule="(meta?.[doc.slug] as EntrySchedule | undefined)"
+            :schedule="(meta?.[doc.slug] as ScheduleWindow | undefined)"
             :entry-id="doc.slug"
             :workspace-id="workspaceId" :project-id="projectId" :model-id="modelId"
             :locale="locale" :editable="editable" @saved="emit('saved')"
