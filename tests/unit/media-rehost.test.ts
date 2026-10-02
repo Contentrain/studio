@@ -251,6 +251,17 @@ describe('runMediaRehost', () => {
     expect(cdn.copyObject).not.toHaveBeenCalledWith('old-proj', 'media/original/a.webp', 'new-proj', 'media/original/a.webp')
   })
 
+  it('copies the private upload sources along with the delivery files', async () => {
+    const { runMediaRehost } = await load()
+    const { git, merge } = createGit(repo())
+    const cdn = createCdn({ 'old-proj': [...ALL_PATHS, 'media-source/a1.jpg'], 'new-proj': ['media/original/a.webp'] })
+
+    const result = await runMediaRehost({ ...baseInput(git, cdn, merge), siteUrl: 'https://staging.example.com', copyAssets: true })
+
+    expect(result.counts.copy).toEqual({ requested: true, toCopy: 3, copied: 3, failed: [] })
+    expect(cdn.copyObject).toHaveBeenCalledWith('old-proj', 'media-source/a1.jpg', 'new-proj', 'media-source/a1.jpg')
+  })
+
   it('reports a conflict and drops the branch when content changed since the read', async () => {
     const { runMediaRehost } = await load()
     const { git, merge } = createGit(repo(), { merged: false, sha: null, pullRequestUrl: null, conflict: true })

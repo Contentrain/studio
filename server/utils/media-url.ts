@@ -97,15 +97,19 @@ export function mediaStoragePathUnder(base: string, value: unknown): string | nu
 }
 
 /**
- * Decorate an asset with ready-to-use delivery URLs for the original and
- * every variant, keeping the raw storage paths intact.
+ * Decorate an asset with ready-to-use delivery URLs for the delivery master and
+ * every variant, keeping the raw storage paths intact. This is the shape handed
+ * to outside callers (the public media API, MCP, the agent): it carries no
+ * stored-source fields — the uploaded bytes are for project members, through
+ * Studio's authed download route only.
  */
-export function withMediaUrls(projectId: string, asset: MediaAsset): MediaAsset & {
+export function withMediaUrls(projectId: string, asset: MediaAsset): Omit<MediaAsset, 'sourcePath' | 'sourceSize'> & {
   url: string
   variantUrls: Record<string, string>
 } {
+  const { sourcePath: _sourcePath, sourceSize: _sourceSize, ...outward } = asset
   return {
-    ...asset,
+    ...outward,
     url: toDeliveryUrl(projectId, asset.originalPath),
     variantUrls: Object.fromEntries(
       Object.entries(asset.variants).map(([key, variant]) => [key, toDeliveryUrl(projectId, variant.path)]),

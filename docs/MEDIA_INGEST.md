@@ -109,3 +109,12 @@ skipping paths already listed here. It only works on the same instance, where
 both projects share one bucket, and only for an owner/admin of the old
 project's workspace. A failed copy or entry insert answers `409` with nothing
 committed; re-running is safe.
+
+## Uploaded source vs delivery master
+
+Every new image upload (SVG, video and PDF are stored as they are, so they have no separate source) produces two stored files:
+
+- the **delivery master** (`originalPath`, `media/original/<id>.webp`): re-encoded WebP, EXIF/GPS removed, at most 4096 px, served publicly with its variants;
+- the **source** (`media-source/<id>.<ext>`): the uploaded bytes, unchanged (its SHA-256 is the asset's `contentHash`).
+
+The source is private. The CDN route answers 404 for `media-source/…` in every auth mode, public/MCP/conversation asset responses leave it out, and only project members can download it (`GET /api/workspaces/{workspaceId}/projects/{projectId}/media/{assetId}/source`). Because it is not stripped, it can contain camera and location data. It counts toward the storage quota and is removed with the asset. Assets uploaded before migration 040 have no source: the download answers 404 and nothing can recover it. Variants are always regenerated from the master, never from the source.

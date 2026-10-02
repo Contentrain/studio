@@ -221,6 +221,7 @@
   "media.rehost_missing_assets": "{count} referenced media files are not in this project's storage yet. Nothing was committed.",
   "media.rehost_same_source": "That is this project's own media address — there is nothing to move.",
   "media.rename_not_supported": "Renaming media assets is not supported over MCP. Update alt text or tags instead.",
+  "media.source_not_stored": "This image has no stored original. Originals are kept for images uploaded after this was introduced; earlier uploads, SVG, video and PDF files are stored as they are.",
   "media.storage_not_configured": "Media storage is not configured. Contact your administrator to set up R2 storage credentials.",
   "media.svg_unsafe": "The SVG could not be made safe to serve ({reason}).",
   "media.update_failed": "Failed to update media asset: {detail}",

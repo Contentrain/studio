@@ -228,7 +228,7 @@ async function handleBulkDelete() {
             class="w-80 shrink-0 border-l border-secondary-200 dark:border-secondary-800"
           >
             <MoleculesAssetDetail
-              :asset="{ ...selectedAsset, previewUrl: `/api/workspaces/${workspaceId}/projects/${projectId}/media/${selectedAsset.id}/preview` }"
+              :asset="{ ...selectedAsset, previewUrl: `/api/workspaces/${workspaceId}/projects/${projectId}/media/${selectedAsset.id}/preview`, sourceUrl: `/api/workspaces/${workspaceId}/projects/${projectId}/media/${selectedAsset.id}/source` }"
               :editable="editable"
               @save="handleSave"
               @delete="handleDelete"

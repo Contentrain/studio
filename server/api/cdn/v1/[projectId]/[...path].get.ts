@@ -1,6 +1,7 @@
 import { trackEnterpriseCdnUsage, trackEnterprisePublicCdnUsage } from '../../../../utils/enterprise'
 import { addCdnOriginBytes, checkCdnOriginBudget } from '../../../../utils/cdn-origin-budget'
 import { getEffectiveLimit } from '../../../../utils/overage'
+import { isMediaSourcePath } from '../../../../utils/media-source'
 
 /**
  * CDN delivery endpoint — serves content + media from CDN storage.
@@ -39,6 +40,11 @@ export default defineEventHandler(async (event) => {
   const path = (getRouterParam(event, 'path') ?? '').replace(/^\/+/, '')
   if (!path)
     throw createError({ statusCode: 400, message: errorMessage('cdn.path_required') })
+
+  // The uploaded source of an image is private to project members (media-source.ts): not delivered in any auth mode,
+  // and not confirmed to exist.
+  if (isMediaSourcePath(path))
+    throw createError({ statusCode: 404, message: errorMessage('cdn.content_not_found') })
 
   // Only media binaries are ever eligible for keyless public delivery.
   const isMediaBinary = path.startsWith('media/')

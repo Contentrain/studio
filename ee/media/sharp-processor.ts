@@ -18,6 +18,7 @@ import type {
   VariantConfig,
 } from '../../server/providers/media'
 import type { DatabaseProvider, DatabaseRow } from '../../server/providers/database'
+import { mediaSourcePath } from '../../server/utils/media-source'
 import { optimizeImage } from './media-optimizer'
 import { generateVariants } from './variant-generator'
 import { calculateBlurhash } from './blurhash-calculator'
@@ -45,6 +46,8 @@ function rowToAsset(row: DatabaseRow, usedIn: MediaUsageRef[] = []): MediaAsset 
     uploadedBy: row.uploaded_by as string,
     source: row.source as MediaAsset['source'],
     originalPath: row.original_path as string,
+    sourcePath: (row.source_path as string | null) ?? null,
+    sourceSize: row.source_size_bytes == null ? null : Number(row.source_size_bytes),
     contentHash: row.content_hash as string,
     usedIn,
     createdAt: row.created_at as string,
@@ -92,6 +95,16 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       const uploadedPaths: string[] = [originalPath]
 
       try {
+        // Keep the bytes as they arrived, apart from public delivery (an image's master is a re-encode: stripped, ≤ 4096 px).
+        // Files already stored as uploaded (SVG after sanitising, video, PDF) are their own source: nothing to duplicate.
+        // Pushed before the write so a failure part-way still sweeps it; deleting an object that never landed is harmless.
+        let sourcePath: string | null = null
+        if (isImage) {
+          sourcePath = mediaSourcePath(assetId, contentType)
+          uploadedPaths.push(sourcePath)
+          await cdn.putObject(projectId, sourcePath, file, contentType)
+        }
+
         // Calculate blurhash (images only)
         let blurhash: string | null = null
         if (isImage) {
@@ -110,8 +123,8 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
           }
         }
 
-        // Total storage used (original + all variants)
-        const totalBytes = optimized.size + Object.values(variantMap).reduce((sum, v) => sum + v.size, 0)
+        // Total storage used: delivery master + all variants + the stored source
+        const totalBytes = optimized.size + Object.values(variantMap).reduce((sum, v) => sum + v.size, 0) + (sourcePath ? file.length : 0)
 
         // Insert DB row
         const row = await db.createMediaAsset({
@@ -130,6 +143,8 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
           alt: options.alt ?? null,
           tags: options.tags ?? [],
           original_path: originalPath,
+          source_path: sourcePath,
+          source_size_bytes: sourcePath ? file.length : null,
           variants: variantMap,
           uploaded_by: uploadedBy,
           source: options.source ?? 'upload',
@@ -202,8 +217,9 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
       const row = await db.getMediaAsset(assetId)
       if (!row) return
 
-      // Delete original from R2
+      // Delete the delivery master and, when one was kept, the uploaded source from R2
       await cdn.deleteObject(projectId, row.original_path as string)
+      if (row.source_path) await cdn.deleteObject(projectId, row.source_path as string)
 
       // Delete variants from R2
       const variants = row.variants as Record<string, { path: string, size: number }>

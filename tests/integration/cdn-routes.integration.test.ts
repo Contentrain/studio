@@ -343,6 +343,26 @@ describe('CDN route integration', () => {
     expect(setResponseHeader).toHaveBeenCalledWith(event, 'Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400')
   })
 
+  it.each([
+    ['keyless, public media on', undefined],
+    ['keyed', 'Bearer crn_abc'],
+  ])('never delivers an uploaded source (%s): 404 and storage is not read', async (_label, authorization) => {
+    const getObject = vi.fn().mockResolvedValue({ etag: 'e', contentType: 'image/jpeg', data: Buffer.from([1]) })
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'projectId') return 'project-1'
+      if (key === 'path') return 'media-source/abc.jpg'
+      return undefined
+    }))
+    vi.stubGlobal('getHeader', vi.fn(() => authorization))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ getObject }))
+    vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true, cdn_public_media: true }))
+
+    const handler = await loadPublicCDNHandler()
+
+    await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 404 })
+    expect(getObject).not.toHaveBeenCalled()
+  })
+
   it('requires a key for a keyless content (non-media) request', async () => {
     const event = {} as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {

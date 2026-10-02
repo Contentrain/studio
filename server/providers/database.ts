@@ -18,6 +18,9 @@ export interface MediaAssetInput {
   alt: string | null
   tags: string[]
   original_path: string
+  /** The uploaded bytes, kept privately (`media-source/…`); null/absent when none are stored. */
+  source_path?: string | null
+  source_size_bytes?: number | null
   variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
   uploaded_by: string
   source: string

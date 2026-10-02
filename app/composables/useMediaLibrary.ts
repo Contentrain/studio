@@ -13,6 +13,8 @@ export interface MediaAssetUI {
   tags: string[]
   originalPath: string
   previewUrl?: string
+  sourcePath?: string | null
+  sourceSize?: number | null
   variants: Record<string, { path: string, width: number, height: number, format: string, size: number }>
   source: string
   createdAt: string

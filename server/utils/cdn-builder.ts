@@ -16,6 +16,7 @@ import type { CDNProvider } from '../providers/cdn'
 import { Marked } from 'marked'
 import { normalizeModelContentMedia, rewriteEntryMedia, rewriteMarkdownMedia } from './media-rewrite'
 import { reportDataLossRisk } from './alert'
+import { isMediaSourcePath } from './media-source'
 import { isWithinSchedule } from '~~/shared/utils/entry-schedule'
 
 // Configure marked for safe HTML output — escape user HTML input
@@ -642,10 +643,11 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
         // of a build's `uploadedPaths`), so it must be excluded from the
         // stale-object sweep — otherwise every full rebuild would delete all
         // media originals + variants while their DB rows and _media_manifest
-        // survive, 404-ing every delivery URL.
+        // survive, 404-ing every delivery URL. The private source area
+        // (`media-source/`, media-source.ts) is owned by the MediaProvider too.
         const existing = await cdn.listObjects(projectId)
         for (const obj of existing) {
-          if (obj.path.startsWith('media/')) continue
+          if (obj.path.startsWith('media/') || isMediaSourcePath(obj.path)) continue
           if (keepForFailedModel(obj.path)) continue
           if (!uploadedPaths.has(obj.path)) {
             await cdn.deleteObject(projectId, obj.path)
