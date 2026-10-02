@@ -241,6 +241,8 @@ export interface MediaAssetsTable {
   alt: string | null
   tags: Generated<string[]>
   original_path: string
+  source_path: string | null
+  source_size_bytes: number | null
   variants: Generated<unknown>
   uploaded_by: string | null // nullable since 015 (detached on uploader account deletion)
   source: Generated<string>

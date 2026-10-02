@@ -270,6 +270,7 @@ describe('cdn builder', () => {
     // genuinely-stale build content from a model that no longer exists.
     objects.set(`${projectId}:media/original/keep.webp`, 'IMG')
     objects.set(`${projectId}:media/thumbnail/keep.jpg`, 'THUMB')
+    objects.set(`${projectId}:media-source/keep.jpg`, 'SRC')
     objects.set(`${projectId}:content/old-model/en.json`, '{"gone":1}')
     objects.set(`${projectId}:meta/old-model/en.json`, '{"gone":1}')
 
@@ -294,6 +295,8 @@ describe('cdn builder', () => {
     // Media binaries survive — owned by MediaProvider, not the build.
     expect(objects.has('proj:media/original/keep.webp')).toBe(true)
     expect(objects.has('proj:media/thumbnail/keep.jpg')).toBe(true)
+    // The kept upload sources are owned by MediaProvider too.
+    expect(objects.has('proj:media-source/keep.jpg')).toBe(true)
     // Genuinely-stale build content is still garbage-collected.
     expect(objects.has('proj:content/old-model/en.json')).toBe(false)
     expect(objects.has('proj:meta/old-model/en.json')).toBe(false)

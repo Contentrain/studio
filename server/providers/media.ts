@@ -29,7 +29,20 @@ export interface MediaAsset {
   tags: string[]
   uploadedBy: string
   source: 'upload' | 'url' | 'connector' | 'agent' | 'repo'
+  /**
+   * Storage path of the DELIVERY MASTER (`media/original/<id>.webp`): what the site serves, and the value content
+   * fields store. Despite the name it is NOT the uploaded file — images are re-encoded (metadata stripped, ≤ 4096 px).
+   * The name stays because stored content references the path.
+   */
   originalPath: string
+  /**
+   * Storage path of the uploaded bytes, byte for byte (`media-source/<id>.<ext>`), kept privately and never delivered.
+   * Null: no stored source — assets created before this was kept, and files already stored as uploaded (SVG, video, PDF).
+   * Studio's authed download route reads it; the public media API does not return it.
+   */
+  sourcePath: string | null
+  /** Size of the stored source in bytes (counted in `size`, the asset's total storage); null with `sourcePath`. */
+  sourceSize: number | null
   contentHash: string
   usedIn: MediaUsageRef[]
   createdAt: string

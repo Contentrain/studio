@@ -7,6 +7,7 @@ import { STUDIO_AUTHOR } from './content-engine/types'
 import { createFeatureBranch, openWriteSnapshot, writeBase } from './content-engine/helpers'
 import { resolveConfigPath, resolveContentPath, resolveModelContentDir, resolveModelsDir } from './content-paths'
 import { mediaBaseFor, mediaStoragePathUnder } from './media-url'
+import { MEDIA_SOURCE_PREFIX } from './media-source'
 
 /**
  * Media rehost (#321) — move a project's media references to this instance.
@@ -245,8 +246,10 @@ async function copyObject(cdn: CDNProvider, fromProjectId: string, toProjectId: 
   await cdn.putObject(toProjectId, path, object.data, object.contentType)
 }
 
+/** Every stored media file of a project: the delivery files (`media/`) and the private sources (`media-source/`). */
 async function storedMediaPaths(cdn: CDNProvider, projectId: string): Promise<Set<string>> {
-  return new Set((await cdn.listObjects(projectId, 'media/')).map(o => o.path))
+  const [delivered, sources] = await Promise.all([cdn.listObjects(projectId, 'media/'), cdn.listObjects(projectId, MEDIA_SOURCE_PREFIX)])
+  return new Set([...delivered, ...sources].map(o => o.path))
 }
 
 /** Plan (and unless `dryRun`, apply) the rehost. The source must pass `checkRehostSource` first. */

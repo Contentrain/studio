@@ -211,7 +211,7 @@ export function mediaMethods(): MediaMethods {
         .columns([
           'project_id', 'workspace_id', 'filename', 'content_type', 'size_bytes', 'content_hash',
           'width', 'height', 'format', 'blurhash', 'focal_point', 'duration_seconds', 'alt', 'tags',
-          'original_path', 'variants', 'uploaded_by', 'source', 'created_at',
+          'original_path', 'source_path', 'source_size_bytes', 'variants', 'uploaded_by', 'source', 'created_at',
         ])
         .expression(eb => eb
           .selectFrom('media_assets as s')
@@ -221,7 +221,7 @@ export function mediaMethods(): MediaMethods {
             sql<string>`${toWorkspaceId}::uuid`.as('workspace_id'),
             's.filename', 's.content_type', 's.size_bytes', 's.content_hash',
             's.width', 's.height', 's.format', 's.blurhash', 's.focal_point', 's.duration_seconds', 's.alt', 's.tags',
-            's.original_path', 's.variants', 's.uploaded_by', 's.source', 's.created_at',
+            's.original_path', 's.source_path', 's.source_size_bytes', 's.variants', 's.uploaded_by', 's.source', 's.created_at',
           ])
           .where('s.project_id', '=', fromProjectId)
           .where('s.original_path', 'in', originalPaths)

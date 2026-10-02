@@ -15,6 +15,11 @@ const props = defineProps<{
     tags: readonly string[]
     originalPath: string
     previewUrl?: string
+    /** The uploaded file, kept privately; null/absent = none stored (older uploads, SVG, video, PDF). */
+    sourcePath?: string | null
+    sourceSize?: number | null
+    /** Studio's authed download of the stored source. */
+    sourceUrl?: string
     variants: Readonly<Record<string, { path: string, width: number, height: number, format: string, size: number }>>
     source: string
     createdAt: string
@@ -105,7 +110,7 @@ function copyPath() {
           <span class="text-sm tabular-nums text-heading dark:text-secondary-100">{{ asset.width }}×{{ asset.height }} · {{ asset.format.toUpperCase() }}</span>
         </div>
         <div>
-          <AtomsSectionLabel :label="t('media.file_size')" class="px-0 py-0" />
+          <AtomsSectionLabel :label="t('media.storage_used')" class="px-0 py-0" />
           <span class="text-sm text-heading dark:text-secondary-100">{{ formatSize(asset.size) }}</span>
         </div>
         <div>
@@ -113,7 +118,7 @@ function copyPath() {
           <span class="text-sm text-heading dark:text-secondary-100">{{ formatDate(asset.createdAt) }}</span>
         </div>
         <div>
-          <AtomsSectionLabel :label="t('media.path')" class="px-0 py-0" />
+          <AtomsSectionLabel :label="t('media.delivery_path')" class="px-0 py-0" />
           <div class="flex items-center gap-1.5">
             <code class="flex-1 truncate rounded bg-secondary-100 px-2 py-1 text-xs text-heading dark:bg-secondary-800 dark:text-secondary-100">{{ asset.originalPath }}</code>
             <AtomsIconButton
@@ -121,6 +126,22 @@ function copyPath() {
               :label="t('common.copy')" size="sm" @click="copyPath"
             />
           </div>
+        </div>
+
+        <!-- The uploaded file, kept apart from what the site serves; only when one is stored -->
+        <div v-if="asset.sourcePath && asset.sourceUrl" data-testid="asset-source">
+          <AtomsSectionLabel :label="t('media.source_file')" class="px-0 py-0" />
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm tabular-nums text-heading dark:text-secondary-100">{{ formatSize(asset.sourceSize ?? 0) }}</span>
+            <a
+              :href="asset.sourceUrl"
+              download
+              class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-3 text-sm font-medium text-secondary-900 transition-colors hover:bg-secondary-50 dark:border-secondary-800 dark:bg-secondary-950 dark:text-secondary-100 dark:hover:bg-secondary-800"
+            >{{ t('media.source_download') }}</a>
+          </div>
+          <p class="mt-1 text-xs text-muted">
+            {{ t('media.source_note') }}
+          </p>
         </div>
 
         <!-- Variants -->
