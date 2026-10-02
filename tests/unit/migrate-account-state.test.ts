@@ -77,7 +77,7 @@ describe('verifyMigrateS2sRequest', () => {
     expect(request).toMatchObject({ github_user_id: '99', plan: 'pro' })
   })
 
-  it('refuses a replay of the same jti, but the same jti for another purpose is another request', async () => {
+  it('refuses a replay of the same jti (the verifier keys the store by jti and purpose; the real table is keyed by jti alone, so it refuses across purposes too)', async () => {
     const token = await sign({}, { jti: 'once' })
     expect(await reason(verify(token))).toBe('accepted')
     expect(await reason(verify(token))).toBe('replayed')
