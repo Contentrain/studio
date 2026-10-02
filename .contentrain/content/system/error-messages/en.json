@@ -53,6 +53,7 @@
   "branches.contentrain_only": "Only contentrain/ branches can be managed through Studio.",
   "branches.health_blocked": "Too many pending content branches. Merge or reject existing branches before making new changes.",
   "branches.merge_forbidden": "You do not have permission to merge branches in this project.",
+  "branches.moved_since_approval": "This branch changed after it was approved. Review the new changes before merging.",
   "branches.permanent_branch": "The contentrain branch is permanent and cannot be rejected.",
   "branches.reject_forbidden": "You do not have permission to reject branches in this project.",
   "branches.request_comment_required": "Say what should change before this branch can be approved",

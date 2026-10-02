@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { EntrySchedule } from '~~/shared/utils/entry-schedule'
+import type { ScheduleWindow } from '~~/shared/utils/entry-schedule'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'radix-vue'
 import { parseScheduleTime, schedulePhase } from '~~/shared/utils/entry-schedule'
 
@@ -13,7 +13,7 @@ import { parseScheduleTime, schedulePhase } from '~~/shared/utils/entry-schedule
 const props = defineProps<{
   status: string | null
   /** The entry's meta, for its `publish_at` / `expire_at`. */
-  schedule?: EntrySchedule | null
+  schedule?: ScheduleWindow | null
   entryId: string
   workspaceId?: string
   projectId?: string

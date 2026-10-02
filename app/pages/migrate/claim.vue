@@ -34,6 +34,8 @@ interface GrantView {
   state: 'claimed' | 'bound' | 'redeemed'
 }
 interface Destination { workspaceSlug: string, projectId: string | null }
+/** The site's comments export, taken onto the grant while the claim is made. */
+interface ClaimComments { status: 'pending' | 'ready' | 'imported' | 'unavailable' | 'expired', count: number }
 
 const { t } = useContent()
 const route = useRoute()
@@ -48,6 +50,7 @@ const destination = ref<Destination | null>(null)
 const focusMedia = route.query.focus === 'media'
 /** Why this plan — only present when opened from the claim link. */
 const planEvidence = ref<Array<{ limit_key: string, measured: number, limit: number, capability?: string }>>([])
+const comments = ref<ClaimComments | null>(null)
 const loadError = ref('')
 const submitting = ref(false)
 const submitError = ref('')
@@ -91,14 +94,15 @@ onMounted(async () => {
   try {
     const [result] = await Promise.all([
       token
-        ? $fetch<{ grant: GrantView, destination?: Destination | null, planEvidence?: typeof planEvidence.value }>('/api/migrate/claim', { method: 'POST', body: { token } })
+        ? $fetch<{ grant: GrantView, destination?: Destination | null, planEvidence?: typeof planEvidence.value, comments?: ClaimComments | null }>('/api/migrate/claim', { method: 'POST', body: { token } })
         : grantId
-          ? $fetch<{ grant: GrantView, destination?: Destination | null }>(`/api/migrate/grants/${encodeURIComponent(grantId)}`)
+          ? $fetch<{ grant: GrantView, destination?: Destination | null, comments?: ClaimComments | null }>(`/api/migrate/grants/${encodeURIComponent(grantId)}`)
           : Promise.reject(new Error('missing')),
       fetchWorkspaces(),
     ])
     grant.value = result.grant
     destination.value = result.destination ?? null
+    comments.value = result.comments ?? null
     planEvidence.value = ('planEvidence' in result && Array.isArray(result.planEvidence)) ? result.planEvidence : []
     if (token) await router.replace({ query: { grant: result.grant.id, ...(focusMedia ? { focus: 'media' } : {}) } })
 
@@ -159,6 +163,11 @@ async function startTrial() {
             {{ t('migrate_claim.plan_reason', { what: item.capability ?? item.limit_key, measured: item.measured.toLocaleString('en-US'), limit: item.limit.toLocaleString('en-US') }) }}
           </li>
         </ul>
+
+        <p v-if="comments" class="mt-3 flex gap-2 text-xs text-body dark:text-secondary-300" data-testid="claim-comments">
+          <span class="icon-[annon--comments] mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden="true" />
+          {{ t(`migrate_claim.comments_${comments.status}`, { count: comments.count.toLocaleString('en-US') }) }}
+        </p>
 
         <div v-if="destination && grant.state === 'redeemed'" class="mt-6 flex flex-wrap items-center gap-3" data-testid="claim-destination">
           <AtomsBaseButton v-if="projectPath" variant="primary" data-testid="claim-open-project" @click="navigateTo(projectPath)">

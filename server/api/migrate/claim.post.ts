@@ -9,9 +9,15 @@
  *
  * No trial starts here — that happens at the grant's checkout, on the
  * workspace the user picks.
+ *
+ * A claim that carries a comments export starts taking it onto the grant
+ * (`captureClaimCommentsExport`) and answers without waiting for it: the
+ * export is imported later, into the project, and a failure only means the
+ * file upload.
  */
 import { MigrateClaimError, verifyMigrateClaim } from '../../utils/migrate-claim'
-import { migrateClaimPublicKey, migrateGrantDestination, migrateGrantView } from '../../utils/migrate-grant'
+import { captureClaimCommentsExport } from '../../utils/migrate-comments-export'
+import { claimCommentsView, migrateClaimPublicKey, migrateGrantDestination, migrateGrantView } from '../../utils/migrate-grant'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -36,7 +42,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('migrate.claim_invalid') })
   }
 
-  const { claim, jti } = verified
+  const { claim, jti, warnings } = verified
   const { grant } = await useDatabaseProvider().claimMigrateGrant({
     orderId: claim.order_id,
     claimJti: jti,
@@ -53,10 +59,15 @@ export default defineEventHandler(async (event) => {
   if (grant.user_id !== session.user.id)
     throw createError({ statusCode: 409, message: errorMessage('migrate.claim_taken') })
 
+  const existing = await useDatabaseProvider().getMigrateCommentsExportState(grant.id as string)
+  // Not awaited: a slow or failing export never holds the claim up. It never throws.
+  void captureClaimCommentsExport({ grantId: grant.id as string, pointer: claim.comments_export, warnings })
+
   return {
     grant: migrateGrantView(grant),
     destination: await migrateGrantDestination(session, grant),
     capabilities: claim.capabilities ?? [],
     planEvidence: claim.plan_evidence,
+    comments: claimCommentsView(existing, claim.comments_export, warnings),
   }
 })

@@ -98,7 +98,7 @@ describe('branch moderation routes', () => {
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/branches/[branch]/merge.post')).default
     const result = await handler(routeEvent())
 
-    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
+    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd', {})
     expect(result).toEqual({
       merged: true,
       sha: 'merge-sha',
@@ -133,7 +133,7 @@ describe('branch moderation routes', () => {
     const result = await handler(routeEvent())
 
     // The decoded name must reach the engine.
-    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
+    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd', {})
     expect(result).toEqual({
       merged: true,
       sha: 'merge-sha',
@@ -199,7 +199,8 @@ describe('branch moderation routes', () => {
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/branches/[branch]/merge.post')).default
     const result = await handler(routeEvent())
 
-    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd')
+    // Pinned to the tip the approval was decided on.
+    expect(mergeBranch).toHaveBeenCalledWith('cr/content/faq/en/1234567890-abcd', { expectedHead: 'tip-sha' })
     expect(result).toMatchObject({ merged: true })
     expect(db.recordReceipt).toHaveBeenCalledTimes(1)
     const receipt = db.recordReceipt.mock.calls[0]![0] as { target: string, planHash: string, receipt: { status: string, plan_hash: string } }
