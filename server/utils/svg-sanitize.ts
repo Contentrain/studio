@@ -334,6 +334,17 @@ function doctypeEnd(text: string, from: number): number {
     if (quote) {
       if (ch === quote) quote = ''
     }
+    // A comment or processing instruction in the subset is one unit: a `]`, `>` or quote inside it is not markup.
+    else if (text.startsWith('<!--', i)) {
+      const end = text.indexOf('-->', i + 4)
+      if (end < 0) return -1
+      i = end + 2
+    }
+    else if (text.startsWith('<?', i)) {
+      const end = text.indexOf('?>', i + 2)
+      if (end < 0) return -1
+      i = end + 1
+    }
     else if (ch === '"' || ch === '\'') quote = ch
     else if (ch === '[') depth++
     else if (ch === ']') depth = Math.max(0, depth - 1)

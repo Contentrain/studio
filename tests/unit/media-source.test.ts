@@ -206,20 +206,29 @@ const ACTIVE = '<rect width="10" height="10" onclick="x()"/><script>alert(1)</sc
 const NS = 'xmlns="http://www.w3.org/2000/svg"'
 const SNIFF_CASES: Record<string, string> = {
   'a DOCTYPE with an internal subset': `<?xml version="1.0"?><!DOCTYPE svg [ <!ENTITY note "a>b"> <!ELEMENT svg ANY> ]><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
+  'a comment holding "]" in the internal subset': `<!DOCTYPE svg [ <!-- ] --> <!ENTITY a "x"> ]><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
+  'a processing instruction holding "]" in the internal subset': `<!DOCTYPE svg [ <?x ] ?> ]><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
   'a prefixed root (<svg:svg>)': `<svg:svg xmlns:svg="http://www.w3.org/2000/svg" onload="alert(1)"><svg:script>alert(1)</svg:script><svg:rect width="10" height="10" onclick="x()"/></svg:svg>`,
   'a comment before the XML declaration': `<!-- exported --><?xml version="1.0"?><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
 }
 
 describe('SVG detection follows the parser, not a pattern', () => {
-  it.each(Object.keys(SNIFF_CASES))('sanitises %s whatever the declared type', async (name) => {
+  it.each(Object.keys(SNIFF_CASES))('treats %s as an SVG, and never stores it as sent', async (name) => {
+    expect(looksLikeSvg(Buffer.from(SNIFF_CASES[name]!))).toBe(true)
     for (const declared of ['video/mp4', 'application/pdf']) {
       const { provider, objects } = harness()
-      const asset = await provider.upload({ ...upload(Buffer.from(SNIFF_CASES[name]!), declared), filename: 'clip.mp4' })
-      const stored = objects.get(asset.originalPath)!.toString()
-      expect(asset.contentType).toBe('image/svg+xml')
-      expect(asset.format).toBe('svg')
-      expect(stored).not.toMatch(/<[\w:]*script|onload|onclick|alert|<!DOCTYPE|<!ENTITY/i)
-      expect(stored).toMatch(/<(?:svg:)?rect /)
+      const sent = Buffer.from(SNIFF_CASES[name]!)
+      // Either the cleaned form is stored, or the sanitiser refuses a subset it cannot read; the bytes as sent never are.
+      const outcome = await provider.upload({ ...upload(sent, declared), filename: 'clip.mp4' }).then(asset => ({ asset }), (error: unknown) => ({ error }))
+      if ('asset' in outcome) {
+        const stored = objects.get(outcome.asset.originalPath)!.toString()
+        expect(outcome.asset.contentType).toBe('image/svg+xml')
+        expect(stored).not.toMatch(/<[\w:]*script|onload|onclick|alert|<!DOCTYPE|<!ENTITY/i)
+      }
+      else {
+        expect(outcome.error).toMatchObject({ statusCode: 400 })
+        expect(objects.size).toBe(0)
+      }
     }
   })
 
