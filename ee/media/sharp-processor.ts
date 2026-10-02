@@ -18,7 +18,9 @@ import type {
   VariantConfig,
 } from '../../server/providers/media'
 import type { DatabaseProvider, DatabaseRow } from '../../server/providers/database'
+import { errorMessage } from '../../server/utils/content-strings'
 import { mediaSourcePath } from '../../server/utils/media-source'
+import { looksLikeSvg, sanitizeSvg } from '../../server/utils/svg-sanitize'
 import { optimizeImage } from './media-optimizer'
 import { generateVariants } from './variant-generator'
 import { calculateBlurhash } from './blurhash-calculator'
@@ -60,7 +62,19 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
 
   return {
     async upload(options: UploadOptions): Promise<MediaAsset> {
-      const { projectId, workspaceId, file, filename, contentType, uploadedBy } = options
+      const { projectId, workspaceId, filename, uploadedBy } = options
+      let { file, contentType } = options
+
+      // An SVG is an executable document, and the declared type is the client's word: content that reads as SVG takes
+      // this path whatever it was declared as. It is stored in its cleaned form (script, event handlers, external
+      // references, <metadata>/RDF and editor data removed); one that cannot be made into a well-formed SVG is refused.
+      if (contentType === 'image/svg+xml' || looksLikeSvg(file)) {
+        const clean = sanitizeSvg(file)
+        if (!clean.ok || clean.bytes.length === 0)
+          throw createError({ statusCode: 400, message: errorMessage('media.svg_unsafe', { reason: clean.ok ? 'empty' : clean.reason }) })
+        file = clean.bytes
+        contentType = 'image/svg+xml'
+      }
 
       // Content hash for duplicate detection
       const contentHash = createHash('sha256').update(file).digest('hex')
@@ -82,7 +96,7 @@ export function createSharpMediaProvider(config: SharpMediaProviderConfig): Medi
           buffer: file,
           width: 0,
           height: 0,
-          format: filename.split('.').pop() ?? 'bin',
+          format: contentType === 'image/svg+xml' ? 'svg' : filename.split('.').pop() ?? 'bin',
           size: file.length,
         }
       }

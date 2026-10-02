@@ -155,3 +155,46 @@ describe('public shapes never carry the source', () => {
     expect(JSON.stringify(shaped)).not.toContain('media-source')
   })
 })
+
+const INKSCAPE_SVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="0 0 100 50" width="100" height="50" inkscape:version="1.2" sodipodi:docname="/Users/jane/secret/logo.svg" onload="alert(1)"><title>Logo</title><metadata><rdf:RDF><dc:creator>Jane Doe</dc:creator></rdf:RDF></metadata><sodipodi:namedview inkscape:window-width="1"/><script>alert(1)</script><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#f00"/><stop offset="1" stop-color="#00f"/></linearGradient><path id="p" d="M0 0h10v10z"/></defs><rect width="100" height="50" fill="url(#g)" onclick="x()"/><a xlink:href="javascript:alert(1)"><circle r="3"/></a><use xlink:href="#p" x="5"/></svg>`
+
+describe('SVG upload is sanitised at the provider, whatever the declared type', () => {
+  it.each(['image/svg+xml', 'image/png', 'application/pdf'])('stores the cleaned form (declared %s)', async (declared) => {
+    const { provider, objects } = harness()
+    const asset = await provider.upload({ ...upload(Buffer.from(INKSCAPE_SVG), declared), filename: 'logo.png' })
+    const stored = objects.get(asset.originalPath)!.toString()
+
+    expect(asset.contentType).toBe('image/svg+xml')
+    expect(asset.format).toBe('svg')
+    expect(asset.originalPath.endsWith('.svg')).toBe(true)
+    // active content and metadata are gone
+    expect(stored).not.toMatch(/<script|onload|onclick|javascript:|<metadata|rdf:|dc:|Jane|sodipodi|inkscape|\/Users\/jane/i)
+    // the render survives
+    expect(stored).toContain('viewBox="0 0 100 50"')
+    expect(stored).toContain('<linearGradient id="g"')
+    expect(stored).toContain('fill="url(#g)"')
+    expect(stored).toContain('<defs>')
+    expect(stored).toContain('<use xlink:href="#p"')
+    expect(stored).toContain('<title>Logo</title>')
+    // `<a>` is not in the allow-list: the link and what it wraps are dropped
+    expect(stored).not.toMatch(/<a[\s>]|<circle/)
+    // hash and size describe the stored bytes, and no private source is kept for an SVG
+    expect(asset.contentHash).toBe(createHash('sha256').update(objects.get(asset.originalPath)!).digest('hex'))
+    expect(asset.size).toBe(objects.get(asset.originalPath)!.length)
+    expect(asset.sourcePath).toBeNull()
+  })
+
+  it('refuses an SVG that cannot be made well-formed', async () => {
+    const { provider, objects } = harness()
+    await expect(provider.upload(upload(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><g><path d="M0 0"/></svg>'), 'image/svg+xml')))
+      .rejects.toMatchObject({ statusCode: 400 })
+    expect(objects.size).toBe(0)
+  })
+
+  it('does not treat a raster as an SVG', async () => {
+    const { provider } = harness()
+    const asset = await provider.upload(upload(await jpeg(100, 100)))
+    expect(asset.contentType).toBe('image/jpeg')
+    expect(asset.sourcePath).not.toBeNull()
+  })
+})
