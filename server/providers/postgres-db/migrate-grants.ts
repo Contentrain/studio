@@ -14,6 +14,8 @@ type MigrateGrantMethods = Pick<
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
   | 'getMigrateGrantOrigin'
+  | 'claimMigrateS2sJti'
+  | 'listOwnedWorkspacesAdmin'
   | 'saveMigrateCommentsExport'
   | 'getMigrateCommentsExport'
   | 'getMigrateCommentsExportState'
@@ -50,6 +52,26 @@ const UNDEFINED_TABLE = '42P01'
 
 export function migrateGrantMethods(): MigrateGrantMethods {
   return {
+    async claimMigrateS2sJti(jti, purpose, expiresAt) {
+      await getAdmin().deleteFrom('migrate_s2s_jti').where('expires_at', '<', new Date().toISOString()).execute()
+      const inserted = await getAdmin()
+        .insertInto('migrate_s2s_jti')
+        .values({ jti, purpose, expires_at: expiresAt.toISOString() })
+        .onConflict(oc => oc.column('jti').doNothing())
+        .returning('jti')
+        .executeTakeFirst()
+      return !!inserted
+    },
+
+    async listOwnedWorkspacesAdmin(userId) {
+      const rows = await getAdmin()
+        .selectFrom('workspaces')
+        .select(['id', 'type', 'plan', 'overage_settings'])
+        .where('owner_id', '=', userId)
+        .execute()
+      return rows as DatabaseRow[]
+    },
+
     async claimMigrateGrant(input) {
       try {
         const inserted = await getAdmin()

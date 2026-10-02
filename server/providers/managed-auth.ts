@@ -570,6 +570,17 @@ export function createManagedAuthProvider(): AuthProvider {
       return row ? toAuthUser(row) : null
     },
 
+    async getUserByProviderAccount(provider, accountId) {
+      const row = await getDb()
+        .selectFrom('auth.users')
+        .select(['id', 'email', 'raw_user_meta_data', 'provider', 'provider_account_id'])
+        .where('provider', '=', provider)
+        .where('provider_account_id', '=', accountId)
+        .executeTakeFirst()
+
+      return row ? toAuthUser(row) : null
+    },
+
     async deleteUser(userId) {
       // Cascades: profiles → workspaces → … plus refresh/one-time tokens.
       await getDb().deleteFrom('auth.users').where('id', '=', userId).execute()

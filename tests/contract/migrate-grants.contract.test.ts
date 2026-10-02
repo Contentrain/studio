@@ -27,6 +27,7 @@ describe('postgres-db migrate-grants (contract)', () => {
 
   afterAll(async () => {
     await sql`DELETE FROM public.migrate_grants WHERE order_id LIKE ${`${orderId}%`}`.execute(getDb())
+    await sql`DELETE FROM public.migrate_s2s_jti WHERE jti LIKE ${`${orderId}%`}`.execute(getDb())
     for (const user of [owner, other]) await deleteSeededUser(user.userId)
   })
 
@@ -170,6 +171,26 @@ describe('postgres-db migrate-grants (contract)', () => {
       const stored = await sql<{ payload: unknown }>`SELECT payload FROM public.migrate_comment_exports WHERE grant_id = ${g.id}`.execute(getDb())
       expect(stored.rows[0]?.payload).toBeNull()
     })
+  })
+
+  it('remembers a server-to-server jti once, and drops it after its window (migration 042)', async () => {
+    const jti = `${orderId}-s2s`
+    const future = new Date(Date.now() + 600_000)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(true)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(false)
+
+    const old = `${orderId}-s2s-old`
+    expect(await methods.claimMigrateS2sJti(old, 'account-state', new Date(Date.now() - 1000))).toBe(true)
+    // The next claim sweeps the lapsed record, so its jti is free again.
+    expect(await methods.claimMigrateS2sJti(`${orderId}-s2s-other`, 'account-state', future)).toBe(true)
+    expect(await methods.claimMigrateS2sJti(old, 'account-state', future)).toBe(true)
+  })
+
+  it('lists the workspaces a user owns, and no one else\'s', async () => {
+    const owned = await methods.listOwnedWorkspacesAdmin(owner.userId)
+    expect(owned.map(w => w.id)).toContain(owner.workspaceId)
+    expect(owned.map(w => w.id)).not.toContain(other.workspaceId)
+    expect(owned[0]).toHaveProperty('plan')
   })
 
   it('refuses a trial longer than the contract allows', async () => {

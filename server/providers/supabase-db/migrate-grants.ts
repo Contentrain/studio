@@ -14,6 +14,8 @@ type MigrateGrantMethods = Pick<
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
   | 'getMigrateGrantOrigin'
+  | 'claimMigrateS2sJti'
+  | 'listOwnedWorkspacesAdmin'
   | 'saveMigrateCommentsExport'
   | 'getMigrateCommentsExport'
   | 'getMigrateCommentsExportState'
@@ -64,6 +66,27 @@ const EXPORT_COLUMNS = 'grant_id, status, comments, expires_at, imported_at'
 
 export function migrateGrantMethods(): MigrateGrantMethods {
   return {
+    async claimMigrateS2sJti(jti, purpose, expiresAt) {
+      const admin = getAdmin()
+      const { error: cleanupError } = await admin.from('migrate_s2s_jti').delete().lt('expires_at', new Date().toISOString())
+      if (cleanupError) fail(cleanupError.message)
+      const { data, error } = await admin
+        .from('migrate_s2s_jti')
+        .upsert({ jti, purpose, expires_at: expiresAt.toISOString() }, { onConflict: 'jti', ignoreDuplicates: true })
+        .select('jti')
+      if (error) fail(error.message)
+      return (data?.length ?? 0) > 0
+    },
+
+    async listOwnedWorkspacesAdmin(userId) {
+      const { data, error } = await getAdmin()
+        .from('workspaces')
+        .select('id, type, plan, overage_settings')
+        .eq('owner_id', userId)
+      if (error) fail(error.message)
+      return (data ?? []) as DatabaseRow[]
+    },
+
     async claimMigrateGrant(input) {
       const admin = getAdmin()
       const { data: inserted, error } = await admin
