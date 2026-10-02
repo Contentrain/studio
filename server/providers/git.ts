@@ -213,6 +213,17 @@ export interface GitProvider extends RepoProvider {
    */
   fastForwardBranch?: (branch: string, sha: string) => Promise<boolean>
 
+  /**
+   * Merge the commit `sha` into `into` with a merge commit — the pinned
+   * counterpart of `mergeBranch`, for an approved merge that cannot
+   * fast-forward. Merging by branch name would land whatever the branch
+   * points at when the call arrives; a SHA lands exactly what was approved.
+   * GitHub's merge API takes a commit as `head`. Optional: a provider that
+   * cannot merge a bare SHA (GitLab merges through a merge request) leaves it
+   * out and the pinned merge falls back to `mergeBranch` by name.
+   */
+  mergeCommit?: (sha: string, into: string) => ReturnType<GitProvider['mergeBranch']>
+
   /** Tree sha of a commit, or null when the commit does not exist. Optional. */
   getCommitTreeSha?: (sha: string) => Promise<string | null>
 
@@ -325,6 +336,9 @@ export function createStudioGitProvider(opts: StudioGitHubInput): GitProvider {
     // cleanup cron), so merges must never delete their source. This
     // restores the pre-1.8.0 semantics exactly.
     mergeBranch: (branch: string, into: string) => core.mergeBranch(branch, into, { removeSourceBranch: false }),
+    // The SHA goes where the branch name would: GitHub's merge API accepts
+    // either as `head`, and no source branch is deleted either way.
+    mergeCommit: (sha: string, into: string) => core.mergeBranch(sha, into, { removeSourceBranch: false }),
     isMerged: (branch: string, into?: string) => core.isMerged(branch, into),
     getDefaultBranch: () => core.getDefaultBranch(),
     // Reconcile primitives (types 1.2.0). This factory builds the provider

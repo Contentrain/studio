@@ -37,6 +37,9 @@ function exportView(row: ExportRow, withPayload: boolean): MigrateCommentsExport
   }
 }
 
+/** The table is missing: Postgres `undefined_table`, or PostgREST's schema-cache miss. */
+const MISSING_RELATION_CODES = ['42P01', 'PGRST205']
+
 /** Exports never imported within their window give up their payload (lazy cleanup). */
 async function expireCommentExports(): Promise<void> {
   const { error } = await getAdmin()
@@ -45,6 +48,16 @@ async function expireCommentExports(): Promise<void> {
     .not('payload', 'is', null)
     .lt('expires_at', new Date().toISOString())
   if (error) fail(error.message)
+}
+
+function isMissingRelation(error: { code?: string } | null): boolean {
+  return !!error?.code && MISSING_RELATION_CODES.includes(error.code)
+}
+
+/** Only the missing table reads as "no export", so a claim still answers while 040 is pending. */
+function warnMissingRelation(code: string | undefined): void {
+  // eslint-disable-next-line no-console -- ops visibility: the migration is pending
+  console.warn(`[migrate-comments] ${code}: migrate_comment_exports is missing; apply migration 040`)
 }
 
 const EXPORT_COLUMNS = 'grant_id, status, comments, expires_at, imported_at'
@@ -190,13 +203,30 @@ export function migrateGrantMethods(): MigrateGrantMethods {
     },
 
     async getMigrateCommentsExportState(grantId) {
-      await expireCommentExports()
+      const { error: expireError } = await getAdmin()
+        .from('migrate_comment_exports')
+        .update({ status: 'expired', payload: null })
+        .not('payload', 'is', null)
+        .lt('expires_at', new Date().toISOString())
+      if (expireError) {
+        if (isMissingRelation(expireError)) {
+          warnMissingRelation(expireError.code)
+          return null
+        }
+        fail(expireError.message)
+      }
       const { data, error } = await getAdmin()
         .from('migrate_comment_exports')
         .select(EXPORT_COLUMNS)
         .eq('grant_id', grantId)
         .maybeSingle()
-      if (error) fail(error.message)
+      if (error) {
+        if (isMissingRelation(error)) {
+          warnMissingRelation(error.code)
+          return null
+        }
+        fail(error.message)
+      }
       return data ? exportView(data as ExportRow, false) : null
     },
 

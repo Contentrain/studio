@@ -7,7 +7,7 @@ import { STUDIO_AUTHOR, BRANCH_PREFIX, CONTENT_BRANCH } from './types'
 import { pinReaderToContentrain } from './helpers'
 import { buildContextChangeFromBrain } from './context-build'
 import { getOrBuildBrainCache, invalidateBrainCache } from '../brain-cache'
-import { BranchMovedError } from './errors'
+import { BranchMovedError, BranchTipUnreadableError } from './errors'
 
 /**
  * Ensure the dedicated `contentrain` branch exists and is synced with main.
@@ -119,17 +119,21 @@ export async function mergeOrFastForward(
   if (options.expectedFrom) {
     // Pinned: land exactly the approved commit or nothing. The fast-forward
     // moves `into` to that SHA, never to whatever the branch points at now.
-    const tips = await git.listBranches()
+    const tips = await git.listBranches().catch((cause) => {
+      throw new BranchTipUnreadableError(from, { cause })
+    })
     const fromSha = tips.find(b => b.name === from)?.sha ?? null
     if (fromSha !== options.expectedFrom) throw new BranchMovedError(from, options.expectedFrom, fromSha)
     const intoSha = tips.find(b => b.name === into)?.sha ?? null
     if (fromSha === intoSha) return { merged: true, sha: null, pullRequestUrl: null }
     if (git.fastForwardBranch && await git.fastForwardBranch(into, fromSha).catch(() => false))
       return { merged: true, sha: fromSha, pullRequestUrl: null }
-    // A merge commit goes through the provider by branch name (GitLab merges
-    // through a merge request, so a bare SHA is not portable). The window left
-    // is this one call; the tip was just checked.
-    return git.mergeBranch(from, into)
+    // A merge commit lands the approved SHA, not the branch name: a commit
+    // pushed between the check above and this call is not merged. GitLab
+    // merges through a merge request, so a bare SHA is not portable there; a
+    // provider without `mergeCommit` merges by name, and the window left is
+    // this one call.
+    return git.mergeCommit ? git.mergeCommit(fromSha, into) : git.mergeBranch(from, into)
   }
   if (git.fastForwardBranch) {
     // One read for both tips. Equal tips: nothing to bring over, no write.
