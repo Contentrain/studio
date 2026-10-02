@@ -314,11 +314,77 @@ export function svgProblems(bytes: Buffer): string | null {
   return null
 }
 
+/** The text head of a document, decoded the way an XML parser would read it: UTF-16 (BOM, or `<` as the first unit) or UTF-8. */
+function xmlHead(bytes: Buffer): string {
+  const b = bytes.subarray(0, 65536)
+  const even = (x: Buffer): Buffer => x.subarray(0, x.length - (x.length % 2))
+  if (b[0] === 0xFF && b[1] === 0xFE) return even(b.subarray(2)).toString('utf16le')
+  if (b[0] === 0xFE && b[1] === 0xFF) return Buffer.from(even(b.subarray(2))).swap16().toString('utf16le')
+  if (b[0] === 0x3C && b[1] === 0x00) return even(b).toString('utf16le')
+  if (b[0] === 0x00 && b[1] === 0x3C) return Buffer.from(even(b)).swap16().toString('utf16le')
+  return b.toString('utf8').replace(/^\uFEFF/, '')
+}
+
+/** Index just after the `>` closing a DOCTYPE that starts at `from`: an internal subset (`[ … ]`) and quoted strings may hold `>`. */
+function doctypeEnd(text: string, from: number): number {
+  let depth = 0
+  let quote = ''
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i]!
+    if (quote) {
+      if (ch === quote) quote = ''
+    }
+    // A comment or processing instruction in the subset is one unit: a `]`, `>` or quote inside it is not markup.
+    else if (text.startsWith('<!--', i)) {
+      const end = text.indexOf('-->', i + 4)
+      if (end < 0) return -1
+      i = end + 2
+    }
+    else if (text.startsWith('<?', i)) {
+      const end = text.indexOf('?>', i + 2)
+      if (end < 0) return -1
+      i = end + 1
+    }
+    else if (ch === '"' || ch === '\'') quote = ch
+    else if (ch === '[') depth++
+    else if (ch === ']') depth = Math.max(0, depth - 1)
+    else if (ch === '>' && depth === 0) return i + 1
+  }
+  return -1
+}
+
 /**
- * Whether the bytes read as an SVG document (an `<svg` root, after an XML declaration and comments), whatever type they
- * were declared as. Only a text head is looked at: a PNG/JPEG/PDF never starts like this.
+ * Whether the bytes read as an SVG document, whatever type they were declared as. This is a gate in front of
+ * {@link sanitizeSvg}, so it errs on the side of "yes": a file that gets in here and is not a well-formed SVG is
+ * refused, while one that is missed is stored as sent and served from the media host.
+ *
+ * The prolog is walked the way an XML parser does — XML declaration, comments, processing instructions and a DOCTYPE
+ * (internal subset included) in any order — and the first element decides: `svg`, with or without a namespace prefix
+ * (`<svg:svg>`). UTF-16 is read as UTF-16 (the sanitizer reads UTF-8 only and refuses it, it is never stored). A prolog
+ * that is not finished inside the text head counts as an SVG too. Only a text head is looked at: a PNG/JPEG/PDF/MP4
+ * never starts like this.
  */
 export function looksLikeSvg(bytes: Buffer): boolean {
-  const head = bytes.subarray(0, 4096).toString('utf8').replace(/^\uFEFF/, '').trimStart()
-  return /^(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(head)
+  const text = xmlHead(bytes)
+  let at = 0
+  for (;;) {
+    while (at < text.length && /\s/.test(text[at]!)) at++
+    if (text.startsWith('<?', at)) {
+      const end = text.indexOf('?>', at + 2)
+      if (end < 0) return true
+      at = end + 2
+    }
+    else if (text.startsWith('<!--', at)) {
+      const end = text.indexOf('-->', at + 4)
+      if (end < 0) return true
+      at = end + 3
+    }
+    else if (/^<!DOCTYPE/i.test(text.slice(at, at + 9))) {
+      const end = doctypeEnd(text, at + 9)
+      if (end < 0) return true
+      at = end
+    }
+    else break
+  }
+  return /^<(?:[A-Za-z_][\w.-]*:)?svg[\s>/]/i.test(text.slice(at, at + 256))
 }

@@ -4,6 +4,7 @@ import sharp from 'sharp'
 import { createSharpMediaProvider } from '../../ee/media/sharp-processor'
 import { isMediaSourcePath, mediaSourcePath, MEDIA_SOURCE_PREFIX } from '../../server/utils/media-source'
 import { withMediaUrls } from '../../server/utils/media-url'
+import { looksLikeSvg } from '../../server/utils/svg-sanitize'
 import { resolveVariantConfig } from '../../server/utils/media-variants'
 import type { CDNProvider } from '../../server/providers/cdn'
 import type { DatabaseProvider, DatabaseRow } from '../../server/providers/database'
@@ -196,5 +197,58 @@ describe('SVG upload is sanitised at the provider, whatever the declared type', 
     const asset = await provider.upload(upload(await jpeg(100, 100)))
     expect(asset.contentType).toBe('image/jpeg')
     expect(asset.sourcePath).not.toBeNull()
+  })
+})
+
+// Documents a parser reads as SVG that a narrow sniff misses. Each one carries active content and is declared as
+// something that is stored as sent (video / pdf), so the cleaned form is the only safe outcome.
+const ACTIVE = '<rect width="10" height="10" onclick="x()"/><script>alert(1)</script>'
+const NS = 'xmlns="http://www.w3.org/2000/svg"'
+const SNIFF_CASES: Record<string, string> = {
+  'a DOCTYPE with an internal subset': `<?xml version="1.0"?><!DOCTYPE svg [ <!ENTITY note "a>b"> <!ELEMENT svg ANY> ]><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
+  'a comment holding "]" in the internal subset': `<!DOCTYPE svg [ <!-- ] --> <!ENTITY a "x"> ]><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
+  'a processing instruction holding "]" in the internal subset': `<!DOCTYPE svg [ <?x ] ?> ]><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
+  'a prefixed root (<svg:svg>)': `<svg:svg xmlns:svg="http://www.w3.org/2000/svg" onload="alert(1)"><svg:script>alert(1)</svg:script><svg:rect width="10" height="10" onclick="x()"/></svg:svg>`,
+  'a comment before the XML declaration': `<!-- exported --><?xml version="1.0"?><svg ${NS} onload="alert(1)">${ACTIVE}</svg>`,
+}
+
+describe('SVG detection follows the parser, not a pattern', () => {
+  it.each(Object.keys(SNIFF_CASES))('treats %s as an SVG, and never stores it as sent', async (name) => {
+    expect(looksLikeSvg(Buffer.from(SNIFF_CASES[name]!))).toBe(true)
+    for (const declared of ['video/mp4', 'application/pdf']) {
+      const { provider, objects } = harness()
+      const sent = Buffer.from(SNIFF_CASES[name]!)
+      // Either the cleaned form is stored, or the sanitiser refuses a subset it cannot read; the bytes as sent never are.
+      const outcome = await provider.upload({ ...upload(sent, declared), filename: 'clip.mp4' }).then(asset => ({ asset }), (error: unknown) => ({ error }))
+      if ('asset' in outcome) {
+        const stored = objects.get(outcome.asset.originalPath)!.toString()
+        expect(outcome.asset.contentType).toBe('image/svg+xml')
+        expect(stored).not.toMatch(/<[\w:]*script|onload|onclick|alert|<!DOCTYPE|<!ENTITY/i)
+      }
+      else {
+        expect(outcome.error).toMatchObject({ statusCode: 400 })
+        expect(objects.size).toBe(0)
+      }
+    }
+  })
+
+  const utf16le = Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(`<svg ${NS}>${ACTIVE}</svg>`, 'utf16le')])
+  const utf16be = Buffer.from(`<svg ${NS}>${ACTIVE}</svg>`, 'utf16le').swap16()
+  it.each([['UTF-16 LE with a BOM', utf16le], ['UTF-16 BE without a BOM', utf16be]] as const)('refuses %s instead of storing it as sent', async (_name, file) => {
+    for (const declared of ['video/mp4', 'application/pdf', 'image/svg+xml']) {
+      const { provider, objects } = harness()
+      await expect(provider.upload(upload(file, declared))).rejects.toMatchObject({ statusCode: 400 })
+      expect(objects.size).toBe(0)
+    }
+  })
+
+  it('reads the root element, nothing looser', () => {
+    expect(looksLikeSvg(Buffer.from(`\uFEFF  <!-- a -->\n<?xml version="1.0"?>\n<!-- b --><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg ${NS}/>`))).toBe(true)
+    // an unfinished prolog is not waved through
+    expect(looksLikeSvg(Buffer.from('<!DOCTYPE svg [ <!ENTITY a "'))).toBe(true)
+    expect(looksLikeSvg(Buffer.from('<html><body><svg></svg></body></html>'))).toBe(false)
+    expect(looksLikeSvg(Buffer.from('<svgx/>'))).toBe(false)
+    expect(looksLikeSvg(Buffer.from('%PDF-1.4 <svg>'))).toBe(false)
+    expect(looksLikeSvg(Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]))).toBe(false)
   })
 })
