@@ -8,7 +8,8 @@
  */
 
 import { loadSharp } from './lazy-sharp'
-import { MAX_ORIGINAL_DIMENSION } from '../../server/utils/media-variants'
+import { ANIMATION_LIMITS, MAX_ORIGINAL_DIMENSION } from '../../server/utils/media-variants'
+import { assertAnimationWithinLimits, canAnimate, frameCount, rethrowAnimationFailure } from './animation'
 
 const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
 
@@ -18,6 +19,8 @@ export interface OptimizeResult {
   height: number
   format: string
   size: number
+  /** More than one frame: the master is an animated WebP. `height` is one frame's. */
+  animated?: boolean
 }
 
 /**
@@ -27,6 +30,9 @@ export interface OptimizeResult {
  * 3. Convert to sRGB pixels (no profile embedded)
  * 4. Cap dimensions to MAX_ORIGINAL_DIMENSION
  * 5. Convert to WebP (lossy for photos, lossless for PNGs with alpha)
+ *
+ * An animated GIF/WebP stays animated (all frames, delays and loop), within `ANIMATION_LIMITS`; over a limit it is
+ * rejected with a localised 400 — never reduced to its first frame.
  */
 export async function optimizeImage(input: Buffer, contentType: string): Promise<OptimizeResult> {
   // Non-image files: passthrough without Sharp processing
@@ -49,16 +55,20 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     return { buffer: input, width: svgWidth, height: svgHeight, format: 'svg', size: input.length }
   }
 
+  // Probe first (sharp's default read: one frame's width/height, `pages` = frame count).
+  const metadata = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
+  const { width: origWidth, height: origHeight, hasAlpha } = metadata
+  const frames = frameCount(metadata.pages)
+  const animated = canAnimate(contentType) && frames > 1
+  if (animated) assertAnimationWithinLimits({ frames, width: origWidth ?? 0, height: origHeight ?? 0 })
+
   // No `withMetadata()`/`keepMetadata()` here: sharp then writes none of the input's EXIF/XMP/IPTC (GPS, camera, owner)
   // and no embedded profile. `.rotate()` applies the EXIF orientation to the pixels first; the sRGB conversion is explicit
   // so the pixels stay right once the input's own profile is gone.
-  let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT })
+  let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT, ...(animated ? { animated: true } : {}) })
     .rotate()
     .toColourspace('srgb')
-
-  // Get original metadata
-  const metadata = await sharp(input, { limitInputPixels: PIXEL_LIMIT }).metadata()
-  const { width: origWidth, height: origHeight, hasAlpha } = metadata
+  if (animated) pipeline = pipeline.timeout({ seconds: ANIMATION_LIMITS.timeoutSeconds })
 
   // Cap dimensions
   if (origWidth && origHeight) {
@@ -68,7 +78,7 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     }
   }
 
-  // Convert to WebP — lossless for PNG with alpha, lossy otherwise
+  // Convert to WebP — lossless for PNG with alpha, lossy otherwise (an animation keeps every frame)
   const isAlphaPng = contentType === 'image/png' && hasAlpha
   if (isAlphaPng) {
     pipeline = pipeline.webp({ lossless: true })
@@ -77,14 +87,16 @@ export async function optimizeImage(input: Buffer, contentType: string): Promise
     pipeline = pipeline.webp({ quality: 85 })
   }
 
-  const result = await pipeline.toBuffer({ resolveWithObject: true })
+  const result = await pipeline.toBuffer({ resolveWithObject: true }).catch(error => animated ? rethrowAnimationFailure(error) : Promise.reject(error))
 
   return {
     buffer: result.data,
     width: result.info.width,
-    height: result.info.height,
+    // An animated result is every frame stacked: the frame's own height is `pageHeight`.
+    height: result.info.pageHeight ?? result.info.height,
     format: 'webp',
     size: result.data.length,
+    ...(animated ? { animated: true } : {}),
   }
 }
 

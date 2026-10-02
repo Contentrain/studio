@@ -9,6 +9,8 @@
 
 import type { FitEnum, ResizeOptions } from 'sharp'
 import { loadSharp } from './lazy-sharp'
+import { ANIMATION_LIMITS } from '../../server/utils/media-variants'
+import { assertAnimationWithinLimits, frameCount, rethrowAnimationFailure } from './animation'
 import type { VariantConfig, MediaVariant } from '../../server/providers/media'
 
 const PIXEL_LIMIT = 100_000_000 // 100 megapixels — prevents decompression bombs
@@ -29,8 +31,14 @@ export async function generateVariants(
 ): Promise<GeneratedVariant[]> {
   const results: GeneratedVariant[] = []
 
+  // The master is an animated WebP when optimizeImage kept an animation: its variants follow the same rule.
+  const sharp = await loadSharp()
+  const probe = await sharp(originalBuffer, { limitInputPixels: PIXEL_LIMIT }).metadata()
+  const frames = frameCount(probe.pages)
+  if (frames > 1) assertAnimationWithinLimits({ frames, width: probe.width ?? 0, height: probe.height ?? 0 })
+
   for (const [name, config] of Object.entries(variants)) {
-    const result = await generateSingleVariant(originalBuffer, assetId, name, config)
+    const result = await generateSingleVariant(originalBuffer, assetId, name, config, frames > 1)
     results.push(result)
   }
 
@@ -42,9 +50,15 @@ async function generateSingleVariant(
   assetId: string,
   name: string,
   config: VariantConfig,
+  masterAnimated: boolean,
 ): Promise<GeneratedVariant> {
   const sharp = await loadSharp()
-  let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT })
+  // Output format first: only WebP can carry the animation. A variant asked for as JPEG/PNG/AVIF (an og:image, a
+  // favicon) is a still by its format — sharp reads just the first frame then, instead of stacking all of them.
+  const format = config.format === 'auto' || !config.format ? 'webp' : config.format
+  const animated = masterAnimated && format === 'webp'
+  let pipeline = sharp(input, { limitInputPixels: PIXEL_LIMIT, ...(animated ? { animated: true } : {}) })
+  if (animated) pipeline = pipeline.timeout({ seconds: ANIMATION_LIMITS.timeoutSeconds })
 
   // Resize with fit mode
   const resizeOptions: ResizeOptions = {
@@ -57,8 +71,6 @@ async function generateSingleVariant(
   }
   pipeline = pipeline.resize(resizeOptions)
 
-  // Output format
-  const format = config.format === 'auto' || !config.format ? 'webp' : config.format
   const quality = config.quality ?? 80
 
   switch (format) {
@@ -75,7 +87,7 @@ async function generateSingleVariant(
       pipeline = pipeline.webp({ quality })
   }
 
-  const result = await pipeline.toBuffer({ resolveWithObject: true })
+  const result = await pipeline.toBuffer({ resolveWithObject: true }).catch(error => animated ? rethrowAnimationFailure(error) : Promise.reject(error))
   const ext = format === 'jpeg' ? 'jpg' : format
 
   return {
@@ -84,7 +96,7 @@ async function generateSingleVariant(
     variant: {
       path: `media/${name}/${assetId}.${ext}`,
       width: result.info.width,
-      height: result.info.height,
+      height: result.info.pageHeight ?? result.info.height,
       format,
       size: result.data.length,
     },
