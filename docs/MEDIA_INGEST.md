@@ -109,3 +109,20 @@ skipping paths already listed here. It only works on the same instance, where
 both projects share one bucket, and only for an owner/admin of the old
 project's workspace. A failed copy or entry insert answers `409` with nothing
 committed; re-running is safe.
+
+## Cleaning media stored before the privacy fixes
+
+Assets uploaded before the EXIF fix (#384) keep camera and GPS data in their public WebP master, and SVGs stored before #393 are as they were sent. `pnpm media:strip-metadata` fixes both in place:
+
+```sh
+pnpm media:strip-metadata --site-url https://studio.example.com                       # dry run: report only
+pnpm media:strip-metadata --site-url https://studio.example.com --apply --urls-out purge.txt
+```
+
+- A WebP is a RIFF container: the `EXIF` and `XMP ` chunks are dropped, their flags in `VP8X` are cleared and the RIFF size is rewritten. Every other chunk is copied byte for byte, so there is no re-encode and no quality loss; the colour profile (`ICCP`) is kept. Before replacing a file the script decodes both versions and requires identical pixels (every frame, for an animation); a mismatch leaves the file untouched and is reported.
+- A stored SVG goes through the same allow-list as a new upload (`server/utils/svg-sanitize.ts`). One that cannot be made well-formed is left as it is and listed under `svg-unsafe` (the exit code is 1) for a person to look at.
+- The dry run reports assets scanned, WebP files with EXIF/XMP, how many of those carry a GPS position, SVGs needing a clean, and the files that would be rewritten. `--variants` also checks variant files (they are cut without metadata, so this is a verification pass). `--project <id>` limits the run.
+- An apply run then corrects `size_bytes` and the workspace storage counter by the difference. Run it again and it finds nothing. If a file was rewritten but the row update failed, it is listed as an error with the asset id.
+- Paths do not change, so no content reference changes. **The edge keeps the old bytes** (`s-maxage=3600, stale-while-revalidate=86400`; `purgeCache` is a no-op for R2). Both modes print the public URL of every rewritten file, one per line; purge them with Cloudflare's "purge by URL" (30 per call, `split -l 30 purge.txt`). The report states how many calls that is.
+- Needs `NUXT_POSTGRES_URL` (or `DATABASE_URL`) and the `NUXT_CDN_R2_*` variables, as the app does; the usual `--env-file` setup applies. Running it against production needs the founder's approval.
+
