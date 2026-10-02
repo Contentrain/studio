@@ -313,3 +313,12 @@ export function svgProblems(bytes: Buffer): string | null {
   }
   return null
 }
+
+/**
+ * Whether the bytes read as an SVG document (an `<svg` root, after an XML declaration and comments), whatever type they
+ * were declared as. Only a text head is looked at: a PNG/JPEG/PDF never starts like this.
+ */
+export function looksLikeSvg(bytes: Buffer): boolean {
+  const head = bytes.subarray(0, 4096).toString('utf8').replace(/^\uFEFF/, '').trimStart()
+  return /^(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(head)
+}

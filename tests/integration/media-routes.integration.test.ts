@@ -33,6 +33,10 @@ async function loadMediaPreviewHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/media/[assetId]/preview.get')).default
 }
 
+async function loadMediaSourceHandler() {
+  return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/media/[assetId]/source.get')).default
+}
+
 const sampleAsset = {
   id: 'asset-1',
   projectId: 'project-1',
@@ -426,6 +430,49 @@ describe('media route integration', () => {
       expect(response.headers.get('cache-control')).toBe('private, max-age=3600')
       expect(response.headers.get('etag')).toBe('etag-1')
       expect(await response.text()).toBe('preview-bytes')
+    })
+  })
+
+  it('sends the private source as an inert attachment: nosniff, sandbox CSP, no cache, bytes untouched', async () => {
+    stubMediaRouteGlobals()
+    // The source is the uploaded bytes unchanged: a script inside it survives there, so the download must not be renderable.
+    const scripted = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+    vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({
+      getAsset: vi.fn().mockResolvedValue({ ...sampleAsset, sourcePath: 'media-source/asset-1.png', sourceSize: scripted.length }),
+    }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({
+      getObject: vi.fn().mockResolvedValue({ data: scripted, contentType: 'image/svg+xml', etag: 'e' }),
+    }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/media/asset-1/source', handler: await loadMediaSourceHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/media/asset-1/source')
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-disposition')).toMatch(/^attachment;/)
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(response.headers.get('content-security-policy')).toBe('default-src \'none\'; sandbox')
+      expect(response.headers.get('cache-control')).toBe('private, no-store')
+      expect(Buffer.from(await response.arrayBuffer()).equals(scripted)).toBe(true)
+    })
+  })
+
+  it('answers 404 for the source of an asset that has none', async () => {
+    stubMediaRouteGlobals()
+    vi.stubGlobal('useMediaProvider', vi.fn().mockReturnValue({
+      getAsset: vi.fn().mockResolvedValue({ ...sampleAsset, sourcePath: null, sourceSize: null }),
+    }))
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ getObject: vi.fn() }))
+
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/media/asset-1/source', handler: await loadMediaSourceHandler() },
+      ],
+    }, async ({ request }) => {
+      expect((await request('/api/workspaces/workspace-1/projects/project-1/media/asset-1/source')).status).toBe(404)
     })
   })
 })
