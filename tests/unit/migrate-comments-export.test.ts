@@ -173,9 +173,21 @@ describe('captureClaimCommentsExport', () => {
       status: 'ready',
       payload: exportPayload,
       comments: 2,
-      expiresAt: new Date(pointer.expires_at * 1000).toISOString(),
+      expiresAt: expect.any(String),
     })
+    // The window is the grant's 30 days from the fetch, not the URL's own expiry.
+    const saved = db.saveMigrateCommentsExport!.mock.calls[0]![1] as { expiresAt: string }
+    expect(Date.parse(saved.expiresAt) - Date.now()).toBeGreaterThan(29.9 * 24 * 3600_000)
+    expect(Date.parse(saved.expiresAt) - Date.now()).toBeLessThanOrEqual(30 * 24 * 3600_000)
     expect(JSON.stringify(db.saveMigrateCommentsExport!.mock.calls)).not.toContain(TOKEN)
+  })
+
+  it('keeps a fetched export for the grant window even when the download URL expires within minutes', async () => {
+    const shortLived = { ...pointer, expires_at: Math.floor(Date.now() / 1000) + 120 }
+    const fetchImpl = vi.fn(async () => json(exportPayload))
+    await expect(captureClaimCommentsExport({ grantId: 'g-1', pointer: shortLived }, { ...fast, fetchImpl })).resolves.toBe('ready')
+    const saved = db.saveMigrateCommentsExport!.mock.calls[0]![1] as { expiresAt: string }
+    expect(Date.parse(saved.expiresAt) - Date.now()).toBeGreaterThan(29 * 24 * 3600_000)
   })
 
   it('falls back to the upload when the env allowlist is empty (the default)', async () => {

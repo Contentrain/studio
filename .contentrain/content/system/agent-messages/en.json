@@ -12,6 +12,7 @@
   "branch.contentrain_only_merge": "Only contentrain/ branches can be merged",
   "branch.contentrain_only_reject": "Only contentrain/ branches can be rejected",
   "branch.merged": "Branch merged successfully. Content changes are now live.",
+  "branch.tip_unreadable": "Not merged: the branch tip could not be read, so the merge could not be pinned to the approved commit. Nothing was changed; tell the user to try again shortly.",
   "branch.moved_since_approval": "Not merged: the branch got a new commit after it was approved, so the approval no longer covers it. Tell the user the new changes are waiting in the review panel; do not merge until they are approved.",
   "branch.rejected": "Branch rejected. Changes have been discarded.",
   "comments.approved": "Comment approved and published.",

@@ -45,6 +45,9 @@ async function expireCommentExports(): Promise<void> {
     .execute()
 }
 
+/** Postgres' `undefined_table`: the image is newer than the database (migration 040 not applied). */
+const UNDEFINED_TABLE = '42P01'
+
 export function migrateGrantMethods(): MigrateGrantMethods {
   return {
     async claimMigrateGrant(input) {
@@ -218,6 +221,13 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         return row ? exportView(row as ExportRow, false) : null
       }
       catch (error) {
+        // Only the missing table reads as "no export", so a claim still answers
+        // while 040 is pending; every other failure surfaces.
+        if ((error as { code?: string } | null)?.code === UNDEFINED_TABLE) {
+          // eslint-disable-next-line no-console -- ops visibility: the migration is pending
+          console.warn(`[migrate-comments] ${UNDEFINED_TABLE}: migrate_comment_exports is missing; apply migration 040`)
+          return null
+        }
         throwDbError(error)
       }
     },
