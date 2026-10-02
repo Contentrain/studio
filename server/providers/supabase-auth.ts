@@ -255,6 +255,21 @@ export function createSupabaseAuthProvider(): AuthProvider {
       return null
     },
 
+    async getUserByProviderAccount(provider: 'github' | 'google', accountId: string): Promise<AuthUser | null> {
+      const admin = createSupabaseAdminClient()
+      let page = 1
+      const perPage = 1000
+      while (true) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
+        if (error) throw error
+        const user = data?.users?.find(u => u.app_metadata?.provider === provider && String(u.user_metadata?.provider_id ?? '') === accountId)
+        if (user) return mapSupabaseUser(user)
+        if (!data?.users || data.users.length < perPage) break
+        page++
+      }
+      return null
+    },
+
     async deleteUser(userId: string): Promise<void> {
       const admin = createSupabaseAdminClient()
       const { error } = await admin.auth.admin.deleteUser(userId)

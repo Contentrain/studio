@@ -137,6 +137,13 @@ export interface MigrateCommentExportsTable {
   imported_at: string | null
 }
 
+export interface MigrateS2sJtiTable {
+  jti: string
+  purpose: string
+  expires_at: string
+  created_at: Generated<string>
+}
+
 export interface WorkspacesTable {
   id: Generated<string>
   name: string
@@ -677,6 +684,7 @@ export interface StudioDatabase {
   'payment_accounts': PaymentAccountsTable
   'migrate_grants': MigrateGrantsTable
   'migrate_comment_exports': MigrateCommentExportsTable
+  'migrate_s2s_jti': MigrateS2sJtiTable
   'migration_media_jobs': MigrationMediaJobsTable
   'migration_media_items': MigrationMediaItemsTable
   'workspaces': WorkspacesTable

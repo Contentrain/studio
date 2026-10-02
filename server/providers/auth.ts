@@ -127,6 +127,12 @@ export interface AuthProvider {
   getUserByEmail: (email: string) => Promise<AuthUser | null>
 
   /**
+   * Look up a user by the id the OAuth provider gave them (GitHub's numeric
+   * user id for `github`). Null when nobody signed in with that account.
+   */
+  getUserByProviderAccount: (provider: 'github' | 'google', accountId: string) => Promise<AuthUser | null>
+
+  /**
    * Delete a user account permanently.
    * Cascades to profiles, workspaces (owned), memberships, etc.
    */

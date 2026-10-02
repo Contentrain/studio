@@ -1140,6 +1140,19 @@ export interface DatabaseProvider {
   getMigrateGrantOrigin: (workspaceId: string, repoFullName: string) => Promise<string | null>
 
   /**
+   * Remember the `jti` of a Migrate server-to-server request (migration 042).
+   * True the first time, false when it was seen before (a replay). Entries
+   * past `expiresAt` are dropped lazily.
+   */
+  claimMigrateS2sJti: (jti: string, purpose: string, expiresAt: Date) => Promise<boolean>
+
+  /**
+   * Workspaces `userId` owns, with the columns plan resolution reads. Admin
+   * read for Migrate's account-state answer; Studio never lists them to the user this way.
+   */
+  listOwnedWorkspacesAdmin: (userId: string) => Promise<DatabaseRow[]>
+
+  /**
    * Record what the claim's comments export gave (migration 040), one row
    * per grant. A `ready` row holds the payload until the project imports it.
    * An `imported` row is final: a later claim for the same order never
