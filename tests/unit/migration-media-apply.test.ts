@@ -81,6 +81,25 @@ describe('planMigrationMediaApply', () => {
     expect(counts).toMatchObject({ rewritten: 7, relations: 1, drifted: [], remaining: [], filesChanged: 3, keptBecause: 'not_requested', deleted: 0 })
   })
 
+  it('rewrites the keys of the generated media-sizes .ts module (contains, pointer \'\') on URL boundaries, leaving look-alike keys', async () => {
+    const m = parseMigrationMediaManifest({
+      version: 1,
+      assets: [{
+        id: 'a', repoPath: 'public/media/a.png', localUrl: '/media/a.png', sha256: H, bytes: 10, mime: 'image/png',
+        refs: [{ file: 'src/lib/media-sizes.ts', pointer: '', match: 'contains' }],
+      }],
+    })
+    const sizes = 'export const MEDIA_SIZES: Readonly<Record<string, { width: number, height: number } | undefined>> = {\n'
+      + '  "/media/a.png": { width: 120, height: 90 },\n'
+      + '  "/media/a.png-1.jpg": { width: 1, height: 1 },\n'
+      + '}\n'
+    const files = { 'src/lib/media-sizes.ts': sizes, 'studio.json': null }
+    const { changes, counts } = await plan({ m, files, imported: new Map([['public/media/a.png', A]]) })
+    expect(contentOf(changes, 'src/lib/media-sizes.ts')).toBe(sizes.replace('"/media/a.png":', `"${A}":`))
+    expect(contentOf(changes, 'src/lib/media-sizes.ts')).toContain('"/media/a.png-1.jpg": { width: 1, height: 1 }')
+    expect(counts).toMatchObject({ rewritten: 1, drifted: [], remaining: [], filesChanged: 1 })
+  })
+
   it('writes studio.json as canonical JSON, and leaves it alone when it already says the same', async () => {
     const written = await plan()
     expect(contentOf(written.changes, 'studio.json')).toBe('{\n  "baseUrl": "https://studio.test",\n  "projectId": "p-1"\n}\n')
