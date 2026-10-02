@@ -270,6 +270,11 @@ async function handleBranchMerge() {
     await invalidateCache(projectId.value)
     await fetchSnapshot(ws.id, projectId.value)
   }
+  // Still open: a branch that moved after its approval (409) is shown again at
+  // its new tip, with the approvals that tip actually has.
+  else if (activeBranch.value) {
+    await fetchBranchReview(ws.id, projectId.value, activeBranch.value)
+  }
 }
 
 async function handleBranchApprove() {
