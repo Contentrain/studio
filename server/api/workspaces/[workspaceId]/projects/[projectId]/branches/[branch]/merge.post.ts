@@ -11,7 +11,7 @@
 import { clearBranchRequestSafe } from '~~/server/utils/branch-requests'
 import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from '~~/server/utils/branch-approval'
 import { actorFromEmail } from '~~/server/utils/execution-plan'
-import { isBranchMoved } from '~~/server/utils/content-engine/errors'
+import { isBranchMoved, isBranchTipUnreadable } from '~~/server/utils/content-engine/errors'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -48,6 +48,10 @@ export default defineEventHandler(async (event) => {
   const moved = (e: unknown): never => {
     if (isBranchMoved(e))
       throw createError({ statusCode: 409, message: errorMessage('branches.moved_since_approval') })
+    // Fail closed: a tip that cannot be read cannot be pinned, and merging by
+    // name would land whatever the branch points at now.
+    if (isBranchTipUnreadable(e))
+      throw createError({ statusCode: 503, message: errorMessage('branches.tip_unreadable') })
     throw e
   }
 

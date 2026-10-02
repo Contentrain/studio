@@ -44,6 +44,33 @@ describe('pinned merge', () => {
     expect(git.deleteBranch).not.toHaveBeenCalled()
   })
 
+  it('lands the approved SHA, not the branch name, when it cannot fast-forward', async () => {
+    const git = { ...fakeGit({ [BRANCH]: 'approved', contentrain: 'base' }), mergeCommit: vi.fn(async () => ({ merged: true, sha: 'merge-sha', pullRequestUrl: null })) }
+    git.fastForwardBranch.mockResolvedValue(false)
+
+    await expect(mergeToContentrain(ctx(git), BRANCH, { expectedHead: 'approved' })).resolves.toEqual({ merged: true, sha: 'merge-sha' })
+    expect(git.mergeCommit).toHaveBeenCalledWith('approved', 'contentrain')
+    expect(git.mergeBranch).not.toHaveBeenCalled()
+  })
+
+  it('merges by name when the provider cannot merge a bare SHA', async () => {
+    const git = fakeGit({ [BRANCH]: 'approved', contentrain: 'base' })
+    git.fastForwardBranch.mockResolvedValue(false)
+
+    await expect(mergeToContentrain(ctx(git), BRANCH, { expectedHead: 'approved' })).resolves.toMatchObject({ merged: true })
+    expect(git.mergeBranch).toHaveBeenCalledWith(BRANCH, 'contentrain')
+  })
+
+  it('fails closed when the tips cannot be read, and touches nothing', async () => {
+    const git = fakeGit({ [BRANCH]: 'approved', contentrain: 'base' })
+    git.listBranches.mockRejectedValue(new Error('GitHub 502'))
+
+    await expect(mergeToContentrain(ctx(git), BRANCH, { expectedHead: 'approved' })).rejects.toMatchObject({ code: 'branch_tip_unreadable', branch: BRANCH })
+    expect(git.fastForwardBranch).not.toHaveBeenCalled()
+    expect(git.mergeBranch).not.toHaveBeenCalled()
+    expect(git.deleteBranch).not.toHaveBeenCalled()
+  })
+
   it('merges unpinned as before when nothing was approved', async () => {
     const git = fakeGit({ [BRANCH]: 'whatever', contentrain: 'base' })
 
@@ -75,6 +102,16 @@ describe('resolveMergeApproval pins the reviewed tip', () => {
 
   it('returns the tip the review was read at', async () => {
     await expect(resolve(['tip-1', 'tip-1'])).resolves.toMatchObject({ commitSha: 'tip-1' })
+  })
+
+  it('fails closed when the tip cannot be read, instead of merging unpinned', async () => {
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn())
+    const git = { listBranches: vi.fn().mockRejectedValue(new Error('GitHub 502')), getBranchDiff: vi.fn(), readFile: vi.fn() }
+    const { resolveMergeApproval } = await import('../../server/utils/branch-approval')
+
+    await expect(resolveMergeApproval({ git: git as never, contentRoot: '', projectId: 'p1', branch: BRANCH, workflow: 'review', policy: null }))
+      .rejects.toMatchObject({ code: 'branch_tip_unreadable' })
+    expect(git.getBranchDiff).not.toHaveBeenCalled()
   })
 
   it('refuses when a commit lands while the review is read', async () => {

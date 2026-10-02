@@ -12,6 +12,8 @@
  *   reason to trust it; an empty list fetches nothing.
  * - The token travels only in `Authorization`. No error, log line or row
  *   carries it.
+ * - A held export waits for its project for the grant window (30 days from
+ *   the fetch), whatever the download URL's own `expires_at` was.
  * - One attempt is short (10 s) and capped at the import's size limit. A
  *   refusal (401/403/404), a 5xx or a dropped connection is retried once.
  * - Whatever goes wrong — a claim whose export had the wrong shape (dropped
@@ -27,7 +29,7 @@ import { EXPORT_MAX_BYTES } from './migration-handoff'
 /** Migrate's export route (`apps/web/server/api/exports/comments.get.ts`). */
 export const MIGRATE_COMMENTS_EXPORT_PATH = '/api/exports/comments'
 export const COMMENTS_EXPORT_ATTEMPT_MS = 10_000
-/** The grant window (XS-1 §6): an export dropped from the claim keeps its row this long. */
+/** The grant window (XS-1 §6): how long a held export waits for its project, counted from the fetch. */
 const GRANT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 
 export type CommentsExportFailure = 'not_allowed' | 'refused' | 'bad_status' | 'too_large' | 'timeout' | 'network' | 'invalid'
@@ -201,7 +203,10 @@ export async function captureClaimCommentsExport(input: CaptureCommentsExportInp
       return 'unavailable'
     }
 
-    const expiresAt = new Date(input.pointer.expires_at * 1000).toISOString()
+    // The window runs from the fetch, not from the download URL's expiry: the
+    // token's `expires_at` is how long Migrate keeps *serving* the export, and a
+    // short one must not drop an export Studio already holds.
+    const expiresAt = new Date(Date.now() + GRANT_WINDOW_MS).toISOString()
     try {
       const { payload, comments } = await fetchClaimCommentsExport(input.pointer, { ...options, origins: options.origins ?? migrateExportOrigins() })
       await db.saveMigrateCommentsExport(input.grantId, { status: 'ready', payload, comments, expiresAt })

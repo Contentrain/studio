@@ -13,7 +13,7 @@ import type { ActorRef, ApprovalGrant, ApprovalPolicyFile, ExecutionPlan } from 
 import type { H3Event } from 'h3'
 import type { GitProvider } from '../providers/git'
 import { buildBranchReview } from './branch-review'
-import { BranchMovedError } from './content-engine/errors'
+import { BranchMovedError, BranchTipUnreadableError } from './content-engine/errors'
 import type { BranchReview } from '../../shared/utils/branch-review'
 import type { PlanDecision } from '../../shared/utils/approval'
 import type { WriteSignals } from './approval-gate'
@@ -138,7 +138,22 @@ export async function branchWriteSignals(input: {
   }
 }
 
-/** The branch tip, or undefined when the branch is gone. */
+/**
+ * The branch tip, or undefined when the branch is gone. A read that fails
+ * throws: an unreadable tip is not a missing branch, and the merge must not
+ * proceed unpinned on it.
+ */
+export async function branchTipStrict(git: GitProvider, branch: string): Promise<string | undefined> {
+  try {
+    const branches = await git.listBranches()
+    return branches.find(b => b.name === branch)?.sha
+  }
+  catch (cause) {
+    throw new BranchTipUnreadableError(branch, { cause })
+  }
+}
+
+/** Best-effort tip for display and sign-off paths; undefined when unreadable. */
 export async function branchTip(git: GitProvider, branch: string): Promise<string | undefined> {
   try {
     const branches = await git.listBranches()
@@ -172,9 +187,9 @@ export async function resolveMergeApproval(input: {
   if (input.workflow !== 'review') return null
   // The tip is read on both sides of the review: a commit that lands while the
   // diff is read would otherwise pair one commit's review with another's SHA.
-  const commitSha = await branchTip(input.git, input.branch)
+  const commitSha = await branchTipStrict(input.git, input.branch)
   const review = await loadBranchReview({ git: input.git, contentRoot: input.contentRoot, projectId: input.projectId, branch: input.branch, canMerge: true, canReject: true })
-  const tipAfter = await branchTip(input.git, input.branch)
+  const tipAfter = await branchTipStrict(input.git, input.branch)
   if (commitSha && tipAfter !== commitSha) throw new BranchMovedError(input.branch, commitSha, tipAfter ?? null)
   const approval = await resolveBranchApproval({
     projectId: input.projectId,
