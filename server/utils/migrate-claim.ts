@@ -32,6 +32,8 @@ export interface VerifiedMigrateClaim {
   jti: string
   /** Migrate's user id (`sub`), kept for support look-ups only. */
   subject: string
+  /** Optional parts the contract dropped rather than refusing the claim (today `comments_export.*`). */
+  warnings: string[]
 }
 
 let cachedKey: { pem: string, key: CryptoKey } | null = null
@@ -74,5 +76,5 @@ export async function verifyMigrateClaim(
     throw new MigrateClaimError('invalid', `Claim payload rejected: ${result.errors.join('; ')}`)
   }
 
-  return { claim: result.claim, jti: result.claim.jti, subject: result.claim.sub }
+  return { claim: result.claim, jti: result.claim.jti, subject: result.claim.sub, warnings: result.warnings ?? [] }
 }

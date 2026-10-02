@@ -55,6 +55,18 @@ describe('verifyMigrateClaim', () => {
     expect(verified.subject).toBe('migrate-user-1')
   })
 
+  it('carries a well-formed comments export, and drops a malformed one with a warning instead of refusing the claim', async () => {
+    const comments_export = { url: 'https://migrate.example/api/exports/comments', token: 'eyJhbGciOiJFZERTQSJ9.eyJqdGkiOiJ4In0.c2ln', expires_at: Math.floor(Date.now() / 1000) + 3600, comments: 12 }
+    const good = await verifyMigrateClaim(await sign({ ...claim, comments_export }), publicPem)
+    expect(good.claim.comments_export).toEqual(comments_export)
+    expect(good.warnings.filter(w => w.startsWith('comments_export'))).toEqual([])
+
+    const bad = await verifyMigrateClaim(await sign({ ...claim, comments_export: { url: 42, token: '' } }), publicPem)
+    expect(bad.claim.order_id).toBe('ord_123')
+    expect(bad.claim.comments_export).toBeUndefined()
+    expect(bad.warnings.some(w => w.startsWith('comments_export'))).toBe(true)
+  })
+
   it('refuses a claim signed by another key', async () => {
     expect(await reason(verifyMigrateClaim(await sign(), otherPublicPem))).toBe('invalid')
   })

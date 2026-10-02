@@ -26,11 +26,18 @@ type HandoffIssue
     | { code: 'preview_url_missing' }
     | { code: 'comments_export_too_large', detail: string }
 
+/** The comments export held on this repository's Migrate grant — status and count only. */
+interface ClaimExport {
+  status: 'ready' | 'unavailable' | 'imported' | 'expired'
+  count: number
+}
+
 interface HandoffState {
   present: boolean
   syncedAt: string | null
   summary: HandoffSummary | null
   commentsImported: number
+  claimExport?: ClaimExport | null
 }
 
 const state = ref<HandoffState | null>(null)
@@ -66,6 +73,13 @@ const dispositionVariant: Record<string, 'warning' | 'success' | 'info' | 'secon
   kept_on_wordpress: 'secondary',
   archived: 'secondary',
   dropped: 'danger',
+}
+
+const claimExport = computed(() => state.value?.claimExport ?? null)
+const canImport = computed(() => !!state.value?.summary?.comments?.hasExport || claimExport.value?.status === 'ready')
+
+function claimExportText(value: ClaimExport): string {
+  return t(`migration.claim_export_${value.status}`, { count: value.count })
 }
 
 const openOffers = computed(() => state.value?.summary?.offers.filter(o => o.supported) ?? [])
@@ -120,78 +134,95 @@ async function importComments() {
 
 <template>
   <section
-    v-if="state?.present && state.summary"
+    v-if="(state?.present && state.summary) || claimExport"
     class="mx-5 mt-5 rounded-xl border border-secondary-200 bg-secondary-50 p-4 dark:border-secondary-800 dark:bg-secondary-900"
   >
-    <div class="flex items-start gap-3">
+    <template v-if="state?.summary">
+      <div class="flex items-start gap-3">
+        <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-50 dark:bg-info-900/20">
+          <span class="icon-[annon--import] size-4 text-info-600 dark:text-info-400" aria-hidden="true" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
+            {{ t('migration.card_title') }}
+          </h4>
+          <p class="mt-0.5 truncate text-xs text-muted">
+            {{ t('migration.source') }}: <a :href="state.summary.siteUrl" target="_blank" rel="noopener" class="rounded text-primary-600 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-400">{{ state.summary.siteUrl }}</a>
+            · {{ t('migration.generated_at') }} {{ formatDate(state.summary.generatedAt) }}
+          </p>
+          <p v-if="state.summary.content" class="mt-0.5 text-xs text-muted">
+            {{ t('migration.content_summary', { models: state.summary.content.models, entries: state.summary.content.entries }) }}
+            <span v-if="state.summary.content.locales.length"> · {{ state.summary.content.locales.join(', ') }}</span>
+          </p>
+        </div>
+        <AtomsIconButton
+          v-if="editable"
+          icon="icon-[annon--refresh-cw]"
+          :label="t('migration.resync')"
+          size="sm"
+          :disabled="busy !== null"
+          @click="resync"
+        />
+      </div>
+
+      <dl class="mt-3 space-y-2">
+        <div v-for="group in groups" :key="group.disposition" class="flex items-start gap-2">
+          <dt class="w-36 shrink-0 pt-0.5 text-xs text-label">
+            {{ dispositionLabel(group.disposition) }}
+          </dt>
+          <dd class="flex flex-wrap gap-1">
+            <AtomsBadge v-for="key in group.keys" :key="key" :variant="dispositionVariant[group.disposition] ?? 'secondary'" size="sm">
+              {{ key }}
+            </AtomsBadge>
+          </dd>
+        </div>
+        <div v-if="openOffers.length" class="flex items-start gap-2">
+          <dt class="w-36 shrink-0 pt-0.5 text-xs text-label">
+            {{ t('migration.offers') }}
+          </dt>
+          <dd class="text-xs text-body dark:text-secondary-300">
+            <span v-for="(offer, i) in openOffers" :key="`${offer.capability}-${offer.provider}`">
+              {{ offer.capability }} → {{ offer.provider }}<span v-if="i < openOffers.length - 1">; </span>
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      <div v-if="state.summary.issues?.length" class="mt-3 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 dark:border-warning-800 dark:bg-warning-900/20">
+        <p class="flex items-center gap-1.5 text-xs font-medium text-warning-700 dark:text-warning-300">
+          <span class="icon-[annon--alert-triangle] size-3.5" aria-hidden="true" />
+          {{ t('migration.issues') }}
+        </p>
+        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300">
+          <li v-for="issue in state.summary.issues" :key="issue.code">
+            {{ issueText(issue) }}
+          </li>
+        </ul>
+      </div>
+    </template>
+
+    <div v-else class="flex items-start gap-3">
       <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-50 dark:bg-info-900/20">
         <span class="icon-[annon--import] size-4 text-info-600 dark:text-info-400" aria-hidden="true" />
       </div>
-      <div class="min-w-0 flex-1">
-        <h4 class="text-sm font-semibold text-heading dark:text-secondary-100">
-          {{ t('migration.card_title') }}
-        </h4>
-        <p class="mt-0.5 truncate text-xs text-muted">
-          {{ t('migration.source') }}: <a :href="state.summary.siteUrl" target="_blank" rel="noopener" class="rounded text-primary-600 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-400">{{ state.summary.siteUrl }}</a>
-          · {{ t('migration.generated_at') }} {{ formatDate(state.summary.generatedAt) }}
-        </p>
-        <p v-if="state.summary.content" class="mt-0.5 text-xs text-muted">
-          {{ t('migration.content_summary', { models: state.summary.content.models, entries: state.summary.content.entries }) }}
-          <span v-if="state.summary.content.locales.length"> · {{ state.summary.content.locales.join(', ') }}</span>
-        </p>
-      </div>
-      <AtomsIconButton
-        v-if="editable"
-        icon="icon-[annon--refresh-cw]"
-        :label="t('migration.resync')"
-        size="sm"
-        :disabled="busy !== null"
-        @click="resync"
-      />
+      <h4 class="pt-1.5 text-sm font-semibold text-heading dark:text-secondary-100">
+        {{ t('migration.card_title') }}
+      </h4>
     </div>
 
-    <dl class="mt-3 space-y-2">
-      <div v-for="group in groups" :key="group.disposition" class="flex items-start gap-2">
-        <dt class="w-36 shrink-0 pt-0.5 text-xs text-label">
-          {{ dispositionLabel(group.disposition) }}
-        </dt>
-        <dd class="flex flex-wrap gap-1">
-          <AtomsBadge v-for="key in group.keys" :key="key" :variant="dispositionVariant[group.disposition] ?? 'secondary'" size="sm">
-            {{ key }}
-          </AtomsBadge>
-        </dd>
-      </div>
-      <div v-if="openOffers.length" class="flex items-start gap-2">
-        <dt class="w-36 shrink-0 pt-0.5 text-xs text-label">
-          {{ t('migration.offers') }}
-        </dt>
-        <dd class="text-xs text-body dark:text-secondary-300">
-          <span v-for="(offer, i) in openOffers" :key="`${offer.capability}-${offer.provider}`">
-            {{ offer.capability }} → {{ offer.provider }}<span v-if="i < openOffers.length - 1">; </span>
-          </span>
-        </dd>
-      </div>
-    </dl>
-
-    <div v-if="state.summary.issues?.length" class="mt-3 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 dark:border-warning-800 dark:bg-warning-900/20">
-      <p class="flex items-center gap-1.5 text-xs font-medium text-warning-700 dark:text-warning-300">
-        <span class="icon-[annon--alert-triangle] size-3.5" aria-hidden="true" />
-        {{ t('migration.issues') }}
-      </p>
-      <ul class="mt-1 list-disc space-y-0.5 pl-5 text-xs text-body dark:text-secondary-300">
-        <li v-for="issue in state.summary.issues" :key="issue.code">
-          {{ issueText(issue) }}
-        </li>
-      </ul>
-    </div>
-
-    <div v-if="state.summary.comments" class="mt-3 flex flex-wrap items-center gap-2 border-t border-secondary-200 pt-3 dark:border-secondary-800">
+    <div v-if="state && (state.summary?.comments || claimExport)" class="mt-3 flex flex-wrap items-center gap-2 border-t border-secondary-200 pt-3 dark:border-secondary-800" data-testid="migration-comments">
       <span class="text-xs text-body dark:text-secondary-300">
-        {{ state.summary.comments.total === 1 ? t('migration.comments_at_source_one') : t('migration.comments_at_source_many', { total: state.summary.comments.total }) }}
-        · {{ t('migration.comments_imported', { count: state.commentsImported }) }}
+        <template v-if="state.summary?.comments">
+          {{ state.summary.comments.total === 1 ? t('migration.comments_at_source_one') : t('migration.comments_at_source_many', { total: state.summary.comments.total }) }}
+          ·
+        </template>
+        {{ t('migration.comments_imported', { count: state.commentsImported }) }}
       </span>
+      <p v-if="claimExport" class="w-full text-xs text-muted" data-testid="migration-claim-export">
+        {{ claimExportText(claimExport) }}
+      </p>
       <AtomsBaseButton
-        v-if="editable && state.summary.comments.hasExport"
+        v-if="editable && canImport"
         type="button"
         variant="primary"
         size="sm"
@@ -203,9 +234,9 @@ async function importComments() {
       </AtomsBaseButton>
     </div>
 
-    <OrganismsMigrationMediaCard :workspace-id="workspaceId" :project-id="projectId" :editable="editable" />
+    <OrganismsMigrationMediaCard v-if="state?.summary" :workspace-id="workspaceId" :project-id="projectId" :editable="editable" />
 
-    <ul v-if="state.summary.notes.length" class="mt-3 list-disc space-y-0.5 pl-5 text-xs text-muted">
+    <ul v-if="state?.summary?.notes.length" class="mt-3 list-disc space-y-0.5 pl-5 text-xs text-muted">
       <li v-for="note in state.summary.notes" :key="note">
         {{ note }}
       </li>

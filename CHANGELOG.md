@@ -11,6 +11,12 @@ A field counts as emptied when it had a value before the change and is empty aft
 **Policy change: removing list items makes a content write `bulk_content`.**
 This applies to lists at any depth, nested ones included. Items are matched by `id`/`key`/`slug`/`ref` when every item carries one. A list that can't be matched that way (plain values, or every item rewritten) counts only the drop in item count. Adding items or reordering them never counts. The count comes from the branch's before/after, so a save and its merge give the same answer. Under the default policy the approval count is unchanged. A policy that sets `low_risk_content` to `auto` now holds these writes, at save and at merge.
 
+**One migration runs before the new image serves: 040.**
+managed+postgres: the Railway pre-deploy runs it (expect "1 applied" in its log, then `pnpm db:verify:pg`); plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. 040 adds the table `migrate_comment_exports`, which holds a Migrate order's comments export on its grant until the project imports it. Nothing existing is changed or dropped, so rolling back the image alone is safe.
+
+**New environment variable: `NUXT_MIGRATE_ORIGINS`.**
+These are the Migrate origins Studio may fetch a comments export from, comma-separated (production: `https://migrate.contentrain.io`). It is empty by default, and empty fetches nothing: a claim's comments export is then marked unavailable and the file upload in the comments settings stays the way in. Once set, the export is fetched when the order is claimed. The claim never waits for it (10 s per attempt, one retry), and the export's payload is cleared as soon as it is imported, or when the 30-day window ends if it is never imported. The bearer token that comes with the claim is never stored or logged. `@contentrain/types` moves to 1.32.0.
+
 ## v0.4.7
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.6...v0.4.7)
