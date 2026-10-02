@@ -174,8 +174,12 @@ export function createContentEngine(ctx: ContentEngineContext) {
       return remember(await write(), write)
     },
     listContentBranches: () => listContentBranches(internal),
-    mergeBranch: async (branch: string): Promise<EngineMergeResult & { branch: string, redone?: boolean }> => {
-      const result = await landWithRedo(branch, b => mergeBranch(internal, b))
+    // `expectedHead` pins an approved merge to the commit that was approved.
+    // No redo then: a write replayed onto a newer head is not what was reviewed.
+    mergeBranch: async (branch: string, options: { expectedHead?: string } = {}): Promise<EngineMergeResult & { branch: string, redone?: boolean }> => {
+      const result = options.expectedHead
+        ? { ...await mergeBranch(internal, branch, options), branch }
+        : await landWithRedo(branch, b => mergeBranch(internal, b))
       if (result.merged) afterMerge(projectId)
       return result
     },

@@ -48,6 +48,8 @@ describe('Migrate grant routes', () => {
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', name: 'Acme', trial_consumed_at: '2026-01-01T00:00:00Z' }),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
       listWorkspaceProjects: vi.fn().mockResolvedValue([]),
+      getMigrateCommentsExportState: vi.fn().mockResolvedValue(null),
+      saveMigrateCommentsExport: vi.fn().mockResolvedValue(undefined),
     }
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('createError', createErrorLike)
@@ -89,6 +91,45 @@ describe('Migrate grant routes', () => {
         origin: 'https://old-blog.example',
       }))
       expect(result).toMatchObject({ grant: { id: 'grant-1', plan: 'pro', trialDays: 60, state: 'claimed', repo: { owner: 'acme', name: 'blog' } } })
+    })
+
+    it('answers without waiting for the comments export, which lands on the grant later', async () => {
+      vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({
+        migrate: { claimPublicKey: 'pem', origins: 'https://migrate.example' },
+        public: { siteUrl: 'https://studio.example.com' },
+      }))
+      let release!: (value: Response) => void
+      const fetchMock = vi.fn(() => new Promise<Response>((resolve) => {
+        release = resolve
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+      const exportPayload = { version: 1, format: 'contentrain-comments@1', source: { kind: 'wxr' }, generated_at: '2026-09-27T10:00:00Z', entries: {}, threads_closed: [], comments: [] }
+      verifyMigrateClaim.mockResolvedValue({
+        ...verified,
+        claim: { ...verified.claim, comments_export: { url: 'https://migrate.example/api/exports/comments', token: 'bearer-secret', expires_at: 1_900_000_000, comments: 3 } },
+        warnings: [],
+      })
+
+      const result = await (await claimRoute())({} as never)
+      expect(result).toMatchObject({ comments: { status: 'pending', count: 3 } })
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      expect(db.saveMigrateCommentsExport).not.toHaveBeenCalled()
+
+      release(new Response(JSON.stringify(exportPayload), { status: 200 }))
+      await vi.waitFor(() => expect(db.saveMigrateCommentsExport).toHaveBeenCalledWith('grant-1', expect.objectContaining({ status: 'ready', comments: 0 })))
+      expect(JSON.stringify(db.saveMigrateCommentsExport!.mock.calls)).not.toContain('bearer-secret')
+    })
+
+    it('says the comments are unavailable when the claim\'s export was dropped by the contract', async () => {
+      verifyMigrateClaim.mockResolvedValue({ ...verified, warnings: ['comments_export.url: not a URL'] })
+      const result = await (await claimRoute())({} as never)
+      expect(result).toMatchObject({ comments: { status: 'unavailable', count: 0 } })
+      await vi.waitFor(() => expect(db.saveMigrateCommentsExport).toHaveBeenCalledWith('grant-1', expect.objectContaining({ status: 'unavailable', payload: null })))
+    })
+
+    it('has no comments line when the claim carries no export', async () => {
+      expect(await (await claimRoute())({} as never)).toMatchObject({ comments: null })
+      expect(db.saveMigrateCommentsExport).not.toHaveBeenCalled()
     })
 
     it('refuses an order another account already claimed', async () => {
@@ -139,7 +180,9 @@ describe('Migrate grant routes', () => {
     it('the workspace alone until the repo is connected there; nothing once the caller no longer administers it', async () => {
       db.getMigrateGrantForUser!.mockResolvedValue(bound)
       db.listWorkspaceProjects!.mockResolvedValue([{ id: 'p-other', repo_full_name: 'acme/docs' }])
-      expect(await (await grantRoute())({} as never)).toMatchObject({ destination: { workspaceSlug: 'acme', projectId: null } })
+      expect(await (await grantRoute())({} as never)).toMatchObject({ destination: { workspaceSlug: 'acme', projectId: null }, comments: null })
+      db.getMigrateCommentsExportState!.mockResolvedValue({ grantId: 'grant-1', status: 'ready', comments: 12, expiresAt: '2026-10-27T00:00:00Z', importedAt: null })
+      expect(await (await grantRoute())({} as never)).toMatchObject({ comments: { status: 'ready', count: 12 } })
       db.getWorkspaceForUser!.mockResolvedValue(null)
       expect(await (await grantRoute())({} as never)).toMatchObject({ destination: null })
     })

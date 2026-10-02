@@ -163,6 +163,16 @@ export interface UsageAlertKey {
   threshold: 80 | 100 | 120
 }
 
+/** A Migrate grant's comments export (migration 040). `payload` only when asked for. */
+export interface MigrateCommentsExportRow {
+  grantId: string
+  status: 'ready' | 'unavailable' | 'imported' | 'expired'
+  comments: number
+  expiresAt: string
+  importedAt: string | null
+  payload?: unknown
+}
+
 export interface DatabaseProvider {
   // ═══════════════════════════════════════════════════
   // PROFILES
@@ -1128,6 +1138,33 @@ export interface DatabaseProvider {
    * nothing from the old site.
    */
   getMigrateGrantOrigin: (workspaceId: string, repoFullName: string) => Promise<string | null>
+
+  /**
+   * Record what the claim's comments export gave (migration 040), one row
+   * per grant. A `ready` row holds the payload until the project imports it.
+   * An `imported` row is final: a later claim for the same order never
+   * re-arms it. Any other row is replaced — a new claim brings a new token.
+   */
+  saveMigrateCommentsExport: (grantId: string, input: {
+    status: 'ready' | 'unavailable'
+    payload: unknown | null
+    comments: number
+    expiresAt: string
+  }) => Promise<void>
+
+  /**
+   * The comments export of the grant behind a workspace's project: the newest
+   * grant bound to `workspaceId` for `repoFullName` (owner/name, any case)
+   * that has one. Exports past their window lose their payload first
+   * (`expired`). `payload` is read only with `withPayload`.
+   */
+  getMigrateCommentsExport: (workspaceId: string, repoFullName: string, options?: { withPayload?: boolean }) => Promise<MigrateCommentsExportRow | null>
+
+  /** A grant's export state without its payload — the claim screen. */
+  getMigrateCommentsExportState: (grantId: string) => Promise<MigrateCommentsExportRow | null>
+
+  /** The export landed: `imported`, the payload cleared at once. */
+  markMigrateCommentsExportImported: (grantId: string) => Promise<void>
 
   // ═══════════════════════════════════════════════════
   // MIGRATION MEDIA JOBS (a migration's media → Studio Media)

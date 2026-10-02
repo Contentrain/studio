@@ -127,6 +127,16 @@ export interface MigrateGrantsTable {
   created_at: Generated<string>
 }
 
+export interface MigrateCommentExportsTable {
+  grant_id: string
+  status: string
+  payload: unknown | null
+  comments: Generated<number>
+  expires_at: string
+  fetched_at: Generated<string>
+  imported_at: string | null
+}
+
 export interface WorkspacesTable {
   id: Generated<string>
   name: string
@@ -666,6 +676,7 @@ export interface StudioDatabase {
   'audit_logs': AuditLogsTable
   'payment_accounts': PaymentAccountsTable
   'migrate_grants': MigrateGrantsTable
+  'migrate_comment_exports': MigrateCommentExportsTable
   'migration_media_jobs': MigrationMediaJobsTable
   'migration_media_items': MigrationMediaItemsTable
   'workspaces': WorkspacesTable

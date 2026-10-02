@@ -11,6 +11,7 @@
 import { clearBranchRequestSafe } from '~~/server/utils/branch-requests'
 import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from '~~/server/utils/branch-approval'
 import { actorFromEmail } from '~~/server/utils/execution-plan'
+import { isBranchMoved } from '~~/server/utils/content-engine/errors'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -41,7 +42,16 @@ export default defineEventHandler(async (event) => {
   const engine = createContentEngine({ git, contentRoot, projectId })
   const startedAt = new Date().toISOString()
 
-  const approval = await resolveMergeApproval({ git, contentRoot, projectId, branch, workflow, policy: brain.approvalPolicy })
+  // A commit that lands after the approval is not approved: the merge is
+  // pinned to the approved tip, and a branch that moved answers 409 so the
+  // panel reloads the new tip for review.
+  const moved = (e: unknown): never => {
+    if (isBranchMoved(e))
+      throw createError({ statusCode: 409, message: errorMessage('branches.moved_since_approval') })
+    throw e
+  }
+
+  const approval = await resolveMergeApproval({ git, contentRoot, projectId, branch, workflow, policy: brain.approvalPolicy }).catch(moved)
   if (approval && !approval.decision.allowed) {
     throw createError({
       statusCode: 403,
@@ -50,7 +60,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const mergeResult = await engine.mergeBranch(branch)
+  const mergeResult = await engine.mergeBranch(branch, approval?.commitSha ? { expectedHead: approval.commitSha } : {}).catch(moved)
   if (mergeResult.merged) clearBranchRequestSafe(projectId, branch)
 
   if (approval && mergeResult.merged) {

@@ -2,7 +2,8 @@
  * Studio included with a Contentrain Migrate order — the pieces the claim
  * and grant-checkout routes share. Lifecycle: migration 031.
  */
-import type { DatabaseRow } from '../providers/database'
+import type { MigrateStudioCommentsExport } from '@contentrain/types'
+import type { DatabaseRow, MigrateCommentsExportRow } from '../providers/database'
 import { resolveDeployment } from './deployment'
 
 /**
@@ -77,4 +78,26 @@ export async function migrationSignedOrigin(workspaceId: string, project: { repo
   const repo = typeof project.repo_full_name === 'string' ? project.repo_full_name : ''
   if (!repo.includes('/')) return null
   return useDatabaseProvider().getMigrateGrantOrigin(workspaceId, repo)
+}
+
+/**
+ * What the claim screen says about the site's comments. `pending` while the
+ * export is being taken onto the grant; `unavailable` means the file upload.
+ * Null when the claim had no comments export.
+ */
+export interface MigrateClaimCommentsView {
+  status: 'pending' | MigrateCommentsExportRow['status']
+  count: number
+}
+
+export function claimCommentsView(
+  stored: MigrateCommentsExportRow | null,
+  pointer?: MigrateStudioCommentsExport,
+  warnings: string[] = [],
+): MigrateClaimCommentsView | null {
+  // Held or imported already: a later claim for the order does not fetch again.
+  if (stored && (stored.status === 'ready' || stored.status === 'imported')) return { status: stored.status, count: stored.comments }
+  if (pointer) return { status: 'pending', count: pointer.comments }
+  if (warnings.some(w => w.startsWith('comments_export'))) return { status: 'unavailable', count: 0 }
+  return stored ? { status: stored.status, count: stored.comments } : null
 }

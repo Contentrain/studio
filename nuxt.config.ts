@@ -122,6 +122,10 @@ export default defineNuxtConfig({
       // NUXT_MIGRATE_CLAIM_PUBLIC_KEY — Contentrain Migrate's Ed25519 public key
       // (SPKI PEM, "\n" escapes allowed). Empty = Migrate claim links are off.
       claimPublicKey: '',
+      // NUXT_MIGRATE_ORIGINS — Migrate origins a claim's comments export is
+      // fetched from (comma-separated, e.g. https://migrate.contentrain.io).
+      // Empty = no fetch; the project's comments settings offer the upload.
+      origins: '',
     },
     stripe: {
       secretKey: '', // NUXT_STRIPE_SECRET_KEY (optional — legacy Stripe plugin)

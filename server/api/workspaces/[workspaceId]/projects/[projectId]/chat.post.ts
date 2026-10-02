@@ -10,6 +10,7 @@ import type { MigrationHandoff } from '@contentrain/types'
 import { buildRequestContext } from '~~/server/utils/agent-system-prompt'
 import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/server/utils/migration-handoff'
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
+import { effectiveWorkflow } from '~~/server/utils/branch-approval'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '~~/server/utils/conversation-history'
 import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor, premiumModelsAllowed } from '../../../../../../shared/utils/ai-models'
 import { settleTurnCredits } from '../../../../../../shared/utils/ai-credits'
@@ -352,9 +353,9 @@ export default defineEventHandler(async (event) => {
       aiTools[aiTools.length - 1]!.cacheControl = PROMPT_CACHE_CONTROL
     }
 
-    // Workflow: plans without review feature always auto-merge regardless of config
-    const configWorkflow = projectConfig?.workflow ?? 'auto-merge'
-    const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
+    // The same reading as the Merge button and the deploy gate: review only
+    // when the plan grants it and the project opted in; any other value merges.
+    const workflow = effectiveWorkflow(projectConfig?.workflow, hasFeature(plan, 'workflow.review'))
 
     // === SSE STREAM ===
     const eventStream = createEventStream(event)

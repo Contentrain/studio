@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { GitProvider } from '../../server/providers/git'
 import type { AgentPermissions } from '../../server/utils/agent-permissions'
 import type { ChatUIContext } from '../../server/utils/agent-types'
+import { BranchMovedError } from '../../server/utils/content-engine/errors'
 
 /**
  * The chat agent's merge_branch merged a branch the review panel showed at
@@ -42,7 +43,7 @@ function decision(allowed: boolean) {
   }
 }
 
-async function runMerge(workflow: string) {
+async function runMerge(workflow: string, mergeBranch = vi.fn().mockResolvedValue({ merged: true, branch: BRANCH })) {
   const { emptyAffected } = await import('../../server/utils/agent-types')
   vi.stubGlobal('emptyAffected', emptyAffected)
   vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
@@ -51,7 +52,7 @@ async function runMerge(workflow: string) {
   vi.stubGlobal('useDatabaseProvider', vi.fn(() => ({})))
   vi.stubGlobal('invalidateBrainCache', vi.fn())
   vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: { workflow }, approvalPolicy: { version: 1 } }))
-  const engine = { mergeBranch: vi.fn().mockResolvedValue({ merged: true, branch: BRANCH }) }
+  const engine = { mergeBranch }
   const { executeToolWithAutoMerge } = await import('../../server/utils/conversation-engine')
   const out = await executeToolWithAutoMerge(
     'merge_branch', { branch: BRANCH }, engine as never, {} as GitProvider, 'owner@x.io', 'u1', 'content', workflow, PERMISSIONS, 'pro', 'p1', 'w1', UI,
@@ -86,12 +87,12 @@ describe('merge_branch answers to the branch approval', () => {
   })
 
   it('merges an approved branch and keeps its receipt, like the Merge button', async () => {
-    const approval = { plan: PLAN, grants: [{ approver: 'reviewer@x.io' }], decision: decision(true) }
+    const approval = { plan: PLAN, grants: [{ approver: 'reviewer@x.io' }], decision: decision(true), commitSha: 'approved-tip' }
     resolveMergeApproval.mockResolvedValue(approval)
 
     const { result, engine } = await runMerge('review')
 
-    expect(engine.mergeBranch).toHaveBeenCalledWith(BRANCH)
+    expect(engine.mergeBranch).toHaveBeenCalledWith(BRANCH, { expectedHead: 'approved-tip' })
     expect(result).toMatchObject({ merged: true })
     expect(recordMergeReceipt).toHaveBeenCalledWith(expect.objectContaining({
       projectId: 'p1',
@@ -107,8 +108,29 @@ describe('merge_branch answers to the branch approval', () => {
 
     const { result, engine } = await runMerge('auto-merge')
 
-    expect(engine.mergeBranch).toHaveBeenCalledWith(BRANCH)
+    expect(engine.mergeBranch).toHaveBeenCalledWith(BRANCH, {})
     expect(result).toMatchObject({ merged: true })
     expect(recordMergeReceipt).not.toHaveBeenCalled()
+  })
+
+  it('does not merge a branch that moved after its approval', async () => {
+    resolveMergeApproval.mockResolvedValue({ plan: PLAN, grants: [], decision: decision(true), commitSha: 'approved-tip' })
+
+    const { result, affected } = await runMerge('review', vi.fn().mockRejectedValue(new BranchMovedError(BRANCH, 'approved-tip', 'pushed-later')))
+
+    expect(result).toMatchObject({ merged: false, error: 'branch.moved_since_approval' })
+    expect(recordMergeReceipt).not.toHaveBeenCalled()
+    // The panel has a new tip to show.
+    expect(affected.branchesChanged).toBe(true)
+  })
+
+  it('reads the policy fresh, not from the turn-start cache', async () => {
+    resolveMergeApproval.mockResolvedValue(null)
+    const getBrainCache = vi.fn().mockReturnValue({ config: { workflow: 'review' }, approvalPolicy: { version: 0 } })
+    vi.stubGlobal('getBrainCache', getBrainCache)
+
+    await runMerge('review')
+
+    expect(resolveMergeApproval).toHaveBeenCalledWith(expect.objectContaining({ policy: { version: 1 } }))
   })
 })
