@@ -49,6 +49,20 @@ export const MAX_IMAGE_DIMENSION = 16384
 export const MAX_ORIGINAL_DIMENSION = 4096
 
 /**
+ * Animated GIF/WebP bounds. A GIF is decoded frame by frame at its own size before it is resized, so the cost is
+ * frames × width × height (RGBA, 4 bytes a pixel) and the encode time grows with the frame count. Over any of these
+ * the upload is rejected — never cut down to one frame.
+ */
+export const ANIMATION_LIMITS = {
+  /** Most frames an animation may have. */
+  maxFrames: 300,
+  /** Most pixels summed over all frames (64 MP ≈ 256 MB decoded). */
+  maxTotalPixels: 64_000_000,
+  /** Wall-clock budget for one animated encode (sharp stops the pipeline and throws). */
+  timeoutSeconds: 30,
+} as const
+
+/**
  * Resolve variant config for a field.
  * - String → preset name lookup
  * - Object → custom config (passthrough)
