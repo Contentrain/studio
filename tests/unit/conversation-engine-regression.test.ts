@@ -696,6 +696,8 @@ describe('turn-end merge coalescing (W4)', () => {
     return {
       ...ctx,
       engine: engine as never,
+      // A review gate reads the written branch back; this one empties nothing.
+      git: { getBranchDiff: vi.fn().mockResolvedValue([]), readFile: vi.fn() } as unknown as GitProvider,
       workflow: overrides.workflow ?? 'auto-merge',
       permissions: {
         ...ctx.permissions,

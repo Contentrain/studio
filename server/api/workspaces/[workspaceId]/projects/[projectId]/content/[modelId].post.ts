@@ -10,7 +10,8 @@
  *   absent leaves unchanged. Never changes status.
  */
 
-import { decideMerge, writeSignals } from '~~/server/utils/approval-gate'
+import { decideMerge, savedEntryIds, toolRisk, writeSignals } from '~~/server/utils/approval-gate'
+import { branchWriteSignals } from '~~/server/utils/branch-approval'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -62,11 +63,20 @@ export default defineEventHandler(async (event) => {
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
   const configWorkflow = brain.config?.workflow ?? 'auto-merge'
   const workflow = hasFeature(plan, 'workflow.review') ? configWorkflow : 'auto-merge'
+  const kind = brain.models.get(modelId)?.kind
+  const scope = { models: [modelId], locales: [body.locale ?? 'en'], entries: savedEntryIds({ data: body.data }, { id: modelId, kind }) }
+  const payloadSignals = writeSignals('save_content', { data: body.data }, kind)
+  // Whether the save empties a field or drops list items is read off the branch it just wrote —
+  // the same review the merge will be judged by — and only when it could
+  // still change the answer.
+  const signals = workflow === 'review' && result.branch && toolRisk('save_content', scope, payloadSignals) === 'low_risk_content'
+    ? { ...payloadSignals, ...await branchWriteSignals({ git, contentRoot, projectId, branch: result.branch }) }
+    : payloadSignals
   const gate = await decideMerge({
     workflow,
     tool: 'save_content',
-    scope: { models: [modelId], locales: [body.locale ?? 'en'], entries: Object.keys(body.data ?? {}) },
-    signals: writeSignals('save_content', { data: body.data }),
+    scope,
+    signals,
     policy: brain.approvalPolicy,
     commitSha: result.commit?.sha,
   })

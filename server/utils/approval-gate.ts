@@ -103,17 +103,36 @@ export interface ToolScope {
  * What a single-entry content write does, read from its payload.
  *
  * The tool's rung says what kind of thing changes; these say how much of it a
- * reader would notice. Three shapes of a one-entry write are not low risk even
+ * reader would notice. Four shapes of a one-entry write are not low risk even
  * though the tool is: it changes whether the entry is visible, it empties a
- * field, or it rewrites a large body of text. All three are read from the
- * payload alone — never from the content's meaning — so the same write always
- * lands on the same rung.
+ * field, it drops list items, or it rewrites a large body of text. Status and
+ * text size are read from the payload ({@link writeSignals}); emptied fields
+ * and dropped items are read from the written branch's review
+ * ({@link contentLoss}), the same account the merge is judged by, because a
+ * payload cannot tell a field someone cleared from one that was never filled,
+ * nor a list that lost items from one that was only reordered. None of them reads the content's meaning, so
+ * the same write always lands on the same rung.
  */
 export interface WriteSignals {
   /** The status the write moves entries to — `update_status`, or a `save_content` that sets one. */
   targetStatus?: string
-  /** Fields the write sets to an empty value (`''`, `null`, `[]`, `{}`). */
+  /**
+   * Fields — nested and list-of-object ones included — that had a value before
+   * the write and are empty after it. From the written branch's review, never
+   * from the payload: see {@link branchWriteSignals}.
+   */
   emptiedFields?: number
+  /**
+   * List items — nested lists included — the write drops. Adding or reordering
+   * never counts. From the written branch's review: see {@link branchWriteSignals}.
+   */
+  removedItems?: number
+  /**
+   * The written branch could not be read back, so whether it empties anything
+   * is unknown. Treated as though it did: a check that cannot run must not
+   * wave the write through.
+   */
+  unreadBranch?: boolean
   /** Total characters of the string values written. */
   textChars?: number
 }
@@ -130,6 +149,10 @@ export function contentSignalReason(signals: WriteSignals = {}): string | null {
     return `it moves content to \`${signals.targetStatus}\``
   if ((signals.emptiedFields ?? 0) > 0)
     return `it empties ${signals.emptiedFields} field${signals.emptiedFields === 1 ? '' : 's'}`
+  if ((signals.removedItems ?? 0) > 0)
+    return `it removes ${signals.removedItems} list item${signals.removedItems === 1 ? '' : 's'}`
+  if (signals.unreadBranch)
+    return 'its branch could not be read back to check for emptied fields or removed list items'
   if ((signals.textChars ?? 0) >= LARGE_TEXT_CHANGE_CHARS)
     return `it writes ${signals.textChars} characters of text`
   return null
@@ -149,20 +172,17 @@ export function toolRisk(tool: string, scope: ToolScope = {}, signals?: WriteSig
   return floor
 }
 
-function isEmptyValue(value: unknown): boolean {
-  if (value === '' || value === null) return true
-  if (Array.isArray(value)) return value.length === 0
-  return typeof value === 'object' && Object.keys(value as object).length === 0
-}
-
 /**
  * The {@link WriteSignals} of a tool call, from the same params the tool ran with.
  *
  * `save_content` carries either one entry's fields (`slug` + `data`, or a
- * singleton/dictionary `data`) or a map of entry id → fields; both are walked
- * one level down so a field of an entry counts, not the entry itself.
+ * singleton/dictionary `data`) or a map of entry id → fields; the map is
+ * walked one level down so a field of an entry counts, not the entry itself.
+ * `kind` tells the two apart — without it a keyless payload is read as a map.
+ *
+ * Emptied fields are not counted here: see {@link WriteSignals.emptiedFields}.
  */
-export function writeSignals(tool: string, params: Record<string, unknown>): WriteSignals {
+export function writeSignals(tool: string, params: Record<string, unknown>, kind?: string): WriteSignals {
   if (tool === 'update_status' && typeof params.status === 'string')
     return { targetStatus: params.status }
   if (tool === 'replace_in_field') {
@@ -190,18 +210,19 @@ export function writeSignals(tool: string, params: Record<string, unknown>): Wri
   else {
     const data = params.data
     if (!data || typeof data !== 'object' || Array.isArray(data)) return targetStatus
+    // Only a collection payload is keyed by entry; a singleton's or a
+    // dictionary's keys are already its fields (see savedEntryIds).
+    const byEntry = !params.slug && kind !== 'singleton' && kind !== 'dictionary'
     for (const value of Object.values(data as Record<string, unknown>)) {
-      if (!params.slug && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
+      if (byEntry && value && typeof value === 'object' && !Array.isArray(value)) values.push(...Object.values(value))
       else values.push(value)
     }
   }
-  let emptiedFields = 0
   let textChars = 0
   for (const value of values) {
-    if (isEmptyValue(value)) emptiedFields++
-    else if (typeof value === 'string') textChars += value.length
+    if (typeof value === 'string') textChars += value.length
   }
-  return { ...targetStatus, emptiedFields, textChars }
+  return { ...targetStatus, textChars }
 }
 
 /**
@@ -250,12 +271,25 @@ export function parseApprovalPolicy(raw: string): { policy: ApprovalPolicyFile |
   return { policy: parsed as ApprovalPolicyFile, error: null }
 }
 
+/** The model a save writes to, as far as counting its entries needs. */
+export interface SavedModel {
+  id: string
+  kind?: string
+}
+
 /**
  * The entries one `save_content` call addresses: a document's slug, or the
  * keys of a collection payload. Used only to tell one entry from many —
  * {@link toolRisk} lifts a multi-entry write a rung.
+ *
+ * A singleton or a dictionary IS one record, so its payload keys are fields or
+ * dictionary keys, not entries. Counting them as entries put a three-field
+ * singleton save on `bulk_content` while the branch it produced — judged by
+ * `branchRisk` over the review, which already counts it as one record — sat
+ * on `low_risk_content`. The editor and the agent both count through here.
  */
-export function savedEntryIds(params: Record<string, unknown>): string[] {
+export function savedEntryIds(params: Record<string, unknown>, model?: SavedModel): string[] {
+  if (model && (model.kind === 'singleton' || model.kind === 'dictionary')) return [model.id]
   if (Array.isArray(params.documents))
     return (params.documents as Array<{ slug?: unknown }>).map(d => String(d?.slug ?? '')).filter(Boolean)
   if (typeof params.slug === 'string' && params.slug) return [params.slug]
@@ -269,7 +303,7 @@ export interface MergeDecisionInput {
   workflow: string
   tool: string
   scope?: ToolScope
-  /** What the write does, from its payload — see {@link writeSignals}. */
+  /** What the write does — {@link writeSignals} plus {@link branchWriteSignals}. */
   signals?: WriteSignals
   /** The project's parsed policy, or `null` to fall back to the default. */
   policy?: ApprovalPolicyFile | null

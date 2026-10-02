@@ -50,6 +50,8 @@ describe('useChat', () => {
     useState('chat-conversations').value = []
     useState('chat-streaming').value = false
     useState('chat-error').value = null
+    useState('chat-failed-turn').value = null
+    useState('chat-credits-exhausted').value = null
     useState('chat-model').value = DEFAULT_CHAT_MODEL
     useState('chat-stream-tick').value = 0
     route.params = {}
@@ -430,6 +432,82 @@ describe('useChat', () => {
     // Network error without statusCode → resolveApiError returns user-friendly fallback
     expect(chat.error.value).not.toBe('Network failed')
     expect(chat.error.value).toBeTruthy()
+  })
+
+  it('offers a retry when /chat answers 503, and a retry sends the same question once', async () => {
+    // A 503 from the proxy has no JSON body. The old path toasted and dropped
+    // the placeholder, leaving the question with no answer — it read as a hang.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: () => Promise.reject(new Error('html')) })
+      .mockResolvedValueOnce(createStreamResponse([
+        'data: {"type":"text","content":"Tamam"}\n',
+        'data: {"type":"done","affected":{"models":[],"locales":[],"snapshotChanged":false,"branchesChanged":false}}\n',
+      ]))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'Başlığı değiştir')
+
+    expect(chat.isStreaming.value).toBe(false)
+    expect(chat.error.value).toBeTruthy()
+    expect(chat.failedTurn.value).toMatchObject({ workspaceId: 'workspace-1', projectId: 'project-1', text: 'Başlığı değiştir' })
+    expect(chat.messages.value.map(m => m.role)).toEqual(['user'])
+
+    await chat.retryFailedTurn()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body).message).toBe('Başlığı değiştir')
+    expect(chat.failedTurn.value).toBeNull()
+    expect(chat.error.value).toBeNull()
+    // One question, one answer — the failed copy left the list.
+    expect(chat.messages.value.map(m => m.role)).toEqual(['user', 'assistant'])
+    expect(messageText(chat.messages.value[1]!)).toBe('Tamam')
+  })
+
+  it('offers a retry after an error event mid-stream and drops the empty placeholder', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"conversation","id":"conv-1"}\n',
+      'data: {"type":"error","message":"Your credit balance is too low to access the Anthropic API"}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'Test')
+
+    expect(chat.isStreaming.value).toBe(false)
+    expect(chat.failedTurn.value?.text).toBe('Test')
+    // The raw provider message is not what the user reads.
+    expect(chat.error.value).not.toContain('credit balance')
+    expect(chat.messages.value.map(m => m.role)).toEqual(['user'])
+  })
+
+  it('keeps text that streamed before an error event', async () => {
+    vi.stubGlobal('$fetch', vi.fn().mockResolvedValue([]))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"text","content":"Başladım"}\n',
+      'data: {"type":"error","message":"boom"}\n',
+    ])))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'Test')
+
+    expect(chat.failedTurn.value).not.toBeNull()
+    expect(messageText(chat.messages.value[1]!)).toBe('Başladım')
+  })
+
+  it('offers no retry when the credits are used up', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: () => Promise.resolve({ statusCode: 429, message: 'Out of credits', data: { code: 'ai_credits_exhausted' } }),
+    }))
+
+    const chat = useChat()
+    await chat.sendMessage('workspace-1', 'project-1', 'Test')
+
+    expect(chat.creditsExhausted.value).not.toBeNull()
+    expect(chat.failedTurn.value).toBeNull()
   })
 
   describe('model persistence', () => {

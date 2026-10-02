@@ -1,6 +1,45 @@
 # Changelog
 
 
+## Unreleased
+
+### ⚠️ Upgrade notes
+
+**Policy change: emptying a field makes a content write `bulk_content`.**
+A field counts as emptied when it had a value before the change and is empty after it (`''`, `null`, `[]`, `{}` or removed), and that includes sub-fields of objects and fields inside lists of objects. It is read from the branch's before/after, so the save and the Merge button give the same answer. Under the default policy nothing changes: `bulk_content` asks for the same single review. A policy that sets `low_risk_content` to `auto` now holds these writes, and the panel Merge holds them too. A blank optional sub-field that was already empty no longer lifts a save.
+
+**Policy change: removing list items makes a content write `bulk_content`.**
+This applies to lists at any depth, nested ones included. Items are matched by `id`/`key`/`slug`/`ref` when every item carries one. A list that can't be matched that way (plain values, or every item rewritten) counts only the drop in item count. Adding items or reordering them never counts. The count comes from the branch's before/after, so a save and its merge give the same answer. Under the default policy the approval count is unchanged. A policy that sets `low_risk_content` to `auto` now holds these writes, at save and at merge.
+
+## v0.4.7
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.6...v0.4.7)
+
+### ⚠️ Upgrade notes
+
+**1. No migrations and no new environment variables.**
+Rolling back the image alone is safe.
+
+**2. A chat merge now needs the branch's approval.**
+On a review project the chat agent's `merge_branch` goes through the same approval check as the review panel's Merge: a branch without its approvals stays open, the owner included, and the agent points the user to the review panel. An approved chat merge writes the same merge receipt the panel writes. Auto-merge projects are unchanged.
+
+**3. Migration media waits for CDN delivery.**
+The media switch is refused while the project's CDN delivery would not serve the rewritten addresses (CDN off, public media off, or a plan without `cdn.delivery`); the media card says which and links to the fix.
+
+### 🩹 Fixes
+
+- **review:** The chat agent's merge answers to the branch approval; schedule-only branches show `publish_at`/`expire_at` rows and can be approved ([#373](https://github.com/Contentrain/studio/pull/373))
+- **migration:** Hold the media switch while CDN delivery would not serve it; preflight reads the signed origin with `repo_full_name` ([#370](https://github.com/Contentrain/studio/pull/370))
+- Stale Approve after a merge, raw scope keys, scheduled/expired entry status, nested field names, workspace-switch hang, CDN panel copy ([#371](https://github.com/Contentrain/studio/pull/371))
+
+### 🚀 Enhancements
+
+- **models:** `title_field` names a nested field by its dotted path; `@contentrain/types` 1.30.0, `@contentrain/mcp` 3.9.0 ([#372](https://github.com/Contentrain/studio/pull/372))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
+
 ## v0.4.6
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.5...v0.4.6)
