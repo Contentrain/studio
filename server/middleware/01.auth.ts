@@ -39,6 +39,17 @@ const PUBLIC_PATHS = [
   '/api/media/', // Media management API — Bearer CDN key (media:* scope)
 ]
 
+// Migrate's server-to-server calls carry no session: each one is a request
+// signed with Migrate's key, verified inside the route. Exact paths, never a
+// prefix: `/api/migrate/claim` and `/api/migrate/grants/:id/*` are user
+// routes and stay behind the session.
+const MIGRATE_S2S_PATHS = [
+  '/api/migrate/account-state',
+  '/api/migrate/provision',
+  '/api/migrate/grants/status',
+  '/api/migrate/grants/install-url',
+]
+
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures
 const REFRESH_BUFFER_SECONDS = 5 * 60
 
@@ -46,7 +57,7 @@ export default defineEventHandler(async (event) => {
   const path = getRequestPath(event)
 
   // Skip non-API routes and public paths
-  if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)))
+  if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)) || MIGRATE_S2S_PATHS.includes(path))
     return
 
   let sessionData
