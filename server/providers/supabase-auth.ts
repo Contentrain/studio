@@ -266,6 +266,25 @@ export function createSupabaseAuthProvider(): AuthProvider {
       return data?.user ? mapSupabaseUser(data.user) : null
     },
 
+    async ensureUserForProviderAccount(input): Promise<AuthUser> {
+      const known = await this.getUserByProviderAccount(input.provider, input.accountId)
+      if (known) return known
+      // The admin API cannot write `auth.identities`: an existing user with this email is
+      // returned as is, and GoTrue links the GitHub identity at their first GitHub sign-in
+      // (same verified email). A new user is created confirmed; the bootstrap trigger fires.
+      const byEmail = await this.getUserByEmail(input.email)
+      if (byEmail) return byEmail
+      const admin = createSupabaseAdminClient()
+      const { data, error } = await admin.auth.admin.createUser({
+        email: input.email,
+        email_confirm: true,
+        app_metadata: { provider: input.provider },
+        user_metadata: { provider_id: input.accountId },
+      })
+      if (error || !data.user) throw error ?? new Error('createUser returned no user')
+      return mapSupabaseUser(data.user)
+    },
+
     async deleteUser(userId: string): Promise<void> {
       const admin = createSupabaseAdminClient()
       const { error } = await admin.auth.admin.deleteUser(userId)

@@ -10,6 +10,10 @@ import { getAdmin, throwDbError } from './helpers'
 type MigrateGrantMethods = Pick<
   DatabaseProvider,
   | 'claimMigrateGrant'
+  | 'getMigrateGrantById'
+  | 'saveMigrateGrantCheckout'
+  | 'markMigrateBundleApplied'
+  | 'listPendingMigrateBundles'
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
@@ -86,11 +90,12 @@ export function migrateGrantMethods(): MigrateGrantMethods {
             claim_jti: input.claimJti,
             user_id: input.userId,
             plan: input.plan,
-            trial_days: input.trialDays,
-            repo_owner: input.repoOwner,
-            repo_name: input.repoName,
+            trial_days: input.trialDays ?? null,
+            repo_owner: input.repoOwner ?? null,
+            repo_name: input.repoName ?? null,
             email: input.email,
             origin: input.origin ?? null,
+            kind: input.kind ?? 'trial',
           })
           .onConflict(oc => oc.column('order_id').doNothing())
           .returningAll()
@@ -112,6 +117,71 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .where('order_id', '=', input.orderId)
           .executeTakeFirstOrThrow()
         return { grant: existing as DatabaseRow, created: false }
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getMigrateGrantById(grantId) {
+      try {
+        const row = await getAdmin()
+          .selectFrom('migrate_grants')
+          .selectAll()
+          .where('id', '=', grantId)
+          .executeTakeFirst()
+        return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async saveMigrateGrantCheckout(grantId, input) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set({
+            checkout_id: input.checkoutId,
+            checkout_url: input.checkoutUrl,
+            checkout_expires_at: input.checkoutExpiresAt,
+            amount_cents: input.amountCents,
+            bundle_target_product_id: input.targetProductId,
+          })
+          .where('id', '=', grantId)
+          .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async markMigrateBundleApplied(grantId) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({ bundle_applied_at: eb.fn.coalesce('bundle_applied_at', eb.fn<string>('now', [])) }))
+          .where('id', '=', grantId)
+          .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async listPendingMigrateBundles(limit) {
+      try {
+        const rows = await getAdmin()
+          .selectFrom('migrate_grants')
+          .selectAll()
+          .where('kind', '=', 'bundle')
+          .where('redeemed_at', 'is not', null)
+          .where('bundle_target_product_id', 'is not', null)
+          .where('bundle_applied_at', 'is', null)
+          .orderBy('redeemed_at', 'asc')
+          .limit(limit)
+          .execute()
+        return rows as DatabaseRow[]
       }
       catch (error) {
         throwDbError(error)

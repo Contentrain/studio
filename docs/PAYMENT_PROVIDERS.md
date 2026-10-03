@@ -104,6 +104,32 @@ NUXT_POLAR_SERVER=sandbox   # or production
 
 Note: `NUXT_PUBLIC_BILLING_ENABLED` is derived automatically at boot by the `server/plugins/00.billing-flag.ts` Nitro plugin — when the Polar access token resolves the plugin registry's `isConfigured()` gate, the public flag flips to `true`. You only need to set it explicitly to override (e.g. staging with Polar configured but checkout intentionally hidden).
 
+## Migrate with Studio bundle (managed, Polar only)
+
+Migrate can sell its own fee plus Studio year 1 as one order. Migrate calls
+`POST /api/migrate/provision` (signed claim v2, same key as the claim link);
+Studio finds or creates the account behind the GitHub user, records one grant
+per order and opens one Polar checkout whose first invoice is the quoted total
+(an ad-hoc fixed price on the plan's **bundle product**). Studio never prices
+on this path: it refuses a quote it does not agree with (`migrate.quote_changed`)
+and the states it cannot sell this way yet (an account that already has a plan,
+a workspace with a live subscription).
+
+When `subscription.created` arrives the webhook moves the subscription to the
+plan's **yearly list product** with `proration_behavior=next_period`, so the
+renewal is the list price. Polar keeps an ad-hoc price on a subscription for
+good, so a move that failed is retried every 6 hours (`migrate-bundle-reconciler`
+plugin) and an error-level `[migrate-bundle] ALARM` line is logged for any
+subscription still unmoved 30 days before its renewal. Point a log alert at it.
+
+```bash
+NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID=…   # sold with an ad-hoc price per checkout
+NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID=…
+NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID=…   # the subscription's list product from the next period
+NUXT_POLAR_PRO_YEARLY_PRODUCT_ID=…
+NUXT_MIGRATE_ORIGINS=https://migrate.contentrain.io   # the only hosts a return_url may name
+```
+
 ## Studio included with a Migrate order (managed)
 
 A paid Contentrain Migrate order can include N days of a Studio plan. Migrate

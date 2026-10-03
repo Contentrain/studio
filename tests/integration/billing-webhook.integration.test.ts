@@ -22,10 +22,17 @@ describe('billing webhook integration', () => {
   const setPaymentAccountCreditUnit = vi.fn().mockResolvedValue(false)
 
   let handleWebhookMock: ReturnType<typeof vi.fn>
+  // The real util (auto-imported in Nitro) marks the grant, then moves a bundle's subscription; the
+  // move itself is covered in migrate-bundle-subscription.test.ts, here only what the webhook hands it.
+  let redeemMigrateGrant: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetModules()
     handleWebhookMock = vi.fn()
+    redeemMigrateGrant = vi.fn(async (_payment: unknown, grantId: string, subscriptionId: string | null) => {
+      await (globalThis as unknown as { useDatabaseProvider: () => { markMigrateGrantRedeemed: (g: string, s: string | null) => Promise<void> } }).useDatabaseProvider().markMigrateGrantRedeemed(grantId, subscriptionId)
+    })
+    vi.stubGlobal('redeemMigrateGrant', redeemMigrateGrant)
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('createError', createErrorLike)
     vi.stubGlobal('readRawBody', vi.fn().mockResolvedValue('{}'))
@@ -195,6 +202,7 @@ describe('billing webhook integration', () => {
     const handler = await mockPluginAndLoadHandler()
     await handler({ context: {} } as never)
     expect(markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', 'sub_123')
+    expect(redeemMigrateGrant).toHaveBeenCalledWith(expect.anything(), 'grant-1', 'sub_123')
     // The trial cap tells a Migrate trial apart by this mark.
     expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
       pluginMetadata: expect.objectContaining({ trial_origin: 'migrate' }),

@@ -133,6 +133,21 @@ export interface AuthProvider {
   getUserByProviderAccount: (provider: 'github' | 'google', accountId: string) => Promise<AuthUser | null>
 
   /**
+   * Find the user behind an OAuth account, or create one for it without a
+   * sign-in (a Migrate customer who pays before ever opening Studio). The
+   * email must be one the provider verified: it links an existing user with
+   * that email (their stored profile is left as it is), or names the new
+   * one. Creating fires the same bootstrap as a first sign-in (profile and
+   * personal workspace). Throws `IdentityConflictError` when the email's
+   * user already has a different account of that provider.
+   */
+  ensureUserForProviderAccount: (input: {
+    provider: 'github'
+    accountId: string
+    email: string
+  }) => Promise<AuthUser>
+
+  /**
    * Delete a user account permanently.
    * Cascades to profiles, workspaces (owned), memberships, etc.
    */
@@ -145,4 +160,11 @@ export interface AuthProvider {
    * rotation family so the refresh token can never mint again.
    */
   revokeSession?: (refreshToken: string) => Promise<void>
+}
+
+/** The email's user already signed in with another account of the same provider. */
+export class IdentityConflictError extends Error {
+  constructor() {
+    super('Email belongs to a user with a different provider account')
+  }
 }

@@ -20,6 +20,7 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { SignJWT, jwtVerify } from 'jose'
+import { IdentityConflictError } from './auth'
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, ProviderTokens } from './auth'
 import { decryptApiKey, encryptApiKey } from '../utils/encryption'
 import { getDb, getPostgresConfig } from './postgres-db/client'
@@ -595,6 +596,47 @@ export function createManagedAuthProvider(): AuthProvider {
 
       const row = identity ? await loadUserById(identity.user_id) : undefined
       return row ? toAuthUser(row) : null
+    },
+
+    async ensureUserForProviderAccount(input) {
+      const known = await this.getUserByProviderAccount(input.provider, input.accountId)
+      if (known) return known
+
+      const db = getDb()
+      const now = new Date().toISOString()
+      const byEmail = await db
+        .selectFrom('auth.users')
+        .select('id')
+        .where(({ eb, fn }) => eb(fn('lower', ['email']), '=', input.email.toLowerCase()))
+        .executeTakeFirst()
+
+      if (byEmail) {
+        // The email is provider-verified: the account joins this user. A user who already has a
+        // different account of this provider is not silently given a second one.
+        const other = await db
+          .selectFrom('auth.identities')
+          .select('provider_id')
+          .where('user_id', '=', byEmail.id)
+          .where('provider', '=', input.provider)
+          .executeTakeFirst()
+        if (other && other.provider_id !== input.accountId) throw new IdentityConflictError()
+        await recordIdentity(byEmail.id, input.provider, input.accountId, now)
+        return toAuthUser((await loadUserById(byEmail.id))!)
+      }
+
+      const inserted = await db
+        .insertInto('auth.users')
+        .values({
+          email: input.email,
+          provider: input.provider,
+          provider_account_id: input.accountId,
+          raw_user_meta_data: JSON.stringify({}),
+          email_verified_at: now,
+        })
+        .returning('id')
+        .executeTakeFirst()
+      await recordIdentity(inserted!.id, input.provider, input.accountId, now)
+      return toAuthUser((await loadUserById(inserted!.id))!)
     },
 
     async deleteUser(userId) {

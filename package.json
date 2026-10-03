@@ -66,7 +66,7 @@
     "@aws-sdk/client-s3": "^3.1076.0",
     "@contentrain/mcp": "3.9.0",
     "@contentrain/query": "7.4.0",
-    "@contentrain/types": "1.40.0",
+    "@contentrain/types": "1.43.0",
     "@gitbeaker/rest": "^43.8.0",
     "@nuxt/eslint": "1.16.0",
     "@nuxt/image": "2.0.0",

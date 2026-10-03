@@ -117,6 +117,12 @@ export default defineNuxtConfig({
       starterProductId: '', // NUXT_POLAR_STARTER_PRODUCT_ID
       proProductId: '', // NUXT_POLAR_PRO_PRODUCT_ID
       server: 'production', // NUXT_POLAR_SERVER — 'sandbox' | 'production'
+      // "Migrate with Studio" bundle: the product the ad-hoc priced first invoice is sold on, and the
+      // yearly list product the subscription moves to for renewal. Empty = the bundle is off.
+      starterBundleProductId: '', // NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID
+      proBundleProductId: '', // NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID
+      starterYearlyProductId: '', // NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID
+      proYearlyProductId: '', // NUXT_POLAR_PRO_YEARLY_PRODUCT_ID
     },
     migrate: {
       // NUXT_MIGRATE_CLAIM_PUBLIC_KEY — Contentrain Migrate's Ed25519 public key

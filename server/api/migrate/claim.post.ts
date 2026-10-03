@@ -58,6 +58,9 @@ export default defineEventHandler(async (event) => {
 
   if (grant.user_id !== session.user.id)
     throw createError({ statusCode: 409, message: errorMessage('migrate.claim_taken') })
+  // The order was bought as a bundle: its Studio year is on the order, there is no trial to claim.
+  if (grant.kind === 'bundle')
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bundle') })
 
   const existing = await useDatabaseProvider().getMigrateCommentsExportState(grant.id as string)
   // Not awaited: a slow or failing export never holds the claim up. It never throws.

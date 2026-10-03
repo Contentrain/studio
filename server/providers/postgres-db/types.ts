@@ -115,15 +115,24 @@ export interface MigrateGrantsTable {
   claim_jti: string
   user_id: string
   plan: string
-  trial_days: number
-  repo_owner: string
-  repo_name: string
+  /** NULL for a bundle grant (044). */
+  trial_days: number | null
+  /** NULL for a bundle grant until the delivery repository reaches Studio (044). */
+  repo_owner: string | null
+  repo_name: string | null
   email: string
   workspace_id: string | null
   bound_at: string | null
   redeemed_at: string | null
   redeemed_subscription_id: string | null
   origin: string | null
+  kind: Generated<string>
+  checkout_id: string | null
+  checkout_url: string | null
+  checkout_expires_at: string | null
+  amount_cents: number | null
+  bundle_target_product_id: string | null
+  bundle_applied_at: string | null
   created_at: Generated<string>
 }
 

@@ -132,6 +132,11 @@ describe('Migrate grant routes', () => {
       expect(db.saveMigrateCommentsExport).not.toHaveBeenCalled()
     })
 
+    it('refuses an order that was bought as a bundle: its Studio year is on the order, there is no trial to claim', async () => {
+      db.claimMigrateGrant!.mockResolvedValue({ grant: { ...grantRow, kind: 'bundle', trial_days: null, repo_owner: null, repo_name: null }, created: false })
+      await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_bundle' })
+    })
+
     it('refuses an order another account already claimed', async () => {
       db.claimMigrateGrant!.mockResolvedValue({ grant: { ...grantRow, user_id: 'user-2' }, created: false })
       await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.claim_taken' })
@@ -207,6 +212,13 @@ describe('Migrate grant routes', () => {
     it('opens no checkout once the grant has been used', async () => {
       db.getMigrateGrantForUser!.mockResolvedValue({ ...grantRow, workspace_id: 'ws-1', bound_at: '2026-09-23T12:00:00Z', redeemed_at: '2026-09-23T12:05:00Z' })
       await expect((await checkoutRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_used' })
+      expect(createCheckoutSession).not.toHaveBeenCalled()
+    })
+
+    it('never opens an included trial for a bundle grant (it is paid through Migrate\'s checkout)', async () => {
+      db.getMigrateGrantForUser!.mockResolvedValue({ ...grantRow, kind: 'bundle', trial_days: null, repo_owner: null, repo_name: null })
+      await expect((await checkoutRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_bundle' })
+      expect(db.bindMigrateGrantWorkspace).not.toHaveBeenCalled()
       expect(createCheckoutSession).not.toHaveBeenCalled()
     })
 

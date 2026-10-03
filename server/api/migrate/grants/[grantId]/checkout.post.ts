@@ -45,6 +45,9 @@ export default defineEventHandler(async (event) => {
 
   if (grant.redeemed_at)
     throw createError({ statusCode: 409, message: errorMessage('migrate.grant_used') })
+  // A bundle grant is paid through Migrate's checkout, never opened as an included trial.
+  if (grant.kind === 'bundle')
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bundle') })
   if (grant.bound_at && grant.workspace_id !== workspaceId)
     throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bound_elsewhere') })
 

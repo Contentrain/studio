@@ -320,7 +320,7 @@ export default defineEventHandler(async (event) => {
       // grant up: no second included trial after cancel-and-resubscribe.
       // Idempotent — whichever of created/updated arrives first marks it.
       if (result.migrateGrantId) {
-        await db.markMigrateGrantRedeemed(result.migrateGrantId, result.subscriptionId ?? null)
+        await redeemMigrateGrant(provider, result.migrateGrantId, result.subscriptionId ?? null)
       }
       // First 'trialing' observation consumes the workspace's one-time
       // trial, so a later re-checkout (after cancel/expiry) gets a paid
@@ -429,7 +429,7 @@ export default defineEventHandler(async (event) => {
       // grant up: no second included trial after cancel-and-resubscribe.
       // Idempotent — whichever of created/updated arrives first marks it.
       if (result.migrateGrantId) {
-        await db.markMigrateGrantRedeemed(result.migrateGrantId, result.subscriptionId ?? null)
+        await redeemMigrateGrant(provider, result.migrateGrantId, result.subscriptionId ?? null)
       }
 
       const workspaceUpdate: Record<string, unknown> = {}

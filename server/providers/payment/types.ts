@@ -39,6 +39,29 @@ export interface CheckoutResult {
   sessionId: string
 }
 
+/**
+ * A "Migrate with Studio" bundle checkout: one first invoice at a price Studio
+ * computed (Migrate fee + Studio year 1), on a yearly subscription that moves
+ * to the list product at the next period (`changeSubscriptionProduct`).
+ */
+export interface BundleCheckoutInput {
+  workspaceId: string
+  plan: 'starter' | 'pro'
+  customerEmail: string
+  /** The first invoice, in cents (USD). */
+  amountCents: number
+  successUrl: string
+  /** Copied onto the checkout and the subscription (order, tenant, grant ids). */
+  metadata: Record<string, string>
+}
+
+export interface BundleCheckoutResult extends CheckoutResult {
+  /** When the checkout stops being payable (ISO). */
+  expiresAt: string
+  /** The list product the subscription must move to after it is created. */
+  targetProductId: string
+}
+
 export interface PortalInput {
   workspaceId: string
   /** Provider-specific customer identifier (e.g. Stripe `cus_…`, Polar UUID). */
@@ -87,6 +110,8 @@ export interface WebhookResult {
    * webhook mark the grant used.
    */
   migrateGrantId?: string
+  /** The product the subscription is on right now (subscription events). */
+  productId?: string
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
   /**
@@ -144,6 +169,20 @@ export interface PaymentProvider {
 
   /** Cancel a subscription (immediate). */
   cancelSubscription: (subscriptionId: string) => Promise<void>
+
+  /**
+   * Open a Migrate bundle checkout (see `BundleCheckoutInput`). Providers
+   * without ad-hoc recurring prices throw: the bundle is Polar-only.
+   */
+  createBundleCheckout: (input: BundleCheckoutInput) => Promise<BundleCheckoutResult>
+
+  /**
+   * Move a bundle subscription to the plan's yearly list product, effective at
+   * the next period (no charge now). The first invoice stays what it was; the
+   * renewal is the list price. Idempotent: a subscription already on the
+   * product is left alone. Returns the product the subscription ends on.
+   */
+  moveBundleSubscriptionToList: (subscriptionId: string, plan: 'starter' | 'pro') => Promise<{ productId: string, alreadyOnList: boolean }>
 
   /**
    * Record a usage event for metered/overage billing.
