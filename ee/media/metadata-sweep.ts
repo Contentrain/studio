@@ -105,11 +105,18 @@ export function purgeList(report: SweepReport): string {
   return report.urls.length ? `${report.urls.join('\n')}\n` : ''
 }
 
+/**
+ * Whether two WebP files decode to the same pixels. Each is decoded on its own and reduced to a digest before the next one
+ * is decoded, so only one raw frame buffer (a large animated WebP is hundreds of MB) is held at a time.
+ */
 async function samePixels(before: Buffer, after: Buffer): Promise<boolean> {
   const sharp = await loadSharp()
-  const decode = async (buf: Buffer) => await sharp(buf, { animated: true }).raw().toBuffer({ resolveWithObject: true })
-  const [a, b] = await Promise.all([decode(before), decode(after)])
-  return a.info.width === b.info.width && a.info.height === b.info.height && a.info.channels === b.info.channels && a.data.equals(b.data)
+  const digest = async (buf: Buffer) => {
+    const { data, info } = await sharp(buf, { animated: true }).raw().toBuffer({ resolveWithObject: true })
+    return `${info.width}x${info.height}x${info.channels}:${createHash('sha256').update(data).digest('hex')}`
+  }
+  const first = await digest(before)
+  return first === await digest(after)
 }
 
 export async function runMetadataSweep(options: SweepOptions): Promise<SweepReport> {
@@ -140,6 +147,7 @@ export async function runMetadataSweep(options: SweepOptions): Promise<SweepRepo
       report.assetsScanned++
       const paths = [asset.original_path, ...(options.includeVariants ? Object.values(asset.variants ?? {}).map(v => v.path) : [])]
       let sizeDelta = 0
+      const rewritten: string[] = []
       let contentHash: string | undefined
       for (const path of paths) {
         // An SVG master is named after the uploaded file's own extension (`.SVG` too); everything else of interest is `.webp`.
@@ -186,6 +194,7 @@ export async function runMetadataSweep(options: SweepOptions): Promise<SweepRepo
           const delta = next.length - object.data.length
           if (!dryRun) await cdn.putObject(asset.project_id, path, next, object.contentType)
           sizeDelta += delta
+          rewritten.push(path)
           report.bytesFreed -= delta
           report.filesRewritten += dryRun ? 0 : 1
           report.urls.push(`${base}/api/cdn/v1/${asset.project_id}/${path}`)
@@ -199,7 +208,7 @@ export async function runMetadataSweep(options: SweepOptions): Promise<SweepRepo
           await store.applyChange({ assetId: asset.id, workspaceId: asset.workspace_id, sizeDelta, ...(contentHash ? { contentHash } : {}) })
         }
         catch (error) {
-          report.errors.push({ assetId: asset.id, path: asset.original_path, reason: `files rewritten but the row/counter update failed: ${error instanceof Error ? error.message : String(error)}` })
+          report.errors.push({ assetId: asset.id, path: asset.original_path, reason: `files rewritten (${rewritten.join(', ')}; sizeDelta ${sizeDelta}) but the row/counter update failed: ${error instanceof Error ? error.message : String(error)}` })
         }
       }
     }
