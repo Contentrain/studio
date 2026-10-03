@@ -19,20 +19,38 @@ import { resolveWorkspaceBilling } from './workspace-billing'
 
 const RUNNING_STATES = new Set(['subscribed', 'past_due', 'canceled'])
 
-/** The highest Studio plan, among the user's owned workspaces, that is actually running. */
-export async function highestRunningPlan(userId: string): Promise<MigrateStudioPlan | null> {
+interface RunningPlan { plan: MigrateStudioPlan, workspaceId: string, primary: boolean }
+
+/** The user's owned workspaces whose plan is actually running, with the sold plan each one holds. */
+async function runningPlans(userId: string): Promise<RunningPlan[]> {
   const db = useDatabaseProvider()
   const workspaces = await db.listOwnedWorkspacesAdmin(userId)
-  let best: MigrateStudioPlan | null = null
+  const running: RunningPlan[] = []
   for (const workspace of workspaces) {
     const billing = await resolveWorkspaceBilling(db, { ...workspace, id: String(workspace.id) })
     if (!RUNNING_STATES.has(billing.state)) continue
     const plan = billing.effectivePlan
     // Enterprise is above everything Migrate sells.
     const sold: MigrateStudioPlan | null = plan === 'enterprise' || plan === 'pro' ? 'pro' : plan === 'starter' ? 'starter' : null
-    if (sold && (!best || planCovers(sold, best))) best = sold
+    if (sold) running.push({ plan: sold, workspaceId: String(workspace.id), primary: workspace.type === 'primary' })
   }
+  return running
+}
+
+/** The highest Studio plan, among the user's owned workspaces, that is actually running. */
+export async function highestRunningPlan(userId: string): Promise<MigrateStudioPlan | null> {
+  let best: MigrateStudioPlan | null = null
+  for (const { plan } of await runningPlans(userId)) if (!best || planCovers(plan, best)) best = plan
   return best
+}
+
+/** The workspace a covered order joins: the account's personal workspace if its plan covers `needed`, else the first owned one that does. */
+export async function coveringWorkspace(userId: string, needed: MigrateStudioPlan): Promise<{ id: string, slug: string } | null> {
+  const covering = (await runningPlans(userId)).filter(r => planCovers(r.plan, needed))
+  const chosen = covering.find(r => r.primary) ?? covering[0]
+  if (!chosen) return null
+  const row = await useDatabaseProvider().getWorkspaceById(chosen.workspaceId, 'id, slug')
+  return row ? { id: String(row.id), slug: String(row.slug) } : null
 }
 
 /**

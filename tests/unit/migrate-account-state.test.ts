@@ -171,6 +171,23 @@ describe('POST /api/migrate/account-state', () => {
     expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, renewal_cents: 49000, current_plan: 'starter' })
   })
 
+  it('coveringWorkspace: the personal workspace if its plan covers, else the first covering one, nothing when none does', async () => {
+    const { coveringWorkspace } = await import('../../server/utils/migrate-account-state')
+    db.getWorkspaceById = vi.fn(async (id: string) => ({ id, slug: `slug-${id}` }))
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([
+      { id: 'team', type: 'secondary', plan: 'pro' },
+      { id: 'home', type: 'primary', plan: 'pro' },
+      { id: 'small', type: 'secondary', plan: 'starter' },
+    ])
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => account(id === 'small' ? 'starter' : 'pro'))
+    expect(await coveringWorkspace('user-1', 'pro')).toEqual({ id: 'home', slug: 'slug-home' })
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'small' ? account('starter') : id === 'team' ? account('pro') : null))
+    expect(await coveringWorkspace('user-1', 'pro')).toEqual({ id: 'team', slug: 'slug-team' })
+    expect(await coveringWorkspace('user-1', 'starter')).toEqual({ id: 'team', slug: 'slug-team' })
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'small' ? account('starter') : null))
+    expect(await coveringWorkspace('user-1', 'pro')).toBeNull()
+  })
+
   it('gives the jti back when our own work fails, so Migrate\'s retry of the same request is taken', async () => {
     const token = await sign({ plan: 'pro' })
     auth.getUserByProviderAccount.mockRejectedValueOnce(new Error('db down'))

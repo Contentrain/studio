@@ -10,10 +10,11 @@
  *
  * - the quote must be what Studio computes now (Migrate fee + the Studio line
  *   from the account's state), else `quote_changed` and Migrate re-quotes;
- * - only a `none` account is provisioned here: a customer who already has a plan
- *   (`covers`, `too_small`) or a workspace with a live subscription needs a
- *   different flow (S3) and is refused with a clear code instead of a checkout
- *   at the wrong amount;
+ * - `none` opens the checkout. `covers` (a running plan at least the sized one)
+ *   opens none: the grant is tied to that plan's workspace and answers `redeemed`,
+ *   the Studio fee is $0 and Polar is not called. `too_small` (an upgrade) is not
+ *   built yet and is refused with a clear code instead of a checkout at the
+ *   wrong amount;
  * - the return address must be on this Studio's Migrate allowlist.
  *
  * One grant per order. A repeated provision returns the checkout the grant
@@ -23,7 +24,7 @@
 import type { MigrateProvisionResponse, MigrateStudioClaimV2 } from '@contentrain/types'
 import { validateMigrateProvisionResponse } from '@contentrain/types'
 import { IdentityConflictError } from '../providers/auth'
-import { resolveMigrateAccountState } from './migrate-account-state'
+import { coveringWorkspace, resolveMigrateAccountState } from './migrate-account-state'
 import { migrateExportOrigins } from './migrate-comments-export'
 
 /** A checkout is reused only while it has at least this long left to be paid. */
@@ -53,6 +54,48 @@ async function bundleWorkspace(userId: string): Promise<{ id: string, slug: stri
   return { id: String(row.id), slug: String(row.slug), name: String(row.name) }
 }
 
+/** A running plan already covers the order: join its workspace, charge Studio nothing, open no checkout. */
+async function provisionCovered(claim: MigrateStudioClaimV2, userId: string): Promise<MigrateProvisionResponse> {
+  const db = useDatabaseProvider()
+  const workspace = await coveringWorkspace(userId, claim.plan)
+  // The plan covered a moment ago and no longer does: Migrate re-asks the account state and re-quotes.
+  if (!workspace) fail(409, 'migrate.quote_changed')
+  const { grant } = await db.claimMigrateGrant({
+    orderId: claim.order_id,
+    claimJti: claim.jti,
+    userId,
+    plan: claim.plan,
+    email: claim.email,
+    origin: claim.origin ?? null,
+    kind: 'bundle',
+  })
+  if (grant.user_id !== userId || grant.kind !== 'bundle') fail(409, 'migrate.claim_taken')
+  if (grant.revoked_at) fail(409, 'migrate.grant_revoked')
+  // A grant that was opened with a checkout (the account had no plan then) is not a covered one.
+  if (grant.checkout_url && !grant.redeemed_at) fail(409, 'migrate.quote_changed')
+  // A repeat finds the grant already tied to a workspace (its own, or the one the bundle was paid on): keep it.
+  let target = workspace
+  if (grant.workspace_id && grant.workspace_id !== workspace.id) {
+    const tied = await db.getWorkspaceById(String(grant.workspace_id), 'id, slug')
+    if (!tied) fail(500, 'generic.server_error')
+    target = { id: String(tied.id), slug: String(tied.slug) }
+  }
+  const bound = await db.bindMigrateGrantWorkspace(String(grant.id), target.id)
+  if (!bound) fail(409, 'migrate.grant_bound_elsewhere')
+  // No subscription of its own: the customer's plan stays theirs (a later revoke cancels nothing of it).
+  if (!bound.redeemed_at) await db.markMigrateGrantRedeemed(String(grant.id), null)
+
+  const response: MigrateProvisionResponse = {
+    grant_id: String(grant.id),
+    state: 'redeemed',
+    plan: claim.plan,
+    workspace_slug: target.slug,
+  }
+  if (!validateMigrateProvisionResponse(response, { quoted_total_cents: claim.billing.quoted_total_cents }).ok)
+    fail(502, 'billing.provider_unavailable')
+  return response
+}
+
 export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: Date = new Date()): Promise<MigrateProvisionResponse> {
   if (!isAllowedReturnUrl(claim.return_url, migrateExportOrigins())) fail(400, 'migrate.return_url_not_allowed')
   // An unverified email never creates or links an account.
@@ -60,7 +103,7 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
 
   // Studio agrees the quote or refuses it; it never prices on this path.
   const account = await resolveMigrateAccountState(claim.github_user_id, claim.plan)
-  if (account.state !== 'none') fail(409, 'migrate.bundle_state_unsupported')
+  if (account.state === 'too_small') fail(409, 'migrate.bundle_state_unsupported')
   if (claim.billing.migrate_fee_cents + account.year1_cents !== claim.billing.quoted_total_cents) fail(409, 'migrate.quote_changed')
 
   let user
@@ -73,6 +116,8 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   }
 
   const db = useDatabaseProvider()
+  if (account.state === 'covers') return provisionCovered(claim, user.id)
+
   const workspace = await bundleWorkspace(user.id)
   const existingAccount = await db.getActivePaymentAccount(workspace.id)
   const status = existingAccount?.subscription_status as string | null | undefined

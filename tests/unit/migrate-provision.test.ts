@@ -6,8 +6,10 @@ function createErrorLike(input: { statusCode: number, message: string }) {
 }
 
 const resolveMigrateAccountState = vi.fn()
+const coveringWorkspace = vi.fn()
 vi.mock('../../server/utils/migrate-account-state', () => ({
   resolveMigrateAccountState: (...args: unknown[]) => resolveMigrateAccountState(...args),
+  coveringWorkspace: (...args: unknown[]) => coveringWorkspace(...args),
 }))
 const planSource = { value: 'subscription' }
 vi.mock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: planSource.value }) }))
@@ -52,6 +54,7 @@ describe('provisionMigrateBundle', () => {
   beforeEach(() => {
     vi.resetModules()
     resolveMigrateAccountState.mockReset().mockResolvedValue({ state: 'none', plan: 'pro', year1_cents: 39200 })
+    coveringWorkspace.mockReset().mockResolvedValue({ id: 'ws-paid', slug: 'agency' })
     db = {
       listOwnedWorkspacesAdmin: vi.fn().mockResolvedValue([{ id: 'ws-other', type: 'team' }, { id: 'ws-1', type: 'primary' }]),
       getWorkspaceById: vi.fn().mockResolvedValue(workspace),
@@ -126,11 +129,57 @@ describe('provisionMigrateBundle', () => {
     expect(auth.ensureUserForProviderAccount).not.toHaveBeenCalled()
   })
 
-  it.each([['covers'], ['too_small']])('refuses an account whose state is %s: those need another flow, never a checkout at the wrong amount', async (state) => {
-    resolveMigrateAccountState.mockResolvedValue({ state, plan: 'pro', year1_cents: 0, current_plan: 'starter' })
+  it('refuses an account that needs an upgrade (too_small): never a checkout at the wrong amount', async () => {
+    resolveMigrateAccountState.mockResolvedValue({ state: 'too_small', plan: 'pro', year1_cents: 0, current_plan: 'starter' })
     expect(await refused()).toEqual({ status: 409, key: 'migrate.bundle_state_unsupported' })
     expect(payment.createBundleCheckout).not.toHaveBeenCalled()
     expect(db.claimMigrateGrant).not.toHaveBeenCalled()
+  })
+
+  describe('an account whose running plan covers the order', () => {
+    const covered = () => claim({ billing: { migrate_fee_cents: 24900, quoted_total_cents: 24900, currency: 'usd' } })
+    beforeEach(() => {
+      resolveMigrateAccountState.mockResolvedValue({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, current_plan: 'pro' })
+      db.bindMigrateGrantWorkspace.mockResolvedValue(bundleRow({ workspace_id: 'ws-paid', bound_at: '2026-10-10T12:00:00Z' }))
+      db.markMigrateGrantRedeemed = vi.fn().mockResolvedValue(undefined)
+    })
+
+    it('ties the grant to the plan\'s workspace and answers redeemed: no checkout, no Polar call, Studio fee $0', async () => {
+      expect(await run(covered())).toEqual({ grant_id: 'grant-1', state: 'redeemed', plan: 'pro', workspace_slug: 'agency' })
+      expect(coveringWorkspace).toHaveBeenCalledWith('user-1', 'pro')
+      expect(db.bindMigrateGrantWorkspace).toHaveBeenCalledWith('grant-1', 'ws-paid')
+      expect(db.markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', null)
+      expect(payment.createBundleCheckout).not.toHaveBeenCalled()
+      expect(db.saveMigrateGrantCheckout).not.toHaveBeenCalled()
+      expect(db.getActivePaymentAccount).not.toHaveBeenCalled()
+    })
+
+    it('agrees only a quote equal to the Migrate fee (no Studio line)', async () => {
+      expect(await refused(claim())).toEqual({ status: 409, key: 'migrate.quote_changed' })
+      expect(db.claimMigrateGrant).not.toHaveBeenCalled()
+    })
+
+    it('is idempotent, and keeps the workspace the grant is already tied to', async () => {
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ workspace_id: 'ws-1', redeemed_at: '2026-10-10T11:00:00Z' }), created: false })
+      db.bindMigrateGrantWorkspace.mockResolvedValue(bundleRow({ workspace_id: 'ws-1', redeemed_at: '2026-10-10T11:00:00Z' }))
+      expect(await run(covered())).toMatchObject({ state: 'redeemed', workspace_slug: 'owner-abc' })
+      expect(db.bindMigrateGrantWorkspace).toHaveBeenCalledWith('grant-1', 'ws-1')
+      expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
+    })
+
+    it('asks Migrate to re-quote when the plan stopped covering, and never reuses a grant opened with a checkout, a revoked or a foreign one', async () => {
+      coveringWorkspace.mockResolvedValue(null)
+      expect(await refused(covered())).toEqual({ status: 409, key: 'migrate.quote_changed' })
+      coveringWorkspace.mockResolvedValue({ id: 'ws-paid', slug: 'agency' })
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ checkout_url: 'https://sandbox.polar.sh/checkout/c_1' }), created: false })
+      expect(await refused(covered())).toEqual({ status: 409, key: 'migrate.quote_changed' })
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ revoked_at: '2026-10-10T11:00:00Z' }), created: false })
+      expect(await refused(covered())).toEqual({ status: 409, key: 'migrate.grant_revoked' })
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ user_id: 'user-2' }), created: false })
+      expect(await refused(covered())).toEqual({ status: 409, key: 'migrate.claim_taken' })
+      expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
+      expect(payment.createBundleCheckout).not.toHaveBeenCalled()
+    })
   })
 
   it('refuses a return address that is not on the Migrate allowlist, and an unverified email', async () => {
