@@ -78,6 +78,19 @@ describe('bundle subscription: move to the list product', () => {
     expect(payment.moveBundleSubscriptionToList).not.toHaveBeenCalled()
   })
 
+  describe('isDuplicateBundleSubscription', () => {
+    it('is true only for a bundle that already has a different subscription', async () => {
+      const { isDuplicateBundleSubscription } = await load()
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: 'sub_1' }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_2')).toBe(true)
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_1')).toBe(false)
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: null }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_2')).toBe(false)
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ kind: 'trial', redeemed_subscription_id: 'sub_1' }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_2')).toBe(false)
+    })
+  })
+
   describe('money guards on redeem', () => {
     const alarms = () => errorLog.mock.calls.map(call => String(call[0])).filter(line => line.includes('ALARM'))
 

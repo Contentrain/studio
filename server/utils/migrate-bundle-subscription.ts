@@ -88,6 +88,20 @@ export async function reconcileMigrateBundles(payment: PaymentProvider, now: Dat
  * grant's subscription moves to its list product. Idempotent: whichever of
  * `subscription.created` / `.updated` arrives first does the work.
  */
+/**
+ * A subscription that is not the one a bundle grant already has came from another checkout (Polar cannot
+ * expire the old one): a duplicate payment. It must not become the workspace's active account, or refunding
+ * it would cancel and drop the valid bundle's plan. The webhook asks first and skips every account write.
+ */
+export async function isDuplicateBundleSubscription(grantId: string, subscriptionId: string, checkoutId: string | null = null): Promise<boolean> {
+  const grant = await useDatabaseProvider().getMigrateGrantById(grantId)
+  const known = grant?.kind === 'bundle' ? (grant.redeemed_subscription_id as string | null) : null
+  if (!known || known === subscriptionId) return false
+  // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
+  console.error(`[migrate-bundle] ALARM duplicate payment: grant ${grantId} already has subscription ${known}, subscription ${subscriptionId} (checkout ${checkoutId ?? 'unknown'}) came from another checkout; refund it`)
+  return true
+}
+
 export async function redeemMigrateGrant(
   payment: PaymentProvider,
   grantId: string,
@@ -99,12 +113,7 @@ export async function redeemMigrateGrant(
   // Polar cannot expire a checkout, so an old one can still be paid after a re-quote or beside the current one.
   // That is money: say so loudly, and never let a second payment pass as the grant's subscription.
   if (before?.kind === 'bundle' && subscriptionId) {
-    const known = before.redeemed_subscription_id as string | null
-    if (known && known !== subscriptionId) {
-      // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
-      console.error(`[migrate-bundle] ALARM duplicate payment: grant ${grantId} already has subscription ${known}, subscription ${subscriptionId} (checkout ${checkoutId ?? 'unknown'}) came from another checkout; refund it`)
-      return
-    }
+    if (await isDuplicateBundleSubscription(grantId, subscriptionId, checkoutId)) return
     if (checkoutId && before.checkout_id && before.checkout_id !== checkoutId) {
       // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
       console.error(`[migrate-bundle] ALARM stale checkout paid: grant ${grantId} subscription ${subscriptionId} came from checkout ${checkoutId}, the current one is ${String(before.checkout_id)}; check the amount paid against the quote`)

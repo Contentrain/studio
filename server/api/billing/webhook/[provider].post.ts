@@ -279,6 +279,10 @@ export default defineEventHandler(async (event) => {
     case 'subscription.created': {
       // Fresh subscription — upsert the active account for this workspace.
       if (!result.workspaceId || !result.customerId) break
+      // A second payment for a bundle (an old checkout) must not replace the valid subscription as the
+      // workspace's account: its refund would cancel the plan. Logged as an ALARM; ops refunds it.
+      if (result.migrateGrantId && result.subscriptionId
+        && await isDuplicateBundleSubscription(result.migrateGrantId, result.subscriptionId, result.checkoutId ?? null)) break
       const overageLock = await planOverageLock(db, {
         workspaceId: result.workspaceId,
         billableMeters: result.billableMeters,
@@ -341,6 +345,8 @@ export default defineEventHandler(async (event) => {
 
     case 'subscription.updated': {
       if (!result.workspaceId || !result.customerId) break
+      if (result.migrateGrantId && result.subscriptionId
+        && await isDuplicateBundleSubscription(result.migrateGrantId, result.subscriptionId, result.checkoutId ?? null)) break
       // Read the existing account BEFORE upsert so we can detect the
       // transitions worth emailing on (trial→active, payment failed or
       // recovered, cancellation scheduled).

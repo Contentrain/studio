@@ -275,9 +275,14 @@ export function createSupabaseAuthProvider(): AuthProvider {
       // (same verified email). A new user is created confirmed; the bootstrap trigger fires.
       const byEmail = await this.getUserByEmail(input.email)
       if (byEmail) {
-        // The account behind this email already signed in with a different GitHub account: linking
-        // ours would hand it to a stranger (same guard as the managed pair).
-        if (byEmail.providerAccountId && byEmail.providerAccountId !== input.accountId) throw new IdentityConflictError()
+        // The account behind this email already has a different GitHub identity: linking ours would hand
+        // it to a stranger (same guard as the managed pair). Read from `auth.identities` (the user's
+        // `identities`), not from `user_metadata.provider_id`, which only names the last sign-in provider.
+        const { data: full, error: fullError } = await createSupabaseAdminClient().auth.admin.getUserById(byEmail.id)
+        if (fullError) throw fullError
+        const other = full?.user?.identities?.find(identity => identity.provider === input.provider)
+        const otherId = other ? String(other.identity_data?.provider_id ?? other.identity_data?.sub ?? other.id ?? '') : ''
+        if (other && otherId !== input.accountId) throw new IdentityConflictError()
         return byEmail
       }
       const admin = createSupabaseAdminClient()
