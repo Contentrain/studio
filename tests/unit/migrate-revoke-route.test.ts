@@ -44,7 +44,7 @@ describe('POST /api/migrate/grants/revoke', () => {
     vi.resetModules()
     taken.clear()
     config.migrate.claimPublicKey = publicPem
-    payment = { cancelSubscription: vi.fn().mockResolvedValue(undefined) }
+    payment = { cancelSubscription: vi.fn().mockResolvedValue('canceled') }
     db = {
       getMigrateGrantByOrderId: vi.fn().mockResolvedValue(grant()),
       getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', github_installation_id: null }),
@@ -102,6 +102,14 @@ describe('POST /api/migrate/grants/revoke', () => {
     expect(await call()).toEqual({ state: 'revoked', installed: false, subscription_canceled: false })
     expect(payment!.cancelSubscription).not.toHaveBeenCalled()
     expect(db.markMigrateGrantRevoked).not.toHaveBeenCalled()
+  })
+
+  it('treats a subscription Polar already ended as done: grant revoked, nothing canceled, no 502 loop', async () => {
+    payment!.cancelSubscription.mockResolvedValue('already_ended')
+    await request()
+    expect(await call()).toEqual({ state: 'revoked', installed: false, subscription_canceled: false })
+    expect(db.markMigrateGrantRevoked).toHaveBeenCalledWith('grant-1', 'refund_before_delivery')
+    expect(db.releaseMigrateS2sJti).not.toHaveBeenCalled()
   })
 
   it('leaves the grant live and gives the token back when Polar fails, so Migrate can retry', async () => {

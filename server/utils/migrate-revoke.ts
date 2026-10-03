@@ -29,8 +29,8 @@ export async function revokeMigrateGrant(grant: DatabaseRow, reason: MigrateRevo
       const payment = usePaymentProvider()
       if (!payment) throw createError({ statusCode: 503, message: errorMessage('generic.server_error') })
       try {
-        await payment.cancelSubscription(subscriptionId)
-        canceled = true
+        // An already ended subscription is the goal met, not a failure: the grant is still marked below.
+        canceled = (await payment.cancelSubscription(subscriptionId)) === 'canceled'
       }
       catch (err) {
         // eslint-disable-next-line no-console -- ops visibility: Migrate retries the call

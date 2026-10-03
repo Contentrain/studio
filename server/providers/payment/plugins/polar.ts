@@ -360,8 +360,17 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
       return { productId: targetProductId, alreadyOnList: false }
     },
 
-    async cancelSubscription(subscriptionId: string): Promise<void> {
-      await polar.subscriptions.revoke({ id: subscriptionId })
+    async cancelSubscription(subscriptionId: string): Promise<'canceled' | 'already_ended'> {
+      try {
+        await polar.subscriptions.revoke({ id: subscriptionId })
+        return 'canceled'
+      }
+      catch (err) {
+        // Already ended (an operator refunded it, or an earlier call revoked it) or gone: nothing left to cancel.
+        const kind = (err as { error?: unknown }).error
+        if (kind === 'AlreadyCanceledSubscription' || kind === 'ResourceNotFound') return 'already_ended'
+        throw err
+      }
     },
 
     async ingestUsageEvent(input: UsageEventInput): Promise<void> {
