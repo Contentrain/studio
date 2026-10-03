@@ -1114,6 +1114,9 @@ export interface DatabaseProvider {
     origin?: string | null
   }) => Promise<{ grant: DatabaseRow, created: boolean }>
 
+  /** A grant by the Migrate order it belongs to (one per order); null when Studio holds none. For Migrate's server-to-server calls, which name an order and no user. */
+  getMigrateGrantByOrderId: (orderId: string) => Promise<DatabaseRow | null>
+
   /** A grant, only if `userId` owns it. */
   getMigrateGrantForUser: (grantId: string, userId: string) => Promise<DatabaseRow | null>
 

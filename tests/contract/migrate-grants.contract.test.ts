@@ -43,6 +43,12 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(second.grant.user_id).toBe(owner.userId)
   })
 
+  it('finds a grant by its order, and nothing for an order without one', async () => {
+    await claim(owner.userId)
+    expect(await methods.getMigrateGrantByOrderId(orderId)).toMatchObject({ order_id: orderId, user_id: owner.userId })
+    expect(await methods.getMigrateGrantByOrderId(`${orderId}-none`)).toBeNull()
+  })
+
   it('shows a grant only to its owner', async () => {
     const { grant } = await claim(owner.userId)
     expect(await methods.getMigrateGrantForUser(grant.id as string, owner.userId)).toMatchObject({ id: grant.id })

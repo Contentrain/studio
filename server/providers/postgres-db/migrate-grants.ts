@@ -10,6 +10,7 @@ import { getAdmin, throwDbError } from './helpers'
 type MigrateGrantMethods = Pick<
   DatabaseProvider,
   | 'claimMigrateGrant'
+  | 'getMigrateGrantByOrderId'
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
@@ -107,6 +108,20 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .where('order_id', '=', input.orderId)
           .executeTakeFirstOrThrow()
         return { grant: existing as DatabaseRow, created: false }
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getMigrateGrantByOrderId(orderId) {
+      try {
+        const row = await getAdmin()
+          .selectFrom('migrate_grants')
+          .selectAll()
+          .where('order_id', '=', orderId)
+          .executeTakeFirst()
+        return (row as DatabaseRow | undefined) ?? null
       }
       catch (error) {
         throwDbError(error)

@@ -50,6 +50,18 @@ const MIGRATE_S2S_PATHS = [
   '/api/migrate/grants/install-url',
 ]
 
+/**
+ * The GitHub App setup callback of an install Migrate started: GitHub sends
+ * the customer back with Studio's signed `state` and no Studio session. Only a
+ * token-shaped `state` passes; an in-app install (workspace-id `state`) is
+ * still session-protected, and the route verifies the token itself.
+ */
+function isMigrateInstallCallback(path: string, event: Parameters<typeof getQuery>[0]): boolean {
+  // `getRequestPath` keeps the query string; the callback always has one.
+  if (path.split('?', 1)[0] !== '/api/github/setup') return false
+  return looksLikeMigrateInstallState((getQuery(event) as { state?: unknown }).state)
+}
+
 // Refresh tokens 5 minutes before expiry to avoid edge-case failures
 const REFRESH_BUFFER_SECONDS = 5 * 60
 
@@ -57,7 +69,8 @@ export default defineEventHandler(async (event) => {
   const path = getRequestPath(event)
 
   // Skip non-API routes and public paths
-  if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)) || MIGRATE_S2S_PATHS.includes(path))
+  if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)) || MIGRATE_S2S_PATHS.includes(path)
+    || isMigrateInstallCallback(path, event))
     return
 
   let sessionData
