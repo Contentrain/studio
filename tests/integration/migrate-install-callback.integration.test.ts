@@ -122,12 +122,16 @@ describe('GitHub setup callback: Migrate install state', () => {
     expect(mocks.db.claimMigrateS2sJti).not.toHaveBeenCalled()
   })
 
-  it('binds nothing when GitHub rejects the code or the installer cannot reach the installation', async () => {
+  const failedTo = `/auth/login?redirect=${encodeURIComponent('/migrate/claim?grant=grant-1&install=failed')}`
+
+  it('binds nothing when GitHub rejects the code or the installer cannot reach the installation, and lands the customer on the claim screen', async () => {
     mocks.exchange.mockResolvedValueOnce(null)
-    expect((await get(`installation_id=555&code=bad&state=${await stateToken()}`)).status).toBe(403)
+    const rejected = await get(`installation_id=555&code=bad&state=${await stateToken()}`)
+    expect([rejected.status, rejected.headers.get('location')]).toEqual([302, failedTo])
 
     mocks.gitAppService.verifyUserHasAccessToInstallation.mockResolvedValue(false)
-    expect((await get(`installation_id=555&code=abc&state=${await stateToken()}`)).status).toBe(403)
+    const denied = await get(`installation_id=555&code=abc&state=${await stateToken()}`)
+    expect([denied.status, denied.headers.get('location')]).toEqual([302, failedTo])
     expect(mocks.db.updateWorkspaceGithubInstallation).not.toHaveBeenCalled()
     expect(setServerSession).not.toHaveBeenCalled()
   })
@@ -135,9 +139,19 @@ describe('GitHub setup callback: Migrate install state', () => {
   it('refuses an installation another workspace already holds', async () => {
     mocks.db.findWorkspaceByGithubInstallation.mockResolvedValue({ id: 'ws-other' })
     const response = await get(`installation_id=555&code=abc&state=${await stateToken()}`)
-    expect(response.status).toBe(409)
+    expect([response.status, response.headers.get('location')]).toEqual([302, failedTo])
     expect(mocks.db.findWorkspaceByGithubInstallation).toHaveBeenCalledWith(555, 'ws-1')
     expect(mocks.db.updateWorkspaceGithubInstallation).not.toHaveBeenCalled()
+    expect(setServerSession).not.toHaveBeenCalled()
+  })
+
+  it('never swaps an installation the workspace already holds for a different one', async () => {
+    mocks.db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', slug: 'acme', github_installation_id: 111 })
+    const response = await get(`installation_id=555&code=abc&state=${await stateToken()}`)
+    expect([response.status, response.headers.get('location')]).toEqual([302, failedTo])
+    expect(mocks.db.updateWorkspaceGithubInstallation).not.toHaveBeenCalled()
+    expect(mocks.db.findWorkspaceByGithubInstallation).not.toHaveBeenCalled()
+    expect(mocks.exchange).not.toHaveBeenCalled()
     expect(setServerSession).not.toHaveBeenCalled()
   })
 

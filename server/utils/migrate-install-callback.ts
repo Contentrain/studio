@@ -18,6 +18,13 @@
  * Otherwise (an org admin installed for them) the installation is still bound
  * — the installer proved access to it, the grant is the payer's — but no
  * session is created; the payer is sent to sign in and open their offer.
+ * Whoever holds the install link can therefore bind THEIR installation to the
+ * payer's workspace; the link goes only to Migrate and the customer, so it is
+ * never logged.
+ *
+ * A refused install (GitHub says no, the installation is taken, the workspace
+ * holds another one) lands the customer on the claim screen with
+ * `install=failed`, not on a raw error page; a bad or replayed state is an error.
  */
 import type { H3Event } from 'h3'
 import { exchangeGitHubInstallCode } from './github-user-code'
@@ -32,8 +39,8 @@ interface CallbackQuery {
   state?: string
 }
 
-const claimScreen = (grantId: string) => `/migrate/claim?grant=${encodeURIComponent(grantId)}`
-const loginThenClaim = (grantId: string) => `/auth/login?redirect=${encodeURIComponent(claimScreen(grantId))}`
+const claimScreen = (grantId: string, failed = false) => `/migrate/claim?grant=${encodeURIComponent(grantId)}${failed ? '&install=failed' : ''}`
+const loginThenClaim = (grantId: string, failed = false) => `/auth/login?redirect=${encodeURIComponent(claimScreen(grantId, failed))}`
 
 export async function handleMigrateInstallCallback(event: H3Event, query: CallbackQuery) {
   const key = migrateInstallStateKey()
@@ -53,6 +60,12 @@ export async function handleMigrateInstallCallback(event: H3Event, query: Callba
   if (!workspace || typeof workspace.slug !== 'string')
     throw createError({ statusCode: 404, message: errorMessage('github.workspace_not_found') })
 
+  // A workspace holds one installation. If it already holds a different one
+  // (installed in-app since the link was handed out, or the link opened twice),
+  // binding would orphan the projects connected through it: bind nothing.
+  const held = Number(workspace.github_installation_id)
+  if (held && held !== installationId) return sendRedirect(event, loginThenClaim(grant.id as string, true))
+
   // Without the installer's authorization nothing proves who installed:
   // bind nothing, send the payer to the manual path.
   if (!query.code) return sendRedirect(event, loginThenClaim(grant.id as string))
@@ -62,14 +75,14 @@ export async function handleMigrateInstallCallback(event: H3Event, query: Callba
     throw createError({ statusCode: 409, message: errorMessage('migrate.s2s_replayed') })
 
   const installer = await exchangeGitHubInstallCode(query.code)
-  if (!installer) throw createError({ statusCode: 403, message: errorMessage('github.installation_access_denied') })
+  if (!installer) return sendRedirect(event, loginThenClaim(grant.id as string, true))
 
   if (!(await useGitAppService().verifyUserHasAccessToInstallation(installer.tokens.accessToken, installationId)))
-    throw createError({ statusCode: 403, message: errorMessage('github.installation_access_denied') })
+    return sendRedirect(event, loginThenClaim(grant.id as string, true))
 
-  if (Number(workspace.github_installation_id) !== installationId) {
+  if (held !== installationId) {
     if (await db.findWorkspaceByGithubInstallation(installationId, state.workspaceId))
-      throw createError({ statusCode: 409, message: errorMessage('github.installation_linked') })
+      return sendRedirect(event, loginThenClaim(grant.id as string, true))
     await db.updateWorkspaceGithubInstallation(state.workspaceId, installationId)
   }
 
