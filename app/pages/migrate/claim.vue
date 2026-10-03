@@ -12,6 +12,9 @@
  * The visitor picks a workspace they own or administer that has no running
  * subscription; the provider checkout then starts the grant's trial at $0
  * today, and the plan's regular price applies after it unless canceled.
+ * A workspace that already pays for a plan covering the grant's is offered
+ * too: the site is added to it, with no trial and no second subscription. A
+ * plan below the grant's is shown with why, and a way to upgrade it.
  *
  * Once the grant's trial has started, the screen is also the way back to
  * the delivered site: its project once the repo is connected there (straight
@@ -19,6 +22,7 @@
  * Studio"), the workspace until then.
  */
 import { PLAN_PRICING } from '~~/shared/utils/license'
+import { planCovers } from '~~/shared/utils/migrate-bundle'
 
 definePageMeta({
   layout: false,
@@ -72,15 +76,35 @@ function hasRunningSubscription(workspace: WorkspaceItem): boolean {
   return !['canceled', 'incomplete_expired'].includes(account.subscription_status ?? '')
 }
 
-interface WorkspaceOption { workspace: WorkspaceItem, eligible: boolean, reason: string | null }
+interface WorkspaceOption { workspace: WorkspaceItem, eligible: boolean, reason: string | null, attach: boolean, tooSmall?: boolean }
+
+/** The sold plan behind a workspace's running, paid subscription (Enterprise sits above both). */
+function paidPlanOf(workspace: WorkspaceItem): 'starter' | 'pro' | null {
+  const account = workspace.payment_account
+  if (!account || !['active', 'past_due'].includes(account.subscription_status ?? '')) return null
+  return account.plan === 'pro' || account.plan === 'enterprise' ? 'pro' : account.plan === 'starter' ? 'starter' : null
+}
 
 const options = computed<WorkspaceOption[]>(() => workspaces.value.map((workspace) => {
   const role = workspace.workspace_members?.[0]?.role
-  if (role !== 'owner' && role !== 'admin') return { workspace, eligible: false, reason: t('migrate_claim.ineligible_role') }
-  if (grant.value?.workspaceId && grant.value.workspaceId !== workspace.id) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_bound') }
-  if (hasRunningSubscription(workspace)) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_subscribed') }
-  return { workspace, eligible: true, reason: null }
+  if (role !== 'owner' && role !== 'admin') return { workspace, eligible: false, reason: t('migrate_claim.ineligible_role'), attach: false }
+  if (grant.value?.workspaceId && grant.value.workspaceId !== workspace.id) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_bound'), attach: false }
+  if (hasRunningSubscription(workspace)) {
+    const paid = paidPlanOf(workspace)
+    const needed = grant.value?.plan
+    if (paid && needed && planCovers(paid, needed)) return { workspace, eligible: true, reason: t('migrate_claim.attach_covers'), attach: true }
+    if (paid && needed) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_plan_below', { plan: PLAN_PRICING[needed].name }), attach: false, tooSmall: true }
+    return { workspace, eligible: false, reason: t('migrate_claim.ineligible_subscribed'), attach: false }
+  }
+  return { workspace, eligible: true, reason: null, attach: false }
 }))
+
+const selectedOption = computed(() => options.value.find(o => o.workspace.id === selectedWorkspaceId.value) ?? null)
+/** Every workspace is taken or too small: the way on is upgrading one, not waiting. */
+const upgradeTarget = computed(() => {
+  if (options.value.some(o => o.eligible)) return null
+  return options.value.find(o => o.tooSmall)?.workspace ?? null
+})
 
 const trialEndText = computed(() => {
   if (!grant.value) return ''
@@ -120,6 +144,15 @@ async function startTrial() {
   submitting.value = true
   submitError.value = ''
   try {
+    if (selectedOption.value?.attach) {
+      await $fetch(`/api/migrate/grants/${grant.value.id}/attach`, { method: 'POST', body: { workspaceId: selectedWorkspaceId.value } })
+      // The grant is used now: reload it so the screen shows the way to the site.
+      const refreshed = await $fetch<{ grant: GrantView, destination?: Destination | null }>(`/api/migrate/grants/${encodeURIComponent(grant.value.id)}`)
+      grant.value = refreshed.grant
+      destination.value = refreshed.destination ?? null
+      submitting.value = false
+      return
+    }
     const result = await $fetch<{ url: string }>(`/api/migrate/grants/${grant.value.id}/checkout`, {
       method: 'POST',
       body: { workspaceId: selectedWorkspaceId.value },
@@ -189,7 +222,10 @@ async function startTrial() {
 
         <template v-else>
           <!-- What is bought, stated before the provider's checkout. -->
-          <dl class="mt-6 space-y-2 rounded-lg border border-border px-4 py-3 text-sm dark:border-secondary-800">
+          <p v-if="selectedOption?.attach" class="mt-6 rounded-lg border border-border px-4 py-3 text-sm text-body dark:border-secondary-800 dark:text-secondary-300" data-testid="claim-attach-note">
+            {{ t('migrate_claim.attach_note') }}
+          </p>
+          <dl v-else class="mt-6 space-y-2 rounded-lg border border-border px-4 py-3 text-sm dark:border-secondary-800">
             <div class="flex justify-between gap-4">
               <dt class="text-label">
                 {{ t('migrate_claim.due_today') }}
@@ -207,7 +243,7 @@ async function startTrial() {
               </dd>
             </div>
           </dl>
-          <p class="mt-2 text-xs text-muted">
+          <p v-if="!selectedOption?.attach" class="mt-2 text-xs text-muted">
             {{ t('migrate_claim.cancel_note') }}
           </p>
 
@@ -236,6 +272,13 @@ async function startTrial() {
             </div>
           </div>
 
+          <p v-if="upgradeTarget" class="mt-3 text-sm text-body dark:text-secondary-300" data-testid="claim-upgrade">
+            {{ t('migrate_claim.upgrade_hint', { plan: PLAN_PRICING[grant.plan].name }) }}
+            <NuxtLink :to="`/w/${upgradeTarget.slug}/settings?tab=billing`" class="font-medium text-primary-700 underline dark:text-primary-300">
+              {{ t('migrate_claim.upgrade_link') }}
+            </NuxtLink>
+          </p>
+
           <p v-if="submitError" class="mt-4 text-sm text-danger-600 dark:text-danger-400" role="alert">
             {{ submitError }}
           </p>
@@ -246,7 +289,7 @@ async function startTrial() {
             :disabled="!selectedWorkspaceId || submitting"
             @click="startTrial"
           >
-            {{ t('migrate_claim.start', { days: grant.trialDays }) }}
+            {{ selectedOption?.attach ? t('migrate_claim.attach_button') : t('migrate_claim.start', { days: grant.trialDays }) }}
           </AtomsBaseButton>
         </template>
       </div>
