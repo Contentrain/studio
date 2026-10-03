@@ -89,6 +89,8 @@ export interface WebhookResult {
   workspaceId?: string
   plan?: string
   subscriptionId?: string
+  /** The checkout that created the subscription (Polar `checkoutId`), when the provider reports it. */
+  checkoutId?: string
   customerId?: string
   /** Provider-normalised status: trialing, active, past_due, canceled, unpaid, incomplete. */
   subscriptionStatus?: string

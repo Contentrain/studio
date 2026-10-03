@@ -202,7 +202,7 @@ describe('billing webhook integration', () => {
     const handler = await mockPluginAndLoadHandler()
     await handler({ context: {} } as never)
     expect(markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', 'sub_123')
-    expect(redeemMigrateGrant).toHaveBeenCalledWith(expect.anything(), 'grant-1', 'sub_123')
+    expect(redeemMigrateGrant).toHaveBeenCalledWith(expect.anything(), 'grant-1', 'sub_123', null)
     // The trial cap tells a Migrate trial apart by this mark.
     expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
       pluginMetadata: expect.objectContaining({ trial_origin: 'migrate' }),

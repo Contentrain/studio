@@ -273,4 +273,30 @@ describe('supabase auth provider', () => {
       },
     })
   })
+
+  describe('ensureUserForProviderAccount', () => {
+    const load = async () => {
+      const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
+      const { IdentityConflictError } = await import('../../server/providers/auth')
+      return { provider: createSupabaseAuthProvider(), IdentityConflictError }
+    }
+    const input = { provider: 'github' as const, accountId: '4242', email: 'owner@example.com' }
+
+    it('refuses to hand an email account that signed in with another GitHub account to a stranger', async () => {
+      const { provider, IdentityConflictError } = await load()
+      vi.spyOn(provider, 'getUserByProviderAccount').mockResolvedValue(null)
+      vi.spyOn(provider, 'getUserByEmail').mockResolvedValue({ id: 'u1', email: input.email, avatarUrl: null, provider: 'github', providerAccountId: '9999' })
+      await expect(provider.ensureUserForProviderAccount(input)).rejects.toBeInstanceOf(IdentityConflictError)
+    })
+
+    it('returns an email account with no GitHub identity yet (GoTrue links it at first sign-in) or the same one', async () => {
+      const { provider } = await load()
+      vi.spyOn(provider, 'getUserByProviderAccount').mockResolvedValue(null)
+      const byEmail = vi.spyOn(provider, 'getUserByEmail')
+      byEmail.mockResolvedValue({ id: 'u1', email: input.email, avatarUrl: null, provider: 'email' as never, providerAccountId: null })
+      expect((await provider.ensureUserForProviderAccount(input)).id).toBe('u1')
+      byEmail.mockResolvedValue({ id: 'u2', email: input.email, avatarUrl: null, provider: 'github', providerAccountId: '4242' })
+      expect((await provider.ensureUserForProviderAccount(input)).id).toBe('u2')
+    })
+  })
 })

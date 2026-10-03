@@ -1,4 +1,5 @@
 import type { AuthProvider, AuthSession, AuthTokens, AuthUser, OAuthRedirectResult, ProviderTokens } from './auth'
+import { IdentityConflictError } from './auth'
 import { createSupabaseAdminClient, createSupabaseAuthFlowClient } from './supabase-client'
 
 /**
@@ -273,7 +274,12 @@ export function createSupabaseAuthProvider(): AuthProvider {
       // returned as is, and GoTrue links the GitHub identity at their first GitHub sign-in
       // (same verified email). A new user is created confirmed; the bootstrap trigger fires.
       const byEmail = await this.getUserByEmail(input.email)
-      if (byEmail) return byEmail
+      if (byEmail) {
+        // The account behind this email already signed in with a different GitHub account: linking
+        // ours would hand it to a stranger (same guard as the managed pair).
+        if (byEmail.providerAccountId && byEmail.providerAccountId !== input.accountId) throw new IdentityConflictError()
+        return byEmail
+      }
       const admin = createSupabaseAdminClient()
       const { data, error } = await admin.auth.admin.createUser({
         email: input.email,
