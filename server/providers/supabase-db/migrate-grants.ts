@@ -14,6 +14,7 @@ type MigrateGrantMethods = Pick<
   | 'saveMigrateGrantCheckout'
   | 'markMigrateBundleApplied'
   | 'listPendingMigrateBundles'
+  | 'getMigrateGrantByOrderId'
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
@@ -138,6 +139,16 @@ export function migrateGrantMethods(): MigrateGrantMethods {
 
     async getMigrateGrantById(grantId) {
       const { data, error } = await getAdmin().from('migrate_grants').select('*').eq('id', grantId).maybeSingle()
+      if (error) fail(error.message)
+      return (data as DatabaseRow | null) ?? null
+    },
+
+    async getMigrateGrantByOrderId(orderId) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('*')
+        .eq('order_id', orderId)
+        .maybeSingle()
       if (error) fail(error.message)
       return (data as DatabaseRow | null) ?? null
     },

@@ -132,6 +132,10 @@ export default defineNuxtConfig({
       // fetched from (comma-separated, e.g. https://migrate.contentrain.io).
       // Empty = no fetch; the project's comments settings offer the upload.
       origins: '',
+      // NUXT_MIGRATE_INSTALL_STATE_KEY — HS256 secret (min 32 chars) that signs
+      // the `state` of the GitHub App install URL Migrate hands a customer. Only
+      // Studio verifies it. Empty = the install-url route is off.
+      installStateKey: '',
     },
     stripe: {
       secretKey: '', // NUXT_STRIPE_SECRET_KEY (optional — legacy Stripe plugin)

@@ -1140,6 +1140,9 @@ export interface DatabaseProvider {
   /** Bundle grants whose subscription still has to move to the list product, oldest first. */
   listPendingMigrateBundles: (limit: number) => Promise<DatabaseRow[]>
 
+  /** A grant by the Migrate order it belongs to (one per order); null when Studio holds none. For Migrate's server-to-server calls, which name an order and no user. */
+  getMigrateGrantByOrderId: (orderId: string) => Promise<DatabaseRow | null>
+
   /** A grant, only if `userId` owns it. */
   getMigrateGrantForUser: (grantId: string, userId: string) => Promise<DatabaseRow | null>
 

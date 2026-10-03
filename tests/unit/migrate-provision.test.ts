@@ -244,8 +244,8 @@ describe('POST /api/migrate/provision', () => {
 
   const sign = (payload: Record<string, unknown> = {}) => {
     const iat = Math.floor(Date.now() / 1000)
-    // `repo` is optional in claim v2 from @contentrain/types after ai#411; 1.43.0 still requires it.
-    return new SignJWT({ ...claim({ iat, exp: iat + 300, repo: { provider: 'github', owner: 'acme', name: 'blog' } }), ...payload }).setProtectedHeader({ alg: 'EdDSA' }).sign(privateKey)
+    // `repo` is optional in claim v2 (@contentrain/types 1.44.0): the bundle opens before the delivery repo exists.
+    return new SignJWT({ ...claim({ iat, exp: iat + 300 }), ...payload }).setProtectedHeader({ alg: 'EdDSA' }).sign(privateKey)
   }
 
   beforeEach(() => {
@@ -275,6 +275,13 @@ describe('POST /api/migrate/provision', () => {
     expect(result).toEqual({ value: { grant_id: 'grant-1' } })
     expect(db.claimMigrateS2sJti).toHaveBeenCalledWith('jti-1', 'provision', expect.any(Date))
     expect(provisionMigrateBundle).toHaveBeenCalledWith(expect.objectContaining({ v: 2, order_id: 'ord_1', github_user_id: '4242' }))
+  })
+
+  it('accepts a claim with no repo and one that names it', async () => {
+    expect(await call(await sign())).toEqual({ value: { grant_id: 'grant-1' } })
+    expect(provisionMigrateBundle.mock.calls[0]![0]).not.toHaveProperty('repo')
+    await call(await sign({ jti: 'jti-2', repo: { provider: 'github', owner: 'acme', name: 'blog' } }))
+    expect(provisionMigrateBundle.mock.calls[1]![0]).toHaveProperty('repo')
   })
 
   it('is off without Migrate\'s key', async () => {
