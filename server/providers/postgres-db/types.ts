@@ -581,6 +581,14 @@ export interface AuthUsersTable {
   updated_at: Generated<string>
 }
 
+export interface AuthIdentitiesTable {
+  provider: string
+  provider_id: string
+  user_id: string
+  last_sign_in_at: string | null
+  created_at: Generated<string>
+}
+
 export interface AuthRefreshTokensTable {
   id: Generated<string>
   user_id: string
@@ -671,6 +679,7 @@ export interface AuthOauthRefreshTokensTable {
 
 export interface StudioDatabase {
   'auth.users': AuthUsersTable
+  'auth.identities': AuthIdentitiesTable
   'auth.refresh_tokens': AuthRefreshTokensTable
   'auth.one_time_tokens': AuthOneTimeTokensTable
   'auth.oauth_clients': AuthOauthClientsTable

@@ -165,6 +165,7 @@ async function upsertOAuthUser(input: {
       })
       .where('id', '=', existingId)
       .execute()
+    await recordIdentity(existingId, input.provider, input.providerAccountId, now)
     return (await loadUserById(existingId))!
   }
 
@@ -181,7 +182,21 @@ async function upsertOAuthUser(input: {
     .returning('id')
     .executeTakeFirst()
 
+  await recordIdentity(inserted!.id, input.provider, input.providerAccountId, now)
   return (await loadUserById(inserted!.id))!
+}
+
+/**
+ * Keep every identity a user signs in with (`auth.identities`, migration 043):
+ * the one-slot `provider` columns hold only the latest. An identity already
+ * attached to a user stays with them; only its sign-in time moves.
+ */
+async function recordIdentity(userId: string, provider: string, providerId: string, at: string): Promise<void> {
+  await getDb()
+    .insertInto('auth.identities')
+    .values({ provider, provider_id: providerId, user_id: userId, last_sign_in_at: at })
+    .onConflict(oc => oc.columns(['provider', 'provider_id']).doUpdateSet({ last_sign_in_at: at }))
+    .execute()
 }
 
 /** Find-or-create by email (magic link / invite). Inserts fire the bootstrap trigger. */
@@ -571,13 +586,14 @@ export function createManagedAuthProvider(): AuthProvider {
     },
 
     async getUserByProviderAccount(provider, accountId) {
-      const row = await getDb()
-        .selectFrom('auth.users')
-        .select(['id', 'email', 'raw_user_meta_data', 'provider', 'provider_account_id'])
+      const identity = await getDb()
+        .selectFrom('auth.identities')
+        .select('user_id')
         .where('provider', '=', provider)
-        .where('provider_account_id', '=', accountId)
+        .where('provider_id', '=', accountId)
         .executeTakeFirst()
 
+      const row = identity ? await loadUserById(identity.user_id) : undefined
       return row ? toAuthUser(row) : null
     },
 

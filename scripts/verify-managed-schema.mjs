@@ -54,6 +54,7 @@ async function main() {
 
     const expectedTables = [
       'auth.users',
+      'auth.identities',
       'auth.refresh_tokens',
       'auth.one_time_tokens',
       'auth.oauth_clients',

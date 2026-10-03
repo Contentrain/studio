@@ -1146,6 +1146,9 @@ export interface DatabaseProvider {
    */
   claimMigrateS2sJti: (jti: string, purpose: string, expiresAt: Date) => Promise<boolean>
 
+  /** Give a `jti` back after the work behind it failed on our side, so Migrate's retry of the same request is not refused. */
+  releaseMigrateS2sJti: (jti: string) => Promise<void>
+
   /**
    * Workspaces `userId` owns, with the columns plan resolution reads. Admin
    * read for Migrate's account-state answer; Studio never lists them to the user this way.

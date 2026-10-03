@@ -115,6 +115,27 @@ describe('managed-auth provider (contract)', () => {
     expect(viaGoogle.user.provider).toBe('google')
   })
 
+  it('finds a user by any identity they signed in with, GitHub linked later or overwritten by another provider', async () => {
+    const email = `identity-${randomUUID()}@managed.test`
+    const githubId = `gh-${randomUUID()}`
+    const googleId = `g-${randomUUID()}`
+
+    // Signed up by magic link first; GitHub is linked later.
+    const { userId } = await auth.inviteUserByEmail(email)
+    cleanupUserIds.push(userId)
+    expect(await auth.getUserByProviderAccount('github', githubId)).toBeNull()
+
+    await completeOAuthSignIn({ provider: 'github', providerAccountId: githubId, email, name: null, userName: null, avatarUrl: null })
+    expect((await auth.getUserByProviderAccount('github', githubId))!.id).toBe(userId)
+
+    // A later Google sign-in overwrites the one-slot columns, not the GitHub identity.
+    await completeOAuthSignIn({ provider: 'google', providerAccountId: googleId, email, name: null, userName: null, avatarUrl: null })
+    expect((await auth.getUserById(userId))!.provider).toBe('google')
+    expect((await auth.getUserByProviderAccount('github', githubId))!.id).toBe(userId)
+    expect((await auth.getUserByProviderAccount('google', googleId))!.id).toBe(userId)
+    expect(await auth.getUserByProviderAccount('google', githubId)).toBeNull()
+  })
+
   it('refreshSession rotates within a family and revokes the family on replay', async () => {
     const session = await completeOAuthSignIn({
       provider: 'github',

@@ -186,6 +186,24 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.claimMigrateS2sJti(old, 'account-state', future)).toBe(true)
   })
 
+  it('gives a jti back after our own failure, so the same request can be taken again', async () => {
+    const jti = `${orderId}-s2s-release`
+    const future = new Date(Date.now() + 600_000)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(true)
+    await methods.releaseMigrateS2sJti(jti)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(true)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(false)
+  })
+
+  it('finds the user behind a GitHub id through the lookup function the Supabase pair calls (migration 043)', async () => {
+    const githubId = `gh-${Date.now()}`
+    await sql`INSERT INTO auth.identities (provider, provider_id, user_id) VALUES ('github', ${githubId}, ${owner.userId})`.execute(getDb())
+    const found = await sql<{ id: string | null }>`SELECT public.migrate_user_id_by_identity('github', ${githubId}) AS id`.execute(getDb())
+    expect(found.rows[0]?.id).toBe(owner.userId)
+    const none = await sql<{ id: string | null }>`SELECT public.migrate_user_id_by_identity('github', 'no-such-id') AS id`.execute(getDb())
+    expect(none.rows[0]?.id).toBeNull()
+  })
+
   it('lists the workspaces a user owns, and no one else\'s', async () => {
     const owned = await methods.listOwnedWorkspacesAdmin(owner.userId)
     expect(owned.map(w => w.id)).toContain(owner.workspaceId)

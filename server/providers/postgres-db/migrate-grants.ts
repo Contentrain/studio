@@ -15,6 +15,7 @@ type MigrateGrantMethods = Pick<
   | 'markMigrateGrantRedeemed'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
+  | 'releaseMigrateS2sJti'
   | 'listOwnedWorkspacesAdmin'
   | 'saveMigrateCommentsExport'
   | 'getMigrateCommentsExport'
@@ -61,6 +62,10 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .returning('jti')
         .executeTakeFirst()
       return !!inserted
+    },
+
+    async releaseMigrateS2sJti(jti) {
+      await getAdmin().deleteFrom('migrate_s2s_jti').where('jti', '=', jti).execute()
     },
 
     async listOwnedWorkspacesAdmin(userId) {

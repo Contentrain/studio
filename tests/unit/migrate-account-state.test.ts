@@ -122,6 +122,7 @@ describe('POST /api/migrate/account-state', () => {
     const seen = new Set<string>()
     db = {
       claimMigrateS2sJti: vi.fn(async (jti: string) => (seen.has(jti) ? false : (seen.add(jti), true))),
+      releaseMigrateS2sJti: vi.fn(async (jti: string) => { seen.delete(jti) }),
       listOwnedWorkspacesAdmin: vi.fn().mockResolvedValue([]),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
     }
@@ -168,6 +169,14 @@ describe('POST /api/migrate/account-state', () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'starter' }])
     db.getActivePaymentAccount.mockResolvedValue(account('starter'))
     expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, current_plan: 'starter' })
+  })
+
+  it('gives the jti back when our own work fails, so Migrate\'s retry of the same request is taken', async () => {
+    const token = await sign({ plan: 'pro' })
+    auth.getUserByProviderAccount.mockRejectedValueOnce(new Error('db down'))
+    await expect(call({ token })).rejects.toThrow('db down')
+    expect(db.releaseMigrateS2sJti).toHaveBeenCalledTimes(1)
+    expect(await call({ token })).toMatchObject({ state: 'none', plan: 'pro' })
   })
 
   it('takes the highest running plan across the user\'s workspaces', async () => {
