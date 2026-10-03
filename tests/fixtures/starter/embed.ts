@@ -96,7 +96,7 @@ export const esc = (value: unknown): string =>
 
 /** `base` without a trailing slash, segments URL-encoded, empty query values dropped. */
 export function publicUrl(base: string, segments: string[], query?: Record<string, string | number | undefined>): string {
-  const path = segments.map(s => encodeURIComponent(s)).join('/')
+  const path = segments.map((s) => encodeURIComponent(s)).join('/')
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined && value !== '') params.set(key, String(value))
@@ -110,12 +110,11 @@ async function failure(res: Response): Promise<EmbedError> {
   let message = text || 'Request failed'
   let code: string | undefined
   try {
-    const parsed = JSON.parse(text) as { message?: unknown, statusMessage?: unknown, data?: { code?: unknown } }
+    const parsed = JSON.parse(text) as { message?: unknown; statusMessage?: unknown; data?: { code?: unknown } }
     const m = parsed.message ?? parsed.statusMessage
     if (typeof m === 'string' && m) message = m
     if (typeof parsed.data?.code === 'string') code = parsed.data.code
-  }
-  catch {
+  } catch {
     // not JSON — the raw text is the message
   }
   return new EmbedError(res.status, message, code)
@@ -216,7 +215,7 @@ function coerce(def: FieldDef, value: string): unknown {
  */
 export function formPayload(
   entries: Iterable<[string, unknown]>,
-  config: { fields: Record<string, FieldDef>, honeypotField: string | null },
+  config: { fields: Record<string, FieldDef>; honeypotField: string | null },
 ): FormPayload {
   const payload: FormPayload = { data: {} }
   for (const [name, raw] of entries) {
@@ -244,13 +243,13 @@ export function labelFor(id: string, def: FieldDef): string {
 
 /** One input for one exposed field, chosen by field type. */
 export function fieldControl(id: string, def: FieldDef, prefix = 'cr-field'): string {
-  const common
-    = ' id="' + esc(prefix + '-' + id) + '" name="' + esc(id) + '"'
-      + (def.required ? ' required' : '')
-      + (def.pattern ? ' pattern="' + esc(def.pattern) + '"' : '')
-  const range
-    = (def.min !== undefined ? ' min="' + esc(def.min) + '"' : '')
-      + (def.max !== undefined ? ' max="' + esc(def.max) + '"' : '')
+  const common =
+    ' id="' + esc(prefix + '-' + id) + '" name="' + esc(id) + '"' +
+    (def.required ? ' required' : '') +
+    (def.pattern ? ' pattern="' + esc(def.pattern) + '"' : '')
+  const range =
+    (def.min !== undefined ? ' min="' + esc(def.min) + '"' : '') +
+    (def.max !== undefined ? ' max="' + esc(def.max) + '"' : '')
   const length = def.max !== undefined ? ' maxlength="' + esc(def.max) + '"' : ''
   switch (def.type) {
     case 'text':
@@ -260,7 +259,7 @@ export function fieldControl(id: string, def: FieldDef, prefix = 'cr-field'): st
       return '<textarea' + common + length + ' rows="5"></textarea>'
     case 'select': {
       const blank = def.required ? '' : '<option value=""></option>'
-      const options = (def.options ?? []).map(o => '<option value="' + esc(o) + '">' + esc(o) + '</option>').join('')
+      const options = (def.options ?? []).map((o) => '<option value="' + esc(o) + '">' + esc(o) + '</option>').join('')
       return '<select' + common + '>' + blank + options + '</select>'
     }
     case 'boolean':
@@ -292,8 +291,8 @@ export function fieldControl(id: string, def: FieldDef, prefix = 'cr-field'): st
 export function honeypotHtml(field: string | null): string {
   if (!field) return ''
   return (
-    '<p class="cr-hp" aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">'
-    + '<label>' + esc(strings.honeypot) + ' <input type="text" name="' + esc(field) + '" tabindex="-1" autocomplete="off" /></label></p>'
+    '<p class="cr-hp" aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">' +
+    '<label>' + esc(strings.honeypot) + ' <input type="text" name="' + esc(field) + '" tabindex="-1" autocomplete="off" /></label></p>'
   )
 }
 
@@ -304,9 +303,9 @@ export function captchaHtml(captcha: 'turnstile' | null, siteKey: string | null)
 
 export function errorsHtml(errors: FieldError[]): string {
   return (
-    '<ul class="cr-errors" role="alert">'
-    + errors.map(e => '<li data-field="' + esc(e.field) + '">' + esc(e.field) + ': ' + esc(e.message) + '</li>').join('')
-    + '</ul>'
+    '<ul class="cr-errors" role="alert">' +
+    errors.map((e) => '<li data-field="' + esc(e.field) + '">' + esc(e.field) + ': ' + esc(e.message) + '</li>').join('') +
+    '</ul>'
   )
 }
 
@@ -320,13 +319,13 @@ export function formHtml(config: FormConfig, prefix = 'cr-field'): string {
     })
     .join('')
   return (
-    '<form class="cr-form" method="post" data-model="' + esc(config.modelId) + '">'
-    + fields
-    + honeypotHtml(config.honeypotField)
-    + captchaHtml(config.captcha, config.captchaSiteKey)
-    + '<p class="cr-actions"><button type="submit">' + esc(strings.send) + '</button></p>'
-    + '<div class="cr-status" aria-live="polite"></div>'
-    + '</form>'
+    '<form class="cr-form" method="post" data-model="' + esc(config.modelId) + '">' +
+    fields +
+    honeypotHtml(config.honeypotField) +
+    captchaHtml(config.captcha, config.captchaSiteKey) +
+    '<p class="cr-actions"><button type="submit">' + esc(strings.send) + '</button></p>' +
+    '<div class="cr-status" aria-live="polite"></div>' +
+    '</form>'
   )
 }
 
@@ -362,7 +361,7 @@ export interface ThreadConfig {
 }
 
 export interface CommentThread {
-  entry: { modelId: string, entryId: string, locale: string }
+  entry: { modelId: string; entryId: string; locale: string }
   config: ThreadConfig
   comments: PublicComment[]
   total: number
@@ -371,7 +370,7 @@ export interface CommentThread {
 }
 
 export interface CommentSubmitBody {
-  author: { name: string, email?: string, url?: string }
+  author: { name: string; email?: string; url?: string }
   body: string
   /** null for a root comment — sent explicitly, as the provider's own fixture does. */
   parentId: string | null
@@ -435,9 +434,9 @@ export function commentPayload(entries: Iterable<[string, unknown]>, honeypotFie
 export function bodyHtml(text: string): string {
   return text
     .split(/\n{2,}/)
-    .map(p => p.trim())
+    .map((p) => p.trim())
     .filter(Boolean)
-    .map(p => '<p>' + esc(p).replace(/\n/g, '<br />') + '</p>')
+    .map((p) => '<p>' + esc(p).replace(/\n/g, '<br />') + '</p>')
     .join('')
 }
 
@@ -446,7 +445,7 @@ export function hasMore(thread: CommentThread): boolean {
 }
 
 /** One comment with its replies. A reply button appears only while the thread is open and depth allows it. */
-export function commentHtml(c: PublicComment, config: { closed: boolean, maxDepth: number }): string {
+export function commentHtml(c: PublicComment, config: { closed: boolean; maxDepth: number }): string {
   const author = c.author.url
     ? '<a href="' + esc(c.author.url) + '" rel="nofollow ugc noopener" target="_blank">' + esc(c.author.name) + '</a>'
     : esc(c.author.name)
@@ -457,43 +456,43 @@ export function commentHtml(c: PublicComment, config: { closed: boolean, maxDept
     ? '<button type="button" class="cr-reply" data-parent="' + esc(c.id) + '" data-author="' + esc(c.author.name) + '">' + esc(strings.reply) + '</button>'
     : ''
   const replies = c.replies.length
-    ? '<ol class="cr-replies">' + c.replies.map(r => commentHtml(r, config)).join('') + '</ol>'
+    ? '<ol class="cr-replies">' + c.replies.map((r) => commentHtml(r, config)).join('') + '</ol>'
     : ''
   return (
-    '<li class="cr-comment cr-comment--' + esc(c.type) + '" id="cr-comment-' + esc(c.id) + '" data-depth="' + esc(c.depth) + '">'
-    + '<div class="cr-comment-meta"><span class="cr-comment-author">' + author + '</span>' + badge + ' ' + date + '</div>'
-    + '<div class="cr-comment-body">' + bodyHtml(c.body) + '</div>'
-    + (reply ? '<div class="cr-comment-actions">' + reply + '</div>' : '')
-    + replies
-    + '</li>'
+    '<li class="cr-comment cr-comment--' + esc(c.type) + '" id="cr-comment-' + esc(c.id) + '" data-depth="' + esc(c.depth) + '">' +
+    '<div class="cr-comment-meta"><span class="cr-comment-author">' + author + '</span>' + badge + ' ' + date + '</div>' +
+    '<div class="cr-comment-body">' + bodyHtml(c.body) + '</div>' +
+    (reply ? '<div class="cr-comment-actions">' + reply + '</div>' : '') +
+    replies +
+    '</li>'
   )
 }
 
 export function threadHtml(thread: CommentThread): string {
   if (!thread.comments.length) return '<p class="cr-empty">' + esc(strings.noComments) + '</p>'
-  return '<ol class="cr-comment-list">' + thread.comments.map(c => commentHtml(c, thread.config)).join('') + '</ol>'
+  return '<ol class="cr-comment-list">' + thread.comments.map((c) => commentHtml(c, thread.config)).join('') + '</ol>'
 }
 
 /** The comment form; a reply carries its parent in a hidden input. */
 export function commentFormHtml(config: ThreadConfig, prefix = 'cr-c'): string {
   const emailLabel = esc(strings.email) + (config.requireEmail ? ' <span aria-hidden="true">*</span>' : '') + ' <small>' + esc(strings.emailNote) + '</small>'
   return (
-    '<form class="cr-comment-form" method="post">'
-    + '<input type="hidden" name="parent_id" value="" />'
-    + '<p class="cr-replying" hidden><span class="cr-replying-to"></span> <button type="button" class="cr-cancel-reply">' + esc(strings.cancel) + '</button></p>'
-    + '<p class="cr-field"><label for="' + prefix + '-body">' + esc(strings.comment) + ' <span aria-hidden="true">*</span></label>'
-    + '<textarea id="' + prefix + '-body" name="body" required maxlength="' + esc(config.maxBodyLength) + '" rows="5"></textarea></p>'
-    + '<p class="cr-field"><label for="' + prefix + '-name">' + esc(strings.name) + ' <span aria-hidden="true">*</span></label>'
-    + '<input type="text" id="' + prefix + '-name" name="author_name" required maxlength="120" autocomplete="name" /></p>'
-    + '<p class="cr-field"><label for="' + prefix + '-email">' + emailLabel + '</label>'
-    + '<input type="email" id="' + prefix + '-email" name="author_email"' + (config.requireEmail ? ' required' : '') + ' maxlength="254" autocomplete="email" /></p>'
-    + '<p class="cr-field"><label for="' + prefix + '-url">' + esc(strings.website) + '</label>'
-    + '<input type="url" id="' + prefix + '-url" name="author_url" maxlength="2048" autocomplete="url" /></p>'
-    + honeypotHtml(config.honeypotField)
-    + captchaHtml(config.captcha, config.captchaSiteKey)
-    + '<p class="cr-actions"><button type="submit">' + esc(strings.postComment) + '</button></p>'
-    + '<div class="cr-status" aria-live="polite"></div>'
-    + '</form>'
+    '<form class="cr-comment-form" method="post">' +
+    '<input type="hidden" name="parent_id" value="" />' +
+    '<p class="cr-replying" hidden><span class="cr-replying-to"></span> <button type="button" class="cr-cancel-reply">' + esc(strings.cancel) + '</button></p>' +
+    '<p class="cr-field"><label for="' + prefix + '-body">' + esc(strings.comment) + ' <span aria-hidden="true">*</span></label>' +
+    '<textarea id="' + prefix + '-body" name="body" required maxlength="' + esc(config.maxBodyLength) + '" rows="5"></textarea></p>' +
+    '<p class="cr-field"><label for="' + prefix + '-name">' + esc(strings.name) + ' <span aria-hidden="true">*</span></label>' +
+    '<input type="text" id="' + prefix + '-name" name="author_name" required maxlength="120" autocomplete="name" /></p>' +
+    '<p class="cr-field"><label for="' + prefix + '-email">' + emailLabel + '</label>' +
+    '<input type="email" id="' + prefix + '-email" name="author_email"' + (config.requireEmail ? ' required' : '') + ' maxlength="254" autocomplete="email" /></p>' +
+    '<p class="cr-field"><label for="' + prefix + '-url">' + esc(strings.website) + '</label>' +
+    '<input type="url" id="' + prefix + '-url" name="author_url" maxlength="2048" autocomplete="url" /></p>' +
+    honeypotHtml(config.honeypotField) +
+    captchaHtml(config.captcha, config.captchaSiteKey) +
+    '<p class="cr-actions"><button type="submit">' + esc(strings.postComment) + '</button></p>' +
+    '<div class="cr-status" aria-live="polite"></div>' +
+    '</form>'
   )
 }
 
@@ -585,8 +584,7 @@ export function applyStrings(host: HTMLElement): void {
   let text: unknown
   try {
     text = JSON.parse(raw)
-  }
-  catch {
+  } catch {
     return
   }
   if (!text || typeof text !== 'object') return
@@ -617,8 +615,7 @@ function busy(form: HTMLFormElement, on: boolean): void {
   if (on) {
     button.dataset.label = button.textContent ?? ''
     button.textContent = strings.sending
-  }
-  else {
+  } else {
     button.textContent = button.dataset.label ?? button.textContent
   }
 }
@@ -638,8 +635,7 @@ export async function mountForm(host: HTMLElement): Promise<void> {
   let config: FormConfig
   try {
     config = await fetchFormConfig(rt, model)
-  }
-  catch (error) {
+  } catch (error) {
     if (isPaymentRequired(error)) return hideUnavailable(host, 'form')
     host.innerHTML = '<p class="cr-error">' + esc(error instanceof Error ? error.message : strings.failed) + '</p>'
     return
@@ -660,13 +656,11 @@ export async function mountForm(host: HTMLElement): Promise<void> {
       }
       setStatus(form, errorsHtml(result.errors ?? []))
       resetCaptcha(form)
-    }
-    catch (error) {
+    } catch (error) {
       if (isPaymentRequired(error)) return hideUnavailable(host, 'form')
       setStatus(form, '<p class="cr-error" role="alert">' + esc(error instanceof Error ? error.message : strings.failed) + '</p>')
       resetCaptcha(form)
-    }
-    finally {
+    } finally {
       busy(form, false)
     }
   })
@@ -681,20 +675,19 @@ export async function mountComments(host: HTMLElement): Promise<void> {
   let thread: CommentThread
   try {
     thread = await fetchThread(rt, entry)
-  }
-  catch (error) {
+  } catch (error) {
     if (isPaymentRequired(error)) return hideUnavailable(host, 'comments')
     host.innerHTML = '<p class="cr-error">' + esc(error instanceof Error ? error.message : strings.failed) + '</p>'
     return
   }
 
-  host.innerHTML
-    = '<section class="cr-comments-section">'
-      + '<h2 class="cr-comments-title">' + esc(strings.commentsTitle) + ' <span class="cr-count">(' + esc(thread.total) + ')</span></h2>'
-      + '<div class="cr-thread">' + threadHtml(thread) + '</div>'
-      + (hasMore(thread) ? '<p class="cr-more"><button type="button" class="cr-load-more">' + esc(strings.loadMore) + '</button></p>' : '')
-      + (thread.config.closed ? '<p class="cr-closed">' + esc(strings.closed) + '</p>' : commentFormHtml(thread.config))
-      + '</section>'
+  host.innerHTML =
+    '<section class="cr-comments-section">' +
+    '<h2 class="cr-comments-title">' + esc(strings.commentsTitle) + ' <span class="cr-count">(' + esc(thread.total) + ')</span></h2>' +
+    '<div class="cr-thread">' + threadHtml(thread) + '</div>' +
+    (hasMore(thread) ? '<p class="cr-more"><button type="button" class="cr-load-more">' + esc(strings.loadMore) + '</button></p>' : '') +
+    (thread.config.closed ? '<p class="cr-closed">' + esc(strings.closed) + '</p>' : commentFormHtml(thread.config)) +
+    '</section>'
   renderCaptcha(host)
 
   const threadEl = host.querySelector('.cr-thread')
@@ -731,14 +724,12 @@ export async function mountComments(host: HTMLElement): Promise<void> {
         const next = await fetchThread(rt, entry, { page: page + 1 })
         page = next.page
         const list = threadEl.querySelector('.cr-comment-list')
-        if (list) list.insertAdjacentHTML('beforeend', next.comments.map(c => commentHtml(c, next.config)).join(''))
+        if (list) list.insertAdjacentHTML('beforeend', next.comments.map((c) => commentHtml(c, next.config)).join(''))
         if (!hasMore(next)) more.closest('.cr-more')?.remove()
-      }
-      catch (error) {
+      } catch (error) {
         if (isPaymentRequired(error)) return hideUnavailable(host, 'comments')
         // Anything else: the button comes back for another try.
-      }
-      finally {
+      } finally {
         more.disabled = false
       }
     }
@@ -766,8 +757,7 @@ export async function mountComments(host: HTMLElement): Promise<void> {
             replies = parent.querySelector(':scope > .cr-replies')
           }
           replies?.insertAdjacentHTML('beforeend', html)
-        }
-        else {
+        } else {
           const list = threadEl.querySelector('.cr-comment-list')
           if (list) list.insertAdjacentHTML('beforeend', html)
           else threadEl.innerHTML = '<ol class="cr-comment-list">' + html + '</ol>'
@@ -779,13 +769,11 @@ export async function mountComments(host: HTMLElement): Promise<void> {
       if (replying) replying.hidden = true
       resetCaptcha(form)
       setStatus(form, '<p class="cr-success" role="status">' + esc(result.status === 'approved' ? strings.posted : strings.pending) + '</p>')
-    }
-    catch (error) {
+    } catch (error) {
       if (isPaymentRequired(error)) return hideUnavailable(host, 'comments')
       setStatus(form, '<p class="cr-error" role="alert">' + esc(error instanceof Error ? error.message : strings.failed) + '</p>')
       resetCaptcha(form)
-    }
-    finally {
+    } finally {
       busy(form, false)
     }
   })
