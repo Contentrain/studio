@@ -55,6 +55,29 @@ describe('auth middleware public paths', () => {
     expect(getServerSession).not.toHaveBeenCalled()
   })
 
+  // Migrate's signed server-to-server calls: no session, the route verifies the signature.
+  it.each([
+    '/api/migrate/account-state',
+    '/api/migrate/provision',
+    '/api/migrate/grants/status',
+    '/api/migrate/grants/install-url',
+  ])('lets Migrate\'s signed server-to-server call %s through without a session lookup', async (path) => {
+    await expect(run(path)).resolves.toBeUndefined()
+    expect(getServerSession).not.toHaveBeenCalled()
+  })
+
+  // The allowlist is exact paths: the user-facing Migrate routes keep their session.
+  it.each([
+    '/api/migrate/claim',
+    '/api/migrate/grants/grant-1',
+    '/api/migrate/grants/grant-1/checkout',
+    '/api/migrate/grants/status/extra',
+    '/api/migrate/account-state/extra',
+  ])('still 401s the user-facing Migrate route %s without a session', async (path) => {
+    getServerSession.mockResolvedValue(null)
+    await expect(run(path)).rejects.toMatchObject({ statusCode: 401 })
+  })
+
   it('still 401s a protected API path when there is no session', async () => {
     getServerSession.mockResolvedValue(null)
     await expect(run('/api/workspaces/w1/projects')).rejects.toMatchObject({ statusCode: 401 })

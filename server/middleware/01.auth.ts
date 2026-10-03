@@ -39,6 +39,17 @@ const PUBLIC_PATHS = [
   '/api/media/', // Media management API — Bearer CDN key (media:* scope)
 ]
 
+// Migrate's server-to-server calls carry no session: each one is a request
+// signed with Migrate's key, verified inside the route. Exact paths, never a
+// prefix: `/api/migrate/claim` and `/api/migrate/grants/:id/*` are user
+// routes and stay behind the session.
+const MIGRATE_S2S_PATHS = [
+  '/api/migrate/account-state',
+  '/api/migrate/provision',
+  '/api/migrate/grants/status',
+  '/api/migrate/grants/install-url',
+]
+
 /**
  * The GitHub App setup callback of an install Migrate started: GitHub sends
  * the customer back with Studio's signed `state` and no Studio session. Only a
@@ -58,7 +69,8 @@ export default defineEventHandler(async (event) => {
   const path = getRequestPath(event)
 
   // Skip non-API routes and public paths
-  if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)) || isMigrateInstallCallback(path, event))
+  if (!path.startsWith('/api') || PUBLIC_PATHS.some(p => path.startsWith(p)) || MIGRATE_S2S_PATHS.includes(path)
+    || isMigrateInstallCallback(path, event))
     return
 
   let sessionData

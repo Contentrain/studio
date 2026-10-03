@@ -25,6 +25,11 @@ describe('normalizeCommentsConfig', () => {
     expect(normalizeCommentsConfig({ captcha: 'recaptcha' as unknown as 'turnstile' }).captcha).toBeNull()
   })
 
+  it('emails owner and admins unless the model turns notifications off', () => {
+    expect(normalizeCommentsConfig({}).notifications).toBe(true)
+    expect(normalizeCommentsConfig({ notifications: false }).notifications).toBe(false)
+  })
+
   it('treats non-numeric values as defaults', () => {
     expect(normalizeCommentsConfig({ maxDepth: 'deep' as unknown as number }).maxDepth).toBe(4)
   })

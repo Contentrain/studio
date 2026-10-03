@@ -13,6 +13,8 @@ export interface CommentsConfig {
   /** Commenters must supply an email (never shown publicly). */
   requireEmail: boolean
   honeypot: boolean
+  /** Email the workspace owner and admins when a comment arrives (default true). */
+  notifications: boolean
   captcha: 'turnstile' | null
   /** Public submissions per IP per minute per entry. */
   rateLimitPerIp: number
@@ -26,6 +28,7 @@ export const COMMENTS_CONFIG_DEFAULTS: CommentsConfig = {
   maxDepth: 4,
   requireEmail: true,
   honeypot: true,
+  notifications: true,
   captcha: null,
   rateLimitPerIp: 5,
   maxBodyLength: 5000,
@@ -58,6 +61,7 @@ export function normalizeCommentsConfig(raw: Partial<CommentsConfig>): CommentsC
     maxDepth: clampInt(raw.maxDepth, COMMENTS_CONFIG_DEFAULTS.maxDepth, 0, COMMENTS_CONFIG_LIMITS.maxDepth),
     requireEmail: raw.requireEmail !== false,
     honeypot: raw.honeypot !== false,
+    notifications: raw.notifications !== false,
     captcha: raw.captcha === 'turnstile' ? 'turnstile' : null,
     rateLimitPerIp: clampInt(raw.rateLimitPerIp, COMMENTS_CONFIG_DEFAULTS.rateLimitPerIp, 1, COMMENTS_CONFIG_LIMITS.rateLimitPerIp),
     maxBodyLength: clampInt(raw.maxBodyLength, COMMENTS_CONFIG_DEFAULTS.maxBodyLength, 100, COMMENTS_CONFIG_LIMITS.maxBodyLength),
