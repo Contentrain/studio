@@ -168,6 +168,8 @@ describe('provisionMigrateBundle', () => {
     expect(await refused()).toEqual({ status: 409, key: 'migrate.claim_taken' })
     db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ redeemed_at: '2026-10-09T00:00:00Z' }), created: false })
     expect(await refused()).toEqual({ status: 409, key: 'migrate.grant_used' })
+    db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ revoked_at: '2026-10-09T00:00:00Z', revoked_reason: 'refund_before_delivery' }), created: false })
+    expect(await refused()).toEqual({ status: 409, key: 'migrate.grant_revoked' })
     db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow(), created: false })
     db.bindMigrateGrantWorkspace.mockResolvedValue(null)
     expect(await refused()).toEqual({ status: 409, key: 'migrate.grant_bound_elsewhere' })

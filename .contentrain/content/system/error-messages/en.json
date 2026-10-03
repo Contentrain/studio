@@ -253,6 +253,7 @@
   "migrate.grant_bundle": "This Studio year is part of your Migrate order. It was paid at checkout and has no included trial to claim.",
   "migrate.grant_not_found": "We couldn’t find this Studio offer on your account.",
   "migrate.grant_not_ready": "Studio is not ready for GitHub yet. Finish the Studio plan step in Migrate first.",
+  "migrate.grant_revoked": "This Studio offer was withdrawn with its Migrate order.",
   "migrate.grant_used": "This Studio offer has already been used — its included days started on a subscription for this workspace.",
   "migrate.identity_conflict": "This GitHub account cannot be linked to the Studio account that owns this email.",
   "migrate.install_already": "Studio is already connected to GitHub for this migration.",

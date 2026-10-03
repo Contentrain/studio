@@ -18,6 +18,7 @@ type MigrateGrantMethods = Pick<
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
+  | 'markMigrateGrantRevoked'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
@@ -250,6 +251,22 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .where('id', '=', grantId)
           .where('redeemed_at', 'is', null)
           .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async markMigrateGrantRevoked(grantId, reason) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({ revoked_at: eb.fn<string>('now', []), revoked_reason: reason }))
+          .where('id', '=', grantId)
+          .where('revoked_at', 'is', null)
+          .execute()
+        const row = await getAdmin().selectFrom('migrate_grants').selectAll().where('id', '=', grantId).executeTakeFirst()
+        return (row as DatabaseRow | undefined) ?? null
       }
       catch (error) {
         throwDbError(error)
