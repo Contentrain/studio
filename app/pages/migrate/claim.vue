@@ -76,12 +76,12 @@ function hasRunningSubscription(workspace: WorkspaceItem): boolean {
   return !['canceled', 'incomplete_expired'].includes(account.subscription_status ?? '')
 }
 
-interface WorkspaceOption { workspace: WorkspaceItem, eligible: boolean, reason: string | null, attach: boolean, tooSmall?: boolean }
+interface WorkspaceOption { workspace: WorkspaceItem, eligible: boolean, reason: string | null, attach: boolean, billingIssue?: 'too_small' | 'past_due' | 'ending' }
 
 /** The sold plan behind a workspace's running, paid subscription (Enterprise sits above both). */
 function paidPlanOf(workspace: WorkspaceItem): 'starter' | 'pro' | null {
   const account = workspace.payment_account
-  if (!account || !['active', 'past_due'].includes(account.subscription_status ?? '')) return null
+  if (account?.subscription_status !== 'active') return null
   return account.plan === 'pro' || account.plan === 'enterprise' ? 'pro' : account.plan === 'starter' ? 'starter' : null
 }
 
@@ -90,20 +90,24 @@ const options = computed<WorkspaceOption[]>(() => workspaces.value.map((workspac
   if (role !== 'owner' && role !== 'admin') return { workspace, eligible: false, reason: t('migrate_claim.ineligible_role'), attach: false }
   if (grant.value?.workspaceId && grant.value.workspaceId !== workspace.id) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_bound'), attach: false }
   if (hasRunningSubscription(workspace)) {
-    const paid = paidPlanOf(workspace)
+    const account = workspace.payment_account
     const needed = grant.value?.plan
+    if (account?.subscription_status === 'past_due') return { workspace, eligible: false, reason: t('migrate_claim.ineligible_past_due'), attach: false, billingIssue: 'past_due' }
+    if (account?.subscription_status === 'active' && account.cancel_at_period_end) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_ending'), attach: false, billingIssue: 'ending' }
+    const paid = paidPlanOf(workspace)
     if (paid && needed && planCovers(paid, needed)) return { workspace, eligible: true, reason: t('migrate_claim.attach_covers'), attach: true }
-    if (paid && needed) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_plan_below', { plan: PLAN_PRICING[needed].name }), attach: false, tooSmall: true }
+    if (paid && needed) return { workspace, eligible: false, reason: t('migrate_claim.ineligible_plan_below', { plan: PLAN_PRICING[needed].name }), attach: false, billingIssue: 'too_small' }
     return { workspace, eligible: false, reason: t('migrate_claim.ineligible_subscribed'), attach: false }
   }
   return { workspace, eligible: true, reason: null, attach: false }
 }))
 
 const selectedOption = computed(() => options.value.find(o => o.workspace.id === selectedWorkspaceId.value) ?? null)
-/** Every workspace is taken or too small: the way on is upgrading one, not waiting. */
-const upgradeTarget = computed(() => {
+/** Every workspace is taken or cannot take the site: the way on is fixing a plan in billing, not waiting. */
+const billingTarget = computed(() => {
   if (options.value.some(o => o.eligible)) return null
-  return options.value.find(o => o.tooSmall)?.workspace ?? null
+  const option = options.value.find(o => o.billingIssue)
+  return option?.billingIssue ? { workspace: option.workspace, issue: option.billingIssue } : null
 })
 
 const trialEndText = computed(() => {
@@ -272,10 +276,10 @@ async function startTrial() {
             </div>
           </div>
 
-          <p v-if="upgradeTarget" class="mt-3 text-sm text-body dark:text-secondary-300" data-testid="claim-upgrade">
-            {{ t('migrate_claim.upgrade_hint', { plan: PLAN_PRICING[grant.plan].name }) }}
-            <NuxtLink :to="`/w/${upgradeTarget.slug}/settings?tab=billing`" class="font-medium text-primary-700 underline dark:text-primary-300">
-              {{ t('migrate_claim.upgrade_link') }}
+          <p v-if="billingTarget" class="mt-3 text-sm text-body dark:text-secondary-300" data-testid="claim-upgrade">
+            {{ t(`migrate_claim.billing_hint_${billingTarget.issue}`, { plan: PLAN_PRICING[grant.plan].name }) }}
+            <NuxtLink :to="`/w/${billingTarget.workspace.slug}/settings?tab=billing`" class="font-medium text-primary-700 underline dark:text-primary-300">
+              {{ t('migrate_claim.billing_link') }}
             </NuxtLink>
           </p>
 

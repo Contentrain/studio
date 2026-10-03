@@ -61,6 +61,20 @@ describe('POST /api/migrate/grants/:grantId/attach', () => {
     expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
   })
 
+  it('refuses a plan that is ending (active, set to cancel at the period\'s end)', async () => {
+    db.getActivePaymentAccount.mockResolvedValue(account({ cancel_at_period_end: true }))
+    await expect(attach()).rejects.toMatchObject({ statusCode: 409, message: 'migrate.attach_no_plan' })
+    expect(db.bindMigrateGrantWorkspace).not.toHaveBeenCalled()
+    expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
+  })
+
+  it('refuses a past_due plan: fix billing first', async () => {
+    db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'past_due', grace_period_ends_at: '2099-01-01T00:00:00Z' }))
+    await expect(attach()).rejects.toMatchObject({ statusCode: 409, message: 'migrate.attach_past_due' })
+    expect(db.bindMigrateGrantWorkspace).not.toHaveBeenCalled()
+    expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
+  })
+
   it('refuses a workspace with no running paid plan (none, or still in trial)', async () => {
     db.getActivePaymentAccount.mockResolvedValue(null)
     await expect(attach()).rejects.toMatchObject({ statusCode: 409, message: 'migrate.attach_no_plan' })
