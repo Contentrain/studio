@@ -257,17 +257,32 @@ export function createSupabaseAuthProvider(): AuthProvider {
 
     async getUserByProviderAccount(provider: 'github' | 'google', accountId: string): Promise<AuthUser | null> {
       const admin = createSupabaseAdminClient()
-      let page = 1
-      const perPage = 1000
-      while (true) {
-        const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
-        if (error) throw error
-        const user = data?.users?.find(u => u.app_metadata?.provider === provider && String(u.user_metadata?.provider_id ?? '') === accountId)
-        if (user) return mapSupabaseUser(user)
-        if (!data?.users || data.users.length < perPage) break
-        page++
-      }
-      return null
+      // `auth.identities` holds every identity the user has, GitHub linked later included (migration 043).
+      const { data: userId, error } = await admin.rpc('migrate_user_id_by_identity', { p_provider: provider, p_account_id: accountId })
+      if (error) throw error
+      if (!userId) return null
+      const { data, error: userError } = await admin.auth.admin.getUserById(userId as string)
+      if (userError) throw userError
+      return data?.user ? mapSupabaseUser(data.user) : null
+    },
+
+    async ensureUserForProviderAccount(input): Promise<AuthUser> {
+      const known = await this.getUserByProviderAccount(input.provider, input.accountId)
+      if (known) return known
+      // The admin API cannot write `auth.identities`: an existing user with this email is
+      // returned as is, and GoTrue links the GitHub identity at their first GitHub sign-in
+      // (same verified email). A new user is created confirmed; the bootstrap trigger fires.
+      const byEmail = await this.getUserByEmail(input.email)
+      if (byEmail) return byEmail
+      const admin = createSupabaseAdminClient()
+      const { data, error } = await admin.auth.admin.createUser({
+        email: input.email,
+        email_confirm: true,
+        app_metadata: { provider: input.provider },
+        user_metadata: { provider_id: input.accountId },
+      })
+      if (error || !data.user) throw error ?? new Error('createUser returned no user')
+      return mapSupabaseUser(data.user)
     },
 
     async deleteUser(userId: string): Promise<void> {

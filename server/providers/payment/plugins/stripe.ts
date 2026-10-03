@@ -225,6 +225,14 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
       }
     },
 
+    async createBundleCheckout(): Promise<never> {
+      throw new Error('The Migrate bundle needs ad-hoc recurring prices, which only the Polar plugin supports')
+    },
+
+    async moveBundleSubscriptionToList(): Promise<never> {
+      throw new Error('The Migrate bundle is Polar-only')
+    },
+
     async cancelSubscription(subscriptionId: string): Promise<void> {
       await stripe.subscriptions.cancel(subscriptionId)
     },

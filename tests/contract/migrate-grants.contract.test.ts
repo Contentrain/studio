@@ -106,6 +106,64 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme')).toBeNull()
   })
 
+  describe('bundle grants (migration 044)', () => {
+    const bundle = (suffix: string) => methods.claimMigrateGrant({
+      orderId: `${orderId}-b-${suffix}`,
+      claimJti: `jti-b-${suffix}`,
+      userId: owner.userId,
+      plan: 'pro',
+      email: 'owner@example.com',
+      kind: 'bundle',
+    })
+
+    it('has no trial and no repository until delivery, and is found by id', async () => {
+      const { grant, created } = await bundle('shape')
+      expect(created).toBe(true)
+      expect(grant).toMatchObject({ kind: 'bundle', trial_days: null, repo_owner: null, repo_name: null })
+      expect(await methods.getMigrateGrantById(grant.id as string)).toMatchObject({ id: grant.id, kind: 'bundle' })
+      expect(await methods.getMigrateGrantById('00000000-0000-0000-0000-000000000000')).toBeNull()
+    })
+
+    it('a trial grant still needs its trial days and repository', async () => {
+      await expect(methods.claimMigrateGrant({
+        orderId: `${orderId}-b-trial`, claimJti: 'jti-b-trial', userId: owner.userId, plan: 'pro', email: 'owner@example.com',
+      })).rejects.toThrow()
+    })
+
+    it('remembers the checkout it opened and the product the subscription must move to', async () => {
+      const { grant } = await bundle('checkout')
+      await methods.saveMigrateGrantCheckout(grant.id as string, {
+        checkoutId: 'co_1',
+        checkoutUrl: 'https://sandbox.polar.sh/checkout/c_1',
+        checkoutExpiresAt: '2030-01-01T00:00:00.000Z',
+        amountCents: 64100,
+        targetProductId: 'prod_pro_y',
+      })
+      expect(await methods.getMigrateGrantById(grant.id as string)).toMatchObject({
+        checkout_id: 'co_1', checkout_url: 'https://sandbox.polar.sh/checkout/c_1', amount_cents: 64100, bundle_target_product_id: 'prod_pro_y', bundle_applied_at: null,
+      })
+    })
+
+    it('lists a redeemed bundle until its move is recorded, oldest first, and only once recorded does it leave', async () => {
+      const mine = (await bundle('pending')).grant.id as string
+      const notRedeemed = (await bundle('unpaid')).grant.id as string
+      for (const id of [mine, notRedeemed]) {
+        await methods.saveMigrateGrantCheckout(id, { checkoutId: `co_${id}`, checkoutUrl: 'https://sandbox.polar.sh/checkout/c', checkoutExpiresAt: '2030-01-01T00:00:00.000Z', amountCents: 100, targetProductId: 'prod_y' })
+      }
+      await methods.markMigrateGrantRedeemed(mine, 'sub_pending')
+
+      const ids = async () => (await methods.listPendingMigrateBundles(500)).map(row => row.id)
+      expect(await ids()).toContain(mine)
+      expect(await ids()).not.toContain(notRedeemed)
+
+      await methods.markMigrateBundleApplied(mine)
+      expect(await ids()).not.toContain(mine)
+      const applied = String((await methods.getMigrateGrantById(mine))!.bundle_applied_at)
+      await methods.markMigrateBundleApplied(mine)
+      expect(String((await methods.getMigrateGrantById(mine))!.bundle_applied_at)).toBe(applied)
+    })
+  })
+
   describe('comments export held on the grant (migration 040)', () => {
     const payload = { format: 'contentrain-comments@1', comments: [{ id: 1 }] }
     const future = () => new Date(Date.now() + 3600_000).toISOString()
@@ -190,6 +248,24 @@ describe('postgres-db migrate-grants (contract)', () => {
     // The next claim sweeps the lapsed record, so its jti is free again.
     expect(await methods.claimMigrateS2sJti(`${orderId}-s2s-other`, 'account-state', future)).toBe(true)
     expect(await methods.claimMigrateS2sJti(old, 'account-state', future)).toBe(true)
+  })
+
+  it('gives a jti back after our own failure, so the same request can be taken again', async () => {
+    const jti = `${orderId}-s2s-release`
+    const future = new Date(Date.now() + 600_000)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(true)
+    await methods.releaseMigrateS2sJti(jti)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(true)
+    expect(await methods.claimMigrateS2sJti(jti, 'account-state', future)).toBe(false)
+  })
+
+  it('finds the user behind a GitHub id through the lookup function the Supabase pair calls (migration 043)', async () => {
+    const githubId = `gh-${Date.now()}`
+    await sql`INSERT INTO auth.identities (provider, provider_id, user_id) VALUES ('github', ${githubId}, ${owner.userId})`.execute(getDb())
+    const found = await sql<{ id: string | null }>`SELECT public.migrate_user_id_by_identity('github', ${githubId}) AS id`.execute(getDb())
+    expect(found.rows[0]?.id).toBe(owner.userId)
+    const none = await sql<{ id: string | null }>`SELECT public.migrate_user_id_by_identity('github', 'no-such-id') AS id`.execute(getDb())
+    expect(none.rows[0]?.id).toBeNull()
   })
 
   it('lists the workspaces a user owns, and no one else\'s', async () => {

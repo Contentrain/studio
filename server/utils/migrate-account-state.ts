@@ -14,7 +14,7 @@
  * to an existing trial subscription.
  */
 import type { MigrateAccountStateResponse, MigrateStudioPlan } from '@contentrain/types'
-import { bundleUpgradeCents, bundleYear1Cents, planCovers } from '../../shared/utils/migrate-bundle'
+import { STUDIO_YEARLY_LIST_CENTS, bundleUpgradeCents, bundleYear1Cents, planCovers } from '../../shared/utils/migrate-bundle'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
 const RUNNING_STATES = new Set(['subscribed', 'past_due', 'canceled'])
@@ -35,11 +35,18 @@ export async function highestRunningPlan(userId: string): Promise<MigrateStudioP
   return best
 }
 
-export async function resolveMigrateAccountState(githubUserId: string, plan: MigrateStudioPlan): Promise<MigrateAccountStateResponse> {
+/**
+ * `renewal_cents` is the yearly list price the subscription renews at after
+ * the discounted first year (0 when nothing is added). Migrate may not compute
+ * it; it shows Studio's number. Not in `@contentrain/types` yet — extra key.
+ */
+export type MigrateAccountStateWithRenewal = MigrateAccountStateResponse & { renewal_cents: number }
+
+export async function resolveMigrateAccountState(githubUserId: string, plan: MigrateStudioPlan): Promise<MigrateAccountStateWithRenewal> {
   const user = await useAuthProvider().getUserByProviderAccount('github', githubUserId)
   const current = user ? await highestRunningPlan(user.id) : null
 
-  if (!current) return { state: 'none', plan, year1_cents: bundleYear1Cents(plan) }
-  if (planCovers(current, plan)) return { state: 'covers', plan: current, year1_cents: 0, current_plan: current }
-  return { state: 'too_small', plan, year1_cents: bundleUpgradeCents(plan, current), current_plan: current }
+  if (!current) return { state: 'none', plan, year1_cents: bundleYear1Cents(plan), renewal_cents: STUDIO_YEARLY_LIST_CENTS[plan] }
+  if (planCovers(current, plan)) return { state: 'covers', plan: current, year1_cents: 0, renewal_cents: 0, current_plan: current }
+  return { state: 'too_small', plan, year1_cents: bundleUpgradeCents(plan, current), renewal_cents: STUDIO_YEARLY_LIST_CENTS[plan], current_plan: current }
 }

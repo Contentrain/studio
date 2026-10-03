@@ -4,7 +4,8 @@
 -- grant status/revoke) with a one-use `jti`. A claim is single-use per order,
 -- enforced by `migrate_grants`; these calls have no such row, so the `jti` is
 -- remembered here until the token could no longer verify, and a repeat is
--- refused. `purpose` keeps one endpoint's token from being replayed on another.
+-- refused. The `jti` is the key, so a token cannot be replayed on another
+-- endpoint either; `purpose` only records which endpoint took it (support).
 --
 -- Service-role only: RLS on, no policies, like `migrate_grants`.
 

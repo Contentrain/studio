@@ -20,6 +20,8 @@ import { Polar } from '@polar-sh/sdk'
 import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks'
 import { billingReasonOf } from '../billing-reason'
 import type {
+  BundleCheckoutInput,
+  BundleCheckoutResult,
   CanonicalWebhookEvent,
   CheckoutInput,
   CheckoutResult,
@@ -37,6 +39,16 @@ interface PolarConfig {
   webhookSecret?: string
   starterProductId?: string
   proProductId?: string
+  /**
+   * "Migrate with Studio" bundle: per plan, the product the first (ad-hoc
+   * priced) invoice is sold on, and the yearly list product the subscription
+   * moves to for renewal. The bundle product carries the same benefits as its
+   * list product; only its price is replaced per checkout.
+   */
+  starterBundleProductId?: string
+  proBundleProductId?: string
+  starterYearlyProductId?: string
+  proYearlyProductId?: string
   /** 'sandbox' | 'production' — Polar SDK server mode. Defaults to 'production'. */
   server?: string
 }
@@ -55,9 +67,21 @@ function buildProductMap(cfg: PolarConfig): Record<string, string> {
 function planFromProductId(productId: string | undefined, productMap: Record<string, string>): string | undefined {
   if (!productId) return undefined
   for (const [plan, id] of Object.entries(productMap)) {
-    if (id === productId) return plan
+    if (id === productId) return plan.split('#')[0]
   }
   return undefined
+}
+
+/** Bundle and yearly products map to their plan too, so a subscription on either reads as Starter / Pro. */
+function extendWithBundleProducts(cfg: PolarConfig, productMap: Record<string, string>): Record<string, string> {
+  // `planFromProductId` walks plan → id; the bundle ids live under suffixed keys that resolve back to the plan.
+  return {
+    ...productMap,
+    ...(cfg.starterBundleProductId ? { 'starter#bundle': cfg.starterBundleProductId } : {}),
+    ...(cfg.proBundleProductId ? { 'pro#bundle': cfg.proBundleProductId } : {}),
+    ...(cfg.starterYearlyProductId ? { 'starter#yearly': cfg.starterYearlyProductId } : {}),
+    ...(cfg.proYearlyProductId ? { 'pro#yearly': cfg.proYearlyProductId } : {}),
+  }
 }
 
 function isoOrUndefined(value: Date | string | null | undefined): string | undefined {
@@ -128,6 +152,7 @@ function subscriptionToResult(
     event: canonicalEvent,
     workspaceId,
     plan: planFromProductId(sub.productId, productMap) ?? planFromMeta,
+    productId: sub.productId,
     subscriptionId: sub.id,
     customerId: sub.customerId,
     subscriptionStatus: sub.status,
@@ -152,6 +177,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
   const polar = new Polar({ accessToken, server })
   const webhookSecret = cfg.webhookSecret ?? ''
   const productMap = buildProductMap(cfg)
+  const planMap = extendWithBundleProducts(cfg, productMap)
 
   return {
     async createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
@@ -221,7 +247,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
 
       switch (event.type) {
         case 'subscription.created':
-          return subscriptionToResult('subscription.created', event.data as unknown as PolarSubscriptionLike, productMap)
+          return subscriptionToResult('subscription.created', event.data as unknown as PolarSubscriptionLike, planMap)
 
         // Every subscription lifecycle event is mapped by the state it
         // carries (`hasEnded`): a cancellation scheduled for the period end
@@ -243,7 +269,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
               subscriptionStatus: 'canceled',
             }
           }
-          const result = subscriptionToResult('subscription.updated', sub, productMap)
+          const result = subscriptionToResult('subscription.updated', sub, planMap)
           return event.type === 'subscription.past_due' ? { ...result, subscriptionStatus: 'past_due' } : result
         }
 
@@ -281,6 +307,55 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
         default:
           return { event: 'noop' }
       }
+    },
+
+    async createBundleCheckout(input: BundleCheckoutInput): Promise<BundleCheckoutResult> {
+      const bundleProductId = input.plan === 'pro' ? cfg.proBundleProductId : cfg.starterBundleProductId
+      const targetProductId = input.plan === 'pro' ? cfg.proYearlyProductId : cfg.starterYearlyProductId
+      if (!bundleProductId || !targetProductId) {
+        throw new Error(`No Polar bundle/yearly product configured for plan: ${input.plan}`)
+      }
+
+      const checkout = await polar.checkouts.create({
+        products: [bundleProductId],
+        // The first invoice is the quoted total, not the product's catalogue price.
+        prices: { [bundleProductId]: [{ amountType: 'fixed', priceCurrency: 'usd', priceAmount: input.amountCents }] },
+        customerEmail: input.customerEmail,
+        externalCustomerId: input.workspaceId,
+        successUrl: input.successUrl,
+        // The bundle is a paid first year: no trial, and no discount code can lower the quoted total.
+        allowTrial: false,
+        allowDiscountCodes: false,
+        metadata: {
+          ...input.metadata,
+          workspace_id: input.workspaceId,
+          plan: input.plan,
+        },
+        customerMetadata: { workspace_id: input.workspaceId },
+      })
+
+      return {
+        url: checkout.url,
+        sessionId: checkout.id,
+        expiresAt: isoOrUndefined(checkout.expiresAt) ?? new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        targetProductId,
+      }
+    },
+
+    async moveBundleSubscriptionToList(subscriptionId, plan) {
+      const targetProductId = plan === 'pro' ? cfg.proYearlyProductId : cfg.starterYearlyProductId
+      if (!targetProductId) throw new Error(`No Polar yearly product configured for plan: ${plan}`)
+
+      const current = await polar.subscriptions.get({ id: subscriptionId })
+      // Already there, or the move is scheduled: sending it again would only reset the pending update.
+      if (current.productId === targetProductId || current.pendingUpdate?.productId === targetProductId) {
+        return { productId: targetProductId, alreadyOnList: true }
+      }
+      await polar.subscriptions.update({
+        id: subscriptionId,
+        subscriptionUpdate: { productId: targetProductId, prorationBehavior: 'next_period' },
+      })
+      return { productId: targetProductId, alreadyOnList: false }
     },
 
     async cancelSubscription(subscriptionId: string): Promise<void> {

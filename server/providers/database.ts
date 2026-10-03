@@ -1103,16 +1103,42 @@ export interface DatabaseProvider {
     claimJti: string
     userId: string
     plan: 'starter' | 'pro'
-    trialDays: number
-    repoOwner: string
-    repoName: string
+    /** Absent for a bundle grant: it opens no included trial (migration 044). */
+    trialDays?: number | null
+    /** Absent for a bundle grant until the delivery repository exists. */
+    repoOwner?: string | null
+    repoName?: string | null
     email: string
     /**
      * The migrated site, as the claim signed it (migration 039). A grant
      * recorded without one takes it from a later claim for the same order.
      */
     origin?: string | null
+    /** `bundle` for a grant opened by a provision; defaults to `trial`. */
+    kind?: 'trial' | 'bundle'
   }) => Promise<{ grant: DatabaseRow, created: boolean }>
+
+  /** A grant by id (admin read; the billing webhook and the reconciler have no user). */
+  getMigrateGrantById: (grantId: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Remember the Polar checkout a bundle grant opened and the list product its
+   * subscription must move to (migration 044). Overwrites an earlier,
+   * expired checkout.
+   */
+  saveMigrateGrantCheckout: (grantId: string, input: {
+    checkoutId: string
+    checkoutUrl: string
+    checkoutExpiresAt: string
+    amountCents: number
+    targetProductId: string
+  }) => Promise<void>
+
+  /** The subscription moved to the list product (or was on it already): the reconciler stops watching it. */
+  markMigrateBundleApplied: (grantId: string) => Promise<void>
+
+  /** Bundle grants whose subscription still has to move to the list product, oldest first. */
+  listPendingMigrateBundles: (limit: number) => Promise<DatabaseRow[]>
 
   /** A grant by the Migrate order it belongs to (one per order); null when Studio holds none. For Migrate's server-to-server calls, which name an order and no user. */
   getMigrateGrantByOrderId: (orderId: string) => Promise<DatabaseRow | null>
@@ -1148,6 +1174,9 @@ export interface DatabaseProvider {
    * past `expiresAt` are dropped lazily.
    */
   claimMigrateS2sJti: (jti: string, purpose: string, expiresAt: Date) => Promise<boolean>
+
+  /** Give a `jti` back after the work behind it failed on our side, so Migrate's retry of the same request is not refused. */
+  releaseMigrateS2sJti: (jti: string) => Promise<void>
 
   /**
    * Workspaces `userId` owns, with the columns plan resolution reads. Admin

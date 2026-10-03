@@ -10,12 +10,17 @@ import { getAdmin } from './helpers'
 type MigrateGrantMethods = Pick<
   DatabaseProvider,
   | 'claimMigrateGrant'
+  | 'getMigrateGrantById'
+  | 'saveMigrateGrantCheckout'
+  | 'markMigrateBundleApplied'
+  | 'listPendingMigrateBundles'
   | 'getMigrateGrantByOrderId'
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
+  | 'releaseMigrateS2sJti'
   | 'listOwnedWorkspacesAdmin'
   | 'saveMigrateCommentsExport'
   | 'getMigrateCommentsExport'
@@ -79,6 +84,11 @@ export function migrateGrantMethods(): MigrateGrantMethods {
       return (data?.length ?? 0) > 0
     },
 
+    async releaseMigrateS2sJti(jti) {
+      const { error } = await getAdmin().from('migrate_s2s_jti').delete().eq('jti', jti)
+      if (error) fail(error.message)
+    },
+
     async listOwnedWorkspacesAdmin(userId) {
       const { data, error } = await getAdmin()
         .from('workspaces')
@@ -97,11 +107,12 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           claim_jti: input.claimJti,
           user_id: input.userId,
           plan: input.plan,
-          trial_days: input.trialDays,
-          repo_owner: input.repoOwner,
-          repo_name: input.repoName,
+          trial_days: input.trialDays ?? null,
+          repo_owner: input.repoOwner ?? null,
+          repo_name: input.repoName ?? null,
           email: input.email,
           origin: input.origin ?? null,
+          kind: input.kind ?? 'trial',
         }, { onConflict: 'order_id', ignoreDuplicates: true })
         .select()
       if (error) fail(error.message)
@@ -126,6 +137,12 @@ export function migrateGrantMethods(): MigrateGrantMethods {
       return { grant: existing as DatabaseRow, created: false }
     },
 
+    async getMigrateGrantById(grantId) {
+      const { data, error } = await getAdmin().from('migrate_grants').select('*').eq('id', grantId).maybeSingle()
+      if (error) fail(error.message)
+      return (data as DatabaseRow | null) ?? null
+    },
+
     async getMigrateGrantByOrderId(orderId) {
       const { data, error } = await getAdmin()
         .from('migrate_grants')
@@ -134,6 +151,43 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .maybeSingle()
       if (error) fail(error.message)
       return (data as DatabaseRow | null) ?? null
+    },
+
+    async saveMigrateGrantCheckout(grantId, input) {
+      const { error } = await getAdmin()
+        .from('migrate_grants')
+        .update({
+          checkout_id: input.checkoutId,
+          checkout_url: input.checkoutUrl,
+          checkout_expires_at: input.checkoutExpiresAt,
+          amount_cents: input.amountCents,
+          bundle_target_product_id: input.targetProductId,
+        })
+        .eq('id', grantId)
+      if (error) fail(error.message)
+    },
+
+    async markMigrateBundleApplied(grantId) {
+      const { error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ bundle_applied_at: new Date().toISOString() })
+        .eq('id', grantId)
+        .is('bundle_applied_at', null)
+      if (error) fail(error.message)
+    },
+
+    async listPendingMigrateBundles(limit) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('*')
+        .eq('kind', 'bundle')
+        .not('redeemed_at', 'is', null)
+        .not('bundle_target_product_id', 'is', null)
+        .is('bundle_applied_at', null)
+        .order('redeemed_at', { ascending: true })
+        .limit(limit)
+      if (error) fail(error.message)
+      return (data ?? []) as DatabaseRow[]
     },
 
     async getMigrateGrantForUser(grantId, userId) {

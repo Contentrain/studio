@@ -25,8 +25,10 @@ export type MigrateGrantState = 'claimed' | 'bound' | 'redeemed'
 export interface MigrateGrantView {
   id: string
   plan: 'starter' | 'pro'
-  trialDays: number
-  repo: { owner: string, name: string }
+  /** Null for a bundle grant (it opens no included trial). */
+  trialDays: number | null
+  /** Null for a bundle grant until the delivery repository reaches Studio. */
+  repo: { owner: string, name: string } | null
   email: string
   workspaceId: string | null
   state: MigrateGrantState
@@ -38,8 +40,8 @@ export function migrateGrantView(row: DatabaseRow): MigrateGrantView {
   return {
     id: row.id as string,
     plan: row.plan as 'starter' | 'pro',
-    trialDays: row.trial_days as number,
-    repo: { owner: row.repo_owner as string, name: row.repo_name as string },
+    trialDays: (row.trial_days as number | null) ?? null,
+    repo: row.repo_owner && row.repo_name ? { owner: row.repo_owner as string, name: row.repo_name as string } : null,
     email: row.email as string,
     workspaceId: (row.workspace_id as string | null) ?? null,
     state,
@@ -64,6 +66,8 @@ export async function migrateGrantDestination(session: { accessToken: string, us
   const db = useDatabaseProvider()
   const workspace = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'id, slug')
   if (!workspace) return null
+  // A bundle grant has no repository until delivery: no project to point at yet.
+  if (!row.repo_owner || !row.repo_name) return { workspaceSlug: workspace.slug as string, projectId: null }
   const repo = `${row.repo_owner as string}/${row.repo_name as string}`.toLowerCase()
   const projects = await db.listWorkspaceProjects(session.accessToken, workspaceId)
   const project = projects.find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === repo)

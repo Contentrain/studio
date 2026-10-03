@@ -43,9 +43,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('migrate.s2s_invalid') })
   }
 
-  const response = await resolveMigrateAccountState(request.github_user_id, request.plan)
-  // Fail closed on our own answer: Migrate prices from it.
-  if (!validateMigrateAccountStateResponse(response, { requested: request.plan }).ok)
-    throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })
-  return response
+  try {
+    const response = await resolveMigrateAccountState(request.github_user_id, request.plan)
+    // Fail closed on our own answer: Migrate prices from it.
+    if (!validateMigrateAccountStateResponse(response, { requested: request.plan }).ok)
+      throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })
+    return response
+  }
+  catch (err) {
+    // Our failure, not Migrate's: its retry of the same request must not be refused as a replay.
+    await useDatabaseProvider().releaseMigrateS2sJti(request.jti).catch(() => {})
+    throw err
+  }
 })

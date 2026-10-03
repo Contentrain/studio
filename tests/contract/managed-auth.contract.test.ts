@@ -30,6 +30,46 @@ describe('managed-auth provider (contract)', () => {
       await deleteSeededUser(id).catch(() => {})
   })
 
+  describe('ensureUserForProviderAccount (Migrate provision: no sign-in)', () => {
+    it('creates the user and its personal workspace, and finds it again by the GitHub id', async () => {
+      const accountId = `gh-${randomUUID()}`
+      const email = `ensure-${randomUUID()}@managed.test`
+      const user = await auth.ensureUserForProviderAccount({ provider: 'github', accountId, email })
+      cleanupUserIds.push(user.id)
+      expect(user).toMatchObject({ email, provider: 'github', providerAccountId: accountId })
+
+      const workspace = await sql<{ count: number }>`
+        SELECT count(*)::int AS count FROM public.workspaces WHERE owner_id = ${user.id} AND type = 'primary'
+      `.execute(getDb())
+      expect(workspace.rows[0]!.count).toBe(1)
+
+      expect((await auth.ensureUserForProviderAccount({ provider: 'github', accountId, email }))?.id).toBe(user.id)
+      expect((await auth.getUserByProviderAccount('github', accountId))?.id).toBe(user.id)
+    })
+
+    it('links the GitHub account to the user who already has that email, leaving their profile as it is', async () => {
+      const email = `ensure-link-${randomUUID()}@managed.test`
+      const accountId = `gh-${randomUUID()}`
+      const session = await completeOAuthSignIn({ provider: 'google', providerAccountId: `g-${randomUUID()}`, email, name: 'Kept Name', userName: 'kept', avatarUrl: 'https://avatars.example/kept.png' })
+      cleanupUserIds.push(session.user.id)
+
+      const user = await auth.ensureUserForProviderAccount({ provider: 'github', accountId, email: email.toUpperCase() })
+      expect(user.id).toBe(session.user.id)
+      expect((await auth.getUserByProviderAccount('github', accountId))?.id).toBe(session.user.id)
+      // The stored name and avatar are not overwritten by a call that knows neither.
+      expect(user.avatarUrl).toBe('https://avatars.example/kept.png')
+      const profile = await sql<{ display_name: string }>`SELECT display_name FROM public.profiles WHERE id = ${session.user.id}`.execute(getDb())
+      expect(profile.rows[0]!.display_name).toBe('Kept Name')
+    })
+
+    it('refuses to give a user with one GitHub account a second', async () => {
+      const email = `ensure-conflict-${randomUUID()}@managed.test`
+      const session = await completeOAuthSignIn({ provider: 'github', providerAccountId: `gh-${randomUUID()}`, email, name: null, userName: null, avatarUrl: null })
+      cleanupUserIds.push(session.user.id)
+      await expect(auth.ensureUserForProviderAccount({ provider: 'github', accountId: `gh-${randomUUID()}`, email })).rejects.toThrow(/different provider account/)
+    })
+  })
+
   it('OAuth sign-in creates the user through the signup bootstrap chain', async () => {
     const email = `oauth-${randomUUID()}@managed.test`
     const session = await completeOAuthSignIn({
@@ -113,6 +153,27 @@ describe('managed-auth provider (contract)', () => {
     })
     expect(viaGoogle.user.id).toBe(first.user.id)
     expect(viaGoogle.user.provider).toBe('google')
+  })
+
+  it('finds a user by any identity they signed in with, GitHub linked later or overwritten by another provider', async () => {
+    const email = `identity-${randomUUID()}@managed.test`
+    const githubId = `gh-${randomUUID()}`
+    const googleId = `g-${randomUUID()}`
+
+    // Signed up by magic link first; GitHub is linked later.
+    const { userId } = await auth.inviteUserByEmail(email)
+    cleanupUserIds.push(userId)
+    expect(await auth.getUserByProviderAccount('github', githubId)).toBeNull()
+
+    await completeOAuthSignIn({ provider: 'github', providerAccountId: githubId, email, name: null, userName: null, avatarUrl: null })
+    expect((await auth.getUserByProviderAccount('github', githubId))!.id).toBe(userId)
+
+    // A later Google sign-in overwrites the one-slot columns, not the GitHub identity.
+    await completeOAuthSignIn({ provider: 'google', providerAccountId: googleId, email, name: null, userName: null, avatarUrl: null })
+    expect((await auth.getUserById(userId))!.provider).toBe('google')
+    expect((await auth.getUserByProviderAccount('github', githubId))!.id).toBe(userId)
+    expect((await auth.getUserByProviderAccount('google', googleId))!.id).toBe(userId)
+    expect(await auth.getUserByProviderAccount('google', githubId)).toBeNull()
   })
 
   it('refreshSession rotates within a family and revokes the family on replay', async () => {
