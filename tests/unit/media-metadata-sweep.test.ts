@@ -131,6 +131,23 @@ describe('metadata sweep', () => {
     expect(rerun).toMatchObject({ webpWithMetadata: 0, filesRewritten: 0, urls: [] })
   })
 
+  it('when the row/counter update fails after the file is written, the error names the path and the size change to repair by hand', async () => {
+    const dirty = await webpWithMetadata()
+    const clean = stripWebpMetadata(dirty)!.buffer
+    const w = world({ 'p1:media/original/a.webp': { data: dirty, contentType: 'image/webp' } }, [asset('1', 'media/original/a.webp')])
+    const store: SweepStore = { ...w.store, applyChange: async () => {
+      throw new Error('connection reset')
+    },
+    }
+    const report = await runMetadataSweep({ store, cdn: w.cdn, siteUrl: 'https://studio.example', dryRun: false })
+    expect(report.filesRewritten).toBe(1)
+    expect(report.errors).toEqual([{
+      assetId: '1',
+      path: 'media/original/a.webp',
+      reason: `files rewritten (media/original/a.webp; sizeDelta ${clean.length - dirty.length}) but the row/counter update failed: connection reset`,
+    }])
+  })
+
   it('re-sanitises a stored SVG, updates its hash, and reports one it cannot make safe', async () => {
     const w = world({
       'p1:media/original/a.svg': { data: Buffer.from(SVG_RAW), contentType: 'image/svg+xml' },
