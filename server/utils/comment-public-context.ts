@@ -15,6 +15,8 @@ export interface PublicCommentContext {
   workspaceId: string
   plan: ReturnType<typeof getWorkspacePlan>
   workspace: Record<string, unknown>
+  /** The project's repository (`owner/repo`), the name an owner knows it by. */
+  projectName: string
   modelId: string
   config: CommentsConfig
   /** The project's default locale (`config.locales.default`), the fallback when a request names none. */
@@ -28,7 +30,7 @@ export async function resolvePublicCommentContext(projectId: string, modelId: st
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('comments.not_found') })
 
-  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, type, plan, github_installation_id, overage_settings')
+  const workspace = await db.getWorkspaceById(project.workspace_id as string, 'id, name, slug, type, plan, github_installation_id, overage_settings')
   if (!workspace)
     throw createError({ statusCode: 404, message: errorMessage('comments.not_found') })
 
@@ -79,6 +81,7 @@ export async function resolvePublicCommentContext(projectId: string, modelId: st
     workspaceId: workspace.id as string,
     plan,
     workspace: workspace as Record<string, unknown>,
+    projectName: String(project.repo_full_name),
     modelId,
     config,
     defaultLocale: normalizeLocaleParam(configuredDefault, 'en'),

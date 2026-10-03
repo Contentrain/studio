@@ -15,6 +15,7 @@
 
 import { getClientIp } from '~~/server/utils/form-types'
 import { toPublicComment } from '~~/server/utils/comment-thread'
+import { notifyCommentSubmitted } from '~~/server/utils/comment-notifications'
 import { normalizeLocaleParam, resolvePublicCommentContext } from '~~/server/utils/comment-public-context'
 import { sanitizeString } from '~~/server/utils/sanitize-input'
 import { verifyTurnstileToken } from '~~/server/utils/turnstile'
@@ -161,6 +162,23 @@ export default defineEventHandler(async (event) => {
 
   if (!outcome.comment)
     throw createError({ statusCode: 500, message: errorMessage('comments.create_failed', { detail: 'empty' }) })
+
+  // Notify the workspace owner/admins (fire-and-forget) — the model's
+  // `comments.notifications` flag defaults on.
+  if (ctx.config.notifications) {
+    notifyCommentSubmitted({
+      workspaceId: ctx.workspaceId,
+      workspaceName: String(ctx.workspace.name ?? ''),
+      workspaceSlug: String(ctx.workspace.slug ?? ctx.workspaceId),
+      projectId,
+      projectName: ctx.projectName,
+      modelId,
+      entryId,
+      status,
+      authorName,
+      body: text,
+    }).catch(() => {})
+  }
 
   // Outbound webhook — gated exactly like forms.webhook_notification (ee).
   if (hasFeature(ctx.plan, 'comments.webhook_notification')) {

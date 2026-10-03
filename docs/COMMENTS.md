@@ -25,6 +25,7 @@ WordPress export (contentrain-comments@1) ── import ┘
 | `maxDepth` | `4` | Reply nesting cap for **new** public submissions (`0` = flat). Import never clamps |
 | `requireEmail` | `true` | Commenters must supply an email; it is never shown publicly |
 | `honeypot` | `true` | Hidden `_hp` field; a filled honeypot is silently accepted and dropped |
+| `notifications` | `true` | Email the workspace owner and admins when a comment arrives (`comment-pending` asks for review, `comment-published` when it went live); a mail failure never affects the visitor's response |
 | `captcha` | `null` | `'turnstile'` to require a Cloudflare Turnstile token (needs `comments.captcha` + `NUXT_TURNSTILE_SECRET_KEY`) |
 | `rateLimitPerIp` | `5` | Submissions per IP per minute on one entry |
 | `maxBodyLength` | `5000` | Body length cap for public submissions |
