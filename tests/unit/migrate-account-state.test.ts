@@ -149,26 +149,26 @@ describe('POST /api/migrate/account-state', () => {
 
   it('none: no Studio account behind that GitHub user prices year 1 of the sized plan', async () => {
     auth.getUserByProviderAccount.mockResolvedValue(null)
-    expect(await ask('pro')).toEqual({ state: 'none', plan: 'pro', year1_cents: 39200 })
+    expect(await ask('pro')).toEqual({ state: 'none', plan: 'pro', year1_cents: 39200, renewal_cents: 49000 })
     expect(auth.getUserByProviderAccount).toHaveBeenCalledWith('github', '4242')
   })
 
   it('none: an account without a running paid plan (free workspace, trial) adds the full line', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-free', type: 'primary', plan: 'free' }, { id: 'ws-trial', type: 'secondary', plan: 'pro' }])
     db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'ws-trial' ? { ...account('pro', 'trialing'), trial_ends_at: new Date(Date.now() + 86_400_000).toISOString() } : null))
-    expect(await ask('starter')).toEqual({ state: 'none', plan: 'starter', year1_cents: 7200 })
+    expect(await ask('starter')).toEqual({ state: 'none', plan: 'starter', year1_cents: 7200, renewal_cents: 9000 })
   })
 
   it('covers: a running plan at least the sized one adds nothing and reports the account\'s own plan', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'pro' }])
     db.getActivePaymentAccount.mockResolvedValue(account('pro'))
-    expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, current_plan: 'pro' })
+    expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, current_plan: 'pro' })
   })
 
   it('too_small: a running plan below the sized one charges the difference', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'starter' }])
     db.getActivePaymentAccount.mockResolvedValue(account('starter'))
-    expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, current_plan: 'starter' })
+    expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, renewal_cents: 49000, current_plan: 'starter' })
   })
 
   it('gives the jti back when our own work fails, so Migrate\'s retry of the same request is taken', async () => {
