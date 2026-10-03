@@ -25,6 +25,7 @@ describe('billing webhook integration', () => {
   // The real util (auto-imported in Nitro) marks the grant, then moves a bundle's subscription; the
   // move itself is covered in migrate-bundle-subscription.test.ts, here only what the webhook hands it.
   let redeemMigrateGrant: ReturnType<typeof vi.fn>
+  let isDuplicateBundleSubscription: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetModules()
@@ -33,6 +34,8 @@ describe('billing webhook integration', () => {
       await (globalThis as unknown as { useDatabaseProvider: () => { markMigrateGrantRedeemed: (g: string, s: string | null) => Promise<void> } }).useDatabaseProvider().markMigrateGrantRedeemed(grantId, subscriptionId)
     })
     vi.stubGlobal('redeemMigrateGrant', redeemMigrateGrant)
+    isDuplicateBundleSubscription = vi.fn().mockResolvedValue(false)
+    vi.stubGlobal('isDuplicateBundleSubscription', isDuplicateBundleSubscription)
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('createError', createErrorLike)
     vi.stubGlobal('readRawBody', vi.fn().mockResolvedValue('{}'))
@@ -175,6 +178,25 @@ describe('billing webhook integration', () => {
     }))
   })
 
+  it('a duplicate bundle payment never becomes the active account, so refunding it leaves the valid plan alone', async () => {
+    isDuplicateBundleSubscription.mockResolvedValue(true)
+    const created = { event: 'subscription.created', workspaceId: 'ws-1', plan: 'pro', customerId: 'cus_123', subscriptionId: 'sub_dup', checkoutId: 'co_old', subscriptionStatus: 'active', migrateGrantId: 'grant-1' }
+    handleWebhookMock.mockResolvedValueOnce(created)
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(isDuplicateBundleSubscription).toHaveBeenCalledWith('grant-1', 'sub_dup', 'co_old')
+    expect(upsertPaymentAccount).not.toHaveBeenCalled()
+    expect(redeemMigrateGrant).not.toHaveBeenCalled()
+    expect(updateWorkspace).not.toHaveBeenCalled()
+
+    // The refund of the duplicate: the workspace's valid subscription is another one, so the ending is ignored.
+    getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_valid', plan: 'pro' })
+    handleWebhookMock.mockResolvedValueOnce({ ...created, event: 'subscription.canceled', subscriptionStatus: 'canceled' })
+    await handler({ context: {} } as never)
+    expect(archiveActivePaymentAccount).not.toHaveBeenCalled()
+    expect(updateWorkspace).not.toHaveBeenCalled()
+  })
+
   it('uses up the Migrate grant a subscription was started from', async () => {
     const markMigrateGrantRedeemed = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
@@ -202,7 +224,7 @@ describe('billing webhook integration', () => {
     const handler = await mockPluginAndLoadHandler()
     await handler({ context: {} } as never)
     expect(markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', 'sub_123')
-    expect(redeemMigrateGrant).toHaveBeenCalledWith(expect.anything(), 'grant-1', 'sub_123')
+    expect(redeemMigrateGrant).toHaveBeenCalledWith(expect.anything(), 'grant-1', 'sub_123', null)
     // The trial cap tells a Migrate trial apart by this mark.
     expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
       pluginMetadata: expect.objectContaining({ trial_origin: 'migrate' }),

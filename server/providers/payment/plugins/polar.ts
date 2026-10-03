@@ -100,6 +100,7 @@ interface PolarSubscriptionLike {
   status: string
   customerId: string
   productId: string
+  checkoutId?: string | null
   currentPeriodStart: Date | string | null
   currentPeriodEnd: Date | string | null
   trialEnd: Date | string | null
@@ -154,6 +155,7 @@ function subscriptionToResult(
     plan: planFromProductId(sub.productId, productMap) ?? planFromMeta,
     productId: sub.productId,
     subscriptionId: sub.id,
+    ...(sub.checkoutId ? { checkoutId: sub.checkoutId } : {}),
     customerId: sub.customerId,
     subscriptionStatus: sub.status,
     currentPeriodStart: isoOrUndefined(sub.currentPeriodStart),

@@ -78,7 +78,55 @@ describe('bundle subscription: move to the list product', () => {
     expect(payment.moveBundleSubscriptionToList).not.toHaveBeenCalled()
   })
 
+  describe('isDuplicateBundleSubscription', () => {
+    it('is true only for a bundle that already has a different subscription', async () => {
+      const { isDuplicateBundleSubscription } = await load()
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: 'sub_1' }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_2')).toBe(true)
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_1')).toBe(false)
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: null }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_2')).toBe(false)
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ kind: 'trial', redeemed_subscription_id: 'sub_1' }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_2')).toBe(false)
+    })
+  })
+
+  describe('money guards on redeem', () => {
+    const alarms = () => errorLog.mock.calls.map(call => String(call[0])).filter(line => line.includes('ALARM'))
+
+    it('a second subscription for a grant that already has one raises an alarm and is not moved', async () => {
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: 'sub_1', checkout_id: 'co_new' }))
+      const { redeemMigrateGrant } = await load()
+      await redeemMigrateGrant(payment as never, 'grant-1', 'sub_2', 'co_old')
+      expect(alarms()).toEqual([expect.stringContaining('duplicate payment')])
+      expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
+      expect(payment.moveBundleSubscriptionToList).not.toHaveBeenCalled()
+    })
+
+    it('the same subscription arriving twice (created, then updated) is not a duplicate', async () => {
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: 'sub_1', checkout_id: 'co_new' }))
+      const { redeemMigrateGrant } = await load()
+      await redeemMigrateGrant(payment as never, 'grant-1', 'sub_1', 'co_new')
+      expect(alarms()).toEqual([])
+    })
+
+    it('a paid checkout that is not the current one is still honoured, with an alarm to check the amount', async () => {
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: null, checkout_id: 'co_new' }))
+      const { redeemMigrateGrant } = await load()
+      await redeemMigrateGrant(payment as never, 'grant-1', 'sub_1', 'co_old')
+      expect(alarms()).toEqual([expect.stringContaining('stale checkout paid')])
+      expect(db.markMigrateGrantRedeemed).toHaveBeenCalledWith('grant-1', 'sub_1')
+    })
+  })
+
   describe('reconciler', () => {
+    it('alarms on a redeemed bundle that has no subscription id', async () => {
+      db.listPendingMigrateBundles.mockResolvedValue([bundleGrant({ redeemed_subscription_id: null })])
+      const { reconcileMigrateBundles } = await load()
+      expect(await reconcileMigrateBundles(payment as never, now)).toMatchObject({ checked: 1, alarms: 1 })
+      expect(errorLog.mock.calls.some(call => String(call[0]).includes('without a subscription id'))).toBe(true)
+    })
+
     it('retries pending moves and counts those it fixed', async () => {
       db.listPendingMigrateBundles.mockResolvedValue([bundleGrant(), bundleGrant({ id: 'grant-2', redeemed_subscription_id: 'sub_2' })])
       const { reconcileMigrateBundles } = await load()

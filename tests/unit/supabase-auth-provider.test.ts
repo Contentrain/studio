@@ -273,4 +273,29 @@ describe('supabase auth provider', () => {
       },
     })
   })
+
+  describe('ensureUserForProviderAccount', () => {
+    const input = { provider: 'github' as const, accountId: '4242', email: 'owner@example.com' }
+    const load = async (identities: Array<Record<string, unknown>>) => {
+      providerState.adminClient = { auth: { admin: { getUserById: vi.fn().mockResolvedValue({ data: { user: { id: 'u1', identities } }, error: null }) } } }
+      const { createSupabaseAuthProvider } = await import('../../server/providers/supabase-auth')
+      const { IdentityConflictError } = await import('../../server/providers/auth')
+      const provider = createSupabaseAuthProvider()
+      vi.spyOn(provider, 'getUserByProviderAccount').mockResolvedValue(null)
+      vi.spyOn(provider, 'getUserByEmail').mockResolvedValue({ id: 'u1', email: input.email, avatarUrl: null, provider: 'google' as never, providerAccountId: 'g-1' })
+      return { provider, IdentityConflictError }
+    }
+
+    it('refuses an email account that already has another GitHub identity', async () => {
+      const { provider, IdentityConflictError } = await load([{ provider: 'github', identity_data: { provider_id: '9999' } }])
+      await expect(provider.ensureUserForProviderAccount(input)).rejects.toBeInstanceOf(IdentityConflictError)
+    })
+
+    it('does not mistake the last sign-in provider for a GitHub identity: Google-only or the same GitHub account passes', async () => {
+      const googleOnly = await load([{ provider: 'google', identity_data: { sub: 'g-1' } }])
+      expect((await googleOnly.provider.ensureUserForProviderAccount(input)).id).toBe('u1')
+      const same = await load([{ provider: 'google', identity_data: { sub: 'g-1' } }, { provider: 'github', identity_data: { provider_id: '4242' } }])
+      expect((await same.provider.ensureUserForProviderAccount(input)).id).toBe('u1')
+    })
+  })
 })
