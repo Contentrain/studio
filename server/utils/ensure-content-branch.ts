@@ -58,6 +58,14 @@ export interface MigrationMergeOps {
   readFile: (path: string, ref?: string) => Promise<string>
 }
 
+/** A read that found nothing — the file or the ref is absent. Anything else (rate limit, network, 5xx) is not an answer. */
+function isMissing(error: unknown): boolean {
+  const status = (error as { status?: unknown })?.status
+  if (status === 404) return true
+  const message = error instanceof Error ? error.message : ''
+  return /\b404\b|not found/i.test(message)
+}
+
 /**
  * The Migrate delivery branch (`migrate/<planHash>`) that has not reached the
  * default branch yet, or null. Migrate delivers into a non-empty repository on
@@ -67,13 +75,30 @@ export interface MigrationMergeOps {
  * Migrate's later "branch present" check would take that stale branch for the
  * migrated one. So connecting waits for the merge.
  *
- * Only a repository with no `contentrain` branch yet and a `migrate/` branch is
- * ever held: every other repository connects exactly as before.
+ * Only a `migrate/…` branch that itself carries the content store counts: a
+ * team's own `migrate/db-v2` branch is not a delivery and never holds a connect.
+ * Only a repository with no `contentrain` branch yet is ever held.
+ *
+ * Fails closed: a read that errors for any reason other than "not there" throws,
+ * so the caller refuses the connect instead of guessing.
  */
 export async function unmergedMigrationBranch(git: MigrationMergeOps, defaultBranch: string): Promise<string | null> {
   if ((await git.listBranches(CONTENTRAIN_BRANCH)).some(branch => branch.name === CONTENTRAIN_BRANCH)) return null
-  const delivery = (await git.listBranches('migrate/')).find(branch => branch.name.startsWith('migrate/'))
-  if (!delivery) return null
-  const store = await git.readFile(CONTENT_STORE_CONFIG, defaultBranch).catch(() => '')
-  return store ? null : delivery.name
+  const candidates = (await git.listBranches('migrate/')).filter(branch => branch.name.startsWith('migrate/'))
+  if (!candidates.length) return null
+  if (await readsStore(git, defaultBranch)) return null
+  for (const candidate of candidates) {
+    if (await readsStore(git, candidate.name)) return candidate.name
+  }
+  return null
+}
+
+async function readsStore(git: MigrationMergeOps, ref: string): Promise<boolean> {
+  try {
+    return Boolean(await git.readFile(CONTENT_STORE_CONFIG, ref))
+  }
+  catch (error) {
+    if (isMissing(error)) return false
+    throw error
+  }
 }

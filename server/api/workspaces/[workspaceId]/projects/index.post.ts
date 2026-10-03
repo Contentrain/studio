@@ -50,7 +50,10 @@ export default defineEventHandler(async (event) => {
     const git = useGitProvider({ installationId, owner, repo, contentRoot: body.contentRoot || '/' })
     // A Migrate delivery waiting on its own branch: `contentrain` forked from the pre-migration
     // default branch would open the project empty (and pass Migrate's "present" check). Wait for the merge.
-    const waiting = await unmergedMigrationBranch(git, defaultBranch).catch(() => null)
+    // Fail closed: a GitHub error here must not let the connect fork a stale `contentrain`.
+    const waiting = await unmergedMigrationBranch(git, defaultBranch).catch(() => {
+      throw createError({ statusCode: 502, message: errorMessage('project.content_branch_failed') })
+    })
     if (waiting) {
       throw createError({
         statusCode: 409,
