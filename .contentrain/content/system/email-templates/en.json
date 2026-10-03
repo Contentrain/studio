@@ -88,5 +88,17 @@
     "slug": "usage-overage-started",
     "subject": "{workspaceName}: {meterName} is now past the plan limit",
     "body": "<p>Hi,</p><p><strong>{workspaceName}</strong> has used all <strong>{limit}</strong> {meterName} included in the {planName} plan. Overage is on, so nothing has stopped: usage past the limit is billed at <strong>{unitPrice}</strong> per unit on your next invoice.</p><p>{resetLine} You can turn overage off or change the plan in Billing.</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td style=\"background-color:#4B6BFB;border-radius:8px;\"><a href=\"{billingUrl}\" target=\"_blank\" style=\"display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;\">Open Billing</a></td></tr></table>"
+  },
+  "comment-pending": {
+    "body": "<p>Hi,</p><p>A new comment on <strong>{entryId}</strong> ({modelName}) of <strong>{projectName}</strong> ({workspaceName}) is waiting for your approval.</p><p><strong>{authorName}</strong> wrote:</p><blockquote>{excerptHtml}</blockquote><p><a href=\"{moderationUrl}\">Review comments</a></p>",
+    "name": "Comment — Waiting for Approval",
+    "slug": "comment-pending",
+    "subject": "New comment to approve on {projectName}"
+  },
+  "comment-published": {
+    "body": "<p>Hi,</p><p>A new comment was published on <strong>{entryId}</strong> ({modelName}) of <strong>{projectName}</strong> ({workspaceName}).</p><p><strong>{authorName}</strong> wrote:</p><blockquote>{excerptHtml}</blockquote><p><a href=\"{moderationUrl}\">Review comments</a></p>",
+    "name": "Comment — Published",
+    "slug": "comment-published",
+    "subject": "New comment on {projectName}"
   }
 }

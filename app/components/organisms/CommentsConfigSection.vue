@@ -16,6 +16,7 @@ interface CommentsConfigShape {
   maxDepth?: number
   requireEmail?: boolean
   honeypot?: boolean
+  notifications?: boolean
   captcha?: 'turnstile' | null
   rateLimitPerIp?: number
   maxBodyLength?: number
@@ -33,6 +34,7 @@ const requireApproval = ref(true)
 const maxDepth = ref(4)
 const requireEmail = ref(true)
 const honeypot = ref(true)
+const notifications = ref(true)
 const captcha = ref<'turnstile' | ''>('')
 const rateLimitPerIp = ref(5)
 const maxBodyLength = ref(5000)
@@ -44,6 +46,7 @@ function syncFromBrain() {
   maxDepth.value = cfg?.maxDepth ?? 4
   requireEmail.value = cfg?.requireEmail ?? true
   honeypot.value = cfg?.honeypot ?? true
+  notifications.value = cfg?.notifications ?? true
   captcha.value = cfg?.captcha === 'turnstile' ? 'turnstile' : ''
   rateLimitPerIp.value = cfg?.rateLimitPerIp ?? 5
   maxBodyLength.value = cfg?.maxBodyLength ?? 5000
@@ -59,6 +62,7 @@ const hasChanges = computed(() => {
     || maxDepth.value !== (cfg?.maxDepth ?? 4)
     || requireEmail.value !== (cfg?.requireEmail ?? true)
     || honeypot.value !== (cfg?.honeypot ?? true)
+    || notifications.value !== (cfg?.notifications ?? true)
     || (captcha.value || null) !== (cfg?.captcha ?? null)
     || rateLimitPerIp.value !== (cfg?.rateLimitPerIp ?? 5)
     || maxBodyLength.value !== (cfg?.maxBodyLength ?? 5000)
@@ -79,6 +83,7 @@ async function save() {
           maxDepth: maxDepth.value,
           requireEmail: requireEmail.value,
           honeypot: honeypot.value,
+          notifications: notifications.value,
           captcha: captcha.value || null,
           rateLimitPerIp: rateLimitPerIp.value,
           maxBodyLength: maxBodyLength.value,
@@ -287,6 +292,16 @@ async function onImportFile(event: Event) {
             </p>
           </div>
           <AtomsFormSwitch :model-value="honeypot" :disabled="!editable" @update:model-value="honeypot = $event" />
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-sm text-heading dark:text-secondary-100">{{ t('comments.notifications') }}</span>
+            <p class="text-xs text-muted">
+              {{ t('comments.notifications_description') }}
+            </p>
+          </div>
+          <AtomsFormSwitch :model-value="notifications" :disabled="!editable" @update:model-value="notifications = $event" />
         </div>
 
         <div class="flex items-center justify-between">

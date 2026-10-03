@@ -202,6 +202,61 @@ describe('public comment routes', () => {
     })
   })
 
+  describe('POST notifies the workspace owner and admins', () => {
+    async function submit(config: Record<string, unknown>, comment: { author: string, body: string } = { author: 'Ada', body: 'hello' }) {
+      stubPublicGlobals({ config })
+      const listWorkspaceNotificationRecipients = vi.fn().mockResolvedValue([{ userId: 'u1', email: 'owner@acme.dev' }, { userId: 'u2', email: 'admin@acme.dev' }])
+      const sendEmail = vi.fn().mockResolvedValue(undefined)
+      const createCommentIfAllowed = vi.fn().mockImplementation(async (_ws: string, _limit: number, input: Record<string, unknown>) => ({
+        allowed: true,
+        currentCount: 1,
+        comment: { ...approvedRoot, id: '33333333-3333-4333-8333-333333333333', body: input.body, author_name: input.author_name, status: input.status },
+      }))
+      vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
+      vi.stubGlobal('emailTemplate', vi.fn((slug: string, params: Record<string, string>) => ({ subject: `${slug}:${params.projectName}`, body: `${params.authorName}|${params.excerptHtml}|${params.moderationUrl}|${params.entryId}` })))
+      vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://studio.test' } }))
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', content_root: '.contentrain' }),
+        getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, name: 'Acme', slug: 'acme', plan: 'pro', github_installation_id: 42, overage_settings: null }),
+        createCommentIfAllowed,
+        listWorkspaceNotificationRecipients,
+      }))
+      await withTestServer({
+        routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicPost() }],
+      }, async ({ request }) => {
+        const response = await request('/api/comments/v1/project-1/posts/entry-1', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ author: { name: comment.author, email: 'a@b.co' }, body: comment.body }),
+        })
+        expect(response.status).toBe(200)
+        // Fire-and-forget — give it a tick.
+        await new Promise(resolve => setTimeout(resolve, 10))
+      })
+      return { sendEmail, listWorkspaceNotificationRecipients }
+    }
+
+    it('a comment waiting for approval asks for review, escaped, with a link to the project', async () => {
+      const { sendEmail, listWorkspaceNotificationRecipients } = await submit({ requireApproval: true }, { author: 'Ada', body: 'a < b & c' })
+      expect(listWorkspaceNotificationRecipients).toHaveBeenCalledWith(WORKSPACE)
+      expect(sendEmail).toHaveBeenCalledTimes(2)
+      expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'owner@acme.dev', subject: 'comment-pending:acme/site' }))
+      expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'admin@acme.dev' }))
+      expect(sendEmail.mock.calls[0]![0].html).toBe('Ada|a &lt; b &amp; c|https://studio.test/w/acme/projects/project-1|entry-1')
+    })
+
+    it('an auto-approved comment says it is already published', async () => {
+      const { sendEmail } = await submit({ requireApproval: false })
+      expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ subject: 'comment-published:acme/site' }))
+    })
+
+    it('stays quiet when the model turns notifications off', async () => {
+      const { sendEmail, listWorkspaceNotificationRecipients } = await submit({ notifications: false })
+      expect(listWorkspaceNotificationRecipients).not.toHaveBeenCalled()
+      expect(sendEmail).not.toHaveBeenCalled()
+    })
+  })
+
   it('POST maps RPC refusals: closed thread → 403, quota → 429, bad parent → field error', async () => {
     stubPublicGlobals({ config: { requireApproval: false } })
     const outcomes = [

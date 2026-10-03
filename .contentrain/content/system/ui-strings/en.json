@@ -264,6 +264,8 @@
   "comments.entry": "Entry",
   "comments.honeypot": "Honeypot Field",
   "comments.honeypot_description": "Add a hidden field to catch spam bots.",
+  "comments.notifications": "Email Notifications",
+  "comments.notifications_description": "Email the workspace owner and admins when a comment arrives.",
   "comments.import_button": "Upload comments-export.json",
   "comments.import_description": "Upload the comments-export.json that `contentrain import` wrote next to your content. Re-uploading is safe: comments already imported are skipped.",
   "comments.import_error": "Comment import failed.",
