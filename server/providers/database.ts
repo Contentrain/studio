@@ -1161,6 +1161,12 @@ export interface DatabaseProvider {
   markMigrateGrantRedeemed: (grantId: string, subscriptionId: string | null) => Promise<void>
 
   /**
+   * Withdraw a grant (Migrate's revoke): records when and why. Only the first call counts, so the
+   * reason of the first revocation stays. Returns the grant as it stands afterwards.
+   */
+  markMigrateGrantRevoked: (grantId: string, reason: string) => Promise<DatabaseRow | null>
+
+  /**
    * The signed origin of the grant behind a workspace's project: the newest
    * grant bound to `workspaceId` for `repoFullName` (owner/name, any case)
    * that carries one. Null when there is none — media import then fetches

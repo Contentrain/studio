@@ -95,7 +95,14 @@ export async function reconcileMigrateBundles(payment: PaymentProvider, now: Dat
  */
 export async function isDuplicateBundleSubscription(grantId: string, subscriptionId: string, checkoutId: string | null = null): Promise<boolean> {
   const grant = await useDatabaseProvider().getMigrateGrantById(grantId)
-  const known = grant?.kind === 'bundle' ? (grant.redeemed_subscription_id as string | null) : null
+  if (grant?.kind !== 'bundle') return false
+  // Withdrawn (refund or failed delivery): nothing paid after that may start or restate a plan.
+  if (grant.revoked_at) {
+    // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
+    console.error(`[migrate-bundle] ALARM payment after revoke: grant ${grantId} was revoked, subscription ${subscriptionId} (checkout ${checkoutId ?? 'unknown'}) arrived; refund it`)
+    return true
+  }
+  const known = grant.redeemed_subscription_id as string | null
   if (!known || known === subscriptionId) return false
   // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
   console.error(`[migrate-bundle] ALARM duplicate payment: grant ${grantId} already has subscription ${known}, subscription ${subscriptionId} (checkout ${checkoutId ?? 'unknown'}) came from another checkout; refund it`)

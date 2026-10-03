@@ -91,6 +91,15 @@ describe('bundle subscription: move to the list product', () => {
     })
   })
 
+  describe('payment after a revoke', () => {
+    it('counts as a duplicate with an alarm: nothing paid for a withdrawn grant starts a plan', async () => {
+      const { isDuplicateBundleSubscription } = await load()
+      db.getMigrateGrantById.mockResolvedValue(bundleGrant({ redeemed_subscription_id: null, revoked_at: '2026-10-03T11:00:00Z', revoked_reason: 'ops' }))
+      expect(await isDuplicateBundleSubscription('grant-1', 'sub_9', 'co_9')).toBe(true)
+      expect(errorLog.mock.calls.map(call => String(call[0])).some(line => line.includes('ALARM payment after revoke'))).toBe(true)
+    })
+  })
+
   describe('money guards on redeem', () => {
     const alarms = () => errorLog.mock.calls.map(call => String(call[0])).filter(line => line.includes('ALARM'))
 

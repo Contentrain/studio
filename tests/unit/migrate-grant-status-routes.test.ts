@@ -86,6 +86,15 @@ describe('Migrate grant status and install-url routes', () => {
       expect(await call('status')).toEqual({ state, installed: false })
     })
 
+    it('reads a withdrawn grant as revoked and keeps the installed fact', async () => {
+      db.getMigrateGrantByOrderId.mockResolvedValue(grant({ revoked_at: '2026-10-03T11:00:00Z', revoked_reason: 'ops' }))
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: 4242 })
+      await status()
+      expect(await call('status')).toEqual({ state: 'revoked', installed: true })
+      await status()
+      await expect(call('install-url')).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_not_ready' })
+    })
+
     it('is a 404 for an order Studio holds no grant for', async () => {
       db.getMigrateGrantByOrderId.mockResolvedValue(null)
       await status()

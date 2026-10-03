@@ -209,6 +209,12 @@ describe('Migrate grant routes', () => {
       expect(result).toEqual({ url: 'https://checkout.polar.sh/c/test' })
     })
 
+    it('opens no checkout for a withdrawn grant', async () => {
+      db.getMigrateGrantForUser!.mockResolvedValue({ ...grantRow, workspace_id: 'ws-1', bound_at: '2026-09-23T12:00:00Z', revoked_at: '2026-10-03T11:00:00Z', revoked_reason: 'ops' })
+      await expect((await checkoutRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_revoked' })
+      expect(createCheckoutSession).not.toHaveBeenCalled()
+    })
+
     it('opens no checkout once the grant has been used', async () => {
       db.getMigrateGrantForUser!.mockResolvedValue({ ...grantRow, workspace_id: 'ws-1', bound_at: '2026-09-23T12:00:00Z', redeemed_at: '2026-09-23T12:05:00Z' })
       await expect((await checkoutRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_used' })

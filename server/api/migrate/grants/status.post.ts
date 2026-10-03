@@ -22,8 +22,8 @@ export default defineEventHandler(async (event) => {
 
   const state = migrateGrantStateOf(grant)
   const { installed } = await migrateGrantInstallation(grant)
-  // An install only counts once the subscription ran (the contract refuses it earlier).
-  const response = { state, installed: installed && state === 'redeemed' }
+  // An install only counts once the subscription ran (the contract refuses it earlier); a revoked grant keeps one made before.
+  const response = { state, installed: installed && (state === 'redeemed' || state === 'revoked') }
   // Fail closed on our own answer: Migrate shows it to a customer.
   if (!validateMigrateGrantStatusResponse(response).ok)
     throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })

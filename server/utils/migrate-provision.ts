@@ -89,6 +89,8 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   })
   // The order belongs to another account, or was opened as something else: never reuse it.
   if (grant.user_id !== user.id || grant.kind !== 'bundle') fail(409, 'migrate.claim_taken')
+  // Withdrawn after a refund or a failed delivery: a repeated provision must not reopen it.
+  if (grant.revoked_at) fail(409, 'migrate.grant_revoked')
   if (grant.redeemed_at) fail(409, 'migrate.grant_used')
   const bound = await db.bindMigrateGrantWorkspace(String(grant.id), workspace.id)
   if (!bound) fail(409, 'migrate.grant_bound_elsewhere')
