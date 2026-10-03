@@ -1,3 +1,4 @@
+import { unmergedMigrationBranch } from '~~/server/utils/ensure-content-branch'
 import { syncMigrationHandoff } from '~~/server/utils/migration-handoff'
 
 export default defineEventHandler(async (event) => {
@@ -46,11 +47,18 @@ export default defineEventHandler(async (event) => {
 
   if (installationId) {
     const [owner = '', repo = ''] = body.repoFullName.split('/')
+    const git = useGitProvider({ installationId, owner, repo, contentRoot: body.contentRoot || '/' })
+    // A Migrate delivery waiting on its own branch: `contentrain` forked from the pre-migration
+    // default branch would open the project empty (and pass Migrate's "present" check). Wait for the merge.
+    const waiting = await unmergedMigrationBranch(git, defaultBranch).catch(() => null)
+    if (waiting) {
+      throw createError({
+        statusCode: 409,
+        message: errorMessage('project.migration_not_merged', { branch: waiting, base: defaultBranch }),
+      })
+    }
     try {
-      await ensureContentBranch(
-        useGitProvider({ installationId, owner, repo, contentRoot: body.contentRoot || '/' }),
-        defaultBranch,
-      )
+      await ensureContentBranch(git, defaultBranch)
     }
     catch {
       throw createError({

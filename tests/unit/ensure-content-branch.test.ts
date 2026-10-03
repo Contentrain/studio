@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ensureContentBranch } from '../../server/utils/ensure-content-branch'
+import { ensureContentBranch, unmergedMigrationBranch } from '../../server/utils/ensure-content-branch'
 
 function ops(overrides: Partial<{
   branches: { name: string }[][]
@@ -55,5 +55,34 @@ describe('ensureContentBranch', () => {
       createBranch: async () => { throw new Error('Resource not accessible by integration') },
     })
     await expect(ensureContentBranch(git, 'main')).rejects.toThrow('Resource not accessible')
+  })
+})
+
+describe('unmergedMigrationBranch', () => {
+  const git = (opts: { branches?: string[], store?: boolean }) => ({
+    listBranches: vi.fn(async (prefix?: string) =>
+      (opts.branches ?? []).filter(name => !prefix || name.startsWith(prefix)).map(name => ({ name }))),
+    readFile: vi.fn(async () => {
+      if (!opts.store) throw new Error('not found')
+      return '{}'
+    }),
+  })
+
+  it('holds the connect while the delivery branch is unmerged and no content branch exists', async () => {
+    await expect(unmergedMigrationBranch(git({ branches: ['main', 'migrate/abc123'] }), 'main')).resolves.toBe('migrate/abc123')
+  })
+
+  it('lets it through once the default branch carries the content store', async () => {
+    await expect(unmergedMigrationBranch(git({ branches: ['main', 'migrate/abc123'], store: true }), 'main')).resolves.toBeNull()
+  })
+
+  it('does not hold a repository that already has a contentrain branch', async () => {
+    await expect(unmergedMigrationBranch(git({ branches: ['contentrain', 'migrate/abc123'] }), 'main')).resolves.toBeNull()
+  })
+
+  it('does not touch an ordinary repository (no migrate/ branch)', async () => {
+    const ops = git({ branches: ['main'] })
+    await expect(unmergedMigrationBranch(ops, 'main')).resolves.toBeNull()
+    expect(ops.readFile).not.toHaveBeenCalled()
   })
 })

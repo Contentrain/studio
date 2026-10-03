@@ -49,3 +49,31 @@ async function branchExists(git: ContentBranchOps): Promise<boolean> {
   const matches = await git.listBranches(CONTENTRAIN_BRANCH)
   return matches.some(branch => branch.name === CONTENTRAIN_BRANCH)
 }
+
+/** The content store file Migrate commits; present on the default branch once the customer has merged the delivery. */
+const CONTENT_STORE_CONFIG = '.contentrain/config.json'
+
+export interface MigrationMergeOps {
+  listBranches: (prefix?: string) => Promise<{ name: string }[]>
+  readFile: (path: string, ref?: string) => Promise<string>
+}
+
+/**
+ * The Migrate delivery branch (`migrate/<planHash>`) that has not reached the
+ * default branch yet, or null. Migrate delivers into a non-empty repository on
+ * a branch of its own; until the customer merges it the default branch has no
+ * content store. Creating `contentrain` from that default branch now would
+ * freeze it at the pre-migration tree: the project would open empty, and
+ * Migrate's later "branch present" check would take that stale branch for the
+ * migrated one. So connecting waits for the merge.
+ *
+ * Only a repository with no `contentrain` branch yet and a `migrate/` branch is
+ * ever held: every other repository connects exactly as before.
+ */
+export async function unmergedMigrationBranch(git: MigrationMergeOps, defaultBranch: string): Promise<string | null> {
+  if ((await git.listBranches(CONTENTRAIN_BRANCH)).some(branch => branch.name === CONTENTRAIN_BRANCH)) return null
+  const delivery = (await git.listBranches('migrate/')).find(branch => branch.name.startsWith('migrate/'))
+  if (!delivery) return null
+  const store = await git.readFile(CONTENT_STORE_CONFIG, defaultBranch).catch(() => '')
+  return store ? null : delivery.name
+}
