@@ -10,6 +10,7 @@ import { getAdmin } from './helpers'
 type MigrateGrantMethods = Pick<
   DatabaseProvider,
   | 'claimMigrateGrant'
+  | 'getMigrateGrantByOrderId'
   | 'getMigrateGrantForUser'
   | 'bindMigrateGrantWorkspace'
   | 'markMigrateGrantRedeemed'
@@ -123,6 +124,16 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .single()
       if (readError) fail(readError.message)
       return { grant: existing as DatabaseRow, created: false }
+    },
+
+    async getMigrateGrantByOrderId(orderId) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('*')
+        .eq('order_id', orderId)
+        .maybeSingle()
+      if (error) fail(error.message)
+      return (data as DatabaseRow | null) ?? null
     },
 
     async getMigrateGrantForUser(grantId, userId) {

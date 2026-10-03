@@ -75,3 +75,34 @@ describe('auth middleware public paths', () => {
     expect(getServerSession).not.toHaveBeenCalled()
   })
 })
+
+describe('auth middleware: Migrate install callback', () => {
+  const getServerSession = vi.fn()
+
+  beforeEach(() => {
+    vi.resetModules()
+    getServerSession.mockReset().mockResolvedValue(null)
+    vi.stubGlobal('defineEventHandler', (fn: unknown) => fn)
+    vi.stubGlobal('createError', (input: { statusCode: number, message: string }) => Object.assign(new Error(input.message), input))
+    vi.stubGlobal('errorMessage', (key: string) => key)
+    vi.stubGlobal('getServerSession', getServerSession)
+    vi.stubGlobal('clearServerSession', vi.fn())
+    vi.stubGlobal('looksLikeMigrateInstallState', (v: unknown) => typeof v === 'string' && /^[\w-]+\.[\w-]+\.[\w-]+$/.test(v))
+  })
+
+  async function run(path: string, state?: string) {
+    // Like h3's getRequestPath: the query string stays on the path.
+    vi.stubGlobal('getRequestPath', () => (state === undefined ? path : `${path}?installation_id=555&code=c&state=${state}`))
+    vi.stubGlobal('getQuery', () => (state === undefined ? {} : { state }))
+    const handler = (await import('../../server/middleware/01.auth')).default as (e: unknown) => Promise<unknown>
+    return handler({ context: {} })
+  }
+
+  it('lets the GitHub setup callback through unauthenticated only for a signed (token-shaped) state', async () => {
+    await expect(run('/api/github/setup', 'aaa.bbb.ccc')).resolves.toBeUndefined()
+    expect(getServerSession).not.toHaveBeenCalled()
+    await expect(run('/api/github/setup', '3f2b1c9e-6c7a-4e1f-9d1a-2b3c4d5e6f70')).rejects.toMatchObject({ statusCode: 401 })
+    await expect(run('/api/github/setup')).rejects.toMatchObject({ statusCode: 401 })
+    await expect(run('/api/github/repos', 'aaa.bbb.ccc')).rejects.toMatchObject({ statusCode: 401 })
+  })
+})

@@ -1,5 +1,7 @@
 import { useDatabaseProvider, useGitAppService } from '../../utils/providers'
 import { getValidGitHubUserToken } from '../../utils/github-token'
+import { looksLikeMigrateInstallState } from '../../utils/migrate-install-state'
+import { handleMigrateInstallCallback } from '../../utils/migrate-install-callback'
 
 /**
  * GitHub App installation callback.
@@ -16,15 +18,23 @@ import { getValidGitHubUserToken } from '../../utils/github-token'
  * "trust the redirect" path — this only matters when the user signed
  * in via Google/magic link AND then somehow ended up at this callback,
  * which is an unsupported flow but not a hard failure.
+ *
+ * A `state` that is a Studio-signed token (not a workspace id) is the install
+ * a Migrate customer started beside a live move: it carries no session and
+ * is handled by `handleMigrateInstallCallback`. The auth middleware lets only
+ * that shape through unauthenticated; everything below is unchanged.
  */
 export default defineEventHandler(async (event) => {
-  const session = requireAuth(event)
-  const db = useDatabaseProvider()
   const query = getQuery(event) as {
     installation_id?: string
     setup_action?: string
+    code?: string
     state?: string // workspace ID passed during GitHub App install
   }
+  if (looksLikeMigrateInstallState(query.state)) return handleMigrateInstallCallback(event, query)
+
+  const session = requireAuth(event)
+  const db = useDatabaseProvider()
 
   if (!query.installation_id) {
     throw createError({ statusCode: 400, message: errorMessage('github.installation_id_missing') })

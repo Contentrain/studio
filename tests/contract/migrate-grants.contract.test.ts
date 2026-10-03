@@ -31,6 +31,12 @@ describe('postgres-db migrate-grants (contract)', () => {
     for (const user of [owner, other]) await deleteSeededUser(user.userId)
   })
 
+  it('finds a grant by its order, and nothing for an order without one', async () => {
+    await claim(owner.userId)
+    expect(await methods.getMigrateGrantByOrderId(orderId)).toMatchObject({ order_id: orderId, user_id: owner.userId })
+    expect(await methods.getMigrateGrantByOrderId(`${orderId}-none`)).toBeNull()
+  })
+
   it('records one grant per order and hands the same row back on a second claim', async () => {
     const first = await claim(owner.userId)
     expect(first.created).toBe(true)
