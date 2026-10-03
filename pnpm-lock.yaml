@@ -29,8 +29,8 @@ importers:
         specifier: 7.4.0
         version: 7.4.0
       '@contentrain/types':
-        specifier: 1.45.0
-        version: 1.45.0
+        specifier: 1.46.0
+        version: 1.46.0
       '@gitbeaker/rest':
         specifier: ^43.8.0
         version: 43.8.0
@@ -713,8 +713,8 @@ packages:
   '@contentrain/types@1.30.0':
     resolution: {integrity: sha512-inJhFqAY25wIw4NvpqDXOn24PRbVEh43s6GGFQSRyBbbmGiWu+xD67D2UEqaEllaFNLSVQ0j2DpOjDj+P6ezQA==}
 
-  '@contentrain/types@1.45.0':
-    resolution: {integrity: sha512-VTkKNxXGJxwme1Ln1CTafZo8RwQx5Q1vUur6R1JcfndYgM4ULrJpJt6LJJV72j15xjo8BOVYNyBk08WS4Istzw==}
+  '@contentrain/types@1.46.0':
+    resolution: {integrity: sha512-ZbCBNvcpcnIMzjq7AvD12uW3ZGVuLZY0sDPhkGLme8AsZPw4kB+wFVreLSSb+oJ2Te5regwLyS5fpT4mzy3Pmg==}
 
   '@conventional-changelog/git-client@3.1.2':
     resolution: {integrity: sha512-jZqwnJwf7nboIlAcw/mkOjVa6DexCcUOgT2oOQgkoi3z9vR8tGFkcMy2BFcYwjhL9sYcDDXkRQDayiDieCoW7A==}
@@ -7938,7 +7938,7 @@ snapshots:
 
   '@contentrain/types@1.30.0': {}
 
-  '@contentrain/types@1.45.0': {}
+  '@contentrain/types@1.46.0': {}
 
   '@conventional-changelog/git-client@3.1.2(conventional-commits-parser@7.1.2)':
     dependencies:

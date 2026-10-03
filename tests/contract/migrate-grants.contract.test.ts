@@ -77,6 +77,18 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(row!.redeemed_subscription_id).toBe('sub_first')
   })
 
+  it('marks a grant revoked once: the first reason stays, the grant is never un-revoked', async () => {
+    const { grant } = await claim(owner.userId)
+    expect(grant.revoked_at).toBeNull()
+    const first = await methods.markMigrateGrantRevoked(grant.id as string, 'refund_before_delivery')
+    expect(first).toMatchObject({ revoked_reason: 'refund_before_delivery' })
+    expect(first!.revoked_at).not.toBeNull()
+    const again = await methods.markMigrateGrantRevoked(grant.id as string, 'ops')
+    expect(again).toMatchObject({ revoked_reason: 'refund_before_delivery' })
+    expect(String(again!.revoked_at)).toBe(String(first!.revoked_at))
+    expect(await methods.markMigrateGrantRevoked(`00000000-0000-0000-0000-000000000000`, 'ops')).toBeNull()
+  })
+
   it('keeps the signed origin: taken once, never replaced, found by workspace and repo', async () => {
     const order = `${orderId}-origin`
     const claimSite = (origin?: string) => methods.claimMigrateGrant({
