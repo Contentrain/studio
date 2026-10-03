@@ -20,7 +20,7 @@
  */
 
 import type { CommentsExport, HandoffComments, MigrationHandoff } from '@contentrain/types'
-import { CONTENTRAIN_BRANCH } from '@contentrain/types'
+import { CONTENTRAIN_BRANCH, MIGRATION_CONTRACT_VERSION } from '@contentrain/types'
 import type { GitProvider } from '~~/server/providers/git'
 import type { CommentsImportReport } from './comment-import'
 import { runCommentsImportChunked } from './comment-import'
@@ -59,7 +59,9 @@ export function validateMigrationHandoff(input: unknown): HandoffValidationError
   if (!input || typeof input !== 'object' || Array.isArray(input)) return { code: 'invalid_payload' }
   const h = input as Partial<MigrationHandoff>
   if (typeof h.version !== 'number' || !Number.isFinite(h.version)) return { code: 'invalid_payload', detail: 'version' }
-  if (h.version !== 1) return { code: 'unsupported_version', detail: String(h.version) }
+  // A compatible range, not one number: Studio reads every contract version up to the one its pinned
+  // `@contentrain/types` knows, so a Migrate bump that stays within the types Studio ships keeps working.
+  if (!Number.isInteger(h.version) || h.version < 1 || h.version > MIGRATION_CONTRACT_VERSION) return { code: 'unsupported_version', detail: String(h.version) }
   if (typeof h.site_url !== 'string' || !h.site_url) return { code: 'invalid_payload', detail: 'site_url' }
   if (typeof h.generated_at !== 'string' || Number.isNaN(Date.parse(h.generated_at))) return { code: 'invalid_payload', detail: 'generated_at' }
   if (!Array.isArray(h.capabilities)) return { code: 'invalid_capabilities' }
