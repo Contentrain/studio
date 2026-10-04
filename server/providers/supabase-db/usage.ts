@@ -9,6 +9,7 @@
  * than reading as 0, which would let a quota path through (AI-15).
  */
 import type { DatabaseProvider } from '../database'
+import { cdnDayWindow } from '../../utils/usage-period'
 import { getAdmin } from './helpers'
 
 type UsageMethods = Pick<
@@ -52,7 +53,7 @@ export function usageMethods(): UsageMethods {
       )
     },
 
-    async getWorkspaceMonthlyCDNBandwidth(workspaceId, month) {
+    async getWorkspaceMonthlyCDNBandwidth(workspaceId, month, window) {
       const admin = getAdmin()
 
       const { data: projects, error } = await admin
@@ -65,10 +66,7 @@ export function usageMethods(): UsageMethods {
 
       const projectIds = projects.map((p: Record<string, unknown>) => p.id as string)
 
-      const monthStart = `${month}-01`
-      const nextMonth = new Date(`${month}-01`)
-      nextMonth.setMonth(nextMonth.getMonth() + 1)
-      const monthEnd = nextMonth.toISOString().substring(0, 10)
+      const { monthStart, monthEnd } = cdnDayWindow(month, window)
 
       const { data, error: usageError } = await admin
         .from('cdn_usage')

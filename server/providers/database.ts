@@ -1,3 +1,5 @@
+import type { UsageWindow } from '../utils/usage-period'
+
 export type DatabaseRow = Record<string, unknown>
 
 // ─── Domain types ───
@@ -665,15 +667,20 @@ export interface DatabaseProvider {
     projectId?: string
     modelId?: string
   }) => Promise<number>
-  countMonthlySubmissions: (workspaceId: string) => Promise<number>
-  /** This calendar month's submissions for one form model (per-model `limits.maxPerMonth`). */
-  countMonthlySubmissionsForModel: (workspaceId: string, projectId: string, modelId: string) => Promise<number>
+  /** Submissions in `window` (a subscribed workspace's billing slice), or this calendar month without one. */
+  countMonthlySubmissions: (workspaceId: string, window?: UsageWindow) => Promise<number>
+  /** One form model's submissions in `window`, or this calendar month (per-model `limits.maxPerMonth`). */
+  countMonthlySubmissionsForModel: (workspaceId: string, projectId: string, modelId: string, window?: UsageWindow) => Promise<number>
 
-  /** Atomic: check monthly limit + insert submission. Prevents race conditions. */
+  /**
+   * Atomic: check monthly limit + insert submission. Prevents race conditions.
+   * The limit is counted over `window`, or the calendar month without one.
+   */
   createFormSubmissionIfAllowed: (
     workspaceId: string,
     monthlyLimit: number,
     submission: FormSubmissionInput,
+    window?: UsageWindow,
   ) => Promise<{ allowed: boolean, currentCount: number, submission?: DatabaseRow }>
 
   /**
@@ -697,6 +704,7 @@ export interface DatabaseProvider {
     workspaceId: string,
     monthlyLimit: number,
     comment: CommentInput & { max_depth: number },
+    window?: UsageWindow,
   ) => Promise<{
     allowed: boolean
     reason?: 'thread_closed' | 'parent_not_found' | 'depth_exceeded' | 'monthly_limit'
@@ -725,8 +733,8 @@ export interface DatabaseProvider {
     workspaceId?: string
     projectId?: string
   }) => Promise<number>
-  /** Public (`source = 'web'`) comments this calendar month — the quota meter. */
-  countMonthlyComments: (workspaceId: string) => Promise<number>
+  /** Public (`source = 'web'`) comments in `window`, or this calendar month — the quota meter. */
+  countMonthlyComments: (workspaceId: string, window?: UsageWindow) => Promise<number>
   /** Pending/approved/spam/rejected counts for a project (optionally one model). */
   countCommentsByStatus: (projectId: string, modelId?: string) => Promise<Record<CommentStatus, number>>
   /** WordPress import — one transaction, idempotent on source id; see `import_comments`. */
@@ -1000,8 +1008,11 @@ export interface DatabaseProvider {
   getWorkspaceMonthlyAIUsage: (workspaceId: string, month: string, source?: 'studio' | 'byoa') => Promise<number>
   /** Sum API message count (source=api) across all API keys in workspace for a month. */
   getWorkspaceMonthlyAPIUsage: (workspaceId: string, month: string) => Promise<number>
-  /** Sum CDN bandwidth bytes across all projects in workspace for a month. */
-  getWorkspaceMonthlyCDNBandwidth: (workspaceId: string, month: string) => Promise<number>
+  /**
+   * Sum CDN bandwidth bytes across all projects in workspace for a month, or for `window`
+   * when given (whole UTC days: the day `from` falls on through the day before `to`'s).
+   */
+  getWorkspaceMonthlyCDNBandwidth: (workspaceId: string, month: string, window?: UsageWindow) => Promise<number>
   /**
    * CDN bytes served per workspace on one UTC day (`YYYY-MM-DD`), summed
    * over every project and key. Workspaces with no usage that day are left

@@ -1,5 +1,6 @@
 import { trackEnterpriseCdnUsage, trackEnterprisePublicCdnUsage } from '../../../../utils/enterprise'
 import { addCdnOriginBytes, checkCdnOriginBudget } from '../../../../utils/cdn-origin-budget'
+import { resolveUsagePeriodCached } from '../../../../utils/usage-period'
 import { getEffectiveLimit } from '../../../../utils/overage'
 import { isMediaSourcePath } from '../../../../utils/media-source'
 
@@ -133,7 +134,9 @@ export default defineEventHandler(async (event) => {
     'cdn.bandwidth_gb',
     (workspace?.overage_settings as Record<string, boolean> | null | undefined) ?? null,
   )
-  const budget = await checkCdnOriginBudget({ workspaceId, limitGb })
+  // The window the budget counts over: a subscribed workspace's billing slice, else the calendar month.
+  const usagePeriod = await resolveUsagePeriodCached(workspaceId)
+  const budget = await checkCdnOriginBudget({ workspaceId, limitGb, period: usagePeriod })
   if (!budget.allowed) {
     setResponseHeader(event, 'Retry-After', budget.retryAfterSeconds)
     throw createError({ statusCode: 429, message: errorMessage('cdn.origin_limit_reached', { limit: limitGb }) })
@@ -197,7 +200,7 @@ export default defineEventHandler(async (event) => {
   if (keyId)
     setResponseHeader(event, 'X-Contentrain-Key', keyId.substring(0, 8))
 
-  void addCdnOriginBytes(workspaceId, result.data.length)
+  void addCdnOriginBytes(workspaceId, result.data.length, new Date(), usagePeriod)
 
   // Track CDN usage (fire-and-forget, Business+ feature). Keyed requests are
   // attributed to the key; keyless public-media requests land in the project's

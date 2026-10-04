@@ -81,7 +81,9 @@ host in the first week.
 ## Origin limit and meter
 
 The origin's served bytes count against the plan's `cdn.bandwidth_gb`, per
-workspace per calendar month. Cache hits never reach the origin and never count.
+workspace per usage window: the billing period of a subscribed workspace (monthly slices of a
+yearly one), the calendar month otherwise. The CDN keeps one row per UTC day, so the window opens and
+closes on whole days. Cache hits never reach the origin and never count.
 
 | Setting | Values | Default |
 |---|---|---|

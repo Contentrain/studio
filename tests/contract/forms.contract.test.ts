@@ -110,6 +110,39 @@ describe('postgres-db forms (contract)', () => {
     expect(denied.currentCount).toBe(current + 1)
   })
 
+  it('counts and caps submissions over a billing window instead of the calendar month', async () => {
+    const owner = await seedUser('forms-window')
+    try {
+      const project = await sql<{ id: string }>`
+        INSERT INTO public.projects (workspace_id, repo_full_name)
+        VALUES (${owner.workspaceId}, 'contentrain/forms-window-fixture') RETURNING id
+      `.execute(getDb())
+      const pid = project.rows[0]!.id
+      // Two inside the slice, one just before it, one after it. All rows are ordinary submissions.
+      for (const at of ['2026-02-10T10:00:00Z', '2026-02-20T10:00:00Z', '2026-02-02T10:00:00Z', '2026-03-12T10:00:00Z']) {
+        await sql`
+          INSERT INTO public.form_submissions (project_id, workspace_id, model_id, data, created_at)
+          VALUES (${pid}, ${owner.workspaceId}, ${modelId}, '{}'::jsonb, ${at})
+        `.execute(getDb())
+      }
+      const window = { from: '2026-02-05T00:00:00.000Z', to: '2026-03-05T00:00:00.000Z' }
+      expect(await methods.countMonthlySubmissions(owner.workspaceId, window)).toBe(2)
+      expect(await methods.countMonthlySubmissionsForModel(owner.workspaceId, pid, modelId, window)).toBe(2)
+
+      const submission = { project_id: pid, model_id: modelId, data: { via: 'window' } }
+      // The cap is counted over the window: 2 in it, so a limit of 2 is full...
+      const denied = await methods.createFormSubmissionIfAllowed(owner.workspaceId, 2, submission, window)
+      expect(denied).toMatchObject({ allowed: false, currentCount: 2 })
+      // ...and one more fits under 3. The row it writes (now) is outside this past window, as it should be:
+      // the window is the caller's to choose, the function only counts inside it.
+      const granted = await methods.createFormSubmissionIfAllowed(owner.workspaceId, 3, submission, window)
+      expect(granted).toMatchObject({ allowed: true, currentCount: 3 })
+    }
+    finally {
+      await deleteSeededUser(owner.userId)
+    }
+  })
+
   it('per-model monthly count and notification recipients (owner + accepted admins with emails)', async () => {
     const before = await methods.countMonthlySubmissionsForModel(user.workspaceId, projectId, 'newsletter-signup')
     await methods.createFormSubmission({

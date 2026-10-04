@@ -83,6 +83,40 @@ describe('postgres-db comments (contract)', () => {
     expect(pub.replies.map(r => r.id)).toEqual([reply.comment!.id])
   })
 
+  it('counts public comments over a billing window, import and studio rows aside', async () => {
+    const owner = await seedUser('comments-window')
+    try {
+      const project = await sql<{ id: string }>`
+        INSERT INTO public.projects (workspace_id, repo_full_name)
+        VALUES (${owner.workspaceId}, 'contentrain/comments-window-fixture') RETURNING id
+      `.execute(getDb())
+      const pid = project.rows[0]!.id
+      for (const row of [
+        { at: '2026-02-10T10:00:00Z', source: 'web' }, // in
+        { at: '2026-02-20T10:00:00Z', source: 'web' }, // in
+        { at: '2026-02-20T11:00:00Z', source: 'import' }, // never counted
+        { at: '2026-02-02T10:00:00Z', source: 'web' }, // before the slice
+        { at: '2026-03-12T10:00:00Z', source: 'web' }, // after it
+      ]) {
+        await sql`
+          INSERT INTO public.comments (project_id, workspace_id, model_id, entry_id, locale, root_id, author_name, body, source, created_at)
+          VALUES (${pid}, ${owner.workspaceId}, 'posts', 'entry-w', 'en', gen_random_uuid(), 'Ada', 'hi', ${row.source}, ${row.at})
+        `.execute(getDb())
+      }
+      const window = { from: '2026-02-05T00:00:00.000Z', to: '2026-03-05T00:00:00.000Z' }
+      expect(await methods.countMonthlyComments(owner.workspaceId, window)).toBe(2)
+
+      const comment = { project_id: pid, workspace_id: owner.workspaceId, model_id: 'posts', entry_id: 'entry-new', locale: 'en', author_name: 'Bob', body: 'new', max_depth: 2 }
+      expect(await methods.createCommentIfAllowed(owner.workspaceId, 2, comment, window))
+        .toMatchObject({ allowed: false, reason: 'monthly_limit', currentCount: 2 })
+      expect(await methods.createCommentIfAllowed(owner.workspaceId, 3, comment, window))
+        .toMatchObject({ allowed: true, currentCount: 3 })
+    }
+    finally {
+      await deleteSeededUser(owner.userId)
+    }
+  })
+
   it('thread close blocks public submit; reopen allows it; moderation listing + counts + status stamps', async () => {
     const closed = await methods.setCommentThreadClosed(projectId, user.workspaceId, KEY, true, user.userId)
     expect(closed.closed_at).not.toBeNull()

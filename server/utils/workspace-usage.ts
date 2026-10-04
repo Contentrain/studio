@@ -6,11 +6,12 @@
  * reached" mean; two copies of this arithmetic would drift the same way the
  * receipt code once did. Both call this.
  *
- * Each meter carries its own counting window. AI credits, API credits and MCP
- * calls follow the billing period; form submissions, comments and CDN
- * bandwidth are still counted per calendar month (see `usage-period.ts`).
- * Showing one "Resets" date for all of them told a customer billed from the
- * 15th that forms reset on the 15th when they reset on the 1st.
+ * Each meter carries its own counting window, and for a subscribed workspace
+ * they are all the billing period's (`usage-period.ts`): the provider invoices
+ * overage on the subscription's cycle, so a counter that reset on the 1st while
+ * the invoice closes on the 15th would show one number and bill another. A
+ * workspace with no subscription counts every meter by calendar month. Storage
+ * is a level and does not reset.
  *
  * Money is only quoted where it can be charged: a meter's overage units,
  * amount and projection are zero unless overage is turned on for it. With the
@@ -30,7 +31,7 @@ import type { DatabaseProvider } from '../providers/database'
 import { calculateOverageUnits, isOverageSellable } from './overage'
 import type { OverageLock } from './overage-lock'
 import { reportBillingRisk } from './alert'
-import { usagePeriodFrom } from './usage-period'
+import { usagePeriodFrom, usageWindowOf } from './usage-period'
 import type { UsagePeriod } from './usage-period'
 
 export interface WorkspaceUsageCategory {
@@ -107,10 +108,12 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
   const { workspaceId, plan, overageSettings, period } = input
   const terms = creditTermsFor(input.creditUnit ?? CURRENT_CREDIT_UNIT)
   const now = input.now ?? new Date()
-  // Forms, comments and CDN keep the calendar month: their rows are written
-  // by date-range aggregators, and the CDN reader expands a `YYYY-MM` key into
-  // a month window — a `YYYY-MM-DD` key would report zero.
+  // Forms, comments and CDN are counted from rows by date range, so they are
+  // read over the period's window (`usageWindowOf`), not keyed by it. Without a
+  // billing period the window is undefined and the readers use the calendar month.
   const calendar = usagePeriodFrom(null, now)
+  const rowPeriod = period.source === 'billing' ? period : calendar
+  const window = usageWindowOf(period)
 
   const reads = await Promise.allSettled([
     db.getWorkspaceMonthlyAIUsage(workspaceId, period.key),
@@ -118,10 +121,10 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
     // never counted in them (migration 030, chat route metering guard).
     db.getWorkspaceMonthlyAIUsage(workspaceId, period.key, 'byoa'),
     db.getWorkspaceMonthlyAPIUsage(workspaceId, period.key),
-    db.countMonthlySubmissions(workspaceId),
-    db.getWorkspaceMonthlyCDNBandwidth(workspaceId, calendar.key),
+    db.countMonthlySubmissions(workspaceId, window),
+    db.getWorkspaceMonthlyCDNBandwidth(workspaceId, calendar.key, window),
     db.getWorkspaceMonthlyMcpCloudUsage(workspaceId, period.key),
-    db.countMonthlyComments(workspaceId),
+    db.countMonthlyComments(workspaceId, window),
   ])
   const failed = reads.find((r): r is PromiseRejectedResult => r.status === 'rejected')
   if (failed && input.readErrors !== 'unavailable') throw failed.reason
@@ -138,9 +141,9 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
 
   const meters: Array<{ key: string, limitKey: string, name: string, current: number | null, unit: string, window: UsagePeriod | null }> = [
     { key: 'ai_messages', limitKey: 'ai.messages_per_month', name: 'AI Credits', current: aiUsage ?? null, unit: 'credits', window: period },
-    { key: 'form_submissions', limitKey: 'forms.submissions_per_month', name: 'Form Submissions', current: formSubmissions ?? null, unit: 'submissions', window: calendar },
-    { key: 'comments', limitKey: 'comments.per_month', name: 'Comments', current: comments ?? null, unit: 'comments', window: calendar },
-    { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes == null ? null : cdnBandwidthBytes / GB, unit: 'GB', window: calendar },
+    { key: 'form_submissions', limitKey: 'forms.submissions_per_month', name: 'Form Submissions', current: formSubmissions ?? null, unit: 'submissions', window: rowPeriod },
+    { key: 'comments', limitKey: 'comments.per_month', name: 'Comments', current: comments ?? null, unit: 'comments', window: rowPeriod },
+    { key: 'cdn_bandwidth', limitKey: 'cdn.bandwidth_gb', name: 'CDN Bandwidth', current: cdnBandwidthBytes == null ? null : cdnBandwidthBytes / GB, unit: 'GB', window: rowPeriod },
     // Storage is a level, not a rate: it does not reset and is not projected.
     { key: 'media_storage', limitKey: 'media.storage_gb', name: 'Media Storage', current: input.storageBytes / GB, unit: 'GB', window: null },
     { key: 'api_messages', limitKey: 'api.messages_per_month', name: 'API Credits', current: apiUsage ?? null, unit: 'credits', window: period },

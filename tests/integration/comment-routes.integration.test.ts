@@ -198,7 +198,7 @@ describe('public comment routes', () => {
         body: 'hello xworld',
         status: 'pending',
         source_ip: '198.51.100.7',
-      }))
+      }), undefined)
     })
   })
 
@@ -580,7 +580,7 @@ describe('public comment routes — validation, captcha and query hygiene', () =
     }, async ({ request }) => {
       const response = await post(request, { author: { name: 'Anon' }, body: 'deep reply', parentId: approvedRoot.id })
       expect(await response.json()).toEqual({ success: false, errors: [{ field: 'parentId', message: 'comments.depth_exceeded' }] })
-      expect(createCommentIfAllowed).toHaveBeenCalledWith(WORKSPACE, 1000, expect.objectContaining({ author_email: null, parent_id: approvedRoot.id }))
+      expect(createCommentIfAllowed).toHaveBeenCalledWith(WORKSPACE, 1000, expect.objectContaining({ author_email: null, parent_id: approvedRoot.id }), undefined)
     })
   })
 
