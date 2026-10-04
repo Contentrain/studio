@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const revoke = vi.fn()
+vi.mock('@polar-sh/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@polar-sh/sdk')>()
+  return { ...actual, Polar: class { subscriptions = { revoke: (...a: unknown[]) => revoke(...a) } } }
+})
+
 // The webhook signature is not under test: hand the plugin the parsed event.
 const validateEvent = vi.fn()
 vi.mock('@polar-sh/sdk/webhooks', () => ({
@@ -102,5 +108,27 @@ describe('polar plugin — cancel and revoke keep what was paid for', () => {
   it('reports a failed renewal as past_due', async () => {
     const result = await handle('subscription.past_due', subscription({ status: 'past_due' }))
     expect(result).toMatchObject({ event: 'subscription.updated', subscriptionStatus: 'past_due' })
+  })
+})
+
+describe('polar plugin — cancelSubscription', () => {
+  const provider = async () => {
+    const { polarPlugin } = await import('../../server/providers/payment/plugins/polar')
+    return polarPlugin.create({ polar: { accessToken: 'tok', webhookSecret: 'sec', proProductId: 'prod_pro' } } as never)
+  }
+
+  it('answers canceled when Polar revokes it', async () => {
+    revoke.mockResolvedValue({})
+    expect(await (await provider()).cancelSubscription('sub_1')).toBe('canceled')
+  })
+
+  it.each(['AlreadyCanceledSubscription', 'ResourceNotFound'])('answers already_ended for Polar\'s %s', async (error) => {
+    revoke.mockRejectedValue(Object.assign(new Error(error), { error }))
+    expect(await (await provider()).cancelSubscription('sub_1')).toBe('already_ended')
+  })
+
+  it('still throws any other provider failure', async () => {
+    revoke.mockRejectedValue(new Error('polar down'))
+    await expect((await provider()).cancelSubscription('sub_1')).rejects.toThrow('polar down')
   })
 })
