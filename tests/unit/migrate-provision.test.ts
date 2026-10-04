@@ -221,7 +221,7 @@ describe('provisionMigrateBundle', () => {
     expect(await refused()).toEqual({ status: 409, key: 'billing.subscription_exists' })
     // The answer carries a stable code (the message is localised text) so Migrate can offer the way out.
     const error = await run(claim()).catch((e: { data?: unknown }) => e)
-    expect((error as { data?: unknown }).data).toEqual({ code: 'subscription_exists' })
+    expect((error as { data?: unknown }).data).toEqual({ code: 'subscription_exists', workspace_slug: 'owner-abc' })
     expect(db.claimMigrateGrant).not.toHaveBeenCalled()
   })
 

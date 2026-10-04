@@ -49,8 +49,12 @@ const hasLiveSubscription = (account: Record<string, unknown> | null | undefined
   return Boolean(account?.subscription_id && status && !['canceled', 'incomplete_expired'].includes(status))
 }
 
-/** The workspace the bundle's subscription belongs on: the account's personal one, else the first, skipping any that already holds a subscription. Null when every owned workspace does. */
-async function bundleWorkspace(userId: string): Promise<{ id: string, slug: string, name: string } | null> {
+/**
+ * The workspace the bundle's subscription belongs on: the account's personal one, else the first, skipping any that already
+ * holds a subscription. When every owned workspace does, `blockedSlug` is the slug of the first of them (the personal one
+ * first) — where the customer resumes or manages that plan.
+ */
+async function bundleWorkspace(userId: string): Promise<{ workspace: { id: string, slug: string, name: string } } | { blockedSlug: string | null }> {
   const db = useDatabaseProvider()
   const owned = await db.listOwnedWorkspacesAdmin(userId)
   if (!owned.length) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
@@ -61,10 +65,13 @@ async function bundleWorkspace(userId: string): Promise<{ id: string, slug: stri
     chosen = w
     break
   }
-  if (!chosen) return null
+  if (!chosen) {
+    const blocked = await db.getWorkspaceById(String(ordered[0]!.id), 'id, slug')
+    return { blockedSlug: blocked ? String(blocked.slug) : null }
+  }
   const row = await db.getWorkspaceById(String(chosen.id), 'id, slug, name')
   if (!row) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
-  return { id: String(row.id), slug: String(row.slug), name: String(row.name) }
+  return { workspace: { id: String(row.id), slug: String(row.slug), name: String(row.name) } }
 }
 
 /** A running plan already covers the order: join its workspace, charge Studio nothing, open no checkout. */
@@ -132,9 +139,13 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   if (account.state === 'covers') return provisionCovered(claim, user.id)
 
   // No owned workspace is free of a subscription (e.g. the only one is on a plan that is ending): never a second one on it.
-  const workspace = await bundleWorkspace(user.id)
-  // `data.code` is the stable handle Migrate matches on (the message is localised text): it shows the customer the way out.
-  if (!workspace) throw createError({ statusCode: 409, message: errorMessage('billing.subscription_exists'), data: { code: 'subscription_exists' } })
+  // `data.code` is the stable handle Migrate matches on (the message is localised text); `workspace_slug` (a workspace the
+  // caller owns, S2S only) is where Migrate sends the customer to resume the plan.
+  const picked = await bundleWorkspace(user.id)
+  if ('blockedSlug' in picked) {
+    throw createError({ statusCode: 409, message: errorMessage('billing.subscription_exists'), data: { code: 'subscription_exists', ...(picked.blockedSlug ? { workspace_slug: picked.blockedSlug } : {}) } })
+  }
+  const { workspace } = picked
 
   const { grant } = await db.claimMigrateGrant({
     orderId: claim.order_id,
