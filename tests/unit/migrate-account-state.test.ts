@@ -165,6 +165,20 @@ describe('POST /api/migrate/account-state', () => {
     expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, current_plan: 'pro' })
   })
 
+  it('none: a plan that is ending (cancel_at_period_end) is not Studio included — the normal bundle applies', async () => {
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro' }])
+    db.getActivePaymentAccount.mockResolvedValue({ ...account('pro'), cancel_at_period_end: true })
+    expect(await ask('starter')).toMatchObject({ state: 'none', plan: 'starter', year1_cents: 7200 })
+  })
+
+  it('none: a past_due or canceled plan is not Studio included either', async () => {
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro' }])
+    for (const status of ['past_due', 'canceled']) {
+      db.getActivePaymentAccount.mockResolvedValue(account('pro', status))
+      expect(await ask('starter')).toMatchObject({ state: 'none', plan: 'starter' })
+    }
+  })
+
   it('too_small: a running plan below the sized one charges the difference', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'starter' }])
     db.getActivePaymentAccount.mockResolvedValue(account('starter'))

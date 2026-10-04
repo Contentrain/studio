@@ -209,6 +209,19 @@ describe('provisionMigrateBundle', () => {
     expect(await refused()).toBeNull()
   })
 
+  it('a plan that is ending keeps its workspace: the bundle goes to another owned workspace without a subscription, never a second one on it', async () => {
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'ws-1' ? { subscription_id: 'sub_ending', subscription_status: 'active', cancel_at_period_end: true } : null))
+    db.getWorkspaceById.mockImplementation(async (id: string) => ({ id, slug: id, name: id }))
+    expect(await refused()).toBeNull()
+    expect(db.bindMigrateGrantWorkspace).toHaveBeenCalledWith(expect.anything(), 'ws-other')
+  })
+
+  it('refuses when every owned workspace already holds a subscription, ending ones included', async () => {
+    db.getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_ending', subscription_status: 'active', cancel_at_period_end: true })
+    expect(await refused()).toEqual({ status: 409, key: 'billing.subscription_exists' })
+    expect(db.claimMigrateGrant).not.toHaveBeenCalled()
+  })
+
   it('refuses an email whose user has another GitHub account', async () => {
     // Loaded after the module reset, so it is the class the provision code sees.
     const { IdentityConflictError } = await import('../../server/providers/auth')

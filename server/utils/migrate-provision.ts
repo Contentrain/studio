@@ -43,12 +43,25 @@ export function isAllowedReturnUrl(returnUrl: string, origins: string[]): boolea
   }
 }
 
-/** The workspace the bundle's subscription belongs on: the account's personal one, else its first. */
-async function bundleWorkspace(userId: string): Promise<{ id: string, slug: string, name: string }> {
+/** A workspace that still carries a subscription (even one scheduled to end) cannot take a second one. */
+const hasLiveSubscription = (account: Record<string, unknown> | null | undefined) => {
+  const status = account?.subscription_status as string | null | undefined
+  return Boolean(account?.subscription_id && status && !['canceled', 'incomplete_expired'].includes(status))
+}
+
+/** The workspace the bundle's subscription belongs on: the account's personal one, else the first, skipping any that already holds a subscription. Null when every owned workspace does. */
+async function bundleWorkspace(userId: string): Promise<{ id: string, slug: string, name: string } | null> {
   const db = useDatabaseProvider()
   const owned = await db.listOwnedWorkspacesAdmin(userId)
-  const chosen = owned.find(w => w.type === 'primary') ?? owned[0]
-  if (!chosen) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
+  if (!owned.length) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
+  const ordered = [...owned.filter(w => w.type === 'primary'), ...owned.filter(w => w.type !== 'primary')]
+  let chosen: (typeof owned)[number] | undefined
+  for (const w of ordered) {
+    if (hasLiveSubscription(await db.getActivePaymentAccount(String(w.id)))) continue
+    chosen = w
+    break
+  }
+  if (!chosen) return null
   const row = await db.getWorkspaceById(String(chosen.id), 'id, slug, name')
   if (!row) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
   return { id: String(row.id), slug: String(row.slug), name: String(row.name) }
@@ -118,10 +131,9 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   const db = useDatabaseProvider()
   if (account.state === 'covers') return provisionCovered(claim, user.id)
 
+  // No owned workspace is free of a subscription (e.g. the only one is on a plan that is ending): never a second one on it.
   const workspace = await bundleWorkspace(user.id)
-  const existingAccount = await db.getActivePaymentAccount(workspace.id)
-  const status = existingAccount?.subscription_status as string | null | undefined
-  if (existingAccount?.subscription_id && status && !['canceled', 'incomplete_expired'].includes(status)) fail(409, 'billing.subscription_exists')
+  if (!workspace) fail(409, 'billing.subscription_exists')
 
   const { grant } = await db.claimMigrateGrant({
     orderId: claim.order_id,

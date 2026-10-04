@@ -8,16 +8,14 @@
  * - `covers`: a running plan at least the sized one → nothing is added.
  * - `too_small`: a running plan below it → the upgrade difference.
  *
- * "Running" is a subscription that is paid up or still inside its paid
- * period (`subscribed`, `past_due`, `canceled`). A trial or a locked
- * workspace counts as no plan; the provision step (S3) settles what happens
+ * "Running" is an active subscription that is not ending: `subscribed` without
+ * `cancel_at_period_end`. past_due, canceled, ending, a trial or a locked
+ * workspace count as no plan (they get the normal bundle checkout); the provision step (S3) settles what happens
  * to an existing trial subscription.
  */
 import type { MigrateAccountStateResponse, MigrateStudioPlan } from '@contentrain/types'
 import { STUDIO_YEARLY_LIST_CENTS, bundleUpgradeCents, bundleYear1Cents, planCovers } from '../../shared/utils/migrate-bundle'
 import { resolveWorkspaceBilling } from './workspace-billing'
-
-const RUNNING_STATES = new Set(['subscribed', 'past_due', 'canceled'])
 
 interface RunningPlan { plan: MigrateStudioPlan, workspaceId: string, primary: boolean }
 
@@ -28,7 +26,10 @@ async function runningPlans(userId: string): Promise<RunningPlan[]> {
   const running: RunningPlan[] = []
   for (const workspace of workspaces) {
     const billing = await resolveWorkspaceBilling(db, { ...workspace, id: String(workspace.id) })
-    if (!RUNNING_STATES.has(billing.state)) continue
+    // Only a plan that will still be there next period covers: past_due, canceled and a plan scheduled to end
+    // (`cancel_at_period_end`) are not "Studio included" — their owner pays the normal bundle (same rule as attach).
+    if (billing.state !== 'subscribed') continue
+    if ((await db.getActivePaymentAccount(String(workspace.id)))?.cancel_at_period_end === true) continue
     const plan = billing.effectivePlan
     // Enterprise is above everything Migrate sells.
     const sold: MigrateStudioPlan | null = plan === 'enterprise' || plan === 'pro' ? 'pro' : plan === 'starter' ? 'starter' : null
