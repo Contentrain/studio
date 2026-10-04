@@ -1,13 +1,13 @@
 /**
  * Where a Migrate grant stands, for Migrate's status call and its install-URL
- * gate. Lifecycle: migration 031 (claimed → bound → redeemed). `revoked` is
- * part of the contract; no stored status maps to it until the revoke column
- * exists.
+ * gate. Lifecycle: migration 031 (claimed → bound → redeemed), and `revoked`
+ * (migration 045) from any of them, which wins over the rest.
  */
 import type { MigrateGrantState } from '@contentrain/types'
 import type { DatabaseRow } from '../providers/database'
 
 export function migrateGrantStateOf(grant: DatabaseRow): MigrateGrantState {
+  if (grant.revoked_at) return 'revoked'
   return grant.redeemed_at ? 'redeemed' : grant.bound_at ? 'bound' : 'claimed'
 }
 

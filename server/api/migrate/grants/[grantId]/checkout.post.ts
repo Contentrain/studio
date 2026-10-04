@@ -43,6 +43,8 @@ export default defineEventHandler(async (event) => {
   )
   if (!workspace) throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
 
+  if (grant.revoked_at)
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_revoked') })
   if (grant.redeemed_at)
     throw createError({ statusCode: 409, message: errorMessage('migrate.grant_used') })
   // A bundle grant is paid through Migrate's checkout, never opened as an included trial.

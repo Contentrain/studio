@@ -233,8 +233,9 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
       throw new Error('The Migrate bundle is Polar-only')
     },
 
-    async cancelSubscription(subscriptionId: string): Promise<void> {
+    async cancelSubscription(subscriptionId: string): Promise<'canceled' | 'already_ended'> {
       await stripe.subscriptions.cancel(subscriptionId)
+      return 'canceled'
     },
 
     async ingestUsageEvent(_input: UsageEventInput): Promise<void> {

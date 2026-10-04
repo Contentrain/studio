@@ -133,6 +133,8 @@ export interface MigrateGrantsTable {
   amount_cents: number | null
   bundle_target_product_id: string | null
   bundle_applied_at: string | null
+  revoked_at: string | null
+  revoked_reason: string | null
   created_at: Generated<string>
 }
 

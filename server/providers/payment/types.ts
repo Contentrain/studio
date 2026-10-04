@@ -170,7 +170,8 @@ export interface PaymentProvider {
   handleWebhook: (payload: string, headers: Record<string, string | undefined>) => Promise<WebhookResult>
 
   /** Cancel a subscription (immediate). */
-  cancelSubscription: (subscriptionId: string) => Promise<void>
+  /** Ends the subscription now. `already_ended` when the provider reports it was already ended or is gone (not an error: the goal is met). */
+  cancelSubscription: (subscriptionId: string) => Promise<'canceled' | 'already_ended'>
 
   /**
    * Open a Migrate bundle checkout (see `BundleCheckoutInput`). Providers
