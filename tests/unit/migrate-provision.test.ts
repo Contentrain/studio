@@ -150,6 +150,17 @@ describe('provisionMigrateBundle', () => {
       db.markMigrateGrantRedeemed = vi.fn().mockResolvedValue(undefined)
     })
 
+    it('refuses with 502 and logs why when the workspace slug is not one Migrate accepts', async () => {
+      // handle_new_user() lowercases after replacing [^a-z0-9-], so an uppercase GitHub name ("ABB65") becomes "---65-1a2b3c4d".
+      coveringWorkspace.mockResolvedValue({ id: 'ws-paid', slug: '---65-1a2b3c4d' })
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      expect(await refused(covered())).toEqual({ status: 502, key: 'billing.provider_unavailable' })
+      expect(log).toHaveBeenCalledWith('[migrate-provision] own response failed validation:', expect.objectContaining({
+        orderId: 'ord_1', state: 'redeemed', workspaceSlug: '---65-1a2b3c4d', errors: ['workspace_slug: invalid'],
+      }))
+      log.mockRestore()
+    })
+
     it('ties the grant to the plan\'s workspace and answers redeemed: no checkout, no Polar call, Studio fee $0', async () => {
       expect(await run(covered())).toEqual({ grant_id: 'grant-1', state: 'redeemed', plan: 'pro', workspace_slug: 'agency' })
       expect(coveringWorkspace).toHaveBeenCalledWith('user-1', 'pro')
@@ -302,7 +313,10 @@ describe('provisionMigrateBundle', () => {
 
   it('never hands Migrate a checkout address that is not Polar\'s', async () => {
     payment.createBundleCheckout.mockResolvedValue({ url: 'https://evil.example/checkout/c_1', sessionId: 'co_1', expiresAt: '2026-10-10T13:00:00.000Z', targetProductId: 'prod_pro_y' })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(await refused()).toEqual({ status: 502, key: 'billing.provider_unavailable' })
+    expect(log).toHaveBeenCalledWith('[migrate-provision] own response failed validation:', expect.objectContaining({ errors: ['checkout_url: not a Polar checkout address'] }))
+    log.mockRestore()
   })
 
   it('takes the personal workspace over the first one it finds', async () => {

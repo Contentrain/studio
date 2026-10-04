@@ -30,6 +30,18 @@ import { migrateExportOrigins } from './migrate-comments-export'
 /** A checkout is reused only while it has at least this long left to be paid. */
 const MIN_REMAINING_MS = 5 * 60 * 1000
 
+/**
+ * Fail closed on our own answer, and say why: the 502 carries no detail to the caller, so the validator's errors
+ * (never the response, which holds a checkout address) go to the log with the order they belong to.
+ */
+function answerOrFail(response: MigrateProvisionResponse, orderId: string, options: Parameters<typeof validateMigrateProvisionResponse>[1]): MigrateProvisionResponse {
+  const checked = validateMigrateProvisionResponse(response, options)
+  if (checked.ok) return response
+  // eslint-disable-next-line no-console -- ops visibility: a refused own answer is otherwise silent
+  console.error('[migrate-provision] own response failed validation:', { orderId, state: response.state, workspaceSlug: response.workspace_slug, errors: checked.errors })
+  return fail(502, 'billing.provider_unavailable')
+}
+
 function fail(statusCode: number, key: string): never {
   throw createError({ statusCode, message: errorMessage(key) })
 }
@@ -113,9 +125,7 @@ async function provisionCovered(claim: MigrateStudioClaimV2, userId: string): Pr
     plan: claim.plan,
     workspace_slug: target.slug,
   }
-  if (!validateMigrateProvisionResponse(response, { quoted_total_cents: claim.billing.quoted_total_cents }).ok)
-    fail(502, 'billing.provider_unavailable')
-  return response
+  return answerOrFail(response, claim.order_id, { quoted_total_cents: claim.billing.quoted_total_cents })
 }
 
 export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: Date = new Date()): Promise<MigrateProvisionResponse> {
@@ -224,7 +234,5 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
     checkout_expires_at: Math.floor((expiresAt as Date).getTime() / 1000),
   }
   // Fail closed on our own answer: Migrate redirects a browser to it.
-  if (!validateMigrateProvisionResponse(response, { quoted_total_cents: quoted, now: Math.floor(now.getTime() / 1000) }).ok)
-    fail(502, 'billing.provider_unavailable')
-  return response
+  return answerOrFail(response, claim.order_id, { quoted_total_cents: quoted, now: Math.floor(now.getTime() / 1000) })
 }
