@@ -21,6 +21,7 @@ import { sanitizeString } from '~~/server/utils/sanitize-input'
 import { verifyTurnstileToken } from '~~/server/utils/turnstile'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import { isUuid } from '~~/shared/utils/uuid'
+import { resolveUsagePeriodCached, usageWindowOf } from '~~/server/utils/usage-period'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -127,6 +128,7 @@ export default defineEventHandler(async (event) => {
   const overageSettings = ctx.workspace.overage_settings as Record<string, boolean> | null
   const monthlyLimit = getEffectiveLimit(basePlanLimit, 'comments.per_month', overageSettings)
 
+  const usageWindow = usageWindowOf(await resolveUsagePeriodCached(ctx.workspaceId))
   const db = useDatabaseProvider()
   const outcome = await db.createCommentIfAllowed(ctx.workspaceId, monthlyLimit, {
     project_id: projectId,
@@ -144,7 +146,7 @@ export default defineEventHandler(async (event) => {
     source_ip: ip !== 'unknown' ? ip : undefined,
     user_agent: getHeader(event, 'user-agent') ?? undefined,
     referrer: getHeader(event, 'referer') ?? getHeader(event, 'referrer') ?? undefined,
-  })
+  }, usageWindow)
 
   if (!outcome.allowed) {
     switch (outcome.reason) {

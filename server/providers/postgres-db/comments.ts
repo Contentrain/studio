@@ -57,7 +57,7 @@ export function commentMethods(): CommentMethods {
       }
     },
 
-    async createCommentIfAllowed(workspaceId, monthlyLimit, comment) {
+    async createCommentIfAllowed(workspaceId, monthlyLimit, comment, window) {
       let result: {
         allowed: boolean
         reason?: 'thread_closed' | 'parent_not_found' | 'depth_exceeded' | 'monthly_limit'
@@ -82,7 +82,9 @@ export function commentMethods(): CommentMethods {
             p_status => ${comment.status ?? 'pending'},
             p_source_ip => ${comment.source_ip ?? null},
             p_user_agent => ${comment.user_agent ?? null},
-            p_referrer => ${comment.referrer ?? null}
+            p_referrer => ${comment.referrer ?? null},
+            p_window_start => ${window?.from ?? null},
+            p_window_end => ${window?.to ?? null}
           ) AS result
         `.execute(getAdmin())
 
@@ -243,17 +245,18 @@ export function commentMethods(): CommentMethods {
       }
     },
 
-    async countMonthlyComments(workspaceId) {
+    async countMonthlyComments(workspaceId, window) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const row = await getAdmin()
+      let query = getAdmin()
         .selectFrom('comments')
         .select(eb => eb.fn.countAll().as('count'))
         .where('workspace_id', '=', workspaceId)
         .where('source', '=', 'web')
-        .where('created_at', '>=', monthStart.toISOString())
-        .executeTakeFirst()
+        .where('created_at', '>=', window?.from ?? monthStart.toISOString())
+      if (window) query = query.where('created_at', '<', window.to)
+      const row = await query.executeTakeFirst()
 
       return Number(row?.count ?? 0)
     },

@@ -18,6 +18,7 @@ import { createContentEngine } from '~~/server/utils/content-engine'
 import { generateEntryId } from '@contentrain/types'
 import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { reportBillingRisk } from '~~/server/utils/alert'
+import { resolveUsagePeriodCached, usageWindowOf } from '~~/server/utils/usage-period'
 
 export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
@@ -179,6 +180,8 @@ export default defineEventHandler(async (event) => {
   const basePlanLimit = getPlanLimit(plan, 'forms.submissions_per_month')
   const overageSettings = billing.overageSettings
   const monthlyLimit = getEffectiveLimit(basePlanLimit, 'forms.submissions_per_month', overageSettings)
+  // The window the quota counts over: a subscribed workspace's billing slice, else the calendar month.
+  const usageWindow = usageWindowOf(await resolveUsagePeriodCached(workspace.id as string))
 
   // Per-model cap from the form config (below the workspace plan limit).
   const modelCap = formConfig.limits?.maxPerMonth
@@ -187,7 +190,7 @@ export default defineEventHandler(async (event) => {
     // would let every submission past the cap (AI-15).
     let used: number
     try {
-      used = await db.countMonthlySubmissionsForModel(workspace.id as string, projectId, modelId)
+      used = await db.countMonthlySubmissionsForModel(workspace.id as string, projectId, modelId, usageWindow)
     }
     catch (err) {
       reportBillingRisk(err, { op: 'forms.model-cap-read', workspaceId: workspace.id as string })
@@ -210,6 +213,7 @@ export default defineEventHandler(async (event) => {
       referrer: referrer ?? undefined,
       locale,
     },
+    usageWindow,
   )
 
   if (!allowed)

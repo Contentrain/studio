@@ -194,7 +194,7 @@ describe('public API fixtures — forms', () => {
         model_id: 'contact',
         locale: 'en',
         data: body.data,
-      }))
+      }), undefined)
     })
   })
 
@@ -327,7 +327,7 @@ describe('public API fixtures — comments', () => {
           body: 'Great post!',
           parent_id: null,
           status: expected.status,
-        }))
+        }), undefined)
       })
     }
 

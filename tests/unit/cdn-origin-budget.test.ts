@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { usagePeriodFrom } from '../../server/utils/usage-period'
 
 const db = vi.hoisted(() => ({ getWorkspaceMonthlyCDNBandwidth: vi.fn() }))
 vi.mock('../../server/utils/providers', () => ({ useDatabaseProvider: () => db }))
@@ -62,5 +63,21 @@ describe('CDN origin budget', () => {
     db.getWorkspaceMonthlyCDNBandwidth.mockRejectedValue(new Error('db down'))
     expect(await checkCdnOriginBudget({ workspaceId: 'ws', limitGb: 2, now: NOW })).toEqual({ allowed: true })
     expect(await checkCdnOriginBudget({ workspaceId: 'ws2', limitGb: Infinity, now: NOW })).toEqual({ allowed: true })
+  })
+
+  it('counts a subscribed workspace over its billing slice and retries when the slice resets', async () => {
+    const { checkCdnOriginBudget } = await load('enforce')
+    const period = usagePeriodFrom({ subscription_status: 'active', current_period_start: '2026-09-21T00:00:00Z', current_period_end: '2026-10-21T00:00:00Z' }, NOW)
+    db.getWorkspaceMonthlyCDNBandwidth.mockResolvedValue(2.5 * GIB)
+    const result = await checkCdnOriginBudget({ workspaceId: 'ws', limitGb: 2, now: NOW, period })
+    expect(db.getWorkspaceMonthlyCDNBandwidth).toHaveBeenCalledWith('ws', '2026-09-21', { from: '2026-09-21T00:00:00.000Z', to: '2026-10-21T00:00:00.000Z' })
+    // 2026-10-21T00:00Z is 27.5 days after NOW.
+    expect(result).toEqual({ allowed: false, retryAfterSeconds: 27.5 * 24 * 3600 })
+  })
+
+  it('reads the calendar month, with no window, when the workspace has no billing period', async () => {
+    const { checkCdnOriginBudget } = await load('enforce')
+    await checkCdnOriginBudget({ workspaceId: 'ws', limitGb: 2, now: NOW, period: usagePeriodFrom(null, NOW) })
+    expect(db.getWorkspaceMonthlyCDNBandwidth).toHaveBeenCalledWith('ws', '2026-09', undefined)
   })
 })

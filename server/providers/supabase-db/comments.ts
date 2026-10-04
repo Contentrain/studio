@@ -53,7 +53,7 @@ export function commentMethods(): CommentMethods {
       return data as DatabaseRow
     },
 
-    async createCommentIfAllowed(workspaceId, monthlyLimit, comment) {
+    async createCommentIfAllowed(workspaceId, monthlyLimit, comment, window) {
       const { data, error } = await getAdmin().rpc('create_comment_if_allowed', {
         p_workspace_id: workspaceId,
         p_monthly_limit: monthlyLimit,
@@ -71,6 +71,8 @@ export function commentMethods(): CommentMethods {
         p_source_ip: comment.source_ip ?? null,
         p_user_agent: comment.user_agent ?? null,
         p_referrer: comment.referrer ?? null,
+        p_window_start: window?.from ?? null,
+        p_window_end: window?.to ?? null,
       })
 
       if (error) {
@@ -207,16 +209,18 @@ export function commentMethods(): CommentMethods {
       return data?.length ?? 0
     },
 
-    async countMonthlyComments(workspaceId) {
+    async countMonthlyComments(workspaceId, window) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const { count, error } = await getAdmin()
+      let query = getAdmin()
         .from('comments')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
         .eq('source', 'web')
-        .gte('created_at', monthStart.toISOString())
+        .gte('created_at', window?.from ?? monthStart.toISOString())
+      if (window) query = query.lt('created_at', window.to)
+      const { count, error } = await query
       if (error) throw createError({ statusCode: 500, message: error.message })
 
       return count ?? 0

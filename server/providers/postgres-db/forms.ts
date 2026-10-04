@@ -166,32 +166,34 @@ export function formMethods(): FormMethods {
       }
     },
 
-    async countMonthlySubmissions(workspaceId) {
+    async countMonthlySubmissions(workspaceId, window) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const row = await getAdmin()
+      let query = getAdmin()
         .selectFrom('form_submissions')
         .select(eb => eb.fn.countAll().as('count'))
         .where('workspace_id', '=', workspaceId)
-        .where('created_at', '>=', monthStart.toISOString())
-        .executeTakeFirst()
+        .where('created_at', '>=', window?.from ?? monthStart.toISOString())
+      if (window) query = query.where('created_at', '<', window.to)
+      const row = await query.executeTakeFirst()
 
       return Number(row?.count ?? 0)
     },
 
-    async countMonthlySubmissionsForModel(workspaceId, projectId, modelId) {
+    async countMonthlySubmissionsForModel(workspaceId, projectId, modelId, window) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const row = await getAdmin()
+      let query = getAdmin()
         .selectFrom('form_submissions')
         .select(eb => eb.fn.countAll().as('count'))
         .where('workspace_id', '=', workspaceId)
         .where('project_id', '=', projectId)
         .where('model_id', '=', modelId)
-        .where('created_at', '>=', monthStart.toISOString())
-        .executeTakeFirst()
+        .where('created_at', '>=', window?.from ?? monthStart.toISOString())
+      if (window) query = query.where('created_at', '<', window.to)
+      const row = await query.executeTakeFirst()
 
       return Number(row?.count ?? 0)
     },
@@ -230,7 +232,7 @@ export function formMethods(): FormMethods {
       }
     },
 
-    async createFormSubmissionIfAllowed(workspaceId, monthlyLimit, submission) {
+    async createFormSubmissionIfAllowed(workspaceId, monthlyLimit, submission, window) {
       let result: { allowed: boolean, current_count: number, submission?: Record<string, unknown> }
       try {
         const outcome = await sql<{ result: typeof result }>`
@@ -244,7 +246,9 @@ export function formMethods(): FormMethods {
             p_source_ip => ${submission.source_ip ?? null},
             p_user_agent => ${submission.user_agent ?? null},
             p_referrer => ${submission.referrer ?? null},
-            p_locale => ${submission.locale ?? 'en'}
+            p_locale => ${submission.locale ?? 'en'},
+            p_window_start => ${window?.from ?? null},
+            p_window_end => ${window?.to ?? null}
           ) AS result
         `.execute(getAdmin())
 
