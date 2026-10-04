@@ -225,6 +225,14 @@ describe('provisionMigrateBundle', () => {
     expect(db.claimMigrateGrant).not.toHaveBeenCalled()
   })
 
+  it('a subscription whose payment failed has its own code, so Migrate can say so instead of "ending"', async () => {
+    db.getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_late', subscription_status: 'past_due' })
+    expect(await refused()).toEqual({ status: 409, key: 'migrate.attach_past_due' })
+    const error = await run(claim()).catch((e: { data?: unknown }) => e)
+    expect((error as { data?: unknown }).data).toEqual({ code: 'subscription_past_due', workspace_slug: 'owner-abc' })
+    expect(db.claimMigrateGrant).not.toHaveBeenCalled()
+  })
+
   it('refuses an email whose user has another GitHub account', async () => {
     // Loaded after the module reset, so it is the class the provision code sees.
     const { IdentityConflictError } = await import('../../server/providers/auth')

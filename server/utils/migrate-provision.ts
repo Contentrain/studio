@@ -54,7 +54,7 @@ const hasLiveSubscription = (account: Record<string, unknown> | null | undefined
  * holds a subscription. When every owned workspace does, `blockedSlug` is the slug of the first of them (the personal one
  * first) — where the customer resumes or manages that plan.
  */
-async function bundleWorkspace(userId: string): Promise<{ workspace: { id: string, slug: string, name: string } } | { blockedSlug: string | null }> {
+async function bundleWorkspace(userId: string): Promise<{ workspace: { id: string, slug: string, name: string } } | { blockedSlug: string | null, pastDue: boolean }> {
   const db = useDatabaseProvider()
   const owned = await db.listOwnedWorkspacesAdmin(userId)
   if (!owned.length) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
@@ -67,7 +67,9 @@ async function bundleWorkspace(userId: string): Promise<{ workspace: { id: strin
   }
   if (!chosen) {
     const blocked = await db.getWorkspaceById(String(ordered[0]!.id), 'id, slug')
-    return { blockedSlug: blocked ? String(blocked.slug) : null }
+    // The workspace the customer is sent to is the first one; whether its payment failed decides which way out Migrate offers.
+    const pastDue = (await db.getActivePaymentAccount(String(ordered[0]!.id)))?.subscription_status === 'past_due'
+    return { blockedSlug: blocked ? String(blocked.slug) : null, pastDue }
   }
   const row = await db.getWorkspaceById(String(chosen.id), 'id, slug, name')
   if (!row) throw createError({ statusCode: 500, message: errorMessage('generic.server_error') })
@@ -143,7 +145,9 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   // caller owns, S2S only) is where Migrate sends the customer to resume the plan.
   const picked = await bundleWorkspace(user.id)
   if ('blockedSlug' in picked) {
-    throw createError({ statusCode: 409, message: errorMessage('billing.subscription_exists'), data: { code: 'subscription_exists', ...(picked.blockedSlug ? { workspace_slug: picked.blockedSlug } : {}) } })
+    // A subscription whose payment failed is its own answer (`subscription_past_due`): the way out is to fix the payment, not to resume a plan.
+    const code = picked.pastDue ? 'subscription_past_due' : 'subscription_exists'
+    throw createError({ statusCode: 409, message: errorMessage(picked.pastDue ? 'migrate.attach_past_due' : 'billing.subscription_exists'), data: { code, ...(picked.blockedSlug ? { workspace_slug: picked.blockedSlug } : {}) } })
   }
   const { workspace } = picked
 
