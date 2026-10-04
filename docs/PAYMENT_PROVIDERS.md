@@ -86,6 +86,18 @@ First run prints a copy-paste block of product IDs for your env:
   NUXT_POLAR_PRO_PRODUCT_ID=…
 ```
 
+The same run also creates the four yearly products "Migrate with Studio" sells through (fixed price only, tagged
+`contentrain_variant`; monthly products are untouched) and prints their ids:
+
+```
+  NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID=…   # year 1 at 20% off ($72), the checkout overrides the amount per order
+  NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID=…   # the list price ($90) the subscription moves to at the next period
+  NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID=…       # $392
+  NUXT_POLAR_PRO_YEARLY_PRODUCT_ID=…       # $490
+```
+
+Prices come from `shared/utils/migrate-bundle.ts`. Metered prices and meter credits are not attached to these products yet.
+
 **3. Webhook endpoint.** In the Polar dashboard:
 
 - URL: `https://<your-domain>/api/billing/webhook/polar`

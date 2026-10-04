@@ -58,6 +58,7 @@ import plansData from '../.contentrain/content/system/plans/en.json'
 import planFeaturesData from '../.contentrain/content/system/plan-features/data.json'
 import { USAGE_METER_LIST } from '../shared/utils/usage-meters'
 import { OVERAGE_PRICING, PLAN_PRICING } from '../shared/utils/license'
+import { bundleYear1Cents, STUDIO_YEARLY_LIST_CENTS } from '../shared/utils/migrate-bundle'
 
 // ─── Config ──────────────────────────────────────────────────────────────
 
@@ -293,7 +294,70 @@ function findExistingProduct(
   products: ProductSummary[],
   slug: BillablePlan,
 ): ProductSummary | undefined {
-  return products.find(p => p.metadata?.contentrain_slug === slug && p.metadata?.contentrain_catalog === CATALOG_VERSION)
+  // A product with no variant tag is the monthly one (how the first two were created), so they keep matching.
+  return products.find(p => p.metadata?.contentrain_slug === slug && p.metadata?.contentrain_catalog === CATALOG_VERSION
+    && (p.metadata?.contentrain_variant ?? 'monthly') === 'monthly')
+}
+
+/**
+ * The yearly products "Migrate with Studio" sells through (`createBundleCheckout` / `moveBundleSubscriptionToList` in
+ * the Polar plugin): per plan, a `bundle` product the checkout opens on (year 1 at 20% off, the checkout overrides the
+ * amount per order) and a `yearly` product the subscription moves to at the next period (the list price).
+ * Prices come from `shared/utils/migrate-bundle.ts`, the numbers the quote and the checkout use.
+ * Create-if-missing only. Metered prices and included meter credits are NOT attached here: on a yearly period the
+ * credits grant per billing cycle, so their units are a pricing decision (see the warning this step prints).
+ */
+const VARIANT_SLUGS = ['bundle', 'yearly'] as const
+type VariantSlug = (typeof VARIANT_SLUGS)[number]
+
+function findVariantProduct(products: ProductSummary[], slug: BillablePlan, variant: VariantSlug): ProductSummary | undefined {
+  return products.find(p => p.metadata?.contentrain_slug === slug && p.metadata?.contentrain_catalog === CATALOG_VERSION
+    && p.metadata?.contentrain_variant === variant)
+}
+
+async function syncVariantProduct(
+  slug: BillablePlan,
+  variant: VariantSlug,
+  existingProducts: ProductSummary[],
+): Promise<void> {
+  const key = `${slug}#${variant}`
+  const cents = variant === 'yearly' ? STUDIO_YEARLY_LIST_CENTS[slug] : bundleYear1Cents(slug)
+  const name = variant === 'yearly' ? `Studio ${PLAN_PRICING[slug].name} Yearly` : `Migrate with Studio ${PLAN_PRICING[slug].name}`
+  const existing = findVariantProduct(existingProducts, slug, variant)
+  if (existing) {
+    summary.products[key] = existing.id
+    const fixed = existing.prices.filter(p => !isPriceArchived(p)).find(p => getPriceType(p) === 'fixed')
+    const current = fixed ? getFixedPriceAmount(fixed) : undefined
+    if (current !== cents) {
+      summary.warnings.push(`Fixed price drift on "${name}": Polar has ${current ?? 'none'} cents, the bundle constants want ${cents} cents. Archive the price in the Polar dashboard and create a new one.`)
+    }
+    else {
+      console.log(`  ✓ product "${name}" in sync (${existing.id})`)
+    }
+    return
+  }
+  if (!APPLY) {
+    console.log(`  + product "${name}" would be created — $${(cents / 100).toFixed(2)}/year`)
+    return
+  }
+  try {
+    const created = await polar.products.create({
+      recurringInterval: 'year',
+      name,
+      description: variant === 'yearly'
+        ? `${PLAN_PRICING[slug].name} billed yearly at the list price.`
+        : `Migrate order with the first year of Studio ${PLAN_PRICING[slug].name}; renews on Studio ${PLAN_PRICING[slug].name} Yearly.`,
+      metadata: { contentrain_slug: slug, contentrain_catalog: CATALOG_VERSION, contentrain_variant: variant },
+      prices: [{ amountType: 'fixed', priceAmount: cents }],
+    })
+    summary.products[key] = created.id
+    console.log(`  + product "${name}" created (${created.id}) — $${(cents / 100).toFixed(2)}/year`)
+  }
+  catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.warnings.push(`Failed to create product "${name}": ${msg}`)
+    console.error(`  ✗ product "${name}" failed: ${msg}`)
+  }
 }
 
 interface ProductPriceRow {
@@ -737,15 +801,21 @@ async function main() {
   console.log(`[polar-sync] server=${server} mode=${APPLY ? 'APPLY' : 'dry-run'}${ROTATE_PRICES ? ' rotate-prices' : ''}`)
   if (!APPLY) console.log('[polar-sync] dry run — nothing will be written. Re-run with --apply to perform it.')
 
-  console.log('\n[polar-sync] step 1/2 — syncing meters')
+  console.log('\n[polar-sync] step 1/3 — syncing meters')
   const existingMeters = await listAllMeters()
   const meterIdByName = await syncMeters(existingMeters)
 
-  console.log('\n[polar-sync] step 2/2 — syncing products, prices + included units')
+  console.log('\n[polar-sync] step 2/3 — syncing products, prices + included units')
   const existingProducts = await listAllProducts()
   for (const slug of BILLABLE_PLAN_SLUGS) {
     await syncProduct(slug, meterIdByName, existingProducts)
   }
+
+  console.log('\n[polar-sync] step 3/3 — syncing the Migrate-with-Studio bundle + yearly products (fixed price only)')
+  for (const slug of BILLABLE_PLAN_SLUGS) {
+    for (const variant of VARIANT_SLUGS) await syncVariantProduct(slug, variant, existingProducts)
+  }
+  console.log('  ! metered prices and meter credits are not attached to these products yet: a yearly period grants credits per billing cycle, so the units are a pricing decision.')
 
   console.log('\n[polar-sync] summary')
   if (summary.warnings.length > 0) {
@@ -756,7 +826,7 @@ async function main() {
   const meterLines = Object.entries(summary.meters).map(([name, id]) => `  - ${name}: ${id}`).join('\n')
   if (meterLines) console.log(`  created meters:\n${meterLines}`)
 
-  const productLines = Object.entries(summary.products).map(([slug, id]) => `  NUXT_POLAR_${slug.toUpperCase()}_PRODUCT_ID=${id}`).join('\n')
+  const productLines = Object.entries(summary.products).map(([slug, id]) => `  NUXT_POLAR_${slug.replace('#', '_').toUpperCase()}_PRODUCT_ID=${id}`).join('\n')
   if (productLines) {
     console.log(`\n  paste these into .env.local (or your deployment env):\n${productLines}`)
   }
