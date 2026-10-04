@@ -195,6 +195,9 @@ export type MigrationHandoffIssue
 export interface MigrationHandoffSummary {
   siteUrl: string
   generatedAt: string
+  /** The producing run and the order it was delivered for, when the document carries them (older ones do not: unknown, never stale). */
+  planHash?: string
+  orderId?: string
   content?: { models: number, entries: number, locales: string[] }
   capabilities: Array<{ key: string, disposition: string, detail?: string }>
   /** Capabilities that need a live service — the ones Studio can take over. */
@@ -240,6 +243,8 @@ export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff): Migr
   return {
     siteUrl: handoff.site_url,
     generatedAt: handoff.generated_at,
+    ...(handoff.plan_hash ? { planHash: handoff.plan_hash } : {}),
+    ...(handoff.order_id ? { orderId: handoff.order_id } : {}),
     content: handoff.content_summary
       ? { models: handoff.content_summary.models, entries: handoff.content_summary.entries, locales: handoff.content_summary.locales ?? [] }
       : undefined,
@@ -373,6 +378,9 @@ export async function syncMigrationHandoff(input: SyncMigrationHandoffInput): Pr
 
   const handoff = enrichMigrationHandoff(manifest, input.project)
   await useDatabaseProvider().setProjectMigrationHandoff(input.projectId, handoff as unknown as Record<string, unknown>)
+  // Which run and order this handoff belongs to, so a stale one (left by an earlier delivery) can be traced from the log.
+  // eslint-disable-next-line no-console
+  if (handoff.plan_hash || handoff.order_id) console.info(`[migration-handoff] synced project ${input.projectId} plan_hash=${handoff.plan_hash ?? '-'} order_id=${handoff.order_id ?? '-'} generated_at=${handoff.generated_at}`)
   return { found: true, handoff, summary: summarizeMigrationHandoff(handoff), source }
 }
 
