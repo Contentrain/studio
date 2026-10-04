@@ -133,7 +133,8 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
 
   // No owned workspace is free of a subscription (e.g. the only one is on a plan that is ending): never a second one on it.
   const workspace = await bundleWorkspace(user.id)
-  if (!workspace) fail(409, 'billing.subscription_exists')
+  // `data.code` is the stable handle Migrate matches on (the message is localised text): it shows the customer the way out.
+  if (!workspace) throw createError({ statusCode: 409, message: errorMessage('billing.subscription_exists'), data: { code: 'subscription_exists' } })
 
   const { grant } = await db.claimMigrateGrant({
     orderId: claim.order_id,

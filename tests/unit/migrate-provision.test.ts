@@ -219,6 +219,9 @@ describe('provisionMigrateBundle', () => {
   it('refuses when every owned workspace already holds a subscription, ending ones included', async () => {
     db.getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_ending', subscription_status: 'active', cancel_at_period_end: true })
     expect(await refused()).toEqual({ status: 409, key: 'billing.subscription_exists' })
+    // The answer carries a stable code (the message is localised text) so Migrate can offer the way out.
+    const error = await run(claim()).catch((e: { data?: unknown }) => e)
+    expect((error as { data?: unknown }).data).toEqual({ code: 'subscription_exists' })
     expect(db.claimMigrateGrant).not.toHaveBeenCalled()
   })
 
