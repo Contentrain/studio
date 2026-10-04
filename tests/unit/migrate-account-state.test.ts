@@ -165,10 +165,41 @@ describe('POST /api/migrate/account-state', () => {
     expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, current_plan: 'pro' })
   })
 
+  it('none: a plan that is ending (cancel_at_period_end) is not Studio included — the normal bundle applies', async () => {
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro' }])
+    db.getActivePaymentAccount.mockResolvedValue({ ...account('pro'), cancel_at_period_end: true })
+    expect(await ask('starter')).toMatchObject({ state: 'none', plan: 'starter', year1_cents: 7200 })
+  })
+
+  it('none: a past_due or canceled plan is not Studio included either', async () => {
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro' }])
+    for (const status of ['past_due', 'canceled']) {
+      db.getActivePaymentAccount.mockResolvedValue(account('pro', status))
+      expect(await ask('starter')).toMatchObject({ state: 'none', plan: 'starter' })
+    }
+  })
+
   it('too_small: a running plan below the sized one charges the difference', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'starter' }])
     db.getActivePaymentAccount.mockResolvedValue(account('starter'))
     expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, renewal_cents: 49000, current_plan: 'starter' })
+  })
+
+  it('coveringWorkspace: the personal workspace if its plan covers, else the first covering one, nothing when none does', async () => {
+    const { coveringWorkspace } = await import('../../server/utils/migrate-account-state')
+    db.getWorkspaceById = vi.fn(async (id: string) => ({ id, slug: `slug-${id}` }))
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([
+      { id: 'team', type: 'secondary', plan: 'pro' },
+      { id: 'home', type: 'primary', plan: 'pro' },
+      { id: 'small', type: 'secondary', plan: 'starter' },
+    ])
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => account(id === 'small' ? 'starter' : 'pro'))
+    expect(await coveringWorkspace('user-1', 'pro')).toEqual({ id: 'home', slug: 'slug-home' })
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'small' ? account('starter') : id === 'team' ? account('pro') : null))
+    expect(await coveringWorkspace('user-1', 'pro')).toEqual({ id: 'team', slug: 'slug-team' })
+    expect(await coveringWorkspace('user-1', 'starter')).toEqual({ id: 'team', slug: 'slug-team' })
+    db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'small' ? account('starter') : null))
+    expect(await coveringWorkspace('user-1', 'pro')).toBeNull()
   })
 
   it('gives the jti back when our own work fails, so Migrate\'s retry of the same request is taken', async () => {
