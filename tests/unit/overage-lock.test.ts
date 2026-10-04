@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reconcileOverageLock, resolveOverageLocks, withoutLockedOverage } from '../../server/utils/overage-lock'
+import { isYearlyPeriod, reconcileOverageLock, resolveOverageLocks, withoutLockedOverage } from '../../server/utils/overage-lock'
 
 // What a Polar subscription created before the credit meters carries, and
 // what one on current prices carries (`scripts/polar-sync.ts`).
@@ -48,6 +48,28 @@ describe('resolveOverageLocks', () => {
     // A v2 product without the API credit price cannot sell API overage.
     const noApi = resolveOverageLocks({ subscription_status: 'active', plugin_metadata: { billable_meters: ['ai_credits_1c', 'mcp_calls'] } })
     expect(noApi.api_messages).toEqual({ reason: 'not_in_subscription', until: null })
+  })
+
+  it('names a yearly plan as the reason, not a subscription support can update', () => {
+    // A yearly subscription (a Migrate bundle) prices no meter: Polar would bill its overage once a year.
+    const locks = resolveOverageLocks({
+      subscription_status: 'active',
+      current_period_start: '2026-10-04T00:00:00.000Z',
+      current_period_end: '2027-10-04T00:00:00.000Z',
+      plugin_metadata: { billable_meters: [] },
+    })
+    expect(locks.ai_messages).toEqual({ reason: 'yearly_plan', until: null })
+    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'cdn_bandwidth', 'form_submissions', 'mcp_calls', 'media_storage'])
+  })
+
+  it('keeps a monthly subscription with no price on the generic reason', () => {
+    const locks = resolveOverageLocks({
+      subscription_status: 'active',
+      current_period_start: '2026-10-04T00:00:00.000Z',
+      current_period_end: '2026-11-04T00:00:00.000Z',
+      plugin_metadata: { billable_meters: LEGACY_PRICES },
+    })
+    expect(locks.ai_messages?.reason).toBe('not_in_subscription')
   })
 
   it('applies only the trial rule when the provider never reported prices', () => {
@@ -133,5 +155,14 @@ describe('reconcileOverageLock', () => {
       account: { subscription_status: 'active' },
     })
     expect(result.pluginMetadata).toEqual({ polar_note: 'x', billable_meters: CURRENT_PRICES })
+  })
+})
+
+describe('isYearlyPeriod', () => {
+  it('is true past a month and false for a month or an unknown period', () => {
+    expect(isYearlyPeriod({ current_period_start: '2026-10-04T00:00:00Z', current_period_end: '2027-10-04T00:00:00Z' })).toBe(true)
+    expect(isYearlyPeriod({ current_period_start: '2026-01-31T00:00:00Z', current_period_end: '2026-03-03T00:00:00Z' })).toBe(false)
+    expect(isYearlyPeriod({ current_period_start: null, current_period_end: '2027-10-04T00:00:00Z' })).toBe(false)
+    expect(isYearlyPeriod({})).toBe(false)
   })
 })

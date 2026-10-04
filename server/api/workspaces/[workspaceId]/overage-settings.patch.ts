@@ -22,7 +22,7 @@ function lockedError(lock: OverageLock) {
           ? new Date(lock.until).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
           : 'the end of your trial',
       })
-    : errorMessage('billing.overage_locked_subscription')
+    : errorMessage(lock.reason === 'yearly_plan' ? 'billing.overage_locked_yearly' : 'billing.overage_locked_subscription')
   return createError({ statusCode: 409, message, data: { code: 'overage_locked', reason: lock.reason, until: lock.until } })
 }
 

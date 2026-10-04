@@ -42,6 +42,7 @@
   "billing.no_subscription": "No active subscription found. Please subscribe first.",
   "billing.overage_locked_subscription": "Overage is not available on your current subscription. Usage stops at your plan limit — contact support to move your subscription to current pricing.",
   "billing.overage_locked_trial": "Overage can be turned on once your trial ends ({date}). Until then, usage stops at your plan limit.",
+  "billing.overage_locked_yearly": "Overage is not available on yearly plans yet. Usage resets every month, and stops at your plan limit until the next reset.",
   "billing.overage_not_available": "This limit is a hard cap — extra usage is not sold on this plan.",
   "billing.overage_requires_subscription": "Overage billing requires an active subscription with a payment method on file.",
   "billing.payment_required": "This workspace's subscription is inactive. The workspace owner needs to update billing to continue.",

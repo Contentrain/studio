@@ -30,6 +30,7 @@ function overageLockText(lock: NonNullable<UsageCategory['overageLock']>): strin
       ? t('billing.overage_locked_trial', { date: new Date(lock.until).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) })
       : t('billing.overage_locked_trial_undated')
   }
+  if (lock.reason === 'yearly_plan') return t('billing.overage_locked_yearly')
   return t('billing.overage_locked_subscription')
 }
 
