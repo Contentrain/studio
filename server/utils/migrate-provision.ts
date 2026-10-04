@@ -139,6 +139,8 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   if (grant.redeemed_at) fail(409, 'migrate.grant_used')
   const bound = await db.bindMigrateGrantWorkspace(String(grant.id), workspace.id)
   if (!bound) fail(409, 'migrate.grant_bound_elsewhere')
+  // Paid in the same moment: the checkout answer never says redeemed, so refuse rather than hand out a used one.
+  if (bound.redeemed_at) fail(409, 'migrate.grant_used')
 
   const quoted = claim.billing.quoted_total_cents
   const storedExpires = grant.checkout_expires_at ? new Date(String(grant.checkout_expires_at)) : null
@@ -186,7 +188,7 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
 
   const response: MigrateProvisionResponse = {
     grant_id: String(grant.id),
-    state: bound.redeemed_at ? 'redeemed' : 'bound',
+    state: 'bound',
     plan: claim.plan,
     workspace_slug: workspace.slug,
     checkout_url: checkoutUrl as string,

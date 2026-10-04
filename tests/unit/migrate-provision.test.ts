@@ -121,6 +121,12 @@ describe('provisionMigrateBundle', () => {
     })
   })
 
+  it('refuses to answer a checkout for a grant that was paid in the same moment', async () => {
+    db.bindMigrateGrantWorkspace.mockResolvedValue(bundleRow({ workspace_id: 'ws-1', redeemed_at: '2026-10-10T12:00:00Z' }))
+    expect(await refused()).toEqual({ status: 409, key: 'migrate.grant_used' })
+    expect(payment.createBundleCheckout).not.toHaveBeenCalled()
+  })
+
   it('refuses a quote that is not what Studio computes now (Migrate fee + the Studio line)', async () => {
     expect(await refused(claim({ billing: { migrate_fee_cents: 24900, quoted_total_cents: 60000, currency: 'usd' } }))).toEqual({ status: 409, key: 'migrate.quote_changed' })
     resolveMigrateAccountState.mockResolvedValue({ state: 'none', plan: 'pro', year1_cents: 40000 })
