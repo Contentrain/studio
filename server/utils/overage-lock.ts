@@ -32,7 +32,7 @@ import { OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
 import { USAGE_METERS, USAGE_METER_LIST } from '../../shared/utils/usage-meters'
 import { CURRENT_CREDIT_UNIT, creditTermsFor, creditUnitFromMeters } from '../../shared/utils/credit-unit'
 
-export type OverageLockReason = 'trialing' | 'not_in_subscription'
+export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan'
 
 export interface OverageLock {
   reason: OverageLockReason
@@ -44,6 +44,7 @@ export interface OverageLock {
 export interface OverageLockAccount {
   subscription_status?: string | null
   trial_ends_at?: string | Date | null
+  current_period_start?: string | Date | null
   current_period_end?: string | Date | null
   plugin_metadata?: unknown
 }
@@ -60,6 +61,23 @@ function toIso(value: string | Date | null | undefined): string | null {
   if (!value) return null
   const date = value instanceof Date ? value : new Date(value)
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+/**
+ * A billing period longer than a month: a yearly subscription.
+ *
+ * The provider invoices metered usage on the subscription's own cycle, so a
+ * yearly subscription would bill overage once a year — not what a yearly plan
+ * promises (usage and overage are monthly). Until overage is billed monthly
+ * on a yearly plan, usage stops at the plan limit; this is told to the
+ * customer as what it is, instead of "contact support to update it".
+ */
+export function isYearlyPeriod(account: Pick<OverageLockAccount, 'current_period_start' | 'current_period_end'>): boolean {
+  const start = toIso(account.current_period_start)
+  const end = toIso(account.current_period_end)
+  if (!start || !end) return false
+  // Anything past a 31-day month; a yearly period is 365 days.
+  return new Date(end).getTime() - new Date(start).getTime() > 35 * 24 * 60 * 60 * 1000
 }
 
 /** The meters the subscription prices, or null when none were recorded. */
@@ -85,11 +103,12 @@ export function resolveOverageLocks(account: OverageLockAccount | null | undefin
   // Credit overage is priced on the meters of the subscription's own unit:
   // a pre-v2 subscription prices `ai_credits`, a v2 one `ai_credits_1c`.
   const creditMeters = creditTermsFor(creditUnitFromMeters(billable) ?? CURRENT_CREDIT_UNIT).meters
+  const reason: OverageLockReason = isYearlyPeriod(account) ? 'yearly_plan' : 'not_in_subscription'
   for (const key of OVERAGE_SETTINGS_KEYS) {
     const meter = key === USAGE_METERS.AI_MESSAGES.settingsKey
       ? creditMeters.ai
       : key === USAGE_METERS.API_MESSAGES.settingsKey ? creditMeters.api : METER_NAME_BY_SETTINGS_KEY[key]
-    if (!meter || !billable.includes(meter)) locks[key] = { reason: 'not_in_subscription', until: null }
+    if (!meter || !billable.includes(meter)) locks[key] = { reason, until: null }
   }
   return locks
 }

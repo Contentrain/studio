@@ -290,6 +290,7 @@ export default defineEventHandler(async (event) => {
         account: {
           subscription_status: result.subscriptionStatus ?? 'trialing',
           trial_ends_at: result.trialEndsAt ?? null,
+          current_period_start: result.currentPeriodStart ?? null,
           current_period_end: result.currentPeriodEnd ?? null,
         },
       })
@@ -381,6 +382,7 @@ export default defineEventHandler(async (event) => {
         account: {
           subscription_status: result.subscriptionStatus ?? null,
           trial_ends_at: result.trialEndsAt ?? (existingAccount?.trial_ends_at as string | null) ?? null,
+          current_period_start: result.currentPeriodStart ?? null,
           current_period_end: result.currentPeriodEnd ?? null,
         },
       })

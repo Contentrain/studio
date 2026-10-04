@@ -30,6 +30,7 @@ function overageLockText(lock: NonNullable<UsageCategory['overageLock']>): strin
       ? t('billing.overage_locked_trial', { date: new Date(lock.until).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) })
       : t('billing.overage_locked_trial_undated')
   }
+  if (lock.reason === 'yearly_plan') return t('billing.overage_locked_yearly')
   return t('billing.overage_locked_subscription')
 }
 
@@ -54,10 +55,9 @@ function formatDate(iso: string): string {
 }
 
 /**
- * When this meter goes back to zero. Each meter carries its own date: AI,
- * API and MCP follow the billing period, forms, comments and CDN the
- * calendar month. One date for all of them was wrong for half of them, and
- * two dates with no reason read as a bug, so the label names which one.
+ * When this meter goes back to zero. A subscribed workspace's meters all
+ * follow the billing period; one with no subscription counts the calendar
+ * month. The label names which one, so a date never reads as a bug.
  */
 function resetLabel(category: UsageCategory): string | null {
   if (category.resetsAt === null) return t('billing.usage_level_note')

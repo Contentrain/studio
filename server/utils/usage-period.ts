@@ -17,13 +17,17 @@
  * one is ten characters, the other seven — so historical rows keep their
  * own key and nothing needs rewriting.
  *
- * Scope: this covers the three quota pools keyed by that column — AI
- * credits (`agent_usage`), API credits (`api_message_usage`) and MCP
- * calls (`mcp_cloud_usage` / `mcp_oauth_usage`). Form submissions,
- * comments and CDN bandwidth are still counted per calendar month
- * because their rows are written by date-range aggregators rather than
- * by a period key; aligning those is a larger change and is tracked
- * separately.
+ * Scope: every counter that resets. AI credits (`agent_usage`), API credits
+ * (`api_message_usage`) and MCP calls (`mcp_cloud_usage` / `mcp_oauth_usage`) are
+ * keyed by the window's key. Form submissions, comments and CDN origin transfer
+ * are counted from rows by date range, so they are read over the window's
+ * `[startsAt, resetsAt)` (`usageWindowOf`) instead of the calendar month; a
+ * workspace with no billing period keeps the calendar month for them too. The CDN
+ * keeps one row per UTC day, so its window opens and closes on whole days.
+ *
+ * Why they must follow the window: the payment provider invoices overage on the
+ * subscription's own cycle, so a counter that resets on the 1st while the invoice
+ * closes on the 21st shows the owner one number and bills another.
  */
 
 export type UsagePeriodSource = 'billing' | 'calendar'
@@ -95,6 +99,34 @@ function sliceEnd(start: Date, billingEnd: Date | null): Date {
   const monthly = addMonthsClamped(start, 1)
   if (billingEnd && billingEnd > start && billingEnd < monthly) return billingEnd
   return monthly
+}
+
+/** The span a row-counted meter is read over: `[from, to)` as ISO instants. */
+export interface UsageWindow {
+  from: string
+  to: string
+}
+
+/**
+ * The window to read form, comment and CDN counts over, or undefined for the
+ * calendar month (a workspace with no billing period — the readers' default).
+ */
+export function usageWindowOf(period: UsagePeriod): UsageWindow | undefined {
+  return period.source === 'billing' ? { from: period.startsAt, to: period.resetsAt } : undefined
+}
+
+/**
+ * The UTC days a CDN read covers, as `[monthStart, monthEnd)` `YYYY-MM-DD` strings.
+ *
+ * `cdn_usage` keeps one row per day, so a billing window opens on the day
+ * `from` falls on and closes before the day `to` falls on: each day belongs to
+ * exactly one slice. Without a window, `month` (`YYYY-MM`) is the calendar month.
+ */
+export function cdnDayWindow(month: string, window?: UsageWindow): { monthStart: string, monthEnd: string } {
+  if (window) return { monthStart: window.from.substring(0, 10), monthEnd: window.to.substring(0, 10) }
+  const next = new Date(`${month}-01`)
+  next.setMonth(next.getMonth() + 1)
+  return { monthStart: `${month}-01`, monthEnd: next.toISOString().substring(0, 10) }
 }
 
 function calendarPeriod(now: Date): UsagePeriod {
@@ -169,4 +201,33 @@ export async function resolveUsagePeriod(workspaceId: string, now: Date = new Da
   catch {
     return calendarPeriod(now)
   }
+}
+
+/** How long a workspace's payment account is remembered by `resolveUsagePeriodCached`. */
+const PERIOD_ACCOUNT_TTL_MS = 60_000
+const accountCache = new Map<string, { account: UsagePeriodAccount | null, at: number }>()
+
+/**
+ * `resolveUsagePeriod` for hot paths (the CDN origin answers every request).
+ *
+ * Only the account row is remembered, for a minute; the window is worked out
+ * from it at `now` each call, so a slice boundary is never held past its time.
+ * A failed read is not remembered and degrades to the calendar month.
+ */
+export async function resolveUsagePeriodCached(workspaceId: string, now: Date = new Date()): Promise<UsagePeriod> {
+  const hit = accountCache.get(workspaceId)
+  if (hit && now.getTime() - hit.at < PERIOD_ACCOUNT_TTL_MS && now.getTime() >= hit.at) return usagePeriodFrom(hit.account, now)
+  try {
+    const account = await useDatabaseProvider().getActivePaymentAccount(workspaceId) as UsagePeriodAccount | null
+    accountCache.set(workspaceId, { account, at: now.getTime() })
+    return usagePeriodFrom(account, now)
+  }
+  catch {
+    return calendarPeriod(now)
+  }
+}
+
+/** Test helper. */
+export function __resetUsagePeriodCache(): void {
+  accountCache.clear()
 }

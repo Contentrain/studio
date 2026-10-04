@@ -7,6 +7,7 @@
  * error would let a quota path through (AI-15).
  */
 import type { DatabaseProvider } from '../database'
+import { cdnDayWindow } from '../../utils/usage-period'
 import { getAdmin } from './helpers'
 
 type UsageMethods = Pick<
@@ -44,13 +45,10 @@ export function usageMethods(): UsageMethods {
       return Number(row?.total ?? 0)
     },
 
-    async getWorkspaceMonthlyCDNBandwidth(workspaceId, month) {
-      // Same month-window computation as the Supabase impl, one join instead
+    async getWorkspaceMonthlyCDNBandwidth(workspaceId, month, window) {
+      // Same day-window computation as the Supabase impl, one join instead
       // of its two round-trips (identical semantics).
-      const monthStart = `${month}-01`
-      const nextMonth = new Date(`${month}-01`)
-      nextMonth.setMonth(nextMonth.getMonth() + 1)
-      const monthEnd = nextMonth.toISOString().substring(0, 10)
+      const { monthStart, monthEnd } = cdnDayWindow(month, window)
 
       const row = await getAdmin()
         .selectFrom('cdn_usage as cu')

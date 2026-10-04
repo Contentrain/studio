@@ -156,7 +156,7 @@ describe('public form routes', () => {
         model_id: 'contact',
         data: { name: 'Ada', email: 'ada@example.com' },
         locale: 'tr',
-      }))
+      }), undefined)
 
       // Notification is fire-and-forget — give it a tick.
       await new Promise(resolve => setTimeout(resolve, 10))

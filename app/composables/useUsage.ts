@@ -19,7 +19,7 @@ export interface UsageCategory {
    * predate this meter). The toggle is off and disabled; `until` is when the
    * lock lifts on its own, null when it waits for a subscription update.
    */
-  overageLock?: { reason: 'trialing' | 'not_in_subscription', until: string | null } | null
+  overageLock?: { reason: 'trialing' | 'not_in_subscription' | 'yearly_plan', until: string | null } | null
   overageUnits: number
   overageUnitPrice: number
   overageAmount: number

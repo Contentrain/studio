@@ -147,7 +147,7 @@ describe('delivered site ↔ Studio forms API', () => {
       expect(createFormSubmissionIfAllowed).toHaveBeenCalledWith(WORKSPACE, expect.anything(), expect.objectContaining({
         model_id: 'contact',
         data: { name: 'Ada', email: 'ada@example.com', message: 'Hello' },
-      }))
+      }), undefined)
     })
   })
 

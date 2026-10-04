@@ -123,31 +123,35 @@ export function formMethods(): FormMethods {
       return data?.length ?? 0
     },
 
-    async countMonthlySubmissions(workspaceId) {
+    async countMonthlySubmissions(workspaceId, window) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const { count, error } = await getAdmin()
+      let query = getAdmin()
         .from('form_submissions')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
-        .gte('created_at', monthStart.toISOString())
+        .gte('created_at', window?.from ?? monthStart.toISOString())
+      if (window) query = query.lt('created_at', window.to)
+      const { count, error } = await query
       if (error) throw createError({ statusCode: 500, message: error.message })
 
       return count ?? 0
     },
 
-    async countMonthlySubmissionsForModel(workspaceId, projectId, modelId) {
+    async countMonthlySubmissionsForModel(workspaceId, projectId, modelId, window) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-      const { count, error } = await getAdmin()
+      let query = getAdmin()
         .from('form_submissions')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
         .eq('project_id', projectId)
         .eq('model_id', modelId)
-        .gte('created_at', monthStart.toISOString())
+        .gte('created_at', window?.from ?? monthStart.toISOString())
+      if (window) query = query.lt('created_at', window.to)
+      const { count, error } = await query
       if (error) throw createError({ statusCode: 500, message: error.message })
 
       return count ?? 0
@@ -177,7 +181,7 @@ export function formMethods(): FormMethods {
         .map(p => ({ userId: p.id, email: p.email as string }))
     },
 
-    async createFormSubmissionIfAllowed(workspaceId, monthlyLimit, submission) {
+    async createFormSubmissionIfAllowed(workspaceId, monthlyLimit, submission, window) {
       const admin = getAdmin()
       const { data, error } = await admin.rpc('create_form_submission_if_allowed', {
         p_workspace_id: workspaceId,
@@ -190,6 +194,8 @@ export function formMethods(): FormMethods {
         p_user_agent: submission.user_agent ?? null,
         p_referrer: submission.referrer ?? null,
         p_locale: submission.locale ?? 'en',
+        p_window_start: window?.from ?? null,
+        p_window_end: window?.to ?? null,
       })
 
       if (error) {

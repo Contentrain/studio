@@ -228,6 +228,22 @@ describe('overage settings API', () => {
       expect(updateWorkspace).not.toHaveBeenCalled()
     })
 
+    it('says yearly plans have no overage yet, not "contact support"', async () => {
+      mockDb({ paymentAccount: {
+        current_period_start: '2026-10-04T00:00:00.000Z',
+        current_period_end: '2027-10-04T00:00:00.000Z',
+        plugin_metadata: { billable_meters: [] },
+      } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 409,
+        data: { code: 'overage_locked', reason: 'yearly_plan' },
+      })
+      expect(updateWorkspace).not.toHaveBeenCalled()
+    })
+
     it('allows overage on a meter the subscription prices', async () => {
       mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions'] } } })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ mcp_calls: true }))

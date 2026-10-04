@@ -268,25 +268,25 @@ describe('usage API — what the billing screen may claim (BR-12)', () => {
     expect(ai.overageUnitPrice).toBe(0.08)
   })
 
-  it('gives each meter its own reset date: billing-period meters on the 15th, calendar meters on the 1st', async () => {
+  it('resets every meter of a subscribed workspace with its billing period, on the 15th', async () => {
     const result = await run(db())
     const by = (key: string) => result.categories.find((c: { key: string }) => c.key === key)
     expect(by('ai_messages').resetsAt).toBe('2026-10-15T00:00:00.000Z')
     expect(by('mcp_calls').resetsAt).toBe('2026-10-15T00:00:00.000Z')
-    expect(by('form_submissions').resetsAt).toBe('2026-10-01T00:00:00.000Z')
-    expect(by('comments').resetsAt).toBe('2026-10-01T00:00:00.000Z')
+    expect(by('form_submissions').resetsAt).toBe('2026-10-15T00:00:00.000Z')
+    expect(by('comments').resetsAt).toBe('2026-10-15T00:00:00.000Z')
+    expect(by('cdn_bandwidth').resetsAt).toBe('2026-10-15T00:00:00.000Z')
     expect(by('media_storage').resetsAt).toBeNull()
   })
 
-  it('projects only enabled overage, each meter across its own window', async () => {
-    // Forms: 3100 by the 23rd of a 30-day calendar month → ~4043 → 1043 over at $0.01.
+  it('projects only enabled overage, across the billing window', async () => {
+    // Forms: 3100 after 8.5 days of the 30-day billing window (15 Sep → 15 Oct) → ~10941 → ~7941 over at $0.01.
     const result = await run(db({
       getWorkspaceMemberRole: vi.fn().mockResolvedValue('owner'),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', plan: 'pro', overage_settings: { form_submissions: true }, media_storage_bytes: 0 }),
     }))
     expect(result.totalOverageAmount).toBe(1) // 100 over × $0.01
-    expect(result.projectedOverageAmount).toBeGreaterThan(9)
-    expect(result.projectedOverageAmount).toBeLessThan(12)
+    expect(result.projectedOverageAmount).toBeCloseTo(79.41, 1)
   })
 
   /** `requireRole` as the providers implement it: a role outside the list is a thrown 403, never null. */

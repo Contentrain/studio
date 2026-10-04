@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addMonthsClamped, usagePeriodFrom } from '../../server/utils/usage-period'
+import { addMonthsClamped, cdnDayWindow, usagePeriodFrom, usageWindowOf } from '../../server/utils/usage-period'
 
 /**
  * The quota window used to be the calendar month while the invoice ran
@@ -137,5 +137,32 @@ describe('usage period', () => {
     // Even when the period starts on the 1st, the key stays ten characters.
     expect(billing.key).toBe('2026-09-01')
     expect(billing.key).not.toBe('2026-09')
+  })
+
+  describe('the window row-counted meters are read over', () => {
+    const account = { subscription_status: 'active', current_period_start: '2026-09-21T14:00:00Z', current_period_end: '2026-10-21T14:00:00Z' }
+
+    it('is the billing slice for a subscribed workspace and nothing for the calendar month', () => {
+      expect(usageWindowOf(usagePeriodFrom(account, at('2026-10-02T00:00:00Z'))))
+        .toEqual({ from: '2026-09-21T14:00:00.000Z', to: '2026-10-21T14:00:00.000Z' })
+      expect(usageWindowOf(usagePeriodFrom(null, at('2026-10-02T00:00:00Z')))).toBeUndefined()
+    })
+
+    it('is one monthly slice of a yearly period, not the whole year', () => {
+      const yearly = { subscription_status: 'active', current_period_start: '2026-10-04T00:00:00Z', current_period_end: '2027-10-04T00:00:00Z' }
+      expect(usageWindowOf(usagePeriodFrom(yearly, at('2027-01-20T00:00:00Z'))))
+        .toEqual({ from: '2027-01-04T00:00:00.000Z', to: '2027-02-04T00:00:00.000Z' })
+    })
+
+    it('gives the CDN whole UTC days that each belong to exactly one slice', () => {
+      expect(cdnDayWindow('2026-09', { from: '2026-09-21T14:00:00.000Z', to: '2026-10-21T14:00:00.000Z' }))
+        .toEqual({ monthStart: '2026-09-21', monthEnd: '2026-10-21' })
+      // The next slice opens on the day this one closes before.
+      expect(cdnDayWindow('2026-10', { from: '2026-10-21T14:00:00.000Z', to: '2026-11-21T14:00:00.000Z' }).monthStart).toBe('2026-10-21')
+    })
+
+    it('falls back to the calendar month without a window', () => {
+      expect(cdnDayWindow('2026-12')).toEqual({ monthStart: '2026-12-01', monthEnd: '2027-01-01' })
+    })
   })
 })

@@ -5,6 +5,15 @@
 
 ### ⚠️ Upgrade notes
 
+**Migration 046: form and comment quotas take a billing window.**
+`046_usage_window_quotas.sql` drops and recreates `create_form_submission_if_allowed` and `create_comment_if_allowed` with two defaulted window parameters (`p_window_start`, `p_window_end`). Run the migration before the new image: the new code always passes the window. The old image still works against the new functions because the parameters default to the calendar month, so rolling back the image alone is safe. Both runners (Supabase and `scripts/migrate-postgres.mjs`) apply it as a normal migration.
+
+**Behaviour change: forms, comments and CDN count over the billing period.**
+For subscribed workspaces these three meters now reset with the billing period, like the other quotas, and a yearly plan slices into monthly windows. In the transition month the usage-alert keys change from `YYYY-MM` to the slice start, so one extra usage alert may go out for these meters.
+
+**Fix: yearly overage lock copy.**
+A workspace on a yearly plan that tries to enable overage now sees that yearly plans do not bill overage, instead of the trial/not-in-subscription message.
+
 **Migration 047: workspace slugs repaired.**
 `047_workspace_slug_repair.sql` replaces `handle_new_user()` (it lowercased after replacing characters, so a GitHub name like `ABB65` gave the slug `---65-1a2b3c4d`) and rewrites only the workspace slugs that fail `^[a-z0-9][a-z0-9-]{0,62}$`; valid slugs are untouched and a repeat run changes nothing. Migrate's provision refused such an account with a 502. A repaired workspace changes its `/w/<slug>` address; nothing else stores a slug (grants, billing, CDN, MCP and CLI use ids). The migration runs in the pre-deploy step; the old image keeps working against it.
 

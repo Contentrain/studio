@@ -60,14 +60,32 @@ describe('computeWorkspaceUsage with a failed read', () => {
 })
 
 describe('computeWorkspaceUsage reset dates', () => {
-  it('names what each meter resets with, so two dates on one screen read as intended', async () => {
-    const period = usagePeriodFrom({ subscription_status: 'active', current_period_start: '2026-09-10T00:00:00Z', current_period_end: '2026-10-10T00:00:00Z' }, NOW)
+  const account = { subscription_status: 'active', current_period_start: '2026-09-10T00:00:00Z', current_period_end: '2026-10-10T00:00:00Z' }
+
+  it('resets every meter with the billing period, so the screen and the invoice close together', async () => {
+    const period = usagePeriodFrom(account, NOW)
     const usage = await computeWorkspaceUsage(db() as never, { ...input, period, storageBytes: 1 })
-    const reset = Object.fromEntries(usage.categories.map(c => [c.key, [c.resetBasis, c.resetsAt]]))
-    for (const key of ['ai_messages', 'api_messages', 'mcp_calls'])
-      expect(reset[key]).toEqual(['billing', '2026-10-10T00:00:00.000Z'])
-    for (const key of ['form_submissions', 'comments', 'cdn_bandwidth'])
-      expect(reset[key]).toEqual(['calendar', '2026-10-01T00:00:00.000Z'])
-    expect(reset.media_storage).toEqual([null, null])
+    const reset = Object.fromEntries(usage.categories.map(c => [c.key, [c.resetBasis, c.resetsAt, c.periodKey]]))
+    for (const key of ['ai_messages', 'api_messages', 'mcp_calls', 'form_submissions', 'comments', 'cdn_bandwidth'])
+      expect(reset[key]).toEqual(['billing', '2026-10-10T00:00:00.000Z', '2026-09-10'])
+    expect(reset.media_storage).toEqual([null, null, '2026-09'])
+  })
+
+  it('reads the row-counted meters over the billing window', async () => {
+    const reader = db()
+    await computeWorkspaceUsage(reader as never, { ...input, period: usagePeriodFrom(account, NOW) })
+    const window = { from: '2026-09-10T00:00:00.000Z', to: '2026-10-10T00:00:00.000Z' }
+    expect(reader.countMonthlySubmissions).toHaveBeenCalledWith('ws-1', window)
+    expect(reader.countMonthlyComments).toHaveBeenCalledWith('ws-1', window)
+    expect(reader.getWorkspaceMonthlyCDNBandwidth).toHaveBeenCalledWith('ws-1', '2026-09', window)
+  })
+
+  it('keeps the calendar month for a workspace with no billing period', async () => {
+    const reader = db()
+    const usage = await computeWorkspaceUsage(reader as never, { ...input, period: usagePeriodFrom(null, NOW) })
+    expect(reader.countMonthlySubmissions).toHaveBeenCalledWith('ws-1', undefined)
+    expect(reader.getWorkspaceMonthlyCDNBandwidth).toHaveBeenCalledWith('ws-1', '2026-09', undefined)
+    const forms = usage.categories.find(c => c.key === 'form_submissions')!
+    expect([forms.resetBasis, forms.resetsAt, forms.periodKey]).toEqual(['calendar', '2026-10-01T00:00:00.000Z', '2026-09'])
   })
 })

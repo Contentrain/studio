@@ -28,7 +28,7 @@ cap). Collection models only. The same block is editable from the model's
 | `honeypot` | `false` | Hidden `_hp` field; a filled honeypot is silently accepted and dropped |
 | `captcha` | `null` | `'turnstile'` to require a Cloudflare Turnstile token (needs `forms.captcha` + `NUXT_TURNSTILE_SECRET_KEY`) |
 | `limits.rateLimitPerIp` | `10` | Submissions per IP per minute |
-| `limits.maxPerMonth` | — | Cap for this form in a calendar month, below the workspace plan limit |
+| `limits.maxPerMonth` | — | Cap for this form in the billing period (calendar month without a subscription), below the workspace plan limit |
 | `autoApprove` | `false` | Create the content entry immediately on submit (needs `forms.auto_approve`) |
 | `notifications` | `true` | Email the workspace owner + admins on every submission (needs `forms.notifications`) |
 | `successMessage` | — | Returned to the visitor after a successful submit |

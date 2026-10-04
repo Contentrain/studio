@@ -89,6 +89,24 @@ describe('postgres-db usage (contract)', () => {
     expect(await methods.getWorkspaceMonthlyCDNBandwidth(other.workspaceId, MONTH)).toBe(0)
   })
 
+  it('sums CDN bandwidth over a billing window of whole UTC days, each day in exactly one slice', async () => {
+    const MID = '2026-05'
+    for (const row of [
+      { start: '2026-05-20', bytes: 10 }, // before the slice
+      { start: '2026-05-21', bytes: 100 }, // the day the slice opens on: in
+      { start: '2026-06-20', bytes: 1000 }, // last day: in
+      { start: '2026-06-21', bytes: 10_000 }, // the day the next slice opens on: out
+    ]) {
+      await sql`
+        INSERT INTO public.cdn_usage (project_id, period_start, bandwidth_bytes)
+        VALUES (${projectId}, ${row.start}, ${row.bytes})
+      `.execute(getDb())
+    }
+    const window = { from: '2026-05-21T14:00:00.000Z', to: '2026-06-21T14:00:00.000Z' }
+    expect(await methods.getWorkspaceMonthlyCDNBandwidth(user.workspaceId, MID, window)).toBe(1100)
+    expect(await methods.getWorkspaceMonthlyCDNBandwidth(other.workspaceId, MID, window)).toBe(0)
+  })
+
   it('sums one day of CDN bytes per workspace across its projects, leaving out empty workspaces', async () => {
     const second = await sql<{ id: string }>`
       INSERT INTO public.projects (workspace_id, repo_full_name)
