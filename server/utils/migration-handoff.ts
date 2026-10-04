@@ -219,6 +219,18 @@ function commentsSourceOf(handoff: StoredMigrationHandoff): HandoffCommentsSourc
   return { kind: 'none' }
 }
 
+/**
+ * The run and order stamps come from the customer's repository, so they are shape-checked (the same shapes Migrate's
+ * `validateHandoff` accepts) before they reach the summary or the log: anything else reads as unknown.
+ */
+export function readPlanHash(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value) ? value : undefined
+}
+
+export function readOrderId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^ord_[0-9a-f]{24}$/.test(value) ? value : undefined
+}
+
 export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff): MigrationHandoffSummary {
   const capabilities = (handoff.capabilities ?? []).map(c => ({ key: String(c.key), disposition: String(c.disposition), ...(c.detail ? { detail: c.detail } : {}) }))
   const needsRuntime = capabilities.filter(c => c.disposition === 'needs_runtime').map(c => c.key)
@@ -243,8 +255,8 @@ export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff): Migr
   return {
     siteUrl: handoff.site_url,
     generatedAt: handoff.generated_at,
-    ...(handoff.plan_hash ? { planHash: handoff.plan_hash } : {}),
-    ...(handoff.order_id ? { orderId: handoff.order_id } : {}),
+    ...(readPlanHash(handoff.plan_hash) ? { planHash: readPlanHash(handoff.plan_hash) } : {}),
+    ...(readOrderId(handoff.order_id) ? { orderId: readOrderId(handoff.order_id) } : {}),
     content: handoff.content_summary
       ? { models: handoff.content_summary.models, entries: handoff.content_summary.entries, locales: handoff.content_summary.locales ?? [] }
       : undefined,
@@ -379,8 +391,10 @@ export async function syncMigrationHandoff(input: SyncMigrationHandoffInput): Pr
   const handoff = enrichMigrationHandoff(manifest, input.project)
   await useDatabaseProvider().setProjectMigrationHandoff(input.projectId, handoff as unknown as Record<string, unknown>)
   // Which run and order this handoff belongs to, so a stale one (left by an earlier delivery) can be traced from the log.
+  const planHash = readPlanHash(handoff.plan_hash)
+  const orderId = readOrderId(handoff.order_id)
   // eslint-disable-next-line no-console
-  if (handoff.plan_hash || handoff.order_id) console.info(`[migration-handoff] synced project ${input.projectId} plan_hash=${handoff.plan_hash ?? '-'} order_id=${handoff.order_id ?? '-'} generated_at=${handoff.generated_at}`)
+  if (planHash || orderId) console.info(`[migration-handoff] synced project ${input.projectId} plan_hash=${planHash ?? '-'} order_id=${orderId ?? '-'} generated_at=${handoff.generated_at}`)
   return { found: true, handoff, summary: summarizeMigrationHandoff(handoff), source }
 }
 

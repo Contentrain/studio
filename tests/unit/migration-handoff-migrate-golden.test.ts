@@ -46,8 +46,10 @@ describe('the handoff Migrate writes, through Studio', () => {
 
   it('the run and order the handoff was delivered for are read when present, and absent on an older document (unknown, not stale)', () => {
     const summary = summarizeMigrationHandoff({ ...handoff })
-    if (handoff.plan_hash) expect(summary.planHash).toBe(handoff.plan_hash)
-    if (handoff.order_id) expect(summary.orderId).toBe(handoff.order_id)
+    expect(handoff.plan_hash).toMatch(/^[0-9a-f]{16}$/)
+    expect(handoff.order_id).toMatch(/^ord_[0-9a-f]{24}$/)
+    expect(summary.planHash).toBe(handoff.plan_hash)
+    expect(summary.orderId).toBe(handoff.order_id)
     const { plan_hash: _p, order_id: _o, ...older } = handoff
     expect(validateMigrationHandoff(older)).toBeNull()
     expect(summarizeMigrationHandoff({ ...older })).not.toHaveProperty('planHash')
@@ -55,6 +57,15 @@ describe('the handoff Migrate writes, through Studio', () => {
     const stamped = { ...handoff, plan_hash: '0123456789abcdef', order_id: `ord_${'a'.repeat(24)}` }
     expect(validateMigrationHandoff(stamped)).toBeNull()
     expect(summarizeMigrationHandoff({ ...stamped })).toMatchObject({ planHash: '0123456789abcdef', orderId: `ord_${'a'.repeat(24)}` })
+  })
+
+  it('a stamp that is not the shape Migrate writes (non-string, newline, wrong form) is unknown, never passed to the summary or the log', () => {
+    for (const bad of [42, ['0123456789abcdef'], '0123456789abcdef\nforged=1', 'ZZZZ', '']) {
+      const summary = summarizeMigrationHandoff({ ...handoff, plan_hash: bad, order_id: bad } as never)
+      expect(summary).not.toHaveProperty('planHash')
+      expect(summary).not.toHaveProperty('orderId')
+    }
+    expect(summarizeMigrationHandoff({ ...handoff, order_id: `ord_${'a'.repeat(24)}\nx` } as never)).not.toHaveProperty('orderId')
   })
 
   it('the contract version is a range: the pinned version and below are read, above is refused', () => {
