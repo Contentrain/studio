@@ -12,6 +12,7 @@ import { getAdmin } from './helpers'
 type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
+  | 'listActivePaymentAccounts'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
   | 'setPaymentAccountCreditUnit'
@@ -36,6 +37,19 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         throw createError({ statusCode: 500, message: error.message })
       }
       return (data ?? null) as DatabaseRow | null
+    },
+
+    async listActivePaymentAccounts(provider, limit) {
+      const { data, error } = await getAdmin()
+        .from('payment_accounts')
+        .select('*')
+        .eq('provider', provider)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(limit)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data ?? []) as DatabaseRow[]
     },
 
     async upsertPaymentAccount(input) {

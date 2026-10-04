@@ -17,8 +17,10 @@ import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payme
 import type { PaymentPluginConfig } from '../../../providers/payment'
 import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
 import { emailTemplate } from '../../../utils/content-strings'
-import { BILLABLE_METERS_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
+import { BILLABLE_METERS_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
 import type { OverageLockAccount } from '../../../utils/overage-lock'
+import { cancelCompanionSubscription, companionSubscriptionIdOf, openCompanionSubscription } from '../../../utils/companion-subscription'
+import type { WebhookResult } from '../../../providers/payment/types'
 
 type Db = ReturnType<typeof useDatabaseProvider>
 
@@ -39,8 +41,11 @@ const ACTIVATION_EMAIL_KEY = 'activation_email'
  */
 const RECOVERY_EMAIL_KEY = 'recovery_email'
 
-/** Keys only `setPaymentAccountMetadataKey` writes; upserts built from a read keep them. */
-const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY]
+/**
+ * Keys only `setPaymentAccountMetadataKey` writes; upserts built from a read keep them. The companion usage
+ * subscription's keys are among them: the plan subscription's events must not wipe what its companion recorded.
+ */
+const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY]
 
 /** The past-due episode a read row is in, as its recovery claim value. */
 function pastDueEpisode(row: Record<string, unknown> | null | undefined): string {
@@ -243,6 +248,77 @@ function formatFriendlyDate(iso: string): string {
   })
 }
 
+/**
+ * A companion usage subscription's event (`WebhookResult.companion`). It is recorded beside the account and
+ * never writes the account's subscription, status, period, plan or workspace: the plan subscription owns those.
+ * What it changes is which meters the account can bill, so the overage lock is lined up again afterwards.
+ */
+async function applyCompanionEvent(db: Db, result: WebhookResult): Promise<void> {
+  if (!result.workspaceId || !result.subscriptionId) {
+    // eslint-disable-next-line no-console -- a companion event that names no workspace cannot be placed
+    console.error('[companion] ALARM event without a workspace or subscription id; nothing recorded', { event: result.event, subscriptionId: result.subscriptionId })
+    return
+  }
+  const workspaceId = result.workspaceId
+  const account = await db.getActivePaymentAccount(workspaceId)
+  if (!account) return
+  const recorded = companionSubscriptionIdOf(account.plugin_metadata)
+  // A late event about a companion the account has since replaced says nothing about the current one.
+  if (recorded && recorded !== result.subscriptionId) return
+
+  if (result.event === 'subscription.canceled') {
+    await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_METERS_KEY, value: '', when: 'different' })
+    await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_SUBSCRIPTION_KEY, value: '', when: 'different' })
+  }
+  else if (result.event === 'subscription.created' || result.event === 'subscription.updated') {
+    await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_SUBSCRIPTION_KEY, value: result.subscriptionId, when: 'different' })
+    if (result.billableMeters) {
+      await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_METERS_KEY, value: result.billableMeters.join(','), when: 'different' })
+    }
+    if (result.subscriptionStatus === 'past_due') {
+      // eslint-disable-next-line no-console -- the alarm: the usage invoice failed; the plan subscription's own state is untouched
+      console.error(`[companion] ALARM usage subscription ${result.subscriptionId} of workspace ${workspaceId} is past due`)
+    }
+  }
+  else {
+    return
+  }
+
+  // Line the toggles up with the meters the account can bill now. Only `plugin_metadata`'s suspended list can
+  // change, and it is written back with the row's own values.
+  const fresh = await db.getActivePaymentAccount(workspaceId)
+  if (!fresh) return
+  const overageLock = await planOverageLock(db, {
+    workspaceId,
+    storedPluginMetadata: fresh.plugin_metadata ?? null,
+    account: {
+      subscription_status: (fresh.subscription_status as string | null) ?? null,
+      trial_ends_at: (fresh.trial_ends_at as string | null) ?? null,
+      current_period_start: (fresh.current_period_start as string | null) ?? null,
+      current_period_end: (fresh.current_period_end as string | null) ?? null,
+    },
+  })
+  if (overageLock.pluginMetadata) {
+    await db.upsertPaymentAccount({
+      workspaceId,
+      provider: fresh.provider as string,
+      customerId: fresh.customer_id as string,
+      subscriptionId: (fresh.subscription_id as string | null) ?? null,
+      subscriptionStatus: (fresh.subscription_status as string | null) ?? null,
+      currentPeriodStart: (fresh.current_period_start as string | null) ?? null,
+      currentPeriodEnd: (fresh.current_period_end as string | null) ?? null,
+      trialEndsAt: (fresh.trial_ends_at as string | null) ?? null,
+      cancelAtPeriodEnd: Boolean(fresh.cancel_at_period_end),
+      gracePeriodEndsAt: (fresh.grace_period_ends_at as string | null) ?? null,
+      plan: (fresh.plan as string | null) ?? null,
+      pluginMetadata: overageLock.pluginMetadata,
+      preserveMetadataKeys: CLAIMED_METADATA_KEYS,
+      isActive: true,
+    })
+  }
+  await overageLock.commit()
+}
+
 export default defineEventHandler(async (event) => {
   const providerKey = getRouterParam(event, 'provider') ?? ''
 
@@ -274,6 +350,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = useDatabaseProvider()
+
+  // A companion usage subscription never reaches the plan subscription's branches below.
+  if (result.companion) {
+    await applyCompanionEvent(db, result)
+    return { received: true }
+  }
 
   switch (result.event) {
     case 'subscription.created': {
@@ -321,6 +403,14 @@ export default defineEventHandler(async (event) => {
         isActive: true,
       })
       await overageLock.commit()
+      // A yearly plan gets its monthly usage subscription (off unless configured; never fails this webhook).
+      await openCompanionSubscription(provider, db, {
+        workspaceId: result.workspaceId,
+        plan: result.plan,
+        customerId: result.customerId,
+        subscriptionId: result.subscriptionId,
+        productId: result.productId,
+      })
       // A subscription started from a Migrate grant's checkout uses the
       // grant up: no second included trial after cancel-and-resubscribe.
       // Idempotent — whichever of created/updated arrives first marks it.
@@ -433,6 +523,16 @@ export default defineEventHandler(async (event) => {
         await db.setPaymentAccountCreditUnit({ workspaceId: result.workspaceId, unit: updatedUnit, periodKey })
       }
       await overageLock.commit()
+      // A subscription that predates the flag, or whose companion failed to open, gets it here.
+      if (!companionSubscriptionIdOf(existingAccount?.plugin_metadata)) {
+        await openCompanionSubscription(provider, db, {
+          workspaceId: result.workspaceId,
+          plan: result.plan,
+          customerId: result.customerId,
+          subscriptionId: result.subscriptionId,
+          productId: result.productId,
+        })
+      }
       // A subscription started from a Migrate grant's checkout uses the
       // grant up: no second included trial after cancel-and-resubscribe.
       // Idempotent — whichever of created/updated arrives first marks it.
@@ -486,6 +586,8 @@ export default defineEventHandler(async (event) => {
       const activeSubscriptionId = (priorAccount?.subscription_id as string | null | undefined) ?? null
       if (activeSubscriptionId && result.subscriptionId && activeSubscriptionId !== result.subscriptionId) break
       const canceledPlan = result.plan ?? (priorAccount?.plan as string | null)
+      // Its usage subscription ends with it: left running, it would bill the customer's usage with no plan.
+      await cancelCompanionSubscription(provider, priorAccount?.plugin_metadata, `plan subscription ${result.subscriptionId ?? 'unknown'} ended`)
       await db.archiveActivePaymentAccount(result.workspaceId)
       await db.updateWorkspace('', result.workspaceId, {
         plan: 'free',

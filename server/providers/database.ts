@@ -1027,6 +1027,9 @@ export interface DatabaseProvider {
   /** Return the single active payment account for a workspace, if any. */
   getActivePaymentAccount: (workspaceId: string) => Promise<DatabaseRow | null>
 
+  /** Active payment accounts of one provider, oldest first (ops jobs; filter the rows in the caller). */
+  listActivePaymentAccounts: (provider: string, limit: number) => Promise<DatabaseRow[]>
+
   /**
    * Upsert a payment account keyed on (workspace_id, provider, customer_id).
    *

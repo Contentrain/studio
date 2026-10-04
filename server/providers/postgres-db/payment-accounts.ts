@@ -15,6 +15,7 @@ import { getAdmin, throwDbError } from './helpers'
 type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
+  | 'listActivePaymentAccounts'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
   | 'setPaymentAccountCreditUnit'
@@ -51,6 +52,23 @@ export function paymentAccountMethods(): PaymentAccountMethods {
           .executeTakeFirst()
 
         return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async listActivePaymentAccounts(provider, limit) {
+      try {
+        const rows = await getAdmin()
+          .selectFrom('payment_accounts')
+          .selectAll()
+          .where('provider', '=', provider)
+          .where('is_active', '=', true)
+          .orderBy('created_at', 'asc')
+          .limit(limit)
+          .execute()
+        return rows as DatabaseRow[]
       }
       catch (error) {
         throwDbError(error)

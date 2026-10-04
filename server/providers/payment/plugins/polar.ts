@@ -25,6 +25,8 @@ import type {
   CanonicalWebhookEvent,
   CheckoutInput,
   CheckoutResult,
+  CompanionSubscriptionInput,
+  CompanionSubscriptionResult,
   PaymentPluginConfig,
   PaymentProvider,
   PaymentProviderPlugin,
@@ -49,6 +51,15 @@ interface PolarConfig {
   proBundleProductId?: string
   starterYearlyProductId?: string
   proYearlyProductId?: string
+  /**
+   * The monthly usage subscription opened beside a yearly plan (see
+   * `CompanionSubscriptionInput`): per plan, a $0-base monthly product with the
+   * plan's metered prices and monthly meter credits. Off unless `companionUsage`
+   * is true AND the plan's companion product is set.
+   */
+  starterCompanionProductId?: string
+  proCompanionProductId?: string
+  companionUsage?: boolean | string
   /** 'sandbox' | 'production' — Polar SDK server mode. Defaults to 'production'. */
   server?: string
 }
@@ -88,6 +99,15 @@ function isoOrUndefined(value: Date | string | null | undefined): string | undef
   if (!value) return undefined
   if (value instanceof Date) return value.toISOString()
   return value
+}
+
+/** Metadata tag on every companion usage subscription Studio opens. */
+const COMPANION_METADATA_KEY = 'contentrain_companion'
+
+/** A subscription (or order) of a companion usage product, by its tag or its product. */
+function isCompanion(subject: { productId?: string, metadata?: Record<string, unknown> | null }, companionProductIds: Set<string>): boolean {
+  return subject.metadata?.[COMPANION_METADATA_KEY] === 'true'
+    || (typeof subject.productId === 'string' && companionProductIds.has(subject.productId))
 }
 
 /**
@@ -145,6 +165,7 @@ function subscriptionToResult(
   canonicalEvent: CanonicalWebhookEvent,
   sub: PolarSubscriptionLike,
   productMap: Record<string, string>,
+  companionProductIds: Set<string> = new Set(),
 ): WebhookResult {
   const workspaceId = typeof sub.metadata?.workspace_id === 'string' ? sub.metadata.workspace_id : undefined
   const planFromMeta = typeof sub.metadata?.plan === 'string' ? sub.metadata.plan : undefined
@@ -165,6 +186,7 @@ function subscriptionToResult(
     billableMeters: billableMetersOf(sub),
     accessEndsAt: sub.cancelAtPeriodEnd ? isoOrUndefined(sub.endsAt) : undefined,
     migrateGrantId: typeof sub.metadata?.migrate_grant_id === 'string' ? sub.metadata.migrate_grant_id : undefined,
+    ...(isCompanion(sub, companionProductIds) ? { companion: true } : {}),
   }
 }
 
@@ -180,6 +202,11 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
   const webhookSecret = cfg.webhookSecret ?? ''
   const productMap = buildProductMap(cfg)
   const planMap = extendWithBundleProducts(cfg, productMap)
+  const companionProducts: Record<string, string | undefined> = { starter: cfg.starterCompanionProductId, pro: cfg.proCompanionProductId }
+  const companionProductIds = new Set(Object.values(companionProducts).filter((id): id is string => Boolean(id)))
+  const companionEnabled = cfg.companionUsage === true || cfg.companionUsage === 'true'
+  // Only a yearly (or bundle) subscription gets a companion: a monthly one bills its overage monthly already.
+  const yearlyParentIds = new Set([cfg.starterBundleProductId, cfg.proBundleProductId, cfg.starterYearlyProductId, cfg.proYearlyProductId].filter((id): id is string => Boolean(id)))
 
   return {
     async createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
@@ -249,7 +276,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
 
       switch (event.type) {
         case 'subscription.created':
-          return subscriptionToResult('subscription.created', event.data as unknown as PolarSubscriptionLike, planMap)
+          return subscriptionToResult('subscription.created', event.data as unknown as PolarSubscriptionLike, planMap, companionProductIds)
 
         // Every subscription lifecycle event is mapped by the state it
         // carries (`hasEnded`): a cancellation scheduled for the period end
@@ -265,13 +292,14 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
           if (hasEnded(sub)) {
             return {
               event: 'subscription.canceled',
+              ...(isCompanion(sub, companionProductIds) ? { companion: true } : {}),
               workspaceId: typeof sub.metadata?.workspace_id === 'string' ? sub.metadata.workspace_id : undefined,
               subscriptionId: sub.id,
               customerId: sub.customerId,
               subscriptionStatus: 'canceled',
             }
           }
-          const result = subscriptionToResult('subscription.updated', sub, planMap)
+          const result = subscriptionToResult('subscription.updated', sub, planMap, companionProductIds)
           return event.type === 'subscription.past_due' ? { ...result, subscriptionStatus: 'past_due' } : result
         }
 
@@ -280,6 +308,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
             id: string
             customerId: string
             subscriptionId: string | null
+            productId?: string
             totalAmount?: number
             billingReason?: string
             metadata?: Record<string, unknown>
@@ -303,6 +332,8 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
             invoiceId: order.id,
             ...(typeof order.totalAmount === 'number' ? { amountPaid: order.totalAmount } : {}),
             ...(order.billingReason ? { billingReason: billingReasonOf(order.billingReason) } : {}),
+            // A companion's monthly usage invoice says nothing about the plan subscription's payment.
+            ...(isCompanion({ productId: order.productId, metadata: order.subscription?.metadata }, companionProductIds) ? { companion: true } : {}),
           }
         }
 
@@ -358,6 +389,31 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
         subscriptionUpdate: { productId: targetProductId, prorationBehavior: 'next_period' },
       })
       return { productId: targetProductId, alreadyOnList: false }
+    },
+
+    async ensureCompanionSubscription(input: CompanionSubscriptionInput): Promise<CompanionSubscriptionResult | null> {
+      const productId = companionProducts[input.plan]
+      if (!companionEnabled || !productId) return null
+      const parentProductId = input.parentProductId ?? (await polar.subscriptions.get({ id: input.parentSubscriptionId })).productId
+      if (!yearlyParentIds.has(parentProductId)) return null
+
+      const existing = await polar.subscriptions.list({ customerId: input.customerId, productId, active: true })
+      for await (const page of existing) {
+        const first = page.result.items[0]
+        if (first) return { subscriptionId: first.id, created: false }
+      }
+
+      const created = await polar.subscriptions.create({
+        productId,
+        customerId: input.customerId,
+        metadata: {
+          [COMPANION_METADATA_KEY]: 'true',
+          workspace_id: input.workspaceId,
+          plan: input.plan,
+          parent_subscription_id: input.parentSubscriptionId,
+        },
+      })
+      return { subscriptionId: created.id, created: true }
     },
 
     async cancelSubscription(subscriptionId: string): Promise<'canceled' | 'already_ended'> {

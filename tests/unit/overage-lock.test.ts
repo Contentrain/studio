@@ -166,3 +166,42 @@ describe('isYearlyPeriod', () => {
     expect(isYearlyPeriod({})).toBe(false)
   })
 })
+
+describe('companion usage subscription meters', () => {
+  const yearly = { subscription_status: 'active', current_period_start: '2026-10-01T00:00:00Z', current_period_end: '2027-10-01T00:00:00Z' }
+
+  it('a yearly plan that prices nothing is locked as yearly_plan', () => {
+    expect(resolveOverageLocks({ ...yearly, plugin_metadata: { billable_meters: [] } }).ai_messages?.reason).toBe('yearly_plan')
+  })
+
+  it('the companion meters lift the lock on what they price', () => {
+    const locks = resolveOverageLocks({ ...yearly, plugin_metadata: { billable_meters: [], companion_billable_meters: CURRENT_PRICES.join(',') } })
+    expect(locks.ai_messages).toBeUndefined()
+    expect(locks.api_messages).toBeUndefined()
+    expect(locks.form_submissions).toBeUndefined()
+  })
+
+  it('a meter the companion does not price reads as not_in_subscription, not yearly_plan', () => {
+    const locks = resolveOverageLocks({ ...yearly, plugin_metadata: { billable_meters: [], companion_billable_meters: 'ai_credits_1c,api_credits_1c' } })
+    expect(locks.ai_messages).toBeUndefined()
+    expect(locks.mcp_calls).toEqual({ reason: 'not_in_subscription', until: null })
+  })
+
+  it('a companion recorded without any own list still counts as a recorded price list', () => {
+    expect(resolveOverageLocks({ ...yearly, plugin_metadata: { companion_billable_meters: 'ai_credits' } }).ai_messages).toBeUndefined()
+  })
+
+  it('no companion keeps a yearly subscription locked exactly as before', () => {
+    const locks = resolveOverageLocks({ ...yearly, plugin_metadata: { billable_meters: [], companion_subscription_id: '', companion_billable_meters: '' } })
+    expect(locks.ai_messages?.reason).toBe('yearly_plan')
+  })
+
+  it('the companion turning up gives suspended toggles back, a subscription event without it would not', () => {
+    const result = reconcileOverageLock({
+      settings: { ai_messages: false },
+      pluginMetadata: { billable_meters: [], overage_suspended: ['ai_messages'], companion_billable_meters: 'ai_credits,api_credits,form_submissions,mcp_calls' },
+      account: yearly,
+    })
+    expect(result.settings).toEqual({ ai_messages: true })
+  })
+})

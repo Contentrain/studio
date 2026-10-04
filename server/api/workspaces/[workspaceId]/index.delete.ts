@@ -24,6 +24,8 @@
  * github_installation_id rows, and the next billing-status read will
  * pick up provider-side cancellations.
  */
+import { cancelCompanionSubscription } from '../../../utils/companion-subscription'
+
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   const workspaceId = getRouterParam(event, 'workspaceId')
@@ -86,8 +88,10 @@ export default defineEventHandler(async (event) => {
       const subscriptionId = (account?.subscription_id as string | null) ?? null
       if (subscriptionId) {
         const payment = usePaymentProvider()
-        if (payment)
+        if (payment) {
+          await cancelCompanionSubscription(payment, account?.plugin_metadata, `workspace ${workspaceId} deleted`)
           await payment.cancelSubscription(subscriptionId)
+        }
       }
     }
     catch (err: unknown) {
