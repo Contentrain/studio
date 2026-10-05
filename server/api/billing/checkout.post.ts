@@ -6,6 +6,7 @@
  * hosted checkout URL for the client to redirect to.
  */
 import { startPlanCheckout } from '../../utils/plan-checkout'
+import { safeReturnPath } from '../../utils/return-path'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -14,6 +15,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{
     workspaceId: string
     plan: 'starter' | 'pro'
+    returnTo?: string
   }>(event)
 
   if (!body.workspaceId || !body.plan || !['starter', 'pro'].includes(body.plan)) {
@@ -43,7 +45,8 @@ export default defineEventHandler(async (event) => {
     plan: body.plan,
     customerEmail: session.user.email ?? '',
     withTrial: !ws.trial_consumed_at,
-    successPath: `/w/${ws.slug}/settings?billing=success`,
+    // returnTo: an internal page (the Migrate claim) that sent the customer here
+    successPath: safeReturnPath(body.returnTo) ?? `/w/${ws.slug}/settings?billing=success`,
     cancelPath: `/w/${ws.slug}/settings?billing=cancelled`,
   })
 })
