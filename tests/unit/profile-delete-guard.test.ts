@@ -62,6 +62,18 @@ describe('DELETE /api/profile', () => {
     expect(deleteUser).not.toHaveBeenCalled()
   })
 
+  it.each(['active', 'trialing', 'past_due'])('a %s subscription already set to cancel at period end does not block', async (status) => {
+    setup({ accounts: { 'ws-1': { subscription_id: 'sub_1', subscription_status: status, cancel_at_period_end: true } } })
+    await expect(run()).resolves.toEqual({ deleted: true })
+    expect(deleteUser).toHaveBeenCalledWith(ME)
+  })
+
+  it.each(['active', 'trialing'])('a %s subscription with cancel_at_period_end false still blocks', async (status) => {
+    setup({ accounts: { 'ws-1': { subscription_id: 'sub_1', subscription_status: status, cancel_at_period_end: false } } })
+    await expect(run()).rejects.toMatchObject({ statusCode: 409, data: { code: 'active_subscription' } })
+    expect(deleteUser).not.toHaveBeenCalled()
+  })
+
   it('a canceled subscription does not block', async () => {
     setup({ accounts: { 'ws-1': { subscription_id: 'sub_1', subscription_status: 'canceled' } } })
     await expect(run()).resolves.toEqual({ deleted: true })
@@ -82,5 +94,18 @@ describe('DELETE /api/profile', () => {
     ] })
     const listed = await (await import('../../server/api/profile/owned-workspaces.get')).default({} as never) as Array<{ id: string }>
     expect(listed.map(w => w.id)).toEqual(['ws-team'])
+  })
+
+  it('the ending-plans list names the period end of a plan already set to end, and only that', async () => {
+    setup({
+      owned: [{ id: 'ws-1', owner_id: ME }, { id: 'ws-2', owner_id: ME }, { id: 'ws-3', owner_id: ME }],
+      accounts: {
+        'ws-1': { subscription_id: 'sub_1', subscription_status: 'active', cancel_at_period_end: true, current_period_end: '2027-01-15T12:00:00Z' },
+        'ws-2': { subscription_id: 'sub_2', subscription_status: 'active', cancel_at_period_end: false, current_period_end: '2027-02-01T00:00:00Z' },
+        'ws-3': { subscription_id: 'sub_3', subscription_status: 'canceled', cancel_at_period_end: true, current_period_end: '2026-09-01T00:00:00Z' },
+      },
+    })
+    const ending = await (await import('../../server/api/profile/ending-plans.get')).default({} as never)
+    expect(ending).toEqual([{ workspace_id: 'ws-1', ends_at: '2027-01-15T12:00:00.000Z' }])
   })
 })

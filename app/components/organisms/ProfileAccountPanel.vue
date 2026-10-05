@@ -27,6 +27,8 @@ const toast = useToast()
 
 const blockingWorkspaces = ref<BlockingWorkspace[]>([])
 const loadingBlocking = ref(true)
+/** Earliest end of a plan already set to end: deleting the account now cuts that period short. */
+const endingPlanDate = ref<string | null>(null)
 const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
 const transferring = ref<string | null>(null)
@@ -49,7 +51,21 @@ async function fetchBlockingWorkspaces() {
   }
 }
 
-onMounted(fetchBlockingWorkspaces)
+async function fetchEndingPlan() {
+  try {
+    const plans = await $fetch<Array<{ ends_at: string }>>('/api/profile/ending-plans')
+    const first = plans.map(p => p.ends_at).sort()[0]
+    endingPlanDate.value = first ? new Date(first).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
+  }
+  catch {
+    endingPlanDate.value = null
+  }
+}
+
+onMounted(() => {
+  void fetchBlockingWorkspaces()
+  void fetchEndingPlan()
+})
 
 function getAdminMembers(ws: BlockingWorkspace) {
   return ws.workspace_members.filter(
@@ -243,7 +259,7 @@ async function handleDeleteAccount() {
   <MoleculesConfirmDeleteDialog
     v-model:open="deleteConfirmOpen"
     :title="t('account_settings.delete_title')"
-    :description="t('account_settings.delete_description')"
+    :description="endingPlanDate ? `${t('account_settings.delete_description')} ${t('account_settings.delete_plan_ending', { date: endingPlanDate })}` : t('account_settings.delete_description')"
     :confirm-text="authState.user?.email ?? ''"
     :confirm-label="t('account_settings.delete_confirm_label')"
     :delete-label="deleting ? t('danger_zone.deleting') : t('account_settings.delete_button')"

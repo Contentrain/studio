@@ -33,6 +33,7 @@
   "account_settings.delete_confirm_label": "Type your email to confirm",
   "account_settings.delete_description": "This will permanently delete your account, all workspaces you own, and all associated data. This action cannot be undone.",
   "account_settings.delete_error": "Failed to delete account",
+  "account_settings.delete_plan_ending": "Your plan is set to end on {date}. Deleting your account now ends access immediately; the remaining period is not refunded.",
   "account_settings.delete_title": "Delete your account",
   "account_settings.description": "Manage your profile and account settings",
   "account_settings.display_name_info": "Your display name is shown to workspace collaborators.",
