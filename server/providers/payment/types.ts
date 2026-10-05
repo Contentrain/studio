@@ -169,6 +169,8 @@ export interface CompanionSubscriptionResult {
   subscriptionId: string
   /** False when the customer already had an active companion (a repeat). */
   created: boolean
+  /** The plan product the companion was opened for (the provider read it from the plan subscription). */
+  parentProductId?: string
 }
 
 export interface UsageEventInput {

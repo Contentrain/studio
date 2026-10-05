@@ -120,7 +120,8 @@ export async function openCompanionSubscription(
       return 'skipped'
     }
     await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_SUBSCRIPTION_KEY, value: companion.subscriptionId, when: 'different' })
-    await setClaim(`done:${input.productId ?? ''}`, held)
+    // The product the provider opened it for, not the event's: the two differ when a plan switch is the first event seen.
+    await setClaim(`done:${companion.parentProductId ?? input.productId ?? ''}`, held)
     return companion.created ? 'opened' : 'existing'
   }
   catch (err) {

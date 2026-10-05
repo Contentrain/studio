@@ -108,6 +108,17 @@ describe('openCompanionSubscription', () => {
     expect(await openCompanionSubscription(p, db, { ...args, productId: 'prod_starter_y' })).toBe('opened')
   })
 
+  it('stamps the product the provider opened it for, so a switch as the first plan event is still a switch', async () => {
+    const db = fakeDb()
+    const p = provider({ ensureCompanionSubscription: vi.fn().mockResolvedValue({ subscriptionId: 'sub_c1', created: true, parentProductId: 'prod_starter_y' }) })
+    // The reconciler does not know the product; the provider does.
+    expect(await openCompanionSubscription(p, db, { ...args, productId: null })).toBe('opened')
+    expect(db.row.plugin_metadata.companion_claim).toBe('done:prod_starter_y')
+    // The first plan event afterwards moves the plan to pro: the starter companion is replaced.
+    expect(await openCompanionSubscription(p, db, args)).toBe('opened')
+    expect((p as { cancelSubscription: ReturnType<typeof vi.fn> }).cancelSubscription).toHaveBeenCalledWith('sub_c1')
+  })
+
   it('a product switch whose old companion will not cancel throws and leaves the claim as it was, so the webhook retries', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const db = fakeDb({ companion_claim: 'done:prod_starter_y', companion_subscription_id: 'sub_old' })

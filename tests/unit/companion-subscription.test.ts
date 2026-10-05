@@ -49,7 +49,7 @@ describe('polar companion subscription', () => {
   })
 
   it('opens the plan\'s companion product for the customer, tagged and tied to the plan subscription', async () => {
-    expect(await (await polar()).ensureCompanionSubscription!(input)).toEqual({ subscriptionId: 'sub_c1', created: true })
+    expect(await (await polar()).ensureCompanionSubscription!(input)).toMatchObject({ subscriptionId: 'sub_c1', created: true, parentProductId: expect.any(String) })
     expect(subscriptionsCreate).toHaveBeenCalledWith({
       productId: 'prod_pro_c',
       customerId: 'cus_1',
@@ -95,7 +95,7 @@ describe('polar companion subscription', () => {
 
   it('returns the active companion the customer already has instead of opening a second one', async () => {
     subscriptionsList.mockResolvedValue(pageOf('sub_existing'))
-    expect(await (await polar()).ensureCompanionSubscription!(input)).toEqual({ subscriptionId: 'sub_existing', created: false })
+    expect(await (await polar()).ensureCompanionSubscription!(input)).toMatchObject({ subscriptionId: 'sub_existing', created: false })
     expect(subscriptionsList).toHaveBeenCalledWith({ customerId: 'cus_1', productId: 'prod_pro_c', active: true })
     expect(subscriptionsCreate).not.toHaveBeenCalled()
   })

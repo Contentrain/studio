@@ -402,7 +402,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
       const existing = await polar.subscriptions.list({ customerId: input.customerId, productId, active: true })
       for await (const page of existing) {
         const first = page.result.items[0]
-        if (first) return { subscriptionId: first.id, created: false }
+        if (first) return { subscriptionId: first.id, created: false, parentProductId }
       }
 
       const created = await polar.subscriptions.create({
@@ -415,7 +415,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
           parent_subscription_id: input.parentSubscriptionId,
         },
       })
-      return { subscriptionId: created.id, created: true }
+      return { subscriptionId: created.id, created: true, parentProductId }
     },
 
     async cancelSubscription(subscriptionId: string): Promise<'canceled' | 'already_ended'> {
