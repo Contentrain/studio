@@ -39,7 +39,7 @@ afterEach(() => {
 describe('/migrate/claim', () => {
   describe('a bundle grant', () => {
     it('covered order, plan running: no trial or checkout, a way to the project', async () => {
-      stubFetch({ grant: bundleView(), destination: { workspaceSlug: 'acme', projectId: 'proj-1' }, bundle: { planState: 'active', workspaceSlug: 'acme' }, comments: null })
+      stubFetch({ grant: bundleView(), destination: { workspaceSlug: 'acme', projectId: 'proj-1' }, bundle: { planState: 'active', workspaceSlug: 'acme', periodEndsAt: null }, comments: null })
       const wrapper = await mount()
 
       expect(wrapper.find('[data-testid="claim-bundle"]').exists()).toBe(true)
@@ -52,7 +52,7 @@ describe('/migrate/claim', () => {
     })
 
     it('plan ended: says so honestly and points to billing, the project stays reachable', async () => {
-      stubFetch({ grant: bundleView(), destination: { workspaceSlug: 'acme', projectId: 'proj-1' }, bundle: { planState: 'ended', workspaceSlug: 'acme' }, comments: null })
+      stubFetch({ grant: bundleView(), destination: { workspaceSlug: 'acme', projectId: 'proj-1' }, bundle: { planState: 'ended', workspaceSlug: 'acme', periodEndsAt: null }, comments: null })
       const wrapper = await mount()
 
       expect(wrapper.find('[data-testid="claim-bundle-plan"]').text()).toBe('Your Studio plan has ended. To continue, choose a plan.')
@@ -60,8 +60,17 @@ describe('/migrate/claim', () => {
       expect(wrapper.find('[data-testid="claim-open-project"]').exists()).toBe(true)
     })
 
+    it('plan set to end: says when, calmly, with no extra button', async () => {
+      stubFetch({ grant: bundleView(), destination: { workspaceSlug: 'acme', projectId: 'proj-1' }, bundle: { planState: 'ending', workspaceSlug: 'acme', periodEndsAt: Date.parse('2027-01-15T12:00:00Z') / 1000 }, comments: null })
+      const wrapper = await mount()
+
+      expect(wrapper.find('[data-testid="claim-bundle-plan"]').text()).toBe('Your plan ends on January 15, 2027.')
+      expect(wrapper.find('[data-testid="claim-bundle-billing"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="claim-open-project"]').exists()).toBe(true)
+    })
+
     it('paid bundle whose repository has not reached Studio: the workspace, and never a TypeError on the null repo', async () => {
-      stubFetch({ grant: bundleView({ repo: null }), destination: { workspaceSlug: 'acme', projectId: null }, bundle: { planState: 'active', workspaceSlug: 'acme' }, comments: null })
+      stubFetch({ grant: bundleView({ repo: null }), destination: { workspaceSlug: 'acme', projectId: null }, bundle: { planState: 'active', workspaceSlug: 'acme', periodEndsAt: null }, comments: null })
       const wrapper = await mount()
 
       expect(wrapper.find('[data-testid="claim-error"]').exists()).toBe(false)

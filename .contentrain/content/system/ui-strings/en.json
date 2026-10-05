@@ -826,7 +826,7 @@
   "migrate_claim.bundle_heading": "Studio {plan} came with your migration",
   "migrate_claim.bundle_plan_active": "Your Studio {plan} plan is active. The site is in your workspace and follows its plan like any other project.",
   "migrate_claim.bundle_plan_ended": "Your Studio plan has ended. To continue, choose a plan.",
-  "migrate_claim.bundle_plan_ending": "Your Studio plan is set to end. Renew it in billing settings to keep the site’s editing, comments and forms.",
+  "migrate_claim.bundle_plan_ending": "Your plan ends on {date}.",
   "migrate_claim.bundle_plan_unknown": "Studio {plan} is part of your migration order. Open Studio to find your site.",
   "migrate_claim.cancel_note": "The payment provider asks for a card, but charges nothing now. We remind you 7, 3 and 1 day before the first charge, and you can cancel anytime before it.",
   "migrate_claim.checkout_failed": "We couldn’t open the checkout. Please try again.",

@@ -51,7 +51,7 @@ interface GrantView {
 }
 interface Destination { workspaceSlug: string, projectId: string | null }
 /** How a bundle grant's workspace plan stands. */
-interface BundleStatus { planState: 'active' | 'ending' | 'ended', workspaceSlug: string }
+interface BundleStatus { planState: 'active' | 'ending' | 'ended', workspaceSlug: string, periodEndsAt: number | null }
 /** The site's comments export, taken onto the grant while the claim is made. */
 interface ClaimComments { status: 'pending' | 'ready' | 'imported' | 'unavailable' | 'expired', count: number }
 
@@ -128,6 +128,17 @@ const billingTarget = computed(() => {
 })
 
 const repoText = computed(() => (grant.value?.repo ? `${grant.value.repo.owner}/${grant.value.repo.name}` : ''))
+/** How the workspace's plan stands, in words; a plan set to end says when, with nothing more to do about it. */
+const bundlePlanText = computed(() => {
+  const status = bundle.value
+  if (!grant.value || !status) return ''
+  const plan = PLAN_PRICING[grant.value.plan].name
+  if (status.planState === 'ending' && status.periodEndsAt) {
+    const date = new Date(status.periodEndsAt * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    return t('migrate_claim.bundle_plan_ending', { plan, date })
+  }
+  return t(`migrate_claim.bundle_plan_${status.planState}`, { plan })
+})
 const isBundle = computed(() => grant.value?.kind === 'bundle')
 const billingPath = computed(() => (bundle.value ? `/w/${bundle.value.workspaceSlug}/settings?tab=billing` : null))
 const supportHref = `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${encodeURIComponent('Studio offer from Contentrain Migrate')}`
@@ -253,7 +264,7 @@ async function startTrial() {
             :data-plan-state="bundle.planState"
             data-testid="claim-bundle-plan"
           >
-            {{ t(`migrate_claim.bundle_plan_${bundle.planState}`, { plan: planPricing.name }) }}
+            {{ bundlePlanText }}
           </p>
           <p v-else class="rounded-lg bg-secondary-50 px-4 py-3 text-sm text-body dark:bg-secondary-800 dark:text-secondary-300">
             {{ t('migrate_claim.bundle_plan_unknown', { plan: planPricing.name }) }}
@@ -265,8 +276,8 @@ async function startTrial() {
             <AtomsBaseButton v-else-if="destination" :variant="bundle?.planState === 'ended' ? 'secondary' : 'primary'" data-testid="claim-open-workspace" @click="navigateTo(`/w/${destination.workspaceSlug}`)">
               {{ t('migrate_claim.open_workspace') }}
             </AtomsBaseButton>
-            <AtomsBaseButton v-if="billingPath && bundle?.planState !== 'active'" variant="primary" data-testid="claim-bundle-billing" @click="navigateTo(billingPath)">
-              {{ bundle?.planState === 'ended' ? t('migrate_claim.bundle_choose_plan') : t('migrate_claim.billing_link') }}
+            <AtomsBaseButton v-if="billingPath && bundle?.planState === 'ended'" variant="primary" data-testid="claim-bundle-billing" @click="navigateTo(billingPath)">
+              {{ t('migrate_claim.bundle_choose_plan') }}
             </AtomsBaseButton>
             <AtomsBaseButton v-if="!destination" variant="primary" data-testid="claim-open-studio" @click="navigateTo('/')">
               {{ t('migrate_claim.error_open_studio') }}
