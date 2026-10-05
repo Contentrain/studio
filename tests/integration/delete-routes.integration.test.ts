@@ -155,6 +155,45 @@ describe('workspace and project delete route integration', () => {
     })
   })
 
+  it('cancels the usage subscription before the plan, and a companion that will not cancel fails the delete with 502', async () => {
+    const deleteWorkspace = vi.fn().mockResolvedValue(undefined)
+    const stub = (cancelSubscription: ReturnType<typeof vi.fn>) => {
+      vi.stubGlobal('getRouterParam', vi.fn(() => 'workspace-1'))
+      vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'owner-1' }, accessToken: 'token-1' }))
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cancelSubscription: true }))
+      vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue(null))
+      vi.stubGlobal('usePaymentProvider', vi.fn().mockReturnValue({ cancelSubscription }))
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+        getWorkspaceById: vi.fn().mockResolvedValue({ id: 'workspace-1', type: 'secondary', owner_id: 'owner-1', github_installation_id: null }),
+        getActivePaymentAccount: vi.fn().mockResolvedValue({ subscription_id: 'sub_plan', plugin_metadata: { companion_subscription_id: 'sub_companion' } }),
+        listWorkspaceProjects: vi.fn().mockResolvedValue([]),
+        deleteWorkspace,
+      }))
+    }
+    const del = async () => {
+      let status = 0
+      await withTestServer({ routes: [{ path: '/api/workspaces/workspace-1', handler: await loadWorkspaceDeleteHandler() }] }, async ({ request }) => {
+        status = (await request('/api/workspaces/workspace-1', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cancelSubscription: true }) })).status
+      })
+      return status
+    }
+
+    const ok = vi.fn().mockResolvedValue('canceled')
+    stub(ok)
+    expect(await del()).toBe(200)
+    expect(ok.mock.calls.map(c => c[0])).toEqual(['sub_companion', 'sub_plan'])
+
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    deleteWorkspace.mockClear()
+    const failing = vi.fn().mockRejectedValue(new Error('polar down'))
+    stub(failing)
+    expect(await del()).toBe(502)
+    expect(failing).toHaveBeenCalledTimes(1)
+    expect(deleteWorkspace).not.toHaveBeenCalled()
+    log.mockRestore()
+  })
+
   it('deletes a workspace after cleaning project storage and ignores storage cleanup failures', async () => {
     const deletePrefix = vi.fn()
       .mockRejectedValueOnce(new Error('r2 unavailable'))

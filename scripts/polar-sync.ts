@@ -308,7 +308,7 @@ function findExistingProduct(
  * credits grant per billing cycle, so their units are a pricing decision (see the warning this step prints).
  */
 const VARIANT_SLUGS = ['bundle', 'yearly'] as const
-type VariantSlug = (typeof VARIANT_SLUGS)[number]
+type VariantSlug = (typeof VARIANT_SLUGS)[number] | 'companion'
 
 function findVariantProduct(products: ProductSummary[], slug: BillablePlan, variant: VariantSlug): ProductSummary | undefined {
   return products.find(p => p.metadata?.contentrain_slug === slug && p.metadata?.contentrain_catalog === CATALOG_VERSION
@@ -466,8 +466,8 @@ function creditDescription(slug: BillablePlan, item: { units: number, meterName:
 }
 
 /** Stable identity for a benefit this script owns. */
-function creditBenefitKey(slug: BillablePlan, meterName: string): string {
-  return `contentrain:${slug}:${meterName}`
+function creditBenefitKey(slug: BillablePlan, meterName: string, variant: 'monthly' | 'companion' = 'monthly'): string {
+  return variant === 'companion' ? `contentrain:${slug}:companion:${meterName}` : `contentrain:${slug}:${meterName}`
 }
 
 interface CreditBenefitPlan {
@@ -494,6 +494,7 @@ async function syncMeterCredits(
   productId: string,
   meterIdByName: Map<string, string>,
   existingBenefits: Array<Record<string, unknown>>,
+  variant: 'monthly' | 'companion' = 'monthly',
 ): Promise<void> {
   const planned: CreditBenefitPlan[] = []
 
@@ -524,7 +525,7 @@ async function syncMeterCredits(
       continue
     }
 
-    const key = creditBenefitKey(slug, meterDef.name)
+    const key = creditBenefitKey(slug, meterDef.name, variant)
     const found = existingBenefits.find(b =>
       (b.metadata as Record<string, unknown> | undefined)?.contentrain_key === key,
     )
@@ -578,7 +579,7 @@ async function syncMeterCredits(
       const created = await polar.benefits.create({
         type: 'meter_credit',
         description: creditDescription(slug, item),
-        metadata: { contentrain_key: creditBenefitKey(slug, item.meterName) },
+        metadata: { contentrain_key: creditBenefitKey(slug, item.meterName, variant) },
         properties: { units: item.units, rollover: false, meterId: item.meterId },
       } as never)
       benefitIds.push((created as unknown as { id: string }).id)
@@ -795,27 +796,85 @@ async function syncProduct(
   }
 }
 
+/**
+ * The monthly usage product a yearly plan's companion subscription is opened on (`ensureCompanionSubscription` in
+ * the Polar plugin): a free base price, the plan's metered prices and its monthly meter credits, so overage is billed
+ * monthly whatever the plan's billing frequency. Create-if-missing; an existing product only has its meter credits
+ * reconciled. Metered price drift is not rotated here: it is reported, then fixed in the dashboard.
+ * Nothing on a subscription uses it until `NUXT_POLAR_COMPANION_USAGE` is on.
+ */
+async function syncCompanionProduct(
+  slug: BillablePlan,
+  meterIdByName: Map<string, string>,
+  existingProducts: ProductSummary[],
+): Promise<void> {
+  const name = `Studio ${PLAN_PRICING[slug].name} Usage (monthly)`
+  const blueprint = buildMeteredPriceBlueprint(meterIdByName)
+  const existing = findVariantProduct(existingProducts, slug, 'companion')
+  if (existing) {
+    summary.products[`${slug}#companion`] = existing.id
+    const attached = new Set(existing.prices.filter(p => !isPriceArchived(p)).filter(p => getPriceType(p) === 'metered_unit').map(p => getMeteredPriceMeterId(p)))
+    const missing = blueprint.filter(m => !attached.has(m.meterId))
+    if (missing.length > 0) {
+      summary.warnings.push(`"${name}" has no metered price for: ${missing.map(m => m.meterName).join(', ')}. Add them in the Polar dashboard (archive-and-recreate is not automated for the companion).`)
+    }
+    else {
+      console.log(`  ✓ product "${name}" in sync (${existing.id})`)
+    }
+    await syncMeterCredits(slug, existing.id, meterIdByName, existing.benefits ?? [], 'companion')
+    return
+  }
+  if (!APPLY) {
+    console.log(`  + product "${name}" would be created — free base + ${blueprint.length} metered prices, monthly`)
+    await syncMeterCredits(slug, 'dry-run-product', meterIdByName, [], 'companion')
+    return
+  }
+  try {
+    const created = await polar.products.create({
+      recurringInterval: 'month',
+      name,
+      description: `Monthly usage of ${PLAN_PRICING[slug].name}: the plan's included allowance each month, then metered overage. Opened beside the yearly plan.`,
+      metadata: { contentrain_slug: slug, contentrain_catalog: CATALOG_VERSION, contentrain_variant: 'companion' },
+      prices: [
+        { amountType: 'free' },
+        ...blueprint.map(m => ({ amountType: 'metered_unit' as const, meterId: m.meterId, unitAmount: m.unitAmountCents })),
+      ],
+    })
+    summary.products[`${slug}#companion`] = created.id
+    console.log(`  + product "${name}" created (${created.id}) — free base + ${blueprint.length} metered prices`)
+    await syncMeterCredits(slug, created.id, meterIdByName, [], 'companion')
+  }
+  catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.warnings.push(`Failed to create product "${name}": ${msg}`)
+    console.error(`  ✗ product "${name}" failed: ${msg}`)
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log(`[polar-sync] server=${server} mode=${APPLY ? 'APPLY' : 'dry-run'}${ROTATE_PRICES ? ' rotate-prices' : ''}`)
   if (!APPLY) console.log('[polar-sync] dry run — nothing will be written. Re-run with --apply to perform it.')
 
-  console.log('\n[polar-sync] step 1/3 — syncing meters')
+  console.log('\n[polar-sync] step 1/4 — syncing meters')
   const existingMeters = await listAllMeters()
   const meterIdByName = await syncMeters(existingMeters)
 
-  console.log('\n[polar-sync] step 2/3 — syncing products, prices + included units')
+  console.log('\n[polar-sync] step 2/4 — syncing products, prices + included units')
   const existingProducts = await listAllProducts()
   for (const slug of BILLABLE_PLAN_SLUGS) {
     await syncProduct(slug, meterIdByName, existingProducts)
   }
 
-  console.log('\n[polar-sync] step 3/3 — syncing the Migrate-with-Studio bundle + yearly products (fixed price only)')
+  console.log('\n[polar-sync] step 3/4 — syncing the Migrate-with-Studio bundle + yearly products (fixed price only)')
   for (const slug of BILLABLE_PLAN_SLUGS) {
     for (const variant of VARIANT_SLUGS) await syncVariantProduct(slug, variant, existingProducts)
   }
-  console.log('  ! metered prices and meter credits are not attached to these products yet: a yearly period grants credits per billing cycle, so the units are a pricing decision.')
+  console.log('  ! metered prices and meter credits are not attached to these products: a yearly period grants credits per billing cycle. Overage on a yearly plan is billed monthly by the companion usage product below.')
+
+  console.log('\n[polar-sync] step 4/4 — syncing the monthly usage (companion) products')
+  for (const slug of BILLABLE_PLAN_SLUGS) await syncCompanionProduct(slug, meterIdByName, existingProducts)
 
   console.log('\n[polar-sync] summary')
   if (summary.warnings.length > 0) {

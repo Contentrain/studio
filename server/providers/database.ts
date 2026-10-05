@@ -1027,6 +1027,9 @@ export interface DatabaseProvider {
   /** Return the single active payment account for a workspace, if any. */
   getActivePaymentAccount: (workspaceId: string) => Promise<DatabaseRow | null>
 
+  /** Active payment accounts of one provider, oldest first (ops jobs; filter the rows in the caller). */
+  listActivePaymentAccounts: (provider: string, limit: number) => Promise<DatabaseRow[]>
+
   /**
    * Upsert a payment account keyed on (workspace_id, provider, customer_id).
    *
@@ -1094,6 +1097,17 @@ export interface DatabaseProvider {
     key: string
     value: string
     when: 'absent' | 'different' | { equals: string }
+  }) => Promise<boolean>
+
+  /**
+   * Set (or, with `null`, remove) one structured `plugin_metadata` key on the active payment account, leaving
+   * every other key and column as they are. For a key that holds a list (e.g. the suspended overage meters),
+   * which `setPaymentAccountMetadataKey` cannot store. Returns whether an active row was found.
+   */
+  setPaymentAccountMetadataJson: (input: {
+    workspaceId: string
+    key: string
+    value: string[] | null
   }) => Promise<boolean>
 
   /** Archive the active payment account for a workspace (no-op if none). */

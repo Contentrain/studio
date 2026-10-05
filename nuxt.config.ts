@@ -123,6 +123,11 @@ export default defineNuxtConfig({
       proBundleProductId: '', // NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID
       starterYearlyProductId: '', // NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID
       proYearlyProductId: '', // NUXT_POLAR_PRO_YEARLY_PRODUCT_ID
+      // Monthly usage subscription opened beside a yearly plan (overage billed monthly). Off unless the flag is true
+      // AND the plan's companion product is set.
+      starterCompanionProductId: '', // NUXT_POLAR_STARTER_COMPANION_PRODUCT_ID
+      proCompanionProductId: '', // NUXT_POLAR_PRO_COMPANION_PRODUCT_ID
+      companionUsage: false, // NUXT_POLAR_COMPANION_USAGE
     },
     migrate: {
       // NUXT_MIGRATE_CLAIM_PUBLIC_KEY — Contentrain Migrate's Ed25519 public key

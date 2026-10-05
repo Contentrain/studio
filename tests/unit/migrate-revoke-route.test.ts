@@ -49,6 +49,7 @@ describe('POST /api/migrate/grants/revoke', () => {
       getMigrateGrantByOrderId: vi.fn().mockResolvedValue(grant()),
       getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', github_installation_id: null }),
       markMigrateGrantRevoked: vi.fn().mockResolvedValue(null),
+      getActivePaymentAccount: vi.fn().mockResolvedValue(null),
       releaseMigrateS2sJti: vi.fn().mockResolvedValue(undefined),
       claimMigrateS2sJti: vi.fn(async (jti: string, purpose: string) => {
         if (taken.has(`${purpose}:${jti}`)) return false
@@ -62,6 +63,25 @@ describe('POST /api/migrate/grants/revoke', () => {
     vi.stubGlobal('useDatabaseProvider', () => db)
     vi.stubGlobal('usePaymentProvider', () => payment)
     vi.stubGlobal('errorMessage', (key: string) => key)
+  })
+
+  it('cancels the plan\'s usage subscription (the companion of a yearly plan) before the plan itself', async () => {
+    db.getActivePaymentAccount.mockResolvedValue({ plugin_metadata: { companion_subscription_id: 'sub_companion' } })
+    await request()
+    expect(await call()).toEqual({ state: 'revoked', installed: false, subscription_canceled: true })
+    expect(payment!.cancelSubscription.mock.calls.map(c => c[0])).toEqual(['sub_companion', 'sub_bound'])
+    expect(db.markMigrateGrantRevoked).toHaveBeenCalledWith('grant-1', 'refund_before_delivery')
+  })
+
+  it('a companion that cannot be cancelled leaves the grant live and the plan untouched, so Migrate can call again', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    db.getActivePaymentAccount.mockResolvedValue({ plugin_metadata: { companion_subscription_id: 'sub_companion' } })
+    payment!.cancelSubscription.mockRejectedValueOnce(new Error('polar down'))
+    await request()
+    await expect(call()).rejects.toMatchObject({ statusCode: 502 })
+    expect(payment!.cancelSubscription).toHaveBeenCalledTimes(1)
+    expect(db.markMigrateGrantRevoked).not.toHaveBeenCalled()
+    log.mockRestore()
   })
 
   it('cancels the subscription the grant is bound to, marks the grant, and keeps the installed fact', async () => {

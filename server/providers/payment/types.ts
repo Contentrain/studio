@@ -136,6 +136,41 @@ export interface WebhookResult {
    * gated by the trial (`server/utils/overage-lock.ts`).
    */
   billableMeters?: string[]
+  /**
+   * The event is about a companion usage subscription (see
+   * `CompanionSubscriptionInput`), not the plan subscription. The webhook
+   * records it beside the account and never lets it write the account's own
+   * subscription fields, status, period or plan.
+   */
+  companion?: boolean
+}
+
+/**
+ * A monthly, $0-base usage subscription opened beside a yearly plan: the
+ * provider invoices metered usage on a subscription's own cycle, so a yearly
+ * subscription alone would bill overage once a year. The companion carries the
+ * plan's monthly meter credits and the metered prices; the plan subscription
+ * keeps the fixed yearly fee. Off unless configured (`companionUsage`).
+ */
+export interface CompanionSubscriptionInput {
+  workspaceId: string
+  plan: 'starter' | 'pro'
+  customerId: string
+  /** The plan subscription the companion belongs to. */
+  parentSubscriptionId: string
+  /**
+   * The product the plan subscription is on now: only a yearly (or bundle) product gets a companion. Omitted by
+   * callers that do not know it (the reconciler): the provider reads it from the subscription.
+   */
+  parentProductId?: string
+}
+
+export interface CompanionSubscriptionResult {
+  subscriptionId: string
+  /** False when the customer already had an active companion (a repeat). */
+  created: boolean
+  /** The plan product the companion was opened for (the provider read it from the plan subscription). */
+  parentProductId?: string
 }
 
 export interface UsageEventInput {
@@ -195,6 +230,18 @@ export interface PaymentProvider {
    * and logs a warning (overage billing is no-op under Stripe).
    */
   ingestUsageEvent: (input: UsageEventInput) => Promise<void>
+
+  /**
+   * Open the monthly usage subscription beside a yearly plan subscription
+   * (`CompanionSubscriptionInput`). Idempotent: an active companion for the
+   * customer is returned, not duplicated. Null when companions are off, the
+   * plan has no companion product, or the parent is not on a yearly product.
+   * Optional: a provider without it never has one.
+   */
+  ensureCompanionSubscription?: (input: CompanionSubscriptionInput) => Promise<CompanionSubscriptionResult | null>
+
+  /** Whether companions are switched on at all; callers skip every companion step (and every write) when not. */
+  companionUsageEnabled?: () => boolean
 }
 
 /**

@@ -15,8 +15,10 @@ import { getAdmin, throwDbError } from './helpers'
 type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
+  | 'listActivePaymentAccounts'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
+  | 'setPaymentAccountMetadataJson'
   | 'setPaymentAccountCreditUnit'
   | 'archiveActivePaymentAccount'
   | 'enqueueUsageEvent'
@@ -51,6 +53,23 @@ export function paymentAccountMethods(): PaymentAccountMethods {
           .executeTakeFirst()
 
         return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async listActivePaymentAccounts(provider, limit) {
+      try {
+        const rows = await getAdmin()
+          .selectFrom('payment_accounts')
+          .selectAll()
+          .where('provider', '=', provider)
+          .where('is_active', '=', true)
+          .orderBy('created_at', 'asc')
+          .limit(limit)
+          .execute()
+        return rows as DatabaseRow[]
       }
       catch (error) {
         throwDbError(error)
@@ -163,6 +182,28 @@ export function paymentAccountMethods(): PaymentAccountMethods {
           WHERE workspace_id = ${workspaceId} AND is_active = true AND ${condition}
           RETURNING id
         `.execute(getAdmin())
+        return result.rows.length > 0
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async setPaymentAccountMetadataJson({ workspaceId, key, value }) {
+      try {
+        const result = value === null
+          ? await sql<{ id: string }>`
+              UPDATE payment_accounts
+              SET plugin_metadata = coalesce(plugin_metadata, '{}'::jsonb) - ${key}::text
+              WHERE workspace_id = ${workspaceId} AND is_active = true
+              RETURNING id
+            `.execute(getAdmin())
+          : await sql<{ id: string }>`
+              UPDATE payment_accounts
+              SET plugin_metadata = coalesce(plugin_metadata, '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::jsonb)
+              WHERE workspace_id = ${workspaceId} AND is_active = true
+              RETURNING id
+            `.execute(getAdmin())
         return result.rows.length > 0
       }
       catch (error) {

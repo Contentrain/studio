@@ -52,6 +52,16 @@ export interface OverageLockAccount {
 /** Keys inside `payment_accounts.plugin_metadata`. */
 export const BILLABLE_METERS_KEY = 'billable_meters'
 export const OVERAGE_SUSPENDED_KEY = 'overage_suspended'
+/**
+ * The monthly usage subscription opened beside a yearly plan (see
+ * `server/utils/companion-subscription.ts`): its id, and the meters it prices
+ * (comma-joined). Written only through `setPaymentAccountMetadataKey`, never by
+ * the plan subscription's own events, so neither can overwrite the other.
+ */
+export const COMPANION_SUBSCRIPTION_KEY = 'companion_subscription_id'
+export const COMPANION_METERS_KEY = 'companion_billable_meters'
+/** Serializes who opens a workspace's companion: `opening:<ms>` | `failed` | `done:<product>` | `skipped:<product>`. */
+export const COMPANION_CLAIM_KEY = 'companion_claim'
 
 const METER_NAME_BY_SETTINGS_KEY: Record<string, string> = Object.fromEntries(
   USAGE_METER_LIST.map(m => [m.settingsKey, m.name]),
@@ -80,11 +90,24 @@ export function isYearlyPeriod(account: Pick<OverageLockAccount, 'current_period
   return new Date(end).getTime() - new Date(start).getTime() > 35 * 24 * 60 * 60 * 1000
 }
 
-/** The meters the subscription prices, or null when none were recorded. */
+/** The meters the companion usage subscription prices (empty when there is none). */
+export function readCompanionMeters(pluginMetadata: unknown): string[] {
+  if (!pluginMetadata || typeof pluginMetadata !== 'object') return []
+  const raw = (pluginMetadata as Record<string, unknown>)[COMPANION_METERS_KEY]
+  return typeof raw === 'string' ? raw.split(',').map(m => m.trim()).filter(Boolean) : []
+}
+
+/**
+ * The meters the account can bill: what the plan subscription prices plus what
+ * its companion usage subscription prices, or null when neither was recorded.
+ */
 export function readBillableMeters(pluginMetadata: unknown): string[] | null {
   if (!pluginMetadata || typeof pluginMetadata !== 'object') return null
   const list = (pluginMetadata as Record<string, unknown>)[BILLABLE_METERS_KEY]
-  return Array.isArray(list) ? list.filter((m): m is string => typeof m === 'string') : null
+  const own = Array.isArray(list) ? list.filter((m): m is string => typeof m === 'string') : null
+  const companion = readCompanionMeters(pluginMetadata)
+  if (!companion.length) return own
+  return [...new Set([...(own ?? []), ...companion])].toSorted()
 }
 
 /** Locked overage settings keys, each with why and until when. */
@@ -103,7 +126,9 @@ export function resolveOverageLocks(account: OverageLockAccount | null | undefin
   // Credit overage is priced on the meters of the subscription's own unit:
   // a pre-v2 subscription prices `ai_credits`, a v2 one `ai_credits_1c`.
   const creditMeters = creditTermsFor(creditUnitFromMeters(billable) ?? CURRENT_CREDIT_UNIT).meters
-  const reason: OverageLockReason = isYearlyPeriod(account) ? 'yearly_plan' : 'not_in_subscription'
+  // `yearly_plan` says "a yearly subscription bills nothing metered": only when the account prices no meter at all.
+  // A yearly account whose companion prices some meters but not this one is a plain `not_in_subscription`.
+  const reason: OverageLockReason = billable.length === 0 && isYearlyPeriod(account) ? 'yearly_plan' : 'not_in_subscription'
   for (const key of OVERAGE_SETTINGS_KEYS) {
     const meter = key === USAGE_METERS.AI_MESSAGES.settingsKey
       ? creditMeters.ai

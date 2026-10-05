@@ -101,6 +101,43 @@ describe('postgres-db payment-accounts (contract)', () => {
     expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'k', value: 'v', when: 'absent' })).toBe(false)
   })
 
+  it('the companion claim survives the plan\'s created-style upsert that races an open in flight', async () => {
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    const base = { workspaceId: user.workspaceId, provider: 'polar', customerId: `cus_race_${randomUUID()}` }
+    await methods.upsertPaymentAccount({ ...base, subscriptionStatus: 'active', pluginMetadata: { billable_meters: ['a'] } })
+    // `updated` holds the claim while its Polar create is in flight…
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'companion_claim', value: 'opening:1', when: 'absent' })).toBe(true)
+    // …`created` writes the row from its own, earlier read…
+    const row = await methods.upsertPaymentAccount({
+      ...base,
+      subscriptionStatus: 'active',
+      pluginMetadata: { overage_suspended: [], activation_email: 'sent' },
+      preserveMetadataKeys: ['companion_subscription_id', 'companion_billable_meters', 'companion_claim'],
+    })
+    expect(row.plugin_metadata).toEqual({ overage_suspended: [], activation_email: 'sent', companion_claim: 'opening:1' })
+    // …so its own claim attempt loses.
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'companion_claim', value: 'opening:2', when: 'absent' })).toBe(false)
+  })
+
+  it('metadata json: sets and removes one structured key, leaves the rest; list returns only active accounts of the provider', async () => {
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    await methods.upsertPaymentAccount({ workspaceId: user.workspaceId, provider: 'polar', customerId: `cus_json_${randomUUID()}`, subscriptionStatus: 'active', pluginMetadata: { billable_meters: ['a'], companion_claim: 'done:p' } })
+    expect(await methods.setPaymentAccountMetadataJson({ workspaceId: user.workspaceId, key: 'overage_suspended', value: ['ai_messages'] })).toBe(true)
+    let row = await methods.getActivePaymentAccount(user.workspaceId)
+    expect(row?.plugin_metadata).toEqual({ billable_meters: ['a'], companion_claim: 'done:p', overage_suspended: ['ai_messages'] })
+    expect(await methods.setPaymentAccountMetadataJson({ workspaceId: user.workspaceId, key: 'overage_suspended', value: null })).toBe(true)
+    row = await methods.getActivePaymentAccount(user.workspaceId)
+    expect(row?.plugin_metadata).toEqual({ billable_meters: ['a'], companion_claim: 'done:p' })
+
+    const listed = await methods.listActivePaymentAccounts('polar', 500)
+    expect(listed.some(r => r.workspace_id === user.workspaceId)).toBe(true)
+    expect(await methods.listActivePaymentAccounts('no-such-provider', 500)).toEqual([])
+
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    expect(await methods.setPaymentAccountMetadataJson({ workspaceId: user.workspaceId, key: 'k', value: ['x'] })).toBe(false)
+    expect((await methods.listActivePaymentAccounts('polar', 500)).some(r => r.workspace_id === user.workspaceId)).toBe(false)
+  })
+
   it('credit unit: a change converts the period\'s credit counters in the same transaction (QA-12 B3)', async () => {
     const { getDb, sql } = await import('./helpers')
     await methods.archiveActivePaymentAccount(user.workspaceId)

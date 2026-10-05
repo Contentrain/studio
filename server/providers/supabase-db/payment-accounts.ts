@@ -12,8 +12,10 @@ import { getAdmin } from './helpers'
 type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
+  | 'listActivePaymentAccounts'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
+  | 'setPaymentAccountMetadataJson'
   | 'setPaymentAccountCreditUnit'
   | 'archiveActivePaymentAccount'
   | 'enqueueUsageEvent'
@@ -36,6 +38,19 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         throw createError({ statusCode: 500, message: error.message })
       }
       return (data ?? null) as DatabaseRow | null
+    },
+
+    async listActivePaymentAccounts(provider, limit) {
+      const { data, error } = await getAdmin()
+        .from('payment_accounts')
+        .select('*')
+        .eq('provider', provider)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(limit)
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data ?? []) as DatabaseRow[]
     },
 
     async upsertPaymentAccount(input) {
@@ -141,6 +156,30 @@ export function paymentAccountMethods(): PaymentAccountMethods {
         const { data: updated, error: updateError } = await admin
           .from('payment_accounts')
           .update({ plugin_metadata: { ...metadata, [key]: value } })
+          .eq('id', row.id)
+          .eq('updated_at', row.updated_at)
+          .select('id')
+        if (updateError) throw createError({ statusCode: 500, message: updateError.message })
+        if (updated?.length) return true
+      }
+      throw createError({ statusCode: 500, message: `Failed to set payment account metadata ${key}: the row kept changing` })
+    },
+
+    async setPaymentAccountMetadataJson({ workspaceId, key, value }) {
+      const admin = getAdmin()
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: row, error } = await admin
+          .from('payment_accounts')
+          .select('id, plugin_metadata, updated_at')
+          .eq('workspace_id', workspaceId)
+          .eq('is_active', true)
+          .maybeSingle()
+        if (error && error.code !== 'PGRST116') throw createError({ statusCode: 500, message: error.message })
+        if (!row) return false
+        const { [key]: _old, ...rest } = (row.plugin_metadata ?? {}) as Record<string, unknown>
+        const { data: updated, error: updateError } = await admin
+          .from('payment_accounts')
+          .update({ plugin_metadata: value === null ? rest : { ...rest, [key]: value } })
           .eq('id', row.id)
           .eq('updated_at', row.updated_at)
           .select('id')
