@@ -60,6 +60,11 @@ function selectedText(value: string): string {
   return option ? (option.text ?? option.label) : ''
 }
 
+// Radix writes the chosen entry's text into the input when it mounts or the value changes, and it cannot
+// know the options arrived later: a field opened before its entries load would stay blank. Remounting
+// the root once the text resolves makes it read the label.
+const labelKnown = computed(() => selectedText(modelValue) !== '')
+
 function onSelect(value: unknown) {
   if (typeof value !== 'string' || !value) return
   emit('update:modelValue', value)
@@ -81,6 +86,7 @@ function openList() {
 
 <template>
   <ComboboxRoot
+    :key="labelKnown ? 'label' : 'blank'"
     :model-value="modelValue"
     :open="open"
     :search-term="searchTerm"

@@ -114,6 +114,15 @@ describe('relation picker', () => {
     expect(labelsOf(['e3'])).toEqual(['Plain title'])
   })
 
+  it('shows the chosen entry once its entries arrive after the field is mounted', async () => {
+    const wrapper = await mountEditor({ type: 'relation', modelValue: 'e2', fieldDef: { type: 'relation', model: 'articles' }, relatedLoading: true })
+    expect(input().value).toBe('')
+    await wrapper.setProps({ relatedLoading: false, relatedEntries: entries })
+    await nextTick()
+    await new Promise(r => setTimeout(r, 20))
+    expect(input().value).toBe('Şehir Rehberi')
+  })
+
   it('groups a polymorphic relation by model and shows the model name', async () => {
     await mountEditor({ type: 'relation', modelValue: null, fieldDef: { type: 'relation', model: ['posts', 'authors'] }, relatedEntries: polymorphic })
     await type('')
