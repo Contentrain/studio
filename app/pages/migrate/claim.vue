@@ -260,7 +260,7 @@ async function startTrial() {
           <p
             v-if="bundle"
             class="rounded-lg px-4 py-3 text-sm"
-            :class="bundle.planState === 'active' ? 'bg-secondary-50 text-body dark:bg-secondary-800 dark:text-secondary-300' : 'border border-warning-300 text-body dark:border-warning-700 dark:text-secondary-300'"
+            :class="bundle.planState !== 'ended' ? 'bg-secondary-50 text-body dark:bg-secondary-800 dark:text-secondary-300' : 'border border-warning-300 text-body dark:border-warning-700 dark:text-secondary-300'"
             :data-plan-state="bundle.planState"
             data-testid="claim-bundle-plan"
           >
