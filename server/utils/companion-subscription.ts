@@ -37,7 +37,7 @@ export function companionSubscriptionIdOf(pluginMetadata: unknown): string | nul
   return typeof id === 'string' && id.length > 0 ? id : null
 }
 
-function claimOf(pluginMetadata: unknown): string | null {
+export function companionClaimOf(pluginMetadata: unknown): string | null {
   if (!pluginMetadata || typeof pluginMetadata !== 'object') return null
   const claim = (pluginMetadata as Record<string, unknown>)[COMPANION_CLAIM_KEY]
   return typeof claim === 'string' ? claim : null
@@ -45,7 +45,7 @@ function claimOf(pluginMetadata: unknown): string | null {
 
 /** Whether a stored claim leaves nothing for the reconciler to do. */
 export function claimSettled(pluginMetadata: unknown): boolean {
-  const claim = claimOf(pluginMetadata)
+  const claim = companionClaimOf(pluginMetadata)
   return Boolean(claim && (claim.startsWith('done:') || claim.startsWith('skipped:')))
 }
 
@@ -61,12 +61,17 @@ async function claimOpening(db: Db, workspaceId: string, productId: string | nul
   if (await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_CLAIM_KEY, value, when: 'absent' })) return { previous: null, value }
   const account = await db.getActivePaymentAccount(workspaceId)
   if (!account) return false
-  const current = claimOf(account.plugin_metadata)
+  const current = companionClaimOf(account.plugin_metadata)
   if (current === null) return false
   const startedAt = current.startsWith('opening:') ? Number(current.slice('opening:'.length)) : Number.NaN
   const stale = Number.isFinite(startedAt) && Date.now() - startedAt > OPENING_STALE_MS
   const settledFor = current.startsWith('done:') ? current.slice('done:'.length) : current.startsWith('skipped:') ? current.slice('skipped:'.length) : null
-  const productChanged = settledFor !== null && Boolean(productId) && settledFor !== productId
+  // A claim the reconciler stamped does not know its product (`done:`): that is not a change. Learn it, once.
+  if (settledFor === '' && productId) {
+    await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_CLAIM_KEY, value: `${current.slice(0, current.indexOf(':'))}:${productId}`, when: { equals: current } })
+    return false
+  }
+  const productChanged = settledFor !== null && settledFor !== '' && Boolean(productId) && settledFor !== productId
   if (current !== 'failed' && current !== '' && !stale && !productChanged) return false
   return (await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_CLAIM_KEY, value, when: { equals: current } })) ? { previous: current, value } : false
 }

@@ -101,6 +101,24 @@ describe('postgres-db payment-accounts (contract)', () => {
     expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'k', value: 'v', when: 'absent' })).toBe(false)
   })
 
+  it('the companion claim survives the plan\'s created-style upsert that races an open in flight', async () => {
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    const base = { workspaceId: user.workspaceId, provider: 'polar', customerId: `cus_race_${randomUUID()}` }
+    await methods.upsertPaymentAccount({ ...base, subscriptionStatus: 'active', pluginMetadata: { billable_meters: ['a'] } })
+    // `updated` holds the claim while its Polar create is in flight…
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'companion_claim', value: 'opening:1', when: 'absent' })).toBe(true)
+    // …`created` writes the row from its own, earlier read…
+    const row = await methods.upsertPaymentAccount({
+      ...base,
+      subscriptionStatus: 'active',
+      pluginMetadata: { overage_suspended: [], activation_email: 'sent' },
+      preserveMetadataKeys: ['companion_subscription_id', 'companion_billable_meters', 'companion_claim'],
+    })
+    expect(row.plugin_metadata).toEqual({ overage_suspended: [], activation_email: 'sent', companion_claim: 'opening:1' })
+    // …so its own claim attempt loses.
+    expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'companion_claim', value: 'opening:2', when: 'absent' })).toBe(false)
+  })
+
   it('metadata json: sets and removes one structured key, leaves the rest; list returns only active accounts of the provider', async () => {
     await methods.archiveActivePaymentAccount(user.workspaceId)
     await methods.upsertPaymentAccount({ workspaceId: user.workspaceId, provider: 'polar', customerId: `cus_json_${randomUUID()}`, subscriptionStatus: 'active', pluginMetadata: { billable_meters: ['a'], companion_claim: 'done:p' } })

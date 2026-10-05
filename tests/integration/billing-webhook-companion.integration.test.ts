@@ -149,14 +149,27 @@ describe('billing webhook: companion usage subscription', () => {
   })
 
   it('an ended companion is forgotten without ending the plan', async () => {
-    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_subscription_id: 'sub_c1', companion_billable_meters: 'ai_credits' }))
+    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_subscription_id: 'sub_c1', companion_billable_meters: 'ai_credits', companion_claim: 'done:prod_pro_y' }))
     handleWebhookMock.mockResolvedValue({ event: 'subscription.canceled', companion: true, workspaceId: 'ws-1', subscriptionId: 'sub_c1', customerId: 'cus_1', subscriptionStatus: 'canceled' })
     await post()
     expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_subscription_id', value: '', when: 'different' })
     expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_billable_meters', value: '', when: 'different' })
-    expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_claim', value: 'failed', when: 'different' })
+    expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_claim', value: 'failed', when: { equals: 'done:prod_pro_y' } })
     expect(archiveActivePaymentAccount).not.toHaveBeenCalled()
     expect(updateWorkspace).not.toHaveBeenCalledWith('', 'ws-1', { plan: 'free', trial_reminder_stage: 0 })
+  })
+
+  it('the plan\'s created upsert preserves the companion keys, claim included, so a racing open keeps its claim', async () => {
+    handleWebhookMock.mockResolvedValue(planCreated)
+    await post()
+    expect(upsertPaymentAccount.mock.calls[0]![0].preserveMetadataKeys).toEqual(expect.arrayContaining(['companion_subscription_id', 'companion_billable_meters', 'companion_claim']))
+  })
+
+  it('an ending companion event on an account with no recorded companion (mid-open, mid-switch) changes nothing', async () => {
+    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_claim: `opening:${Date.now()}` }))
+    handleWebhookMock.mockResolvedValue({ event: 'subscription.canceled', companion: true, workspaceId: 'ws-1', subscriptionId: 'sub_c_old', customerId: 'cus_1', subscriptionStatus: 'canceled' })
+    await post()
+    expect(setPaymentAccountMetadataKey).not.toHaveBeenCalled()
   })
 
   it('a replayed event of a companion that already ended does not bring it back', async () => {

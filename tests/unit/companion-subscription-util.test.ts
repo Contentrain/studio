@@ -96,6 +96,18 @@ describe('openCompanionSubscription', () => {
     expect(db.row.plugin_metadata.companion_claim).toBe('done:prod_pro_y')
   })
 
+  it('a claim the reconciler stamped without a product is learned, not mistaken for a product change', async () => {
+    const db = fakeDb({ companion_claim: 'done:', companion_subscription_id: 'sub_c1' })
+    const p = provider()
+    expect(await openCompanionSubscription(p, db, args)).toBe('busy')
+    expect((p as { cancelSubscription: ReturnType<typeof vi.fn> }).cancelSubscription).not.toHaveBeenCalled()
+    expect(ensureOf(p)).not.toHaveBeenCalled()
+    expect(db.row.plugin_metadata.companion_claim).toBe('done:prod_pro_y')
+    expect(db.row.plugin_metadata.companion_subscription_id).toBe('sub_c1')
+    // Stamped now, so a real change is still a change.
+    expect(await openCompanionSubscription(p, db, { ...args, productId: 'prod_starter_y' })).toBe('opened')
+  })
+
   it('a product switch whose old companion will not cancel throws and leaves the claim as it was, so the webhook retries', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const db = fakeDb({ companion_claim: 'done:prod_starter_y', companion_subscription_id: 'sub_old' })
