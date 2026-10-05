@@ -5,6 +5,7 @@
 import type { MigrateStudioCommentsExport } from '@contentrain/types'
 import type { DatabaseRow, MigrateCommentsExportRow } from '../providers/database'
 import { resolveDeployment } from './deployment'
+import { isBillingLocked } from './billing'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
 /**
@@ -80,8 +81,12 @@ export async function migrateGrantDestination(session: { accessToken: string, us
 
 /**
  * Where a bundle grant's Studio plan stands, for the claim screen. The site lives in the grant's workspace
- * and follows that workspace's plan like any other project: `active` while the subscription runs,
- * `ending` when it is set to end, `ended` otherwise (canceled, past due, never started, locked).
+ * and follows that workspace's plan like any other project, by the workspace's billing state:
+ * - `active`: the subscription runs (also a trial, and `past_due` while its grace period lasts: still accessible).
+ * - `ending`: set to end at the period's end (`cancel_at_period_end`), or canceled with the paid period still
+ *   running. `periodEndsAt` is when.
+ * - `ended`: only what locks the workspace — canceled and past its period, grace period over, trial over — or no
+ *   subscription at all.
  */
 export interface MigrateBundleStatus {
   planState: 'active' | 'ending' | 'ended'
@@ -97,10 +102,15 @@ export async function migrateBundleStatus(row: DatabaseRow): Promise<MigrateBund
   const workspace = await db.getWorkspaceById(workspaceId, 'id, slug, type, plan, overage_settings')
   if (!workspace) return null
   const billing = await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId })
-  const account = billing.state === 'subscribed' ? await db.getActivePaymentAccount(workspaceId) : null
-  const planState = billing.state !== 'subscribed' ? 'ended' : account?.cancel_at_period_end === true ? 'ending' : 'active'
+  const slug = workspace.slug as string
+  // No subscription (a free workspace), or one that locks the workspace.
+  if (billing.state === 'free' || isBillingLocked(billing.state)) return { planState: 'ended', workspaceSlug: slug, periodEndsAt: null }
+
+  const account = await db.getActivePaymentAccount(workspaceId)
   const end = account?.current_period_end ? Date.parse(String(account.current_period_end)) : Number.NaN
-  return { planState, workspaceSlug: workspace.slug as string, periodEndsAt: Number.isFinite(end) ? Math.floor(end / 1000) : null }
+  const periodEndsAt = Number.isFinite(end) ? Math.floor(end / 1000) : null
+  const ending = billing.state === 'canceled' || account?.cancel_at_period_end === true
+  return { planState: ending ? 'ending' : 'active', workspaceSlug: slug, periodEndsAt }
 }
 
 /**

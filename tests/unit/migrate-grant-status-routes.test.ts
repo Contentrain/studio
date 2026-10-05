@@ -126,11 +126,34 @@ describe('Migrate grant status and install-url routes', () => {
         expect(await call('status')).toMatchObject({ kind: 'bundle' })
       })
 
-      it('plan ended: says so, with Studio\'s own text for Migrate to show as is', async () => {
+      it('plan ended (canceled and its period is over): says so, with Studio\'s own text for Migrate to show as is', async () => {
         db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
-        db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'canceled' }))
+        db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'canceled', current_period_end: '2020-01-01T00:00:00Z' }))
         await status()
         expect(await call('status')).toMatchObject({ kind: 'covered', ended: true, notice: 'migrate.bundle_plan_ended_notice' })
+      })
+
+      it.each([
+        ['canceled, paid period still running', { subscription_status: 'canceled', current_period_end: '2099-01-01T00:00:00Z' }],
+        ['past_due within its grace period', { subscription_status: 'past_due', grace_period_ends_at: '2099-01-01T00:00:00Z' }],
+        ['set to end at the period\'s end', { cancel_at_period_end: true, current_period_end: '2099-01-01T00:00:00Z' }],
+      ])('not ended: %s', async (_name, over) => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
+        db.getActivePaymentAccount.mockResolvedValue(account(over))
+        await status()
+        const answer = await call('status') as Record<string, unknown>
+        expect(answer).not.toHaveProperty('ended')
+        expect(answer).not.toHaveProperty('notice')
+      })
+
+      it('grace period over and no subscription at all are ended', async () => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
+        db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'past_due', grace_period_ends_at: '2020-01-01T00:00:00Z' }))
+        await status()
+        expect(await call('status')).toMatchObject({ ended: true })
+        db.getActivePaymentAccount.mockResolvedValue(null)
+        await status()
+        expect(await call('status')).toMatchObject({ ended: true })
       })
     })
 

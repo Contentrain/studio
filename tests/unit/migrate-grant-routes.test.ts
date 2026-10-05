@@ -158,10 +158,28 @@ describe('Migrate grant routes', () => {
         })
       })
 
-      it('covered order, plan ended: still opens, and says the plan has ended', async () => {
-        db.getActivePaymentAccount!.mockResolvedValue(account({ subscription_status: 'canceled' }))
+      it('covered order, plan ended (canceled and its period is over): still opens, and says the plan has ended', async () => {
+        db.getActivePaymentAccount!.mockResolvedValue(account({ subscription_status: 'canceled', current_period_end: '2020-01-01T00:00:00Z' }))
         const result = await (await claimRoute())({} as never)
-        expect(result).toMatchObject({ bundle: { planState: 'ended', workspaceSlug: 'acme' }, destination: { workspaceSlug: 'acme' } })
+        expect(result).toMatchObject({ bundle: { planState: 'ended', workspaceSlug: 'acme', periodEndsAt: null }, destination: { workspaceSlug: 'acme' } })
+      })
+
+      it.each([
+        ['grace period over', { subscription_status: 'past_due', grace_period_ends_at: '2020-01-01T00:00:00Z' }],
+        ['no subscription at all', null],
+      ])('ended too: %s', async (_name, over) => {
+        db.getActivePaymentAccount!.mockResolvedValue(over ? account(over) : null)
+        expect(await (await claimRoute())({} as never)).toMatchObject({ bundle: { planState: 'ended' } })
+      })
+
+      it('canceled but the paid period still runs: ending, with when', async () => {
+        db.getActivePaymentAccount!.mockResolvedValue(account({ subscription_status: 'canceled', current_period_end: '2099-01-01T00:00:00Z' }))
+        expect(await (await claimRoute())({} as never)).toMatchObject({ bundle: { planState: 'ending', periodEndsAt: Date.parse('2099-01-01T00:00:00Z') / 1000 } })
+      })
+
+      it('past_due within its grace period is still a running plan, not an ended one', async () => {
+        db.getActivePaymentAccount!.mockResolvedValue(account({ subscription_status: 'past_due', grace_period_ends_at: '2099-01-01T00:00:00Z' }))
+        expect(await (await claimRoute())({} as never)).toMatchObject({ bundle: { planState: 'active' } })
       })
 
       it('a plan set to end is told apart from one that has ended', async () => {
