@@ -87,8 +87,9 @@ async function handleDeleteAccount() {
   try {
     await deleteAccount()
   }
-  catch {
-    toast.error(t('account_settings.delete_error'))
+  catch (e) {
+    // The server says why (members to hand over to, a subscription to cancel), not just that it failed.
+    toast.error(resolveApiError(e, t('account_settings.delete_error')))
     deleting.value = false
   }
 }

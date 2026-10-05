@@ -1,4 +1,6 @@
 {
+  "account.subscription_active": "You have a workspace with a subscription that is still active. Cancel it from the billing portal before deleting your account.",
+  "account.transfer_required": "You own workspaces with other members. Transfer ownership before deleting your account.",
   "api.byoa_upgrade": "Bring Your Own API (BYOA) keys are available on {plans:ai.byoa}. Upgrade to {toPlan} to add your own provider key.",
   "api.key_id_required": "Workspace ID and key ID are required.",
   "api.provider_key_required": "AI provider and API key are required.",
