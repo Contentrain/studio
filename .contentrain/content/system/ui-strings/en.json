@@ -825,6 +825,7 @@
   "migrate_claim.bundle_choose_plan": "Choose a plan",
   "migrate_claim.bundle_heading": "Studio {plan} came with your migration",
   "migrate_claim.bundle_plan_active": "Your Studio {plan} plan is active. The site is in your workspace and follows its plan like any other project.",
+  "migrate_claim.bundle_plan_active_connect": "Your Studio {plan} plan is active and covers this site. Connect it below to manage it in Studio.",
   "migrate_claim.bundle_plan_ended": "Your Studio plan has ended. To continue, choose a plan.",
   "migrate_claim.bundle_plan_ending": "Your plan ends on {date}.",
   "migrate_claim.bundle_plan_unknown": "Studio {plan} is part of your migration order. Open Studio to find your site.",
