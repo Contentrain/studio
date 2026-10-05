@@ -116,4 +116,40 @@ describe('billing checkout route', () => {
     })
     expect(createCheckoutSession).toHaveBeenCalledTimes(1)
   })
+  describe('returnTo', () => {
+    async function checkoutWith(returnTo?: string) {
+      const createCheckoutSession = vi.fn().mockResolvedValue({ url: 'https://checkout.polar.sh/c/x', sessionId: 's' })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ workspaceId: 'workspace-1', plan: 'starter', ...(returnTo === undefined ? {} : { returnTo }) }))
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'workspace-1', slug: 'team', name: 'Team' }),
+        getActivePaymentAccount: vi.fn().mockResolvedValue(null),
+      }))
+      vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({ allowed: true, remaining: 1, retryAfterMs: 0 }))
+      vi.stubGlobal('usePaymentProvider', vi.fn().mockReturnValue({ createCheckoutSession }))
+      const handler = (await import('../../server/api/billing/checkout.post')).default
+      await handler({} as never)
+      return createCheckoutSession.mock.calls[0]![0].successUrl as string
+    }
+
+    it('sends the customer back to the Migrate claim they came from', async () => {
+      expect(await checkoutWith('/migrate/claim?grant=mg_1')).toBe('https://studio.example.com/migrate/claim?grant=mg_1')
+    })
+
+    it('keeps today\'s success page when there is no returnTo', async () => {
+      expect(await checkoutWith()).toBe('https://studio.example.com/w/team/settings?billing=success')
+    })
+
+    it.each([
+      'https://evil.example/claim',
+      '//evil.example/migrate/claim',
+      '/\\evil.example',
+      '/migrate/claim/../../admin',
+      '/w/team/settings',
+      '/migrate/claimx',
+      'migrate/claim',
+      '/migrate/claim\r\nX: 1',
+    ])('drops an open-redirect attempt %j', async (bad) => {
+      expect(await checkoutWith(bad)).toBe('https://studio.example.com/w/team/settings?billing=success')
+    })
+  })
 })

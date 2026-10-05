@@ -115,6 +115,22 @@ describe('/migrate/claim', () => {
       expect(navigate).toHaveBeenCalledWith('/w/acme/projects/proj-9')
     })
 
+    it('Choose a plan comes back to this claim: the billing link carries the claim as returnTo', async () => {
+      stubFetch({ ...noProject, bundle: { planState: 'ended', workspaceSlug: 'acme', periodEndsAt: null } })
+      const wrapper = await mount()
+      await wrapper.find('[data-testid="claim-bundle-billing"]').trigger('click')
+      expect(navigate).toHaveBeenCalledWith('/w/acme/settings?tab=billing&returnTo=%2Fmigrate%2Fclaim%3Fgrant%3Dgrant-1')
+    })
+
+    it('the plan line points to Connect while Connect is shown, and not once the site is a project', async () => {
+      stubFetch(running)
+      const connectable = await mount()
+      expect(connectable.find('[data-testid="claim-bundle-plan"]').text()).toContain('Connect it below')
+      stubFetch({ ...running, destination: { workspaceSlug: 'acme', projectId: 'proj-1' } })
+      const connected = await mount()
+      expect(connected.find('[data-testid="claim-bundle-plan"]').text()).not.toContain('Connect it below')
+    })
+
     it('plan ended: no Connect, only Choose a plan', async () => {
       stubFetch({ ...noProject, bundle: { planState: 'ended', workspaceSlug: 'acme', periodEndsAt: null } })
       const wrapper = await mount()

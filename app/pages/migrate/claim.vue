@@ -146,12 +146,16 @@ const bundlePlanText = computed(() => {
     const date = new Date(status.periodEndsAt * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     return t('migrate_claim.bundle_plan_ending', { plan, date })
   }
+  if (status.planState === 'active' && canConnect.value) return t('migrate_claim.bundle_plan_active_connect', { plan })
   return t(`migrate_claim.bundle_plan_${status.planState}`, { plan })
 })
 const isBundle = computed(() => grant.value?.kind === 'bundle')
 /** A bundle grant whose repository is known and not yet a project, on a plan that runs: one click makes it one. */
 const canConnect = computed(() => isBundle.value && !!repoText.value && !projectPath.value && !!destination.value && bundle.value?.planState !== 'ended')
-const billingPath = computed(() => (bundle.value ? `/w/${bundle.value.workspaceSlug}/settings?tab=billing` : null))
+/** Choosing a plan comes back to this claim (checkout accepts only this internal path), where Connect is waiting. */
+const billingPath = computed(() => (bundle.value && grant.value
+  ? `/w/${bundle.value.workspaceSlug}/settings?tab=billing&returnTo=${encodeURIComponent(`/migrate/claim?grant=${grant.value.id}`)}`
+  : null))
 const supportHref = `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${encodeURIComponent('Studio offer from Contentrain Migrate')}`
 /** Whoever is on the other end of a refused claim: signed in with the wrong account, or a link that no longer works. */
 const wrongAccount = computed(() => loadErrorCode.value === 'claim_taken')

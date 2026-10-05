@@ -73,6 +73,7 @@ function resolveEffectivePlan(ws: Workspace | null, state: BillingState): Studio
 }
 
 export function useBilling() {
+  const route = useRoute()
   const { activeWorkspace, fetchWorkspaces } = useWorkspaces()
   const deployment = useDeployment()
 
@@ -146,7 +147,7 @@ export function useBilling() {
 
     const { url } = await $fetch<{ url: string }>('/api/billing/checkout', {
       method: 'POST',
-      body: { workspaceId: ws.id, plan },
+      body: { workspaceId: ws.id, plan, returnTo: typeof route.query.returnTo === 'string' ? route.query.returnTo : undefined },
     })
 
     if (url) {
