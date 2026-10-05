@@ -22,7 +22,7 @@ import { startPlanCheckout } from '../../../../utils/plan-checkout'
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
   if (!migrateClaimPublicKey())
-    throw createError({ statusCode: 404, message: errorMessage('migrate.unavailable') })
+    throw createError({ statusCode: 404, message: errorMessage('migrate.unavailable'), data: { code: 'unavailable' } })
 
   const grantId = getRouterParam(event, 'grantId') ?? ''
   const body = await readBody<{ workspaceId?: unknown }>(event)
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
   const grant = await db.getMigrateGrantForUser(grantId, session.user.id)
-  if (!grant) throw createError({ statusCode: 404, message: errorMessage('migrate.grant_not_found') })
+  if (!grant) throw createError({ statusCode: 404, message: errorMessage('migrate.grant_not_found'), data: { code: 'grant_not_found' } })
 
   const workspace = await db.getWorkspaceForUser(
     session.accessToken,
@@ -44,14 +44,14 @@ export default defineEventHandler(async (event) => {
   if (!workspace) throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
 
   if (grant.revoked_at)
-    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_revoked') })
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_revoked'), data: { code: 'grant_revoked' } })
   if (grant.redeemed_at)
-    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_used') })
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_used'), data: { code: 'grant_used' } })
   // A bundle grant is paid through Migrate's checkout, never opened as an included trial.
   if (grant.kind === 'bundle')
-    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bundle') })
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bundle'), data: { code: 'grant_bundle' } })
   if (grant.bound_at && grant.workspace_id !== workspaceId)
-    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bound_elsewhere') })
+    throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bound_elsewhere'), data: { code: 'grant_bound_elsewhere' } })
 
   // Checked before binding too (the plan checkout checks it again): a
   // grant tied to a workspace that already pays could never be used.
@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, message: errorMessage('billing.subscription_exists') })
 
   const bound = await db.bindMigrateGrantWorkspace(grantId, workspaceId)
-  if (!bound) throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bound_elsewhere') })
+  if (!bound) throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bound_elsewhere'), data: { code: 'grant_bound_elsewhere' } })
 
   const ws = workspace as { slug: string, name: string }
   return startPlanCheckout({

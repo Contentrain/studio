@@ -132,14 +132,75 @@ describe('Migrate grant routes', () => {
       expect(db.saveMigrateCommentsExport).not.toHaveBeenCalled()
     })
 
-    it('refuses an order that was bought as a bundle: its Studio year is on the order, there is no trial to claim', async () => {
-      db.claimMigrateGrant!.mockResolvedValue({ grant: { ...grantRow, kind: 'bundle', trial_days: null, repo_owner: null, repo_name: null }, created: false })
-      await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_bundle' })
+    describe('a bundle grant (Studio came with the order)', () => {
+      const bundleRow = { ...grantRow, kind: 'bundle', trial_days: null, repo_owner: null, repo_name: null, workspace_id: 'ws-1', bound_at: '2026-10-01T10:00:00Z', redeemed_at: '2026-10-01T10:00:00Z' }
+      const account = (over: Record<string, unknown> = {}) => ({
+        subscription_id: 'sub_1', subscription_status: 'active', plan: 'pro', current_period_end: '2027-01-01T00:00:00Z',
+        trial_ends_at: null, cancel_at_period_end: false, grace_period_ends_at: null, plugin_metadata: {}, ...over,
+      })
+      beforeEach(() => {
+        db.claimMigrateGrant!.mockResolvedValue({ grant: bundleRow, created: false })
+        db.setMigrateGrantRepo = vi.fn().mockImplementation((_id: string, repo: { owner: string, name: string }) => Promise.resolve({ ...bundleRow, repo_owner: repo.owner, repo_name: repo.name }))
+        db.getWorkspaceById = vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', type: 'secondary', plan: 'pro', overage_settings: {} })
+        db.getWorkspaceForUser!.mockResolvedValue({ id: 'ws-1', slug: 'acme', name: 'Acme' })
+        db.listWorkspaceProjects!.mockResolvedValue([{ id: 'proj-1', repo_full_name: 'acme/blog' }])
+      })
+
+      it('covered order, plan running: takes the repo from the signed claim and points at the project', async () => {
+        db.getActivePaymentAccount!.mockResolvedValue(account())
+        const result = await (await claimRoute())({} as never)
+
+        expect(db.setMigrateGrantRepo).toHaveBeenCalledWith('grant-1', { owner: 'acme', name: 'blog' })
+        expect(result).toMatchObject({
+          grant: { kind: 'bundle', trialDays: null, state: 'redeemed', repo: { owner: 'acme', name: 'blog' } },
+          destination: { workspaceSlug: 'acme', projectId: 'proj-1' },
+          bundle: { planState: 'active', workspaceSlug: 'acme' },
+        })
+      })
+
+      it('covered order, plan ended: still opens, and says the plan has ended', async () => {
+        db.getActivePaymentAccount!.mockResolvedValue(account({ subscription_status: 'canceled' }))
+        const result = await (await claimRoute())({} as never)
+        expect(result).toMatchObject({ bundle: { planState: 'ended', workspaceSlug: 'acme' }, destination: { workspaceSlug: 'acme' } })
+      })
+
+      it('a plan set to end is told apart from one that has ended', async () => {
+        db.getActivePaymentAccount!.mockResolvedValue(account({ cancel_at_period_end: true }))
+        expect(await (await claimRoute())({} as never)).toMatchObject({ bundle: { planState: 'ending' } })
+      })
+
+      it('paid bundle (subscription of its own): same way in, repo written once', async () => {
+        db.claimMigrateGrant!.mockResolvedValue({ grant: { ...bundleRow, redeemed_subscription_id: 'sub_1' }, created: false })
+        db.getActivePaymentAccount!.mockResolvedValue(account())
+        expect(await (await claimRoute())({} as never)).toMatchObject({ grant: { kind: 'bundle' }, bundle: { planState: 'active' } })
+        expect(db.setMigrateGrantRepo).toHaveBeenCalledTimes(1)
+      })
+
+      it('never rewrites a repository the grant already has', async () => {
+        db.claimMigrateGrant!.mockResolvedValue({ grant: { ...bundleRow, repo_owner: 'other', repo_name: 'site' }, created: false })
+        db.getActivePaymentAccount!.mockResolvedValue(account())
+        const result = await (await claimRoute())({} as never)
+        expect(db.setMigrateGrantRepo).not.toHaveBeenCalled()
+        expect(result).toMatchObject({ grant: { repo: { owner: 'other', name: 'site' } } })
+      })
+
+      it('another account still gets claim_taken', async () => {
+        db.claimMigrateGrant!.mockResolvedValue({ grant: { ...bundleRow, user_id: 'user-2' }, created: false })
+        await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, data: { code: 'claim_taken' } })
+        expect(db.setMigrateGrantRepo).not.toHaveBeenCalled()
+      })
+    })
+
+    it('a trial grant is unchanged: no bundle status, no repo write', async () => {
+      db.setMigrateGrantRepo = vi.fn()
+      const result = await (await claimRoute())({} as never)
+      expect(result).toMatchObject({ grant: { kind: 'trial' }, bundle: null })
+      expect(db.setMigrateGrantRepo).not.toHaveBeenCalled()
     })
 
     it('refuses an order another account already claimed', async () => {
       db.claimMigrateGrant!.mockResolvedValue({ grant: { ...grantRow, user_id: 'user-2' }, created: false })
-      await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.claim_taken' })
+      await expect((await claimRoute())({} as never)).rejects.toMatchObject({ statusCode: 409, message: 'migrate.claim_taken', data: { code: 'claim_taken' } })
     })
 
     it('tells an expired link apart from a bad one', async () => {

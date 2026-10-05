@@ -5,6 +5,7 @@
 import type { MigrateStudioCommentsExport } from '@contentrain/types'
 import type { DatabaseRow, MigrateCommentsExportRow } from '../providers/database'
 import { resolveDeployment } from './deployment'
+import { resolveWorkspaceBilling } from './workspace-billing'
 
 /**
  * Migrate's public key, or null when claim links are off here: no key
@@ -24,6 +25,8 @@ export type MigrateGrantState = 'claimed' | 'bound' | 'redeemed'
 
 export interface MigrateGrantView {
   id: string
+  /** `bundle`: Studio was part of the order itself (no included trial to start). */
+  kind: 'trial' | 'bundle'
   plan: 'starter' | 'pro'
   /** Null for a bundle grant (it opens no included trial). */
   trialDays: number | null
@@ -39,6 +42,7 @@ export function migrateGrantView(row: DatabaseRow): MigrateGrantView {
   const state: MigrateGrantState = row.redeemed_at ? 'redeemed' : row.bound_at ? 'bound' : 'claimed'
   return {
     id: row.id as string,
+    kind: row.kind === 'bundle' ? 'bundle' : 'trial',
     plan: row.plan as 'starter' | 'pro',
     trialDays: (row.trial_days as number | null) ?? null,
     repo: row.repo_owner && row.repo_name ? { owner: row.repo_owner as string, name: row.repo_name as string } : null,
@@ -72,6 +76,31 @@ export async function migrateGrantDestination(session: { accessToken: string, us
   const projects = await db.listWorkspaceProjects(session.accessToken, workspaceId)
   const project = projects.find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === repo)
   return { workspaceSlug: workspace.slug as string, projectId: (project?.id as string | undefined) ?? null }
+}
+
+/**
+ * Where a bundle grant's Studio plan stands, for the claim screen. The site lives in the grant's workspace
+ * and follows that workspace's plan like any other project: `active` while the subscription runs,
+ * `ending` when it is set to end, `ended` otherwise (canceled, past due, never started, locked).
+ */
+export interface MigrateBundleStatus {
+  planState: 'active' | 'ending' | 'ended'
+  workspaceSlug: string
+  /** When the running plan's current period ends, seconds since the epoch; null when it has no running period. */
+  periodEndsAt: number | null
+}
+
+export async function migrateBundleStatus(row: DatabaseRow): Promise<MigrateBundleStatus | null> {
+  const workspaceId = row.workspace_id as string | null
+  if (row.kind !== 'bundle' || !workspaceId) return null
+  const db = useDatabaseProvider()
+  const workspace = await db.getWorkspaceById(workspaceId, 'id, slug, type, plan, overage_settings')
+  if (!workspace) return null
+  const billing = await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId })
+  const account = billing.state === 'subscribed' ? await db.getActivePaymentAccount(workspaceId) : null
+  const planState = billing.state !== 'subscribed' ? 'ended' : account?.cancel_at_period_end === true ? 'ending' : 'active'
+  const end = account?.current_period_end ? Date.parse(String(account.current_period_end)) : Number.NaN
+  return { planState, workspaceSlug: workspace.slug as string, periodEndsAt: Number.isFinite(end) ? Math.floor(end / 1000) : null }
 }
 
 /**
