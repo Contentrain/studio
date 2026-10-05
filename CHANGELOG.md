@@ -1,9 +1,20 @@
 # Changelog
 
 
-## Unreleased
+## v0.4.8
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.7...v0.4.8)
 
 ### ⚠️ Upgrade notes
+
+**1. Migrations 040–047 run before the new image serves: nine files on a managed database, eight on Supabase.**
+managed+postgres: the Railway pre-deploy runs them (expect "9 applied" in its log, then `pnpm db:verify:pg`; `postgres/migrations/043_managed_auth_identities.sql` is the ninth, it only exists for the managed runner); plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push` (eight). Every migration is additive or replaces a function; none rewrites a large table. 044 and 045 add columns to `migrate_grants` (a small table) and check constraints on it. 046 replaces two quota functions and 047 replaces `handle_new_user()` and rewrites only workspace slugs that fail `^[a-z0-9][a-z0-9-]{0,62}$` (a repaired workspace changes its `/w/<slug>` address). The old image keeps working against all of them, so rolling back the image alone is safe, except that a "Migrate with Studio" grant written after 044 has no repository yet, which the old image does not know.
+
+**2. The "Migrate with Studio" bundle needs four Polar products and one origin list.**
+New environment variables (names only): `NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID`, `NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID`, `NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID`, `NUXT_POLAR_PRO_YEARLY_PRODUCT_ID`, `NUXT_MIGRATE_ORIGINS` (production: `https://migrate.contentrain.io`), and `NUXT_MIGRATE_INSTALL_STATE_KEY` (HS256 secret, at least 32 characters). Empty bundle product ids switch the bundle off: provision answers 502 and nothing else changes. `pnpm polar:sync` creates the products (dry run unless `--apply`); run it against production only with the owner's say-so. Point a log alert at `[migrate-bundle] ALARM` and `[companion] ALARM`.
+
+**3. The companion usage subscription ships OFF.**
+`NUXT_POLAR_COMPANION_USAGE` and `NUXT_POLAR_STARTER_COMPANION_PRODUCT_ID` / `NUXT_POLAR_PRO_COMPANION_PRODUCT_ID` stay unset in production. With the flag off no companion is created, nothing is written for it and the reconciler lists no accounts. Whether Polar bills its overage at cycle end, and to which card, is still open (see below).
 
 **Migration 046: form and comment quotas take a billing window.**
 `046_usage_window_quotas.sql` drops and recreates `create_form_submission_if_allowed` and `create_comment_if_allowed` with two defaulted window parameters (`p_window_start`, `p_window_end`). Run the migration before the new image: the new code always passes the window. The old image still works against the new functions because the parameters default to the calendar month, so rolling back the image alone is safe. Both runners (Supabase and `scripts/migrate-postgres.mjs`) apply it as a normal migration.
@@ -28,7 +39,7 @@ This applies to lists at any depth, nested ones included. Items are matched by `
 **New: `pnpm media:strip-metadata` cleans media stored before #384 and #393 (run on request, not on deploy).**
 WebP masters uploaded before the EXIF fix still carry camera/GPS data, and SVGs stored before the sanitising fix still carry scripts and metadata. The script removes the EXIF/XMP chunks of a WebP losslessly (the pixel data is copied byte for byte, nothing is re-encoded; the colour profile stays) and passes stored SVGs through the upload allow-list. Paths, and so every URL, stay the same. It is a dry run unless `--apply` is given: the dry run reads and reports how many assets, how many WebP files carry EXIF and how many a GPS position. An apply run checks each rewritten WebP decodes to identical pixels before replacing it, then corrects the asset's `size_bytes` and the workspace storage counter by the difference; it is idempotent. Both modes print the public URL of every rewritten file, one per line (`--urls-out <file>` to save them). **The CDN edge keeps the old bytes** (`s-maxage=3600, stale-while-revalidate=86400`, and `purgeCache` is a no-op for R2), so purge those URLs by hand after an apply (Cloudflare "purge by URL", 30 per call; `split -l 30`). No migration, no new environment variables; it reads the app's own `NUXT_POSTGRES_URL` and `NUXT_CDN_R2_*`. See `docs/MEDIA_INGEST.md`.
 
-**One migration runs before the new image serves: 040.**
+**Migration 040 (comments export).**
 managed+postgres: the Railway pre-deploy runs it (expect "1 applied" in its log, then `pnpm db:verify:pg`); plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. 040 adds the table `migrate_comment_exports`, which holds a Migrate order's comments export on its grant until the project imports it. Nothing existing is changed or dropped, so rolling back the image alone is safe.
 
 **New environment variable: `NUXT_MIGRATE_ORIGINS`.**
@@ -45,6 +56,29 @@ Uploads used to be cut down to their first frame without a word. An animated GIF
 
 **Fix: uploaded images no longer keep their EXIF/GPS in the public master.**
 `optimizeImage()` used to re-attach the input's metadata (`withMetadata`), so camera model, owner and GPS position of an upload could still be read from the published WebP. It now writes no metadata at all: EXIF/GPS, XMP, IPTC and the embedded profile are dropped, the EXIF rotation is applied to the pixels, and the pixels are converted to sRGB. Variants are cut from that master, so they carry nothing either. **Existing assets are not regenerated by this change** — files uploaded before it still carry their metadata until they are re-uploaded. Whether a remediation step for them is needed is tracked separately. No migration, no new environment variables.
+
+### 🚀 Enhancements
+
+- **migrate:** The Studio+Migrate bundle: Migrate sells its fee plus Studio year 1 as one order. Studio provisions the account (`POST /api/migrate/provision`, signed claim v2), opens one Polar checkout at the quoted total, moves the subscription to the yearly list product for renewal, and refuses a quote it does not agree with. An order whose account already has a covering plan joins that workspace and charges nothing. Money guards and the GitHub identity check are in place ([#396](https://github.com/Contentrain/studio/pull/396), [#404](https://github.com/Contentrain/studio/pull/404), [#405](https://github.com/Contentrain/studio/pull/405), [#407](https://github.com/Contentrain/studio/pull/407), [#409](https://github.com/Contentrain/studio/pull/409), [#411](https://github.com/Contentrain/studio/pull/411))
+- **migrate:** Refunds: a grant can be revoked (`refund_before_delivery`, `refund_after_delivery`, `delivery_failed`, `ops`), which cancels the subscription it is bound to; revoking an already ended subscription is success ([#406](https://github.com/Contentrain/studio/pull/406), [#408](https://github.com/Contentrain/studio/pull/408))
+- **migrate:** Studio setup beside a live move: install URL, grant status and a signed setup callback, with the comments export imported from the claim ([#403](https://github.com/Contentrain/studio/pull/403), [#383](https://github.com/Contentrain/studio/pull/383))
+- **comments:** The workspace owner and admins get an email when a comment arrives ([#401](https://github.com/Contentrain/studio/pull/401))
+- **billing:** Yearly plans: honest overage-lock copy; forms, comments and CDN count over the billing window ([#413](https://github.com/Contentrain/studio/pull/413))
+- **billing:** Companion monthly usage subscription for yearly plans, behind `NUXT_POLAR_COMPANION_USAGE` (off) ([#415](https://github.com/Contentrain/studio/pull/415))
+- **media:** Uploaded images are kept as a private source; animated GIF/WebP stay animated; stored EXIF/XMP and unsanitised SVG can be swept (`pnpm media:strip-metadata`) ([#387](https://github.com/Contentrain/studio/pull/387), [#385](https://github.com/Contentrain/studio/pull/385), [#394](https://github.com/Contentrain/studio/pull/394))
+- `@contentrain/types` 1.49.0; the Migrate golden handoff comes from the package ([#410](https://github.com/Contentrain/studio/pull/410), [#399](https://github.com/Contentrain/studio/pull/399))
+
+### 🩹 Fixes
+
+- **migrate:** Workspace slugs repaired and provision logs why its own answer failed ([#414](https://github.com/Contentrain/studio/pull/414)); a past-due subscription gets its own provision code ([#412](https://github.com/Contentrain/studio/pull/412)); signed server-to-server routes pass the session middleware ([#402](https://github.com/Contentrain/studio/pull/402)); a held comments export lasts the grant window ([#388](https://github.com/Contentrain/studio/pull/388))
+- **review:** An approved merge is pinned to the commit that was approved; the merge fails closed on an unreadable tip; removed list items and emptied fields count as `bulk_content` ([#375](https://github.com/Contentrain/studio/pull/375), [#389](https://github.com/Contentrain/studio/pull/389), [#378](https://github.com/Contentrain/studio/pull/378), [#379](https://github.com/Contentrain/studio/pull/379), [#377](https://github.com/Contentrain/studio/pull/377))
+- **projects:** The connect is held while a Migrate delivery branch is unmerged ([#398](https://github.com/Contentrain/studio/pull/398))
+- **media:** SVG uploads are sanitised and detected the way a parser reads them; uploaded images keep no EXIF/GPS in the public master; the sweep names the file to repair ([#393](https://github.com/Contentrain/studio/pull/393), [#395](https://github.com/Contentrain/studio/pull/395), [#384](https://github.com/Contentrain/studio/pull/384), [#397](https://github.com/Contentrain/studio/pull/397))
+- Dark-mode 950 shades, badge contrast and schedule wording ([#374](https://github.com/Contentrain/studio/pull/374))
+
+### ❤️ Contributors
+
+- AHMET BAYHAN BAYRAMOGLU ([@ABB65](https://github.com/ABB65))
 
 ## v0.4.7
 
