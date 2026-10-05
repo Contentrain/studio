@@ -21,7 +21,9 @@ afterEach(() => {
   while (wrappers.length) wrappers.pop()!.unmount()
 })
 
-async function mountEditor(props: Record<string, unknown>) {
+type EditorProps = InstanceType<typeof ContentFieldEditor>['$props']
+
+async function mountEditor(props: Omit<EditorProps, 'fieldId' | 'standalone'>) {
   const wrapper = await mountSuspended(ContentFieldEditor, { props: { ...base, ...props }, attachTo: document.body })
   wrappers.push(wrapper)
   return wrapper
