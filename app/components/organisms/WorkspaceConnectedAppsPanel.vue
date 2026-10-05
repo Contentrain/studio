@@ -37,6 +37,13 @@ const claudeCommand = computed(() =>
   endpoint.value ? `claude mcp add --transport http contentrain ${endpoint.value}` : '',
 )
 
+/** Codex reads remote servers from config.toml; sign-in is OAuth (no key in the file), started with `codex mcp login`. */
+const codexConfig = computed(() =>
+  endpoint.value
+    ? ['[mcp_servers.contentrain]', `url = "${endpoint.value}"`, '# then: codex mcp login contentrain'].join('\n')
+    : '',
+)
+
 async function refresh() {
   loading.value = true
   try {
@@ -127,6 +134,18 @@ function formatRelative(iso: string | null): string {
               :label="t('mcp_cloud.copy_command')"
               size="sm"
               @click="copyToClipboard(claudeCommand)"
+            />
+          </div>
+        </div>
+        <div class="mt-3">
+          <AtomsFormLabel :text="t('connected_apps.connect_codex_label')" size="sm" />
+          <div class="mt-1.5 flex items-start gap-2">
+            <code class="block flex-1 overflow-x-auto whitespace-pre rounded bg-secondary-50 px-3 py-2 font-mono text-xs text-heading dark:bg-secondary-900 dark:text-secondary-100" data-testid="codex-config">{{ codexConfig }}</code>
+            <AtomsIconButton
+              icon="icon-[annon--copy]"
+              :label="t('mcp_cloud.copy_config')"
+              size="sm"
+              @click="copyToClipboard(codexConfig)"
             />
           </div>
         </div>
