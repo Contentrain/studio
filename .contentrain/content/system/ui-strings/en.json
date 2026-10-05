@@ -359,6 +359,7 @@
   "common.upgrade": "Upgrade",
   "common.yes": "Yes",
   "connected_apps.connect_claude_code_label": "Claude Code",
+  "connected_apps.connect_codex_label": "OpenAI Codex (config.toml)",
   "connected_apps.connected_by_you": "You",
   "connected_apps.description": "AI apps connected to this workspace over the remote MCP endpoint (Claude, ChatGPT, Codex). Each connection is scoped to one project.",
   "connected_apps.empty_description": "Connect Claude or ChatGPT to this workspace using the remote MCP endpoint above.",

@@ -49,6 +49,21 @@ describe('WorkspaceConnectedAppsPanel', () => {
     expect(text).toContain('42')
   })
 
+  it('offers a copyable Codex config.toml block for the same endpoint, with the OAuth login step', async () => {
+    const wrapper = await mountSuspended(WorkspaceConnectedAppsPanel, {
+      props: { workspaceId: 'ws-grants' },
+    })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('OpenAI Codex (config.toml)')
+    expect(wrapper.find('[data-testid="codex-config"]').text()).toBe([
+      '[mcp_servers.contentrain]',
+      'url = "https://studio.example/api/mcp/remote"',
+      '# then: codex mcp login contentrain',
+    ].join('\n'))
+  })
+
   it('explains the managed-pair requirement instead of erroring on other deployments', async () => {
     const wrapper = await mountSuspended(WorkspaceConnectedAppsPanel, {
       props: { workspaceId: 'ws-supabase' },
