@@ -104,6 +104,16 @@ describe('relation picker', () => {
     expect(input().value).toBe('Şehir Rehberi')
   })
 
+  it('a filled-in field opens to the whole list, not only its own entry', async () => {
+    await mountEditor({ type: 'relation', modelValue: 'e2', fieldDef: { type: 'relation', model: 'articles' }, relatedEntries: entries })
+    input().click()
+    await nextTick()
+    await new Promise(r => setTimeout(r, 20))
+    expect(optionTexts()).toHaveLength(3)
+    await type('plain')
+    expect(labelsOf(['e3'])).toEqual(['Plain title'])
+  })
+
   it('groups a polymorphic relation by model and shows the model name', async () => {
     await mountEditor({ type: 'relation', modelValue: null, fieldDef: { type: 'relation', model: ['posts', 'authors'] }, relatedEntries: polymorphic })
     await type('')

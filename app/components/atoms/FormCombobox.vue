@@ -43,12 +43,16 @@ const { t } = useContent()
 
 const open = ref(false)
 const searchTerm = ref('')
+// Radix writes the chosen entry's text into the input (and back into `searchTerm`). That is a label, not a
+// query: until the user types, the whole list shows, so a filled-in field can still be changed.
+const typed = ref(false)
+const query = computed(() => (typed.value ? searchTerm.value : ''))
 
-const result = computed(() => filterRelationOptions(options, searchTerm.value, maxResults))
+const result = computed(() => filterRelationOptions(options, query.value, maxResults))
 const groups = computed(() => groupRelationOptions(result.value.items))
 // Polymorphic matches carry their model: show it even when only one model matches.
 const grouped = computed(() => result.value.items.some(item => item.group))
-const searching = computed(() => searchTerm.value.trim().length > 0)
+const searching = computed(() => query.value.trim().length > 0)
 
 function selectedText(value: string): string {
   if (!value || clearOnSelect) return ''
@@ -60,7 +64,13 @@ function onSelect(value: unknown) {
   if (typeof value !== 'string' || !value) return
   emit('update:modelValue', value)
   open.value = false
+  typed.value = false
   if (clearOnSelect) searchTerm.value = ''
+}
+
+function onOpen(value: boolean) {
+  open.value = value
+  if (!value) typed.value = false
 }
 
 // A click or focus on the box opens the list; the chevron toggles it.
@@ -78,7 +88,7 @@ function openList() {
     :filter-function="(values: any) => values"
     :reset-search-term-on-select="true"
     @update:model-value="onSelect"
-    @update:open="open = $event"
+    @update:open="onOpen"
     @update:search-term="searchTerm = $event"
   >
     <ComboboxAnchor
@@ -92,6 +102,7 @@ function openList() {
         class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
         @focus="openList"
         @click="openList"
+        @input="typed = true"
       />
       <AtomsSpinner v-if="loading" size="sm" class="shrink-0" />
       <ComboboxTrigger
@@ -116,7 +127,7 @@ function openList() {
             {{ t('content.relation_none_available') }}
           </p>
           <p v-else-if="result.total === 0" class="px-2 py-3 text-sm text-muted" role="status">
-            {{ t('content.relation_no_results', { query: searchTerm.trim() }) }}
+            {{ t('content.relation_no_results', { query: query.trim() }) }}
           </p>
           <template v-else>
             <ComboboxGroup v-for="group in groups" :key="group.key">
