@@ -56,15 +56,13 @@ export async function coveringWorkspace(userId: string, needed: MigrateStudioPla
 }
 
 /**
- * `renewal_cents` is the yearly list price the subscription renews at after
- * the discounted first year (0 when nothing is added). Migrate may not compute
- * it; it shows Studio's number. Not in `@contentrain/types` yet — extra key.
- *
- * `monthly_list_cents` is the sized plan's monthly price × 12 (from PLAN_PRICING): what a year costs paid month
- * by month, so the offer can show the yearly saving. It follows the plan discovery sized (`plan`), also when
- * the account's own plan covers it. The price stays in Studio; Migrate only displays it.
+ * `renewal_cents` is the yearly list price the subscription renews at after the discounted first year (0 when
+ * nothing is added). `monthly_list_cents` is the sized plan's monthly price × 12 (from PLAN_PRICING): what a year
+ * costs paid month by month, so the offer can show the yearly saving. It follows the plan discovery sized (`plan`),
+ * also when the account's own plan covers it. Both are typed (optional) in `@contentrain/types` since 1.56.0 for
+ * Migrate, which only displays them; Studio always sends them, so here they are required.
  */
-export type MigrateAccountStateWithRenewal = MigrateAccountStateResponse & { renewal_cents: number, monthly_list_cents: number }
+export type MigrateAccountStateWithRenewal = MigrateAccountStateResponse & Required<Pick<MigrateAccountStateResponse, 'renewal_cents' | 'monthly_list_cents'>>
 
 function monthlyListCents(plan: MigrateStudioPlan): number {
   return PLAN_PRICING[plan].priceMonthly * 12 * 100
