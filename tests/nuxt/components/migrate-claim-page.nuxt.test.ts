@@ -134,7 +134,6 @@ describe('/migrate/claim', () => {
       ['no_installation', 'claim-connect-install', 'Install Studio’s GitHub App'],
       ['repo_not_accessible', 'claim-connect-settings', 'Open the app’s settings on GitHub'],
       ['migration_not_merged', 'claim-connect-retry', 'Check again'],
-      ['plan_locked', 'claim-connect-billing', 'Choose a plan'],
     ])('%s: its message and its own next step', async (code, testid, label) => {
       stubFetch(running, { error: { statusCode: 409, message: `message for ${code}`, code, settingsUrl: 'https://github.com/settings/installations/4242' } })
       const wrapper = await mount()
@@ -158,12 +157,14 @@ describe('/migrate/claim', () => {
       expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/connect-project'))).toHaveLength(2)
     })
 
-    it('a plan that stopped running: the screen then shows it as ended', async () => {
+    it('a plan that stopped running: the screen then shows it as ended, with one Choose a plan and no error box', async () => {
       stubFetch(running, { error: { statusCode: 409, message: 'locked', code: 'plan_locked' } })
       const wrapper = await mount()
       await click(wrapper)
       expect(wrapper.find('[data-testid="claim-bundle-plan"]').attributes('data-plan-state')).toBe('ended')
       expect(wrapper.find('[data-testid="claim-connect"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="claim-connect-error"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="claim-bundle-billing"]')).toHaveLength(1)
     })
   })
 

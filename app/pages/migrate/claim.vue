@@ -222,13 +222,16 @@ async function connectProject() {
   }
   catch (e: unknown) {
     const body = (e as { data?: { data?: { code?: unknown, settingsUrl?: unknown } } })?.data?.data
+    // A plan that stopped running since the page loaded: the page becomes the ended view (Choose a plan), no second box.
+    if (body?.code === 'plan_locked' && bundle.value) {
+      bundle.value = { ...bundle.value, planState: 'ended' }
+      return
+    }
     connectError.value = {
       code: typeof body?.code === 'string' ? body.code : '',
       message: resolveApiError(e, t('migrate_claim.connect_failed')),
       settingsUrl: typeof body?.settingsUrl === 'string' ? body.settingsUrl : null,
     }
-    // A plan that stopped running since the page loaded: the screen shows it as ended, with Choose a plan.
-    if (connectError.value.code === 'plan_locked' && bundle.value) bundle.value = { ...bundle.value, planState: 'ended' }
   }
   finally {
     connecting.value = false
@@ -355,10 +358,7 @@ async function startTrial() {
               <a v-else-if="connectError.code === 'repo_not_accessible' && connectError.settingsUrl" :href="connectError.settingsUrl" target="_blank" rel="noopener" class="text-sm font-medium text-primary-700 underline dark:text-primary-300" data-testid="claim-connect-settings">
                 {{ t('migrate_claim.connect_open_settings') }}
               </a>
-              <AtomsBaseButton v-else-if="connectError.code === 'plan_locked' && billingPath" variant="primary" data-testid="claim-connect-billing" @click="navigateTo(billingPath)">
-                {{ t('migrate_claim.bundle_choose_plan') }}
-              </AtomsBaseButton>
-              <AtomsBaseButton v-if="connectError.code !== 'plan_locked' && connectError.code !== 'no_installation'" variant="secondary" :disabled="connecting" data-testid="claim-connect-retry" @click="connectProject">
+              <AtomsBaseButton v-if="connectError.code !== 'no_installation'" variant="secondary" :disabled="connecting" data-testid="claim-connect-retry" @click="connectProject">
                 {{ t('migrate_claim.connect_check_again') }}
               </AtomsBaseButton>
             </div>
