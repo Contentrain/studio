@@ -78,7 +78,10 @@ describe('postgres-db migrate-grants (contract)', () => {
   })
 
   it('writes a repository only onto a grant that has none', async () => {
-    const { grant } = await claim(owner.userId)
+    // A bundle grant is made before the delivery repository exists.
+    const { grant } = await methods.claimMigrateGrant({
+      orderId: `${orderId}-bundle`, claimJti: 'jti-bundle', userId: owner.userId, plan: 'pro', kind: 'bundle', email: 'owner@example.com',
+    })
     expect(grant.repo_owner).toBeNull()
     const first = await methods.setMigrateGrantRepo(grant.id as string, { owner: 'acme', name: 'blog' })
     expect(first).toMatchObject({ repo_owner: 'acme', repo_name: 'blog' })
