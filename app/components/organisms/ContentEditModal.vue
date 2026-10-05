@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
+import type { RelationOption } from '~~/shared/utils/content-relations'
 import { buildRelationOptions, inferFieldType, isPolymorphicRelation } from '~~/shared/utils/content-relations'
 import { orderedFieldIds } from '~~/shared/utils/field-label'
 import { isLocaleAgnosticField } from '~~/shared/utils/locale-agnostic-fields'
@@ -104,7 +105,9 @@ const mergedFields = computed(() => {
 })
 
 // Relation entries for relation fields
-const relationEntriesMap = ref<Record<string, Array<{ value: string, label: string }>>>({})
+const relationEntriesMap = ref<Record<string, RelationOption[]>>({})
+// True while the target models' entries are being read, so a relation field shows a loading picker, not a bare text box.
+const relationEntriesLoading = ref(false)
 
 /**
  * A media or relation value carries no language, so on an i18n model the
@@ -154,7 +157,10 @@ watch(open, (isOpen) => {
   if (isOpen) {
     showValidation.value = false
     startBatchEdit(entryData)
-    loadRelationEntries()
+    relationEntriesLoading.value = true
+    void loadRelationEntries().finally(() => {
+      relationEntriesLoading.value = false
+    })
   }
   else {
     cancelBatchEdit()
@@ -166,7 +172,7 @@ async function loadRelationEntries() {
   // Target-model content is already in the Content Brain (synced for the whole
   // project). The old `GET /content/:modelId` route was removed when the brain
   // replaced per-model fetches, so read from the brain instead of a dead route.
-  const map: Record<string, Array<{ value: string, label: string }>> = {}
+  const map: Record<string, RelationOption[]> = {}
   const defaultLocale = (brain.config.value as { locales?: { default?: string } } | null)?.locales?.default
 
   for (const [fieldId, def] of Object.entries(mergedFields.value)) {
@@ -175,7 +181,7 @@ async function loadRelationEntries() {
 
     const targetModels = Array.isArray(def.model) ? def.model : [def.model]
     const polymorphic = isPolymorphicRelation(def.model)
-    const options: Array<{ value: string, label: string }> = []
+    const options: RelationOption[] = []
 
     for (const targetModelId of targetModels) {
       let result = await brain.queryContent(targetModelId, locale)
@@ -274,7 +280,7 @@ function confirmDiscard() {
                 <AtomsContentFieldEditor
                   :type="mergedFields[fieldId]?.type ?? 'string'" :model-value="batchEditData[fieldId]"
                   :field-id="fieldId" :field-def="mergedFields[fieldId]" :options="mergedFields[fieldId]?.options"
-                  :related-entries="relationEntriesMap[fieldId]" :standalone="false" :locale="locale"
+                  :related-entries="relationEntriesMap[fieldId]" :related-loading="relationEntriesLoading" :standalone="false" :locale="locale"
                   @update:model-value="updateBatchField(fieldId, $event)"
                 />
               </div>
