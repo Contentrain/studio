@@ -19,7 +19,7 @@ const sign = (body: Record<string, unknown> = {}, key = privateKey) => {
 }
 
 const grant = (over: Record<string, unknown> = {}) => ({
-  id: 'grant-1', order_id: 'ord_123', user_id: 'user-1', workspace_id: 'ws-1', bound_at: '2026-10-03T10:00:00Z', redeemed_at: '2026-10-03T10:05:00Z', ...over,
+  id: 'grant-1', order_id: 'ord_123', user_id: 'user-1', kind: 'trial', plan: 'pro', trial_days: 60, redeemed_subscription_id: null, workspace_id: 'ws-1', bound_at: '2026-10-03T10:00:00Z', redeemed_at: '2026-10-03T10:05:00Z', ...over,
 })
 
 beforeAll(async () => {
@@ -51,7 +51,8 @@ describe('Migrate grant status and install-url routes', () => {
     config.migrate.installStateKey = stateKey
     db = {
       getMigrateGrantByOrderId: vi.fn().mockResolvedValue(grant()),
-      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', github_installation_id: null }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', type: 'secondary', plan: 'pro', overage_settings: {}, github_installation_id: null }),
+      getActivePaymentAccount: vi.fn().mockResolvedValue(null),
       claimMigrateS2sJti: vi.fn(async (jti: string, purpose: string) => {
         if (taken.has(`${purpose}:${jti}`)) return false
         taken.add(`${purpose}:${jti}`)
@@ -68,11 +69,11 @@ describe('Migrate grant status and install-url routes', () => {
   describe('status', () => {
     it('answers the state, and installed only once redeemed', async () => {
       await status()
-      expect(await call('status')).toEqual({ state: 'redeemed', installed: false })
+      expect(await call('status')).toMatchObject({ state: 'redeemed', installed: false })
 
       db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', slug: 'acme', github_installation_id: 4242 })
       await status()
-      expect(await call('status')).toEqual({ state: 'redeemed', installed: true })
+      expect(await call('status')).toMatchObject({ state: 'redeemed', installed: true })
       expect(db.getMigrateGrantByOrderId).toHaveBeenCalledWith('ord_123')
     })
 
@@ -83,16 +84,77 @@ describe('Migrate grant status and install-url routes', () => {
       db.getMigrateGrantByOrderId.mockResolvedValue(grant(over))
       db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: 4242 })
       await status()
-      expect(await call('status')).toEqual({ state, installed: false })
+      expect(await call('status')).toMatchObject({ state, installed: false })
     })
 
     it('reads a withdrawn grant as revoked and keeps the installed fact', async () => {
       db.getMigrateGrantByOrderId.mockResolvedValue(grant({ revoked_at: '2026-10-03T11:00:00Z', revoked_reason: 'ops' }))
       db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: 4242 })
       await status()
-      expect(await call('status')).toEqual({ state: 'revoked', installed: true })
+      expect(await call('status')).toMatchObject({ state: 'revoked', installed: true })
       await status()
       await expect(call('install-url')).rejects.toMatchObject({ statusCode: 409, message: 'migrate.grant_not_ready' })
+    })
+
+    describe('what kind of Studio the order has', () => {
+      const account = (over: Record<string, unknown> = {}) => ({
+        subscription_id: 'sub_1', subscription_status: 'active', plan: 'pro', current_period_end: '2027-01-01T00:00:00Z',
+        trial_ends_at: null, cancel_at_period_end: false, grace_period_ends_at: null, plugin_metadata: {}, ...over,
+      })
+      const bundle = (over: Record<string, unknown> = {}) => grant({ kind: 'bundle', trial_days: null, ...over })
+
+      it('trial: the included days, and when the trial ends', async () => {
+        db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'trialing', trial_ends_at: '2026-12-02T00:00:00Z' }))
+        await status()
+        expect(await call('status')).toMatchObject({ kind: 'trial', plan: 'pro', trial_days: 60, ends_at: Date.parse('2026-12-02T00:00:00Z') / 1000 })
+      })
+
+      it('covered: a bundle grant redeemed with no subscription of its own; plan running', async () => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
+        db.getActivePaymentAccount.mockResolvedValue(account())
+        await status()
+        const answer = await call('status') as Record<string, unknown>
+        expect(answer).toMatchObject({ state: 'redeemed', kind: 'covered', plan: 'pro', ends_at: Date.parse('2027-01-01T00:00:00Z') / 1000 })
+        expect(answer).not.toHaveProperty('ended')
+        expect(answer).not.toHaveProperty('trial_days')
+      })
+
+      it('bundle: Studio paid with the order (a subscription of its own)', async () => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1' }))
+        db.getActivePaymentAccount.mockResolvedValue(account())
+        await status()
+        expect(await call('status')).toMatchObject({ kind: 'bundle' })
+      })
+
+      it('plan ended (canceled and its period is over): says so, with Studio\'s own text for Migrate to show as is', async () => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
+        db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'canceled', current_period_end: '2020-01-01T00:00:00Z' }))
+        await status()
+        expect(await call('status')).toMatchObject({ kind: 'covered', ended: true, notice: 'migrate.bundle_plan_ended_notice' })
+      })
+
+      it.each([
+        ['canceled, paid period still running', { subscription_status: 'canceled', current_period_end: '2099-01-01T00:00:00Z' }],
+        ['past_due within its grace period', { subscription_status: 'past_due', grace_period_ends_at: '2099-01-01T00:00:00Z' }],
+        ['set to end at the period\'s end', { cancel_at_period_end: true, current_period_end: '2099-01-01T00:00:00Z' }],
+      ])('not ended: %s', async (_name, over) => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
+        db.getActivePaymentAccount.mockResolvedValue(account(over))
+        await status()
+        const answer = await call('status') as Record<string, unknown>
+        expect(answer).not.toHaveProperty('ended')
+        expect(answer).not.toHaveProperty('notice')
+      })
+
+      it('grace period over and no subscription at all are ended', async () => {
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle())
+        db.getActivePaymentAccount.mockResolvedValue(account({ subscription_status: 'past_due', grace_period_ends_at: '2020-01-01T00:00:00Z' }))
+        await status()
+        expect(await call('status')).toMatchObject({ ended: true })
+        db.getActivePaymentAccount.mockResolvedValue(null)
+        await status()
+        expect(await call('status')).toMatchObject({ ended: true })
+      })
     })
 
     it('is a 404 for an order Studio holds no grant for', async () => {

@@ -77,6 +77,18 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(row!.redeemed_subscription_id).toBe('sub_first')
   })
 
+  it('writes a repository only onto a grant that has none', async () => {
+    // A bundle grant is made before the delivery repository exists.
+    const { grant } = await methods.claimMigrateGrant({
+      orderId: `${orderId}-bundle`, claimJti: 'jti-bundle', userId: owner.userId, plan: 'pro', kind: 'bundle', email: 'owner@example.com',
+    })
+    expect(grant.repo_owner).toBeNull()
+    const first = await methods.setMigrateGrantRepo(grant.id as string, { owner: 'acme', name: 'blog' })
+    expect(first).toMatchObject({ repo_owner: 'acme', repo_name: 'blog' })
+    const second = await methods.setMigrateGrantRepo(grant.id as string, { owner: 'other', name: 'site' })
+    expect(second).toMatchObject({ repo_owner: 'acme', repo_name: 'blog' })
+  })
+
   it('marks a grant revoked once: the first reason stays, the grant is never un-revoked', async () => {
     const { grant } = await claim(owner.userId)
     expect(grant.revoked_at).toBeNull()
