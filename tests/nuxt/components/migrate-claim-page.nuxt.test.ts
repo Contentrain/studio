@@ -5,6 +5,8 @@ import ClaimPage from '../../../app/pages/migrate/claim.vue'
 
 const routeQuery = vi.hoisted(() => ({ value: {} as Record<string, string> }))
 mockNuxtImport('useRoute', () => () => ({ query: routeQuery.value }))
+const navigate = vi.hoisted(() => vi.fn())
+mockNuxtImport('navigateTo', () => navigate)
 
 const grantView = (over: Record<string, unknown> = {}) => ({
   id: 'grant-1', kind: 'trial', plan: 'pro', trialDays: 60, repo: { owner: 'acme', name: 'blog' },
@@ -13,16 +15,25 @@ const grantView = (over: Record<string, unknown> = {}) => ({
 const bundleView = (over: Record<string, unknown> = {}) => grantView({ kind: 'bundle', trialDays: null, workspaceId: 'ws-1', state: 'redeemed', ...over })
 
 /** The claim answers with `claim`, or fails the way the API does (`data` is the response body, its own `data` the error code). */
-interface ApiError { statusCode: number, message: string, code: string }
-function stubFetch(claim: Record<string, unknown> | { error: ApiError }) {
-  vi.stubGlobal('$fetch', vi.fn(async (url: string) => {
+interface ApiError { statusCode: number, message: string, code: string, settingsUrl?: string }
+/** `connect`: what the connect-project call answers, or the error it fails with. */
+function stubFetch(claim: Record<string, unknown> | { error: ApiError }, connect?: Record<string, unknown> | { error: ApiError }) {
+  const fail = (error: ApiError) => Object.assign(new Error(error.message), { statusCode: error.statusCode, data: { statusCode: error.statusCode, message: error.message, data: { code: error.code, settingsUrl: error.settingsUrl } } })
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('/connect-project')) {
+      const error = (connect as { error?: ApiError } | undefined)?.error
+      if (error) throw fail(error)
+      return connect
+    }
     if (url === '/api/migrate/claim') {
       const error = (claim as { error?: ApiError }).error
       if (error) throw Object.assign(new Error(error.message), { statusCode: error.statusCode, data: { statusCode: error.statusCode, message: error.message, data: { code: error.code } } })
       return claim
     }
     return []
-  }))
+  })
+  vi.stubGlobal('$fetch', fetcher)
+  return fetcher
 }
 
 async function mount() {
@@ -34,6 +45,7 @@ async function mount() {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  navigate.mockReset()
 })
 
 describe('/migrate/claim', () => {
@@ -81,6 +93,78 @@ describe('/migrate/claim', () => {
       stubFetch({ grant: bundleView({ workspaceId: null, state: 'claimed' }), destination: null, bundle: null, comments: null })
       const wrapper = await mount()
       expect(wrapper.find('[data-testid="claim-open-studio"]').exists()).toBe(true)
+    })
+  })
+
+  describe('connecting the delivered repository', () => {
+    const noProject = { grant: bundleView(), destination: { workspaceSlug: 'acme', projectId: null }, comments: null }
+    const running = { ...noProject, bundle: { planState: 'active', workspaceSlug: 'acme', periodEndsAt: null } }
+    const click = async (wrapper: Awaited<ReturnType<typeof mount>>) => {
+      await wrapper.find('[data-testid="claim-connect"]').trigger('click')
+      await flushPromises()
+    }
+
+    it('plan running, repo not a project yet: Connect, and one click opens the new project', async () => {
+      const fetcher = stubFetch(running, { projectId: 'proj-9', workspaceSlug: 'acme', created: true })
+      const wrapper = await mount()
+
+      expect(wrapper.find('[data-testid="claim-connect"]').text()).toBe('Connect acme/blog')
+      expect(wrapper.find('[data-testid="claim-open-project"]').exists()).toBe(false)
+      await click(wrapper)
+      expect(fetcher).toHaveBeenCalledWith('/api/migrate/grants/grant-1/connect-project', { method: 'POST' })
+      expect(navigate).toHaveBeenCalledWith('/w/acme/projects/proj-9')
+    })
+
+    it('plan ended: no Connect, only Choose a plan', async () => {
+      stubFetch({ ...noProject, bundle: { planState: 'ended', workspaceSlug: 'acme', periodEndsAt: null } })
+      const wrapper = await mount()
+
+      expect(wrapper.find('[data-testid="claim-connect"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="claim-bundle-billing"]').exists()).toBe(true)
+    })
+
+    it('the project is already there: Open the site, no Connect', async () => {
+      stubFetch({ ...running, destination: { workspaceSlug: 'acme', projectId: 'proj-1' } })
+      const wrapper = await mount()
+      expect(wrapper.find('[data-testid="claim-connect"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="claim-open-project"]').exists()).toBe(true)
+    })
+
+    it.each([
+      ['no_installation', 'claim-connect-install', 'Install Studio’s GitHub App'],
+      ['repo_not_accessible', 'claim-connect-settings', 'Open the app’s settings on GitHub'],
+      ['migration_not_merged', 'claim-connect-retry', 'Check again'],
+    ])('%s: its message and its own next step', async (code, testid, label) => {
+      stubFetch(running, { error: { statusCode: 409, message: `message for ${code}`, code, settingsUrl: 'https://github.com/settings/installations/4242' } })
+      const wrapper = await mount()
+      await click(wrapper)
+
+      const box = wrapper.find('[data-testid="claim-connect-error"]')
+      expect(box.attributes('data-code')).toBe(code)
+      expect(box.text()).toContain(`message for ${code}`)
+      expect(box.find(`[data-testid="${testid}"]`).text()).toContain(label)
+      expect(navigate).not.toHaveBeenCalledWith(expect.stringContaining('/projects/'))
+    })
+
+    it('repo_not_accessible links straight to the installation\'s settings, and checking again tries the connect again', async () => {
+      const fetcher = stubFetch(running, { error: { statusCode: 409, message: 'no access', code: 'repo_not_accessible', settingsUrl: 'https://github.com/settings/installations/4242' } })
+      const wrapper = await mount()
+      await click(wrapper)
+
+      expect(wrapper.find('[data-testid="claim-connect-settings"]').attributes('href')).toBe('https://github.com/settings/installations/4242')
+      await wrapper.find('[data-testid="claim-connect-retry"]').trigger('click')
+      await flushPromises()
+      expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/connect-project'))).toHaveLength(2)
+    })
+
+    it('a plan that stopped running: the screen then shows it as ended, with one Choose a plan and no error box', async () => {
+      stubFetch(running, { error: { statusCode: 409, message: 'locked', code: 'plan_locked' } })
+      const wrapper = await mount()
+      await click(wrapper)
+      expect(wrapper.find('[data-testid="claim-bundle-plan"]').attributes('data-plan-state')).toBe('ended')
+      expect(wrapper.find('[data-testid="claim-connect"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="claim-connect-error"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="claim-bundle-billing"]')).toHaveLength(1)
     })
   })
 

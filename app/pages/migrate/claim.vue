@@ -22,6 +22,11 @@
  * that workspace's plan like any other project; when the plan has ended the
  * screen says so and points to billing.
  *
+ * The delivered repository becomes a project in one click ("Connect {repo}"): the server says which of the
+ * things it needs is missing (a running plan, Studio's GitHub App on the account, its access to the repository,
+ * the delivery merged), and each gets its own next step. When the screen is opened again after the user has
+ * chosen a plan or fixed the app on GitHub, it re-reads the grant and shows Connect again.
+ *
  * A claim error is never a dead end: each one gets a way on (open Studio, its
  * workspaces, or support), picked from the error's `code`.
  *
@@ -32,6 +37,7 @@
  */
 import { ENTERPRISE_CONTACT_EMAIL, PLAN_PRICING } from '~~/shared/utils/license'
 import { planCovers } from '~~/shared/utils/migrate-bundle'
+import { getGitHubAppInstallUrl } from '~/utils/github-app'
 
 definePageMeta({
   layout: false,
@@ -75,6 +81,9 @@ const loadError = ref('')
 const loadErrorCode = ref('')
 const submitting = ref(false)
 const submitError = ref('')
+/** Connecting the delivered repository: what is missing, as the API's `code`, with its message and the installation's settings page. */
+const connecting = ref(false)
+const connectError = ref<{ code: string, message: string, settingsUrl: string | null } | null>(null)
 const selectedWorkspaceId = ref<string | null>(null)
 
 const planPricing = computed(() => (grant.value ? PLAN_PRICING[grant.value.plan] : null))
@@ -140,6 +149,8 @@ const bundlePlanText = computed(() => {
   return t(`migrate_claim.bundle_plan_${status.planState}`, { plan })
 })
 const isBundle = computed(() => grant.value?.kind === 'bundle')
+/** A bundle grant whose repository is known and not yet a project, on a plan that runs: one click makes it one. */
+const canConnect = computed(() => isBundle.value && !!repoText.value && !projectPath.value && !!destination.value && bundle.value?.planState !== 'ended')
 const billingPath = computed(() => (bundle.value ? `/w/${bundle.value.workspaceSlug}/settings?tab=billing` : null))
 const supportHref = `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${encodeURIComponent('Studio offer from Contentrain Migrate')}`
 /** Whoever is on the other end of a refused claim: signed in with the wrong account, or a link that no longer works. */
@@ -180,6 +191,56 @@ onMounted(async () => {
     loadErrorCode.value = typeof code === 'string' ? code : ''
   }
 })
+
+/** The grant as it stands now (after a plan was chosen, or the app fixed on GitHub). */
+async function reloadGrant() {
+  if (!grant.value) return
+  try {
+    const refreshed = await $fetch<{ grant: GrantView, destination?: Destination | null, bundle?: BundleStatus | null }>(`/api/migrate/grants/${encodeURIComponent(grant.value.id)}`)
+    grant.value = refreshed.grant
+    destination.value = refreshed.destination ?? null
+    bundle.value = refreshed.bundle ?? null
+  }
+  catch {
+    // Keep what is shown; the next focus tries again.
+  }
+}
+
+function onVisible() {
+  if (document.visibilityState === 'visible' && isBundle.value && !projectPath.value) void reloadGrant()
+}
+onMounted(() => document.addEventListener('visibilitychange', onVisible))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
+
+async function connectProject() {
+  if (!grant.value || connecting.value) return
+  connecting.value = true
+  connectError.value = null
+  try {
+    const result = await $fetch<{ projectId: string, workspaceSlug: string }>(`/api/migrate/grants/${encodeURIComponent(grant.value.id)}/connect-project`, { method: 'POST' })
+    await navigateTo(`/w/${result.workspaceSlug}/projects/${result.projectId}${focusMedia ? '?focus=migration-media' : ''}`)
+  }
+  catch (e: unknown) {
+    const body = (e as { data?: { data?: { code?: unknown, settingsUrl?: unknown } } })?.data?.data
+    // A plan that stopped running since the page loaded: the page becomes the ended view (Choose a plan), no second box.
+    if (body?.code === 'plan_locked' && bundle.value) {
+      bundle.value = { ...bundle.value, planState: 'ended' }
+      return
+    }
+    connectError.value = {
+      code: typeof body?.code === 'string' ? body.code : '',
+      message: resolveApiError(e, t('migrate_claim.connect_failed')),
+      settingsUrl: typeof body?.settingsUrl === 'string' ? body.settingsUrl : null,
+    }
+  }
+  finally {
+    connecting.value = false
+  }
+}
+
+function installApp() {
+  if (grant.value?.workspaceId) window.location.href = getGitHubAppInstallUrl(grant.value.workspaceId)
+}
 
 async function startTrial() {
   if (!grant.value || !selectedWorkspaceId.value) return
@@ -273,7 +334,10 @@ async function startTrial() {
             <AtomsBaseButton v-if="projectPath" :variant="bundle?.planState === 'ended' ? 'secondary' : 'primary'" data-testid="claim-open-project" @click="navigateTo(projectPath)">
               {{ focusMedia ? t('migrate_claim.open_media') : t('migrate_claim.open_project') }}
             </AtomsBaseButton>
-            <AtomsBaseButton v-else-if="destination" :variant="bundle?.planState === 'ended' ? 'secondary' : 'primary'" data-testid="claim-open-workspace" @click="navigateTo(`/w/${destination.workspaceSlug}`)">
+            <AtomsBaseButton v-else-if="canConnect" variant="primary" :disabled="connecting" data-testid="claim-connect" @click="connectProject">
+              {{ connecting ? t('migrate_claim.connecting') : t('migrate_claim.connect_button', { repo: repoText }) }}
+            </AtomsBaseButton>
+            <AtomsBaseButton v-if="!projectPath && destination" :variant="canConnect || bundle?.planState === 'ended' ? 'secondary' : 'primary'" data-testid="claim-open-workspace" @click="navigateTo(`/w/${destination.workspaceSlug}`)">
               {{ t('migrate_claim.open_workspace') }}
             </AtomsBaseButton>
             <AtomsBaseButton v-if="billingPath && bundle?.planState === 'ended'" variant="primary" data-testid="claim-bundle-billing" @click="navigateTo(billingPath)">
@@ -283,9 +347,22 @@ async function startTrial() {
               {{ t('migrate_claim.error_open_studio') }}
             </AtomsBaseButton>
           </div>
-          <p v-if="repoText && !projectPath && destination" class="text-sm text-body dark:text-secondary-300">
-            {{ t('migrate_claim.connect_repo', { repo: repoText }) }}
-          </p>
+          <div v-if="connectError" class="rounded-lg border border-border px-4 py-3 text-sm dark:border-secondary-800" role="alert" data-testid="claim-connect-error" :data-code="connectError.code">
+            <p class="text-body dark:text-secondary-300">
+              {{ connectError.message }}
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-3">
+              <AtomsBaseButton v-if="connectError.code === 'no_installation'" variant="primary" data-testid="claim-connect-install" @click="installApp">
+                {{ t('migrate_claim.connect_install_app') }}
+              </AtomsBaseButton>
+              <a v-else-if="connectError.code === 'repo_not_accessible' && connectError.settingsUrl" :href="connectError.settingsUrl" target="_blank" rel="noopener" class="text-sm font-medium text-primary-700 underline dark:text-primary-300" data-testid="claim-connect-settings">
+                {{ t('migrate_claim.connect_open_settings') }}
+              </a>
+              <AtomsBaseButton v-if="connectError.code !== 'no_installation'" variant="secondary" :disabled="connecting" data-testid="claim-connect-retry" @click="connectProject">
+                {{ t('migrate_claim.connect_check_again') }}
+              </AtomsBaseButton>
+            </div>
+          </div>
         </div>
 
         <div v-else-if="destination && grant.state === 'redeemed'" class="mt-6 flex flex-wrap items-center gap-3" data-testid="claim-destination">
