@@ -95,9 +95,9 @@ describe('/migrate/claim', () => {
 
   describe('a refused claim is never a dead end', () => {
     it.each([
-      [{ statusCode: 409, message: 'Already claimed elsewhere.', code: 'claim_taken' }, 'Sign in to Studio with the account that claimed it'],
-      [{ statusCode: 410, message: 'This link has expired.', code: 'claim_expired' }, 'You can open Studio'],
-      [{ statusCode: 400, message: 'This link is not valid.', code: 'claim_invalid' }, 'You can open Studio'],
+      [{ statusCode: 409, message: 'Claimed by another Studio account.', code: 'claim_taken' }, 'Sign in to Studio with the account that claimed it'],
+      [{ statusCode: 410, message: 'This link has expired.', code: 'claim_expired' }, 'Open Studio from your migration'],
+      [{ statusCode: 400, message: 'This link is not valid.', code: 'claim_invalid' }, 'Open Studio from your migration'],
     ])('%o: the reason, a next step, and a way to reach us', async (error, next) => {
       stubFetch({ error })
       const wrapper = await mount()
