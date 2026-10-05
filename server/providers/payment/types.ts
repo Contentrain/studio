@@ -237,6 +237,9 @@ export interface PaymentProvider {
    * Optional: a provider without it never has one.
    */
   ensureCompanionSubscription?: (input: CompanionSubscriptionInput) => Promise<CompanionSubscriptionResult | null>
+
+  /** Whether companions are switched on at all; callers skip every companion step (and every write) when not. */
+  companionUsageEnabled?: () => boolean
 }
 
 /**

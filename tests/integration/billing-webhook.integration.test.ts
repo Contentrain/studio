@@ -550,7 +550,7 @@ describe('billing webhook integration', () => {
 
       expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
         pluginMetadata: { billable_meters: LEGACY_PRICES, overage_suspended: ['ai_messages'] },
-        preserveMetadataKeys: ['activation_email', 'recovery_email', 'companion_subscription_id', 'companion_billable_meters'],
+        preserveMetadataKeys: ['activation_email', 'recovery_email', 'companion_subscription_id', 'companion_billable_meters', 'companion_claim'],
       }))
       // Trial → active also marks the activation email owed (it goes out on the first paid order).
       expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'activation_email', value: 'pending', when: 'absent' })

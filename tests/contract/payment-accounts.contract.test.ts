@@ -101,6 +101,25 @@ describe('postgres-db payment-accounts (contract)', () => {
     expect(await methods.setPaymentAccountMetadataKey({ workspaceId: user.workspaceId, key: 'k', value: 'v', when: 'absent' })).toBe(false)
   })
 
+  it('metadata json: sets and removes one structured key, leaves the rest; list returns only active accounts of the provider', async () => {
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    await methods.upsertPaymentAccount({ workspaceId: user.workspaceId, provider: 'polar', customerId: `cus_json_${randomUUID()}`, subscriptionStatus: 'active', pluginMetadata: { billable_meters: ['a'], companion_claim: 'done:p' } })
+    expect(await methods.setPaymentAccountMetadataJson({ workspaceId: user.workspaceId, key: 'overage_suspended', value: ['ai_messages'] })).toBe(true)
+    let row = await methods.getActivePaymentAccount(user.workspaceId)
+    expect(row?.plugin_metadata).toEqual({ billable_meters: ['a'], companion_claim: 'done:p', overage_suspended: ['ai_messages'] })
+    expect(await methods.setPaymentAccountMetadataJson({ workspaceId: user.workspaceId, key: 'overage_suspended', value: null })).toBe(true)
+    row = await methods.getActivePaymentAccount(user.workspaceId)
+    expect(row?.plugin_metadata).toEqual({ billable_meters: ['a'], companion_claim: 'done:p' })
+
+    const listed = await methods.listActivePaymentAccounts('polar', 500)
+    expect(listed.some(r => r.workspace_id === user.workspaceId)).toBe(true)
+    expect(await methods.listActivePaymentAccounts('no-such-provider', 500)).toEqual([])
+
+    await methods.archiveActivePaymentAccount(user.workspaceId)
+    expect(await methods.setPaymentAccountMetadataJson({ workspaceId: user.workspaceId, key: 'k', value: ['x'] })).toBe(false)
+    expect((await methods.listActivePaymentAccounts('polar', 500)).some(r => r.workspace_id === user.workspaceId)).toBe(false)
+  })
+
   it('credit unit: a change converts the period\'s credit counters in the same transaction (QA-12 B3)', async () => {
     const { getDb, sql } = await import('./helpers')
     await methods.archiveActivePaymentAccount(user.workspaceId)

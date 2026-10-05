@@ -83,20 +83,32 @@ export default defineEventHandler(async (event) => {
   // CASCADE will drop the payment_accounts row and we lose the
   // subscription_id reference.
   if (cancelSubscription) {
+    let account: Awaited<ReturnType<typeof db.getActivePaymentAccount>> = null
     try {
-      const account = await db.getActivePaymentAccount(workspaceId)
-      const subscriptionId = (account?.subscription_id as string | null) ?? null
-      if (subscriptionId) {
-        const payment = usePaymentProvider()
-        if (payment) {
-          await cancelCompanionSubscription(payment, account?.plugin_metadata, `workspace ${workspaceId} deleted`)
-          await payment.cancelSubscription(subscriptionId)
-        }
-      }
+      account = await db.getActivePaymentAccount(workspaceId)
     }
     catch (err: unknown) {
       // eslint-disable-next-line no-console
       console.warn('[workspace-delete] cancelSubscription failed:', err instanceof Error ? err.message : err)
+    }
+    const subscriptionId = (account?.subscription_id as string | null) ?? null
+    const payment = subscriptionId ? usePaymentProvider() : null
+    if (subscriptionId && payment) {
+      // The companion first, and loudly: CASCADE drops the account row, the only record of its id, so a companion
+      // left running would keep billing usage to a customer with no workspace.
+      try {
+        await cancelCompanionSubscription(payment, account?.plugin_metadata, `workspace ${workspaceId} deleted`, true)
+      }
+      catch {
+        throw createError({ statusCode: 502, message: errorMessage('billing.provider_unavailable') })
+      }
+      try {
+        await payment.cancelSubscription(subscriptionId)
+      }
+      catch (err: unknown) {
+        // eslint-disable-next-line no-console
+        console.warn('[workspace-delete] cancelSubscription failed:', err instanceof Error ? err.message : err)
+      }
     }
   }
 

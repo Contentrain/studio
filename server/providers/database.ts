@@ -1099,6 +1099,17 @@ export interface DatabaseProvider {
     when: 'absent' | 'different' | { equals: string }
   }) => Promise<boolean>
 
+  /**
+   * Set (or, with `null`, remove) one structured `plugin_metadata` key on the active payment account, leaving
+   * every other key and column as they are. For a key that holds a list (e.g. the suspended overage meters),
+   * which `setPaymentAccountMetadataKey` cannot store. Returns whether an active row was found.
+   */
+  setPaymentAccountMetadataJson: (input: {
+    workspaceId: string
+    key: string
+    value: string[] | null
+  }) => Promise<boolean>
+
   /** Archive the active payment account for a workspace (no-op if none). */
   archiveActivePaymentAccount: (workspaceId: string) => Promise<void>
 

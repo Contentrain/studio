@@ -60,6 +60,8 @@ export const OVERAGE_SUSPENDED_KEY = 'overage_suspended'
  */
 export const COMPANION_SUBSCRIPTION_KEY = 'companion_subscription_id'
 export const COMPANION_METERS_KEY = 'companion_billable_meters'
+/** Serializes who opens a workspace's companion: `opening:<ms>` | `failed` | `done:<product>` | `skipped:<product>`. */
+export const COMPANION_CLAIM_KEY = 'companion_claim'
 
 const METER_NAME_BY_SETTINGS_KEY: Record<string, string> = Object.fromEntries(
   USAGE_METER_LIST.map(m => [m.settingsKey, m.name]),

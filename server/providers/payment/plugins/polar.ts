@@ -391,6 +391,8 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
       return { productId: targetProductId, alreadyOnList: false }
     },
 
+    companionUsageEnabled: () => companionEnabled,
+
     async ensureCompanionSubscription(input: CompanionSubscriptionInput): Promise<CompanionSubscriptionResult | null> {
       const productId = companionProducts[input.plan]
       if (!companionEnabled || !productId) return null

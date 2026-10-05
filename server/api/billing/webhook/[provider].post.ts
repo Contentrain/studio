@@ -17,7 +17,7 @@ import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payme
 import type { PaymentPluginConfig } from '../../../providers/payment'
 import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
 import { emailTemplate } from '../../../utils/content-strings'
-import { BILLABLE_METERS_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
+import { BILLABLE_METERS_KEY, COMPANION_CLAIM_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, OVERAGE_SUSPENDED_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
 import type { OverageLockAccount } from '../../../utils/overage-lock'
 import { cancelCompanionSubscription, companionSubscriptionIdOf, openCompanionSubscription } from '../../../utils/companion-subscription'
 import type { WebhookResult } from '../../../providers/payment/types'
@@ -45,7 +45,7 @@ const RECOVERY_EMAIL_KEY = 'recovery_email'
  * Keys only `setPaymentAccountMetadataKey` writes; upserts built from a read keep them. The companion usage
  * subscription's keys are among them: the plan subscription's events must not wipe what its companion recorded.
  */
-const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY]
+const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY]
 
 /** The past-due episode a read row is in, as its recovery claim value. */
 function pastDueEpisode(row: Record<string, unknown> | null | undefined): string {
@@ -269,8 +269,12 @@ async function applyCompanionEvent(db: Db, result: WebhookResult): Promise<void>
   if (result.event === 'subscription.canceled') {
     await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_METERS_KEY, value: '', when: 'different' })
     await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_SUBSCRIPTION_KEY, value: '', when: 'different' })
+    // The companion is gone while the plan lives on: let the next plan event or reconcile open a new one.
+    await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_CLAIM_KEY, value: 'failed', when: 'different' })
   }
   else if (result.event === 'subscription.created' || result.event === 'subscription.updated') {
+    // A replayed event of a companion that has already ended (Polar delivers out of order) must not bring it back.
+    if (result.subscriptionStatus === 'canceled' || result.subscriptionStatus === 'unpaid' || result.subscriptionStatus === 'incomplete_expired') return
     await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_SUBSCRIPTION_KEY, value: result.subscriptionId, when: 'different' })
     if (result.billableMeters) {
       await db.setPaymentAccountMetadataKey({ workspaceId, key: COMPANION_METERS_KEY, value: result.billableMeters.join(','), when: 'different' })
@@ -299,22 +303,10 @@ async function applyCompanionEvent(db: Db, result: WebhookResult): Promise<void>
     },
   })
   if (overageLock.pluginMetadata) {
-    await db.upsertPaymentAccount({
-      workspaceId,
-      provider: fresh.provider as string,
-      customerId: fresh.customer_id as string,
-      subscriptionId: (fresh.subscription_id as string | null) ?? null,
-      subscriptionStatus: (fresh.subscription_status as string | null) ?? null,
-      currentPeriodStart: (fresh.current_period_start as string | null) ?? null,
-      currentPeriodEnd: (fresh.current_period_end as string | null) ?? null,
-      trialEndsAt: (fresh.trial_ends_at as string | null) ?? null,
-      cancelAtPeriodEnd: Boolean(fresh.cancel_at_period_end),
-      gracePeriodEndsAt: (fresh.grace_period_ends_at as string | null) ?? null,
-      plan: (fresh.plan as string | null) ?? null,
-      pluginMetadata: overageLock.pluginMetadata,
-      preserveMetadataKeys: CLAIMED_METADATA_KEYS,
-      isActive: true,
-    })
+    // Only the suspended list can have changed: write that key alone, so a plan event that landed since the read
+    // is not rolled back by a whole-row write of this snapshot.
+    const suspended = overageLock.pluginMetadata[OVERAGE_SUSPENDED_KEY]
+    await db.setPaymentAccountMetadataJson({ workspaceId, key: OVERAGE_SUSPENDED_KEY, value: Array.isArray(suspended) ? suspended as string[] : null })
   }
   await overageLock.commit()
 }
@@ -523,16 +515,16 @@ export default defineEventHandler(async (event) => {
         await db.setPaymentAccountCreditUnit({ workspaceId: result.workspaceId, unit: updatedUnit, periodKey })
       }
       await overageLock.commit()
-      // A subscription that predates the flag, or whose companion failed to open, gets it here.
-      if (!companionSubscriptionIdOf(existingAccount?.plugin_metadata)) {
-        await openCompanionSubscription(provider, db, {
-          workspaceId: result.workspaceId,
-          plan: result.plan,
-          customerId: result.customerId,
-          subscriptionId: result.subscriptionId,
-          productId: result.productId,
-        })
-      }
+      // A subscription that predates the flag, or whose companion failed to open, gets it here. Failing to
+      // cancel the companion of a product the plan left throws: the webhook is retried.
+      // A plan moved to another product also lands here: its old companion is replaced.
+      await openCompanionSubscription(provider, db, {
+        workspaceId: result.workspaceId,
+        plan: result.plan,
+        customerId: result.customerId,
+        subscriptionId: result.subscriptionId,
+        productId: result.productId,
+      })
       // A subscription started from a Migrate grant's checkout uses the
       // grant up: no second included trial after cancel-and-resubscribe.
       // Idempotent — whichever of created/updated arrives first marks it.
@@ -587,7 +579,14 @@ export default defineEventHandler(async (event) => {
       if (activeSubscriptionId && result.subscriptionId && activeSubscriptionId !== result.subscriptionId) break
       const canceledPlan = result.plan ?? (priorAccount?.plan as string | null)
       // Its usage subscription ends with it: left running, it would bill the customer's usage with no plan.
-      await cancelCompanionSubscription(provider, priorAccount?.plugin_metadata, `plan subscription ${result.subscriptionId ?? 'unknown'} ended`)
+      // A failure throws, so the webhook answers an error and Polar retries while the account is still active:
+      // once archived, nothing would look for the companion again.
+      await cancelCompanionSubscription(provider, priorAccount?.plugin_metadata, `plan subscription ${result.subscriptionId ?? 'unknown'} ended`, true)
+      // A resubscribe reuses this row: it must not keep the ended companion's id, meters or claim.
+      const priorMetadata = (priorAccount?.plugin_metadata ?? {}) as Record<string, unknown>
+      for (const key of [COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY]) {
+        if (key in priorMetadata) await db.setPaymentAccountMetadataKey({ workspaceId: result.workspaceId, key, value: '', when: 'different' })
+      }
       await db.archiveActivePaymentAccount(result.workspaceId)
       await db.updateWorkspace('', result.workspaceId, {
         plan: 'free',

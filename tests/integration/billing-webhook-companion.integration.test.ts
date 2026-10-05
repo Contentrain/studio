@@ -16,7 +16,10 @@ describe('billing webhook: companion usage subscription', () => {
   const getActivePaymentAccount = vi.fn()
   const getWorkspaceById = vi.fn()
   const markWorkspaceTrialConsumed = vi.fn().mockResolvedValue(undefined)
-  const setPaymentAccountMetadataKey = vi.fn(async ({ when }: { when: unknown }) => when === 'different')
+  // `absent` (the claim) wins unless a claim is already held; every other conditional write lands.
+  let claimHeld = false
+  const setPaymentAccountMetadataKey = vi.fn(async ({ when }: { when: unknown }) => when === 'absent' ? !claimHeld : true)
+  const setPaymentAccountMetadataJson = vi.fn().mockResolvedValue(true)
   const setPaymentAccountCreditUnit = vi.fn().mockResolvedValue(false)
   const ensureCompanionSubscription = vi.fn()
   const cancelSubscription = vi.fn()
@@ -42,7 +45,7 @@ describe('billing webhook: companion usage subscription', () => {
     vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue(null))
     vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
       upsertPaymentAccount, archiveActivePaymentAccount, updateWorkspace, getActivePaymentAccount, getWorkspaceById,
-      markWorkspaceTrialConsumed, setPaymentAccountMetadataKey, setPaymentAccountCreditUnit,
+      markWorkspaceTrialConsumed, setPaymentAccountMetadataKey, setPaymentAccountMetadataJson, setPaymentAccountCreditUnit,
     }))
     getWorkspaceById.mockResolvedValue({ id: 'ws-1', overage_settings: { ai_messages: false } })
     ensureCompanionSubscription.mockReset().mockResolvedValue({ subscriptionId: 'sub_c1', created: true })
@@ -54,6 +57,8 @@ describe('billing webhook: companion usage subscription', () => {
     for (const fn of [upsertPaymentAccount, archiveActivePaymentAccount, updateWorkspace, getActivePaymentAccount, getWorkspaceById, markWorkspaceTrialConsumed, setPaymentAccountCreditUnit]) fn.mockReset()
     upsertPaymentAccount.mockResolvedValue({})
     setPaymentAccountMetadataKey.mockClear()
+    setPaymentAccountMetadataJson.mockClear()
+    claimHeld = false
   })
 
   async function load() {
@@ -67,7 +72,7 @@ describe('billing webhook: companion usage subscription', () => {
       isConfigured: () => true,
       create: () => ({
         createCheckoutSession: vi.fn(), createPortalSession: vi.fn(), handleWebhook: handleWebhookMock, cancelSubscription,
-        createBundleCheckout: vi.fn(), moveBundleSubscriptionToList: vi.fn(), ingestUsageEvent: vi.fn(), ensureCompanionSubscription,
+        createBundleCheckout: vi.fn(), moveBundleSubscriptionToList: vi.fn(), ingestUsageEvent: vi.fn(), ensureCompanionSubscription, companionUsageEnabled: () => true,
       }),
     })
     return (await import('../../server/api/billing/webhook/[provider].post.ts')).default
@@ -85,7 +90,16 @@ describe('billing webhook: companion usage subscription', () => {
     expect(ensureCompanionSubscription).toHaveBeenCalledWith({
       workspaceId: 'ws-1', plan: 'pro', customerId: 'cus_1', parentSubscriptionId: 'sub_1', parentProductId: 'prod_pro_y',
     })
+    expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith(expect.objectContaining({ key: 'companion_claim', when: 'absent' }))
     expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_subscription_id', value: 'sub_c1', when: 'different' })
+  })
+
+  it('does not open a second companion while another caller holds the claim', async () => {
+    claimHeld = true
+    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_claim: `opening:${Date.now()}` }))
+    handleWebhookMock.mockResolvedValue(planCreated)
+    await post()
+    expect(ensureCompanionSubscription).not.toHaveBeenCalled()
   })
 
   it('a companion that cannot be opened never fails the plan subscription\'s webhook', async () => {
@@ -121,10 +135,9 @@ describe('billing webhook: companion usage subscription', () => {
     handleWebhookMock.mockResolvedValue({ event: 'subscription.updated', companion: true, workspaceId: 'ws-1', subscriptionId: 'sub_c1', customerId: 'cus_1', subscriptionStatus: 'active', billableMeters: ['ai_credits', 'api_credits'] })
     await post()
     expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { ai_messages: true } })
-    const written = upsertPaymentAccount.mock.calls[0]![0]
-    expect(written).toMatchObject({ subscriptionId: 'sub_1', subscriptionStatus: 'active', plan: 'pro', customerId: 'cus_1', currentPeriodEnd: '2027-10-01T00:00:00Z' })
-    expect(written.preserveMetadataKeys).toEqual(expect.arrayContaining(['companion_subscription_id', 'companion_billable_meters']))
-    expect(written.pluginMetadata.overage_suspended).toBeUndefined()
+    // Only the suspended list is written, and alone: no whole-row write of this event's snapshot.
+    expect(upsertPaymentAccount).not.toHaveBeenCalled()
+    expect(setPaymentAccountMetadataJson).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'overage_suspended', value: null })
   })
 
   it('ignores a late event about a companion the account no longer has', async () => {
@@ -141,8 +154,16 @@ describe('billing webhook: companion usage subscription', () => {
     await post()
     expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_subscription_id', value: '', when: 'different' })
     expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_billable_meters', value: '', when: 'different' })
+    expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'companion_claim', value: 'failed', when: 'different' })
     expect(archiveActivePaymentAccount).not.toHaveBeenCalled()
     expect(updateWorkspace).not.toHaveBeenCalledWith('', 'ws-1', { plan: 'free', trial_reminder_stage: 0 })
+  })
+
+  it('a replayed event of a companion that already ended does not bring it back', async () => {
+    getActivePaymentAccount.mockResolvedValue(yearlyAccount({}))
+    handleWebhookMock.mockResolvedValue({ event: 'subscription.created', companion: true, workspaceId: 'ws-1', subscriptionId: 'sub_c1', customerId: 'cus_1', subscriptionStatus: 'canceled', billableMeters: ['ai_credits'] })
+    await post()
+    expect(setPaymentAccountMetadataKey).not.toHaveBeenCalled()
   })
 
   it('a companion\'s usage invoice is not the plan\'s payment', async () => {
@@ -154,12 +175,14 @@ describe('billing webhook: companion usage subscription', () => {
   })
 
   it('a plan subscription update keeps what its companion recorded, and opens the companion when there is none', async () => {
-    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_subscription_id: 'sub_c1', companion_billable_meters: 'ai_credits' }))
+    claimHeld = true
+    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_subscription_id: 'sub_c1', companion_billable_meters: 'ai_credits', companion_claim: 'done:prod_pro_y' }))
     handleWebhookMock.mockResolvedValue({ ...planCreated, event: 'subscription.updated' })
     await post()
     expect(upsertPaymentAccount.mock.calls[0]![0].preserveMetadataKeys).toEqual(expect.arrayContaining(['companion_subscription_id', 'companion_billable_meters']))
     expect(ensureCompanionSubscription).not.toHaveBeenCalled()
 
+    claimHeld = false
     getActivePaymentAccount.mockResolvedValue(yearlyAccount({}))
     await post()
     expect(ensureCompanionSubscription).toHaveBeenCalledTimes(1)
@@ -173,14 +196,24 @@ describe('billing webhook: companion usage subscription', () => {
     expect(archiveActivePaymentAccount).toHaveBeenCalledWith('ws-1')
   })
 
-  it('a companion that will not cancel is an ALARM, and the plan still ends', async () => {
+  it('a companion that will not cancel fails the webhook, so Polar retries, and the account is not archived', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_subscription_id: 'sub_c1' }))
     cancelSubscription.mockRejectedValue(new Error('polar down'))
     handleWebhookMock.mockResolvedValue({ event: 'subscription.canceled', workspaceId: 'ws-1', subscriptionId: 'sub_1', customerId: 'cus_1', subscriptionStatus: 'canceled' })
-    await post()
+    await expect(post()).rejects.toThrow('polar down')
     expect(log).toHaveBeenCalledWith(expect.stringContaining('[companion] ALARM could not cancel'), expect.any(Error))
-    expect(archiveActivePaymentAccount).toHaveBeenCalledWith('ws-1')
+    expect(archiveActivePaymentAccount).not.toHaveBeenCalled()
     log.mockRestore()
+  })
+
+  it('forgets the ended companion on the row a resubscribe will reuse', async () => {
+    getActivePaymentAccount.mockResolvedValue(yearlyAccount({ companion_subscription_id: 'sub_c1', companion_billable_meters: 'ai_credits', companion_claim: 'done:prod_pro_y' }))
+    handleWebhookMock.mockResolvedValue({ event: 'subscription.canceled', workspaceId: 'ws-1', subscriptionId: 'sub_1', customerId: 'cus_1', subscriptionStatus: 'canceled' })
+    await post()
+    for (const key of ['companion_subscription_id', 'companion_billable_meters', 'companion_claim']) {
+      expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key, value: '', when: 'different' })
+    }
+    expect(archiveActivePaymentAccount).toHaveBeenCalledWith('ws-1')
   })
 })
