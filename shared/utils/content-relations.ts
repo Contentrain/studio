@@ -23,6 +23,12 @@ export type RelationRef = string | { model: string, ref: string }
 export interface RelationOption {
   value: string
   label: string
+  /** Polymorphic only: the target model's id, so a picker can group by it. */
+  group?: string
+  /** Polymorphic only: the target model's display name. */
+  groupLabel?: string
+  /** Polymorphic only: the label without the `model: ` prefix. */
+  text?: string
 }
 
 /**
@@ -129,11 +135,16 @@ export function buildRelationOptions(
   polymorphic: boolean,
   targetModel?: TitleFieldModel | null,
 ): RelationOption[] {
+  const groupLabel = (targetModel as { name?: unknown } | null | undefined)?.name
   return toSelectableRefs(data).map(({ ref, entry }) => {
     const label = findRelationLabel(entry, targetModel) ?? ref.substring(0, 8)
+    if (!polymorphic) return { value: ref, label }
     return {
-      value: polymorphic ? `${targetModelId}::${ref}` : ref,
-      label: polymorphic ? `${targetModelId}: ${label}` : label,
+      value: `${targetModelId}::${ref}`,
+      label: `${targetModelId}: ${label}`,
+      group: targetModelId,
+      groupLabel: typeof groupLabel === 'string' && groupLabel ? groupLabel : targetModelId,
+      text: label,
     }
   })
 }

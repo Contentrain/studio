@@ -2,6 +2,7 @@
 import type { FieldDef as SchemaFieldDef } from '@contentrain/types'
 import { fieldLabel } from '~~/shared/utils/field-label'
 import { isPolymorphicRelation, relationItemKey, relationKeyToItem } from '~~/shared/utils/content-relations'
+import type { RelationPickerOption } from '~~/shared/utils/relation-search'
 
 interface FieldDef {
   type: string
@@ -33,6 +34,7 @@ const {
   standalone = true,
   fieldDef,
   relatedEntries,
+  relatedLoading = false,
   depth = 0,
   locale,
 } = defineProps<{
@@ -43,7 +45,9 @@ const {
   saving?: boolean
   standalone?: boolean
   fieldDef?: FieldDef
-  relatedEntries?: Array<{ value: string, label: string }>
+  relatedEntries?: RelationPickerOption[]
+  /** The target models' entries are still being read. */
+  relatedLoading?: boolean
   depth?: number
   /** Resolves a nested field's localised `label`; the editor's own locale. */
   locale?: string
@@ -419,13 +423,13 @@ function getRelationLabel(key: string): string {
       @update:model-value="localValue = $event ?? ''"
     />
 
-    <!-- ═══ Relation (single select) ═══ -->
-    <AtomsFormSelect
-      v-else-if="type === 'relation' && relatedEntries && relatedEntries.length > 0"
+    <!-- ═══ Relation (single select, searchable) ═══ -->
+    <AtomsFormCombobox
+      v-else-if="type === 'relation' && (relatedLoading || (relatedEntries && relatedEntries.length > 0))"
       :model-value="relItemKey(localValue)"
-      :options="relatedEntries"
+      :options="relatedEntries ?? []"
+      :loading="relatedLoading"
       :placeholder="t('content.select_entry')"
-      size="md"
       @update:model-value="localValue = relKeyToItem($event)"
     />
     <AtomsFormInput
@@ -472,12 +476,13 @@ function getRelationLabel(key: string): string {
           </button>
         </span>
       </div>
-      <AtomsFormSelect
-        v-if="availableRelationOptions.length > 0"
+      <AtomsFormCombobox
+        v-if="relatedLoading || availableRelationOptions.length > 0"
         model-value=""
         :options="availableRelationOptions"
+        :loading="relatedLoading"
         :placeholder="t('content.select_entry')"
-        size="md"
+        clear-on-select
         @update:model-value="addRelation($event)"
       />
       <div
