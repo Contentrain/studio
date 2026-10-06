@@ -16,6 +16,8 @@ const { isOwnerOrAdmin } = useWorkspaceRole()
 const props = defineProps<{
   workspaceId: string
   projectId: string
+  /** Rendered inside another scrolling panel (the project API keys tab): no own height or scroll. */
+  embedded?: boolean
 }>()
 
 const canManage = computed(() => isOwnerOrAdmin.value)
@@ -57,6 +59,12 @@ const copied = ref(false)
 
 const activeKeys = computed(() => keys.value.filter(k => !k.revokedAt))
 
+const roleLabelKey: Record<string, string> = {
+  viewer: 'conversation_keys.role_viewer',
+  editor: 'conversation_keys.role_editor',
+  admin: 'conversation_keys.role_admin',
+}
+
 const roleVariant: Record<string, 'info' | 'primary' | 'warning'> = {
   viewer: 'info',
   editor: 'primary',
@@ -65,6 +73,11 @@ const roleVariant: Record<string, 'info' | 'primary' | 'warning'> = {
 
 async function loadKeys() {
   if (!props.workspaceId || !props.projectId) return
+  // The routes are owner/admin only: a member would get a 403 and a misleading empty list.
+  if (!canManage.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     keys.value = await $fetch<ConversationKey[]>(
@@ -81,7 +94,7 @@ async function loadKeys() {
 }
 
 watch(
-  [() => props.workspaceId, () => props.projectId],
+  [() => props.workspaceId, () => props.projectId, canManage],
   ([ws, proj]) => {
     if (ws && proj) loadKeys()
   },
@@ -174,19 +187,26 @@ watch(createOpen, (isOpen) => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div :class="embedded ? '' : 'flex h-full flex-col'">
+    <!-- Members cannot list or manage keys (owner/admin routes) -->
+    <div v-if="!canManage" class="px-5 py-4">
+      <p class="text-xs text-muted" data-testid="conversation-keys-admin-note">
+        {{ t('conversation_keys.managed_by_admins') }}
+      </p>
+    </div>
+
     <!-- Loading -->
-    <div v-if="loading" class="space-y-3 p-5">
+    <div v-else-if="loading" class="space-y-3 p-5">
       <AtomsSkeleton v-for="i in 3" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
     </div>
 
     <!-- Keys Management -->
-    <div v-else class="flex-1 overflow-y-auto">
+    <div v-else :class="embedded ? '' : 'flex-1 overflow-y-auto'">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-secondary-200 px-5 py-3 dark:border-secondary-800">
         <div>
           <div class="text-sm font-medium text-heading dark:text-secondary-100">
-            {{ t('conversation_keys.title') }}
+            {{ embedded ? t('conversation_keys.section_title') : t('conversation_keys.title') }}
           </div>
           <p class="text-xs text-muted">
             {{ t('conversation_keys.description') }}
@@ -251,7 +271,7 @@ watch(createOpen, (isOpen) => {
                     {{ key.name }}
                   </span>
                   <AtomsBadge :variant="roleVariant[key.role] ?? 'secondary'" size="sm">
-                    {{ key.role }}
+                    {{ roleLabelKey[key.role] ? t(roleLabelKey[key.role]!) : key.role }}
                   </AtomsBadge>
                 </div>
                 <div class="mt-0.5 flex items-center gap-3">
@@ -260,6 +280,9 @@ watch(createOpen, (isOpen) => {
                   </span>
                   <span class="text-[10px] text-disabled">
                     {{ key.lastUsedAt ? `${t('conversation_keys.last_used')} ${formatRelativeTime(key.lastUsedAt)}` : t('conversation_keys.never_used') }}
+                  </span>
+                  <span class="text-[10px] text-disabled" data-testid="conversation-key-usage">
+                    {{ t('conversation_keys.usage_this_month', { count: key.monthlyUsage ?? 0 }) }}
                   </span>
                 </div>
               </div>
@@ -284,7 +307,7 @@ watch(createOpen, (isOpen) => {
                     <template v-if="revoking === key.id" #prepend>
                       <div class="size-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                     </template>
-                    {{ t('common.delete') }}
+                    {{ t('common.revoke') }}
                   </AtomsBaseButton>
                   <AtomsBaseButton variant="ghost" size="sm" @click="confirmRevokeId = null">
                     {{ t('common.cancel') }}
@@ -362,9 +385,9 @@ watch(createOpen, (isOpen) => {
               <AtomsFormSelect
                 :model-value="newRole"
                 :options="[
-                  { value: 'viewer', label: 'Viewer' },
-                  { value: 'editor', label: 'Editor' },
-                  { value: 'admin', label: 'Admin' },
+                  { value: 'viewer', label: t('conversation_keys.role_viewer') },
+                  { value: 'editor', label: t('conversation_keys.role_editor') },
+                  { value: 'admin', label: t('conversation_keys.role_admin') },
                 ]"
                 size="md"
                 class="mt-1.5"

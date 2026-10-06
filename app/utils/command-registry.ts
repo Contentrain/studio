@@ -124,7 +124,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
     keywords: ['ai', 'keys', 'api', 'byoa', 'anthropic', 'claude'],
     group: 'workspace',
     scope: 'workspace',
-    action: 'ws-ai-keys',
+    action: 'ws-ai',
   })
 
   commands.push({
@@ -181,7 +181,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
 
     commands.push({
       id: 'cmd:media',
-      label: 'Media library',
+      labelKey: 'command.media_library',
       icon: 'icon-[annon--image]',
       keywords: ['media', 'assets', 'images', 'files', 'library', 'upload'],
       group: 'project',
@@ -191,7 +191,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
 
     commands.push({
       id: 'cmd:health',
-      label: 'Project health',
+      labelKey: 'command.project_health',
       icon: 'icon-[annon--heart]',
       keywords: ['health', 'score', 'validation', 'warnings', 'quality'],
       group: 'project',
@@ -201,7 +201,7 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
 
     commands.push({
       id: 'cmd:project-settings',
-      label: 'Project settings',
+      labelKey: 'command.project_settings',
       icon: 'icon-[annon--gear]',
       keywords: ['settings', 'project', 'config', 'configuration'],
       group: 'project',
@@ -219,14 +219,25 @@ export function getCommands(ctx: CommandContext): CommandDefinition[] {
       action: 'open-webhooks',
     })
 
+    // API keys tab of the project settings: MCP keys + Conversation API keys.
     commands.push({
       id: 'cmd:conversation-keys',
-      label: 'Conversation API',
+      labelKey: 'project_settings.api_keys_tab',
       icon: 'icon-[annon--key]',
       keywords: ['conversation', 'api', 'keys', 'external', 'bot', 'integration'],
       group: 'project',
       scope: 'project',
-      action: 'open-conversation-keys',
+      action: 'open-api-keys',
+    })
+
+    commands.push({
+      id: 'cmd:mcp-keys',
+      labelKey: 'mcp_cloud.section_title',
+      icon: 'icon-[annon--key]',
+      keywords: ['mcp', 'cursor', 'agent', 'keys', 'ci', 'claude code'],
+      group: 'project',
+      scope: 'project',
+      action: 'open-api-keys',
     })
 
     // ─── AI Model Selection (from the shared catalog) ────────

@@ -226,8 +226,8 @@ function handleAction(actionKey: string, payload?: Record<string, unknown>) {
     case 'ws-github':
       if (slug) router.push(`/w/${slug}/settings?tab=github`)
       break
-    case 'ws-ai-keys':
-      if (slug) router.push(`/w/${slug}/settings?tab=ai-keys`)
+    case 'ws-ai':
+      if (slug) router.push(`/w/${slug}/settings?tab=ai`)
       break
     case 'connect-repo':
       emitAction({ type: 'connect-repo' })
@@ -258,7 +258,7 @@ function handleAction(actionKey: string, payload?: Record<string, unknown>) {
     case 'open-webhooks':
       emitAction({ type: 'open-project-settings', payload: 'webhooks' })
       break
-    case 'open-conversation-keys':
+    case 'open-api-keys':
       emitAction({ type: 'open-project-settings', payload: 'api' })
       break
 
