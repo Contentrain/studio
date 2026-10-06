@@ -82,6 +82,22 @@ export function useFeatureMeta(featureKey: string) {
   })
 }
 
+export type FeatureGate = 'enabled' | 'locked' | 'hidden'
+
+/**
+ * The one gating rule for settings surfaces: an ee-backed feature in Community Edition is hidden
+ * (its route would 404); otherwise it is shown, with an upgrade call to action when the plan
+ * does not include it.
+ */
+export function useFeatureGate(featureKey: string) {
+  const meta = useFeatureMeta(featureKey)
+  const { edition } = useDeployment()
+  return computed<FeatureGate>(() => {
+    if (meta.value.enabled) return 'enabled'
+    return meta.value.requiresEE && edition === 'agpl' ? 'hidden' : 'locked'
+  })
+}
+
 /**
  * Whether a limit row exists in the matrix. Limits never have a
  * `roadmap` flag (roadmap only makes sense for feature flags).

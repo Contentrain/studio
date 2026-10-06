@@ -53,6 +53,7 @@ const createOpen = ref(false)
 const creating = ref(false)
 const testing = ref<string | null>(null)
 const deleting = ref<string | null>(null)
+const toggling = ref<string | null>(null)
 const confirmDeleteId = ref<string | null>(null)
 
 // Create form state
@@ -66,6 +67,11 @@ const copied = ref(false)
 
 async function loadWebhooks() {
   if (!props.workspaceId || !props.projectId) return
+  // The routes are owner/admin only: a member would get a 403 and a misleading empty list.
+  if (!canManage.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     webhooks.value = await $fetch<Webhook[]>(
@@ -82,7 +88,7 @@ async function loadWebhooks() {
 }
 
 watch(
-  [() => props.workspaceId, () => props.projectId],
+  [() => props.workspaceId, () => props.projectId, canManage],
   ([ws, proj]) => {
     if (ws && proj) loadWebhooks()
   },
@@ -139,6 +145,23 @@ async function testWebhook(webhookId: string) {
   }
   finally {
     testing.value = null
+  }
+}
+
+async function toggleActive(webhook: Webhook) {
+  toggling.value = webhook.id
+  try {
+    await $fetch(
+      `/api/workspaces/${props.workspaceId}/projects/${props.projectId}/webhooks/${webhook.id}`,
+      { method: 'PATCH', body: { active: !webhook.active } },
+    )
+    webhooks.value = webhooks.value.map(w => w.id === webhook.id ? { ...w, active: !webhook.active } : w)
+  }
+  catch {
+    toast.error(t('webhooks.update_error'))
+  }
+  finally {
+    toggling.value = null
   }
 }
 
@@ -203,8 +226,15 @@ watch(createOpen, (isOpen) => {
 
 <template>
   <div class="flex h-full flex-col">
+    <!-- Members cannot list or manage webhooks (owner/admin routes) -->
+    <div v-if="!canManage" class="px-5 py-4">
+      <p class="text-xs text-muted" data-testid="webhooks-admin-note">
+        {{ t('webhooks.managed_by_admins') }}
+      </p>
+    </div>
+
     <!-- Loading -->
-    <div v-if="loading" class="space-y-3 p-5">
+    <div v-else-if="loading" class="space-y-3 p-5">
       <AtomsSkeleton v-for="i in 3" :key="i" variant="custom" class="h-14 w-full rounded-lg" />
     </div>
 
@@ -307,6 +337,17 @@ watch(createOpen, (isOpen) => {
                   <template v-else>
                     {{ t('webhooks.test') }}
                   </template>
+                </button>
+
+                <!-- Pause / resume (PATCH active) -->
+                <button
+                  type="button"
+                  :disabled="toggling === webhook.id"
+                  class="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted transition-colors hover:bg-secondary-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50 disabled:opacity-50 dark:hover:bg-secondary-800"
+                  data-testid="webhook-toggle"
+                  @click="toggleActive(webhook)"
+                >
+                  {{ webhook.active ? t('webhooks.pause') : t('webhooks.resume') }}
                 </button>
 
                 <!-- Delete -->

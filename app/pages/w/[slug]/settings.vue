@@ -6,6 +6,7 @@ definePageMeta({
 })
 
 const route = useRoute()
+const router = useRouter()
 const slug = computed(() => route.params.slug as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
@@ -20,20 +21,30 @@ useHead({
     : t('common.settings'),
 })
 
-// AI Keys tab hosts BYOA key management — backed by runEnterpriseRoute
-// on the server and gated by `ai.byoa` (requires_ee). Hide in Community
-// so users don't see a tab that 403s. MCP Cloud stays visible even in
-// Community because `api.mcp_cloud` itself is core; only MCP custom
-// domain / SSO are ee-gated and those are rendered inside that panel.
-const aiKeysEnabled = useFeature('ai.byoa')
+// AI tab hosts the member's own Anthropic key (BYOA) — `ai.byoa` is ee-backed. One gating rule:
+// hidden in Community (the route would 404), otherwise shown, with an upgrade call to action
+// when the plan lacks it.
+const aiGate = useFeatureGate('ai.byoa')
 
 const validTabs = computed(() => {
-  const base = ['overview', 'members', 'billing', 'github', 'mcp-cloud', 'connected-apps'] as const
-  return aiKeysEnabled.value ? [...base, 'ai-keys'] as const : base
+  const base = ['overview', 'members', 'billing', 'github', 'connected-apps'] as const
+  return aiGate.value !== 'hidden' ? [...base, 'ai'] as const : base
 })
 
+// Old deep links (docs, bookmarks, the previous palette entries) keep working.
+const LEGACY_TAB_ALIASES: Record<string, string> = {
+  'ai-keys': 'ai',
+  'mcp-cloud': 'connected-apps',
+}
+
+watch(() => route.query.tab, (tab) => {
+  const alias = typeof tab === 'string' ? LEGACY_TAB_ALIASES[tab] : undefined
+  if (alias) router.replace({ query: { ...route.query, tab: alias } })
+}, { immediate: true })
+
 const tabFromQuery = computed(() => {
-  const tab = route.query.tab as string | undefined
+  const raw = route.query.tab as string | undefined
+  const tab = raw ? (LEGACY_TAB_ALIASES[raw] ?? raw) : undefined
   return tab && (validTabs.value as readonly string[]).includes(tab) ? tab : null
 })
 
@@ -44,7 +55,7 @@ watch(tabFromQuery, (tab) => {
   if (tab) activeTab.value = tab
 })
 
-// If the active tab becomes unavailable (e.g. user lands on ?tab=ai-keys
+// If the active tab becomes unavailable (e.g. user lands on ?tab=ai
 // in Community), fall back to overview.
 watch(validTabs, (tabs) => {
   if (!(tabs as readonly string[]).includes(activeTab.value)) activeTab.value = 'overview'
@@ -107,14 +118,11 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger v-if="isOwnerOrAdmin" value="github" :class="tabTriggerClass">
           {{ t('settings.github_tab') }}
         </TabsTrigger>
-        <TabsTrigger v-if="aiKeysEnabled" value="ai-keys" :class="tabTriggerClass">
-          {{ t('settings.ai_tab') }}
-        </TabsTrigger>
-        <TabsTrigger value="mcp-cloud" :class="tabTriggerClass">
-          {{ t('settings.mcp_cloud_tab') }}
-        </TabsTrigger>
         <TabsTrigger value="connected-apps" :class="tabTriggerClass">
           {{ t('settings.connected_apps_tab') }}
+        </TabsTrigger>
+        <TabsTrigger v-if="aiGate !== 'hidden'" value="ai" :class="tabTriggerClass">
+          {{ t('settings.ai_tab') }}
         </TabsTrigger>
       </TabsList>
 
@@ -134,16 +142,12 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <OrganismsWorkspaceGitHubPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent v-if="aiKeysEnabled" value="ai-keys" class="mt-6">
-        <OrganismsWorkspaceAIKeysPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
-      </TabsContent>
-
-      <TabsContent value="mcp-cloud" class="mt-6">
-        <OrganismsWorkspaceMcpCloudPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
-      </TabsContent>
-
       <TabsContent value="connected-apps" class="mt-6">
         <OrganismsWorkspaceConnectedAppsPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
+      </TabsContent>
+
+      <TabsContent v-if="aiGate !== 'hidden'" value="ai" class="mt-6">
+        <OrganismsWorkspaceAIKeysPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" :locked="aiGate === 'locked'" />
       </TabsContent>
     </TabsRoot>
   </div>
