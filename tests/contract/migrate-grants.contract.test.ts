@@ -87,6 +87,9 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(first).toMatchObject({ repo_owner: 'acme', repo_name: 'blog' })
     const second = await methods.setMigrateGrantRepo(grant.id as string, { owner: 'other', name: 'site' })
     expect(second).toMatchObject({ repo_owner: 'acme', repo_name: 'blog' })
+    // After GitHub moved the repository, the connect step points the grant at its new name.
+    await methods.updateMigrateGrantRepo(grant.id as string, { owner: 'moved', name: 'blog' })
+    expect(await methods.getMigrateGrantById(grant.id as string)).toMatchObject({ repo_owner: 'moved', repo_name: 'blog' })
   })
 
   it('marks a grant revoked once: the first reason stays, the grant is never un-revoked', async () => {

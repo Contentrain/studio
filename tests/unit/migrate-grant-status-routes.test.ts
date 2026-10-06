@@ -5,6 +5,9 @@ import { verifyMigrateInstallState } from '../../server/utils/migrate-install-st
 
 vi.mock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: 'subscription' }) }))
 
+const installation = { getInstallationDetails: vi.fn() }
+vi.mock('../../server/utils/providers', () => ({ useGitAppProvider: () => installation }))
+
 let privateKey: CryptoKey
 let publicPem: string
 const stateKey = 'k'.repeat(40)
@@ -47,6 +50,7 @@ describe('Migrate grant status and install-url routes', () => {
   beforeEach(() => {
     vi.resetModules()
     taken.clear()
+    installation.getInstallationDetails.mockReset().mockResolvedValue({ account: { login: 'ABB65', type: 'User' } })
     config.migrate.claimPublicKey = publicPem
     config.migrate.installStateKey = stateKey
     db = {
@@ -75,6 +79,23 @@ describe('Migrate grant status and install-url routes', () => {
       await status()
       expect(await call('status')).toMatchObject({ state: 'redeemed', installed: true })
       expect(db.getMigrateGrantByOrderId).toHaveBeenCalledWith('ord_123')
+    })
+
+    it('tells which GitHub account the workspace is installed on, once installed and redeemed', async () => {
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', slug: 'acme', github_installation_id: 4242 })
+      await status()
+      expect(await call('status')).toMatchObject({ installed: true, workspace_github_account: { login: 'ABB65', type: 'User' } })
+    })
+
+    it('leaves the account out with no installation, before redeem, or when GitHub does not answer', async () => {
+      await status()
+      expect(await call('status')).not.toHaveProperty('workspace_github_account')
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', slug: 'acme', github_installation_id: 4242 })
+      installation.getInstallationDetails.mockRejectedValue(new Error('boom'))
+      await status()
+      expect(await call('status')).toMatchObject({ installed: true })
+      await status()
+      expect(await call('status')).not.toHaveProperty('workspace_github_account')
     })
 
     it.each([

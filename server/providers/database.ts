@@ -1193,6 +1193,12 @@ export interface DatabaseProvider {
   setMigrateGrantRepo: (grantId: string, repo: { owner: string, name: string }) => Promise<DatabaseRow | null>
 
   /**
+   * Point a grant at the repository's new name after GitHub renamed or transferred it (the connect
+   * step found it through the old one). Unlike `setMigrateGrantRepo` it rewrites a repository that is set.
+   */
+  updateMigrateGrantRepo: (grantId: string, repo: { owner: string, name: string }) => Promise<void>
+
+  /**
    * Withdraw a grant (Migrate's revoke): records when and why. Only the first call counts, so the
    * reason of the first revocation stays. Returns the grant as it stands afterwards.
    */

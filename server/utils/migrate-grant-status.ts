@@ -6,6 +6,7 @@
 import type { MigrateGrantState } from '@contentrain/types'
 import type { DatabaseRow } from '../providers/database'
 import { migrateBundleStatus } from './migrate-grant'
+import { useGitAppProvider } from './providers'
 
 export function migrateGrantStateOf(grant: DatabaseRow): MigrateGrantState {
   if (grant.revoked_at) return 'revoked'
@@ -34,6 +35,12 @@ export interface MigrateGrantStatusDetail {
   ends_at?: number
   ended?: boolean
   notice?: string
+  /**
+   * The GitHub account (login) the workspace's Studio GitHub App is installed on, so Migrate's delivery can
+   * default to it: a workspace connects one account, and a repository delivered elsewhere cannot be connected.
+   * Only when the workspace has an installation and GitHub answered; absent otherwise.
+   */
+  workspace_github_account?: { login: string, type: 'User' | 'Organization' }
 }
 
 export async function migrateGrantStatusDetail(grant: DatabaseRow): Promise<MigrateGrantStatusDetail> {
@@ -56,4 +63,19 @@ export async function migrateGrantStatusDetail(grant: DatabaseRow): Promise<Migr
     detail.notice = errorMessage('migrate.bundle_plan_ended_notice')
   }
   return detail
+}
+
+/** The GitHub account the grant's workspace has installed Studio's app on; null when none or unknown. */
+export async function migrateGrantGithubAccount(workspace: DatabaseRow | null): Promise<{ login: string, type: 'User' | 'Organization' } | null> {
+  const installationId = workspace?.github_installation_id
+  if (typeof installationId !== 'number') return null
+  try {
+    const { account } = await useGitAppProvider(installationId).getInstallationDetails()
+    if (!account.login) return null
+    return { login: account.login, type: account.type === 'Organization' ? 'Organization' : 'User' }
+  }
+  catch {
+    // The status answer is Migrate's; a GitHub hiccup leaves the account out rather than failing it.
+    return null
+  }
 }
