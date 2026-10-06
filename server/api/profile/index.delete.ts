@@ -53,8 +53,19 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Delete from auth.users — CASCADE handles the entire chain
-  await authProvider.deleteUser(session.user.id)
+  // Delete from auth.users — CASCADE handles the entire chain. A row that still pins the profile
+  // (a FK without a delete action) must come back as a clear, logged refusal, never a bare 500.
+  try {
+    await authProvider.deleteUser(session.user.id)
+  }
+  catch (e) {
+    reportDataLossRisk(e, { op: 'account-delete.auth-user', userId: session.user.id })
+    throw createError({
+      statusCode: 409,
+      message: errorMessage('account.delete_blocked'),
+      data: { code: 'account_delete_blocked' },
+    })
+  }
 
   // Clear the session cookie
   await clearServerSession(event)

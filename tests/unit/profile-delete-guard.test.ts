@@ -87,6 +87,20 @@ describe('DELETE /api/profile', () => {
     expect(clearServerSession).toHaveBeenCalledTimes(1)
   })
 
+  it('a deleteUser failure (e.g. a leftover FK) is a logged 409 account_delete_blocked, not a 500', async () => {
+    setup({})
+    const report = vi.fn()
+    vi.stubGlobal('reportDataLossRisk', report)
+    deleteUser.mockRejectedValueOnce(new Error('violates foreign key constraint "x_fkey"'))
+    await expect(run()).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'account.delete_blocked',
+      data: { code: 'account_delete_blocked' },
+    })
+    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ op: 'account-delete.auth-user' }))
+    expect(clearServerSession).not.toHaveBeenCalled()
+  })
+
   it('the list the screen uses is the same blocking set the delete refuses on', async () => {
     setup({ secondary: [
       { id: 'ws-team', workspace_members: [{ user_id: ME }, { user_id: 'someone' }] },
