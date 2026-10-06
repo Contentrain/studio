@@ -260,6 +260,7 @@
   "migrate.connect_no_installation": "Studio’s GitHub App is not installed for this workspace yet. Install it, then connect the site.",
   "migrate.connect_plan_locked": "This workspace has no running Studio plan. Choose a plan, then connect the site.",
   "migrate.connect_repo_not_accessible": "Studio’s GitHub App cannot see {repo} yet. Give it access to the repository on GitHub, then check again.",
+  "migrate.connect_repo_other_account": "This workspace is connected to the GitHub account {workspaceAccount}, but the project is in {repoOwner}. Studio connects one GitHub account per workspace: transfer the repository to {workspaceAccount} on GitHub, or create a workspace for {repoOwner}.",
   "migrate.email_unverified": "The email on this order is not verified, so Studio cannot create or link an account for it.",
   "migrate.grant_bound_elsewhere": "This Studio offer is already tied to another workspace.",
   "migrate.grant_bundle": "This Studio year is part of your Migrate order, so there is no included trial to start. Open your site in Studio instead.",

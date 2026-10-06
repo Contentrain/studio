@@ -10,7 +10,7 @@ const git = {
   detectFramework: vi.fn(),
   getDefaultBranch: vi.fn(),
 }
-const gitApp = { canAccessRepository: vi.fn() }
+const gitApp = { resolveRepository: vi.fn(), getInstallationDetails: vi.fn() }
 vi.mock('../../server/utils/providers', () => ({
   useGitAppProvider: () => gitApp,
   useGitProvider: () => git,
@@ -37,7 +37,8 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
     vi.resetModules()
     git.detectFramework.mockReset().mockResolvedValue({ stack: 'astro', hasContentDir: true, hasI18n: false, suggestedContentPaths: {} })
     git.getDefaultBranch.mockReset().mockResolvedValue('main')
-    gitApp.canAccessRepository.mockReset().mockResolvedValue(true)
+    gitApp.resolveRepository.mockReset().mockResolvedValue({ id: 1, fullName: 'ABB65/formchickens' })
+    gitApp.getInstallationDetails.mockReset().mockResolvedValue({ account: { login: 'ABB65' } })
     unmergedMigrationBranch.mockReset().mockResolvedValue(null)
     db = {
       getMigrateGrantForUser: vi.fn().mockResolvedValue(grantRow),
@@ -47,6 +48,7 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
       getActivePaymentAccount: vi.fn().mockResolvedValue(account()),
       checkDuplicateProject: vi.fn().mockResolvedValue(false),
       createProject: vi.fn().mockResolvedValue({ id: 'proj-new' }),
+      updateMigrateGrantRepo: vi.fn().mockResolvedValue(undefined),
     }
     vi.stubGlobal('defineEventHandler', (h: unknown) => h)
     vi.stubGlobal('createError', createErrorLike)
@@ -102,12 +104,59 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
   })
 
   it('repo_not_accessible: the app cannot see the repository, with the installation\'s settings page', async () => {
-    gitApp.canAccessRepository.mockResolvedValue(false)
+    gitApp.resolveRepository.mockResolvedValue(null)
     await expect(route()).rejects.toMatchObject({
       statusCode: 409,
       data: { code: 'repo_not_accessible', settingsUrl: 'https://github.com/settings/installations/4242' },
     })
     expect(db.createProject).not.toHaveBeenCalled()
+  })
+
+  it('repo_other_account: the repository is in another GitHub account than the workspace\'s installation: no "give access" advice', async () => {
+    db.getMigrateGrantForUser.mockResolvedValue({ ...grantRow, repo_owner: 'Lanista-Software' })
+    gitApp.resolveRepository.mockResolvedValue(null)
+    const error = await route().catch(e => e)
+    expect(error).toMatchObject({
+      statusCode: 409,
+      message: 'migrate.connect_repo_other_account',
+      data: { code: 'repo_other_account', repoOwner: 'Lanista-Software', workspaceAccount: 'ABB65' },
+    })
+    expect(error.data.settingsUrl).toBeUndefined()
+    expect(db.createProject).not.toHaveBeenCalled()
+  })
+
+  it('the same account written in another case is not another account: repo_not_accessible', async () => {
+    gitApp.resolveRepository.mockResolvedValue(null)
+    gitApp.getInstallationDetails.mockResolvedValue({ account: { login: 'abb65' } })
+    await expect(route()).rejects.toMatchObject({ data: { code: 'repo_not_accessible' } })
+  })
+
+  it('an installation GitHub will not describe falls back to repo_not_accessible', async () => {
+    db.getMigrateGrantForUser.mockResolvedValue({ ...grantRow, repo_owner: 'Lanista-Software' })
+    gitApp.resolveRepository.mockResolvedValue(null)
+    gitApp.getInstallationDetails.mockRejectedValue(new Error('boom'))
+    await expect(route()).rejects.toMatchObject({ data: { code: 'repo_not_accessible' } })
+  })
+
+  it('a transferred repository connects under its new name and the grant follows it', async () => {
+    db.getMigrateGrantForUser.mockResolvedValue({ ...grantRow, repo_owner: 'Lanista-Software' })
+    gitApp.resolveRepository.mockResolvedValue({ id: 7, fullName: 'ABB65/formchickens' })
+    expect(await route()).toEqual({ projectId: 'proj-new', workspaceSlug: 'acme', created: true })
+    expect(db.updateMigrateGrantRepo).toHaveBeenCalledWith('grant-1', { owner: 'ABB65', name: 'formchickens' })
+    expect(db.createProject).toHaveBeenCalledWith('t', expect.objectContaining({ repo_full_name: 'ABB65/formchickens' }))
+  })
+
+  it('a transferred repository that is already a project there is the answer, with the grant updated', async () => {
+    db.getMigrateGrantForUser.mockResolvedValue({ ...grantRow, repo_owner: 'Lanista-Software' })
+    gitApp.resolveRepository.mockResolvedValue({ id: 7, fullName: 'ABB65/formchickens' })
+    db.listWorkspaceProjects.mockResolvedValue([{ id: 'proj-old', repo_full_name: 'ABB65/formchickens' }])
+    expect(await route()).toEqual({ projectId: 'proj-old', workspaceSlug: 'acme', created: false })
+    expect(db.updateMigrateGrantRepo).toHaveBeenCalled()
+  })
+
+  it('a repository under the grant\'s own name rewrites nothing', async () => {
+    await route()
+    expect(db.updateMigrateGrantRepo).not.toHaveBeenCalled()
   })
 
   it('migration_not_merged: the delivery waits on its branch', async () => {

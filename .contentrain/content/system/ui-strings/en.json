@@ -844,6 +844,7 @@
   "migrate_claim.connect_install_app": "Install Studio’s GitHub App",
   "migrate_claim.connect_open_settings": "Open the app’s settings on GitHub",
   "migrate_claim.connect_repo": "Connect {repo} in the workspace to open the site here.",
+  "migrate_claim.connect_transfer_docs": "How to transfer a repository on GitHub",
   "migrate_claim.connecting": "Connecting…",
   "migrate_claim.due_today": "Due today",
   "migrate_claim.error_next": "Open Studio from your migration’s delivery page to get a fresh link, or contact us and we will sort it out.",

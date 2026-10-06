@@ -149,6 +149,7 @@ describe('/migrate/claim', () => {
     it.each([
       ['no_installation', 'claim-connect-install', 'Install Studio’s GitHub App'],
       ['repo_not_accessible', 'claim-connect-settings', 'Open the app’s settings on GitHub'],
+      ['repo_other_account', 'claim-connect-transfer', 'How to transfer a repository on GitHub'],
       ['migration_not_merged', 'claim-connect-retry', 'Check again'],
     ])('%s: its message and its own next step', async (code, testid, label) => {
       stubFetch(running, { error: { statusCode: 409, message: `message for ${code}`, code, settingsUrl: 'https://github.com/settings/installations/4242' } })
@@ -171,6 +172,13 @@ describe('/migrate/claim', () => {
       await wrapper.find('[data-testid="claim-connect-retry"]').trigger('click')
       await flushPromises()
       expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/connect-project'))).toHaveLength(2)
+    })
+
+    it('repo_other_account never offers the "give access" settings link', async () => {
+      stubFetch(running, { error: { statusCode: 409, message: 'other account', code: 'repo_other_account', settingsUrl: 'https://github.com/settings/installations/4242' } })
+      const wrapper = await mount()
+      await click(wrapper)
+      expect(wrapper.find('[data-testid="claim-connect-settings"]').exists()).toBe(false)
     })
 
     it('a plan that stopped running: the screen then shows it as ended, with one Choose a plan and no error box', async () => {

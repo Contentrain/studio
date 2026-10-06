@@ -362,6 +362,9 @@ async function startTrial() {
               <a v-else-if="connectError.code === 'repo_not_accessible' && connectError.settingsUrl" :href="connectError.settingsUrl" target="_blank" rel="noopener" class="text-sm font-medium text-primary-700 underline dark:text-primary-300" data-testid="claim-connect-settings">
                 {{ t('migrate_claim.connect_open_settings') }}
               </a>
+              <a v-else-if="connectError.code === 'repo_other_account'" href="https://docs.github.com/en/repositories/creating-and-managing-repositories/transferring-a-repository" target="_blank" rel="noopener" class="text-sm font-medium text-primary-700 underline dark:text-primary-300" data-testid="claim-connect-transfer">
+                {{ t('migrate_claim.connect_transfer_docs') }}
+              </a>
               <AtomsBaseButton v-if="connectError.code !== 'no_installation'" variant="secondary" :disabled="connecting" data-testid="claim-connect-retry" @click="connectProject">
                 {{ t('migrate_claim.connect_check_again') }}
               </AtomsBaseButton>
