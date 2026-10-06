@@ -20,7 +20,7 @@
  * chip without re-reading the matrix.
  */
 
-import { FEATURE_MATRIX, getPlanLimitForPlan, hasFeatureForPlan, PLAN_LIMITS } from '~~/shared/utils/license'
+import { FEATURE_MATRIX, getPlanLimitForPlan, hasFeatureForPlan, PLAN_LIMITS, plansWithFeatureLabel } from '~~/shared/utils/license'
 import type { Edition, StudioPlan } from '~~/shared/utils/license'
 
 function resolveEdition(): Edition {
@@ -109,4 +109,9 @@ export function useLimitMeta(limitKey: string) {
     if (!entry) return { defined: false, requiresEE: false }
     return { defined: true, requiresEE: entry.requires_ee }
   })
+}
+
+/** Which plans grant a feature, from the matrix ("Pro and Enterprise", "every paid plan"), for upgrade copy. */
+export function useFeaturePlans(featureKey: string): string {
+  return plansWithFeatureLabel(featureKey)
 }
