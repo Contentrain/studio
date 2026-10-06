@@ -94,7 +94,8 @@ export function useFeatureGate(featureKey: string) {
   const { edition } = useDeployment()
   return computed<FeatureGate>(() => {
     if (meta.value.enabled) return 'enabled'
-    return meta.value.requiresEE && edition === 'agpl' ? 'hidden' : 'locked'
+    // Only a known ee edition may show the upgrade call to action; an empty or unknown edition hides it too.
+    return meta.value.requiresEE && edition !== 'ee' ? 'hidden' : 'locked'
   })
 }
 

@@ -36,6 +36,20 @@ describe('WorkspaceAIKeysPanel', () => {
     expect(wrapper.text()).not.toContain('abcd')
   })
 
+  it('a slow answer for the workspace we left does not overwrite the new list', async () => {
+    let releaseOld: (keys: unknown[]) => void = () => {}
+    const old = new Promise<unknown[]>((resolve) => {
+      releaseOld = resolve
+    })
+    vi.stubGlobal('$fetch', vi.fn((url: string) => (url.includes('ws-1') ? old : Promise.resolve([]))))
+    const wrapper = await mountSuspended(WorkspaceAIKeysPanel, { props: { workspaceId: 'ws-1' } })
+    await wrapper.setProps({ workspaceId: 'ws-2' })
+    await flushPromises()
+    releaseOld([KEY])
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('abcd')
+  })
+
   it('a failed delete says the key could not be removed, not that it could not be saved', async () => {
     vi.stubGlobal('$fetch', vi.fn(async (_url: string, opts?: { method?: string }) => {
       if (opts?.method === 'DELETE') throw new Error('boom')

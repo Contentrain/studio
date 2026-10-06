@@ -16,13 +16,21 @@ const aiKeySaving = ref(false)
 // Reload whenever the workspace changes (switching slugs reuses this panel).
 watch(
   () => [props.workspaceId, props.locked] as const,
-  async ([workspaceId, locked]) => {
+  async ([workspaceId, locked], _previous, onCleanup) => {
+    // A slow answer for the workspace we left must not overwrite the list of the one we are on.
+    let stale = false
+    onCleanup(() => {
+      stale = true
+    })
     aiKeys.value = []
     if (!workspaceId || locked) return
     try {
-      aiKeys.value = await $fetch<AIKeyInfo[]>(`/api/workspaces/${workspaceId}/ai-keys`)
+      const keys = await $fetch<AIKeyInfo[]>(`/api/workspaces/${workspaceId}/ai-keys`)
+      if (!stale) aiKeys.value = keys
     }
-    catch { aiKeys.value = [] }
+    catch {
+      if (!stale) aiKeys.value = []
+    }
   },
   { immediate: true },
 )

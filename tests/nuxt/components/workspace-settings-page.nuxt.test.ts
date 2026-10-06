@@ -5,7 +5,7 @@ import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import SettingsPage from '../../../app/pages/w/[slug]/settings.vue'
 
 const state = vi.hoisted(() => ({
-  edition: 'ee' as 'agpl' | 'ee',
+  edition: 'ee' as string,
   plan: 'pro' as string,
   query: {} as Record<string, string>,
 }))
@@ -90,5 +90,12 @@ describe('workspace settings tabs', () => {
     state.plan = 'community'
     const community = await visit({ tab: 'ai' })
     expect(tabLabels(community)).not.toContain('AI')
+    document.body.innerHTML = ''
+
+    // An empty or unknown edition is not a reason to show an upgrade call to action.
+    state.edition = ''
+    state.plan = 'free'
+    const unknown = await visit({ tab: 'ai' })
+    expect(tabLabels(unknown)).not.toContain('AI')
   })
 })
