@@ -1,4 +1,5 @@
 {
+  "account.delete_blocked": "We couldn’t delete your account because some of your data is still linked to it. Our team has been notified — contact support and we will finish the deletion.",
   "account.subscription_active": "You have a workspace with a subscription that is still active. Cancel it from the billing portal before deleting your account.",
   "account.transfer_required": "You own workspaces with other members. Transfer ownership before deleting your account.",
   "api.byoa_upgrade": "Bring Your Own API (BYOA) keys are available on {plans:ai.byoa}. Upgrade to {toPlan} to add your own provider key.",
