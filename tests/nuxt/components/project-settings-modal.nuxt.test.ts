@@ -53,7 +53,8 @@ describe('project settings tabs', () => {
     await open('api')
     expect(tabLabels()).toEqual(expect.arrayContaining(['General', 'API keys', 'Webhooks', 'Danger Zone']))
     expect(document.body.querySelector('[data-testid="conversation-keys-locked"]')).not.toBeNull()
-    expect(document.body.textContent).toContain('The Conversation API is available on Pro and Enterprise plans')
+    expect(document.body.textContent).toContain('The Conversation API is available on Pro and Enterprise.')
+    expect(document.body.textContent).toContain('MCP Cloud is available on every paid plan.')
   })
 
   it('managed Free: the webhooks tab says what plan it needs', async () => {

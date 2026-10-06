@@ -81,7 +81,7 @@ async function handleDeleteAIKey(keyId: string) {
 
     <div v-if="locked" class="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20" data-testid="ai-keys-locked">
       <p class="text-sm text-warning-800 dark:text-warning-200">
-        {{ t('ai_keys.upgrade_cta') }}
+        {{ t('ai_keys.upgrade_cta', { plans: useFeaturePlans('ai.byoa') }) }}
       </p>
     </div>
 

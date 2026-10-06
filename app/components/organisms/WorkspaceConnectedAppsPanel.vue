@@ -104,7 +104,7 @@ function formatRelative(iso: string | null): string {
 
     <div v-if="!hasRemoteMcp" class="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
       <p class="text-sm text-warning-800 dark:text-warning-200">
-        {{ t('connected_apps.upgrade_cta') }}
+        {{ t('connected_apps.upgrade_cta', { plans: useFeaturePlans('api.mcp_cloud_oauth') }) }}
       </p>
     </div>
 

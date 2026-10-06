@@ -26,7 +26,7 @@ const conversationGate = useFeatureGate('api.conversation')
         </h3>
         <div class="mt-3 rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
           <p class="text-sm text-warning-800 dark:text-warning-200">
-            {{ t('mcp_cloud.upgrade_cta') }}
+            {{ t('mcp_cloud.upgrade_cta', { plans: useFeaturePlans('api.mcp_cloud') }) }}
           </p>
         </div>
       </section>
@@ -46,7 +46,7 @@ const conversationGate = useFeatureGate('api.conversation')
           </h3>
           <div class="mt-3 rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
             <p class="text-sm text-warning-800 dark:text-warning-200">
-              {{ t('conversation_keys.upgrade_cta') }}
+              {{ t('conversation_keys.upgrade_cta', { plans: useFeaturePlans('api.conversation') }) }}
             </p>
           </div>
         </div>

@@ -500,7 +500,7 @@ async function save() {
           <div v-else class="px-6 py-5" data-testid="webhooks-locked">
             <div class="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
               <p class="text-sm text-warning-800 dark:text-warning-200">
-                {{ t('webhooks.upgrade_cta') }}
+                {{ t('webhooks.upgrade_cta', { plans: useFeaturePlans('api.webhooks_outbound') }) }}
               </p>
             </div>
           </div>
