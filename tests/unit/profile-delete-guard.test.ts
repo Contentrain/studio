@@ -101,6 +101,44 @@ describe('DELETE /api/profile', () => {
     expect(clearServerSession).not.toHaveBeenCalled()
   })
 
+  it('a failed deleteUser never touches the CDN files', async () => {
+    const db = setup({})
+    db.listWorkspaceProjectsAdmin.mockResolvedValue([{ id: 'p-1' }, { id: 'p-2' }])
+    const deletePrefix = vi.fn()
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ deletePrefix }))
+    deleteUser.mockRejectedValueOnce(new Error('violates foreign key constraint'))
+    await expect(run()).rejects.toMatchObject({ statusCode: 409, data: { code: 'account_delete_blocked' } })
+    expect(deletePrefix).not.toHaveBeenCalled()
+  })
+
+  it('after a successful delete every owned project prefix is cleaned, in that order', async () => {
+    const db = setup({})
+    db.listWorkspaceProjectsAdmin.mockResolvedValue([{ id: 'p-1' }, { id: 'p-2' }])
+    const order: string[] = []
+    deleteUser.mockImplementationOnce(async () => {
+      order.push('delete-user')
+    })
+    const deletePrefix = vi.fn(async (id: string) => {
+      order.push(`r2:${id}`)
+    })
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ deletePrefix }))
+    await expect(run()).resolves.toEqual({ deleted: true })
+    expect(order).toEqual(['delete-user', 'r2:p-1', 'r2:p-2'])
+    expect(deletePrefix).toHaveBeenCalledWith('p-1', '')
+  })
+
+  it('a CDN cleanup failure after the delete is reported but does not fail the request', async () => {
+    const db = setup({})
+    db.listWorkspaceProjectsAdmin.mockResolvedValue([{ id: 'p-1' }, { id: 'p-2' }])
+    const report = vi.fn()
+    vi.stubGlobal('reportDataLossRisk', report)
+    const deletePrefix = vi.fn().mockRejectedValueOnce(new Error('r2 down')).mockResolvedValueOnce(undefined)
+    vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({ deletePrefix }))
+    await expect(run()).resolves.toEqual({ deleted: true })
+    expect(deletePrefix).toHaveBeenCalledTimes(2)
+    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ op: 'account-delete.r2', projectId: 'p-1' }))
+  })
+
   it('the list the screen uses is the same blocking set the delete refuses on', async () => {
     setup({ secondary: [
       { id: 'ws-team', workspace_members: [{ user_id: ME }, { user_id: 'someone' }] },
