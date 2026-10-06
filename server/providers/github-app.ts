@@ -476,6 +476,18 @@ export function createGitHubAppInstallationProvider(config: GitHubAppBaseConfig)
       }
     },
 
+    async resolveRepository(owner: string, repo: string) {
+      try {
+        const { data } = await octokit.repos.get({ owner, repo })
+        return { id: data.id, fullName: data.full_name }
+      }
+      catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        if (status === 404 || status === 403) return null
+        throw err
+      }
+    },
+
     async revokeInstallation(): Promise<boolean> {
       // `DELETE /app/installations/{id}` is an App-administration call
       // that requires a JWT, NOT an installation token. We mint a

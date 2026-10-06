@@ -112,6 +112,11 @@ export interface GitAppProvider {
   createRepositoryFromTemplate: (input: TemplateRepositoryInput) => Promise<InstallationRepository>
   canAccessRepository: (owner: string, repo: string) => Promise<boolean>
   /**
+   * The repository as the installation sees it now, or null when it cannot see it. GitHub answers a
+   * renamed or transferred repository's old name with a redirect, so `fullName` is where it lives today.
+   */
+  resolveRepository: (owner: string, repo: string) => Promise<{ id: number, fullName: string } | null>
+  /**
    * Revoke (uninstall) the GitHub App from the account/org this
    * installation is bound to. Auth context: App JWT (not the
    * installation token). Returns true on success, false if GitHub

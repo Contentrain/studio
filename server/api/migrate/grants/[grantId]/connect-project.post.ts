@@ -6,6 +6,8 @@
  * project the way the Connect dialog does (`connectWorkspaceProject`), after saying which of the things it
  * needs is missing, each with its own `data.code` so the screen can show the next step:
  * `plan_locked`, `no_installation`, `repo_not_accessible` (with the installation's settings page),
+ * `repo_other_account` (the repository belongs to a GitHub account other than the one the workspace is
+ * connected to: a workspace carries one installation, so giving the app access is a dead end there),
  * `migration_not_merged`. A repository that is already a project is the answer, not an error.
  */
 import { resolveWorkspaceBilling } from '../../../../utils/workspace-billing'
@@ -26,8 +28,8 @@ export default defineEventHandler(async (event) => {
   if (grant.revoked_at) throw createError({ statusCode: 409, message: errorMessage('migrate.grant_revoked'), data: { code: 'grant_revoked' } })
 
   const workspaceId = grant.workspace_id as string | null
-  const owner = grant.repo_owner as string | null
-  const name = grant.repo_name as string | null
+  let owner = grant.repo_owner as string | null
+  let name = grant.repo_name as string | null
   // Only a bundle grant that is in use, tied to a workspace, and knows its repository (the claim writes it).
   if (grant.kind !== 'bundle' || !grant.redeemed_at || !workspaceId || !owner || !name)
     throw createError({ statusCode: 409, message: errorMessage('migrate.connect_grant_not_ready'), data: { code: 'grant_not_ready' } })
@@ -50,9 +52,19 @@ export default defineEventHandler(async (event) => {
   if (!installationId)
     throw createError({ statusCode: 409, message: errorMessage('migrate.connect_no_installation'), data: { code: 'no_installation' } })
 
-  // Migrate made the repository with its own app: the Studio app may not be allowed on it.
-  const accessible = await useGitAppProvider(installationId).canAccessRepository(owner, name).catch(() => false)
-  if (!accessible) {
+  // Migrate made the repository with its own app: the Studio app may not be allowed on it. A repository
+  // that was renamed or transferred answers under its new name (GitHub redirects the old one).
+  const gitApp = useGitAppProvider(installationId)
+  const resolved = await gitApp.resolveRepository(owner, name).catch(() => null)
+  if (!resolved) {
+    const account = (await gitApp.getInstallationDetails().catch(() => null))?.account.login ?? null
+    if (account && account.toLowerCase() !== owner.toLowerCase()) {
+      throw createError({
+        statusCode: 409,
+        message: errorMessage('migrate.connect_repo_other_account', { repoOwner: owner, workspaceAccount: account }),
+        data: { code: 'repo_other_account', repoOwner: owner, workspaceAccount: account },
+      })
+    }
     throw createError({
       statusCode: 409,
       message: errorMessage('migrate.connect_repo_not_accessible', { repo: repoFullName }),
@@ -60,10 +72,22 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  let connectedName = repoFullName
+  if (resolved.fullName.toLowerCase() !== repoFullName.toLowerCase()) {
+    const [movedOwner, movedName] = resolved.fullName.split('/') as [string, string]
+    await db.updateMigrateGrantRepo(grantId, { owner: movedOwner, name: movedName })
+    owner = movedOwner
+    name = movedName
+    connectedName = resolved.fullName
+    const moved = (await db.listWorkspaceProjects(session.accessToken, workspaceId))
+      .find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === connectedName.toLowerCase())
+    if (moved) return { projectId: moved.id as string, workspaceSlug: slug, created: false }
+  }
+
   const git = useGitProvider({ installationId, owner, repo: name })
   const [detection, defaultBranch] = await Promise.all([git.detectFramework(), git.getDefaultBranch()])
   const project = await connectWorkspaceProject(session.accessToken, workspaceId, billing.effectivePlan, {
-    repoFullName,
+    repoFullName: connectedName,
     defaultBranch,
     detectedStack: detection.stack,
     hasContentrain: detection.hasContentDir,
