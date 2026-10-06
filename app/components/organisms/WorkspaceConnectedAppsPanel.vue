@@ -42,7 +42,7 @@ const claudeCommand = computed(() =>
 /** Codex reads remote servers from config.toml; sign-in is OAuth (no key in the file), started with `codex mcp login`. */
 const codexConfig = computed(() =>
   endpoint.value
-    ? ['[mcp_servers.contentrain]', `url = "${endpoint.value}"`, '# then: codex mcp login contentrain'].join('\n')
+    ? ['[mcp_servers.contentrain-remote]', `url = "${endpoint.value}"`, '# then: codex mcp login contentrain-remote'].join('\n')
     : '',
 )
 

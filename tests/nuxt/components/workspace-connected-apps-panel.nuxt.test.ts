@@ -58,9 +58,9 @@ describe('WorkspaceConnectedAppsPanel', () => {
 
     expect(wrapper.text()).toContain('OpenAI Codex (config.toml)')
     expect(wrapper.find('[data-testid="codex-config"]').text()).toBe([
-      '[mcp_servers.contentrain]',
+      '[mcp_servers.contentrain-remote]',
       'url = "https://studio.example/api/mcp/remote"',
-      '# then: codex mcp login contentrain',
+      '# then: codex mcp login contentrain-remote',
     ].join('\n'))
   })
 

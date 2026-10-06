@@ -90,7 +90,25 @@ onMounted(async () => {
 })
 watch(slug, loadSettingsData)
 
-const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
+// On a narrow screen the tab strip scrolls: keep the active tab in view, and fade the right edge while more tabs hide there.
+const tabStrip = ref<{ $el: HTMLElement } | null>(null)
+const moreToTheRight = ref(false)
+
+function updateStripHint() {
+  const el = tabStrip.value?.$el
+  moreToTheRight.value = !!el && el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+}
+
+function revealActiveTab() {
+  const el = tabStrip.value?.$el
+  el?.querySelector<HTMLElement>('[data-state="active"]')?.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+  updateStripHint()
+}
+
+watch(activeTab, () => nextTick(revealActiveTab))
+onMounted(() => nextTick(revealActiveTab))
+
+const tabTriggerClass = 'shrink-0 snap-start whitespace-nowrap px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
 </script>
 
 <template>
@@ -103,7 +121,13 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
     </p>
 
     <TabsRoot v-model="activeTab" class="mt-6">
-      <TabsList class="flex gap-1 border-b border-secondary-200 dark:border-secondary-800">
+      <TabsList
+        ref="tabStrip"
+        class="flex snap-x gap-1 overflow-x-auto border-b border-secondary-200 dark:border-secondary-800"
+        :class="moreToTheRight ? '[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]' : ''"
+        data-testid="settings-tab-strip"
+        @scroll.passive="updateStripHint"
+      >
         <TabsTrigger value="overview" :class="tabTriggerClass">
           {{ t('settings.overview_tab') }}
         </TabsTrigger>
