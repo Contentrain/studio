@@ -16,6 +16,9 @@ New environment variables (names only): `NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID`, 
 **3. The companion usage subscription ships OFF.**
 `NUXT_POLAR_COMPANION_USAGE` and `NUXT_POLAR_STARTER_COMPANION_PRODUCT_ID` / `NUXT_POLAR_PRO_COMPANION_PRODUCT_ID` stay unset in production. With the flag off no companion is created, nothing is written for it and the reconciler lists no accounts. Whether Polar bills its overage at cycle end, and to which card, is still open (see below).
 
+**4. Keys with only `media:read` no longer receive `_media_manifest.json`.**
+The delivery route now enforces key scopes: the manifest needs the `delivery` scope, while media files stay readable with `delivery` or `media:read`. Give a media-only key the `delivery` scope if it needs the manifest; keys with the default scope are unaffected.
+
 **Migration 046: form and comment quotas take a billing window.**
 `046_usage_window_quotas.sql` drops and recreates `create_form_submission_if_allowed` and `create_comment_if_allowed` with two defaulted window parameters (`p_window_start`, `p_window_end`). Run the migration before the new image: the new code always passes the window. The old image still works against the new functions because the parameters default to the calendar month, so rolling back the image alone is safe. Both runners (Supabase and `scripts/migrate-postgres.mjs`) apply it as a normal migration.
 
