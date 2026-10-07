@@ -363,6 +363,69 @@ describe('CDN route integration', () => {
     expect(getObject).not.toHaveBeenCalled()
   })
 
+  describe('key scopes on the delivery route', () => {
+    function stubKeyedRequest(path: string, scopes: string[]) {
+      vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+        if (key === 'projectId') return 'project-1'
+        if (key === 'path') return path
+        return undefined
+      }))
+      vi.stubGlobal('getHeader', vi.fn((_: unknown, key: string) => key === 'authorization' ? 'Bearer crn_live_example' : undefined))
+      vi.stubGlobal('setResponseHeader', vi.fn())
+      vi.stubGlobal('cachedValidateCDNKey', vi.fn().mockResolvedValue({
+        projectId: 'project-1',
+        keyId: 'key-1',
+        rateLimitPerHour: 60,
+        allowedOrigins: [],
+        scopes,
+      }))
+      vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+      vi.stubGlobal('hasFeature', vi.fn().mockImplementation((_: string, feature: string) => feature !== 'cdn.metering'))
+      vi.stubGlobal('useCDNProvider', vi.fn().mockReturnValue({
+        getObject: vi.fn().mockResolvedValue({ etag: 'etag-1', contentType: 'application/json', data: Buffer.from('{}') }),
+      }))
+      vi.stubGlobal('cachedProjectDelivery', vi.fn().mockResolvedValue({ workspace_id: 'workspace-1', cdn_enabled: true }))
+      vi.stubGlobal('cachedWorkspacePlan', vi.fn().mockResolvedValue({ plan: 'pro' }))
+    }
+
+    it('refuses content JSON to a media-only key with 403 cdn.scope_insufficient', async () => {
+      stubKeyedRequest('content/posts/en.json', ['media:read', 'media:write'])
+      const handler = await loadPublicCDNHandler()
+
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403, message: expect.stringContaining('scope') })
+    })
+
+    it('refuses the manifest to a media-only key', async () => {
+      stubKeyedRequest('manifest.json', ['media:read'])
+      const handler = await loadPublicCDNHandler()
+
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
+    })
+
+    it('serves content to a delivery key', async () => {
+      stubKeyedRequest('content/posts/en.json', ['delivery'])
+      const handler = await loadPublicCDNHandler()
+
+      await expect(handler({} as never)).resolves.toBeDefined()
+    })
+
+    it('serves a media binary to a media:read key and to a delivery key', async () => {
+      for (const scopes of [['media:read'], ['delivery']]) {
+        stubKeyedRequest('media/logo.png', scopes)
+        const handler = await loadPublicCDNHandler()
+
+        await expect(handler({} as never)).resolves.toBeDefined()
+      }
+    })
+
+    it('refuses a media binary to a key that holds only media:write', async () => {
+      stubKeyedRequest('media/logo.png', ['media:write'])
+      const handler = await loadPublicCDNHandler()
+
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
+    })
+  })
+
   it('requires a key for a keyless content (non-media) request', async () => {
     const event = {} as never
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {

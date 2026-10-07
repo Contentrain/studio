@@ -48,6 +48,10 @@ export function auditMethods(): AuditMethods {
         query = query.eq('action', options.action)
       }
 
+      if (options?.projectId) {
+        query = query.eq('record_snapshot->>project_id', options.projectId)
+      }
+
       query = options?.sort === 'oldest'
         ? query.order('created_at', { ascending: true })
         : query.order('created_at', { ascending: false })

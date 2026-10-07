@@ -80,6 +80,11 @@ Uploads used to be cut down to their first frame without a word. An animated GIF
 - **media:** Uploaded images are kept as a private source; animated GIF/WebP stay animated; stored EXIF/XMP and unsanitised SVG can be swept (`pnpm media:strip-metadata`) ([#387](https://github.com/Contentrain/studio/pull/387), [#385](https://github.com/Contentrain/studio/pull/385), [#394](https://github.com/Contentrain/studio/pull/394))
 - `@contentrain/types` 1.49.0; the Migrate golden handoff comes from the package ([#410](https://github.com/Contentrain/studio/pull/410), [#399](https://github.com/Contentrain/studio/pull/399))
 
+### 🔒 Security
+
+- **cdn:** The delivery route enforces each key's scopes. Keys with the default scope are unaffected.
+- **activity:** The project activity feed follows project access; workspace owners and admins keep the full view.
+
 ### 🩹 Fixes
 
 - **migrate:** Workspace slugs repaired and provision logs why its own answer failed ([#414](https://github.com/Contentrain/studio/pull/414)); a past-due subscription gets its own provision code ([#412](https://github.com/Contentrain/studio/pull/412)); signed server-to-server routes pass the session middleware ([#402](https://github.com/Contentrain/studio/pull/402)); a held comments export lasts the grant window ([#388](https://github.com/Contentrain/studio/pull/388))

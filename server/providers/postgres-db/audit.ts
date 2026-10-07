@@ -51,6 +51,9 @@ export function auditMethods(): AuditMethods {
         if (options?.action)
           base = base.where('action', '=', options.action)
 
+        if (options?.projectId)
+          base = base.where(sql<boolean>`record_snapshot ->> 'project_id' = ${options.projectId}`)
+
         const totalRow = await base
           .select(eb => eb.fn.countAll().as('total'))
           .executeTakeFirst()

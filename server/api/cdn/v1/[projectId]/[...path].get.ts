@@ -3,6 +3,7 @@ import { addCdnOriginBytes, checkCdnOriginBudget } from '../../../../utils/cdn-o
 import { resolveUsagePeriodCached } from '../../../../utils/usage-period'
 import { getEffectiveLimit } from '../../../../utils/overage'
 import { isMediaSourcePath } from '../../../../utils/media-source'
+import { requireDeliveryScope } from '../../../../utils/cdn-keys'
 
 /**
  * CDN delivery endpoint — serves content + media from CDN storage.
@@ -70,6 +71,9 @@ export default defineEventHandler(async (event) => {
     projectId = validated.projectId
     if (routeProjectId !== projectId)
       throw createError({ statusCode: 403, message: errorMessage('cdn.key_mismatch') })
+
+    // Scope: a key reads what its scopes allow (a media-only key never reads content or the manifest).
+    requireDeliveryScope(validated.scopes, isMediaBinary)
 
     // CORS origin check (if allowed_origins configured)
     if (validated.allowedOrigins.length > 0) {
