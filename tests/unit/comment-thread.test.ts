@@ -48,6 +48,26 @@ describe('toPublicComment', () => {
     expect(JSON.stringify(pub)).not.toContain('203.0.113.9')
   })
 
+  it.each(['javascript:alert(1)', 'JavaScript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)', '/relative'])(
+    'serves a stored non-http(s) author_url (%j) as null',
+    (stored) => {
+      expect(toPublicComment(row({ author_url: stored })).author.url).toBeNull()
+    },
+  )
+
+  it('keeps a stored http(s) author_url exactly as written', () => {
+    expect(toPublicComment(row({ author_url: 'http://ada.dev/a?b=1' })).author.url).toBe('http://ada.dev/a?b=1')
+  })
+
+  it('nulls the hostile address on replies in a built thread too', () => {
+    const { threads } = buildCommentTree(
+      [row({ id: 'r1', author_url: 'https://ada.dev' })],
+      [row({ id: 'r2', parent_id: 'r1', root_id: 'r1', depth: 1, author_url: 'javascript:alert(1)' })],
+    )
+    expect(threads[0]!.author.url).toBe('https://ada.dev')
+    expect(threads[0]!.replies[0]!.author.url).toBeNull()
+  })
+
   it('flags Studio-authored rows as moderator', () => {
     expect(toPublicComment(row({ source: 'studio' })).author.isModerator).toBe(true)
     expect(toPublicComment(row({ author_user_id: 'u1' })).author.isModerator).toBe(true)
@@ -178,6 +198,16 @@ describe('mapCommentsExport', () => {
     // unparseable date → export's generated_at, counted
     expect(ping!.created_at).toBe('2026-01-10T00:00:00.000Z')
     expect(mapped.datesDefaulted).toBe(1)
+  })
+
+  it('writes null for javascript:, data:, vbscript: and relative author URLs and normalizes a good https one', () => {
+    const urls = ['javascript:alert(1)', 'JavaScript:alert(1)', 'data:text/html,<b>x</b>', 'vbscript:msgbox(1)', '/relative', 'https://ada.dev']
+    const mapped = mapCommentsExport(makeExport({
+      entries: { 10: { model_id: 'posts', entry_id: 'e10' } },
+      threads_closed: [],
+      comments: urls.map((url, i) => ({ id: i + 1, post: 10, parent: null, author: 'A', email: null, url, date: '2020-05-01T10:00:00Z', content: 'x', approved: '1', type: 'comment' })),
+    }), 'en')
+    expect(mapped.rows.map(r => r.author_url)).toEqual([null, null, null, null, null, 'https://ada.dev/'])
   })
 
   it('maps threads_closed through the entry map and ignores unknown posts', () => {

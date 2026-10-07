@@ -17,6 +17,7 @@ import { getClientIp } from '~~/server/utils/form-types'
 import { toPublicComment } from '~~/server/utils/comment-thread'
 import { notifyCommentSubmitted } from '~~/server/utils/comment-notifications'
 import { normalizeLocaleParam, resolvePublicCommentContext } from '~~/server/utils/comment-public-context'
+import { normalizeHttpUrl } from '~~/server/utils/http-url'
 import { sanitizeString } from '~~/server/utils/sanitize-input'
 import { verifyTurnstileToken } from '~~/server/utils/turnstile'
 import { getEffectiveLimit } from '~~/server/utils/overage'
@@ -35,17 +36,6 @@ interface SubmitBody {
 
 function fieldError(field: string, key: string) {
   return { success: false as const, errors: [{ field, message: errorMessage(key) }] }
-}
-
-function normalizeUrl(value: string): string | null {
-  try {
-    const url = new URL(value.trim())
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    return url.toString().slice(0, 2048)
-  }
-  catch {
-    return null
-  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -101,7 +91,7 @@ export default defineEventHandler(async (event) => {
 
   let authorUrl: string | null = null
   if (typeof body.author?.url === 'string' && body.author.url.trim()) {
-    authorUrl = normalizeUrl(body.author.url)
+    authorUrl = normalizeHttpUrl(body.author.url)
     if (!authorUrl)
       return fieldError('author.url', 'comments.url_invalid')
   }
