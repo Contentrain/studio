@@ -127,6 +127,34 @@ describe('public comment routes', () => {
     })
   })
 
+  it('GET serves a stored javascript:/data: author_url as null and leaves an https one untouched (#embed XSS layer 2)', async () => {
+    stubPublicGlobals()
+    const reply = (n: number, author_url: string | null) => ({ ...approvedRoot, id: `3333333${n}-3333-4333-8333-333333333333`, parent_id: approvedRoot.id, depth: 1, body: `reply ${n}`, author_url })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', content_root: '.contentrain' }),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, plan: 'pro', github_installation_id: 42, overage_settings: null }),
+      getCommentThread: vi.fn().mockResolvedValue(null),
+      listPublicComments: vi.fn().mockResolvedValue({
+        roots: [{ ...approvedRoot, author_url: 'javascript:alert(document.cookie)' }],
+        replies: [reply(1, 'data:text/html,<script>alert(1)</script>'), reply(2, 'https://ada.dev')],
+        total: 1,
+      }),
+    }))
+
+    await withTestServer({
+      middleware: [await loadCorsMiddleware()],
+      routes: [{ path: '/api/comments/v1/project-1/posts/entry-1', handler: await loadPublicGet() }],
+    }, async ({ request }) => {
+      const response = await request('/api/comments/v1/project-1/posts/entry-1?locale=en')
+      expect(response.status).toBe(200)
+      const body = await response.json() as { comments: Array<{ author: { url: string | null }, replies: Array<{ author: { url: string | null } }> }> }
+      const [root] = body.comments
+      expect(root!.author.url).toBeNull()
+      expect(root!.replies.map(r => r.author.url)).toEqual([null, 'https://ada.dev'])
+      expect(JSON.stringify(body)).not.toMatch(/javascript:|data:text/i)
+    })
+  })
+
   it('CORS middleware answers the preflight with 204 before any route runs', async () => {
     await withTestServer({
       middleware: [await loadCorsMiddleware()],
@@ -509,6 +537,33 @@ describe('comment moderation routes', () => {
         ],
         threads_closed: [{ model_id: 'posts', entry_id: 'entry-1', locale: 'tr' }],
       })
+    })
+  })
+
+  it('import writes null for a javascript:/data: author URL and keeps a good https one', async () => {
+    const base = stubModerationGlobals()
+    const importComments = vi.fn().mockResolvedValue({ inserted: 3, skippedExisting: 0, orphanCount: 0, orphanParents: [], maxDepth: 0, threadsClosed: 0 })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, importComments }))
+
+    const comment = (id: number, url: string) => ({ id, post: 10, parent: null, author: 'Ada', url, date: '2020-05-01T10:00:00Z', content: 'hi', approved: '1' })
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/comments/import', handler: await loadImport() }],
+    }, async ({ request }) => {
+      const ok = await request('/api/workspaces/workspace-1/projects/project-1/comments/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: 1,
+          format: COMMENTS_EXPORT_FORMAT,
+          source: { kind: 'wxr' },
+          generated_at: '2026-01-10T00:00:00.000Z',
+          entries: { 10: { model_id: 'posts', entry_id: 'entry-1' } },
+          comments: [comment(1, 'javascript:alert(1)'), comment(2, 'data:text/html,<script>alert(1)</script>'), comment(3, 'https://ada.dev')],
+        }),
+      })
+      expect(ok.status).toBe(200)
+      const forwarded = importComments.mock.calls[0]![2] as { comments: Array<{ source_id: string, author_url: string | null }> }
+      expect(forwarded.comments.map(c => [c.source_id, c.author_url])).toEqual([['1', null], ['2', null], ['3', 'https://ada.dev/']])
     })
   })
 

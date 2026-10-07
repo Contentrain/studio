@@ -79,6 +79,7 @@ GET /api/comments/v1/{projectId}/{modelId}/{entryId}?locale=en&page=1&limit=20&s
 }
 ```
 
+- `author.url` is an absolute `http(s)` address or `null`: it is checked on write (submit and WordPress import) and again on read, so a `javascript:` or `data:` address stored earlier is served as `null`. Render it as a link only when it is not null.
 - Pagination is over **root** comments; every approved reply under the page's
   roots ships nested inside them (up to 500 per page).
 - Only `approved` comments are returned. A reply whose parent is not approved
