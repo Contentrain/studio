@@ -1,0 +1,109 @@
+/**
+ * Connect a repository to a workspace as a project — the one place a project row is made. Shared by the
+ * workspace's own route (the Connect dialog) and a Migrate grant's connect (`/migrate/claim`), so both
+ * hold the same rules: a paid plan, no duplicate, the content branch ready, a Migrate delivery merged.
+ */
+import { unmergedMigrationBranch } from './ensure-content-branch'
+import { syncMigrationHandoff } from './migration-handoff'
+
+export interface ConnectProjectInput {
+  repoFullName: string
+  defaultBranch?: string
+  contentRoot?: string
+  detectedStack?: string
+  hasContentrain?: boolean
+}
+
+export async function connectWorkspaceProject(
+  accessToken: string,
+  workspaceId: string,
+  effectivePlan: string | undefined,
+  body: ConnectProjectInput,
+) {
+  if (!body.repoFullName)
+    throw createError({ statusCode: 400, message: errorMessage('validation.repo_required') })
+
+  // Free plan cannot create projects — requires paid subscription
+  if (effectivePlan === 'free') {
+    throw createError({
+      statusCode: 402,
+      message: 'A paid plan is required to connect repositories.',
+      data: { requiresCheckout: true, workspaceId },
+    })
+  }
+
+  const db = useDatabaseProvider()
+
+  // Prevent duplicate — same repo in same workspace
+  const isDuplicate = await db.checkDuplicateProject(workspaceId, body.repoFullName)
+
+  if (isDuplicate)
+    throw createError({ statusCode: 409, message: errorMessage('project.already_connected'), data: { code: 'already_connected' } })
+
+  const defaultBranch = body.defaultBranch || 'main'
+
+  // Establish the content SSOT branch before the project row exists, so a
+  // stored project always implies a write-ready one. Without this a repo that
+  // already carries `.contentrain/` connects as `active` and reads fine while
+  // every write fails on the missing base ref — see ensureContentBranch.
+  const workspace = await db.getWorkspaceById(workspaceId, 'id, github_installation_id')
+  const installationId = workspace?.github_installation_id as number | null | undefined
+
+  if (installationId) {
+    const [owner = '', repo = ''] = body.repoFullName.split('/')
+    const git = useGitProvider({ installationId, owner, repo, contentRoot: body.contentRoot || '/' })
+    // A Migrate delivery waiting on its own branch: `contentrain` forked from the pre-migration
+    // default branch would open the project empty (and pass Migrate's "present" check). Wait for the merge.
+    // Fail closed: a GitHub error here must not let the connect fork a stale `contentrain`.
+    const waiting = await unmergedMigrationBranch(git, defaultBranch).catch(() => {
+      throw createError({ statusCode: 502, message: errorMessage('project.content_branch_failed'), data: { code: 'content_branch_failed' } })
+    })
+    if (waiting) {
+      throw createError({
+        statusCode: 409,
+        message: errorMessage('project.migration_not_merged', { branch: waiting, base: defaultBranch }),
+        data: { code: 'migration_not_merged', branch: waiting },
+      })
+    }
+    try {
+      await ensureContentBranch(git, defaultBranch)
+    }
+    catch {
+      throw createError({
+        statusCode: 502,
+        message: errorMessage('project.content_branch_failed'),
+        data: { code: 'content_branch_failed' },
+      })
+    }
+  }
+
+  const project = await db.createProject(accessToken, {
+    workspace_id: workspaceId,
+    repo_full_name: body.repoFullName,
+    default_branch: defaultBranch,
+    content_root: body.contentRoot || '/',
+    detected_stack: body.detectedStack || null,
+    status: body.hasContentrain === false ? 'setup' : 'active',
+  })
+
+  // A repository produced by Contentrain Migrate carries a migration handoff;
+  // pick it up now so the overview card and the agent see the migration on the
+  // very first visit. Best-effort — a missing or malformed file never blocks the
+  // connect (the project can re-sync from the overview card).
+  if (installationId && project?.id) {
+    try {
+      const [owner = '', repo = ''] = body.repoFullName.split('/')
+      syncMigrationHandoff({
+        projectId: project.id as string,
+        git: useGitProvider({ installationId, owner, repo }),
+        contentRoot: normalizeContentRoot(body.contentRoot || '/'),
+        project: { repo_full_name: body.repoFullName, default_branch: defaultBranch },
+      }).catch(() => {})
+    }
+    catch {
+      // Best-effort: the project is connected; the handoff can be re-read from the overview card.
+    }
+  }
+
+  return project
+}

@@ -29,12 +29,10 @@ const deleteConfirmOpen = ref(false)
 const deleting = ref(false)
 const activeTab = ref<'general' | 'media' | 'api' | 'webhooks' | 'danger'>(props.initialTab ?? 'general')
 
-// Edition gates: Conversation API and outbound webhooks are ee/-backed
-// (runEnterpriseRoute paths). Hide the tabs in Community Edition so
-// users don't click through to a 403. Managed / on-premise profiles
-// (edition='ee') keep both tabs.
-const conversationApiEnabled = useFeature('api.conversation')
-const webhooksEnabled = useFeature('api.webhooks_outbound')
+// One gating rule (see useFeatureGate): ee-backed features are hidden in Community Edition so nobody
+// clicks through to a 403; otherwise the tab shows, with an upgrade call to action when the plan
+// lacks the feature. API keys always has MCP keys (core), so the tab is always there.
+const webhooksGate = useFeatureGate('api.webhooks_outbound')
 // Media rehost rewrites content onto this instance's CDN delivery URLs, so it
 // needs the CDN stack; owner/admin only (the server enforces both).
 const cdnEnabled = useFeature('cdn.delivery')
@@ -45,8 +43,8 @@ const availableTabs = computed(() => {
     { value: 'general', label: t('project_settings.general') },
   ]
   if (cdnEnabled.value && isOwnerOrAdmin.value) tabs.push({ value: 'media', label: t('media_rehost.tab') })
-  if (conversationApiEnabled.value) tabs.push({ value: 'api', label: t('conversation_keys.title') })
-  if (webhooksEnabled.value) tabs.push({ value: 'webhooks', label: t('webhooks.title') })
+  tabs.push({ value: 'api', label: t('project_settings.api_keys_tab') })
+  if (webhooksGate.value !== 'hidden') tabs.push({ value: 'webhooks', label: t('webhooks.title') })
   tabs.push({ value: 'danger', label: t('danger_zone.title') })
   return tabs
 })
@@ -484,9 +482,9 @@ async function save() {
           />
         </div>
 
-        <!-- Conversation API Keys -->
+        <!-- API keys: MCP keys + Conversation API keys -->
         <div v-else-if="activeTab === 'api'" class="flex-1 overflow-y-auto">
-          <OrganismsConversationKeysPanel
+          <OrganismsProjectApiKeysPanel
             :workspace-id="workspaceId"
             :project-id="projectId"
           />
@@ -495,9 +493,17 @@ async function save() {
         <!-- Webhooks -->
         <div v-else-if="activeTab === 'webhooks'" class="flex-1 overflow-y-auto">
           <OrganismsWebhookSettingsPanel
+            v-if="webhooksGate === 'enabled'"
             :workspace-id="workspaceId"
             :project-id="projectId"
           />
+          <div v-else class="px-6 py-5" data-testid="webhooks-locked">
+            <div class="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
+              <p class="text-sm text-warning-800 dark:text-warning-200">
+                {{ t('webhooks.upgrade_cta', { plans: useFeaturePlans('api.webhooks_outbound') }) }}
+              </p>
+            </div>
+          </div>
         </div>
 
         <!-- Danger Zone -->

@@ -33,8 +33,17 @@ const grants = ref<ConnectedGrant[]>([])
 
 const hasRemoteMcp = useFeature('api.mcp_cloud_oauth')
 
+// "contentrain-remote" (OAuth) never collides with the "contentrain-<project>" entry of an MCP key
+// when both are added to Claude Code.
 const claudeCommand = computed(() =>
-  endpoint.value ? `claude mcp add --transport http contentrain ${endpoint.value}` : '',
+  endpoint.value ? `claude mcp add --transport http contentrain-remote ${endpoint.value}` : '',
+)
+
+/** Codex reads remote servers from config.toml; sign-in is OAuth (no key in the file), started with `codex mcp login`. */
+const codexConfig = computed(() =>
+  endpoint.value
+    ? ['[mcp_servers.contentrain-remote]', `url = "${endpoint.value}"`, '# then: codex mcp login contentrain-remote'].join('\n')
+    : '',
 )
 
 async function refresh() {
@@ -60,8 +69,9 @@ function copyToClipboard(value: string) {
   navigator.clipboard?.writeText(value).then(() => toast.success(t('mcp_cloud.copied')))
 }
 
+const confirmRevokeId = ref<string | null>(null)
+
 async function handleRevoke(grantId: string) {
-  if (!window.confirm(t('connected_apps.revoke_confirm'))) return
   try {
     await $fetch(`/api/workspaces/${props.workspaceId}/connected-apps/${grantId}`, { method: 'DELETE' })
     grants.value = grants.value.filter(grant => grant.grantId !== grantId)
@@ -69,6 +79,9 @@ async function handleRevoke(grantId: string) {
   }
   catch {
     toast.error(t('connected_apps.revoke_error'))
+  }
+  finally {
+    confirmRevokeId.value = null
   }
 }
 
@@ -91,7 +104,7 @@ function formatRelative(iso: string | null): string {
 
     <div v-if="!hasRemoteMcp" class="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
       <p class="text-sm text-warning-800 dark:text-warning-200">
-        {{ t('connected_apps.upgrade_cta') }}
+        {{ t('connected_apps.upgrade_cta', { plans: useFeaturePlans('api.mcp_cloud_oauth') }) }}
       </p>
     </div>
 
@@ -127,6 +140,18 @@ function formatRelative(iso: string | null): string {
               :label="t('mcp_cloud.copy_command')"
               size="sm"
               @click="copyToClipboard(claudeCommand)"
+            />
+          </div>
+        </div>
+        <div class="mt-3">
+          <AtomsFormLabel :text="t('connected_apps.connect_codex_label')" size="sm" />
+          <div class="mt-1.5 flex items-start gap-2">
+            <code class="block flex-1 overflow-x-auto whitespace-pre rounded bg-secondary-50 px-3 py-2 font-mono text-xs text-heading dark:bg-secondary-900 dark:text-secondary-100" data-testid="codex-config">{{ codexConfig }}</code>
+            <AtomsIconButton
+              icon="icon-[annon--copy]"
+              :label="t('mcp_cloud.copy_config')"
+              size="sm"
+              @click="copyToClipboard(codexConfig)"
             />
           </div>
         </div>
@@ -170,11 +195,25 @@ function formatRelative(iso: string | null): string {
             </div>
           </div>
           <AtomsIconButton
+            v-if="confirmRevokeId !== grant.grantId"
             icon="icon-[annon--trash]"
             :label="t('connected_apps.revoke')"
             size="sm"
-            @click="handleRevoke(grant.grantId)"
+            @click="confirmRevokeId = grant.grantId"
           />
+          <div v-else class="flex shrink-0 flex-col items-end gap-1" data-testid="grant-confirm">
+            <p class="max-w-52 text-right text-xs text-muted">
+              {{ t('connected_apps.revoke_confirm') }}
+            </p>
+            <div class="flex items-center gap-1">
+              <AtomsBaseButton variant="danger" size="sm" data-testid="grant-confirm-revoke" @click="handleRevoke(grant.grantId)">
+                {{ t('connected_apps.revoke') }}
+              </AtomsBaseButton>
+              <AtomsBaseButton variant="ghost" size="sm" @click="confirmRevokeId = null">
+                {{ t('common.cancel') }}
+              </AtomsBaseButton>
+            </div>
+          </div>
         </li>
       </ul>
       <div v-else-if="!loading">
@@ -184,6 +223,10 @@ function formatRelative(iso: string | null): string {
           :description="t('connected_apps.empty_description')"
         />
       </div>
+
+      <p class="text-xs text-muted" data-testid="connected-apps-keys-hint">
+        {{ t('connected_apps.keys_hint') }}
+      </p>
     </template>
   </div>
 </template>

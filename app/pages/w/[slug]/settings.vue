@@ -6,6 +6,7 @@ definePageMeta({
 })
 
 const route = useRoute()
+const router = useRouter()
 const slug = computed(() => route.params.slug as string)
 
 const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaces()
@@ -20,20 +21,30 @@ useHead({
     : t('common.settings'),
 })
 
-// AI Keys tab hosts BYOA key management — backed by runEnterpriseRoute
-// on the server and gated by `ai.byoa` (requires_ee). Hide in Community
-// so users don't see a tab that 403s. MCP Cloud stays visible even in
-// Community because `api.mcp_cloud` itself is core; only MCP custom
-// domain / SSO are ee-gated and those are rendered inside that panel.
-const aiKeysEnabled = useFeature('ai.byoa')
+// AI tab hosts the member's own Anthropic key (BYOA) — `ai.byoa` is ee-backed. One gating rule:
+// hidden in Community (the route would 404), otherwise shown, with an upgrade call to action
+// when the plan lacks it.
+const aiGate = useFeatureGate('ai.byoa')
 
 const validTabs = computed(() => {
-  const base = ['overview', 'members', 'billing', 'github', 'mcp-cloud', 'connected-apps'] as const
-  return aiKeysEnabled.value ? [...base, 'ai-keys'] as const : base
+  const base = ['overview', 'members', 'billing', 'github', 'connected-apps'] as const
+  return aiGate.value !== 'hidden' ? [...base, 'ai'] as const : base
 })
 
+// Old deep links (docs, bookmarks, the previous palette entries) keep working.
+const LEGACY_TAB_ALIASES: Record<string, string> = {
+  'ai-keys': 'ai',
+  'mcp-cloud': 'connected-apps',
+}
+
+watch(() => route.query.tab, (tab) => {
+  const alias = typeof tab === 'string' ? LEGACY_TAB_ALIASES[tab] : undefined
+  if (alias) router.replace({ query: { ...route.query, tab: alias } })
+}, { immediate: true })
+
 const tabFromQuery = computed(() => {
-  const tab = route.query.tab as string | undefined
+  const raw = route.query.tab as string | undefined
+  const tab = raw ? (LEGACY_TAB_ALIASES[raw] ?? raw) : undefined
   return tab && (validTabs.value as readonly string[]).includes(tab) ? tab : null
 })
 
@@ -44,7 +55,7 @@ watch(tabFromQuery, (tab) => {
   if (tab) activeTab.value = tab
 })
 
-// If the active tab becomes unavailable (e.g. user lands on ?tab=ai-keys
+// If the active tab becomes unavailable (e.g. user lands on ?tab=ai
 // in Community), fall back to overview.
 watch(validTabs, (tabs) => {
   if (!(tabs as readonly string[]).includes(activeTab.value)) activeTab.value = 'overview'
@@ -79,7 +90,25 @@ onMounted(async () => {
 })
 watch(slug, loadSettingsData)
 
-const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
+// On a narrow screen the tab strip scrolls: keep the active tab in view, and fade the right edge while more tabs hide there.
+const tabStrip = ref<{ $el: HTMLElement } | null>(null)
+const moreToTheRight = ref(false)
+
+function updateStripHint() {
+  const el = tabStrip.value?.$el
+  moreToTheRight.value = !!el && el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+}
+
+function revealActiveTab() {
+  const el = tabStrip.value?.$el
+  el?.querySelector<HTMLElement>('[data-state="active"]')?.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+  updateStripHint()
+}
+
+watch(activeTab, () => nextTick(revealActiveTab))
+onMounted(() => nextTick(revealActiveTab))
+
+const tabTriggerClass = 'shrink-0 snap-start whitespace-nowrap px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-heading data-[state=active]:text-heading data-[state=active]:border-b-2 data-[state=active]:border-primary-500 dark:text-secondary-400 dark:hover:text-secondary-100 dark:data-[state=active]:text-secondary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 rounded-t'
 </script>
 
 <template>
@@ -92,7 +121,13 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
     </p>
 
     <TabsRoot v-model="activeTab" class="mt-6">
-      <TabsList class="flex gap-1 border-b border-secondary-200 dark:border-secondary-800">
+      <TabsList
+        ref="tabStrip"
+        class="flex snap-x gap-1 overflow-x-auto border-b border-secondary-200 dark:border-secondary-800"
+        :class="moreToTheRight ? '[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]' : ''"
+        data-testid="settings-tab-strip"
+        @scroll.passive="updateStripHint"
+      >
         <TabsTrigger value="overview" :class="tabTriggerClass">
           {{ t('settings.overview_tab') }}
         </TabsTrigger>
@@ -107,14 +142,11 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <TabsTrigger v-if="isOwnerOrAdmin" value="github" :class="tabTriggerClass">
           {{ t('settings.github_tab') }}
         </TabsTrigger>
-        <TabsTrigger v-if="aiKeysEnabled" value="ai-keys" :class="tabTriggerClass">
-          {{ t('settings.ai_tab') }}
-        </TabsTrigger>
-        <TabsTrigger value="mcp-cloud" :class="tabTriggerClass">
-          {{ t('settings.mcp_cloud_tab') }}
-        </TabsTrigger>
         <TabsTrigger value="connected-apps" :class="tabTriggerClass">
           {{ t('settings.connected_apps_tab') }}
+        </TabsTrigger>
+        <TabsTrigger v-if="aiGate !== 'hidden'" value="ai" :class="tabTriggerClass">
+          {{ t('settings.ai_tab') }}
         </TabsTrigger>
       </TabsList>
 
@@ -134,16 +166,12 @@ const tabTriggerClass = 'px-4 py-2 text-sm font-medium text-muted transition-col
         <OrganismsWorkspaceGitHubPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
       </TabsContent>
 
-      <TabsContent v-if="aiKeysEnabled" value="ai-keys" class="mt-6">
-        <OrganismsWorkspaceAIKeysPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
-      </TabsContent>
-
-      <TabsContent value="mcp-cloud" class="mt-6">
-        <OrganismsWorkspaceMcpCloudPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
-      </TabsContent>
-
       <TabsContent value="connected-apps" class="mt-6">
         <OrganismsWorkspaceConnectedAppsPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" />
+      </TabsContent>
+
+      <TabsContent v-if="aiGate !== 'hidden'" value="ai" class="mt-6">
+        <OrganismsWorkspaceAIKeysPanel v-if="activeWorkspace" :workspace-id="activeWorkspace.id" :locked="aiGate === 'locked'" />
       </TabsContent>
     </TabsRoot>
   </div>

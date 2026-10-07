@@ -135,7 +135,7 @@ describe('buildRelationOptions', () => {
   it('encodes the target model into value + label for polymorphic relations', () => {
     const data = [{ slug: 'getting-started', frontmatter: { title: 'Getting Started' }, body: '' }]
     const [opt] = buildRelationOptions('blog-post', data, true)
-    expect(opt).toEqual({ value: 'blog-post::getting-started', label: 'blog-post: Getting Started' })
+    expect(opt).toMatchObject({ value: 'blog-post::getting-started', label: 'blog-post: Getting Started', group: 'blog-post', text: 'Getting Started' })
     // Selecting this option round-trips to the stored { model, ref } shape.
     expect(relationKeyToItem(opt!.value, true)).toEqual({ model: 'blog-post', ref: 'getting-started' })
   })

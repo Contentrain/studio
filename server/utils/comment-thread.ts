@@ -15,6 +15,7 @@
 import type { CommentsExport, RawComment } from '@contentrain/types'
 import { COMMENTS_EXPORT_FORMAT } from '@contentrain/types'
 import type { CommentImportRow, CommentStatus, CommentThreadKey, CommentType, DatabaseRow } from '~~/server/providers/database'
+import { normalizeHttpUrl, onlyHttpUrl } from './http-url'
 import { htmlToPlainText, sanitizeString } from './sanitize-input'
 
 // ─── Public shape ───
@@ -42,7 +43,8 @@ export function toPublicComment(row: DatabaseRow): PublicComment {
     depth: Number(row.depth ?? 0),
     author: {
       name: String(row.author_name ?? ''),
-      url: row.author_url ? String(row.author_url) : null,
+      // Stored rows may predate the write-side filter: only an http(s) address leaves the server.
+      url: onlyHttpUrl(row.author_url ? String(row.author_url) : null),
       isModerator: row.source === 'studio' || Boolean(row.author_user_id),
     },
     body: String(row.body ?? ''),
@@ -158,19 +160,6 @@ function clean(value: string | null | undefined, max: number): string | null {
   return s.length > max ? s.slice(0, max) : s
 }
 
-/** Author URLs must be absolute http(s); anything else is dropped, never rewritten. */
-function cleanUrl(value: string | null | undefined): string | null {
-  if (!value) return null
-  try {
-    const url = new URL(String(value).trim())
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    return url.toString().slice(0, 2048)
-  }
-  catch {
-    return null
-  }
-}
-
 /**
  * `CommentsExport` → import rows. Targets come from `entries`
  * (WordPress post id → entry); parents travel as source ids and are linked
@@ -215,7 +204,7 @@ export function mapCommentsExport(exp: CommentsExport, defaultLocale = 'en'): Ma
       locale: target.locale,
       author_name: clean(comment.author, 120) ?? 'Anonymous',
       author_email: clean(comment.email, 254),
-      author_url: cleanUrl(comment.url),
+      author_url: normalizeHttpUrl(comment.url),
       // A comment is never dropped for an empty body; the check constraint needs one character.
       body: body || '…',
       status: mapWordPressStatus(comment.approved),

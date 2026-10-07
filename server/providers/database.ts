@@ -1186,6 +1186,19 @@ export interface DatabaseProvider {
   markMigrateGrantRedeemed: (grantId: string, subscriptionId: string | null) => Promise<void>
 
   /**
+   * Record the delivery repository on a grant that has none (a bundle grant is created before the
+   * repository exists; the claim Migrate signs carries it). Only a grant with no repository takes it:
+   * one that has it is never rewritten. Returns the grant as it stands afterwards.
+   */
+  setMigrateGrantRepo: (grantId: string, repo: { owner: string, name: string }) => Promise<DatabaseRow | null>
+
+  /**
+   * Point a grant at the repository's new name after GitHub renamed or transferred it (the connect
+   * step found it through the old one). Unlike `setMigrateGrantRepo` it rewrites a repository that is set.
+   */
+  updateMigrateGrantRepo: (grantId: string, repo: { owner: string, name: string }) => Promise<void>
+
+  /**
    * Withdraw a grant (Migrate's revoke): records when and why. Only the first call counts, so the
    * reason of the first revocation stays. Returns the grant as it stands afterwards.
    */

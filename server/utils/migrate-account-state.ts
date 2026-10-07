@@ -15,6 +15,7 @@
  */
 import type { MigrateAccountStateResponse, MigrateStudioPlan } from '@contentrain/types'
 import { STUDIO_YEARLY_LIST_CENTS, bundleUpgradeCents, bundleYear1Cents, planCovers } from '../../shared/utils/migrate-bundle'
+import { PLAN_PRICING } from '../../shared/utils/license'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
 interface RunningPlan { plan: MigrateStudioPlan, workspaceId: string, primary: boolean }
@@ -55,17 +56,24 @@ export async function coveringWorkspace(userId: string, needed: MigrateStudioPla
 }
 
 /**
- * `renewal_cents` is the yearly list price the subscription renews at after
- * the discounted first year (0 when nothing is added). Migrate may not compute
- * it; it shows Studio's number. Not in `@contentrain/types` yet — extra key.
+ * `renewal_cents` is the yearly list price the subscription renews at after the discounted first year (0 when
+ * nothing is added). `monthly_list_cents` is the sized plan's monthly price × 12 (from PLAN_PRICING): what a year
+ * costs paid month by month, so the offer can show the yearly saving. It follows the plan discovery sized (`plan`),
+ * also when the account's own plan covers it. Both are typed (optional) in `@contentrain/types` since 1.56.0 for
+ * Migrate, which only displays them; Studio always sends them, so here they are required.
  */
-export type MigrateAccountStateWithRenewal = MigrateAccountStateResponse & { renewal_cents: number }
+export type MigrateAccountStateWithRenewal = MigrateAccountStateResponse & Required<Pick<MigrateAccountStateResponse, 'renewal_cents' | 'monthly_list_cents'>>
+
+function monthlyListCents(plan: MigrateStudioPlan): number {
+  return PLAN_PRICING[plan].priceMonthly * 12 * 100
+}
 
 export async function resolveMigrateAccountState(githubUserId: string, plan: MigrateStudioPlan): Promise<MigrateAccountStateWithRenewal> {
   const user = await useAuthProvider().getUserByProviderAccount('github', githubUserId)
   const current = user ? await highestRunningPlan(user.id) : null
 
-  if (!current) return { state: 'none', plan, year1_cents: bundleYear1Cents(plan), renewal_cents: STUDIO_YEARLY_LIST_CENTS[plan] }
-  if (planCovers(current, plan)) return { state: 'covers', plan: current, year1_cents: 0, renewal_cents: 0, current_plan: current }
-  return { state: 'too_small', plan, year1_cents: bundleUpgradeCents(plan, current), renewal_cents: STUDIO_YEARLY_LIST_CENTS[plan], current_plan: current }
+  const monthly_list_cents = monthlyListCents(plan)
+  if (!current) return { state: 'none', plan, year1_cents: bundleYear1Cents(plan), renewal_cents: STUDIO_YEARLY_LIST_CENTS[plan], monthly_list_cents }
+  if (planCovers(current, plan)) return { state: 'covers', plan: current, year1_cents: 0, renewal_cents: 0, monthly_list_cents, current_plan: current }
+  return { state: 'too_small', plan, year1_cents: bundleUpgradeCents(plan, current), renewal_cents: STUDIO_YEARLY_LIST_CENTS[plan], monthly_list_cents, current_plan: current }
 }

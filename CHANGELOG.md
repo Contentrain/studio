@@ -28,6 +28,8 @@ A workspace on a yearly plan that tries to enable overage now sees that yearly p
 **Migration 047: workspace slugs repaired.**
 `047_workspace_slug_repair.sql` replaces `handle_new_user()` (it lowercased after replacing characters, so a GitHub name like `ABB65` gave the slug `---65-1a2b3c4d`) and rewrites only the workspace slugs that fail `^[a-z0-9][a-z0-9-]{0,62}$`; valid slugs are untouched and a repeat run changes nothing. Migrate's provision refused such an account with a 502. A repaired workspace changes its `/w/<slug>` address; nothing else stores a slug (grants, billing, CDN, MCP and CLI use ids). The migration runs in the pre-deploy step; the old image keeps working against it.
 
+**Enhancement: the Migrate account state carries `monthly_list_cents`.** The sized plan's monthly price × 12 (Starter $9 → 10800), next to `renewal_cents`, so the Migrate offer can show the yearly saving without holding a price of its own.
+
 **Fix: provision logs why its own answer failed validation.** A refused answer now logs the order, the slug and the validator's errors before the 502.
 
 **Policy change: emptying a field makes a content write `bulk_content`.**

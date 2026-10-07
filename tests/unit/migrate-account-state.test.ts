@@ -2,6 +2,7 @@ import { exportSPKI, generateKeyPair, SignJWT } from 'jose'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { validateMigrateAccountStateRequest } from '@contentrain/types'
 import { MigrateS2sError, verifyMigrateS2sRequest } from '../../server/utils/migrate-s2s'
+import { PLAN_PRICING } from '../../shared/utils/license'
 import { bundleUpgradeCents, bundleYear1Cents, planCovers } from '../../shared/utils/migrate-bundle'
 
 function createErrorLike(input: { statusCode: number, message: string }) {
@@ -149,20 +150,20 @@ describe('POST /api/migrate/account-state', () => {
 
   it('none: no Studio account behind that GitHub user prices year 1 of the sized plan', async () => {
     auth.getUserByProviderAccount.mockResolvedValue(null)
-    expect(await ask('pro')).toEqual({ state: 'none', plan: 'pro', year1_cents: 39200, renewal_cents: 49000 })
+    expect(await ask('pro')).toEqual({ state: 'none', plan: 'pro', year1_cents: 39200, renewal_cents: 49000, monthly_list_cents: PLAN_PRICING.pro.priceMonthly * 1200 })
     expect(auth.getUserByProviderAccount).toHaveBeenCalledWith('github', '4242')
   })
 
   it('none: an account without a running paid plan (free workspace, trial) adds the full line', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-free', type: 'primary', plan: 'free' }, { id: 'ws-trial', type: 'secondary', plan: 'pro' }])
     db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'ws-trial' ? { ...account('pro', 'trialing'), trial_ends_at: new Date(Date.now() + 86_400_000).toISOString() } : null))
-    expect(await ask('starter')).toEqual({ state: 'none', plan: 'starter', year1_cents: 7200, renewal_cents: 9000 })
+    expect(await ask('starter')).toEqual({ state: 'none', plan: 'starter', year1_cents: 7200, renewal_cents: 9000, monthly_list_cents: 10800 })
   })
 
   it('covers: a running plan at least the sized one adds nothing and reports the account\'s own plan', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'pro' }])
     db.getActivePaymentAccount.mockResolvedValue(account('pro'))
-    expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, current_plan: 'pro' })
+    expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, monthly_list_cents: 10800, current_plan: 'pro' })
   })
 
   it('none: a plan that is ending (cancel_at_period_end) is not Studio included — the normal bundle applies', async () => {
@@ -182,7 +183,7 @@ describe('POST /api/migrate/account-state', () => {
   it('too_small: a running plan below the sized one charges the difference', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'starter' }])
     db.getActivePaymentAccount.mockResolvedValue(account('starter'))
-    expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, renewal_cents: 49000, current_plan: 'starter' })
+    expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, renewal_cents: 49000, monthly_list_cents: PLAN_PRICING.pro.priceMonthly * 1200, current_plan: 'starter' })
   })
 
   it('coveringWorkspace: the personal workspace if its plan covers, else the first covering one, nothing when none does', async () => {

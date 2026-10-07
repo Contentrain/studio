@@ -372,7 +372,7 @@ brain-cache invalidation on write tools. **Quota semantics:** only
 `tools/call` requests consume the monthly quota and produce meter events;
 protocol traffic (initialize, tools/list, SSE GET, session DELETE) is
 rate-limited but free. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
-`WorkspaceMcpCloudPanel.vue`. The whole path is implemented — **not** a stub.
+`ProjectMcpKeysPanel.vue` (project settings → API keys). The whole path is implemented — **not** a stub.
 
 **Scaling note:** loopback MCP sessions are in-memory per Nitro instance
 (15 min TTL). Multiple instances need sticky sessions for `mcp-session-id`
