@@ -1384,6 +1384,9 @@ export interface DatabaseProvider {
     limit?: number
     action?: string
     sort?: 'newest' | 'oldest'
+    // Only rows whose snapshot names this project (`record_snapshot.project_id`). Rows without a snapshot belong to
+    // no project and are never returned when this is set.
+    projectId?: string
   }) => Promise<{ data: DatabaseRow[], total: number }>
 
   // Purges audit logs older than retentionDays (default 90). Returns the

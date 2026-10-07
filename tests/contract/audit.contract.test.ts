@@ -85,4 +85,22 @@ describe('postgres-db audit (contract)', () => {
     const { total: recent } = await methods.listAuditLogs(user.workspaceId)
     expect(recent).toBe(3)
   })
+
+  it('projectId keeps only the rows whose snapshot names that project', async () => {
+    const mine = randomUUID()
+    const other = randomUUID()
+    await methods.createAuditLog({ ...entry('delete_comment'), recordSnapshot: { project_id: mine } })
+    await methods.createAuditLog({ ...entry('delete_comment'), recordSnapshot: { project_id: mine } })
+    await methods.createAuditLog({ ...entry('delete_comment'), recordSnapshot: { project_id: other } })
+    await methods.createAuditLog({ ...entry('delete_comment'), recordSnapshot: null })
+
+    const scoped = await methods.listAuditLogs(user.workspaceId, { projectId: mine })
+
+    expect(scoped.total).toBe(2)
+    expect(scoped.data).toHaveLength(2)
+    // The workspace-wide view (owner/admin) is unchanged by the option being absent.
+    const all = await methods.listAuditLogs(user.workspaceId, { action: 'delete_comment' })
+    expect(all.total).toBe(4)
+    await sql`DELETE FROM public.audit_logs WHERE workspace_id = ${user.workspaceId} AND action = 'delete_comment'`.execute(getDb())
+  })
 })

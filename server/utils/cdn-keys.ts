@@ -25,6 +25,18 @@ export function requireScope(scopes: string[], needed: CDNKeyScope): void {
     throw createError({ statusCode: 403, message: errorMessage('cdn.scope_insufficient', { scope: needed }) })
 }
 
+/**
+ * What a key may fetch from the delivery route (`/api/cdn/v1/...`): content and manifests need `delivery`; a media
+ * binary is served to `delivery` and to `media:read`. A media-only key therefore cannot read content JSON. Legacy keys
+ * without scopes are `delivery` (see `validateCDNKey`).
+ */
+export function requireDeliveryScope(scopes: readonly string[] | undefined, isMediaBinary: boolean): void {
+  const held = scopes ?? ['delivery']
+  if (held.includes('delivery') || (isMediaBinary && held.includes('media:read')))
+    return
+  throw createError({ statusCode: 403, message: errorMessage('cdn.scope_insufficient', { scope: 'delivery' }) })
+}
+
 function toBase62(buffer: Buffer): string {
   let result = ''
   for (const byte of buffer) {

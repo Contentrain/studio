@@ -26,6 +26,16 @@ describe('CDN key scopes', () => {
     expect(() => requireScope(['delivery'], 'media:write')).toThrowError(/cdn\.scope_insufficient/)
   })
 
+  it('requireDeliveryScope: content needs delivery, media also accepts media:read, a legacy key is delivery', async () => {
+    const { requireDeliveryScope } = await import('../../server/utils/cdn-keys')
+    expect(() => requireDeliveryScope(['delivery'], false)).not.toThrow()
+    expect(() => requireDeliveryScope(undefined, false)).not.toThrow()
+    expect(() => requireDeliveryScope(['media:read'], true)).not.toThrow()
+    expect(() => requireDeliveryScope(['media:read', 'media:write'], false)).toThrowError(/cdn\.scope_insufficient/)
+    expect(() => requireDeliveryScope(['media:write'], true)).toThrowError(/cdn\.scope_insufficient/)
+    expect(() => requireDeliveryScope([], true)).toThrowError(/cdn\.scope_insufficient/)
+  })
+
   it('validateCDNKey surfaces the key scopes', async () => {
     vi.stubGlobal('useDatabaseProvider', () => ({
       validateCDNKeyHash: vi.fn().mockResolvedValue({

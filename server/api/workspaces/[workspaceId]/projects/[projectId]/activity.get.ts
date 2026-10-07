@@ -2,7 +2,8 @@
  * GET /api/workspaces/:workspaceId/projects/:projectId/activity
  *
  * Returns a paginated activity feed from the audit log.
- * Currently workspace-scoped (audit_logs table has workspace_id).
+ * A workspace owner/admin sees the whole workspace's log. A member needs access to this project and sees only the
+ * rows that name it (`record_snapshot.project_id`); rows with no project are owner/admin only.
  *
  * Query params:
  *   - page (default: 1)
@@ -20,8 +21,14 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
 
-  // Verify workspace access (owner/admin/member)
-  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
+  // Verify workspace access (owner/admin/member); a member also needs this project (same rule as requireProjectAccess)
+  const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin', 'member'])
+  const projectScoped = role === 'member'
+  if (projectScoped) {
+    const projectMember = await db.getProjectMember(projectId, session.user.id)
+    if (!projectMember)
+      throw createError({ statusCode: 403, message: errorMessage('project.access_denied') })
+  }
 
   // Verify project belongs to workspace
   const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId)
@@ -43,6 +50,7 @@ export default defineEventHandler(async (event) => {
     limit,
     action: query.action,
     sort: (query.sort as 'newest' | 'oldest') ?? 'newest',
+    projectId: projectScoped ? projectId : undefined,
   })
 
   return {
