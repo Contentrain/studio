@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### ⚠️ Upgrade notes
+
+**The "Migrate with Studio" bundle sells Studio year 1 at the yearly list price ($90 Starter / $490 Pro, not $72 / $392).**
+Founder rule: Studio is never discounted beyond the yearly plan; the bundle's saving moves to the Migrate fee (Migrate PR-4), and a Studio refund within 14 days of delivery is reduced by that Migrate credit. The S2S shape is unchanged (`year1_cents` now carries the list price, `renewal_cents` the same, `monthly_list_cents` monthly × 12). Deploy this together with Migrate's PR-4: Studio alone raises the cart by the old discount, and an order quoted before the deploy and paid after it answers `migrate.quote_changed` until it re-quotes. The two Polar **bundle** products still carry the old fixed price ($72 / $392); the checkout overrides the amount per order, so no customer is charged it, but `pnpm polar:sync` reports the drift and exits 1 until it is fixed. Owner steps, production: (1) in the Polar dashboard, archive the fixed price on "Migrate with Studio Starter" and on "Migrate with Studio Pro" (the yearly products are already at list); (2) `npx tsx --env-file=.env.prod scripts/polar-sync.ts` (dry run) should now print `+ price $90.00/year would be added` / `+ price $490.00/year would be added`; (3) the same command with `--apply --server=production` adds them; (4) a second dry run prints both products `in sync`.
+
+### 🚀 Enhancements
+
+- **migrate:** the bundle's Studio line is the yearly list price; `polar-sync` adds the fixed price back to a bundle/yearly product whose price was archived
 
 ## v0.4.8
 

@@ -1,9 +1,9 @@
 import { exportSPKI, generateKeyPair, SignJWT } from 'jose'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { validateMigrateAccountStateRequest } from '@contentrain/types'
+import { validateMigrateAccountStateRequest, validateMigrateAccountStateResponse } from '@contentrain/types'
 import { MigrateS2sError, verifyMigrateS2sRequest } from '../../server/utils/migrate-s2s'
 import { PLAN_PRICING } from '../../shared/utils/license'
-import { bundleUpgradeCents, bundleYear1Cents, planCovers } from '../../shared/utils/migrate-bundle'
+import { STUDIO_YEARLY_LIST_CENTS, bundleUpgradeCents, bundleYear1Cents, monthlyListCents, planCovers, yearlySaving } from '../../shared/utils/migrate-bundle'
 
 function createErrorLike(input: { statusCode: number, message: string }) {
   return Object.assign(new Error(input.message), input)
@@ -39,13 +39,30 @@ const validate = (payload: unknown, now: number) => {
 }
 
 describe('bundle pricing', () => {
-  it('year 1 is 20% off the yearly list price, and an upgrade is the difference', () => {
-    expect(bundleYear1Cents('starter')).toBe(7200)
-    expect(bundleYear1Cents('pro')).toBe(39200)
-    expect(bundleUpgradeCents('pro', 'starter')).toBe(32000)
+  it('year 1 is the yearly list price — Studio is never discounted beyond the yearly plan — and an upgrade is the difference', () => {
+    expect(bundleYear1Cents('starter')).toBe(9000)
+    expect(bundleYear1Cents('pro')).toBe(49000)
+    expect(bundleYear1Cents('starter')).toBe(STUDIO_YEARLY_LIST_CENTS.starter)
+    expect(bundleYear1Cents('pro')).toBe(STUDIO_YEARLY_LIST_CENTS.pro)
+    expect(bundleUpgradeCents('pro', 'starter')).toBe(40000)
     expect(bundleUpgradeCents('starter', 'pro')).toBe(0)
     expect(planCovers('pro', 'starter')).toBe(true)
     expect(planCovers('starter', 'pro')).toBe(false)
+  })
+
+  it('the yearly price is explained against monthly × 12 from the plan config, never a literal', () => {
+    for (const plan of ['starter', 'pro'] as const) {
+      const monthly = PLAN_PRICING[plan].priceMonthly * 100
+      expect(monthlyListCents(plan)).toBe(monthly * 12)
+      // The claim "N months free compared to monthly" has to stay true: yearly under monthly × 12.
+      expect(STUDIO_YEARLY_LIST_CENTS[plan]).toBeLessThan(monthlyListCents(plan))
+      const saving = yearlySaving(plan)
+      expect(saving.savingCents).toBe(monthlyListCents(plan) - STUDIO_YEARLY_LIST_CENTS[plan])
+      expect(saving.monthsFree).toBe(Math.floor(saving.savingCents / monthly))
+      expect(saving.monthsFree).toBeGreaterThan(0)
+    }
+    expect(yearlySaving('starter')).toEqual({ savingCents: 1800, monthsFree: 2 })
+    expect(yearlySaving('pro')).toEqual({ savingCents: 9800, monthsFree: 2 })
   })
 })
 
@@ -150,14 +167,38 @@ describe('POST /api/migrate/account-state', () => {
 
   it('none: no Studio account behind that GitHub user prices year 1 of the sized plan', async () => {
     auth.getUserByProviderAccount.mockResolvedValue(null)
-    expect(await ask('pro')).toEqual({ state: 'none', plan: 'pro', year1_cents: 39200, renewal_cents: 49000, monthly_list_cents: PLAN_PRICING.pro.priceMonthly * 1200 })
+    expect(await ask('pro')).toEqual({ state: 'none', plan: 'pro', year1_cents: 49000, renewal_cents: 49000, monthly_list_cents: PLAN_PRICING.pro.priceMonthly * 1200 })
     expect(auth.getUserByProviderAccount).toHaveBeenCalledWith('github', '4242')
+  })
+
+  it('contract: every answer passes the @contentrain/types check Migrate runs, with the S2S shape unchanged (year 1 = the renewal list price)', async () => {
+    // `none`: year 1 is the list price, so it equals the renewal; monthly × 12 is above it (the struck price Migrate shows).
+    auth.getUserByProviderAccount.mockResolvedValue(null)
+    const none = await ask('starter') as Record<string, number | string>
+    expect(validateMigrateAccountStateResponse(none, { requested: 'starter' })).toEqual({ ok: true, response: none })
+    expect(Object.keys(none).sort()).toEqual(['monthly_list_cents', 'plan', 'renewal_cents', 'state', 'year1_cents'])
+    expect(none.year1_cents).toBe(none.renewal_cents)
+    expect(none.monthly_list_cents).toBeGreaterThan(none.year1_cents as number)
+    // `covers`: nothing added.
+    auth.getUserByProviderAccount.mockResolvedValue({ id: 'user-1' })
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro' }])
+    db.getActivePaymentAccount.mockResolvedValue(account('pro'))
+    const covers = await ask('starter') as Record<string, number | string>
+    expect(validateMigrateAccountStateResponse(covers, { requested: 'starter' })).toEqual({ ok: true, response: covers })
+    expect(Object.keys(covers).sort()).toEqual(['current_plan', 'monthly_list_cents', 'plan', 'renewal_cents', 'state', 'year1_cents'])
+    // `too_small`: the difference of the two list prices; the renewal is the sized plan's list.
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'starter' }])
+    db.getActivePaymentAccount.mockResolvedValue(account('starter'))
+    const tooSmall = await ask('pro') as Record<string, number | string>
+    expect(validateMigrateAccountStateResponse(tooSmall, { requested: 'pro' })).toEqual({ ok: true, response: tooSmall })
+    expect(tooSmall.year1_cents).toBe(49000 - 9000)
+    expect(tooSmall.renewal_cents).toBe(49000)
   })
 
   it('none: an account without a running paid plan (free workspace, trial) adds the full line', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-free', type: 'primary', plan: 'free' }, { id: 'ws-trial', type: 'secondary', plan: 'pro' }])
     db.getActivePaymentAccount.mockImplementation(async (id: string) => (id === 'ws-trial' ? { ...account('pro', 'trialing'), trial_ends_at: new Date(Date.now() + 86_400_000).toISOString() } : null))
-    expect(await ask('starter')).toEqual({ state: 'none', plan: 'starter', year1_cents: 7200, renewal_cents: 9000, monthly_list_cents: 10800 })
+    expect(await ask('starter')).toEqual({ state: 'none', plan: 'starter', year1_cents: 9000, renewal_cents: 9000, monthly_list_cents: 10800 })
   })
 
   it('covers: a running plan at least the sized one adds nothing and reports the account\'s own plan', async () => {
@@ -169,7 +210,7 @@ describe('POST /api/migrate/account-state', () => {
   it('none: a plan that is ending (cancel_at_period_end) is not Studio included — the normal bundle applies', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro' }])
     db.getActivePaymentAccount.mockResolvedValue({ ...account('pro'), cancel_at_period_end: true })
-    expect(await ask('starter')).toMatchObject({ state: 'none', plan: 'starter', year1_cents: 7200 })
+    expect(await ask('starter')).toMatchObject({ state: 'none', plan: 'starter', year1_cents: 9000 })
   })
 
   it('none: a past_due or canceled plan is not Studio included either', async () => {
@@ -183,7 +224,7 @@ describe('POST /api/migrate/account-state', () => {
   it('too_small: a running plan below the sized one charges the difference', async () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'starter' }])
     db.getActivePaymentAccount.mockResolvedValue(account('starter'))
-    expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 32000, renewal_cents: 49000, monthly_list_cents: PLAN_PRICING.pro.priceMonthly * 1200, current_plan: 'starter' })
+    expect(await ask('pro')).toEqual({ state: 'too_small', plan: 'pro', year1_cents: 40000, renewal_cents: 49000, monthly_list_cents: PLAN_PRICING.pro.priceMonthly * 1200, current_plan: 'starter' })
   })
 
   it('coveringWorkspace: the personal workspace if its plan covers, else the first covering one, nothing when none does', async () => {
