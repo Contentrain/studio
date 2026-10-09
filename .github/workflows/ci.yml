@@ -23,7 +23,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # The ECR Public mirror of the official image, not Docker Hub: CI hit Docker Hub's anonymous pull limit.
+        # Pinned by the multi-arch index digest, the same on both registries on 2026-10-10:
+        # docker.io/library/postgres:16 = public.ecr.aws/docker/library/postgres:16 =
+        # sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d (`docker buildx imagetools inspect`).
+        image: public.ecr.aws/docker/library/postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
         env:
           POSTGRES_PASSWORD: postgres
         ports:
