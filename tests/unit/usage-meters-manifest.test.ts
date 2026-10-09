@@ -54,17 +54,19 @@ describe('usage meter manifest', () => {
     }
   })
 
-  it('prices a per-gigabyte overage per gigabyte, exactly', () => {
-    // What the sync writes as Polar's `unit_amount` (cents per meter unit).
-    const perGb = OVERAGE_PRICING['cdn.bandwidth_gb']!.price
-    expect(perGb * 100 / USAGE_METERS.CDN_ORIGIN_GB.unitsPerLimitUnit).toBe(perGb * 100)
+  it('meters CDN per gigabyte, so a future per-GB overage price maps to Polar 1:1', () => {
+    // What the sync would write as Polar's `unit_amount` (cents per meter unit).
+    expect(USAGE_METERS.CDN_ORIGIN_GB.unitsPerLimitUnit).toBe(1)
   })
 
-  it('keeps every settings key distinct and matched to a priced limit', () => {
+  it('keeps every settings key distinct; a billable meter has a priced limit, a hard limit none', () => {
     const keys = USAGE_METER_LIST.map(m => m.settingsKey)
     expect(new Set(keys).size).toBe(keys.length)
     for (const meter of USAGE_METER_LIST) {
-      expect(OVERAGE_PRICING[meter.limitKey]?.settingsKey).toBe(meter.settingsKey)
+      if (meter.overageBillable)
+        expect(OVERAGE_PRICING[meter.limitKey]?.settingsKey).toBe(meter.settingsKey)
+      else
+        expect(OVERAGE_PRICING[meter.limitKey]).toBeUndefined()
     }
   })
 })

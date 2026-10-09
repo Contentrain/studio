@@ -3,7 +3,8 @@
  *
  * Each meter maps to:
  *   - a plan limit key in `PLAN_LIMITS` (`shared/utils/license.ts`)
- *   - an `OVERAGE_PRICING` entry (settingsKey) for overage pricing
+ *   - an `OVERAGE_PRICING` entry (settingsKey) for overage pricing, when
+ *     `overageBillable`; a hard limit lists no overage price
  *   - a Polar meter slug used by the plugin when ingesting events
  *
  * Keeping a single manifest avoids drift between the overage-settings UI,

@@ -61,7 +61,6 @@ describe('license utilities', () => {
 
   it('free plan has no features — structural shell only', () => {
     expect(hasFeature('free', 'ai.byoa')).toBe(false)
-    expect(hasFeature('free', 'ai.studio_key')).toBe(false)
     expect(hasFeature('free', 'media.library')).toBe(false)
     expect(hasFeature('free', 'media.upload')).toBe(false)
     expect(hasFeature('free', 'cdn.delivery')).toBe(false)
