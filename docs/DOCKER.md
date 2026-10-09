@@ -16,7 +16,8 @@ The container listens on port `3000`.
 Official container images are published to GHCR on every `v*` tag by the release workflow.
 
 ```bash
-docker pull ghcr.io/contentrain/studio:v0.1.0-beta.7
+# Replace vX.Y.Z with the newest tag from https://github.com/Contentrain/studio/releases
+docker pull ghcr.io/contentrain/studio:vX.Y.Z
 ```
 
 Available image tags for each release:
