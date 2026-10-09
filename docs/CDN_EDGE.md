@@ -103,6 +103,12 @@ once per workspace and month at each level:
 The in-app banner shows the same levels. The buffer caps what Studio pays past
 a plan at 20 % of its transfer (`shared/utils/cdn-limit.ts`).
 
+With overage on (Billing › Usage, needs a subscription that prices
+`cdn_origin_gb`) there is no unbilled buffer: past the plan every GB of origin
+transfer is billed at the catalogue price, the 100 % mail says so, and delivery
+stops only at the abuse ceiling, 10× the plan (`OVERAGE_ABUSE_CEILING_RATIO`,
+`server/utils/overage.ts`), which sends the "stopped" mail.
+
 Rollout:
 1. Do the Cloudflare steps above. With the cache in front, a normal site stays
    far below its origin limit.
