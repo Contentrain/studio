@@ -14,8 +14,7 @@ describe('resolveOverageLocks', () => {
   it('locks every toggle during a trial, until the trial ends', () => {
     const locks = resolveOverageLocks({ subscription_status: 'trialing', trial_ends_at: '2026-09-29T07:36:51.653Z' })
     expect(locks.ai_messages).toEqual({ reason: 'trialing', until: '2026-09-29T07:36:51.653Z' })
-    // Only priced overage has a toggle to lock; CDN and media are hard limits (no overage price).
-    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'form_submissions', 'mcp_calls'])
+    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'cdn_bandwidth', 'form_submissions', 'mcp_calls', 'media_storage'])
   })
 
   it('falls back to the period end when a trial has no recorded trial end', () => {
@@ -60,8 +59,7 @@ describe('resolveOverageLocks', () => {
       plugin_metadata: { billable_meters: [] },
     })
     expect(locks.ai_messages).toEqual({ reason: 'yearly_plan', until: null })
-    // Only priced overage has a toggle to lock; CDN and media are hard limits (no overage price).
-    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'form_submissions', 'mcp_calls'])
+    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'cdn_bandwidth', 'form_submissions', 'mcp_calls', 'media_storage'])
   })
 
   it('keeps a monthly subscription with no price on the generic reason', () => {

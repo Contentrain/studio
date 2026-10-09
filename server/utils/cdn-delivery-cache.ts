@@ -20,6 +20,7 @@
  */
 
 import type { DatabaseRow } from '../providers/database'
+import { billableOverageSettings } from './workspace-billing'
 
 interface CacheEntry<T> {
   value: T
@@ -140,14 +141,27 @@ export async function cachedProjectDelivery(projectId: string): Promise<Database
   return project
 }
 
-/** Workspace plan + overage row, cached. Changes propagate within the TTL. */
+/**
+ * Workspace plan + overage row, cached. Changes propagate within the TTL.
+ *
+ * `overage_settings` comes back with every toggle the subscription cannot
+ * bill turned off (`withoutLockedOverage`), the same as the billing
+ * middleware gives the in-app routes. CDN overage is billed per GB, so a
+ * stored `true` whose subscription has no `cdn_origin_gb` price (trial, an
+ * older subscription, a toggle left from before the limit was sold) must
+ * not raise the delivery cap. The account is read only when a toggle is on.
+ */
 export async function cachedWorkspacePlan(workspaceId: string): Promise<DatabaseRow | null> {
   const hit = getFresh(workspacePlanCache, workspaceId)
   if (hit) return hit
 
   const db = useDatabaseProvider()
   const workspace = await db.getWorkspaceById(workspaceId, 'plan, overage_settings')
-  if (workspace) setEntry(workspacePlanCache, workspaceId, workspace)
+  if (workspace) {
+    if (workspace.overage_settings)
+      workspace.overage_settings = await billableOverageSettings(db, workspaceId, workspace.overage_settings)
+    setEntry(workspacePlanCache, workspaceId, workspace)
+  }
   return workspace
 }
 

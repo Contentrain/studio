@@ -14,7 +14,9 @@
  * is a level and does not reset.
  *
  * Money is only quoted where it can be charged: a meter's overage units,
- * amount and projection are zero unless overage is turned on for it. With the
+ * amount and projection are zero unless overage is turned on for it.
+ * Storage is quoted at today's level; the invoice bills the period's
+ * average (`media_storage_gb_months`), and the screen says so. With the
  * switch off the meter is hard-capped, and quoting "$54.88 overage" there
  * told customers they owed something they did not.
  *
@@ -28,7 +30,7 @@ import { OVERAGE_PRICING, getPlanLimitForPlan } from '../../shared/utils/license
 import { CURRENT_CREDIT_UNIT, creditTermsFor, isCreditLimitKey } from '../../shared/utils/credit-unit'
 import type { CreditUnit } from '../../shared/utils/credit-unit'
 import type { DatabaseProvider } from '../providers/database'
-import { calculateOverageUnits, isOverageSellable } from './overage'
+import { calculateOverageUnits, isOverageSellable, overageCeiling } from './overage'
 import type { OverageLock } from './overage-lock'
 import { reportBillingRisk } from './alert'
 import { usagePeriodFrom, usageWindowOf } from './usage-period'
@@ -50,6 +52,11 @@ export interface WorkspaceUsageCategory {
   /** Price per unit past the limit; shown beside the switch before it is turned on. */
   overageUnitPrice: number
   overageAmount: number
+  /**
+   * With overage on, where this meter stops anyway (the abuse ceiling, in
+   * `unit`); null when overage on it has no ceiling or is not sold.
+   */
+  overageCeiling: number | null
   unit: string
   percentage: number
   /** When this meter goes back to zero; null for a meter that does not reset (storage). */
@@ -169,6 +176,7 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
     const overageUnitPrice = sellable ? terms.overagePrice(m.limitKey) ?? 0 : 0
     const overageUnits = overageEnabled && !unavailable ? calculateOverageUnits(current, planLimit) : 0
     const overageAmount = overageUnits * overageUnitPrice
+    const ceiling = sellable ? overageCeiling(planLimit, m.limitKey) : Infinity
 
     if (overageEnabled && !unavailable && planLimit !== Infinity && planLimit > 0) {
       if (!m.window) {
@@ -196,6 +204,7 @@ export async function computeWorkspaceUsage(db: UsageReader, input: {
       overageUnits: round2(overageUnits),
       overageUnitPrice,
       overageAmount: round2(overageAmount),
+      overageCeiling: Number.isFinite(ceiling) ? ceiling : null,
       unit: m.unit,
       percentage: unavailable || planLimit === Infinity || planLimit === 0 ? 0 : Math.round((current / planLimit) * 100),
       resetsAt: m.window?.resetsAt ?? null,

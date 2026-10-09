@@ -171,4 +171,34 @@ describe('cdn delivery cache', () => {
     expect(await cachedWorkspacePlan('ws-1')).toEqual({ plan: 'pro' })
     expect(getWorkspaceById).toHaveBeenCalledOnce()
   })
+
+  it('turns off an overage toggle the subscription cannot bill, so it never raises the delivery cap', async () => {
+    // CDN overage is billed per GB on `cdn_origin_gb`; a subscription that does
+    // not price it (an older one, or a stale `true`) must stay at the plan limit.
+    vi.doMock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: 'subscription' }) }))
+    const getWorkspaceById = vi.fn().mockResolvedValue({ plan: 'pro', overage_settings: { cdn_bandwidth: true, ai_messages: true } })
+    const getActivePaymentAccount = vi.fn().mockResolvedValue({
+      subscription_status: 'active',
+      plugin_metadata: { billable_meters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls', 'form_submissions'] },
+    })
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ getWorkspaceById, getActivePaymentAccount }))
+
+    const { cachedWorkspacePlan } = await loadCacheModule()
+    expect(await cachedWorkspacePlan('ws-locked')).toEqual({ plan: 'pro', overage_settings: { cdn_bandwidth: false, ai_messages: true } })
+    vi.doUnmock('../../server/utils/deployment')
+  })
+
+  it('keeps a CDN toggle the subscription prices, and fails closed when billing is unreadable', async () => {
+    vi.doMock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: 'subscription' }) }))
+    const getWorkspaceById = vi.fn().mockResolvedValue({ plan: 'pro', overage_settings: { cdn_bandwidth: true } })
+    const getActivePaymentAccount = vi.fn()
+      .mockResolvedValueOnce({ subscription_status: 'active', plugin_metadata: { billable_meters: ['cdn_origin_gb'] } })
+      .mockRejectedValueOnce(new Error('db down'))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ getWorkspaceById, getActivePaymentAccount }))
+
+    const { cachedWorkspacePlan } = await loadCacheModule()
+    expect(await cachedWorkspacePlan('ws-priced')).toEqual({ plan: 'pro', overage_settings: { cdn_bandwidth: true } })
+    expect(await cachedWorkspacePlan('ws-unreadable')).toEqual({ plan: 'pro', overage_settings: { cdn_bandwidth: false } })
+    vi.doUnmock('../../server/utils/deployment')
+  })
 })

@@ -54,8 +54,8 @@ describe('overage settings API', () => {
 
       expect(result.overageSettings).toEqual({ ai_messages: true, cdn_bandwidth: false })
       expect(result.categories).toBeInstanceOf(Array)
-      // Priced overage only: CDN and media are hard limits with no overage price.
-      expect(result.categories.length).toBe(4)
+      // Every priced overage, CDN origin transfer and media storage included.
+      expect(result.categories.length).toBe(6)
 
       const aiCategory = result.categories.find((c: { settingsKey: string }) => c.settingsKey === 'ai_messages')
       expect(aiCategory).toMatchObject({
@@ -134,21 +134,29 @@ describe('overage settings API', () => {
       })
     })
 
-    it('refuses to enable a limit that is not sold', async () => {
-      // CDN bandwidth and media storage are hard limits: the meter counts
-      // bytes, so Polar cannot carry the plan's gigabyte allowance and
-      // overage would bill the included gigabytes as well.
-      mockDb()
+    it('turns CDN and storage overage on when the subscription prices their meters', async () => {
+      mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_credits_1c', 'cdn_origin_gb', 'media_storage_gb_months'] } } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: true, media_storage: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).resolves.toEqual({ overageSettings: { cdn_bandwidth: true, media_storage: true } })
+    })
+
+    it('refuses CDN overage on a subscription that has no price for it yet', async () => {
+      // Polar keeps a subscription's prices: one created before CDN overage
+      // was sold would serve the overage and never invoice it.
+      mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls', 'form_submissions'] } } })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: true }))
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
-      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 409 })
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 409,
+        data: { code: 'overage_locked', reason: 'not_in_subscription' },
+      })
       expect(updateWorkspace).not.toHaveBeenCalled()
     })
 
-    it('still lets a stale hard-limit toggle be turned off', async () => {
-      // Refusing `false` too would trap a workspace that has a stale
-      // `true` stored from before the limit became hard.
+    it('lets a CDN toggle be turned off', async () => {
       mockDb({ workspace: { overage_settings: { cdn_bandwidth: true } } })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: false }))
 

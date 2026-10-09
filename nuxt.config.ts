@@ -85,6 +85,9 @@ export default defineNuxtConfig({
       originLimit: 'enforce', // NUXT_CDN_ORIGIN_LIMIT
       // Daily `cdn_origin_gb` meter events. Off until the meter exists in Polar.
       originMeter: false, // NUXT_CDN_ORIGIN_METER
+      // Daily `media_storage_gb_months` meter events (stored media, billed per
+      // GB-month past the plan). Off until the meter exists in Polar.
+      storageMeter: false, // NUXT_CDN_STORAGE_METER
     },
     // Provider selection — pairs must match: supabase+supabase (default) or
     // managed+postgres. Enforced at boot by server/plugins/00.validate-config.ts.

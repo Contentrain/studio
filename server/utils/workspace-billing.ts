@@ -91,3 +91,29 @@ export async function resolveWorkspaceBilling(
     creditUnit: resolveCreditUnit(account as { credit_unit?: unknown } | null),
   }
 }
+
+/**
+ * Stored `overage_settings` as the subscription can bill them, for a
+ * caller that read the row itself (outside the billing middleware and
+ * `resolveWorkspaceBilling`): every toggle the account cannot invoice is
+ * off. The account is read only when some toggle is on; an unreadable
+ * account turns them all off — usage stops at the plan, never past it unbilled.
+ */
+export async function billableOverageSettings(
+  db: Pick<ReturnType<typeof useDatabaseProvider>, 'getActivePaymentAccount'>,
+  workspaceId: string,
+  stored: unknown,
+): Promise<Record<string, boolean>> {
+  const settings = stored && typeof stored === 'object' ? stored as Record<string, boolean> : null
+  if (!settings || !Object.values(settings).includes(true)) return settings ?? {}
+  // No subscription state machine (self-hosted, dedicated): nothing is billed, nothing locks.
+  if (resolveDeployment().planSource !== 'subscription') return settings
+  try {
+    const account = await db.getActivePaymentAccount(workspaceId)
+    return withoutLockedOverage(settings, resolveOverageLocks(account as OverageLockAccount | null))
+  }
+  catch {
+    // Unreadable billing: serve within the plan's own limit, never past it unbilled.
+    return Object.fromEntries(Object.keys(settings).map(key => [key, false]))
+  }
+}

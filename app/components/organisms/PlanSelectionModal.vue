@@ -122,8 +122,8 @@ interface LimitRow {
 
 /**
  * What a unit past the included amount costs, so the price is known before
- * anyone chooses a plan. Limits that are hard caps (media, CDN: their meters
- * cannot bill past an allowance) show nothing, whatever the data lists.
+ * anyone chooses a plan. A limit whose meter is not billable
+ * (`overageBillable: false`) shows nothing, whatever the data lists.
  */
 function overageLabel(key: string, ownTerms = false): string | null {
   const pricing = OVERAGE_PRICING[key]

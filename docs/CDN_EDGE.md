@@ -87,7 +87,7 @@ closes on whole days. Cache hits never reach the origin and never count.
 
 | Setting | Values | Default |
 |---|---|---|
-| `NUXT_CDN_ORIGIN_LIMIT` | `enforce`: past the plan limit delivery **continues** (usage alert + banner with the upgrade link); at **120 %** of the limit the origin answers **429** + `Retry-After` until the month resets, unless overage is on · `observe`: count and log, never refuse (self-hosters, operators) · `off` | `enforce` |
+| `NUXT_CDN_ORIGIN_LIMIT` | `enforce`: past the plan limit delivery **continues** (usage alert + banner with the upgrade link); at **120 %** of the limit the origin answers **429** + `Retry-After` until the month resets. With overage on, transfer past the plan is billed per GB and the 429 comes at the abuse ceiling, 10× the plan · `observe`: count and log, never refuse (self-hosters, operators) · `off` | `enforce` |
 | `NUXT_CDN_ORIGIN_METER` | `true` sends one `cdn_origin_gb` event per workspace per finished UTC day to the payment meter | `false` |
 
 `enforce` is the default on every deployment profile, dedicated and on-premise
@@ -107,8 +107,9 @@ Rollout:
 1. Do the Cloudflare steps above. With the cache in front, a normal site stays
    far below its origin limit.
 2. Run polar-sync so the `cdn_origin_gb` meter exists, then set
-   `NUXT_CDN_ORIGIN_METER=true`. Overage stays unsold (`overageBillable: false`)
-   until the price decision (PR-F / ST-6).
+   `NUXT_CDN_ORIGIN_METER=true`. Overage is sold per GB of origin transfer
+   (`overage_price` on `cdn.bandwidth_gb`); a subscription bills it once it
+   prices `cdn_origin_gb`, until then its switch shows as locked.
 
 ## Rollback
 

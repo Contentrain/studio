@@ -37,6 +37,15 @@ describe('CDN origin budget', () => {
     expect(result).toEqual({ allowed: false, retryAfterSeconds: 7.5 * 24 * 3600 })
   })
 
+  it('with overage on, stops at the ceiling it is given, with no buffer past it', async () => {
+    // Overage on: the route passes the abuse ceiling (10x the plan) and hardStopRatio 1.
+    const { checkCdnOriginBudget } = await load('enforce')
+    db.getWorkspaceMonthlyCDNBandwidth.mockResolvedValue(599 * GIB)
+    expect(await checkCdnOriginBudget({ workspaceId: 'below', limitGb: 600, now: NOW, hardStopRatio: 1 })).toEqual({ allowed: true })
+    db.getWorkspaceMonthlyCDNBandwidth.mockResolvedValue(600 * GIB)
+    expect(await checkCdnOriginBudget({ workspaceId: 'at', limitGb: 600, now: NOW, hardStopRatio: 1 })).toMatchObject({ allowed: false })
+  })
+
   it('counts served bytes on top of the seed', async () => {
     const { addCdnOriginBytes, checkCdnOriginBudget } = await load('enforce')
     db.getWorkspaceMonthlyCDNBandwidth.mockResolvedValue(GIB)

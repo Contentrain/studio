@@ -18,6 +18,7 @@ type UsageMethods = Pick<
   | 'getWorkspaceMonthlyAPIUsage'
   | 'getWorkspaceMonthlyCDNBandwidth'
   | 'listWorkspaceCDNBandwidthForDay'
+  | 'listWorkspaceMediaStorageBytes'
 >
 
 export function usageMethods(): UsageMethods {
@@ -108,6 +109,17 @@ export function usageMethods(): UsageMethods {
         totals.set(workspaceId, (totals.get(workspaceId) ?? 0) + Number(row.bandwidth_bytes ?? 0))
       }
       return [...totals].map(([workspaceId, bytes]) => ({ workspaceId, bytes })).filter(r => r.bytes > 0)
+    },
+
+    async listWorkspaceMediaStorageBytes() {
+      // A failure propagates — the meter job must not record "nothing stored".
+      const { data, error } = await getAdmin()
+        .from('workspaces')
+        .select('id, media_storage_bytes')
+        .gt('media_storage_bytes', 0)
+      if (error) throw error
+      return ((data ?? []) as Array<Record<string, unknown>>)
+        .map(r => ({ workspaceId: String(r.id), bytes: Number(r.media_storage_bytes ?? 0) }))
     },
   }
 }

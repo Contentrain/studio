@@ -62,9 +62,9 @@ NUXT_POLAR_ACCESS_TOKEN=polar_oat_… NUXT_POLAR_SERVER=sandbox \
 
 The script is idempotent and content-driven. On every run it:
 
-- Creates the six meters if missing (`ai_messages`, `api_messages`,
-  `mcp_calls`, `form_submissions`, `cdn_bandwidth_bytes`,
-  `media_storage_byte_hours` — from `shared/utils/usage-meters.ts`).
+- Creates the six meters if missing (`ai_credits_1c`, `api_credits_1c`,
+  `mcp_calls`, `form_submissions`, `cdn_origin_gb`,
+  `media_storage_gb_months` — from `shared/utils/usage-meters.ts`).
 - Creates Starter + Pro products if missing, stamped with
   `metadata.contentrain_slug` so future runs find them reliably.
   Name and description mutate in place when content changes.

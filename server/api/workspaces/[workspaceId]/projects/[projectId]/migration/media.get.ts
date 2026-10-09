@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
       tree,
       plan,
       usedBytes: Number(ws?.media_storage_bytes ?? 0),
-      overageSettings: (ws?.overage_settings as Record<string, boolean> | null) ?? {},
+      overageSettings: event.context.billing?.overageSettings ?? (ws?.overage_settings as Record<string, boolean> | null) ?? {},
       root: found.root,
       signedOrigin: await migrationSignedOrigin(workspaceId, project),
     }),

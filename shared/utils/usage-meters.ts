@@ -44,12 +44,11 @@ export interface UsageMeterDefinition {
    *
    * False means the limit is hard: no metered price, no included
    * allowance, and the app refuses to raise the cap even if the workspace
-   * has the overage toggle on. The two byte meters are false because they
-   * cannot carry an allowance — Polar caps a meter credit at int32 and a
-   * gigabyte in bytes exceeds it — and billing overage against an
-   * allowance that cannot be expressed would charge from the first byte.
-   * Events still flow, so the usage is measured and shown; it just is not
-   * sold until the meter counts the unit the plan sells.
+   * has the overage toggle on. A meter can only be billable when it counts
+   * the unit the plan sells (`unitsPerLimitUnit: 1`): Polar caps a meter
+   * credit at int32, so an allowance counted in a smaller unit (a gigabyte
+   * in bytes) cannot be expressed, and billing against it would charge
+   * from the first unit. Every meter in the manifest meets that today.
    */
   readonly overageBillable: boolean
 }
@@ -108,9 +107,9 @@ export const USAGE_METERS = {
     unitLabel: 'GB',
     aggregation: 'sum',
     unitsPerLimitUnit: 1,
-    // Still a hard limit: turning overage on is the price decision (PR-F /
-    // ST-6), which also attaches the metered price in Polar.
-    overageBillable: false,
+    // Sold past the plan (founder, 2026-10-09): the allowance is the plan's
+    // GB as is, and each GB past it bills at the catalogue price.
+    overageBillable: true,
   },
   FORM_SUBMISSIONS: {
     name: 'form_submissions',
@@ -121,14 +120,22 @@ export const USAGE_METERS = {
     unitsPerLimitUnit: 1,
     overageBillable: true,
   },
-  MEDIA_STORAGE_BYTE_HOURS: {
-    name: 'media_storage_byte_hours',
+  // `media_storage_gb_months`, not the older `media_storage_byte_hours`:
+  // the plan sells gigabytes per month, and a byte meter cannot carry that
+  // allowance (int32 meter credit). One event per workspace per finished
+  // UTC day (`server/plugins/media-storage-meter.ts`) carrying the stored GB
+  // divided by the days in the workspace's billing period, so a period's
+  // sum is the average GB stored over it — a GB-month. The plan's included
+  // GB is the allowance as is; the average past it bills per GB-month.
+  // The byte-hour meter never received an event and stays unused in Polar.
+  MEDIA_STORAGE_GB_MONTHS: {
+    name: 'media_storage_gb_months',
     limitKey: 'media.storage_gb',
     settingsKey: 'media_storage',
-    unitLabel: 'byte·hour',
+    unitLabel: 'GB·month',
     aggregation: 'sum',
-    unitsPerLimitUnit: 1024 ** 3,
-    overageBillable: false,
+    unitsPerLimitUnit: 1,
+    overageBillable: true,
   },
 } as const satisfies Record<string, UsageMeterDefinition>
 

@@ -106,6 +106,35 @@ describe('usage alerts', () => {
     expect(await runUsageAlerts(deps(stopped, stopMail))).toEqual([])
   })
 
+  it('CDN with overage on: 100 % says it is billed, the 10x ceiling says it stopped — and offers an upgrade, not overage', async () => {
+    // Pro: 60 GB, overage on → billed past 60, stops at 600.
+    const billed = fakeDb({ cdn: 65 }, { overage_settings: { cdn_bandwidth: true } })
+    expect(await runUsageAlerts(deps(billed))).toEqual([
+      expect.objectContaining({ meter: 'cdn_bandwidth', threshold: 100, template: 'usage-overage-started' }),
+    ])
+
+    const ceiling = fakeDb({ cdn: 601 }, { overage_settings: { cdn_bandwidth: true } })
+    const mail = vi.fn().mockResolvedValue(undefined)
+    expect(await runUsageAlerts(deps(ceiling, mail))).toEqual([
+      expect.objectContaining({ meter: 'cdn_bandwidth', threshold: 120, template: 'usage-limit-reached' }),
+    ])
+    const html = mail.mock.calls[0]![0].html as string
+    expect(html).toContain('has stopped')
+    expect(html).not.toContain('allow overage')
+  })
+
+  it('storage with overage on stops at 10x the plan, and that alert re-arms well below the ceiling', async () => {
+    const at = (gb: number) => [{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: { media_storage: true }, media_storage_bytes: gb * 1024 ** 3 }]
+    const db = fakeDb({}, { overage_settings: { media_storage: true }, media_storage_bytes: 251 * 1024 ** 3 })
+    expect(await runUsageAlerts(deps(db))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 120, periodKey: 'level' })])
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(240)) // 96 % of the ceiling: stays claimed
+    await runUsageAlerts(deps(db))
+    expect(db.releaseUsageAlert).not.toHaveBeenCalledWith(expect.objectContaining({ threshold: 120 }))
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(200)) // 80 %: re-armed
+    await runUsageAlerts(deps(db))
+    expect(db.releaseUsageAlert).toHaveBeenCalledWith({ workspaceId: 'ws-1', meter: 'media_storage', periodKey: 'level', threshold: 120 })
+  })
+
   it('a failed send is retried on the next run', async () => {
     const db = fakeDb({ ai: 1036 })
     const failing = vi.fn().mockRejectedValueOnce(new Error('resend down')).mockResolvedValue(undefined)
@@ -194,7 +223,7 @@ describe('usage alerts', () => {
   })
 
   it('never plans an alert for an unavailable meter, whatever its numbers say', () => {
-    const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, unit: 'credits', percentage: 120, resetsAt: null, resetBasis: null, periodKey: '2026-09-15' }
+    const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, overageCeiling: null, unit: 'credits', percentage: 120, resetsAt: null, resetBasis: null, periodKey: '2026-09-15' }
     expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420, unavailable: true }])).toEqual([])
     expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420 }])).toHaveLength(1)
   })

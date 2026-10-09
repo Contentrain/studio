@@ -79,9 +79,32 @@ function unitPriceLabel(category: UsageCategory): string | null {
 function describedBy(category: UsageCategory): string | undefined {
   const ids = [
     unitPriceLabel(category) ? `overage-price-${category.key}` : null,
+    ceilingLabel(category) ? `overage-ceiling-${category.key}` : null,
     category.overageLock ? `overage-lock-${category.key}` : null,
   ].filter(Boolean)
   return ids.length ? ids.join(' ') : undefined
+}
+
+/** How a meter is measured or billed, where that is not obvious from its name. */
+function meterNote(category: UsageCategory): string | null {
+  if (category.key === 'cdn_bandwidth') return t('billing.usage_note_cdn_bandwidth')
+  if (category.key === 'media_storage' && canManage.value && category.overageSellable !== false) return t('billing.usage_note_media_storage')
+  return null
+}
+
+function formatCeiling(category: UsageCategory): string {
+  return category.unit === 'GB' ? `${category.overageCeiling} GB` : `${category.overageCeiling} ${category.unit}`
+}
+
+/** With overage on, where the meter stops anyway — said before it is turned on. */
+function ceilingLabel(category: UsageCategory): string | null {
+  if (!category.overageCeiling || category.overageSellable === false) return null
+  return t('billing.overage_ceiling', { ceiling: formatCeiling(category) })
+}
+
+/** Overage on and the ceiling reached: it has stopped, billed or not. */
+function atCeiling(category: UsageCategory): boolean {
+  return category.overageEnabled && !!category.overageCeiling && category.current >= category.overageCeiling
 }
 
 /** What to say when a meter is at its limit and nothing extra is billed. */
@@ -171,6 +194,14 @@ function categoryIcon(key: string): string {
             >
               {{ unitPriceLabel(category) }}
             </span>
+            <!-- Where it stops even with the switch on (abuse ceiling). -->
+            <span
+              v-if="ceilingLabel(category)"
+              :id="`overage-ceiling-${category.key}`"
+              class="text-right text-xs text-muted"
+            >
+              {{ ceilingLabel(category) }}
+            </span>
             <!-- Why the switch is off and when it can be on. The plan's
                  included usage is unaffected either way. -->
             <span
@@ -204,6 +235,10 @@ function categoryIcon(key: string): string {
           {{ resetLabel(category) }}
         </p>
 
+        <p v-if="meterNote(category)" class="mt-1 text-xs text-muted">
+          {{ meterNote(category) }}
+        </p>
+
         <p
           v-if="category.key === 'ai_messages' && (usage.byoaRequests ?? 0) > 0"
           class="mt-2 text-xs text-muted"
@@ -211,9 +246,19 @@ function categoryIcon(key: string): string {
           {{ t('billing.usage_byoa_requests', { count: usage.byoaRequests ?? 0 }) }}
         </p>
 
+        <!-- Overage on, and the abuse ceiling reached: stopped all the same. -->
+        <div
+          v-if="atCeiling(category)"
+          class="mt-2 rounded-md bg-danger-50 px-3 py-2 dark:bg-danger-950/30"
+        >
+          <p class="text-xs text-danger-700 dark:text-danger-300">
+            {{ t('billing.overage_ceiling_reached', { name: category.name, ceiling: formatCeiling(category) }) }}
+          </p>
+        </div>
+
         <!-- Limit reached warning (overage disabled) -->
         <div
-          v-if="category.limit > 0 && category.current >= category.limit && !category.overageEnabled"
+          v-else-if="category.limit > 0 && category.current >= category.limit && !category.overageEnabled"
           class="mt-2 rounded-md bg-danger-50 px-3 py-2 dark:bg-danger-950/30"
         >
           <p class="text-xs text-danger-700 dark:text-danger-300">
