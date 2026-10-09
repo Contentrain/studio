@@ -10,9 +10,7 @@ describe('OVERAGE_PRICING constant', () => {
       'ai.messages_per_month',
       'api.messages_per_month',
       'api.mcp_calls_per_month',
-      'cdn.bandwidth_gb',
       'forms.submissions_per_month',
-      'media.storage_gb',
     ]))
   })
 

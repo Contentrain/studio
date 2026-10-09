@@ -9,6 +9,7 @@
  */
 
 import { OVERAGE_SETTINGS_KEYS, OVERAGE_PRICING } from '../../../../shared/utils/license'
+import { USAGE_METER_LIST } from '../../../../shared/utils/usage-meters'
 import { isOverageSellable } from '../../../../server/utils/overage'
 import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
@@ -26,9 +27,13 @@ function lockedError(lock: OverageLock) {
   return createError({ statusCode: 409, message, data: { code: 'overage_locked', reason: lock.reason, until: lock.until } })
 }
 
-const LIMIT_KEY_BY_SETTINGS_KEY: Record<string, string> = Object.fromEntries(
-  Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => [pricing.settingsKey, limitKey]),
-)
+const LIMIT_KEY_BY_SETTINGS_KEY: Record<string, string> = Object.fromEntries([
+  // Hard limits (CDN, media) carry no overage price, so they are not in
+  // OVERAGE_PRICING; their meter still names the toggle, so a stale `true`
+  // can be turned off and turning one on is refused as "not sold".
+  ...USAGE_METER_LIST.map(m => [m.settingsKey, m.limitKey]),
+  ...Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => [pricing.settingsKey, limitKey]),
+])
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -70,14 +75,14 @@ export default defineEventHandler(async (event) => {
   // Validate keys — only accept known overage settings keys
   const validUpdates: Record<string, boolean> = {}
   for (const [key, value] of Object.entries(body)) {
-    if (!OVERAGE_SETTINGS_KEYS.includes(key))
+    if (!OVERAGE_SETTINGS_KEYS.includes(key) && !LIMIT_KEY_BY_SETTINGS_KEY[key])
       throw createError({ statusCode: 400, message: errorMessage('validation.invalid_field', { field: key }) })
     if (typeof value !== 'boolean')
       throw createError({ statusCode: 400, message: errorMessage('validation.invalid_field', { field: key }) })
     // Refuse to record a `true` the billing side cannot honour. Storing it
     // would show the customer an overage they are not actually being sold.
     const limitKey = LIMIT_KEY_BY_SETTINGS_KEY[key]
-    if (value && limitKey && !isOverageSellable(limitKey))
+    if (value && limitKey && (!OVERAGE_PRICING[limitKey] || !isOverageSellable(limitKey)))
       throw createError({ statusCode: 409, message: errorMessage('billing.overage_not_available') })
     // Turning a locked toggle off is always allowed.
     if (value && locks[key])

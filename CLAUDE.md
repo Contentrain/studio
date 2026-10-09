@@ -506,7 +506,7 @@ Under `ee/LICENSE` scope. Requires an active Contentrain subscription or separat
 
 - Advanced project roles: `reviewer`, `viewer`, `specificModels` (core degrades to `editor`)
 - BYOA API key management UI + key rotation + encryption (`ai.byoa`)
-- Studio-hosted AI key (`ai.studio_key`) — the Anthropic key billed to Contentrain
+- Studio-hosted AI key — the Anthropic key billed to Contentrain
 - Conversation API + conversation keys (`api.conversation*`)
 - Outbound webhooks + delivery retry (`api.webhooks_outbound`, `api.webhooks`)
 - CDN provider implementation (R2 driver, custom variants, preview branches, custom domain)

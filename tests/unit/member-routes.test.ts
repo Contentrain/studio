@@ -308,25 +308,68 @@ describe('member routes', () => {
     expect(result).toEqual([{ id: 'project-member-1' }])
   })
 
-  it('degrades premium project roles to editor on free plans', async () => {
+  it.each(['reviewer', 'viewer'])('refuses the %s role with 403 on a plan without the feature (Free)', async (role) => {
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'workspace-1'
       if (key === 'projectId') return 'project-1'
       return undefined
     }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
     vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
       email: 'reviewer@example.com',
-      role: 'reviewer',
+      role,
+    }))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/members/index.post')).default
+
+    await expect(handler({ context: {} } as never)).rejects.toMatchObject({
+      statusCode: 403,
+      message: 'members.project_role_upgrade',
+    })
+    expect(hasFeature).toHaveBeenCalledWith('free', `roles.${role}`)
+    expect(inviteOrLookupUser).not.toHaveBeenCalled()
+    expect(useDatabaseProvider().createProjectMember).not.toHaveBeenCalled()
+  })
+
+  it.each(['reviewer', 'viewer'])('assigns the %s role on a plan with the feature', async (role) => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('hasFeature', vi.fn((_: string, feature: string) => feature === `roles.${role}`))
+    vi.stubGlobal('normalizeEnterpriseProjectMemberAccess', vi.fn().mockImplementation(async (input: { role: string }) => ({
+      role: input.role,
+      specificModels: false,
+      allowedModels: [],
+    })))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      email: 'reviewer@example.com',
+      role,
+    }))
+
+    const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/members/index.post')).default
+    await handler({ context: {} } as never)
+
+    expect(useDatabaseProvider().createProjectMember).toHaveBeenCalledWith(expect.objectContaining({ role }))
+  })
+
+  it('assigns the editor role on any plan', async () => {
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
+      if (key === 'workspaceId') return 'workspace-1'
+      if (key === 'projectId') return 'project-1'
+      return undefined
+    }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      email: 'editor@example.com',
+      role: 'editor',
     }))
 
     const handler = (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/members/index.post')).default
     const result = await handler({ context: {} } as never)
 
-    expect(result).toMatchObject({
-      role: 'editor',
-      specific_models: false,
-      allowed_models: [],
-    })
+    expect(result).toMatchObject({ role: 'editor' })
   })
 
   it('deletes project members only after validating workspace ownership', async () => {

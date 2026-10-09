@@ -89,7 +89,6 @@ Proprietary features under `ee/` directory. Community Edition (AGPL core without
 | Media upload / library / variants | `media.upload`, `media.library`, `media.custom_variants` | Starter+ (custom variants Pro+) |
 | Reviewer / Viewer project roles | `roles.reviewer`, `roles.viewer` | Starter+ |
 | Model-specific access | `roles.specific_models` | Pro, Enterprise |
-| Studio-hosted AI key | `ai.studio_key` | Starter+ |
 
 ### Advertised, implementation pending (`roadmap: true` in `plan-features`)
 

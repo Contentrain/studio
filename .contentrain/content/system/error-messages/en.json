@@ -244,6 +244,7 @@
   "members.invalid_workspace_role": "Role must be admin or member.",
   "members.no_email": "No email address found for this member.",
   "members.not_found": "Member not found in this workspace.",
+  "members.project_role_upgrade": "Reviewer and Viewer roles are available on {plans:roles.reviewer}. Upgrade your plan to assign them.",
   "members.requires_role": "Requires {roles} role",
   "members.resend_failed": "Failed to send invitation email. Please try again.",
   "members.resend_rate_limited": "Too many resend attempts. Please wait before trying again.",

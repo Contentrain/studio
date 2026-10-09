@@ -36,7 +36,6 @@ The AGPL core is intended to be a **functional deployment**, not a teaser. The f
 
 The following features require `ee/` and are **disabled** in Community Edition regardless of plan matrix values, enforced via `requires_ee: true` at `hasFeature()`:
 
-- Studio-hosted AI key (`ai.studio_key`) — the Contentrain-managed Anthropic key
 - Bring-your-own-API-key management UI (`ai.byoa`)
 - Conversation API routes (`api.conversation`, `api.custom_instructions`, `api.conversation_keys`)
 - Outbound webhooks (`api.webhooks_outbound`, `api.webhooks`)

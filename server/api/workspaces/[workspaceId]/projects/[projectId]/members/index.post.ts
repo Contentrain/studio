@@ -28,6 +28,12 @@ export default defineEventHandler(async (event) => {
   // Plan-based role gating
   const ws = await db.getWorkspaceById(workspaceId, 'plan, name, slug')
   const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(ws ?? {})
+  // Reviewer/Viewer are sold per plan (`roles.reviewer`, `roles.viewer`).
+  // The UI hides them; the server refuses them too, rather than quietly
+  // storing a role the plan does not include.
+  if ((body.role === 'reviewer' || body.role === 'viewer') && !hasFeature(plan, `roles.${body.role}`))
+    throw createError({ statusCode: 403, message: errorMessage('members.project_role_upgrade') })
+
   const normalizedAccess = await normalizeEnterpriseProjectMemberAccess({
     plan,
     role: body.role,
