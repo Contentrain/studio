@@ -90,13 +90,19 @@ The same run also creates the four yearly products "Migrate with Studio" sells t
 `contentrain_variant`; monthly products are untouched) and prints their ids:
 
 ```
-  NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID=…   # year 1 at 20% off ($72), the checkout overrides the amount per order
-  NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID=…   # the list price ($90) the subscription moves to at the next period
-  NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID=…       # $392
+  NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID=…   # year 1 at the yearly list price ($90); the checkout overrides the amount per order
+  NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID=…   # the same list price ($90) the subscription moves to at the next period
+  NUXT_POLAR_PRO_BUNDLE_PRODUCT_ID=…       # $490
   NUXT_POLAR_PRO_YEARLY_PRODUCT_ID=…       # $490
 ```
 
-Prices come from `shared/utils/migrate-bundle.ts`. Metered prices and meter credits are not attached to these products yet.
+Prices come from `shared/utils/migrate-bundle.ts`. Studio is never discounted beyond the yearly plan: the
+bundle's first year is the yearly list price, and the only saving Studio states is yearly versus monthly × 12
+(`monthly_list_cents`, from the plan config). A bundle product whose fixed price disagrees with the constants
+is reported as drift and the sync exits 1; a Polar price in use cannot be changed, so archive it in the
+dashboard and the next `--apply` run adds the right one. The checkout sets the first invoice per order, so a
+drifted catalogue price never reaches a customer. Metered prices and meter credits are not attached to these
+products yet.
 
 **3. Webhook endpoint.** In the Polar dashboard:
 
@@ -133,6 +139,15 @@ renewal is the list price. Polar keeps an ad-hoc price on a subscription for
 good, so a move that failed is retried every 6 hours (`migrate-bundle-reconciler`
 plugin) and an error-level `[migrate-bundle] ALARM` line is logged for any
 subscription still unmoved 30 days before its renewal. Point a log alert at it.
+
+**Refunds.** The bundle is one Polar order, and Migrate refunds it: its operator
+route works the amount out (`@migrate/billing` `refund.ts`) and only then asks
+Studio to withdraw the grant (`POST /api/migrate/grants/revoke`), which cancels
+the subscription and marks the grant `revoked` — Studio moves no money. After
+delivery, within 14 days, the refund is Studio's share pro rata **minus the
+Migrate bundle credit** (the saving the order carried on the Migrate fee), so
+buying the bundle, refunding Studio and keeping the Migrate discount is not
+possible. Before delivery the whole payment goes back, credit included.
 
 ```bash
 NUXT_POLAR_STARTER_BUNDLE_PRODUCT_ID=…   # sold with an ad-hoc price per checkout

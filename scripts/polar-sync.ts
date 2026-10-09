@@ -301,11 +301,15 @@ function findExistingProduct(
 
 /**
  * The yearly products "Migrate with Studio" sells through (`createBundleCheckout` / `moveBundleSubscriptionToList` in
- * the Polar plugin): per plan, a `bundle` product the checkout opens on (year 1 at 20% off, the checkout overrides the
- * amount per order) and a `yearly` product the subscription moves to at the next period (the list price).
+ * the Polar plugin): per plan, a `bundle` product the checkout opens on (year 1 at the yearly list price — Studio is
+ * never discounted beyond the yearly plan; the checkout overrides the amount per order) and a `yearly` product the
+ * subscription moves to at the next period (the same list price).
  * Prices come from `shared/utils/migrate-bundle.ts`, the numbers the quote and the checkout use.
- * Create-if-missing only. Metered prices and included meter credits are NOT attached here: on a yearly period the
- * credits grant per billing cycle, so their units are a pricing decision (see the warning this step prints).
+ * Create-if-missing for the product. A fixed price that disagrees with the constants is reported as drift (a price
+ * in use cannot be changed); once it has been archived in the dashboard the product has no active fixed price and the
+ * next `--apply` run adds the one the constants want. Metered prices and included meter credits are NOT attached
+ * here: on a yearly period the credits grant per billing cycle, so their units are a pricing decision (see the
+ * warning this step prints).
  */
 const VARIANT_SLUGS = ['bundle', 'yearly'] as const
 type VariantSlug = (typeof VARIANT_SLUGS)[number] | 'companion'
@@ -326,10 +330,36 @@ async function syncVariantProduct(
   const existing = findVariantProduct(existingProducts, slug, variant)
   if (existing) {
     summary.products[key] = existing.id
-    const fixed = existing.prices.filter(p => !isPriceArchived(p)).find(p => getPriceType(p) === 'fixed')
-    const current = fixed ? getFixedPriceAmount(fixed) : undefined
+    const activePrices = existing.prices.filter(p => !isPriceArchived(p))
+    const fixed = activePrices.find(p => getPriceType(p) === 'fixed')
+    if (!fixed) {
+      // The old price was archived (or the product never had one): add the one the constants want.
+      if (!APPLY) {
+        console.log(`  + price $${(cents / 100).toFixed(2)}/year would be added to "${name}" (${existing.id}) — no active fixed price`)
+        return
+      }
+      try {
+        await polar.products.update({
+          id: existing.id,
+          productUpdate: {
+            prices: [
+              ...activePrices.map(p => ({ id: (p as unknown as ProductPriceRow).id })),
+              { amountType: 'fixed' as const, priceAmount: cents },
+            ],
+          },
+        })
+        console.log(`  + price $${(cents / 100).toFixed(2)}/year added to "${name}" (${existing.id})`)
+      }
+      catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        summary.warnings.push(`Failed to add the fixed price to "${name}": ${msg}`)
+        console.error(`  ✗ price on "${name}" failed: ${msg}`)
+      }
+      return
+    }
+    const current = getFixedPriceAmount(fixed)
     if (current !== cents) {
-      summary.warnings.push(`Fixed price drift on "${name}": Polar has ${current ?? 'none'} cents, the bundle constants want ${cents} cents. Archive the price in the Polar dashboard and create a new one.`)
+      summary.warnings.push(`Fixed price drift on "${name}": Polar has ${current ?? 'none'} cents, the bundle constants want ${cents} cents. Archive the price in the Polar dashboard; the next --apply run adds the new one.`)
     }
     else {
       console.log(`  ✓ product "${name}" in sync (${existing.id})`)
@@ -346,7 +376,7 @@ async function syncVariantProduct(
       name,
       description: variant === 'yearly'
         ? `${PLAN_PRICING[slug].name} billed yearly at the list price.`
-        : `Migrate order with the first year of Studio ${PLAN_PRICING[slug].name}; renews on Studio ${PLAN_PRICING[slug].name} Yearly.`,
+        : `Migrate order with the first year of Studio ${PLAN_PRICING[slug].name} at the yearly list price; renews on Studio ${PLAN_PRICING[slug].name} Yearly.`,
       metadata: { contentrain_slug: slug, contentrain_catalog: CATALOG_VERSION, contentrain_variant: variant },
       prices: [{ amountType: 'fixed', priceAmount: cents }],
     })

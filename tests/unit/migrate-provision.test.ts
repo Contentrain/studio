@@ -32,7 +32,7 @@ const claim = (overrides: Record<string, unknown> = {}) => ({
   github_user_id: '4242',
   email_verified: true,
   return_url: 'https://migrate.contentrain.io/orders/ord_1?studio=done',
-  billing: { migrate_fee_cents: 24900, quoted_total_cents: 64100, currency: 'usd' },
+  billing: { migrate_fee_cents: 24900, quoted_total_cents: 73900, currency: 'usd' },
   origin: 'https://old-blog.example',
   ...overrides,
 })
@@ -53,7 +53,7 @@ describe('provisionMigrateBundle', () => {
 
   beforeEach(() => {
     vi.resetModules()
-    resolveMigrateAccountState.mockReset().mockResolvedValue({ state: 'none', plan: 'pro', year1_cents: 39200 })
+    resolveMigrateAccountState.mockReset().mockResolvedValue({ state: 'none', plan: 'pro', year1_cents: 49000 })
     coveringWorkspace.mockReset().mockResolvedValue({ id: 'ws-paid', slug: 'agency' })
     db = {
       listOwnedWorkspacesAdmin: vi.fn().mockResolvedValue([{ id: 'ws-other', type: 'team' }, { id: 'ws-1', type: 'primary' }]),
@@ -99,7 +99,7 @@ describe('provisionMigrateBundle', () => {
       workspaceId: 'ws-1',
       plan: 'pro',
       customerEmail: 'owner@example.com',
-      amountCents: 64100,
+      amountCents: 73900,
       successUrl: 'https://migrate.contentrain.io/orders/ord_1?studio=done',
       metadata: { order_id: 'ord_1', tenant_id: 'ten_1', migrate_grant_id: 'grant-1', migrate_bundle: 'true', studio_url: 'https://studio.example.com' },
     })
@@ -107,7 +107,7 @@ describe('provisionMigrateBundle', () => {
       checkoutId: 'co_1',
       checkoutUrl: 'https://sandbox.polar.sh/checkout/c_1',
       checkoutExpiresAt: '2026-10-10T13:00:00.000Z',
-      amountCents: 64100,
+      amountCents: 73900,
       targetProductId: 'prod_pro_y',
     })
     expect(response).toEqual({
@@ -116,7 +116,7 @@ describe('provisionMigrateBundle', () => {
       plan: 'pro',
       workspace_slug: 'owner-abc',
       checkout_url: 'https://sandbox.polar.sh/checkout/c_1',
-      amount_cents: 64100,
+      amount_cents: 73900,
       checkout_expires_at: Math.floor(new Date('2026-10-10T13:00:00Z').getTime() / 1000),
     })
   })
@@ -129,7 +129,7 @@ describe('provisionMigrateBundle', () => {
 
   it('refuses a quote that is not what Studio computes now (Migrate fee + the Studio line)', async () => {
     expect(await refused(claim({ billing: { migrate_fee_cents: 24900, quoted_total_cents: 60000, currency: 'usd' } }))).toEqual({ status: 409, key: 'migrate.quote_changed' })
-    resolveMigrateAccountState.mockResolvedValue({ state: 'none', plan: 'pro', year1_cents: 40000 })
+    resolveMigrateAccountState.mockResolvedValue({ state: 'none', plan: 'pro', year1_cents: 43210 })
     expect(await refused()).toEqual({ status: 409, key: 'migrate.quote_changed' })
     expect(payment.createBundleCheckout).not.toHaveBeenCalled()
     expect(auth.ensureUserForProviderAccount).not.toHaveBeenCalled()
@@ -271,7 +271,7 @@ describe('provisionMigrateBundle', () => {
       workspace_id: 'ws-1',
       checkout_url: 'https://sandbox.polar.sh/checkout/c_old',
       checkout_expires_at: '2026-10-10T13:00:00.000Z',
-      amount_cents: 64100,
+      amount_cents: 73900,
       ...overrides,
     })
 
