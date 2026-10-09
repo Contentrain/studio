@@ -54,7 +54,10 @@ interface GrantView {
   email: string
   workspaceId: string | null
   state: 'claimed' | 'bound' | 'redeemed'
+  /** How writing studio.json to the delivered site went; absent until it was tried. */
+  siteBinding?: SiteBinding
 }
+interface SiteBinding { state: string, prUrl: string | null, overLimit: string[], limit: number | null }
 interface Destination { workspaceSlug: string, projectId: string | null }
 /** How a bundle grant's workspace plan stands. */
 interface BundleStatus { planState: 'active' | 'ending' | 'ended', workspaceSlug: string, periodEndsAt: number | null }
@@ -216,13 +219,30 @@ function onVisible() {
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
+/** What the claim screen says about the site's forms (studio.json), once binding them was tried. */
+const siteBinding = computed(() => grant.value?.siteBinding ?? null)
+const siteBindingText = computed(() => {
+  const b = siteBinding.value
+  if (!b) return ''
+  if (b.state === 'partial') return t('migrate_claim.site_binding_partial', { limit: b.limit ?? 0, forms: b.overLimit.join(', ') })
+  if (b.state === 'pr_open') return t(b.prUrl ? 'migrate_claim.site_binding_pr_open' : 'migrate_claim.site_binding_review')
+  if (b.state === 'conflict') return t('migrate_claim.site_binding_conflict')
+  if (b.state === 'failed') return t('migrate_claim.site_binding_failed')
+  return t('migrate_claim.site_binding_written')
+})
+
 async function connectProject() {
   if (!grant.value || connecting.value) return
   connecting.value = true
   connectError.value = null
   try {
-    const result = await $fetch<{ projectId: string, workspaceSlug: string }>(`/api/migrate/grants/${encodeURIComponent(grant.value.id)}/connect-project`, { method: 'POST' })
-    await navigateTo(`/w/${result.workspaceSlug}/projects/${result.projectId}${focusMedia ? '?focus=migration-media' : ''}`)
+    const result = await $fetch<{ projectId: string, workspaceSlug: string, siteBinding?: SiteBinding | null }>(`/api/migrate/grants/${encodeURIComponent(grant.value.id)}/connect-project`, { method: 'POST' })
+    // The forms are bound (or nothing could be tried): on to the project. Anything else is said here first.
+    if (!result.siteBinding || result.siteBinding.state === 'written') {
+      await navigateTo(`/w/${result.workspaceSlug}/projects/${result.projectId}${focusMedia ? '?focus=migration-media' : ''}`)
+      return
+    }
+    await reloadGrant()
   }
   catch (e: unknown) {
     const body = (e as { data?: { data?: { code?: unknown, settingsUrl?: unknown } } })?.data?.data
@@ -350,6 +370,20 @@ async function startTrial() {
             <AtomsBaseButton v-if="!destination" variant="primary" data-testid="claim-open-studio" @click="navigateTo('/')">
               {{ t('migrate_claim.error_open_studio') }}
             </AtomsBaseButton>
+          </div>
+          <!-- The site's forms: studio.json written, waiting on a pull request, or why not (never silently broken). -->
+          <div v-if="siteBinding && projectPath" class="rounded-lg border px-4 py-3 text-sm" :class="siteBinding.state === 'written' ? 'border-border dark:border-secondary-800' : 'border-warning-300 dark:border-warning-700'" role="status" data-testid="claim-site-binding" :data-state="siteBinding.state">
+            <p class="text-body dark:text-secondary-300">
+              {{ siteBindingText }}
+            </p>
+            <div v-if="siteBinding.state !== 'written' && siteBinding.state !== 'partial'" class="mt-3 flex flex-wrap items-center gap-3">
+              <a v-if="siteBinding.state === 'pr_open' && siteBinding.prUrl" :href="siteBinding.prUrl" target="_blank" rel="noopener" class="rounded text-sm font-medium text-primary-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-300" data-testid="claim-site-binding-pr">
+                {{ t('migrate_claim.site_binding_pr_link') }}
+              </a>
+              <AtomsBaseButton variant="secondary" :disabled="connecting" data-testid="claim-site-binding-retry" @click="connectProject">
+                {{ t('migrate_claim.site_binding_retry') }}
+              </AtomsBaseButton>
+            </div>
           </div>
           <div v-if="connectError" class="rounded-lg border border-border px-4 py-3 text-sm dark:border-secondary-800" role="alert" data-testid="claim-connect-error" :data-code="connectError.code">
             <p class="text-body dark:text-secondary-300">

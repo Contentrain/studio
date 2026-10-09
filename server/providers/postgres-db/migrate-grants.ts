@@ -21,6 +21,7 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantRepo'
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
+  | 'setMigrateGrantSiteBinding'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
@@ -299,6 +300,19 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .execute()
         const row = await getAdmin().selectFrom('migrate_grants').selectAll().where('id', '=', grantId).executeTakeFirst()
         return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async setMigrateGrantSiteBinding(grantId, binding) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({ site_binding_state: binding.state, site_binding_detail: JSON.stringify(binding.detail), site_binding_at: eb.fn<string>('now', []) }))
+          .where('id', '=', grantId)
+          .execute()
       }
       catch (error) {
         throwDbError(error)

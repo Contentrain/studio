@@ -21,6 +21,7 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantRepo'
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
+  | 'setMigrateGrantSiteBinding'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
@@ -267,6 +268,14 @@ export function migrateGrantMethods(): MigrateGrantMethods {
       const { data, error: readError } = await getAdmin().from('migrate_grants').select('*').eq('id', grantId).maybeSingle()
       if (readError) fail(readError.message)
       return (data as DatabaseRow | null) ?? null
+    },
+
+    async setMigrateGrantSiteBinding(grantId, binding) {
+      const { error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ site_binding_state: binding.state, site_binding_detail: binding.detail, site_binding_at: new Date().toISOString() })
+        .eq('id', grantId)
+      if (error) fail(error.message)
     },
 
     async getMigrateGrantOrigin(workspaceId, repoFullName) {

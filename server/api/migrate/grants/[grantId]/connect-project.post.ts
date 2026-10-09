@@ -9,12 +9,19 @@
  * `repo_other_account` (the repository belongs to a GitHub account other than the one the workspace is
  * connected to: a workspace carries one installation, so giving the app access is a dead end there),
  * `migration_not_merged`. A repository that is already a project is the answer, not an error.
+ *
+ * Then the site is bound to the project (`ensureMigrateSiteBinding`: studio.json, so its forms and comments are
+ * Studio's) and the answer says how that went (`siteBinding`). Every answer binds, the "already a project" ones too:
+ * the claim screen's retry is this same call, and the binding is idempotent.
  */
 import { resolveWorkspaceBilling } from '../../../../utils/workspace-billing'
 import { isBillingLocked } from '../../../../utils/billing'
 import { migrateClaimPublicKey } from '../../../../utils/migrate-grant'
 import { connectWorkspaceProject } from '../../../../utils/project-connect'
 import { useGitAppProvider, useGitProvider } from '../../../../utils/providers'
+import { ensureMigrateSiteBinding } from '../../../../utils/migrate-site-binding'
+import type { MigrateSiteBinding } from '../../../../utils/migrate-site-binding'
+import { publicMediaBase } from '../../../../utils/media-url'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -39,13 +46,33 @@ export default defineEventHandler(async (event) => {
   const slug = workspace.slug as string
   const repoFullName = `${owner}/${name}`
 
+  let billing: Awaited<ReturnType<typeof resolveWorkspaceBilling>> | undefined
+  const billingOf = async () => (billing ??= await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId } as Parameters<typeof resolveWorkspaceBilling>[1]))
+  // The site's binding to the project (studio.json). Recorded on the grant; never fails the connect.
+  const bind = async (projectId: string, repo: { owner: string, name: string }, defaultBranch?: string): Promise<MigrateSiteBinding | null> => {
+    const installation = typeof workspace.github_installation_id === 'number' ? workspace.github_installation_id : null
+    if (!installation) return null
+    const git = useGitProvider({ installationId: installation, owner: repo.owner, repo: repo.name })
+    const project = await db.getProjectById(projectId, 'id, content_root, default_branch')
+    return ensureMigrateSiteBinding({
+      db,
+      grantId,
+      projectId,
+      git,
+      contentRoot: normalizeContentRoot((project?.content_root as string | null) ?? ''),
+      defaultBranch: defaultBranch ?? (project?.default_branch as string | null) ?? await git.getDefaultBranch(),
+      plan: (await billingOf()).effectivePlan,
+      studio: { baseUrl: String(useRuntimeConfig().public?.siteUrl ?? ''), mediaBaseUrl: publicMediaBase(projectId) },
+    })
+  }
+
   // Already a project: the answer, not an error. Compared without case, as the claim screen does.
   const existing = (await db.listWorkspaceProjects(session.accessToken, workspaceId))
     .find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === repoFullName.toLowerCase())
-  if (existing) return { projectId: existing.id as string, workspaceSlug: slug, created: false }
+  if (existing) return { projectId: existing.id as string, workspaceSlug: slug, created: false, siteBinding: await bind(existing.id as string, { owner, name }) }
 
-  const billing = await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId } as Parameters<typeof resolveWorkspaceBilling>[1])
-  if (billing.state === 'free' || isBillingLocked(billing.state))
+  const { state: billingState, effectivePlan } = await billingOf()
+  if (billingState === 'free' || isBillingLocked(billingState))
     throw createError({ statusCode: 409, message: errorMessage('migrate.connect_plan_locked'), data: { code: 'plan_locked' } })
 
   const installationId = typeof workspace.github_installation_id === 'number' ? workspace.github_installation_id : null
@@ -81,16 +108,16 @@ export default defineEventHandler(async (event) => {
     connectedName = resolved.fullName
     const moved = (await db.listWorkspaceProjects(session.accessToken, workspaceId))
       .find(p => typeof p.repo_full_name === 'string' && p.repo_full_name.toLowerCase() === connectedName.toLowerCase())
-    if (moved) return { projectId: moved.id as string, workspaceSlug: slug, created: false }
+    if (moved) return { projectId: moved.id as string, workspaceSlug: slug, created: false, siteBinding: await bind(moved.id as string, { owner, name }) }
   }
 
   const git = useGitProvider({ installationId, owner, repo: name })
   const [detection, defaultBranch] = await Promise.all([git.detectFramework(), git.getDefaultBranch()])
-  const project = await connectWorkspaceProject(session.accessToken, workspaceId, billing.effectivePlan, {
+  const project = await connectWorkspaceProject(session.accessToken, workspaceId, effectivePlan, {
     repoFullName: connectedName,
     defaultBranch,
     detectedStack: detection.stack,
     hasContentrain: detection.hasContentDir,
   })
-  return { projectId: project.id as string, workspaceSlug: slug, created: true }
+  return { projectId: project.id as string, workspaceSlug: slug, created: true, siteBinding: await bind(project.id as string, { owner, name }, defaultBranch) }
 })

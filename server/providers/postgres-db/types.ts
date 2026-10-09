@@ -135,6 +135,10 @@ export interface MigrateGrantsTable {
   bundle_applied_at: string | null
   revoked_at: string | null
   revoked_reason: string | null
+  /** How writing studio.json to the delivered site went (049). */
+  site_binding_state: string | null
+  site_binding_detail: unknown | null
+  site_binding_at: string | null
   created_at: Generated<string>
 }
 
