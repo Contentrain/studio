@@ -32,17 +32,6 @@ export function monthlyListCents(plan: MigrateStudioPlan): number {
   return PLAN_PRICING[plan].priceMonthly * 12 * 100
 }
 
-/**
- * How the yearly price explains itself against monthly × 12: the saving in cents and the same saving in whole
- * months of the monthly price ("2 months free compared to monthly"). Both derived; a plan whose yearly price is
- * not under monthly × 12 saves nothing and the months read 0.
- */
-export function yearlySaving(plan: MigrateStudioPlan): { savingCents: number, monthsFree: number } {
-  const monthly = PLAN_PRICING[plan].priceMonthly * 100
-  const savingCents = Math.max(0, monthlyListCents(plan) - STUDIO_YEARLY_LIST_CENTS[plan])
-  return { savingCents, monthsFree: monthly > 0 ? Math.floor(savingCents / monthly) : 0 }
-}
-
 export function planCovers(current: MigrateStudioPlan, needed: MigrateStudioPlan): boolean {
   return PLAN_RANK[current] >= PLAN_RANK[needed]
 }

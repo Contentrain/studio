@@ -3,7 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { validateMigrateAccountStateRequest, validateMigrateAccountStateResponse } from '@contentrain/types'
 import { MigrateS2sError, verifyMigrateS2sRequest } from '../../server/utils/migrate-s2s'
 import { PLAN_PRICING } from '../../shared/utils/license'
-import { STUDIO_YEARLY_LIST_CENTS, bundleUpgradeCents, bundleYear1Cents, monthlyListCents, planCovers, yearlySaving } from '../../shared/utils/migrate-bundle'
+import { STUDIO_YEARLY_LIST_CENTS, bundleUpgradeCents, bundleYear1Cents, monthlyListCents, planCovers } from '../../shared/utils/migrate-bundle'
 
 function createErrorLike(input: { statusCode: number, message: string }) {
   return Object.assign(new Error(input.message), input)
@@ -56,13 +56,7 @@ describe('bundle pricing', () => {
       expect(monthlyListCents(plan)).toBe(monthly * 12)
       // The claim "N months free compared to monthly" has to stay true: yearly under monthly × 12.
       expect(STUDIO_YEARLY_LIST_CENTS[plan]).toBeLessThan(monthlyListCents(plan))
-      const saving = yearlySaving(plan)
-      expect(saving.savingCents).toBe(monthlyListCents(plan) - STUDIO_YEARLY_LIST_CENTS[plan])
-      expect(saving.monthsFree).toBe(Math.floor(saving.savingCents / monthly))
-      expect(saving.monthsFree).toBeGreaterThan(0)
     }
-    expect(yearlySaving('starter')).toEqual({ savingCents: 1800, monthsFree: 2 })
-    expect(yearlySaving('pro')).toEqual({ savingCents: 9800, monthsFree: 2 })
   })
 })
 
