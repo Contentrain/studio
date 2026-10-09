@@ -4,10 +4,11 @@ import { hasFeature } from '../../server/utils/license'
 /**
  * Normalize project member access based on plan features.
  *
- * Reviewer and Viewer are plan-gated (`roles.reviewer`, `roles.viewer`).
- * A stored reviewer/viewer role on a plan without the feature (after a
- * downgrade, or written before this check) acts as `editor`, the same way
- * `specificModels` falls back when `roles.specific_models` is missing.
+ * Reviewer and Viewer are plan-gated at assignment (`members/index.post.ts`
+ * refuses them without `roles.reviewer` / `roles.viewer`). A role already
+ * stored is kept on every plan: both are read-only or narrower than editor,
+ * so widening one to editor after a downgrade would grant write access.
+ * Only specific_models access is plan-gated here (Pro+).
  */
 export function normalizeProjectMemberAccess(input: {
   plan: EnterprisePlan
@@ -15,8 +16,7 @@ export function normalizeProjectMemberAccess(input: {
   specificModels?: boolean | null
   allowedModels?: string[] | null
 }): EnterpriseProjectMemberAccess {
-  const role: EnterpriseProjectMemberAccess['role'] = (input.role === 'reviewer' || input.role === 'viewer')
-    && hasFeature(input.plan, `roles.${input.role}`)
+  const role: EnterpriseProjectMemberAccess['role'] = input.role === 'reviewer' || input.role === 'viewer'
     ? input.role
     : 'editor'
 

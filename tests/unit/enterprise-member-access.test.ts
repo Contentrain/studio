@@ -40,8 +40,9 @@ afterEach(() => {
 })
 
 /**
- * Reviewer/Viewer are plan features (`roles.reviewer`, `roles.viewer`).
- * A stored reviewer/viewer role on a plan without them acts as editor (#438).
+ * Reviewer/Viewer are plan features gated at assignment (#438). A role
+ * already stored is kept on every plan: widening it to editor would grant
+ * write access to a read-only member.
  */
 describe('normalizeProjectMemberAccess (EE edition)', () => {
   it.each(['reviewer', 'viewer'] as const)('keeps %s on a plan with the feature (Starter, Pro)', (role) => {
@@ -49,8 +50,9 @@ describe('normalizeProjectMemberAccess (EE edition)', () => {
     expect(normalizeProjectMemberAccess({ plan: 'pro', role }).role).toBe(role)
   })
 
-  it.each(['reviewer', 'viewer'] as const)('treats a stored %s as editor on Free', (role) => {
-    expect(normalizeProjectMemberAccess({ plan: 'free', role }).role).toBe('editor')
+  it.each(['reviewer', 'viewer'] as const)('keeps a stored %s on Free, never widening it to editor', (role) => {
+    expect(normalizeProjectMemberAccess({ plan: 'free', role }).role).toBe(role)
+    expect(normalizeProjectMemberAccess({ plan: 'community', role }).role).toBe(role)
   })
 
   it('keeps editor, and defaults a missing role to editor', () => {
