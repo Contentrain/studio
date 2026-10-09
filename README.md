@@ -40,7 +40,7 @@ Traditional CMS products hide content workflows behind opaque databases and admi
 
 ## Relationship to Contentrain AI
 
-Studio shares the same `.contentrain/` contract with the MIT package surface in the `contentrain-ai` repository. Developers usually enter the ecosystem through local-first package workflows, then move into Studio when review, roles, and delivery become operational needs.
+Studio shares the same `.contentrain/` contract with the MIT package surface in the [`Contentrain/ai`](https://github.com/Contentrain/ai) repository. Developers usually enter the ecosystem through local-first package workflows, then move into Studio when review, roles, and delivery become operational needs.
 
 | AI surface | Primary job | Studio bridge | Docs |
 | --- | --- | --- | --- |

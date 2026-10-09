@@ -24,7 +24,8 @@ Self-hosting typically means one of two profiles:
 Always deploy a **tagged release** container image, not `main` HEAD. Tags are the supported stability contract; `main` is stable-at-HEAD for CI purposes but may carry not-yet-released changes at any moment.
 
 ```bash
-docker pull ghcr.io/contentrain/studio:v0.1.0-beta.7
+# Replace vX.Y.Z with the newest tag from https://github.com/Contentrain/studio/releases
+docker pull ghcr.io/contentrain/studio:vX.Y.Z
 ```
 
 See [DOCKER.md](DOCKER.md) for the full image-tag policy and [RELEASING.md](RELEASING.md) for the release cadence. Pinning to an exact `vX.Y.Z` tag makes upgrades explicit; avoid `:latest` in production.

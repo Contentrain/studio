@@ -1,6 +1,6 @@
 # Contentrain Studio — Roadmap
 
-> Last updated: 2026-04-24 | Current release: v0.1.0-beta.7
+> Last updated: 2026-10-09 | Current release: v0.4.8 (see [GitHub Releases](https://github.com/Contentrain/studio/releases) and [CHANGELOG.md](CHANGELOG.md) for what each release shipped)
 
 This roadmap reflects our current priorities. Items may shift based on user feedback and production learnings.
 
@@ -8,9 +8,9 @@ See [docs/EDITIONS.md](docs/EDITIONS.md) for the Community vs Enterprise feature
 
 ---
 
-## Shipped (v0.1.0-beta)
+## Shipped (through v0.4.x)
 
-Core platform is feature-complete for beta:
+Core platform:
 
 | Area | What |
 |------|------|
@@ -22,16 +22,17 @@ Core platform is feature-complete for beta:
 | Forms & Submissions | Public form API, captcha, rate limiting, approve/reject flow |
 | Conversation API | External AI content operations via API key auth |
 | Webhooks | Outbound event delivery, HMAC-SHA256 signing, retry with backoff |
-| Billing | Stripe integration, 4-tier flat-rate plans (Free / Starter / Pro / Enterprise) |
+| Billing | Payment plugin registry: Polar by default, Stripe as an opt-in plugin ([docs/PAYMENT_PROVIDERS.md](docs/PAYMENT_PROVIDERS.md)); 4-tier plans (Free / Starter / Pro / Enterprise) |
+| Approvals & Scheduling | Approval gates for branches and releases (`server/utils/approval-gate.ts`, `branch-approval.ts`, `release-approval.ts`), scheduled publication (`server/utils/schedule-registry.ts`) |
 | Content Brain | IndexedDB offline cache, semantic search, full-text index, delta sync |
 | Audit Logs | Application + database-level audit trail, 90-day retention |
-| Overage Billing | Stripe metered billing for AI, CDN, storage, forms, API with usage dashboard |
+| Overage Billing | Metered overage for AI credits, API credits, MCP Cloud calls and form submissions, with a usage dashboard. CDN bandwidth and media storage are hard limits; their overage is not sold (`overageBillable: false` in `shared/utils/usage-meters.ts`) |
 | CLI Integration | Auth (OAuth + token refresh), activity feed, usage API for Studio CLI |
-| Self-Hosting | Docker Compose deployment, 3-stage build |
+| Self-Hosting | Docker Compose deployment, 3-stage build; plain PostgreSQL 14+ provider (`server/providers/postgres-db/`) as an alternative to Supabase |
 
 ---
 
-## Now — Stabilization + MCP ecosystem alignment (v0.2.x)
+## Now — Stabilization + MCP ecosystem alignment
 
 Focus: production readiness, monitoring, critical fixes, alignment with
 `@contentrain/mcp` ecosystem.
@@ -43,15 +44,15 @@ Focus: production readiness, monitoring, critical fixes, alignment with
 - [x] **GDPR audit for deletions** — Bulk delete audit logging, 4 missing audit registry entries (CDN key, conversation key, webhook, AI key)
 - [x] **MCP integration** — Content engine (save/delete/model CRUD + validation + canonical serialization) delegates to `@contentrain/mcp/core/ops`. `GitProvider` wraps MCP's `GitHubProvider`; Studio keeps brain-cache, branch lifecycle, and Studio-specific extensions (framework detection, PR helpers, tree listing). Faz S1–S5 in `.internal/refactor/02-studio-handoff.md`.
 - [x] **Comments v1** — Studio-stored comment threads on entries: public read/submit API for any site (the migration path's `<cr-component type="comments">`), moderation tab + moderator replies, agent tools, WordPress import of `contentrain-comments@1` exports with zero record/parent loss. `docs/COMMENTS.md`.
-- [x] **MCP Cloud endpoint (`api.mcp_cloud`)** — Hosted HTTP MCP endpoint for external AI agents (Cursor, Claude Desktop, custom drivers). Shipped on `@contentrain/mcp@1.4.0`'s `resolveProvider` multi-tenant entry point (`starter: 5K, pro: 50K, enterprise: ∞` calls/month at `$0.005/call` overage). Architecture: internal loopback MCP HTTP server + Nuxt proxy route that handles auth / plan gate / rate limit / atomic quota / brain-cache invalidation. Workspace Settings → MCP Cloud tab for key management. Faz S6.
+- [x] **MCP Cloud endpoint (`api.mcp_cloud`)** — Hosted HTTP MCP endpoint for external AI agents (Cursor, Claude Desktop, custom drivers). Shipped on `@contentrain/mcp@1.4.0`'s `resolveProvider` multi-tenant entry point (monthly call quotas and the per-call overage price come from the `api.mcp_calls_per_month` row of `.contentrain/content/system/plan-features/data.json`). Architecture: internal loopback MCP HTTP server + Nuxt proxy route that handles auth / plan gate / rate limit / atomic quota / brain-cache invalidation. Workspace Settings → MCP Cloud tab for key management. Faz S6.
 
 ---
 
-## Next — Post-Launch Polish (v0.2.x)
+## Next — Post-Launch Polish
 
 Focus: UX polish, operational resilience, mobile support.
 
-- [x] **Usage-based overage billing** — Stripe metered billing for AI messages, CDN bandwidth, storage, form submissions with overage settings and usage dashboard (shipped v0.1.0-beta.6)
+- [x] **Usage-based overage billing** — metered overage with overage settings and usage dashboard (first shipped v0.1.0-beta.6 on Stripe; Polar is the default provider today, and CDN bandwidth / media storage remain hard limits)
 - [x] **Mobile responsive shell** — Hamburger menu + slide-over drawer for mobile viewports (shipped v0.1.0-beta.1)
 - [ ] **Branch health warnings** — 80+ branch threshold alert, auto-cleanup of merged cr/* branches
 - [ ] **Brain cache webhook invalidation** — GitHub push webhook triggers cache invalidation (currently TTL-only)
@@ -63,7 +64,6 @@ Focus: UX polish, operational resilience, mobile support.
 
 No timeline commitment. Prioritized by user demand.
 
-- [ ] **Plain PostgreSQL provider** — DatabaseProvider implementation for self-hosted deployments without Supabase dependency. Interface exists (`server/providers/database.ts`), needs `pg-db/` implementation.
 - [ ] **OpenAI / Gemini AI providers** — Alternative AI backends (GPT-4o, Gemini) via existing AIProvider interface (`server/providers/ai.ts`). Currently only Anthropic implemented.
 - [ ] **Voice input** — Browser Speech-to-Text API, microphone button in chat panel. Speech-to-text transcription sent as regular chat message.
 - [ ] **Service Worker & PWA** — Background sync, offline write queue, push notifications, installable app experience. *Current state:* Content Brain Worker already provides offline read via IndexedDB + FlexSearch. Service Worker would add offline writes and push notifications.
@@ -106,7 +106,6 @@ These rows exist in the plan matrix as marketing and carry `roadmap: true`. UI s
 
 - [ ] **Multi-repo governance** — Cross-repository content management and standards enforcement
 - [ ] **Premium connectors** — Canva, Figma, Recraft, Notion, Google Drive integrations
-- [ ] **Approval chains** — Multi-step review workflows with scheduled publish
 - [ ] **Form spam filter (server-side)** — `forms.spam_filter` — beyond Turnstile captcha, a real heuristic/ML filter
 - [ ] **Media variants per-field enforcement** — `media.variants_per_field` limit check in variant creation path
 
