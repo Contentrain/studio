@@ -51,6 +51,21 @@ export interface UsageMeterDefinition {
    * from the first unit. Every meter in the manifest meets that today.
    */
   readonly overageBillable: boolean
+  /**
+   * The `runtimeConfig.cdn` flag that turns this meter's events on, for a
+   * meter fed by a background job rather than by the request itself.
+   * While the flag is off no event reaches the payment provider, so the
+   * overage is not sold either: the limit stays hard, whatever the
+   * workspace has toggled.
+   */
+  readonly eventFlag?: 'originMeter' | 'storageMeter'
+  /**
+   * The overage costs Studio real money per unit (egress, storage), so it
+   * is sold only to a subscription known to price this meter: a payment
+   * account whose priced meters were never reported counts as locked for
+   * it, never as unlocked.
+   */
+  readonly requiresKnownPrice?: boolean
 }
 
 export const USAGE_METERS = {
@@ -110,6 +125,8 @@ export const USAGE_METERS = {
     // Sold past the plan (founder, 2026-10-09): the allowance is the plan's
     // GB as is, and each GB past it bills at the catalogue price.
     overageBillable: true,
+    eventFlag: 'originMeter',
+    requiresKnownPrice: true,
   },
   FORM_SUBMISSIONS: {
     name: 'form_submissions',
@@ -136,6 +153,8 @@ export const USAGE_METERS = {
     aggregation: 'sum',
     unitsPerLimitUnit: 1,
     overageBillable: true,
+    eventFlag: 'storageMeter',
+    requiresKnownPrice: true,
   },
 } as const satisfies Record<string, UsageMeterDefinition>
 

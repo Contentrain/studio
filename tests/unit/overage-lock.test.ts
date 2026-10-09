@@ -7,8 +7,9 @@ const LEGACY_PRICES = ['ai_messages', 'api_messages', 'cdn_bandwidth_bytes', 'fo
 const CURRENT_PRICES = ['ai_credits', 'api_credits', 'form_submissions', 'mcp_calls']
 
 describe('resolveOverageLocks', () => {
-  it('locks nothing without an account', () => {
-    expect(resolveOverageLocks(null)).toEqual({})
+  it('without an account, locks only the overage that costs Studio per unit (CDN, storage)', () => {
+    const unknown = { reason: 'not_in_subscription', until: null }
+    expect(resolveOverageLocks(null)).toEqual({ cdn_bandwidth: unknown, media_storage: unknown })
   })
 
   it('locks every toggle during a trial, until the trial ends', () => {
@@ -72,9 +73,18 @@ describe('resolveOverageLocks', () => {
     expect(locks.ai_messages?.reason).toBe('not_in_subscription')
   })
 
-  it('applies only the trial rule when the provider never reported prices', () => {
-    expect(resolveOverageLocks({ subscription_status: 'active', plugin_metadata: {} })).toEqual({})
-    expect(resolveOverageLocks({ subscription_status: 'past_due', plugin_metadata: null })).toEqual({})
+  it('when the provider never reported prices, keeps the others open but locks CDN and storage', () => {
+    // Unknown is not "priced": Studio would pay the egress and storage and
+    // never invoice them. The credit and event meters keep the old rule.
+    const unknown = { reason: 'not_in_subscription', until: null }
+    expect(resolveOverageLocks({ subscription_status: 'active', plugin_metadata: {} })).toEqual({ cdn_bandwidth: unknown, media_storage: unknown })
+    expect(resolveOverageLocks({ subscription_status: 'past_due', plugin_metadata: null })).toEqual({ cdn_bandwidth: unknown, media_storage: unknown })
+  })
+
+  it('unlocks CDN and storage once the subscription is known to price them', () => {
+    const locks = resolveOverageLocks({ subscription_status: 'active', plugin_metadata: { billable_meters: ['ai_credits_1c', 'cdn_origin_gb', 'media_storage_gb_months'] } })
+    expect(locks.cdn_bandwidth).toBeUndefined()
+    expect(locks.media_storage).toBeUndefined()
   })
 })
 

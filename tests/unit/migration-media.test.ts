@@ -294,6 +294,25 @@ describe('ingestMediaBytes — the repository source shares the upload path', ()
     expect(media.upload).not.toHaveBeenCalled()
   })
 
+  it('a storage toggle the subscription cannot bill does not raise the cap (bulk ingest, Migrate import)', async () => {
+    vi.resetModules()
+    vi.doMock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: 'subscription' }) }))
+    const { createMediaIngestContext } = await import('../../server/utils/media-bulk-ingest')
+    vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://studio.test' }, cdn: { originMeter: true, storageMeter: true } }))
+    const unpriced = { subscription_status: 'active', plugin_metadata: { billable_meters: ['ai_credits_1c', 'form_submissions'] } }
+    vi.stubGlobal('useDatabaseProvider', () => ({ ...db, getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', overage_settings: { media_storage: true } }), getActivePaymentAccount: vi.fn().mockResolvedValue(unpriced) }))
+    const media = { upload: vi.fn() }
+    const locked = await createMediaIngestContext({ projectId: 'p-1', workspaceId: 'ws-1', plan: 'starter', uploadedBy: 'u-1', source: 'repo', media: media as never })
+    expect(locked.storageLimit).toBe(1024 * 1024 * 1024)
+
+    // Priced: the toggle raises the cap to the 10x ceiling.
+    vi.stubGlobal('useDatabaseProvider', () => ({ ...db, getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', overage_settings: { media_storage: true } }), getActivePaymentAccount: vi.fn().mockResolvedValue({ ...unpriced, plugin_metadata: { billable_meters: ['media_storage_gb_months'] } }) }))
+    const priced = await createMediaIngestContext({ projectId: 'p-1', workspaceId: 'ws-1', plan: 'starter', uploadedBy: 'u-1', source: 'repo', media: media as never })
+    expect(priced.storageLimit).toBe(10 * 1024 * 1024 * 1024)
+    vi.doUnmock('../../server/utils/deployment')
+    vi.resetModules()
+  })
+
   it('bytes the project already holds: the existing asset, no quota, no upload', async () => {
     const media = { upload: vi.fn(), getAssetByContentHash: vi.fn(async () => uploaded) }
     const ctx = await createMediaIngestContext({ projectId: 'p-1', workspaceId: 'ws-1', plan: 'starter', uploadedBy: 'u-1', source: 'repo', media: media as never })

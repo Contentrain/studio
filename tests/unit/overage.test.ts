@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getEffectiveLimit, isOverageEnabled, calculateOverageUnits } from '../../server/utils/overage'
 import { OVERAGE_PRICING, OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('OVERAGE_PRICING constant', () => {
   it('contains every metered category', () => {
@@ -32,6 +36,10 @@ describe('OVERAGE_PRICING constant', () => {
 })
 
 describe('getEffectiveLimit', () => {
+  beforeEach(() => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+  })
+
   it('returns plan limit when overage is disabled (empty settings)', () => {
     expect(getEffectiveLimit(50, 'ai.messages_per_month', {})).toBe(50)
   })
@@ -98,6 +106,10 @@ describe('getEffectiveLimit', () => {
 })
 
 describe('isOverageEnabled', () => {
+  beforeEach(() => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+  })
+
   it('returns false when settings is null', () => {
     expect(isOverageEnabled('ai.messages_per_month', null)).toBe(false)
   })

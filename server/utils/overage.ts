@@ -10,6 +10,7 @@
 
 import { OVERAGE_PRICING } from '../../shared/utils/license'
 import { USAGE_METER_LIST } from '../../shared/utils/usage-meters'
+import type { UsageMeterDefinition } from '../../shared/utils/usage-meters'
 
 /**
  * Limits whose usage is not sold past the plan allowance, whatever the
@@ -23,9 +24,34 @@ const UNSELLABLE_LIMIT_KEYS: ReadonlySet<string> = new Set(
   USAGE_METER_LIST.filter(m => !m.overageBillable).map(m => m.limitKey),
 )
 
-/** Whether usage past the plan limit may be sold for this limit at all. */
+/** limitKey → the runtime flag its meter's events need (`eventFlag`). */
+const EVENT_FLAG_BY_LIMIT_KEY: ReadonlyMap<string, NonNullable<UsageMeterDefinition['eventFlag']>> = new Map(
+  USAGE_METER_LIST.filter(m => m.eventFlag).map(m => [m.limitKey, m.eventFlag!]),
+)
+
+/**
+ * Whether the meter's events are on. A meter fed by a background job
+ * (CDN origin, storage) sends nothing while its flag is off, so overage
+ * sold then would be served and never invoiced. Unreadable config = off.
+ */
+function meterEventsOn(limitKey: string): boolean {
+  const flag = EVENT_FLAG_BY_LIMIT_KEY.get(limitKey)
+  if (!flag) return true
+  try {
+    const value = (useRuntimeConfig().cdn as Record<string, unknown> | undefined)?.[flag]
+    return value === true || value === 'true'
+  }
+  catch {
+    return false
+  }
+}
+
+/**
+ * Whether usage past the plan limit may be sold for this limit at all:
+ * the meter is billable and, where it has one, its event flag is on.
+ */
 export function isOverageSellable(limitKey: string): boolean {
-  return !UNSELLABLE_LIMIT_KEYS.has(limitKey)
+  return !UNSELLABLE_LIMIT_KEYS.has(limitKey) && meterEventsOn(limitKey)
 }
 
 /** Postgres INT max — used as soft cap when overage is enabled. */

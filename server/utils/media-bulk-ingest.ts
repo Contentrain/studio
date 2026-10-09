@@ -32,6 +32,7 @@ import type { Plan } from './license'
 import type { RemoteMedia } from './media-ingest'
 import { fetchRemoteMedia } from './media-ingest'
 import { getEffectiveLimit } from './overage'
+import { billableOverageSettings } from './workspace-billing'
 import { resolveVariantConfigWithPlan } from './media-variants'
 import { toDeliveryUrl } from './media-url'
 
@@ -146,7 +147,8 @@ export async function createMediaIngestContext(input: {
     variantsPerFieldLimit: getPlanLimit(input.plan, 'media.variants_per_field'),
   })
   const workspace = await db.getWorkspaceById(input.workspaceId, 'id, overage_settings')
-  const overageSettings = (workspace?.overage_settings as Record<string, boolean> | null) ?? {}
+  // A toggle the subscription cannot bill does not raise the cap.
+  const overageSettings = await billableOverageSettings(db, input.workspaceId, workspace?.overage_settings)
   const baseLimit = getPlanLimit(input.plan, 'media.storage_gb') * 1024 * 1024 * 1024
 
   return {

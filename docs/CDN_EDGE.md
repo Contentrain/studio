@@ -114,8 +114,11 @@ Rollout:
    far below its origin limit.
 2. Run polar-sync so the `cdn_origin_gb` meter exists, then set
    `NUXT_CDN_ORIGIN_METER=true`. Overage is sold per GB of origin transfer
-   (`overage_price` on `cdn.bandwidth_gb`); a subscription bills it once it
-   prices `cdn_origin_gb`, until then its switch shows as locked.
+   (`overage_price` on `cdn.bandwidth_gb`), and only while this flag is on: with
+   it off no event reaches Polar, so the limit stays hard whatever a workspace
+   has toggled. A subscription bills it once it is known to price
+   `cdn_origin_gb` (`billable_meters`); until then — and for an account whose
+   priced meters were never reported — its switch shows as locked.
 
 ## Rollback
 

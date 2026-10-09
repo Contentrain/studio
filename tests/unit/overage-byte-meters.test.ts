@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OVERAGE_ABUSE_CEILING_RATIO, getEffectiveLimit, isOverageEnabled, isOverageSellable, overageCeiling } from '../../server/utils/overage'
 import { USAGE_METERS, USAGE_METER_LIST } from '../../shared/utils/usage-meters'
 
@@ -12,6 +12,14 @@ describe('CDN and storage overage', () => {
   const SOFT_CAP_MAX = 2_147_483_647
   const GB = 1024 ** 3
   const bothOn = { cdn_bandwidth: true, media_storage: true, ai_messages: true }
+
+  // Both meters' events on (NUXT_CDN_ORIGIN_METER / NUXT_CDN_STORAGE_METER).
+  beforeEach(() => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
 
   it('sells every metered limit', () => {
     for (const key of ['cdn.bandwidth_gb', 'media.storage_gb', 'ai.messages_per_month', 'api.messages_per_month', 'api.mcp_calls_per_month', 'forms.submissions_per_month'])
@@ -54,5 +62,42 @@ describe('CDN and storage overage', () => {
     expect(overageCeiling(60, 'cdn.bandwidth_gb')).toBe(600)
     expect(overageCeiling(25, 'media.storage_gb')).toBe(250)
     expect(overageCeiling(350, 'ai.messages_per_month')).toBe(Infinity)
+  })
+})
+
+/**
+ * A meter fed by a background job sends nothing while its flag is off, so
+ * its overage would be served and never invoiced. Flag off = the hard limit
+ * of before, whatever the workspace has toggled.
+ */
+describe('CDN and storage overage with the meter flag off', () => {
+  const GB = 1024 ** 3
+  const bothOn = { cdn_bandwidth: true, media_storage: true, ai_messages: true }
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('is not sold, and the toggle raises nothing', () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: false, storageMeter: false } }))
+    expect(isOverageSellable('cdn.bandwidth_gb')).toBe(false)
+    expect(isOverageSellable('media.storage_gb')).toBe(false)
+    expect(getEffectiveLimit(60, 'cdn.bandwidth_gb', bothOn)).toBe(60)
+    expect(getEffectiveLimit(25 * GB, 'media.storage_gb', bothOn)).toBe(25 * GB)
+    expect(isOverageEnabled('cdn.bandwidth_gb', bothOn)).toBe(false)
+    // Meters fed by the request itself are unaffected.
+    expect(isOverageSellable('ai.messages_per_month')).toBe(true)
+  })
+
+  it('follows each flag on its own, and reads an env string "true" as on', () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: 'true', storageMeter: false } }))
+    expect(isOverageSellable('cdn.bandwidth_gb')).toBe(true)
+    expect(isOverageSellable('media.storage_gb')).toBe(false)
+  })
+
+  it('treats unreadable config as off', () => {
+    vi.stubGlobal('useRuntimeConfig', () => {
+      throw new Error('no nitro')
+    })
+    expect(isOverageSellable('cdn.bandwidth_gb')).toBe(false)
   })
 })

@@ -135,6 +135,7 @@ describe('overage settings API', () => {
     })
 
     it('turns CDN and storage overage on when the subscription prices their meters', async () => {
+      vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
       mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_credits_1c', 'cdn_origin_gb', 'media_storage_gb_months'] } } })
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ cdn_bandwidth: true, media_storage: true }))
 
@@ -143,6 +144,7 @@ describe('overage settings API', () => {
     })
 
     it('refuses CDN overage on a subscription that has no price for it yet', async () => {
+      vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
       // Polar keeps a subscription's prices: one created before CDN overage
       // was sold would serve the overage and never invoice it.
       mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls', 'form_submissions'] } } })
@@ -153,6 +155,17 @@ describe('overage settings API', () => {
         statusCode: 409,
         data: { code: 'overage_locked', reason: 'not_in_subscription' },
       })
+      expect(updateWorkspace).not.toHaveBeenCalled()
+    })
+
+    it('refuses CDN and storage overage while their meter flags are off, even on a subscription that prices them', async () => {
+      // No events reach Polar with the flag off: the overage would be served and never invoiced.
+      vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: false, storageMeter: false } }))
+      mockDb({ paymentAccount: { plugin_metadata: { billable_meters: ['ai_credits_1c', 'cdn_origin_gb', 'media_storage_gb_months'] } } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ media_storage: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 409 })
       expect(updateWorkspace).not.toHaveBeenCalled()
     })
 
