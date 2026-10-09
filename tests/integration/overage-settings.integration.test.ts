@@ -54,7 +54,8 @@ describe('overage settings API', () => {
 
       expect(result.overageSettings).toEqual({ ai_messages: true, cdn_bandwidth: false })
       expect(result.categories).toBeInstanceOf(Array)
-      expect(result.categories.length).toBe(6)
+      // Priced overage only: CDN and media are hard limits with no overage price.
+      expect(result.categories.length).toBe(4)
 
       const aiCategory = result.categories.find((c: { settingsKey: string }) => c.settingsKey === 'ai_messages')
       expect(aiCategory).toMatchObject({

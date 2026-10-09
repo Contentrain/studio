@@ -43,19 +43,6 @@
     "starter_value": "false",
     "type": "feature"
   },
-  "ai-studio-key": {
-    "category": "ai",
-    "community_value": "false",
-    "enterprise_value": "true",
-    "free_value": "false",
-    "key": "ai.studio_key",
-    "name": "Studio-Hosted AI Key",
-    "pro_value": "true",
-    "requires_ee": "true",
-    "sort_order": 3,
-    "starter_value": "true",
-    "type": "feature"
-  },
   "api-conversation": {
     "category": "api",
     "community_value": "false",
@@ -91,7 +78,6 @@
     "name": "Custom AI Instructions",
     "pro_value": "true",
     "requires_ee": "true",
-    "roadmap": "true",
     "sort_order": 4,
     "starter_value": "false",
     "type": "feature"
@@ -243,7 +229,6 @@
     "free_value": "0",
     "key": "cdn.bandwidth_gb",
     "name": "CDN Bandwidth (GB)",
-    "overage_price": 0.15,
     "overage_settings_key": "cdn_bandwidth",
     "overage_unit": "per GB",
     "pro_value": "60",
@@ -579,7 +564,6 @@
     "free_value": "0",
     "key": "media.storage_gb",
     "name": "Media Storage (GB)",
-    "overage_price": 0.25,
     "overage_settings_key": "media_storage",
     "overage_unit": "per GB/month",
     "pro_value": "25",

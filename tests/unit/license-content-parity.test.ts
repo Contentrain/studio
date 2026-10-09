@@ -31,7 +31,6 @@ import { AI_CREDIT_UNIT_USD } from '../../shared/utils/ai-credits'
 const REQUIRED_FEATURES = [
   'ai.byoa',
   'ai.pro_models',
-  'ai.studio_key',
   'cdn.delivery',
   'cdn.preview_branch',
   'cdn.custom_domain',
@@ -91,8 +90,14 @@ const REQUIRED_OVERAGE_KEYS = [
   'ai.messages_per_month',
   'api.messages_per_month',
   'api.mcp_calls_per_month',
-  'cdn.bandwidth_gb',
   'forms.submissions_per_month',
+] as const
+
+// Hard limits: the meter cannot bill past an allowance yet
+// (`overageBillable: false`, usage-meters.ts), so the catalogue lists no
+// overage price for them. Selling it is a founder decision (#437).
+const UNSOLD_OVERAGE_KEYS = [
+  'cdn.bandwidth_gb',
   'media.storage_gb',
 ] as const
 
@@ -101,7 +106,6 @@ const REQUIRED_OVERAGE_KEYS = [
 // When a feature graduates (real enforcement lands), its row should
 // drop the `roadmap` flag and move to EE_REQUIRED_FEATURES.
 const ROADMAP_FEATURES = [
-  'api.custom_instructions',
   'api.mcp_cloud_custom_domain',
   'api.mcp_cloud_sso',
   'cdn.custom_domain',
@@ -117,7 +121,6 @@ const ROADMAP_FEATURES = [
 // Edition force-disables them regardless of plan.
 const EE_REQUIRED_FEATURES = [
   'ai.byoa',
-  'ai.studio_key',
   'api.conversation',
   'api.custom_instructions',
   'api.webhooks_outbound',
@@ -203,7 +206,7 @@ describe('license ↔ content parity', () => {
     })
 
     it('shipped features do NOT carry the roadmap flag', () => {
-      const shipped = ['cdn.delivery', 'media.upload', 'ai.byoa', 'api.conversation', 'api.webhooks_outbound', 'workflow.review']
+      const shipped = ['cdn.delivery', 'media.upload', 'ai.byoa', 'api.conversation', 'api.custom_instructions', 'api.webhooks_outbound', 'workflow.review']
       for (const key of shipped) {
         const entry = FEATURE_MATRIX[key]!
         expect(entry.roadmap, `${key} has runtime enforcement; roadmap must be false`).toBe(false)
@@ -301,6 +304,10 @@ describe('license ↔ content parity', () => {
       expect(OVERAGE_PRICING[key]).toBeDefined()
     })
 
+    it.each(UNSOLD_OVERAGE_KEYS)('lists no overage price for the hard limit "%s"', (key) => {
+      expect(OVERAGE_PRICING[key]).toBeUndefined()
+    })
+
     it('pins canonical unit prices (catalog v2; pre-v2 products keep theirs, credit-unit.ts)', () => {
       // $0.08 ≈ 2.7x AI_CREDIT_UNIT_USD ($0.03) — above the SS-14
       // profit-policy floor (overage price >= 2x marginal cost) with
@@ -314,18 +321,14 @@ describe('license ↔ content parity', () => {
       expect(OVERAGE_PRICING['ai.messages_per_month']!.price).toBe(0.025)
       expect(OVERAGE_PRICING['api.messages_per_month']!.price).toBe(0.025)
       expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.price).toBe(0.001)
-      expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price).toBe(0.15)
       expect(OVERAGE_PRICING['forms.submissions_per_month']!.price).toBe(0.01)
-      expect(OVERAGE_PRICING['media.storage_gb']!.price).toBe(0.25)
     })
 
     it('pins canonical JSONB settings keys', () => {
       expect(OVERAGE_PRICING['ai.messages_per_month']!.settingsKey).toBe('ai_messages')
       expect(OVERAGE_PRICING['api.messages_per_month']!.settingsKey).toBe('api_messages')
       expect(OVERAGE_PRICING['api.mcp_calls_per_month']!.settingsKey).toBe('mcp_calls')
-      expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.settingsKey).toBe('cdn_bandwidth')
       expect(OVERAGE_PRICING['forms.submissions_per_month']!.settingsKey).toBe('form_submissions')
-      expect(OVERAGE_PRICING['media.storage_gb']!.settingsKey).toBe('media_storage')
     })
 
     it('OVERAGE_SETTINGS_KEYS is kept in sync with OVERAGE_PRICING', () => {

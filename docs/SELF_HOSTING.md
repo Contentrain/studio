@@ -102,7 +102,7 @@ Recommended config:
 - `ee/` directory absent (or excluded from the deployed image)
 - no Polar / Stripe env vars
 - no Redis for local/dev, Redis for production if multi-instance
-- `NUXT_ANTHROPIC_API_KEY` set (the operator provides the AI key; `ai.studio_key` is disabled in Community Edition)
+- `NUXT_ANTHROPIC_API_KEY` set (the operator provides the AI key; the Studio-hosted key is an ee feature)
 
 This gives you:
 

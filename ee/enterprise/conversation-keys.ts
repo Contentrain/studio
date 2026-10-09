@@ -91,6 +91,11 @@ export function createConversationKeysBridge() {
       if (!hasFeature(plan, 'api.conversation'))
         throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
 
+      // Same gate as the update path: custom instructions are their own
+      // feature (`api.custom_instructions`), not part of `api.conversation`.
+      if (body.customInstructions && !hasFeature(plan, 'api.custom_instructions'))
+        throw createError({ statusCode: 403, message: errorMessage('conversation.upgrade') })
+
       const keyLimit = getPlanLimit(plan, 'api.conversation_keys')
       const count = await db.countActiveConversationKeys(projectId, workspaceId)
 

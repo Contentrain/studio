@@ -55,6 +55,8 @@ export default defineConfig({
           include: ['tests/unit/**/*.test.ts'],
           environment: 'node',
           setupFiles: ['tests/setup/unit.ts'],
+          // The 5 s default times out under load (#440); nuxt runs at 30 s too.
+          testTimeout: 30_000,
         },
       },
       {

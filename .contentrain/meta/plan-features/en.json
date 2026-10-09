@@ -9,11 +9,6 @@
     "status": "draft",
     "updated_by": "contentrain-mcp"
   },
-  "ai-studio-key": {
-    "source": "agent",
-    "status": "draft",
-    "updated_by": "contentrain-mcp"
-  },
   "api-conversation": {
     "source": "agent",
     "status": "draft",
