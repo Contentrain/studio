@@ -73,14 +73,14 @@ const git = {
   },
 }
 
-const db = { setMigrateGrantSiteBinding: vi.fn(async () => {}) }
+const db = { setMigrateGrantSiteBinding: vi.fn(async (_id: string, _b: unknown) => {}) }
 const STUDIO = { baseUrl: 'https://studio.contentrain.io', mediaBaseUrl: 'https://studio.contentrain.io/api/cdn/v1/proj-1' }
 
 async function bind(over: { projectId?: string } = {}) {
   const { ensureMigrateSiteBinding } = await import('../../server/utils/migrate-site-binding')
   return ensureMigrateSiteBinding({ db, grantId: 'grant-1', projectId: over.projectId ?? 'proj-1', git: git as never, contentRoot: '', defaultBranch: 'main', plan: 'pro', studio: STUDIO })
 }
-const recorded = () => db.setMigrateGrantSiteBinding.mock.calls.at(-1)?.[1] as { state: string, detail: Record<string, unknown> }
+const recorded = () => db.setMigrateGrantSiteBinding.mock.calls.at(-1)?.[1] as { state: string, detail: Record<string, unknown>, attempts?: number, nextAt?: Date | null }
 
 beforeEach(() => {
   vi.resetModules()
@@ -106,7 +106,7 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
     expect(commit!.message.split('\n')[0]).toBe('contentrain: connect this site to Contentrain Studio (forms and comments)')
     expect(commit!.message).toContain('Your host rebuilds the site on this commit.')
     expect(branches.main!.get('studio.json')).toBe(commit!.changes[0]!.content)
-    expect(recorded()).toEqual({ state: 'written', detail: { path: 'studio.json', change: 'written', formModels: 1, limit: 3 } })
+    expect(recorded()).toEqual({ state: 'written', detail: { path: 'studio.json', change: 'written', formModels: 1, limit: 3 }, attempts: 0, nextAt: null })
   })
 
   it('a studio.json for the same project: nothing written; the retry is a no-op', async () => {
@@ -136,7 +136,7 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
     limit = 1
     expect(await bind()).toEqual({ state: 'partial', overLimit: ['newsletter'] })
     expect(commits).toHaveLength(1)
-    expect(recorded()).toEqual({ state: 'partial', detail: { path: 'studio.json', change: 'written', formModels: 2, limit: 1, overLimit: ['newsletter'] } })
+    expect(recorded()).toEqual({ state: 'partial', detail: { path: 'studio.json', change: 'written', formModels: 2, limit: 1, overLimit: ['newsletter'] }, attempts: 0, nextAt: null })
   })
 
   it('a protected main: the same single file in a pull request (pr_open); a retry opens no second one; once merged, written', async () => {
@@ -145,7 +145,7 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
     expect(commits).toHaveLength(1)
     expect(commits[0]!.changes.map(c => c.path)).toEqual(['studio.json'])
     expect(branches.main!.has('studio.json')).toBe(false)
-    expect(recorded()).toEqual({ state: 'pr_open', detail: { path: 'studio.json', prUrl: PR } })
+    expect(recorded()).toEqual({ state: 'pr_open', detail: { path: 'studio.json', prUrl: PR }, attempts: 0, nextAt: null })
 
     // The claim screen's retry while the pull request waits: nothing committed again, only the merge asked for.
     expect(await bind()).toEqual({ state: 'pr_open', prUrl: PR })
@@ -168,10 +168,20 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
   it('a write that fails is recorded as failed and never thrown; the next try writes once', async () => {
     failWrite = true
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(await bind()).toEqual({ state: 'failed' })
-    expect(recorded()).toEqual({ state: 'failed', detail: { code: 'github_unavailable' } })
+    expect(await bind()).toEqual({ state: 'failed', attempts: 1, code: 'github_unavailable' })
+    // The first failure waits 30 minutes before the sweep tries again.
+    expect(recorded()).toMatchObject({ state: 'failed', detail: { code: 'github_unavailable' }, attempts: 1 })
+    expect((recorded() as unknown as { nextAt: Date }).nextAt.getTime() - Date.now()).toBeGreaterThan(29 * 60_000)
     failWrite = false
     expect(await bind()).toEqual({ state: 'written' })
     expect(commits).toHaveLength(1)
+  })
+
+  it('the retry schedule doubles from 30 minutes and stops at the cap', async () => {
+    const { siteBindingNextAt, SITE_BINDING_MAX_ATTEMPTS } = await import('../../server/utils/migrate-site-binding')
+    const now = new Date('2026-10-10T00:00:00Z')
+    const after = (n: number) => (siteBindingNextAt(n, now)!.getTime() - now.getTime()) / 60_000
+    expect([1, 2, 3, 4].map(after)).toEqual([30, 60, 120, 240])
+    expect(siteBindingNextAt(SITE_BINDING_MAX_ATTEMPTS, now)).toBeNull()
   })
 })

@@ -10,7 +10,7 @@
  * connected to: a workspace carries one installation, so giving the app access is a dead end there),
  * `migration_not_merged`. A repository that is already a project is the answer, not an error.
  *
- * Then the site is bound to the project (`ensureMigrateSiteBinding`: studio.json, so its forms and comments are
+ * Then the site is bound to the project (`bindMigrateGrantSite` → `ensureMigrateSiteBinding`: studio.json, so its forms and comments are
  * Studio's) and the answer says how that went (`siteBinding`). Every answer binds, the "already a project" ones too:
  * the claim screen's retry is this same call, and the binding is idempotent.
  */
@@ -19,9 +19,8 @@ import { isBillingLocked } from '../../../../utils/billing'
 import { migrateClaimPublicKey } from '../../../../utils/migrate-grant'
 import { connectWorkspaceProject } from '../../../../utils/project-connect'
 import { useGitAppProvider, useGitProvider } from '../../../../utils/providers'
-import { ensureMigrateSiteBinding } from '../../../../utils/migrate-site-binding'
+import { bindMigrateGrantSite } from '../../../../utils/migrate-site-binding-run'
 import type { MigrateSiteBinding } from '../../../../utils/migrate-site-binding'
-import { publicMediaBase } from '../../../../utils/media-url'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -48,23 +47,10 @@ export default defineEventHandler(async (event) => {
 
   let billing: Awaited<ReturnType<typeof resolveWorkspaceBilling>> | undefined
   const billingOf = async () => (billing ??= await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId } as Parameters<typeof resolveWorkspaceBilling>[1]))
-  // The site's binding to the project (studio.json). Recorded on the grant; never fails the connect.
-  const bind = async (projectId: string, repo: { owner: string, name: string }, defaultBranch?: string): Promise<MigrateSiteBinding | null> => {
-    const installation = typeof workspace.github_installation_id === 'number' ? workspace.github_installation_id : null
-    if (!installation) return null
-    const git = useGitProvider({ installationId: installation, owner: repo.owner, repo: repo.name })
-    const project = await db.getProjectById(projectId, 'id, content_root, default_branch')
-    return ensureMigrateSiteBinding({
-      db,
-      grantId,
-      projectId,
-      git,
-      contentRoot: normalizeContentRoot((project?.content_root as string | null) ?? ''),
-      defaultBranch: defaultBranch ?? (project?.default_branch as string | null) ?? await git.getDefaultBranch(),
-      plan: (await billingOf()).effectivePlan,
-      studio: { baseUrl: String(useRuntimeConfig().public?.siteUrl ?? ''), mediaBaseUrl: publicMediaBase(projectId) },
-    })
-  }
+  // The site's binding to the project (studio.json). Recorded on the grant; never fails the connect. The sweep binds the
+  // same way (`bindMigrateGrantSite`) and retries a failed one.
+  const bind = async (projectId: string, repo: { owner: string, name: string }, defaultBranch?: string): Promise<MigrateSiteBinding | null> =>
+    bindMigrateGrantSite({ db, grant, workspace, projectId, repo, ...(defaultBranch ? { defaultBranch } : {}), plan: (await billingOf()).effectivePlan })
 
   // Already a project: the answer, not an error. Compared without case, as the claim screen does.
   const existing = (await db.listWorkspaceProjects(session.accessToken, workspaceId))

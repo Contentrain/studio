@@ -22,6 +22,8 @@ type MigrateGrantMethods = Pick<
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
   | 'setMigrateGrantSiteBinding'
+  | 'listMigrateSiteBindingWork'
+  | 'markMigrateSiteBindingAlerted'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
@@ -271,11 +273,61 @@ export function migrateGrantMethods(): MigrateGrantMethods {
     },
 
     async setMigrateGrantSiteBinding(grantId, binding) {
+      const through = binding.state === 'written' || binding.state === 'partial'
       const { error } = await getAdmin()
         .from('migrate_grants')
-        .update({ site_binding_state: binding.state, site_binding_detail: binding.detail, site_binding_at: new Date().toISOString() })
+        .update({
+          site_binding_state: binding.state,
+          site_binding_detail: binding.detail,
+          site_binding_at: new Date().toISOString(),
+          ...(binding.attempts === undefined ? {} : { site_binding_attempts: binding.attempts }),
+          ...(binding.nextAt === undefined ? {} : { site_binding_next_at: binding.nextAt ? binding.nextAt.toISOString() : null }),
+          ...(through ? { site_binding_alerted_at: null } : {}),
+        })
         .eq('id', grantId)
       if (error) fail(error.message)
+    },
+
+    async listMigrateSiteBindingWork(limit, maxAttempts) {
+      // PostgREST has no join without a foreign key: the grants first, then each one's project in its workspace.
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('*')
+        .eq('kind', 'bundle')
+        .not('redeemed_at', 'is', null)
+        .is('revoked_at', null)
+        .not('workspace_id', 'is', null)
+        .not('repo_owner', 'is', null)
+        .or(`site_binding_state.is.null,and(site_binding_state.eq.failed,site_binding_attempts.lt.${Math.trunc(maxAttempts)}),and(site_binding_state.in.(failed,conflict),site_binding_alerted_at.is.null)`)
+        .order('site_binding_next_at', { ascending: true, nullsFirst: true })
+        .order('site_binding_at', { ascending: true, nullsFirst: true })
+        .limit(limit)
+      if (error) fail(error.message)
+      const rows: DatabaseRow[] = []
+      for (const grant of (data ?? []) as DatabaseRow[]) {
+        const repo = `${String(grant.repo_owner)}/${String(grant.repo_name)}`
+        const { data: project, error: projectError } = await getAdmin()
+          .from('projects')
+          .select('id, default_branch, content_root')
+          .eq('workspace_id', grant.workspace_id as string)
+          .ilike('repo_full_name', repo.replace(/[\\%_]/g, '\\$&'))
+          .limit(1)
+          .maybeSingle()
+        if (projectError) fail(projectError.message)
+        if (project) rows.push({ ...grant, project_id: project.id, project_default_branch: project.default_branch, project_content_root: project.content_root })
+      }
+      return rows
+    },
+
+    async markMigrateSiteBindingAlerted(grantId) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ site_binding_alerted_at: new Date().toISOString() })
+        .eq('id', grantId)
+        .is('site_binding_alerted_at', null)
+        .select('id')
+      if (error) fail(error.message)
+      return (data ?? []).length > 0
     },
 
     async getMigrateGrantOrigin(workspaceId, repoFullName) {
