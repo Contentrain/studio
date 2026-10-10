@@ -92,6 +92,27 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.getMigrateGrantById(grant.id as string)).toMatchObject({ repo_owner: 'moved', repo_name: 'blog' })
   })
 
+  it('a covered bundle grant redeemed before delivery: the post-delivery claim hands it back and gives it its repository', async () => {
+    // provisionCovered: bundle, no repository, bound to the account's workspace and redeemed with no subscription of its own.
+    const covered = `${orderId}-covered`
+    const { grant } = await methods.claimMigrateGrant({ orderId: covered, claimJti: 'jti-cov-provision', userId: owner.userId, plan: 'starter', kind: 'bundle', email: 'owner@example.com' })
+    await methods.bindMigrateGrantWorkspace(grant.id as string, owner.workspaceId)
+    await methods.markMigrateGrantRedeemed(grant.id as string, null)
+    // claim.post after delivery: the same order, now with the repository and the days Migrate always signs
+    // (`studio-claim.post.ts`: the bundle's days), so the candidate row passes `migrate_grants_trial_shape` before the
+    // order's conflict; the redeemed row comes back, not refused.
+    const again = await methods.claimMigrateGrant({ orderId: covered, claimJti: 'jti-cov-delivery', userId: owner.userId, plan: 'starter', trialDays: 60, repoOwner: 'acme', repoName: 'covered', email: 'owner@example.com' })
+    expect(again.created).toBe(false)
+    expect(again.grant).toMatchObject({ id: grant.id, kind: 'bundle', workspace_id: owner.workspaceId, repo_owner: null })
+    expect(again.grant.redeemed_at).not.toBeNull()
+    // claim.post:69: a bundle grant with no repository takes the claim's.
+    expect(await methods.setMigrateGrantRepo(grant.id as string, { owner: 'acme', name: 'covered' })).toMatchObject({ repo_owner: 'acme', repo_name: 'covered', workspace_id: owner.workspaceId })
+    // Everything connect-project's gate reads (bundle, redeemed, workspace, repository) holds on the stored row.
+    const stored = await methods.getMigrateGrantForUser(grant.id as string, owner.userId)
+    expect(stored).toMatchObject({ kind: 'bundle', workspace_id: owner.workspaceId, repo_owner: 'acme', repo_name: 'covered', revoked_at: null })
+    expect(stored!.redeemed_at).not.toBeNull()
+  })
+
   it('marks a grant revoked once: the first reason stays, the grant is never un-revoked', async () => {
     const { grant } = await claim(owner.userId)
     expect(grant.revoked_at).toBeNull()
