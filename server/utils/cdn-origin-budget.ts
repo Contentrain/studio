@@ -15,8 +15,10 @@
  * Mode (`NUXT_CDN_ORIGIN_LIMIT`):
  * - `enforce` (default) — past the limit delivery continues (the owner is
  *                alerted), and at `CDN_ORIGIN_HARD_STOP_RATIO` of it the origin
- *                answers 429 with Retry-After until the window resets, unless
- *                overage is on (`getEffectiveLimit`).
+ *                answers 429 with Retry-After until the window resets. With
+ *                overage on, the limit passed in is the abuse ceiling
+ *                (`getEffectiveLimit`, 10× the plan), billed per GB past the
+ *                plan, and the stop is at the ceiling itself (`hardStopRatio: 1`).
  * - `observe`  — count and log, never refuse (self-hosters, operators).
  * - `off`      — neither count nor refuse.
  */
@@ -84,6 +86,11 @@ export async function checkCdnOriginBudget(input: {
   now?: Date
   /** The workspace's usage window; absent = calendar month. */
   period?: UsagePeriod
+  /**
+   * Where, as a multiple of `limitGb`, the origin stops. The plan limit
+   * keeps the unbilled 20 % buffer; an overage ceiling stops at itself.
+   */
+  hardStopRatio?: number
 }): Promise<{ allowed: true } | { allowed: false, retryAfterSeconds: number }> {
   const mode = cdnOriginLimitMode()
   if (mode === 'off' || !Number.isFinite(input.limitGb)) return { allowed: true }
@@ -104,7 +111,8 @@ export async function checkCdnOriginBudget(input: {
     console.warn(`[cdn-origin] workspace=${input.workspaceId} over its ${input.limitGb} GB origin limit (${(used / GIB).toFixed(2)} GB, mode=${mode})`)
   }
   // Past the limit and under the hard stop: keep serving, the owner is alerted.
-  if (mode === 'observe' || used < input.limitGb * GIB * CDN_ORIGIN_HARD_STOP_RATIO) return { allowed: true }
+  const stopRatio = input.hardStopRatio ?? CDN_ORIGIN_HARD_STOP_RATIO
+  if (mode === 'observe' || used < input.limitGb * GIB * stopRatio) return { allowed: true }
   return { allowed: false, retryAfterSeconds: secondsUntilMonthReset(now, input.period) }
 }
 

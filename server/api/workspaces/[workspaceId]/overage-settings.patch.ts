@@ -28,9 +28,9 @@ function lockedError(lock: OverageLock) {
 }
 
 const LIMIT_KEY_BY_SETTINGS_KEY: Record<string, string> = Object.fromEntries([
-  // Hard limits (CDN, media) carry no overage price, so they are not in
-  // OVERAGE_PRICING; their meter still names the toggle, so a stale `true`
-  // can be turned off and turning one on is refused as "not sold".
+  // A meter whose limit carries no overage price is not in OVERAGE_PRICING;
+  // it still names the toggle, so a stale `true` can be turned off and
+  // turning one on is refused as "not sold".
   ...USAGE_METER_LIST.map(m => [m.settingsKey, m.limitKey]),
   ...Object.entries(OVERAGE_PRICING).map(([limitKey, pricing]) => [pricing.settingsKey, limitKey]),
 ])

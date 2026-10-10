@@ -1034,6 +1034,12 @@ export interface DatabaseProvider {
    * out. Feeds the daily `cdn_origin_gb` meter event.
    */
   listWorkspaceCDNBandwidthForDay: (day: string) => Promise<Array<{ workspaceId: string, bytes: number }>>
+  /**
+   * Every workspace's stored media bytes (`workspaces.media_storage_bytes`),
+   * workspaces storing nothing left out. Feeds the daily
+   * `media_storage_gb_months` meter event. A failed read throws.
+   */
+  listWorkspaceMediaStorageBytes: () => Promise<Array<{ workspaceId: string, bytes: number }>>
 
   // ═══════════════════════════════════════════════════
   // PAYMENT ACCOUNTS (per-provider subscription state)

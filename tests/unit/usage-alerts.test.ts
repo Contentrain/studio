@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { planUsageAlerts, runUsageAlerts } from '../../server/utils/usage-alerts'
 import type { UsageAlertKey } from '../../server/providers/database'
 
@@ -44,6 +44,21 @@ function fakeDb(usage: Partial<Record<'ai' | 'api' | 'forms' | 'comments' | 'cdn
 function deps(db: ReturnType<typeof fakeDb>, sendEmail = vi.fn().mockResolvedValue(undefined)) {
   return { db: db as never, sendEmail, ownerEmail: async () => 'owner@lanista.test', siteUrl: 'https://studio.test', now: NOW }
 }
+
+/** The subscription prices the CDN and storage meters (`billable_meters`). */
+function pricesByteMeters(db: ReturnType<typeof fakeDb>) {
+  db.getActivePaymentAccount.mockResolvedValue({
+    credit_unit: '0.01',
+    subscription_id: 'sub_1', subscription_status: 'active',
+    current_period_start: '2026-09-15T00:00:00Z', current_period_end: '2026-10-15T00:00:00Z',
+    trial_ends_at: null, grace_period_ends_at: null,
+    plugin_metadata: { billable_meters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls', 'form_submissions', 'cdn_origin_gb', 'media_storage_gb_months'] },
+  })
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('usage alerts', () => {
   it('tells the owner when AI credits and public form submissions have stopped, and until when', async () => {
@@ -104,6 +119,40 @@ describe('usage alerts', () => {
     expect(stopMail.mock.calls[0]![0].html).toContain('has stopped')
     // The next sweep in the same month sends nothing more.
     expect(await runUsageAlerts(deps(stopped, stopMail))).toEqual([])
+  })
+
+  it('CDN with overage on: 100 % says it is billed, the 10x ceiling says it stopped — and offers an upgrade, not overage', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+    // Pro: 60 GB, overage on → billed past 60, stops at 600.
+    const billed = fakeDb({ cdn: 65 }, { overage_settings: { cdn_bandwidth: true } })
+    pricesByteMeters(billed)
+    expect(await runUsageAlerts(deps(billed))).toEqual([
+      expect.objectContaining({ meter: 'cdn_bandwidth', threshold: 100, template: 'usage-overage-started' }),
+    ])
+
+    const ceiling = fakeDb({ cdn: 601 }, { overage_settings: { cdn_bandwidth: true } })
+    pricesByteMeters(ceiling)
+    const mail = vi.fn().mockResolvedValue(undefined)
+    expect(await runUsageAlerts(deps(ceiling, mail))).toEqual([
+      expect.objectContaining({ meter: 'cdn_bandwidth', threshold: 120, template: 'usage-limit-reached' }),
+    ])
+    const html = mail.mock.calls[0]![0].html as string
+    expect(html).toContain('has stopped')
+    expect(html).not.toContain('allow overage')
+  })
+
+  it('storage with overage on stops at 10x the plan, and that alert re-arms well below the ceiling', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+    const at = (gb: number) => [{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: { media_storage: true }, media_storage_bytes: gb * 1024 ** 3 }]
+    const db = fakeDb({}, { overage_settings: { media_storage: true }, media_storage_bytes: 251 * 1024 ** 3 })
+    pricesByteMeters(db)
+    expect(await runUsageAlerts(deps(db))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 120, periodKey: 'level' })])
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(240)) // 96 % of the ceiling: stays claimed
+    await runUsageAlerts(deps(db))
+    expect(db.releaseUsageAlert).not.toHaveBeenCalledWith(expect.objectContaining({ threshold: 120 }))
+    db.listWorkspacesForUsageAlerts.mockResolvedValue(at(200)) // 80 %: re-armed
+    await runUsageAlerts(deps(db))
+    expect(db.releaseUsageAlert).toHaveBeenCalledWith({ workspaceId: 'ws-1', meter: 'media_storage', periodKey: 'level', threshold: 120 })
   })
 
   it('a failed send is retried on the next run', async () => {
@@ -194,7 +243,7 @@ describe('usage alerts', () => {
   })
 
   it('never plans an alert for an unavailable meter, whatever its numbers say', () => {
-    const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, unit: 'credits', percentage: 120, resetsAt: null, resetBasis: null, periodKey: '2026-09-15' }
+    const base = { limitKey: 'ai.messages_per_month', name: 'AI Credits', limit: 350, overageEnabled: false, overageSellable: true, overageLock: null, overageUnits: 0, overageUnitPrice: 0, overageAmount: 0, overageCeiling: null, unit: 'credits', percentage: 120, resetsAt: null, resetBasis: null, periodKey: '2026-09-15' }
     expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420, unavailable: true }])).toEqual([])
     expect(planUsageAlerts([{ ...base, key: 'ai_messages', current: 420 }])).toHaveLength(1)
   })

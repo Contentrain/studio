@@ -31,6 +31,7 @@ import type { Plan } from './license'
 import { fetchRemoteMedia } from './media-ingest'
 import { withMediaUrls } from './media-url'
 import { resolveVariantConfigWithPlan } from './media-variants'
+import { billableOverageSettings } from './workspace-billing'
 
 export interface McpMediaFacetInput {
   projectId: string
@@ -161,7 +162,8 @@ export function buildMcpMediaFacet(input: McpMediaFacetInput): ContractMediaProv
       // call rather than trusting the (up to 15-min-old) session snapshot.
       const db = useDatabaseProvider()
       const workspace = await db.getWorkspaceById(input.workspaceId, 'id, overage_settings')
-      const overageSettings = (workspace?.overage_settings as Record<string, boolean> | null) ?? {}
+      // A toggle the subscription cannot bill does not raise the cap.
+      const overageSettings = await billableOverageSettings(db, input.workspaceId, workspace?.overage_settings)
       const baseLimit = getPlanLimit(input.plan, 'media.storage_gb') * 1024 * 1024 * 1024
       const storageLimit = getEffectiveLimit(baseLimit, 'media.storage_gb', overageSettings)
 

@@ -23,6 +23,8 @@ export interface UsageCategory {
   overageUnits: number
   overageUnitPrice: number
   overageAmount: number
+  /** With overage on, where this meter stops anyway (abuse ceiling, in `unit`); null = none. Absent from an older server. */
+  overageCeiling?: number | null
   unit: string
   percentage: number
   /** When this meter resets; null for a level that does not (storage). Absent from an older server. */

@@ -146,16 +146,32 @@ export function recordCDNOriginUsage(input: {
   })
 }
 
-export function recordStorageSample(input: {
+/** A gigabyte-month in GB per day: the day's stored GB over the days in its period, rounded to 1e-6. */
+export function storageGbMonthsForDay(bytes: number, periodDays: number): number {
+  if (bytes <= 0 || periodDays <= 0) return 0
+  return Math.round((bytes / 1024 ** 3 / periodDays) * 1e6) / 1e6
+}
+
+/**
+ * One day of media storage for a workspace, in GB-months
+ * (`media_storage_gb_months`): the GB stored at the day's sample divided by
+ * the days in the workspace's billing period, so a full period sums to the
+ * average GB stored over it. Keyed by workspace + day, so a job re-running
+ * for the same day records nothing twice.
+ */
+export function recordMediaStorageDay(input: {
   workspaceId: string
-  byteHours: number
-  sampleHour: string
+  /** UTC day, `YYYY-MM-DD`. */
+  day: string
+  bytes: number
+  /** Days in the billing (or calendar) period the day belongs to. */
+  periodDays: number
 }): Promise<void> {
   return recordUsage({
     workspaceId: input.workspaceId,
-    meterName: USAGE_METERS.MEDIA_STORAGE_BYTE_HOURS.name,
-    value: input.byteHours,
-    idempotencyKey: `storage:${input.workspaceId}:${input.sampleHour}`,
-    metadata: { sample_hour: input.sampleHour },
+    meterName: USAGE_METERS.MEDIA_STORAGE_GB_MONTHS.name,
+    value: storageGbMonthsForDay(input.bytes, input.periodDays),
+    idempotencyKey: `storage-gbm:${input.workspaceId}:${input.day}`,
+    metadata: { day: input.day, bytes: input.bytes, period_days: input.periodDays },
   })
 }

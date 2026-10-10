@@ -97,4 +97,26 @@ describe('WorkspaceUsagePanel', () => {
     // The other meters still show their numbers.
     expect(text).toContain('$0.08 per credit past the limit')
   })
+  it('sells CDN and storage overage: price, ceiling and how each is measured, before the switch is on', async () => {
+    state.usage = { ...staging(true), categories: [
+      category('cdn_bandwidth', 'cdn.bandwidth_gb', 'CDN Bandwidth', 5.3, 60, 'GB', '2026-10-01T00:00:00.000Z', { overageUnitPrice: 0.15, overageCeiling: 600, resetBasis: 'calendar' }),
+      category('media_storage', 'media.storage_gb', 'Media Storage', 1.9, 25, 'GB', null, { overageUnitPrice: 0.25, overageCeiling: 250 }),
+    ] }
+    const text = (await mountSuspended(WorkspaceUsagePanel, { props: { workspaceId: 'ws-1' } })).text()
+    expect(text).toContain('$0.15 per GB past the limit')
+    expect(text).toContain('$0.25 per GB/month past the limit')
+    expect(text).toContain('Continues past the plan up to 600 GB, then stops')
+    expect(text).toContain('Continues past the plan up to 250 GB, then stops')
+    expect(text).toContain('Responses served from the Cloudflare cache are not counted.')
+    expect(text).toContain('billed on the average stored over the billing period')
+    expect(text).not.toContain('Fixed limit')
+  })
+
+  it('says a meter stopped at its ceiling even with overage on', async () => {
+    state.usage = { ...staging(true), categories: [
+      category('cdn_bandwidth', 'cdn.bandwidth_gb', 'CDN Bandwidth', 600, 60, 'GB', '2026-10-01T00:00:00.000Z', { overageEnabled: true, overageUnitPrice: 0.15, overageUnits: 540, overageAmount: 81, overageCeiling: 600 }),
+    ] }
+    const text = (await mountSuspended(WorkspaceUsagePanel, { props: { workspaceId: 'ws-1' } })).text()
+    expect(text).toContain('CDN Bandwidth reached its 600 GB ceiling and has stopped.')
+  })
 })

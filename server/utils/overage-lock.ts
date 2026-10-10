@@ -19,7 +19,9 @@
  * the subscription's price list, and fires again whenever it changes). No
  * list recorded means the provider never reported one: only the trial rule
  * applies then, which keeps providers that do not report prices working as
- * before.
+ * before — except for overage that costs Studio per unit (CDN origin,
+ * storage: `requiresKnownPrice`), which stays locked until a list names its
+ * meter, as it does for a workspace with no payment account at all.
  *
  * A lock only ever stops the sale of usage *past* the plan limit; what the
  * plan includes is never touched. It is also temporary by construction: a
@@ -110,10 +112,19 @@ export function readBillableMeters(pluginMetadata: unknown): string[] | null {
   return [...new Set([...(own ?? []), ...companion])].toSorted()
 }
 
+/** Locks every `requiresKnownPrice` toggle not already locked. */
+function lockUnknownPrices(locks: Record<string, OverageLock>): Record<string, OverageLock> {
+  for (const meter of USAGE_METER_LIST) {
+    if (meter.requiresKnownPrice && OVERAGE_SETTINGS_KEYS.includes(meter.settingsKey) && !locks[meter.settingsKey])
+      locks[meter.settingsKey] = { reason: 'not_in_subscription', until: null }
+  }
+  return locks
+}
+
 /** Locked overage settings keys, each with why and until when. */
 export function resolveOverageLocks(account: OverageLockAccount | null | undefined): Record<string, OverageLock> {
   const locks: Record<string, OverageLock> = {}
-  if (!account) return locks
+  if (!account) return lockUnknownPrices(locks)
 
   if (account.subscription_status === 'trialing') {
     const until = toIso(account.trial_ends_at) ?? toIso(account.current_period_end)
@@ -122,7 +133,10 @@ export function resolveOverageLocks(account: OverageLockAccount | null | undefin
   }
 
   const billable = readBillableMeters(account.plugin_metadata)
-  if (!billable) return locks
+  // Never reported which meters the subscription prices: the credit and
+  // event meters keep working as before, but overage that costs Studio per
+  // unit (CDN, storage) is sold only once it is known to be priced.
+  if (!billable) return lockUnknownPrices(locks)
   // Credit overage is priced on the meters of the subscription's own unit:
   // a pre-v2 subscription prices `ai_credits`, a v2 one `ai_credits_1c`.
   const creditMeters = creditTermsFor(creditUnitFromMeters(billable) ?? CURRENT_CREDIT_UNIT).meters

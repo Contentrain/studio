@@ -26,7 +26,7 @@ Core platform:
 | Approvals & Scheduling | Approval gates for branches and releases (`server/utils/approval-gate.ts`, `branch-approval.ts`, `release-approval.ts`), scheduled publication (`server/utils/schedule-registry.ts`) |
 | Content Brain | IndexedDB offline cache, semantic search, full-text index, delta sync |
 | Audit Logs | Application + database-level audit trail, 90-day retention |
-| Overage Billing | Metered overage for AI credits, API credits, MCP Cloud calls and form submissions, with a usage dashboard. CDN bandwidth and media storage are hard limits; their overage is not sold (`overageBillable: false` in `shared/utils/usage-meters.ts`) |
+| Overage Billing | Metered overage for AI credits, API credits, MCP Cloud calls, form submissions, CDN origin transfer (per GB, `cdn_origin_gb`) and media storage (per GB-month of average stored, `media_storage_gb_months`), with a usage dashboard. Each is an opt-in switch; with it off the limit holds. CDN and storage overage stop at 10× the plan (abuse ceiling, `server/utils/overage.ts`) |
 | CLI Integration | Auth (OAuth + token refresh), activity feed, usage API for Studio CLI |
 | Self-Hosting | Docker Compose deployment, 3-stage build; plain PostgreSQL 14+ provider (`server/providers/postgres-db/`) as an alternative to Supabase |
 

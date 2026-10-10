@@ -29,6 +29,7 @@ import { isEntryWriteMode } from './content-engine/entry-mode'
 import type { TextEdit } from './content-engine/replace-text'
 import type { AttachmentPromotionContext, PromotedAttachment } from './attachment-promotion'
 import { hasAttachmentMarker, promoteAttachmentMarkers } from './attachment-promotion'
+import { billableOverageSettings } from './workspace-billing'
 
 /**
  * Conversation Engine — reusable AI conversation loop with tool execution.
@@ -1636,7 +1637,8 @@ export async function executeToolWithAutoMerge(
 
           const db = useDatabaseProvider()
           const workspace = await db.getWorkspaceById(workspaceId, 'id, overage_settings')
-          const overageSettings = (workspace?.overage_settings as Record<string, boolean> | null) ?? {}
+          // A toggle the subscription cannot bill does not raise the cap.
+          const overageSettings = await billableOverageSettings(db, workspaceId, workspace?.overage_settings)
           const baseLimit = getPlanLimit(plan, 'media.storage_gb') * 1024 * 1024 * 1024
           const storageLimit = getEffectiveLimit(baseLimit, 'media.storage_gb', overageSettings)
 

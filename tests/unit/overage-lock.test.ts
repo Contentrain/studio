@@ -7,15 +7,15 @@ const LEGACY_PRICES = ['ai_messages', 'api_messages', 'cdn_bandwidth_bytes', 'fo
 const CURRENT_PRICES = ['ai_credits', 'api_credits', 'form_submissions', 'mcp_calls']
 
 describe('resolveOverageLocks', () => {
-  it('locks nothing without an account', () => {
-    expect(resolveOverageLocks(null)).toEqual({})
+  it('without an account, locks only the overage that costs Studio per unit (CDN, storage)', () => {
+    const unknown = { reason: 'not_in_subscription', until: null }
+    expect(resolveOverageLocks(null)).toEqual({ cdn_bandwidth: unknown, media_storage: unknown })
   })
 
   it('locks every toggle during a trial, until the trial ends', () => {
     const locks = resolveOverageLocks({ subscription_status: 'trialing', trial_ends_at: '2026-09-29T07:36:51.653Z' })
     expect(locks.ai_messages).toEqual({ reason: 'trialing', until: '2026-09-29T07:36:51.653Z' })
-    // Only priced overage has a toggle to lock; CDN and media are hard limits (no overage price).
-    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'form_submissions', 'mcp_calls'])
+    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'cdn_bandwidth', 'form_submissions', 'mcp_calls', 'media_storage'])
   })
 
   it('falls back to the period end when a trial has no recorded trial end', () => {
@@ -60,8 +60,7 @@ describe('resolveOverageLocks', () => {
       plugin_metadata: { billable_meters: [] },
     })
     expect(locks.ai_messages).toEqual({ reason: 'yearly_plan', until: null })
-    // Only priced overage has a toggle to lock; CDN and media are hard limits (no overage price).
-    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'form_submissions', 'mcp_calls'])
+    expect(Object.keys(locks).toSorted()).toEqual(['ai_messages', 'api_messages', 'cdn_bandwidth', 'form_submissions', 'mcp_calls', 'media_storage'])
   })
 
   it('keeps a monthly subscription with no price on the generic reason', () => {
@@ -74,9 +73,18 @@ describe('resolveOverageLocks', () => {
     expect(locks.ai_messages?.reason).toBe('not_in_subscription')
   })
 
-  it('applies only the trial rule when the provider never reported prices', () => {
-    expect(resolveOverageLocks({ subscription_status: 'active', plugin_metadata: {} })).toEqual({})
-    expect(resolveOverageLocks({ subscription_status: 'past_due', plugin_metadata: null })).toEqual({})
+  it('when the provider never reported prices, keeps the others open but locks CDN and storage', () => {
+    // Unknown is not "priced": Studio would pay the egress and storage and
+    // never invoice them. The credit and event meters keep the old rule.
+    const unknown = { reason: 'not_in_subscription', until: null }
+    expect(resolveOverageLocks({ subscription_status: 'active', plugin_metadata: {} })).toEqual({ cdn_bandwidth: unknown, media_storage: unknown })
+    expect(resolveOverageLocks({ subscription_status: 'past_due', plugin_metadata: null })).toEqual({ cdn_bandwidth: unknown, media_storage: unknown })
+  })
+
+  it('unlocks CDN and storage once the subscription is known to price them', () => {
+    const locks = resolveOverageLocks({ subscription_status: 'active', plugin_metadata: { billable_meters: ['ai_credits_1c', 'cdn_origin_gb', 'media_storage_gb_months'] } })
+    expect(locks.cdn_bandwidth).toBeUndefined()
+    expect(locks.media_storage).toBeUndefined()
   })
 })
 

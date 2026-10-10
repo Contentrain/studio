@@ -34,6 +34,13 @@ const emit = defineEmits<{
 const toast = useToast()
 const loading = ref<string | null>(null)
 
+// Whether this deployment sells CDN and storage overage: their meters run on
+// a flag the server knows, and the usage route reports it as `overageSellable`.
+const { usage, fetchUsage } = useUsage()
+watch(() => props.open, (open) => {
+  if (open && !usage.value) fetchUsage().catch(() => {})
+}, { immediate: true })
+
 const enterpriseMailto = computed(() => {
   const subject = encodeURIComponent('Contentrain Studio — Enterprise inquiry')
   return `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=${subject}`
@@ -122,13 +129,17 @@ interface LimitRow {
 
 /**
  * What a unit past the included amount costs, so the price is known before
- * anyone chooses a plan. Limits that are hard caps (media, CDN: their meters
- * cannot bill past an allowance) show nothing, whatever the data lists.
+ * anyone chooses a plan. A limit whose meter is not billable
+ * (`overageBillable: false`) shows nothing, whatever the data lists, and a
+ * meter fed by a background job (CDN origin, storage: `eventFlag`) shows its
+ * price only once the server says this deployment sells it — never on a guess.
  */
 function overageLabel(key: string, ownTerms = false): string | null {
   const pricing = OVERAGE_PRICING[key]
   if (!pricing) return null
   if (USAGE_METER_LIST.some(m => m.limitKey === key && !m.overageBillable)) return null
+  if (USAGE_METER_LIST.some(m => m.limitKey === key && m.eventFlag)
+    && usage.value?.categories.find(c => c.limitKey === key)?.overageSellable !== true) return null
   const price = ownTerms ? creditTermsFor(LEGACY_CREDIT_UNIT).overagePrice(key) ?? pricing.price : pricing.price
   return t('plans.overage_then', { price: `$${price}`, unit: pricing.unit })
 }

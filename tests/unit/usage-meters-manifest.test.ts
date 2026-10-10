@@ -16,7 +16,7 @@ describe('usage meter manifest', () => {
     expect(USAGE_METERS.AI_MESSAGES.aggregation).toBe('sum')
     expect(USAGE_METERS.API_MESSAGES.aggregation).toBe('sum')
     expect(USAGE_METERS.CDN_ORIGIN_GB.aggregation).toBe('sum')
-    expect(USAGE_METERS.MEDIA_STORAGE_BYTE_HOURS.aggregation).toBe('sum')
+    expect(USAGE_METERS.MEDIA_STORAGE_GB_MONTHS.aggregation).toBe('sum')
     // These two always carry value 1, so counting and summing agree.
     expect(USAGE_METERS.MCP_CALLS.aggregation).toBe('count')
     expect(USAGE_METERS.FORM_SUBMISSIONS.aggregation).toBe('count')
@@ -31,10 +31,13 @@ describe('usage meter manifest', () => {
     expect(USAGE_METERS.API_MESSAGES.name).toBe('api_credits_1c')
   })
 
-  it('converts a gigabyte limit into the byte unit the storage meter sums', () => {
-    // The plan limit is in GB; the meter sums raw bytes. Sending the limit
-    // straight through would include two *bytes* on a 2 GB plan.
-    expect(USAGE_METERS.MEDIA_STORAGE_BYTE_HOURS.unitsPerLimitUnit).toBe(1024 ** 3)
+  it('meters storage in the unit the plan sells: GB-months', () => {
+    // The byte-hour meter could not carry a gigabyte allowance (int32 meter
+    // credit) and never received an event; the GB-month meter's allowance
+    // is the plan value as is.
+    expect(USAGE_METERS.MEDIA_STORAGE_GB_MONTHS.name).toBe('media_storage_gb_months')
+    expect(USAGE_METERS.MEDIA_STORAGE_GB_MONTHS.unitsPerLimitUnit).toBe(1)
+    expect(USAGE_METER_LIST.some(m => m.name === 'media_storage_byte_hours')).toBe(false)
   })
 
   it('meters CDN origin transfer in the unit the plan sells: gigabytes', () => {
@@ -47,16 +50,21 @@ describe('usage meter manifest', () => {
     expect(starterGb * USAGE_METERS.CDN_ORIGIN_GB.unitsPerLimitUnit).toBe(starterGb)
   })
 
-  it('keeps every other meter at parity with its limit', () => {
+  it('keeps every billable meter at parity with its limit', () => {
+    // A billable meter's allowance is the plan value; a meter counting a
+    // smaller unit cannot carry it (int32 meter credit) and would bill from
+    // the first unit.
     for (const meter of USAGE_METER_LIST) {
-      if (meter.unitLabel === 'byte' || meter.unitLabel === 'byte·hour') continue
-      expect(meter.unitsPerLimitUnit).toBe(1)
+      if (meter.overageBillable) expect(meter.unitsPerLimitUnit).toBe(1)
     }
   })
 
-  it('meters CDN per gigabyte, so a future per-GB overage price maps to Polar 1:1', () => {
-    // What the sync would write as Polar's `unit_amount` (cents per meter unit).
-    expect(USAGE_METERS.CDN_ORIGIN_GB.unitsPerLimitUnit).toBe(1)
+  it('sells CDN and storage overage, priced per plan unit', () => {
+    // What the sync writes as Polar's `unit_amount` (cents per meter unit).
+    expect(USAGE_METERS.CDN_ORIGIN_GB.overageBillable).toBe(true)
+    expect(USAGE_METERS.MEDIA_STORAGE_GB_MONTHS.overageBillable).toBe(true)
+    expect(OVERAGE_PRICING['cdn.bandwidth_gb']!.price * 100 / USAGE_METERS.CDN_ORIGIN_GB.unitsPerLimitUnit).toBe(15)
+    expect(OVERAGE_PRICING['media.storage_gb']!.price * 100 / USAGE_METERS.MEDIA_STORAGE_GB_MONTHS.unitsPerLimitUnit).toBe(25)
   })
 
   it('keeps every settings key distinct; a billable meter has a priced limit, a hard limit none', () => {

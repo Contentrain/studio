@@ -19,6 +19,10 @@
  * still serving, so its 100 % mail says so and asks for an upgrade; the stop
  * comes at 120 %, which is its own third alert.
  *
+ * With overage on, a meter with an abuse ceiling (CDN, storage: 10× the plan,
+ * `server/utils/overage.ts`) stops there; reaching it is the same third
+ * alert (threshold 120, "stopped"), with an upgrade as the next step.
+ *
  * Send is at most once per key: the row is claimed first (primary key), the
  * email goes out only if this run won the claim, and a failed send releases it
  * so the next run retries.
@@ -61,6 +65,10 @@ export function planUsageAlerts(categories: WorkspaceUsageCategory[]): PlannedAl
     // and a "stopped" mail sent then would also burn the one 100 % alert of the period.
     // CDN: stopped only at the hard stop; between 100 % and it, still serving.
     if (category.key === 'cdn_bandwidth' && !category.overageEnabled && category.current >= category.limit * CDN_ORIGIN_HARD_STOP_RATIO) {
+      planned.push({ category, threshold: 120, template: 'usage-limit-reached' })
+    }
+    // Overage on and the abuse ceiling reached: it has stopped, billed or not.
+    else if (category.overageEnabled && category.overageCeiling !== null && category.current >= category.overageCeiling) {
       planned.push({ category, threshold: 120, template: 'usage-limit-reached' })
     }
     else if (category.current >= category.limit) {
@@ -108,14 +116,17 @@ function formatAmount(value: number, unit: string): string {
  * 80 % (an upload, a delete, an upload) would otherwise mail the owner on every sweep.
  */
 export const STORAGE_REARM_BELOW: Record<80 | 100, number> = { 80: 0.7, 100: 0.9 }
+/** The same for the overage ceiling's alert, as a share of the ceiling. */
+export const STORAGE_CEILING_REARM_BELOW = 0.9
 
 /** Releases the storage `level` claims of thresholds the workspace is now well back below. */
 async function rearmStorageAlerts(db: AlertDatabase, workspaceId: string, categories: WorkspaceUsageCategory[]): Promise<void> {
   const storage = categories.find(c => c.key === 'media_storage')
   if (!storage || storage.limit <= 0) return
-  const below: Array<80 | 100> = []
+  const below: Array<80 | 100 | 120> = []
   if (storage.current < storage.limit * STORAGE_REARM_BELOW[100]) below.push(100)
   if (storage.current < storage.limit * STORAGE_REARM_BELOW[80]) below.push(80)
+  if (storage.current < storage.limit * STORAGE_REARM_BELOW[100] || (storage.overageCeiling !== null && storage.current < storage.overageCeiling * STORAGE_CEILING_REARM_BELOW)) below.push(120)
   for (const threshold of below)
     await db.releaseUsageAlert({ workspaceId, meter: 'media_storage', periodKey: STORAGE_PERIOD_KEY, threshold })
 }
@@ -193,7 +204,8 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
             ? errorMessage('usage_alert.storage_note')
             : errorMessage('usage_alert.resets_on', { date: formatDate(c.resetsAt) }),
           // Overage is offered only where it can be turned on: sold, and not locked for this subscription.
-          nextStep: errorMessage(c.overageSellable && !c.overageLock ? 'usage_alert.next_overage' : 'usage_alert.next_upgrade'),
+          // Already on (the ceiling was reached): only a plan change helps.
+          nextStep: errorMessage(c.overageSellable && !c.overageLock && !c.overageEnabled ? 'usage_alert.next_overage' : 'usage_alert.next_upgrade'),
           unitPrice: `$${c.overageUnitPrice}`,
           billingUrl,
         })

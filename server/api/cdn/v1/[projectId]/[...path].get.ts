@@ -1,7 +1,7 @@
 import { trackEnterpriseCdnUsage, trackEnterprisePublicCdnUsage } from '../../../../utils/enterprise'
 import { addCdnOriginBytes, checkCdnOriginBudget } from '../../../../utils/cdn-origin-budget'
 import { resolveUsagePeriodCached } from '../../../../utils/usage-period'
-import { getEffectiveLimit } from '../../../../utils/overage'
+import { getEffectiveLimit, isOverageEnabled } from '../../../../utils/overage'
 import { isMediaSourcePath } from '../../../../utils/media-source'
 import { requireDeliveryScope } from '../../../../utils/cdn-keys'
 
@@ -133,14 +133,14 @@ export default defineEventHandler(async (event) => {
   // expired Pro trial serves within the Pro cap — bounded by that cap, and
   // only until revoke; a site going dark at trial end is the worse outcome.
   const workspaceId = project.workspace_id as string
-  const limitGb = getEffectiveLimit(
-    getPlanLimit(plan, 'cdn.bandwidth_gb'),
-    'cdn.bandwidth_gb',
-    (workspace?.overage_settings as Record<string, boolean> | null | undefined) ?? null,
-  )
+  const overageSettings = (workspace?.overage_settings as Record<string, boolean> | null | undefined) ?? null
+  const limitGb = getEffectiveLimit(getPlanLimit(plan, 'cdn.bandwidth_gb'), 'cdn.bandwidth_gb', overageSettings)
+  // With overage on, past the plan is billed per GB and `limitGb` is the abuse
+  // ceiling, which stops at itself; the plan limit keeps its unbilled buffer.
+  const overageOn = isOverageEnabled('cdn.bandwidth_gb', overageSettings)
   // The window the budget counts over: a subscribed workspace's billing slice, else the calendar month.
   const usagePeriod = await resolveUsagePeriodCached(workspaceId)
-  const budget = await checkCdnOriginBudget({ workspaceId, limitGb, period: usagePeriod })
+  const budget = await checkCdnOriginBudget({ workspaceId, limitGb, period: usagePeriod, ...(overageOn ? { hardStopRatio: 1 } : {}) })
   if (!budget.allowed) {
     setResponseHeader(event, 'Retry-After', budget.retryAfterSeconds)
     throw createError({ statusCode: 429, message: errorMessage('cdn.origin_limit_reached', { limit: limitGb }) })

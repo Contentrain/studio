@@ -16,7 +16,9 @@ import { CDN_ORIGIN_HARD_STOP_RATIO } from '~~/shared/utils/cdn-limit'
  *
  * CDN bandwidth has a buffer: past its limit delivery continues (a grace
  * notice with the upgrade link, owners and admins) and it stops only at
- * `CDN_ORIGIN_HARD_STOP_RATIO` of the limit.
+ * `CDN_ORIGIN_HARD_STOP_RATIO` of the limit. With overage on, CDN and storage
+ * continue past the limit, billed, and stop at their abuse ceiling
+ * (`overageCeiling`).
  */
 
 const { t } = useContent()
@@ -26,8 +28,9 @@ const { isOwnerOrAdmin } = useWorkspaceRole()
 
 const ALERTING = ['ai_messages', 'form_submissions', 'comments', 'api_messages', 'mcp_calls', 'media_storage', 'cdn_bandwidth']
 
-/** Where a meter stops: its limit, or the CDN's hard stop past it. */
+/** Where a meter stops: its limit, the CDN's hard stop past it, or with overage on its ceiling (Infinity = none). */
 function stopAt(c: UsageCategory): number {
+  if (c.overageEnabled) return c.overageCeiling ?? Infinity
   return c.key === 'cdn_bandwidth' ? c.limit * CDN_ORIGIN_HARD_STOP_RATIO : c.limit
 }
 /** CDN between its limit and the hard stop: still serving. */
@@ -44,7 +47,7 @@ const relevant = computed(() =>
 )
 /** At the limit with nothing billed past it: this has stopped. */
 // Raw values, not the rounded percentage: 995 / 1000 shows 100 % but nothing has stopped.
-const stopped = computed(() => relevant.value.filter(c => c.current >= stopAt(c) && !c.overageEnabled))
+const stopped = computed(() => relevant.value.filter(c => c.current >= stopAt(c)))
 const warnings = computed(() => isOwnerOrAdmin.value
   ? relevant.value.filter(c => (c.current >= c.limit * 0.8 && c.current < c.limit) || inGrace(c))
   : [])
@@ -66,7 +69,7 @@ const text = computed(() => {
     : t('usage_banner.warning_undated', { name: c.name, percentage: c.percentage })
 })
 
-const isStop = computed(() => !!primary.value && primary.value.current >= stopAt(primary.value) && !primary.value.overageEnabled)
+const isStop = computed(() => !!primary.value && primary.value.current >= stopAt(primary.value))
 
 const billingPath = computed(() => {
   const slug = activeWorkspace.value?.slug

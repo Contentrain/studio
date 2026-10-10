@@ -92,4 +92,11 @@ describe('UsageAlertBanner', () => {
     expect((await mountSuspended(UsageAlertBanner)).text()).toContain('AI credits are used up')
     spy.mockRestore()
   })
+  it('with CDN overage on: no notice while billed past the limit, "stopped" at the ceiling', async () => {
+    const billed = category('cdn_bandwidth', 'CDN Bandwidth', 100, 60, '2026-10-01T00:00:00.000Z', { overageEnabled: true, overageCeiling: 600 })
+    state.usage = usage(billed)
+    expect((await mountSuspended(UsageAlertBanner)).text()).not.toContain('has stopped')
+    state.usage = usage({ ...billed, current: 600 })
+    expect((await mountSuspended(UsageAlertBanner)).text()).toContain('CDN delivery has stopped')
+  })
 })

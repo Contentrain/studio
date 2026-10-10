@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getEffectiveLimit, isOverageEnabled, calculateOverageUnits } from '../../server/utils/overage'
 import { OVERAGE_PRICING, OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('OVERAGE_PRICING constant', () => {
   it('contains every metered category', () => {
@@ -10,7 +14,9 @@ describe('OVERAGE_PRICING constant', () => {
       'ai.messages_per_month',
       'api.messages_per_month',
       'api.mcp_calls_per_month',
+      'cdn.bandwidth_gb',
       'forms.submissions_per_month',
+      'media.storage_gb',
     ]))
   })
 
@@ -30,6 +36,10 @@ describe('OVERAGE_PRICING constant', () => {
 })
 
 describe('getEffectiveLimit', () => {
+  beforeEach(() => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+  })
+
   it('returns plan limit when overage is disabled (empty settings)', () => {
     expect(getEffectiveLimit(50, 'ai.messages_per_month', {})).toBe(50)
   })
@@ -68,15 +78,25 @@ describe('getEffectiveLimit', () => {
     expect(getEffectiveLimit(5000, 'api.mcp_calls_per_month', settings)).toBe(5000) // not in settings
   })
 
-  it('keeps the byte limits hard even with the toggle on', () => {
-    // These two are not sold past the plan allowance — the meter counts
-    // bytes and Polar cannot express a gigabyte allowance against it, so
-    // selling overage would bill the included gigabytes too. A stale
-    // `true` from before the limit became hard must not raise the cap.
+  it('raises CDN and storage to their abuse ceiling, not to the int32 soft cap', () => {
+    // Sold per GB past the plan, but bounded: 10x the plan, whatever is paid.
     const settings = { cdn_bandwidth: true, media_storage: true }
 
-    expect(getEffectiveLimit(2, 'cdn.bandwidth_gb', settings)).toBe(2)
-    expect(getEffectiveLimit(1, 'media.storage_gb', settings)).toBe(1)
+    expect(getEffectiveLimit(60, 'cdn.bandwidth_gb', settings)).toBe(600)
+    expect(getEffectiveLimit(25, 'media.storage_gb', settings)).toBe(250)
+    // Off: the plan limit holds.
+    expect(getEffectiveLimit(60, 'cdn.bandwidth_gb', {})).toBe(60)
+  })
+
+  it('keeps a storage limit passed in bytes in bytes', () => {
+    // Every media caller passes the plan limit in bytes. The int32 soft cap
+    // read as bytes is 2 GiB — below Starter's 5 GB — so turning overage on
+    // would have shrunk the cap.
+    const GB = 1024 ** 3
+    const raised = getEffectiveLimit(5 * GB, 'media.storage_gb', { media_storage: true })
+    expect(raised).toBe(50 * GB)
+    expect(raised).toBeGreaterThan(5 * GB)
+    expect(raised).toBeGreaterThan(2_147_483_647)
   })
 
   it('returns plan limit for zero limits (free plan)', () => {
@@ -86,6 +106,10 @@ describe('getEffectiveLimit', () => {
 })
 
 describe('isOverageEnabled', () => {
+  beforeEach(() => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+  })
+
   it('returns false when settings is null', () => {
     expect(isOverageEnabled('ai.messages_per_month', null)).toBe(false)
   })
@@ -117,9 +141,10 @@ describe('isOverageEnabled', () => {
     expect(isOverageEnabled('forms.submissions_per_month', { form_submissions: true })).toBe(true)
   })
 
-  it('stays false for the limits that are not sold', () => {
-    expect(isOverageEnabled('cdn.bandwidth_gb', { cdn_bandwidth: true })).toBe(false)
-    expect(isOverageEnabled('media.storage_gb', { media_storage: true })).toBe(false)
+  it('is true for CDN and storage when their toggle is on', () => {
+    expect(isOverageEnabled('cdn.bandwidth_gb', { cdn_bandwidth: true })).toBe(true)
+    expect(isOverageEnabled('media.storage_gb', { media_storage: true })).toBe(true)
+    expect(isOverageEnabled('cdn.bandwidth_gb', { media_storage: true })).toBe(false)
   })
 })
 
