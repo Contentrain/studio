@@ -314,4 +314,16 @@ describe('postgres-db migrate-grants (contract)', () => {
       email: 'owner@example.com',
     })).rejects.toBeDefined()
   })
+
+  it('records the site binding (049): state, detail and when; each call replaces the last; only the five states', async () => {
+    const { grant } = await claim(owner.userId)
+    const id = grant.id as string
+    await methods.setMigrateGrantSiteBinding(id, { state: 'pr_open', detail: { prUrl: 'https://github.com/acme/blog/pull/7' } })
+    const open = await methods.getMigrateGrantById(id)
+    expect(open).toMatchObject({ site_binding_state: 'pr_open', site_binding_detail: { prUrl: 'https://github.com/acme/blog/pull/7' } })
+    expect(open!.site_binding_at).not.toBeNull()
+    await methods.setMigrateGrantSiteBinding(id, { state: 'written', detail: { change: 'merged', formModels: 1, limit: 3 } })
+    expect(await methods.getMigrateGrantById(id)).toMatchObject({ site_binding_state: 'written', site_binding_detail: { change: 'merged', formModels: 1, limit: 3 } })
+    await expect(methods.setMigrateGrantSiteBinding(id, { state: 'done' as never, detail: {} })).rejects.toBeDefined()
+  })
 })

@@ -166,6 +166,9 @@ export interface UsageAlertKey {
 }
 
 /** A Migrate grant's comments export (migration 040). `payload` only when asked for. */
+/** How writing studio.json to a bundle grant's delivered site went (migration 049). */
+export type MigrateSiteBindingState = 'written' | 'partial' | 'pr_open' | 'conflict' | 'failed'
+
 export interface MigrateCommentsExportRow {
   grantId: string
   status: 'ready' | 'unavailable' | 'imported' | 'expired'
@@ -1203,6 +1206,12 @@ export interface DatabaseProvider {
    * reason of the first revocation stays. Returns the grant as it stands afterwards.
    */
   markMigrateGrantRevoked: (grantId: string, reason: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Record how writing studio.json to a bundle grant's delivered site went (049, `migrate-site-binding.ts`):
+   * the state, what the claim screen and support read, and when. Each call replaces the last.
+   */
+  setMigrateGrantSiteBinding: (grantId: string, binding: { state: MigrateSiteBindingState, detail: Record<string, unknown> }) => Promise<void>
 
   /**
    * The signed origin of the grant behind a workspace's project: the newest

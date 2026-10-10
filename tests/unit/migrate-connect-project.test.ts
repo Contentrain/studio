@@ -18,6 +18,9 @@ vi.mock('../../server/utils/providers', () => ({
 const unmergedMigrationBranch = vi.fn()
 vi.mock('../../server/utils/ensure-content-branch', () => ({ unmergedMigrationBranch: (...a: unknown[]) => unmergedMigrationBranch(...a) }))
 vi.mock('../../server/utils/migration-handoff', () => ({ syncMigrationHandoff: () => Promise.resolve() }))
+const ensureMigrateSiteBinding = vi.fn()
+vi.mock('../../server/utils/migrate-site-binding', () => ({ ensureMigrateSiteBinding: (...a: unknown[]) => ensureMigrateSiteBinding(...a) }))
+vi.mock('../../server/utils/media-url', () => ({ publicMediaBase: (id: string) => `https://studio.example/api/cdn/v1/${id}` }))
 
 const grantRow = {
   id: 'grant-1', order_id: 'ord_123', user_id: 'user-1', kind: 'bundle', plan: 'pro', trial_days: null,
@@ -40,6 +43,7 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
     gitApp.resolveRepository.mockReset().mockResolvedValue({ id: 1, fullName: 'ABB65/formchickens' })
     gitApp.getInstallationDetails.mockReset().mockResolvedValue({ account: { login: 'ABB65' } })
     unmergedMigrationBranch.mockReset().mockResolvedValue(null)
+    ensureMigrateSiteBinding.mockReset().mockResolvedValue({ state: 'written' })
     db = {
       getMigrateGrantForUser: vi.fn().mockResolvedValue(grantRow),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', type: 'secondary', plan: 'pro', overage_settings: {}, github_installation_id: 4242 }),
@@ -49,13 +53,14 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
       checkDuplicateProject: vi.fn().mockResolvedValue(false),
       createProject: vi.fn().mockResolvedValue({ id: 'proj-new' }),
       updateMigrateGrantRepo: vi.fn().mockResolvedValue(undefined),
+      getProjectById: vi.fn().mockResolvedValue({ id: 'proj-new', content_root: '', default_branch: 'main' }),
     }
     vi.stubGlobal('defineEventHandler', (h: unknown) => h)
     vi.stubGlobal('createError', createErrorLike)
     vi.stubGlobal('errorMessage', (key: string) => key)
     vi.stubGlobal('requireAuth', () => ({ user: { id: 'user-1' }, accessToken: 't' }))
     vi.stubGlobal('getRouterParam', () => 'grant-1')
-    vi.stubGlobal('useRuntimeConfig', () => ({ migrate: { claimPublicKey: '-----BEGIN PUBLIC KEY-----\\nMCow\\n-----END PUBLIC KEY-----' } }))
+    vi.stubGlobal('useRuntimeConfig', () => ({ migrate: { claimPublicKey: '-----BEGIN PUBLIC KEY-----\\nMCow\\n-----END PUBLIC KEY-----' }, public: { siteUrl: 'https://studio.example' } }))
     vi.stubGlobal('useDatabaseProvider', () => db)
     vi.stubGlobal('useGitProvider', () => git)
     vi.stubGlobal('ensureContentBranch', vi.fn().mockResolvedValue(undefined))
@@ -65,15 +70,40 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('makes the delivered repository a project, with what was detected, and says where it is', async () => {
-    expect(await route()).toEqual({ projectId: 'proj-new', workspaceSlug: 'acme', created: true })
+    expect(await route()).toEqual({ projectId: 'proj-new', workspaceSlug: 'acme', created: true, siteBinding: { state: 'written' } })
     expect(db.createProject).toHaveBeenCalledWith('t', expect.objectContaining({
       workspace_id: 'ws-1', repo_full_name: 'ABB65/formchickens', default_branch: 'main', detected_stack: 'astro', status: 'active',
     }))
   })
 
+  it('binds the new project\'s site: studio.json for THIS project on its default branch, Studio\'s origin and media base, the grant', async () => {
+    await route()
+    expect(ensureMigrateSiteBinding).toHaveBeenCalledTimes(1)
+    expect(ensureMigrateSiteBinding.mock.calls[0]![0]).toMatchObject({
+      grantId: 'grant-1', projectId: 'proj-new', contentRoot: '', defaultBranch: 'main', plan: 'pro',
+      studio: { baseUrl: 'https://studio.example', mediaBaseUrl: 'https://studio.example/api/cdn/v1/proj-new' },
+    })
+  })
+
+  it('the claim screen\'s retry is the same call: an existing project is bound again (idempotent), and says how it went', async () => {
+    db.listWorkspaceProjects.mockResolvedValue([{ id: 'proj-old', repo_full_name: 'ABB65/formchickens' }])
+    db.getProjectById.mockResolvedValue({ id: 'proj-old', content_root: '', default_branch: 'trunk' })
+    ensureMigrateSiteBinding.mockResolvedValue({ state: 'pr_open', prUrl: 'https://github.com/ABB65/formchickens/pull/3' })
+    expect(await route()).toMatchObject({ projectId: 'proj-old', created: false, siteBinding: { state: 'pr_open', prUrl: 'https://github.com/ABB65/formchickens/pull/3' } })
+    expect(await route()).toMatchObject({ projectId: 'proj-old', created: false })
+    expect(ensureMigrateSiteBinding).toHaveBeenCalledTimes(2)
+    expect(ensureMigrateSiteBinding.mock.calls[1]![0]).toMatchObject({ projectId: 'proj-old', defaultBranch: 'trunk' })
+    expect(db.createProject).not.toHaveBeenCalled()
+  })
+
+  it('a binding that did not go through never fails the connect: the project is the answer, the state says why', async () => {
+    ensureMigrateSiteBinding.mockResolvedValue({ state: 'failed' })
+    expect(await route()).toEqual({ projectId: 'proj-new', workspaceSlug: 'acme', created: true, siteBinding: { state: 'failed' } })
+  })
+
   it('a second click finds the project already there: the same answer, nothing created', async () => {
     db.listWorkspaceProjects.mockResolvedValue([{ id: 'proj-old', repo_full_name: 'abb65/FormChickens' }])
-    expect(await route()).toEqual({ projectId: 'proj-old', workspaceSlug: 'acme', created: false })
+    expect(await route()).toEqual({ projectId: 'proj-old', workspaceSlug: 'acme', created: false, siteBinding: { state: 'written' } })
     expect(db.createProject).not.toHaveBeenCalled()
   })
 
@@ -141,7 +171,7 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
   it('a transferred repository connects under its new name and the grant follows it', async () => {
     db.getMigrateGrantForUser.mockResolvedValue({ ...grantRow, repo_owner: 'Lanista-Software' })
     gitApp.resolveRepository.mockResolvedValue({ id: 7, fullName: 'ABB65/formchickens' })
-    expect(await route()).toEqual({ projectId: 'proj-new', workspaceSlug: 'acme', created: true })
+    expect(await route()).toEqual({ projectId: 'proj-new', workspaceSlug: 'acme', created: true, siteBinding: { state: 'written' } })
     expect(db.updateMigrateGrantRepo).toHaveBeenCalledWith('grant-1', { owner: 'ABB65', name: 'formchickens' })
     expect(db.createProject).toHaveBeenCalledWith('t', expect.objectContaining({ repo_full_name: 'ABB65/formchickens' }))
   })
@@ -150,7 +180,7 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
     db.getMigrateGrantForUser.mockResolvedValue({ ...grantRow, repo_owner: 'Lanista-Software' })
     gitApp.resolveRepository.mockResolvedValue({ id: 7, fullName: 'ABB65/formchickens' })
     db.listWorkspaceProjects.mockResolvedValue([{ id: 'proj-old', repo_full_name: 'ABB65/formchickens' }])
-    expect(await route()).toEqual({ projectId: 'proj-old', workspaceSlug: 'acme', created: false })
+    expect(await route()).toEqual({ projectId: 'proj-old', workspaceSlug: 'acme', created: false, siteBinding: { state: 'written' } })
     expect(db.updateMigrateGrantRepo).toHaveBeenCalled()
   })
 

@@ -36,6 +36,11 @@ export interface MigrateGrantView {
   email: string
   workspaceId: string | null
   state: MigrateGrantState
+  /**
+   * How writing studio.json to the delivered site went (049, `migrate-site-binding.ts`); absent until it was tried.
+   * `prUrl`: the pull request to merge (`pr_open`); `overLimit`: the form models the plan does not serve (`partial`).
+   */
+  siteBinding?: { state: string, prUrl: string | null, overLimit: string[], limit: number | null }
 }
 
 /** What the claim screen may see of a grant. */
@@ -50,6 +55,18 @@ export function migrateGrantView(row: DatabaseRow): MigrateGrantView {
     email: row.email as string,
     workspaceId: (row.workspace_id as string | null) ?? null,
     state,
+    ...(typeof row.site_binding_state === 'string' ? { siteBinding: siteBindingView(row.site_binding_state, row.site_binding_detail) } : {}),
+  }
+}
+
+/** Only what the claim screen says: the state, the pull request's address, the form models over the plan and its limit. */
+function siteBindingView(state: string, raw: unknown): NonNullable<MigrateGrantView['siteBinding']> {
+  const detail = (raw && typeof raw === 'object' ? raw : {}) as { prUrl?: unknown, overLimit?: unknown, limit?: unknown }
+  return {
+    state,
+    limit: typeof detail.limit === 'number' ? detail.limit : null,
+    prUrl: typeof detail.prUrl === 'string' && detail.prUrl.startsWith('https://') ? detail.prUrl : null,
+    overLimit: Array.isArray(detail.overLimit) ? detail.overLimit.filter((id): id is string => typeof id === 'string') : [],
   }
 }
 
