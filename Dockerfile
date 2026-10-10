@@ -1,5 +1,11 @@
+# Base image: the ECR Public mirror of the official image, not Docker Hub (Docker Hub's anonymous pull limit stopped
+# Railway and CI builds, 2026-10-09). Pinned by the multi-arch index digest, the same on both registries on 2026-10-10:
+# docker.io/library/node:22-slim = public.ecr.aws/docker/library/node:22-slim =
+# sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 (`docker buildx imagetools inspect`).
+# To update Node: all three FROM lines together, the new digest compared on both registries.
+
 # ── Stage 1: Install dependencies ─────────────────────────────────────────────
-FROM node:22-slim AS deps
+FROM public.ecr.aws/docker/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS deps
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -9,7 +15,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile --prod=false
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────────
-FROM node:22-slim AS build
+FROM public.ecr.aws/docker/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS build
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -30,7 +36,7 @@ ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
 RUN pnpm build
 
 # ── Stage 3: Production runtime ───────────────────────────────────────────────
-FROM node:22-slim AS runtime
+FROM public.ecr.aws/docker/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runtime
 
 # git is required for content operations (clone, branch, commit, push)
 RUN apt-get update && apt-get install -y --no-install-recommends \
