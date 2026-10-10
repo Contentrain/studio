@@ -166,6 +166,21 @@ export interface UsageAlertKey {
 }
 
 /** A Migrate grant's comments export (migration 040). `payload` only when asked for. */
+/** How writing studio.json to a bundle grant's delivered site went (migration 049). */
+export type MigrateSiteBindingState = 'written' | 'partial' | 'pr_open' | 'conflict' | 'failed'
+
+/**
+ * One write of a grant's site binding (049/050): the state and its detail, and the retry bookkeeping. `attempts` is
+ * the failed attempts in a row (0 once it goes through), `nextAt` when the sweep may try a `failed` one again. A
+ * `written` or `partial` binding also clears the alarm mark, so a later failure can raise it again.
+ */
+export interface MigrateSiteBindingWrite {
+  state: MigrateSiteBindingState
+  detail: Record<string, unknown>
+  attempts?: number
+  nextAt?: Date | null
+}
+
 export interface MigrateCommentsExportRow {
   grantId: string
   status: 'ready' | 'unavailable' | 'imported' | 'expired'
@@ -1209,6 +1224,24 @@ export interface DatabaseProvider {
    * reason of the first revocation stays. Returns the grant as it stands afterwards.
    */
   markMigrateGrantRevoked: (grantId: string, reason: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Record how writing studio.json to a bundle grant's delivered site went (049, `migrate-site-binding.ts`):
+   * the state, what the claim screen and support read, and when. Each call replaces the last.
+   */
+  setMigrateGrantSiteBinding: (grantId: string, binding: MigrateSiteBindingWrite) => Promise<void>
+
+  /**
+   * The sweep's work list (050): redeemed, unrevoked bundle grants whose repository is a project in the grant's
+   * workspace and that still need the sweep: no binding yet, a `failed` one under `maxAttempts`, or a `failed` /
+   * `conflict` one whose alarm is not raised yet. A capped failure or a conflict already alarmed is left out, so they
+   * never crowd the list. Each row is the grant plus `project_id`, `project_default_branch` and
+   * `project_content_root`. Earliest retry first (never tried before all); the sweep decides what is due.
+   */
+  listMigrateSiteBindingWork: (limit: number, maxAttempts: number) => Promise<DatabaseRow[]>
+
+  /** Mark the grant's site-binding alarm as raised (050). True only for the call that set it: one alarm per grant. */
+  markMigrateSiteBindingAlerted: (grantId: string) => Promise<boolean>
 
   /**
    * The signed origin of the grant behind a workspace's project: the newest

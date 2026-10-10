@@ -34,6 +34,23 @@ import { projectPath } from './migration-media'
 
 export const STUDIO_BINDING_FILE = 'studio.json'
 
+/**
+ * `studio.json`'s content, canonical: what the starter reads as `siteConfig.studio` (its forms and comments) and builds
+ * its image `remotePatterns` from. `mediaBaseUrl` is written only when it differs from what the starter derives by
+ * default (`${baseUrl}/api/cdn/v1/${projectId}`). Shared by the media apply and the bundle's site binding
+ * (`migrate-site-binding.ts`), so both write the same bytes for the same project.
+ */
+export function studioBindingSource(studio: { baseUrl: string, projectId: string, mediaBaseUrl?: string }): string {
+  const baseUrl = studio.baseUrl.replace(/\/+$/, '')
+  const mediaBaseUrl = studio.mediaBaseUrl?.replace(/\/+$/, '')
+  const derived = `${baseUrl}/api/cdn/v1/${studio.projectId}`
+  return canonicalStringify({
+    baseUrl,
+    ...(mediaBaseUrl && mediaBaseUrl !== derived ? { mediaBaseUrl } : {}),
+    projectId: studio.projectId,
+  })
+}
+
 export interface MigrationMediaApplyInput {
   manifest: MigrationMediaManifest
   /** Project root the manifest's paths are relative to. */
@@ -277,15 +294,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
   counts.filesChanged = changes.length
 
   const bindingPath = projectPath(input.root, STUDIO_BINDING_FILE)
-  const baseUrl = input.studio.baseUrl.replace(/\/+$/, '')
-  const mediaBaseUrl = input.studio.mediaBaseUrl?.replace(/\/+$/, '')
-  // Written only when it differs from what the starter derives by default (`${baseUrl}/api/cdn/v1/${projectId}`).
-  const derived = `${baseUrl}/api/cdn/v1/${input.studio.projectId}`
-  const binding = canonicalStringify({
-    baseUrl,
-    ...(mediaBaseUrl && mediaBaseUrl !== derived ? { mediaBaseUrl } : {}),
-    projectId: input.studio.projectId,
-  })
+  const binding = studioBindingSource(input.studio)
   if ((await input.read(bindingPath)) !== binding) {
     changes.push({ path: bindingPath, content: binding })
     counts.studioBinding = 'written'

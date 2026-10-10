@@ -5,6 +5,7 @@
  * query runs on the admin connection. See migration 031 for the lifecycle.
  */
 import type { DatabaseProvider, DatabaseRow, MigrateCommentsExportRow } from '../database'
+import { sql } from 'kysely'
 import { getAdmin, throwDbError } from './helpers'
 
 type MigrateGrantMethods = Pick<
@@ -21,6 +22,9 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantRepo'
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
+  | 'setMigrateGrantSiteBinding'
+  | 'listMigrateSiteBindingWork'
+  | 'markMigrateSiteBindingAlerted'
   | 'getMigrateGrantOrigin'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
@@ -299,6 +303,73 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .execute()
         const row = await getAdmin().selectFrom('migrate_grants').selectAll().where('id', '=', grantId).executeTakeFirst()
         return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async setMigrateGrantSiteBinding(grantId, binding) {
+      const through = binding.state === 'written' || binding.state === 'partial'
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({
+            site_binding_state: binding.state,
+            site_binding_detail: JSON.stringify(binding.detail),
+            site_binding_at: eb.fn<string>('now', []),
+            ...(binding.attempts === undefined ? {} : { site_binding_attempts: binding.attempts }),
+            ...(binding.nextAt === undefined ? {} : { site_binding_next_at: binding.nextAt ? binding.nextAt.toISOString() : null }),
+            ...(through ? { site_binding_alerted_at: null } : {}),
+          }))
+          .where('id', '=', grantId)
+          .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async listMigrateSiteBindingWork(limit, maxAttempts) {
+      try {
+        const rows = await getAdmin()
+          .selectFrom('migrate_grants as g')
+          .innerJoin('projects as p', join => join
+            .onRef('p.workspace_id', '=', 'g.workspace_id')
+            .on(eb => eb(eb.fn('lower', [eb.ref('p.repo_full_name')]), '=', eb.fn('lower', [sql<string>`g.repo_owner || '/' || g.repo_name`]))))
+          .selectAll('g')
+          .select(['p.id as project_id', 'p.default_branch as project_default_branch', 'p.content_root as project_content_root'])
+          .where('g.kind', '=', 'bundle')
+          .where('g.redeemed_at', 'is not', null)
+          .where('g.revoked_at', 'is', null)
+          .where('g.workspace_id', 'is not', null)
+          .where('g.repo_owner', 'is not', null)
+          .where(eb => eb.or([
+            eb('g.site_binding_state', 'is', null),
+            eb.and([eb('g.site_binding_state', '=', 'failed'), eb('g.site_binding_attempts', '<', maxAttempts)]),
+            eb.and([eb('g.site_binding_state', 'in', ['failed', 'conflict']), eb('g.site_binding_alerted_at', 'is', null)]),
+          ]))
+          .orderBy('g.site_binding_next_at', ob => ob.asc().nullsFirst())
+          .orderBy('g.site_binding_at', ob => ob.asc().nullsFirst())
+          .limit(limit)
+          .execute()
+        return rows as DatabaseRow[]
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async markMigrateSiteBindingAlerted(grantId) {
+      try {
+        const row = await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({ site_binding_alerted_at: eb.fn<string>('now', []) }))
+          .where('id', '=', grantId)
+          .where('site_binding_alerted_at', 'is', null)
+          .returning('id')
+          .executeTakeFirst()
+        return !!row
       }
       catch (error) {
         throwDbError(error)
