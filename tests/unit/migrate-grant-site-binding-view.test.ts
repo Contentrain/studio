@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import strings from '../../.contentrain/content/system/ui-strings/en.json'
 
 vi.mock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: 'subscription' }) }))
 
@@ -27,5 +28,17 @@ describe('migrateGrantView: siteBinding', () => {
   it('a pull request address that is not https is not passed on as a link', async () => {
     const { migrateGrantView } = await import('../../server/utils/migrate-grant')
     expect(migrateGrantView(row({ site_binding_state: 'pr_open', site_binding_detail: { prUrl: 'javascript:alert(1)' } })).siteBinding?.prUrl).toBeNull()
+  })
+})
+
+describe('claim-screen copy for the site binding (honest about the rebuild)', () => {
+  const dict = strings as Record<string, string>
+  it('written and partial say the forms send once the host rebuilds, never that the site is already updated', () => {
+    expect(dict['migrate_claim.site_binding_written']).toBe('Your site’s forms and comments send to Studio once your host rebuilds the site: studio.json is in your repository.')
+    expect(dict['migrate_claim.site_binding_partial']).toMatch(/^Your site’s forms and comments send to Studio once your host rebuilds the site: studio\.json is in your repository\. /)
+    expect(dict['migrate_claim.site_binding_partial']).toContain('{limit}')
+    expect(dict['migrate_claim.site_binding_partial']).toContain('{forms}')
+    for (const key of Object.keys(dict).filter(k => k.startsWith('migrate_claim.site_binding_')))
+      expect(dict[key], key).not.toMatch(/now send|is now updated|is updated/)
   })
 })
