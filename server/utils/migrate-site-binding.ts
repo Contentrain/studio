@@ -17,8 +17,9 @@
  * - **Idempotent**: the claim screen's retry calls it again. A binding already on `contentrain` but not yet on the
  *   default branch (its pull request still open) is not committed twice: only the merge is asked for again.
  *
- * The outcome is recorded on the grant (`setMigrateGrantSiteBinding`, migration 049) and returned; a failure is
- * recorded too and never thrown, so connecting the project never fails because of it.
+ * The outcome is recorded on the grant (`setMigrateGrantSiteBinding`, migrations 049/050) and returned; a failure is
+ * recorded too, with its retry time, and never thrown, so connecting the project never fails because of it. The
+ * sweep (`sweepMigrateSiteBindings`) retries it and raises the ops alarm.
  */
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { DatabaseProvider, MigrateSiteBindingState } from '../providers/database'
@@ -38,12 +39,28 @@ export const SITE_BINDING_MESSAGE = 'contentrain: connect this site to Contentra
   + 'studio.json binds the site to its Studio project: its forms send to Studio and its comment threads are Studio\'s.\n'
   + 'Your host rebuilds the site on this commit.'
 
+/** The sweep's retries (050): a `failed` binding waits 30 min, 1 h, 2 h, 4 h…; after this many in a row it stops. */
+export const SITE_BINDING_RETRY_BASE_MS = 30 * 60 * 1000
+export const SITE_BINDING_MAX_ATTEMPTS = 5
+/** The ops alarm goes out after this many failed attempts in a row (or on any conflict), once per grant. */
+export const SITE_BINDING_ALARM_ATTEMPTS = 3
+
+/** When a binding that failed `attempts` times in a row may be tried again; null once the cap is reached. */
+export function siteBindingNextAt(attempts: number, now: Date): Date | null {
+  if (attempts >= SITE_BINDING_MAX_ATTEMPTS) return null
+  return new Date(now.getTime() + SITE_BINDING_RETRY_BASE_MS * 2 ** Math.max(0, attempts - 1))
+}
+
 export interface MigrateSiteBinding {
   state: MigrateSiteBindingState
   /** `pr_open` from a protected branch: the pull request to merge. */
   prUrl?: string | null
   /** `partial`: the form models beyond the plan's `forms.models`, by id. */
   overLimit?: string[]
+  /** `failed`: the failed attempts in a row, this one included. */
+  attempts?: number
+  /** `failed`: the machine code recorded for it. */
+  code?: string
 }
 
 export interface MigrateSiteBindingInput {
@@ -56,6 +73,9 @@ export interface MigrateSiteBindingInput {
   plan: string
   /** Studio's own origin and the project's media base (`publicMediaBase`), as the media apply writes them. */
   studio: { baseUrl: string, mediaBaseUrl?: string }
+  /** Failed attempts in a row before this one (`migrate_grants.site_binding_attempts`); 0 when unknown. */
+  attempts?: number
+  now?: () => Date
 }
 
 /** A studio.json that reads as a binding: its two values, or null. */
@@ -72,9 +92,12 @@ function bindingOf(source: string): { baseUrl: string, projectId: string } | nul
 const sameStudio = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
 
 export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): Promise<MigrateSiteBinding> {
+  const now = input.now ?? (() => new Date())
   const record = async (state: MigrateSiteBindingState, detail: Record<string, unknown>, extra: Omit<MigrateSiteBinding, 'state'> = {}): Promise<MigrateSiteBinding> => {
-    await input.db.setMigrateGrantSiteBinding(input.grantId, { state, detail })
-    return { state, ...extra }
+    // A failure counts toward the sweep's retries and alarm; anything else starts the count again.
+    const attempts = state === 'failed' ? (input.attempts ?? 0) + 1 : 0
+    await input.db.setMigrateGrantSiteBinding(input.grantId, { state, detail, attempts, nextAt: state === 'failed' ? siteBindingNextAt(attempts, now()) : null })
+    return { state, ...extra, ...(state === 'failed' ? { attempts, code: typeof detail.code === 'string' ? detail.code : 'write_failed' } : {}) }
   }
   try {
     const { git, contentRoot, defaultBranch, projectId } = input
@@ -130,6 +153,6 @@ export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): 
     const code = (error as { code?: unknown })?.code
     // eslint-disable-next-line no-console -- ops visibility: a site whose forms are not bound yet
     console.error('[migrate-site-binding]', { grantId: input.grantId, projectId: input.projectId, message: (error as Error)?.message })
-    return record('failed', { code: typeof code === 'string' ? code : 'write_failed' }).catch(() => ({ state: 'failed' as const }))
+    return record('failed', { code: typeof code === 'string' ? code : 'write_failed' }).catch(() => ({ state: 'failed' as const, attempts: (input.attempts ?? 0) + 1, code: 'record_failed' }))
   }
 }

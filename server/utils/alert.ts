@@ -124,3 +124,36 @@ export function reportAgentToolError(message: string, context: AgentToolErrorCon
     })
     .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
 }
+
+export interface MigrateSiteBindingAlarmContext {
+  grantId: string
+  projectId: string
+  /** `owner/name` of the delivered repository. */
+  repo: string
+  /** `failed` (after repeated attempts) or `conflict`. */
+  state: string
+  /** The recorded machine code (`github_unavailable`, `merge_conflict`, `conflict`…). Never a message or file content. */
+  code: string
+  attempts: number
+}
+
+/**
+ * Raise the alarm for a "Migrate with Studio" site whose forms are not bound to its project (studio.json): it failed
+ * `SITE_BINDING_ALARM_ATTEMPTS` times in a row, or a studio.json there points elsewhere (a person decides). Called once
+ * per grant by the sweep (`migrate-site-binding-run.ts`). Same shape as the other alarms here: the log line always
+ * (the platform's log alert watches `ALARM`), Sentry best-effort; ids, the repository, the state and a code only.
+ */
+export function reportMigrateSiteBindingAlarm(context: MigrateSiteBindingAlarmContext): void {
+  // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
+  console.error(`[migrate-site-binding] ALARM grant ${context.grantId}: the delivered site's forms are not bound (${context.state}, ${context.code}, ${context.attempts} attempts)`, context)
+
+  void import('@sentry/nuxt')
+    .then((Sentry) => {
+      Sentry.captureMessage(`migrate site binding ${context.state}`, {
+        level: 'error',
+        tags: { migrate_site_binding: 'true', state: context.state, code: context.code },
+        extra: { ...context },
+      })
+    })
+    .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
+}

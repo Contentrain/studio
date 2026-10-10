@@ -2,6 +2,7 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import ClaimPage from '../../../app/pages/migrate/claim.vue'
+import strings from '../../../.contentrain/content/system/ui-strings/en.json'
 
 const routeQuery = vi.hoisted(() => ({ value: {} as Record<string, string> }))
 mockNuxtImport('useRoute', () => () => ({ query: routeQuery.value }))
@@ -199,6 +200,85 @@ describe('/migrate/claim', () => {
     expect(wrapper.find('[data-testid="claim-bundle"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('60 days of Studio')
     expect(wrapper.text()).toContain('$0.00')
+  })
+
+  describe('the site binding (studio.json): every state says what happened, never silently broken', () => {
+    const copy = strings as Record<string, string>
+    const PR = 'https://github.com/acme/blog/pull/3'
+    const bound = (siteBinding: Record<string, unknown>) => ({
+      grant: bundleView({ siteBinding: { prUrl: null, overLimit: [], limit: null, ...siteBinding } }),
+      destination: { workspaceSlug: 'acme', projectId: 'proj-1' },
+      bundle: { planState: 'active', workspaceSlug: 'acme', periodEndsAt: null },
+      comments: null,
+    })
+    const note = (wrapper: Awaited<ReturnType<typeof mount>>) => wrapper.find('[data-testid="claim-site-binding"]')
+
+    it('written: the rebuild note, no link and no retry', async () => {
+      stubFetch(bound({ state: 'written' }))
+      const wrapper = await mount()
+      expect(note(wrapper).attributes('data-state')).toBe('written')
+      expect(note(wrapper).text()).toBe(copy['migrate_claim.site_binding_written'])
+      expect(wrapper.find('[data-testid="claim-site-binding-pr"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="claim-site-binding-retry"]').exists()).toBe(false)
+    })
+
+    it('partial: the plan\'s limit and the form models over it, by name; no retry (nothing to retry)', async () => {
+      stubFetch(bound({ state: 'partial', overLimit: ['newsletter', 'quote'], limit: 1 }))
+      const wrapper = await mount()
+      expect(note(wrapper).text()).toBe(copy['migrate_claim.site_binding_partial']!.replace('{limit}', '1').replace('{forms}', 'newsletter, quote'))
+      expect(wrapper.find('[data-testid="claim-site-binding-retry"]').exists()).toBe(false)
+    })
+
+    it('pr_open on a protected branch: the pull request to merge, linked, and a re-check', async () => {
+      stubFetch(bound({ state: 'pr_open', prUrl: PR }))
+      const wrapper = await mount()
+      expect(note(wrapper).text()).toContain(copy['migrate_claim.site_binding_pr_open'])
+      const link = wrapper.find('[data-testid="claim-site-binding-pr"]')
+      expect(link.attributes('href')).toBe(PR)
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.text()).toBe(copy['migrate_claim.site_binding_pr_link'])
+      expect(wrapper.find('[data-testid="claim-site-binding-retry"]').exists()).toBe(true)
+    })
+
+    it('pr_open waiting for review: the review copy and no link', async () => {
+      stubFetch(bound({ state: 'pr_open', prUrl: null }))
+      const wrapper = await mount()
+      expect(note(wrapper).text()).toContain(copy['migrate_claim.site_binding_review'])
+      expect(wrapper.find('[data-testid="claim-site-binding-pr"]').exists()).toBe(false)
+    })
+
+    it('conflict: says the file was left as it is', async () => {
+      stubFetch(bound({ state: 'conflict' }))
+      const wrapper = await mount()
+      expect(note(wrapper).attributes('data-state')).toBe('conflict')
+      expect(note(wrapper).text()).toContain(copy['migrate_claim.site_binding_conflict'])
+      expect(wrapper.find('[data-testid="claim-site-binding-pr"]').exists()).toBe(false)
+    })
+
+    it('failed: says so, and Try again binds once more; once written it goes on to the project', async () => {
+      const fetcher = stubFetch(bound({ state: 'failed' }), { projectId: 'proj-1', workspaceSlug: 'acme', created: false, siteBinding: { state: 'written' } })
+      const wrapper = await mount()
+      expect(note(wrapper).text()).toContain(copy['migrate_claim.site_binding_failed'])
+      const retry = wrapper.find('[data-testid="claim-site-binding-retry"]')
+      expect(retry.text()).toBe(copy['migrate_claim.site_binding_retry'])
+      await retry.trigger('click')
+      await flushPromises()
+      expect(fetcher).toHaveBeenCalledWith('/api/migrate/grants/grant-1/connect-project', { method: 'POST' })
+      expect(navigate).toHaveBeenCalledWith('/w/acme/projects/proj-1')
+    })
+
+    it('failed again on the retry: stays here, reloads the grant and shows what it says now, no navigation', async () => {
+      const page = bound({ state: 'failed' })
+      const base = stubFetch(page, { projectId: 'proj-1', workspaceSlug: 'acme', created: false, siteBinding: { state: 'failed' } })
+      const reloads = vi.fn(async () => bound({ state: 'conflict' }))
+      vi.stubGlobal('$fetch', vi.fn(async (url: string) => (url === '/api/migrate/grants/grant-1' ? reloads() : base(url))))
+      const wrapper = await mount()
+      await wrapper.find('[data-testid="claim-site-binding-retry"]').trigger('click')
+      await flushPromises()
+      expect(navigate).not.toHaveBeenCalledWith(expect.stringContaining('/projects/'))
+      expect(reloads).toHaveBeenCalledTimes(1)
+      expect(note(wrapper).attributes('data-state')).toBe('conflict')
+    })
   })
 
   describe('a refused claim is never a dead end', () => {

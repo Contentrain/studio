@@ -326,4 +326,51 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.getMigrateGrantById(id)).toMatchObject({ site_binding_state: 'written', site_binding_detail: { change: 'merged', formModels: 1, limit: 3 } })
     await expect(methods.setMigrateGrantSiteBinding(id, { state: 'done' as never, detail: {} })).rejects.toBeDefined()
   })
+
+  it('the sweep\'s work list (050): a connected, never-bound bundle site with its project; capped or alarmed ones drop out', async () => {
+    const sweepOrder = `${orderId}-sweep`
+    const { grant } = await methods.claimMigrateGrant({ orderId: sweepOrder, claimJti: `${sweepOrder}-jti`, userId: owner.userId, plan: 'pro', trialDays: 60, repoOwner: 'acme', repoName: 'sweep', email: 'owner@example.com' })
+    const id = grant.id as string
+    await sql`UPDATE public.migrate_grants SET kind = 'bundle', redeemed_at = now(), workspace_id = ${owner.workspaceId}, bound_at = now() WHERE id = ${id}`.execute(getDb())
+    const listed = async () => (await methods.listMigrateSiteBindingWork(500, 5)).find(r => r.id === id)
+
+    // No project for the repository yet: nothing to bind.
+    expect(await listed()).toBeUndefined()
+    const project = await sql<{ id: string }>`INSERT INTO public.projects (workspace_id, repo_full_name, default_branch) VALUES (${owner.workspaceId}, 'Acme/Sweep', 'main') RETURNING id`.execute(getDb())
+    const projectId = project.rows[0]!.id
+    try {
+      // The repository matches without case, as connect-project does.
+      expect(await listed()).toMatchObject({ project_id: projectId, project_default_branch: 'main', site_binding_attempts: 0, site_binding_next_at: null })
+
+      const next = new Date(Date.now() + 30 * 60_000)
+      await methods.setMigrateGrantSiteBinding(id, { state: 'failed', detail: { code: 'github_unavailable' }, attempts: 1, nextAt: next })
+      expect(await listed()).toMatchObject({ site_binding_state: 'failed', site_binding_attempts: 1 })
+      expect(new Date(String((await listed())!.site_binding_next_at)).getTime()).toBe(next.getTime())
+
+      // At the cap it stays listed only until its alarm is raised, and the alarm is raised once.
+      await methods.setMigrateGrantSiteBinding(id, { state: 'failed', detail: { code: 'github_unavailable' }, attempts: 5, nextAt: null })
+      expect(await listed()).toBeDefined()
+      expect(await methods.markMigrateSiteBindingAlerted(id)).toBe(true)
+      expect(await methods.markMigrateSiteBindingAlerted(id)).toBe(false)
+      expect(await listed()).toBeUndefined()
+
+      // A binding that goes through clears the mark and leaves the list; pr_open is never listed.
+      await methods.setMigrateGrantSiteBinding(id, { state: 'written', detail: {}, attempts: 0, nextAt: null })
+      expect(await methods.getMigrateGrantById(id)).toMatchObject({ site_binding_alerted_at: null, site_binding_attempts: 0 })
+      expect(await listed()).toBeUndefined()
+      await methods.setMigrateGrantSiteBinding(id, { state: 'pr_open', detail: {} })
+      expect(await listed()).toBeUndefined()
+
+      // A conflict: listed until alarmed, then left to a person.
+      await methods.setMigrateGrantSiteBinding(id, { state: 'conflict', detail: {}, attempts: 0, nextAt: null })
+      expect(await listed()).toBeDefined()
+      expect(await methods.markMigrateSiteBindingAlerted(id)).toBe(true)
+      expect(await listed()).toBeUndefined()
+
+      await expect(sql`UPDATE public.migrate_grants SET site_binding_attempts = -1 WHERE id = ${id}`.execute(getDb())).rejects.toBeDefined()
+    }
+    finally {
+      await sql`DELETE FROM public.projects WHERE id = ${projectId}`.execute(getDb())
+    }
+  })
 })
