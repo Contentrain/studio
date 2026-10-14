@@ -89,12 +89,12 @@ const shellPanelStorage = {
 </script>
 
 <template>
-  <!-- The shell stops widening past 1920px and centres. Only the chat column
-       is elastic (sidebar and content panel are fixed), so on a very wide
-       display every extra pixel lands in the message bubbles and the line
-       length gets hard to read. Portalled surfaces — command palette, modals,
-       toasts — are `fixed` and stay centred on the viewport, which is right. -->
   <div ref="shellEl" class="mx-auto flex h-screen w-full max-w-[120rem] overflow-hidden border-x border-secondary-200 bg-white dark:border-secondary-800 dark:bg-secondary-950">
+    <!-- The shell stops widening past 1920px and centres. Only the chat column
+         is elastic (sidebar and content panel are fixed), so on a very wide
+         display every extra pixel lands in the message bubbles and the line
+         length gets hard to read. Portalled surfaces — command palette, modals,
+         toasts — are `fixed` and stay centred on the viewport, which is right. -->
     <SplitterGroup
       direction="horizontal"
       auto-save-id="shell-panels"
