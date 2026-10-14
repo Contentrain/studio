@@ -43,7 +43,7 @@ vi.mock('../../server/utils/conversation-keys', () => ({
     workspaceId: 'ws-1',
     monthlyMessageLimit: 1000,
     rateLimitPerMinute: 10,
-    aiModel: 'claude-sonnet-5',
+    aiModel: 'claude-sonnet-5-5',
   })),
 }))
 vi.mock('../../server/utils/providers', () => ({

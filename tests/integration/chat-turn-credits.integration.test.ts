@@ -39,7 +39,7 @@ vi.mock('../../server/utils/enterprise', async importOriginal => ({
 describe('chat route — turn credits (AI-8)', () => {
   it('two concurrent heavy turns cannot push the pool past its limit', async () => {
     // Pro, limit 100, 20 already used. Each turn really costs 45 credits:
-    // 1M input + 70K output on Haiku 4.5 = $1.35. Both turns reserve
+    // 2M input + 140K output on Haiku 5.5 (long card) = $1.35. Both turns reserve
     // before either settles (the barrier holds both streams).
     const pool = createCreditPool(20)
     let started = 0
@@ -55,7 +55,7 @@ describe('chat route — turn credits (AI-8)', () => {
         if (started === 2) release()
         await barrier
         yield { type: 'text', content: 'Done.' }
-        yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1_000_000, outputTokens: 70_000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
+        yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 2_000_000, outputTokens: 140_000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
       },
     })
 
@@ -76,7 +76,7 @@ describe('chat route — turn credits (AI-8)', () => {
   })
 
   it('a turn the client cancels mid-stream counts what it really cost', async () => {
-    // Starter, Haiku. The call's prompt is 300K tokens ($0.30 = 10
+    // Starter, Haiku. The call's prompt is 600K tokens (Haiku 5.5 long card, $0.30 = 10
     // credits) and is billed by Anthropic as soon as the call starts; the
     // client disconnects while the answer is streaming.
     const pool = createCreditPool(0)
@@ -85,7 +85,7 @@ describe('chat route — turn credits (AI-8)', () => {
       plan: 'starter',
       limit: 60,
       stream: async function* (req) {
-        yield { type: 'message_start', usage: { inputTokens: 300_000, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
+        yield { type: 'message_start', usage: { inputTokens: 600_000, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
         yield { type: 'text', content: 'Rewriting the first entry now' }
         await new Promise<void>((_, reject) => {
           const fail = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
@@ -129,7 +129,7 @@ describe('chat route — turn credits (AI-8)', () => {
       plan: 'starter',
       limit: 60,
       stream: async function* () {
-        yield { type: 'message_start', usage: { inputTokens: 300_000, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
+        yield { type: 'message_start', usage: { inputTokens: 600_000, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
         yield { type: 'text', content: 'Rewriting the first entry now' }
         throw new Error('overloaded_error')
       },

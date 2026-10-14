@@ -12,7 +12,7 @@ import { renderMigrationHandoffForAgent, summarizeMigrationHandoff } from '~~/se
 import { runConversationLoop } from '~~/server/utils/conversation-engine'
 import { effectiveWorkflow } from '~~/server/utils/branch-approval'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '~~/server/utils/conversation-history'
-import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor, premiumModelsAllowed } from '../../../../../../shared/utils/ai-models'
+import { chatModelIdsFor, DEFAULT_CHAT_MODEL, maxOutputTokensFor, premiumModelsAllowed, resolveChatModelId } from '../../../../../../shared/utils/ai-models'
 import { settleTurnCredits } from '../../../../../../shared/utils/ai-credits'
 import { CURRENT_CREDIT_UNIT, creditTermsFor } from '../../../../../../shared/utils/credit-unit'
 import type { CreditUnit } from '../../../../../../shared/utils/credit-unit'
@@ -160,7 +160,7 @@ export default defineEventHandler(async (event) => {
     const usage = tracker.snapshot()
     const hasTokens = usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens > 0
     const credits = usageSource === 'studio'
-      ? settleTurnCredits({ model: turnModel, ...usage }, reservedCredits, creditUnit)
+      ? settleTurnCredits(tracker.pricedUsage(turnModel), reservedCredits, creditUnit)
       : (hasTokens ? 1 : 0)
     try {
       await db.updateAgentUsageTokens({
@@ -241,7 +241,9 @@ export default defineEventHandler(async (event) => {
     const availableModels = chatModelIdsFor(hasFeature(plan, 'ai.pro_models'), {
       premium: premiumModelsAllowed({ billingState: event.context.billing?.state, usageSource }),
     })
-    const requestedModel = body.model as string | undefined
+    // A retired ID (a client with an old saved pick) moves to its
+    // family's current model before the gate (`resolveChatModelId`).
+    const requestedModel = resolveChatModelId(body.model as string | undefined)
     const model = (requestedModel && availableModels.includes(requestedModel))
       ? requestedModel
       : (availableModels.includes(DEFAULT_CHAT_MODEL) ? DEFAULT_CHAT_MODEL : availableModels[0]!)

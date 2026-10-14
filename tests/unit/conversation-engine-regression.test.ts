@@ -152,6 +152,29 @@ describe('conversation engine regression', () => {
     })
   })
 
+  it('ends a refused turn with a typed error and runs none of its tools', async () => {
+    // The 5.5 models' safety classifiers decline with `stop_reason: refusal`;
+    // Haiku 5.5 has no server-side fallback. The user must see why, not an
+    // empty answer, and a tool call in the response must not run.
+    let calls = 0
+    const { events } = await collectConversationEvents({
+      aiProvider: {
+        streamCompletion: async function* () {
+          calls++
+          yield { type: 'tool_use_start', toolId: 't1', toolName: 'get_content' }
+          yield { type: 'tool_use_end', toolId: 't1', toolName: 'get_content', toolInput: {} }
+          yield { type: 'message_end', stopReason: 'refusal', usage: { inputTokens: 100, outputTokens: 3 } }
+        },
+        createCompletion: vi.fn(),
+      },
+    })
+
+    expect(calls).toBe(1)
+    expect(events.find(e => e.type === 'error')).toMatchObject({ type: 'error', code: 'refused' })
+    expect(events.some(e => e.type === 'tool_result')).toBe(false)
+    expect(events[events.length - 1]).toMatchObject({ type: 'done' })
+  })
+
   it('streams the post-tool continuation instead of buffering it', async () => {
     // Every iteration now streams — the first turn AND the post-tool
     // continuation. The follow-up answer must arrive as streamed text

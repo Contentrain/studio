@@ -426,7 +426,7 @@ export async function* runConversationLoop(
       if (budget) {
         const plan = planCall({
           budget,
-          spentUsd: usageCostUsd(config.model, tracker.snapshot()),
+          spentUsd: usageCostUsd(config.model, tracker.pricedUsage(config.model)),
           model: config.model,
           prompt: nextPrompt,
           maxOutputTokens,
@@ -483,6 +483,23 @@ export async function* runConversationLoop(
           type: 'error',
           code: 'output_truncated',
           message: 'The response was cut off at the output-token limit before it finished. Any pending save/create did not run. Split large operations into smaller steps (e.g. one locale or a few entries per call) and retry.',
+        }
+        break
+      }
+
+      // === REFUSAL ===
+      // The 5.5 models run safety classifiers that can decline a request:
+      // a normal response with `stop_reason: refusal` and usually no
+      // content. Haiku 5.5 has no server-side fallback, and none is
+      // configured for the others. Run no tool the response may carry and
+      // end the turn with a typed error the client localizes, instead of an
+      // empty answer. The tokens it used are settled like any other call.
+      if (turn.stopReason === 'refusal') {
+        trace.push({ iteration, assistantBlocks: turn.assistantBlocks, toolResultBlocks: [] })
+        yield {
+          type: 'error',
+          code: 'refused',
+          message: 'The model declined this request. Rephrase it, or switch to another model, and try again.',
         }
         break
       }
@@ -568,7 +585,7 @@ export async function* runConversationLoop(
     if (budget && (stoppedByBudget || hitStepLimit)) {
       const plan = planCall({
         budget,
-        spentUsd: usageCostUsd(config.model, tracker.snapshot()),
+        spentUsd: usageCostUsd(config.model, tracker.pricedUsage(config.model)),
         model: config.model,
         prompt: nextPrompt,
         maxOutputTokens: stoppedByBudget ? Math.min(maxOutputTokens, floors.close) : maxOutputTokens,
@@ -642,6 +659,10 @@ export async function* runConversationLoop(
     await flushTurnMerges()
 
     // === DONE with affected resources ===
+    // `longPrompt` (only on a model with a long-prompt card) is the share
+    // of the totals from calls over its threshold, so a caller settling
+    // from this event prices each call on the card Anthropic billed it.
+    const longPrompt = tracker.pricedUsage(config.model).longPrompt
     yield {
       type: 'done',
       usage: {
@@ -649,6 +670,7 @@ export async function* runConversationLoop(
         outputTokens: totalOutputTokens,
         cacheCreationInputTokens: totalCacheCreationInputTokens,
         cacheReadInputTokens: totalCacheReadInputTokens,
+        ...(longPrompt ? { longPrompt } : {}),
       },
       affected: accumulatedAffected,
       lastContent: lastAssistantContent,

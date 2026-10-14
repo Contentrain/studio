@@ -58,18 +58,25 @@ export function getMaxCreditsPerMessage(plan: StudioPlan | string, unit: CreditU
   return creditTermsFor(unit).maxCreditsPerMessage(plan)
 }
 
-/** Cache-write premium — Studio caches on the 1h TTL (`PROMPT_CACHE_CONTROL`). */
+/**
+ * Cache-write premium — Studio caches on the 1h TTL (`PROMPT_CACHE_CONTROL`).
+ * 2x on every catalog model (Anthropic pricing page: Opus 5.5 $8, Sonnet
+ * 5.5 $4, Haiku 5.5 $0.20 / $1 per MTok on its two cards).
+ */
 export const CACHE_WRITE_MULTIPLIER = 2
 /** Cache-read discount. */
 export const CACHE_READ_MULTIPLIER = 0.1
 
 /**
- * Models no longer offered in the chat catalog: Conversation-API
- * models and retired chat models. A retired model keeps its entry so
- * a turn that started on it, and any later re-computation, settles at
- * what Anthropic actually billed.
+ * Models no longer offered in the chat catalog: retired chat and
+ * Conversation-API models. A retired model keeps its entry so a turn
+ * that started on it (one in flight across the deploy that retired it),
+ * and any later re-computation, settles at what Anthropic billed.
  */
 const LEGACY_MODEL_PRICING: Record<string, ModelPricing> = {
+  'claude-sonnet-5': { inputPerMTok: 2, outputPerMTok: 10 },
+  'claude-haiku-4-5-20251001': { inputPerMTok: 1, outputPerMTok: 5 },
+  'claude-haiku-4-5': { inputPerMTok: 1, outputPerMTok: 5 },
   'claude-sonnet-4-6': { inputPerMTok: 3, outputPerMTok: 15 },
   'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15 },
   'claude-opus-4-8': { inputPerMTok: 5, outputPerMTok: 25 },
@@ -94,28 +101,72 @@ export function pricingForModel(modelId: string): ModelPricing {
   return CATALOG_PRICING[modelId] ?? LEGACY_MODEL_PRICING[modelId] ?? FALLBACK_PRICING
 }
 
-/** Cache-read rate for a model, as a fraction of its input price (0.1x standard, 0.05x on Opus 5.5). */
+/** Cache-read rate for a model, as a fraction of its input price (0.1x standard, 0.05x on Opus 5.5 and Sonnet 5.5). */
 export function cacheReadMultiplierFor(pricing: ModelPricing): number {
   return pricing.cacheReadMultiplier ?? CACHE_READ_MULTIPLIER
 }
 
-export interface MessageUsage {
-  model: string
+/** The four token buckets Anthropic bills a request by. */
+export interface TokenBuckets {
   inputTokens: number
   outputTokens: number
   cacheCreationInputTokens: number
   cacheReadInputTokens: number
 }
 
+const ZERO_BUCKETS: TokenBuckets = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+
+/** A request's prompt length as Anthropic measures it for the long-prompt card: every input bucket. */
+export function promptTokensOf(usage: TokenBuckets): number {
+  return usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens
+}
+
+/**
+ * The rates one request pays, given its prompt length: the long card
+ * (`ModelPricing.longPrompt`) when the prompt is over its threshold, the
+ * base card otherwise. Cache multipliers apply on top of either.
+ */
+export function ratesForPrompt(pricing: ModelPricing, promptTokens: number): ModelPricing {
+  const long = pricing.longPrompt
+  if (!long || promptTokens <= long.overTokens) return pricing
+  return { inputPerMTok: long.inputPerMTok, outputPerMTok: long.outputPerMTok, cacheReadMultiplier: pricing.cacheReadMultiplier }
+}
+
+export interface MessageUsage extends TokenBuckets {
+  model: string
+  /**
+   * The share of the totals that came from requests over the model's
+   * long-prompt threshold, classified per request (`TurnUsageTracker`).
+   * Absent on a model with a long card: the totals are classified as if
+   * they were one request — exact for a single call, above the real
+   * cost for a multi-call turn whose summed prompt crosses the line,
+   * never below it.
+   */
+  longPrompt?: TokenBuckets
+}
+
+function bucketsCostUsd(usage: TokenBuckets, rates: ModelPricing): number {
+  return (
+    usage.inputTokens * rates.inputPerMTok
+    + usage.cacheCreationInputTokens * rates.inputPerMTok * CACHE_WRITE_MULTIPLIER
+    + usage.cacheReadInputTokens * rates.inputPerMTok * cacheReadMultiplierFor(rates)
+    + usage.outputTokens * rates.outputPerMTok
+  ) / 1e6
+}
+
 /** Approximate Anthropic spend for one message's turn totals. */
 export function estimateMessageCostUsd(usage: MessageUsage): number {
   const pricing = pricingForModel(usage.model)
-  return (
-    usage.inputTokens * pricing.inputPerMTok
-    + usage.cacheCreationInputTokens * pricing.inputPerMTok * CACHE_WRITE_MULTIPLIER
-    + usage.cacheReadInputTokens * pricing.inputPerMTok * cacheReadMultiplierFor(pricing)
-    + usage.outputTokens * pricing.outputPerMTok
-  ) / 1e6
+  if (!pricing.longPrompt) return bucketsCostUsd(usage, pricing)
+  const long = usage.longPrompt
+    ?? (promptTokensOf(usage) > pricing.longPrompt.overTokens ? usage : ZERO_BUCKETS)
+  const base: TokenBuckets = {
+    inputTokens: Math.max(0, usage.inputTokens - long.inputTokens),
+    outputTokens: Math.max(0, usage.outputTokens - long.outputTokens),
+    cacheCreationInputTokens: Math.max(0, usage.cacheCreationInputTokens - long.cacheCreationInputTokens),
+    cacheReadInputTokens: Math.max(0, usage.cacheReadInputTokens - long.cacheReadInputTokens),
+  }
+  return bucketsCostUsd(base, pricing) + bucketsCostUsd(long, ratesForPrompt(pricing, Number.POSITIVE_INFINITY))
 }
 
 /**

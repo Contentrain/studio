@@ -176,11 +176,67 @@ describe('anthropic provider', () => {
     expect(plain[2]!.content).toEqual([{ type: 'text', text: '(no reply)' }])
   })
 
-  it('keeps thinking explicitly disabled for every model that is not adaptive', async () => {
+  it('keeps thinking explicitly disabled for every model outside the catalog', async () => {
     const { requestThinking } = await import('../../server/providers/anthropic-ai')
     for (const model of ['claude-sonnet-5', 'claude-haiku-4-5-20251001', 'claude-sonnet-4-5', 'claude-opus-4-8']) {
       expect(requestThinking(model)).toEqual({ params: { thinking: { type: 'disabled' } }, keepThinking: false })
     }
+  })
+
+  it('runs every 5.5 catalog model adaptive with an explicit effort — never `disabled`, `between_tools` or `budget_tokens`', async () => {
+    // Sonnet 5.5 and Opus 5.5 answer `disabled` with a 400; Haiku 5.5
+    // answers `budget_tokens` with a 400. Only adaptive takes `block_binding`.
+    const { requestThinking, THINKING_BINDING_BETA } = await import('../../server/providers/anthropic-ai')
+    const expected: Record<string, string> = { 'claude-haiku-5-5': 'low', 'claude-sonnet-5-5': 'medium', 'claude-opus-5-5': 'medium' }
+    for (const [model, effort] of Object.entries(expected)) {
+      expect(requestThinking(model)).toEqual({
+        params: {
+          thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } },
+          output_config: { effort },
+        },
+        headers: { 'anthropic-beta': THINKING_BINDING_BETA },
+        keepThinking: true,
+      })
+    }
+  })
+
+  it('sends no parameter the 5.5 models reject: sampling, forced tool_choice, fallbacks', async () => {
+    anthropicState.stream.mockReturnValue((async function* () {
+      yield { type: 'message_start', message: { usage: { input_tokens: 1, output_tokens: 0 } } }
+      yield { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } }
+      yield { type: 'message_stop' }
+    })())
+    const { createAnthropicProvider } = await import('../../server/providers/anthropic-ai')
+    for await (const _ of createAnthropicProvider().streamCompletion({
+      model: 'claude-haiku-5-5',
+      system: 'system',
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{ name: 't', description: 'd', inputSchema: {} }],
+      maxTokens: 256,
+    }, 'api-key')) { /* drain */ }
+    const [params] = anthropicState.stream.mock.calls.at(-1)!
+    for (const key of ['temperature', 'top_p', 'top_k', 'tool_choice', 'fallbacks'])
+      expect(params).not.toHaveProperty(key)
+  })
+
+  it('passes a refusal stop reason through to the engine', async () => {
+    anthropicState.stream.mockReturnValue((async function* () {
+      yield { type: 'message_start', message: { usage: { input_tokens: 5, output_tokens: 0 } } }
+      yield { type: 'message_delta', delta: { stop_reason: 'refusal' }, usage: { output_tokens: 0 } }
+      yield { type: 'message_stop' }
+    })())
+    const { createAnthropicProvider } = await import('../../server/providers/anthropic-ai')
+    const events = []
+    for await (const event of createAnthropicProvider().streamCompletion({
+      model: 'claude-sonnet-5-5',
+      system: 'system',
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      maxTokens: 256,
+    }, 'api-key')) {
+      events.push(event)
+    }
+    expect(events.at(-1)).toMatchObject({ type: 'message_end', stopReason: 'refusal' })
   })
 
   it('captures prompt cache token buckets reported by the provider', async () => {
@@ -315,7 +371,7 @@ describe('anthropic provider', () => {
     const { createAnthropicProvider } = await import('../../server/providers/anthropic-ai')
     const provider = createAnthropicProvider()
     await provider.createCompletion({
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
       system: [{ type: 'text', text: 'static body', cacheControl: { type: 'ephemeral', ttl: '1h' } }],
       messages: [
         { role: 'user', content: 'earlier' },

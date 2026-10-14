@@ -62,8 +62,8 @@ describe('credit unit per account', () => {
   })
 
   it('charges the same work the same dollars in either unit — never 3×', () => {
-    // A mid-size Sonnet 5 turn: ~$0.25 of Anthropic spend.
-    const usage = { model: 'claude-sonnet-5', inputTokens: 20_000, outputTokens: 12_000, cacheCreationInputTokens: 30_000, cacheReadInputTokens: 150_000 }
+    // A mid-size Sonnet 5.5 turn: ~$0.24 of Anthropic spend.
+    const usage = { model: 'claude-sonnet-5-5', inputTokens: 20_000, outputTokens: 12_000, cacheCreationInputTokens: 30_000, cacheReadInputTokens: 150_000 }
     const usd = estimateMessageCostUsd(usage)
     const legacyCredits = settleTurnCredits(usage, 60, '0.03')
     const currentCredits = settleTurnCredits(usage, 150, '0.01')

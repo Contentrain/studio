@@ -16,7 +16,7 @@ function textOf(message: { content: unknown }): string {
 
 describe('selectHistoryBudget', () => {
   it('returns the per-model budget when the model is known', () => {
-    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-haiku-4-5-20251001', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-haiku-5-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 24_000 })
     expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-4-1-20250805', source: 'studio' }))
       .toMatchObject({ maxTokens: 32_000 })
@@ -26,7 +26,7 @@ describe('selectHistoryBudget', () => {
       .toMatchObject({ maxTokens: 48_000 })
     // Catalog-sourced entries (shared/utils/ai-models.ts) — the replayed
     // history is served from the prompt cache, so the window is wide.
-    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-5', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'pro', model: 'claude-sonnet-5-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 96_000 })
     expect(selectHistoryBudget({ plan: 'pro', model: 'claude-opus-5-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 96_000 })
@@ -48,7 +48,7 @@ describe('selectHistoryBudget', () => {
   })
 
   it('returns zero budget for the free plan (defensive backstop — should never reach chat path)', () => {
-    expect(selectHistoryBudget({ plan: 'free', model: 'claude-haiku-4-5-20251001', source: 'studio' }))
+    expect(selectHistoryBudget({ plan: 'free', model: 'claude-haiku-5-5', source: 'studio' }))
       .toMatchObject({ maxTokens: 0 })
   })
 
@@ -70,8 +70,8 @@ describe('selectHistoryBudget', () => {
   })
 
   it('scales rowLimit with the token budget', () => {
-    const big = selectHistoryBudget({ plan: 'enterprise', model: 'claude-sonnet-5', source: 'byoa' })
-    const small = selectHistoryBudget({ plan: 'starter', model: 'claude-haiku-4-5-20251001', source: 'studio' })
+    const big = selectHistoryBudget({ plan: 'enterprise', model: 'claude-sonnet-5-5', source: 'byoa' })
+    const small = selectHistoryBudget({ plan: 'starter', model: 'claude-haiku-5-5', source: 'studio' })
     expect(big.rowLimit).toBeGreaterThan(small.rowLimit)
     expect(small.rowLimit).toBeGreaterThanOrEqual(50) // minimum safety floor
   })

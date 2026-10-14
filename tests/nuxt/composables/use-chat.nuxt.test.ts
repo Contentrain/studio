@@ -512,7 +512,7 @@ describe('useChat', () => {
 
   describe('model persistence', () => {
     const OPUS = 'claude-opus-5-5'
-    const HAIKU = 'claude-haiku-4-5-20251001'
+    const HAIKU = 'claude-haiku-5-5'
 
     it('stores the picked model against the open project', async () => {
       route.params = { projectId: 'project-a' }
@@ -544,10 +544,26 @@ describe('useChat', () => {
       expect(useChat().selectedModel.value).toBe(OPUS)
     })
 
-    it.each(['claude-sonnet-4-0', 'claude-opus-4-8', 'claude-sonnet-4-6'])('ignores a stored model that has left the catalog (%s)', (retired) => {
+    it.each([
+      ['claude-haiku-4-5-20251001', 'claude-haiku-5-5'],
+      ['claude-sonnet-5', 'claude-sonnet-5-5'],
+      ['claude-sonnet-4-6', 'claude-sonnet-5-5'],
+      ['claude-opus-4-8', 'claude-opus-5-5'],
+    ])('moves a stored retired model to its family\'s current one (%s → %s)', async (retired, current) => {
+      localStorage.setItem('contentrain-chat-model:project-a', retired)
+
+      route.params = { projectId: 'project-a' }
+
+      expect(useChat().selectedModel.value).toBe(current)
+      await nextTick()
+      // The new ID is saved, so the next load reads it directly.
+      expect(localStorage.getItem('contentrain-chat-model:project-a')).toBe(current)
+    })
+
+    it.each(['claude-fable-5-1', 'gpt-4o'])('ignores a stored model with no catalog family (%s)', (unknown) => {
       // The server quietly falls back to an allowed model; the picker would
       // otherwise keep showing a label for a model nobody can select.
-      localStorage.setItem('contentrain-chat-model:project-a', retired)
+      localStorage.setItem('contentrain-chat-model:project-a', unknown)
 
       route.params = { projectId: 'project-a' }
 

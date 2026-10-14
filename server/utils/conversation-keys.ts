@@ -7,7 +7,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '../../shared/utils/ai-models'
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, resolveChatModelId } from '../../shared/utils/ai-models'
 
 const KEY_PREFIX = 'crn_conv_'
 const RANDOM_BYTES = 32
@@ -55,9 +55,8 @@ export interface ConversationKeyData {
 
 /**
  * Models a Conversation API key may run on: the chat catalog's current,
- * non-premium models (Haiku 4.5, Sonnet 5). Retired models leave the list
- * with the catalog — `claude-sonnet-4-5` ($3/$15) runs on Sonnet 5 now —
- * and a premium model never reaches a public API key.
+ * non-premium models (Haiku 5.5, Sonnet 5.5). Retired models leave the
+ * list with the catalog, and a premium model never reaches a public API key.
  */
 export const CONVERSATION_API_MODELS: readonly string[] = CHAT_MODELS.filter(m => !m.premium).map(m => m.id)
 
@@ -65,12 +64,25 @@ export const CONVERSATION_API_MODELS: readonly string[] = CHAT_MODELS.filter(m =
 export const DEFAULT_CONVERSATION_API_MODEL = DEFAULT_CHAT_MODEL
 
 /**
- * The model to run a key on. A key stored with a model that has since been
- * retired (e.g. `claude-sonnet-4-20250514`) would fail every request at the
- * provider, so it runs on the default until its owner picks another.
+ * The Conversation API model an ID maps to, or null. A retired ID of a
+ * catalog family moves to that family's current model
+ * (`resolveChatModelId`: `claude-haiku-4-5-20251001` → Haiku 5.5,
+ * `claude-sonnet-4-5` / `claude-sonnet-5` → Sonnet 5.5); a premium or
+ * unknown model is null.
+ */
+export function toConversationApiModel(id: string | null | undefined): string | null {
+  const resolved = resolveChatModelId(id)
+  return resolved && CONVERSATION_API_MODELS.includes(resolved) ? resolved : null
+}
+
+/**
+ * The model to run a key on. A key stored with a retired model would fail
+ * every request at the provider, so it runs on its family's current model,
+ * or on the default when it has none (or is premium), until its owner
+ * picks another.
  */
 export function resolveConversationModel(stored: string | null | undefined): string {
-  return stored && CONVERSATION_API_MODELS.includes(stored) ? stored : DEFAULT_CONVERSATION_API_MODEL
+  return toConversationApiModel(stored) ?? DEFAULT_CONVERSATION_API_MODEL
 }
 
 /** Validate a Conversation API key. Returns key config or throws 401. */

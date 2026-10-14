@@ -3,7 +3,7 @@ import { requireAuth } from '../../server/utils/auth'
 import { errorMessage } from '../../server/utils/content-strings'
 import { getCreditLimit, getWorkspacePlan, hasFeature, getPlanLimit } from '../../server/utils/license'
 import { CURRENT_CREDIT_UNIT } from '../../shared/utils/credit-unit'
-import { CONVERSATION_API_MODELS, DEFAULT_CONVERSATION_API_MODEL, generateConversationKey } from '../../server/utils/conversation-keys'
+import { generateConversationKey, resolveConversationModel, toConversationApiModel } from '../../server/utils/conversation-keys'
 import { useDatabaseProvider } from '../../server/utils/providers'
 import { resolveUsagePeriod } from '../../server/utils/usage-period'
 
@@ -44,7 +44,8 @@ export function createConversationKeysBridge() {
         allowedTools: key.allowed_tools,
         allowedLocales: key.allowed_locales,
         customInstructions: key.custom_instructions,
-        aiModel: key.ai_model,
+        // What the key really runs on: a retired stored ID shows its successor.
+        aiModel: resolveConversationModel(key.ai_model as string | null),
         rateLimitPerMinute: key.rate_limit_per_minute,
         monthlyMessageLimit: key.monthly_message_limit,
         monthlyUsage: usageMap[String(key.id)] ?? 0,
@@ -105,7 +106,7 @@ export function createConversationKeysBridge() {
       const validRoles = ['viewer', 'editor', 'admin']
       const role = validRoles.includes(body.role ?? '') ? body.role : 'editor'
 
-      const aiModel = CONVERSATION_API_MODELS.includes(body.aiModel ?? '') ? body.aiModel : DEFAULT_CONVERSATION_API_MODEL
+      const aiModel = resolveConversationModel(body.aiModel)
 
       const rateLimitPerMinute = Math.max(1, Math.min(body.rateLimitPerMinute ?? 10, 60))
       // Per-key cap in the account's own credit terms (`credit-unit.ts`).
@@ -183,7 +184,8 @@ export function createConversationKeysBridge() {
       if (body.allowedTools !== undefined) updates.allowed_tools = body.allowedTools
       if (body.allowedLocales !== undefined) updates.allowed_locales = body.allowedLocales
       if (body.customInstructions !== undefined) updates.custom_instructions = body.customInstructions ? body.customInstructions.substring(0, 2000) : body.customInstructions
-      if (body.aiModel !== undefined && CONVERSATION_API_MODELS.includes(body.aiModel)) updates.ai_model = body.aiModel
+      const updatedModel = body.aiModel !== undefined ? toConversationApiModel(body.aiModel) : null
+      if (updatedModel) updates.ai_model = updatedModel
       if (body.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = Math.max(1, Math.min(body.rateLimitPerMinute, 60))
       if (body.monthlyMessageLimit !== undefined) {
         const planCap = getCreditLimit(plan!, 'api.messages_per_month', event.context?.billing?.creditUnit ?? CURRENT_CREDIT_UNIT)

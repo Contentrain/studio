@@ -78,7 +78,7 @@ function stubTurn(opts: { plan: string, monthlyLimit: number }) {
     streamCompletion: async function* () {
       yield { type: 'text', content: 'Done.' }
       // Heavy enough that a Studio-key turn would settle extra credits.
-      yield { type: 'message_end', usage: { inputTokens: 400_000, outputTokens: 60_000 }, stopReason: 'end_turn' }
+      yield { type: 'message_end', usage: { inputTokens: 800_000, outputTokens: 120_000 }, stopReason: 'end_turn' }
     },
   }))
 
@@ -117,7 +117,7 @@ describe('chat route — BYOA turns are outside the AI credit quota and never me
     // Row booked under `byoa` at 1 — migrations 030/031 keep it out of the pool.
     expect(reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ source: 'byoa', amount: 1 }))
     // The settle records its tokens but keeps it at 1 credit.
-    expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'byoa', inputTokens: 400_000, messageCountDelta: 0 }))
+    expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'byoa', inputTokens: 800_000, messageCountDelta: 0 }))
     // Nothing reaches the payment meter.
     expect(recordAIUsage).not.toHaveBeenCalled()
     expect(saveChatResult).toHaveBeenCalledWith(expect.objectContaining({ usageSource: 'byoa', settleUsage: false }))
@@ -132,8 +132,7 @@ describe('chat route — BYOA turns are outside the AI credit quota and never me
     // The whole Pro turn ceiling (60) is reserved up front.
     // No billing context: the current unit ($0.01) — Pro ceiling 150.
     expect(reserveAgentCredits).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', limit: 350, amount: 150 }))
-    // 400K in + 60K out on Haiku 4.5 = $0.70 = 23 credits; the other 37 are refunded.
-    // 400K in + 60K out on Haiku = $0.70 → 70 credits of $0.01.
+    // 800K in + 120K out on Haiku 5.5 (long card) = $0.70 → 70 credits of $0.01.
     expect(updateAgentUsageTokens).toHaveBeenCalledWith(expect.objectContaining({ source: 'studio', messageCountDelta: 70 - 150 }))
     expect(recordAIUsage).toHaveBeenCalledTimes(1)
     expect(recordAIUsage).toHaveBeenCalledWith(expect.objectContaining({ count: 70, creditUnit: '0.01' }))

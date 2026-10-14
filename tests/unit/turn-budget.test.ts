@@ -16,7 +16,10 @@ vi.setConfig({ testTimeout: 30_000 })
  * exactly as it did without one.
  */
 
+// A plain (non-thinking) model at $1/$5: the retired Haiku 4.5 keeps its legacy price, so
+// the planner arithmetic below stays readable. Haiku 5.5 has its own block.
 const HAIKU = 'claude-haiku-4-5-20251001'
+const HAIKU_55 = 'claude-haiku-5-5'
 const OPUS = 'claude-opus-5-5'
 const ZERO = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
 
@@ -83,6 +86,46 @@ describe('TurnUsageTracker', () => {
     tracker.addStreamedOutput('x'.repeat(3500))
     tracker.endCall({ inputTokens: 1000, outputTokens: 800, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 })
     expect(tracker.snapshot()).toEqual({ inputTokens: 1000, outputTokens: 800, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 })
+  })
+})
+
+describe('Haiku 5.5 under the budget: the long-prompt card is chosen per request', () => {
+  it('splits a turn by which calls crossed 100K, the call in flight included', () => {
+    const tracker = new TurnUsageTracker()
+    const short = { inputTokens: 5_000, outputTokens: 1_000, cacheCreationInputTokens: 40_000, cacheReadInputTokens: 0 }
+    const long = { inputTokens: 5_000, outputTokens: 2_000, cacheCreationInputTokens: 10_000, cacheReadInputTokens: 90_000 }
+    tracker.endCall(short)
+    tracker.endCall(long)
+    expect(tracker.pricedUsage(HAIKU_55).longPrompt).toEqual(long)
+    // In flight: 120K prompt known from message_start.
+    tracker.startCall({ inputTokens: 1_000, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 119_000 })
+    expect(tracker.pricedUsage(HAIKU_55).longPrompt).toEqual({
+      inputTokens: 6_000,
+      outputTokens: 2_000,
+      cacheCreationInputTokens: 10_000,
+      cacheReadInputTokens: 209_000,
+    })
+    // Priced per call, the turn costs what the calls cost one by one.
+    tracker.endCall({ inputTokens: 1_000, outputTokens: 500, cacheCreationInputTokens: 0, cacheReadInputTokens: 119_000 })
+    const perCall = [short, long, { inputTokens: 1_000, outputTokens: 500, cacheCreationInputTokens: 0, cacheReadInputTokens: 119_000 }]
+      .reduce((sum, u) => sum + estimateMessageCostUsd({ model: HAIKU_55, ...u }), 0)
+    expect(estimateMessageCostUsd(tracker.pricedUsage(HAIKU_55))).toBeCloseTo(perCall, 9)
+    // A model without a long card carries no split.
+    expect(tracker.pricedUsage(OPUS).longPrompt).toBeUndefined()
+  })
+
+  it('plans a call over 100K at the long card, output included', () => {
+    // 150K cached prompt on the long card: 150K × $0.50 × 0.1 = $0.0075; $0.0525 left → 21,000 tokens at $2.50/MTok.
+    const plan = planCall({ budget: { maxUsd: 0.06 }, spentUsd: 0, model: HAIKU_55, prompt: { cached: 150_000, fresh: 0 }, maxOutputTokens: 32_000, minOutputTokens: 1024 })
+    expect(plan.ok && plan.maxTokens).toBeGreaterThanOrEqual(20_999)
+    expect(plan.ok && plan.maxTokens).toBeLessThanOrEqual(21_000)
+    expect(promptCostUsd({ cached: 150_000, fresh: 0 }, pricingForModel(HAIKU_55))).toBeCloseTo(0.0075, 9)
+    // The same prompt under the line pays the base card.
+    expect(promptCostUsd({ cached: 90_000, fresh: 0 }, pricingForModel(HAIKU_55))).toBeCloseTo(0.0009, 9)
+  })
+
+  it('gives Haiku 5.5 the thinking headroom: it runs adaptive', () => {
+    expect(outputFloorsFor(HAIKU_55).minToolCall).toBe(1024 + THINKING_HEADROOM_TOKENS)
   })
 })
 

@@ -123,7 +123,7 @@ describe('chat route — premium models in a trial', () => {
     resolveEnterpriseChatApiKey.mockResolvedValue({ apiKey: 'sk-studio', usageSource: 'studio' })
     const turn = stubTurn()
     expect((await runTurn(trial('standard'), { model: OPUS })).status).toBe(200)
-    expect(turn.models).toEqual(['claude-sonnet-5'])
+    expect(turn.models).toEqual(['claude-sonnet-5-5'])
   })
 
   it('a paid subscription gets Opus', async () => {
