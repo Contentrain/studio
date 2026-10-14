@@ -161,7 +161,7 @@ describe('db helpers', () => {
         { iteration: 1, assistantBlocks: [{ type: 'text', text: 'Done' }], toolResultBlocks: [] },
       ],
       lastAssistantContent: [{ type: 'text', text: 'Done' }],
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
       inputTokens: 20_000,
       outputTokens: 9_000,
       cacheCreationInputTokens: 5_000,

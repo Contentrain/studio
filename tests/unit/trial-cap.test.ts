@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyTrialCap, PLAN_LIMITS } from '../../shared/utils/license'
-import { chatModelIdsFor, premiumModelsAllowed } from '../../shared/utils/ai-models'
+import { chatModelIdsFor, premiumModelsAllowed, resolveChatModelId } from '../../shared/utils/ai-models'
 import { resolveTrialContext } from '../../server/utils/billing'
 
 const AI = 'ai.messages_per_month'
@@ -51,6 +51,30 @@ describe('premium models in a trial', () => {
   it('filters by the catalog `premium` flag, not a model-ID list', () => {
     expect(chatModelIdsFor(true)).toContain('claude-opus-5-5')
     expect(chatModelIdsFor(true, { premium: false })).not.toContain('claude-opus-5-5')
-    expect(chatModelIdsFor(true, { premium: false })).toContain('claude-sonnet-5')
+    expect(chatModelIdsFor(true, { premium: false })).toContain('claude-sonnet-5-5')
+  })
+})
+
+describe('resolveChatModelId (stored and requested model IDs)', () => {
+  it('keeps a catalog ID as is', () => {
+    for (const id of ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'])
+      expect(resolveChatModelId(id)).toBe(id)
+  })
+
+  it('moves a retired ID to its family\'s current model', () => {
+    expect(resolveChatModelId('claude-haiku-4-5-20251001')).toBe('claude-haiku-5-5')
+    expect(resolveChatModelId('claude-haiku-4-5')).toBe('claude-haiku-5-5')
+    expect(resolveChatModelId('claude-sonnet-5')).toBe('claude-sonnet-5-5')
+    expect(resolveChatModelId('claude-sonnet-4-6')).toBe('claude-sonnet-5-5')
+    expect(resolveChatModelId('claude-sonnet-4-20250514')).toBe('claude-sonnet-5-5')
+    expect(resolveChatModelId('claude-3-5-sonnet-20241022')).toBe('claude-sonnet-5-5')
+    expect(resolveChatModelId('claude-opus-5')).toBe('claude-opus-5-5')
+    expect(resolveChatModelId('claude-opus-4-8')).toBe('claude-opus-5-5')
+    expect(resolveChatModelId('claude-opus-4-1-20250805')).toBe('claude-opus-5-5')
+  })
+
+  it('returns null for anything without a catalog family, so the caller keeps its default', () => {
+    for (const id of [null, undefined, '', 'claude-fable-5-1', 'claude-mythos-5', 'gpt-4o', 'claude-sonnetx-1'])
+      expect(resolveChatModelId(id)).toBeNull()
   })
 })

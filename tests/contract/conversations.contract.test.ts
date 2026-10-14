@@ -86,7 +86,7 @@ describe('postgres-db conversations (contract)', () => {
       { ...base, role: 'user', content: 'Hello', turnSequence: 0 },
       { ...base, role: 'assistant', content: 'Working…', turnSequence: 1, iteration: 1, toolCalls: [{ name: 'contentrain_status', args: {} }] },
       { ...base, role: 'user', content: '[tool results]', turnSequence: 2, internal: true, iteration: 1, contentBlocks: [{ type: 'tool_result', toolUseId: 'tu', content: '{"ok":true}' }] },
-      { ...base, role: 'assistant', content: 'Done', turnSequence: 3, contentBlocks: [{ type: 'text', text: 'Done' }], tokenCountInput: 10, tokenCountOutput: 5, model: 'claude-sonnet-5' },
+      { ...base, role: 'assistant', content: 'Done', turnSequence: 3, contentBlocks: [{ type: 'text', text: 'Done' }], tokenCountInput: 10, tokenCountOutput: 5, model: 'claude-sonnet-5-5' },
     ])
     await methods.insertMessage({ ...base, role: 'user', content: 'Thanks', turnSequence: 0, turnId: randomUUID() })
 

@@ -123,8 +123,8 @@ export async function waitFor(check: () => boolean, ms = 3000): Promise<void> {
   while (!check() && Date.now() - start < ms) await new Promise(r => setTimeout(r, 20))
 }
 
-/** A single heavy call: 1M input + 70K output on Haiku 4.5 = $1.35 = 45 credits. */
+/** A single heavy call: 2M input + 140K output on Haiku 5.5 (prompt over 100K, long card $0.50/$2.50) = $1.35 = 45 credits. */
 export async function* heavyTurn(): AsyncGenerator<Record<string, unknown>> {
   yield { type: 'text', content: 'Done.' }
-  yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1_000_000, outputTokens: 70_000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
+  yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 2_000_000, outputTokens: 140_000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
 }

@@ -39,7 +39,7 @@ vi.mock('../../server/utils/conversation-keys', () => ({
     customInstructions: null,
     rateLimitPerMinute: 60,
     monthlyMessageLimit: 1000,
-    aiModel: 'claude-haiku-4-5-20251001',
+    aiModel: 'claude-haiku-5-5',
   }),
 }))
 vi.mock('../../server/utils/providers', () => ({
@@ -131,12 +131,12 @@ describe('Conversation API — the payment meter respects overage off (MG-12 D1)
     vi.stubGlobal('recordAPIUsage', vi.fn(async (input: { count: number }) => {
       state.meter.push(input.count)
     }))
-    // One heavy call: 1M input + 70K output on Haiku 4.5 = $1.35 = 45 credits.
+    // One heavy call: 2M input + 140K output on Haiku 5.5 — a prompt over 100K, so the long card ($0.50/$2.50) = $1.35 = 45 credits.
     vi.stubGlobal('useAIProvider', vi.fn().mockReturnValue({
       streamCompletion: async function* () {
         state.modelCalls++
         yield { type: 'text', content: 'Here is the summary.' }
-        yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 1_000_000, outputTokens: 70_000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
+        yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 2_000_000, outputTokens: 140_000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } }
       },
     }))
   })

@@ -87,20 +87,28 @@ describe('resolveWorkspaceBilling', () => {
 })
 
 describe('resolveConversationModel', () => {
-  it('runs a key stored with a retired model on the default', async () => {
+  it('runs a key stored with a retired model on its family\'s current model', async () => {
     const { resolveConversationModel, DEFAULT_CONVERSATION_API_MODEL } = await import('../../server/utils/conversation-keys')
-    expect(DEFAULT_CONVERSATION_API_MODEL).toBe('claude-sonnet-5')
-    expect(resolveConversationModel('claude-sonnet-4-20250514')).toBe('claude-sonnet-5')
-    expect(resolveConversationModel(null)).toBe('claude-sonnet-5')
-    // Retired with the catalog: $3/$15 Sonnet 4.5 runs on Sonnet 5.
-    expect(resolveConversationModel('claude-sonnet-4-5')).toBe('claude-sonnet-5')
-    expect(resolveConversationModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001')
+    expect(DEFAULT_CONVERSATION_API_MODEL).toBe('claude-sonnet-5-5')
+    expect(resolveConversationModel(null)).toBe('claude-sonnet-5-5')
+    // Retired with the catalog: every old Sonnet runs on Sonnet 5.5, every old Haiku on Haiku 5.5.
+    expect(resolveConversationModel('claude-sonnet-4-20250514')).toBe('claude-sonnet-5-5')
+    expect(resolveConversationModel('claude-sonnet-4-5')).toBe('claude-sonnet-5-5')
+    expect(resolveConversationModel('claude-sonnet-5')).toBe('claude-sonnet-5-5')
+    expect(resolveConversationModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-5-5')
+    expect(resolveConversationModel('claude-haiku-5-5')).toBe('claude-haiku-5-5')
+    // No catalog family: the default, as before.
+    expect(resolveConversationModel('claude-fable-5-1')).toBe('claude-sonnet-5-5')
+    expect(resolveConversationModel('gpt-4o')).toBe('claude-sonnet-5-5')
   })
 
   it('never lets a public API key run a premium model', async () => {
-    const { CONVERSATION_API_MODELS, resolveConversationModel } = await import('../../server/utils/conversation-keys')
-    expect([...CONVERSATION_API_MODELS].sort()).toEqual(['claude-haiku-4-5-20251001', 'claude-sonnet-5'])
-    expect(resolveConversationModel('claude-opus-5-5')).toBe('claude-sonnet-5')
-    expect(resolveConversationModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001')
+    const { CONVERSATION_API_MODELS, resolveConversationModel, toConversationApiModel } = await import('../../server/utils/conversation-keys')
+    expect([...CONVERSATION_API_MODELS].sort()).toEqual(['claude-haiku-5-5', 'claude-sonnet-5-5'])
+    expect(resolveConversationModel('claude-opus-5-5')).toBe('claude-sonnet-5-5')
+    // A retired Opus resolves to Opus 5.5, which is premium: still the default.
+    expect(resolveConversationModel('claude-opus-4-8')).toBe('claude-sonnet-5-5')
+    expect(toConversationApiModel('claude-opus-4-8')).toBeNull()
+    expect(toConversationApiModel('claude-haiku-4-5')).toBe('claude-haiku-5-5')
   })
 })
