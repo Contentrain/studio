@@ -1,15 +1,39 @@
 # Changelog
 
-## Unreleased
+## v0.4.9
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.8...v0.4.9)
 
 ### ⚠️ Upgrade notes
 
-**The "Migrate with Studio" bundle sells Studio year 1 at the yearly list price ($90 Starter / $490 Pro, not $72 / $392).**
+**1. Migrations 049–051 run before the new image serves.**
+managed+postgres: the Railway pre-deploy runs them (expect "3 applied", then `pnpm db:verify:pg`); plain PostgreSQL: `pnpm db:migrate:pg`; Supabase pair: `supabase db push`. All three are additive: 049 and 050 add nullable or defaulted columns and one partial index to `migrate_grants` (a small table) for the bundle's site binding, 051 changes the default of `conversation_api_keys.ai_model` to `claude-sonnet-5-5`. The old image keeps working against them, so rolling back the image alone is safe.
+
+**2. Chat models are Opus 5.5, Sonnet 5.5 and Haiku 5.5; the older ids are retired.**
+A conversation key or saved choice that names a retired id (`claude-sonnet-5`, `claude-sonnet-4-*`, `claude-opus-4-*`, `claude-haiku-4-5*`) resolves to its 5.5 successor. Credit weights and the 1-credit floor per turn are unchanged.
+
+**3. CDN bandwidth and media storage overage ship OFF.**
+They are billable only while `NUXT_CDN_ORIGIN_METER` / `NUXT_CDN_STORAGE_METER` are on (both default `false`) and the subscription has the metered price. With the flags off both stay hard limits, as in v0.4.8. Turning them on is a separate owner step: set the flags, then `pnpm polar:sync` (dry run, then `--apply --server=production`).
+
+**4. The "Migrate with Studio" bundle sells Studio year 1 at the yearly list price ($90 Starter / $490 Pro, not $72 / $392).**
 Founder rule: Studio is never discounted beyond the yearly plan; the bundle's saving moves to the Migrate fee (Migrate PR-4), and a Studio refund within 14 days of delivery is reduced by that Migrate credit. The S2S shape is unchanged (`year1_cents` now carries the list price, `renewal_cents` the same, `monthly_list_cents` monthly × 12). Deploy this together with Migrate's PR-4, and keep Migrate's bundle checkout off until both are in production and the founder has seen the price table (before PR-4 there is no Migrate credit, after PR-4 alone year 1 would be discounted twice): Studio alone raises the cart by the old discount, and an order quoted before the deploy and paid after it answers `migrate.quote_changed` until it re-quotes. The two Polar **bundle** products still carry the old fixed price ($72 / $392); the checkout overrides the amount per order, so no customer is charged it, but `pnpm polar:sync` reports the drift and exits 1 until it is fixed. Owner steps, production: (1) in the Polar dashboard, archive the fixed price on "Migrate with Studio Starter" and on "Migrate with Studio Pro" (the yearly products are already at list); (2) `npx tsx --env-file=.env.prod scripts/polar-sync.ts` (dry run) should now print `+ price $90.00/year would be added` / `+ price $490.00/year would be added`; (3) the same command with `--apply --server=production` adds them; (4) a second dry run prints both products `in sync`.
 
 ### 🚀 Enhancements
 
-- **migrate:** the bundle's Studio line is the yearly list price; `polar-sync` adds the fixed price back to a bundle/yearly product whose price was archived
+- **ai:** chat models move to Opus 5.5, Sonnet 5.5 (default) and Haiku 5.5; Haiku 5.5's long-prompt card is priced per request (#460)
+- **billing:** CDN origin transfer and media storage overage, billed per GB and GB-month behind meter flags, with a 10× ceiling (#449)
+- **migrate:** a bundle's delivered site is bound to its Studio project (`studio.json`), retried, and alarmed when it stays unbound (#452, #453, #454)
+- **migrate:** the bundle's Studio line is the yearly list price; `polar-sync` adds the fixed price back to a bundle/yearly product whose price was archived (#447)
+
+### 🩹 Fixes
+
+- **billing, members:** reviewer/viewer roles are gated on the server; the plan catalogue lists only what is sold (#445)
+
+### 🏡 Chore
+
+- **deps:** `@contentrain/mcp` 3.11.2, `@contentrain/query` 7.6.45, `@contentrain/types` 1.64.0, vue 3.5, vue-router 5.4, testing and linting groups (#461)
+- **build, ci:** the Studio image, BuildKit and the CI postgres service come from the ECR Public mirrors, pinned by digest (#450, #451)
+- **license:** AGPL-3.0-only in the license header and package.json (#444); roadmap at v0.4.8 (#448); unit tests get a 30 s timeout (#446)
 
 ## v0.4.8
 
