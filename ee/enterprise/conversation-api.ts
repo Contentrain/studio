@@ -20,6 +20,7 @@ import { extractPageUrls, resolvePageUrl } from '../../server/utils/page-resolut
 import { runConversationLoop } from '../../server/utils/conversation-engine'
 import { buildPromptMessages, composeUserTurn, selectHistoryBudget, shouldIncludeContentIndex } from '../../server/utils/conversation-history'
 import { estimateMessageCredits } from '../../shared/utils/ai-credits'
+import type { TokenBuckets } from '../../shared/utils/ai-credits'
 import { maxOutputTokensFor } from '../../shared/utils/ai-models'
 import { validateConversationKey } from '../../server/utils/conversation-keys'
 import { saveApiChatResult } from '../../server/utils/db'
@@ -417,6 +418,8 @@ async function runConversationMessage(
     let totalOutputTokens = 0
     let totalCacheCreationInputTokens = 0
     let totalCacheReadInputTokens = 0
+    // Share of the totals from calls over the model's long-prompt card (Haiku 5.5 > 100K).
+    let longPromptUsage: TokenBuckets | undefined
     let lastAssistantContent: AIContentBlock[] = []
     let iterations: Array<{ iteration: number, assistantBlocks: AIContentBlock[], toolResultBlocks: AIContentBlock[] }> = []
 
@@ -453,11 +456,12 @@ async function runConversationMessage(
           toolResults.push({ id: evt.id as string, name: evt.name as string, result: evt.result })
           break
         case 'done': {
-          const u = evt.usage as { inputTokens?: number, outputTokens?: number, cacheCreationInputTokens?: number, cacheReadInputTokens?: number } | undefined
+          const u = evt.usage as { inputTokens?: number, outputTokens?: number, cacheCreationInputTokens?: number, cacheReadInputTokens?: number, longPrompt?: TokenBuckets } | undefined
           totalInputTokens = u?.inputTokens ?? 0
           totalOutputTokens = u?.outputTokens ?? 0
           totalCacheCreationInputTokens = u?.cacheCreationInputTokens ?? 0
           totalCacheReadInputTokens = u?.cacheReadInputTokens ?? 0
+          longPromptUsage = u?.longPrompt
           lastAssistantContent = (evt.lastContent as AIContentBlock[]) ?? []
           iterations = (evt.iterations as typeof iterations) ?? []
           break
@@ -476,6 +480,7 @@ async function runConversationMessage(
           outputTokens: totalOutputTokens,
           cacheCreationInputTokens: totalCacheCreationInputTokens,
           cacheReadInputTokens: totalCacheReadInputTokens,
+          ...(longPromptUsage ? { longPrompt: longPromptUsage } : {}),
         }, trialCapped && capPlan ? capPlan : plan, creditUnit)
       : 1
     const extraCredits = credits - 1

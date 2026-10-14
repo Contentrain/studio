@@ -3,7 +3,7 @@
  * conversation history, and model selection.
  */
 
-import { CHAT_MODELS, DEFAULT_CHAT_MODEL, premiumModelsAllowed } from '~~/shared/utils/ai-models'
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, premiumModelsAllowed, resolveChatModelId } from '~~/shared/utils/ai-models'
 
 export interface ToolCall {
   id: string
@@ -238,15 +238,27 @@ function useModelPersistence(selectedModel: Ref<string>) {
 
   function read(id: string | null): string | null {
     const stored = (id && localStorage.getItem(MODEL_KEY_PREFIX + id)) || localStorage.getItem(MODEL_KEY_LAST)
-    // A model that has left the catalog would keep showing a stale label: the
-    // server quietly falls back to an allowed one (chat.post.ts), the picker
-    // would not. Drop unknown ids instead of restoring them.
-    return stored && CHAT_MODELS.some(m => m.id === stored) ? stored : null
+    // A model that has left the catalog would keep showing a stale label. A
+    // retired ID of a catalog family moves to that family's current model
+    // (saved straight away in `hydrate`); anything else is dropped and
+    // the default stays, as on the server (chat.post.ts).
+    return resolveChatModelId(stored)
   }
 
   function hydrate(id: string | null) {
     const stored = read(id)
-    if (stored) selectedModel.value = stored
+    if (!stored) return
+    // The watch below only fires on a change, so a retired ID that resolves
+    // to the model already selected would otherwise stay in storage.
+    if (id) resaveRetired(MODEL_KEY_PREFIX + id)
+    resaveRetired(MODEL_KEY_LAST)
+    selectedModel.value = stored
+  }
+
+  function resaveRetired(key: string) {
+    const raw = localStorage.getItem(key)
+    const current = resolveChatModelId(raw)
+    if (raw && current && current !== raw) localStorage.setItem(key, current)
   }
 
   // Navigating between two projects reuses the page component, so the initial
@@ -740,10 +752,14 @@ export function useChat(options?: {
         // turn was cut off before a pending save/create ran. Give it its
         // own localized message instead of the generic send failure. Any
         // partial text already streamed stays in the bubble.
+        // A refusal (the model's safety classifiers declined) gets its own
+        // message too: retrying the same text will not help.
         error.value = event.code === 'output_truncated'
           ? t('chat.output_truncated')
-          // Other SSE error events may carry raw backend messages — use fallback
-          : t('chat.send_error')
+          : event.code === 'refused'
+            ? t('chat.refused')
+            // Other SSE error events may carry raw backend messages — use fallback
+            : t('chat.send_error')
         streamErrored = true
         streamTick.value++
         break

@@ -228,13 +228,20 @@ export const THINKING_BINDING_BETA = 'thinking-binding-controls-2026-08-01'
 /**
  * Thinking parameters for a model (catalog `thinking` mode).
  *
- * `disabled` — sent explicitly, not merely omitted: newer models
- * (Sonnet 5+) default to adaptive thinking when the field is absent.
- * Thinking blocks are also left out of the replayed messages: a
- * conversation that switched from a thinking model keeps them in its
- * rows, and a model running without thinking has no use for them.
+ * `disabled` — only for model IDs outside the catalog. Sent explicitly,
+ * not merely omitted: newer models default to adaptive thinking when the
+ * field is absent. Thinking blocks are also left out of the replayed
+ * messages: a conversation that switched from a thinking model keeps
+ * them in its rows, and a model running without thinking has no use
+ * for them.
  *
- * `adaptive` — for a model that rejects `disabled` (Opus 5.5). Effort
+ * `adaptive` — every catalog model (Opus 5.5 and Sonnet 5.5 answer
+ * `disabled` with a 400; Haiku 5.5 is steered by effort). Sonnet 5.5's
+ * own thinking-off mode, `between_tools`, is not used: it does not take
+ * `block_binding`, which the replay below depends on. No request sets
+ * `budget_tokens`, sampling parameters (`temperature` / `top_p` /
+ * `top_k`), a forced `tool_choice`, an assistant prefill or `fallbacks`
+ * — each is a 400 on at least one 5.5 model. Effort
  * is set explicitly. Thinking blocks are kept, in the tool loop and on
  * replay: the model needs them to continue after a tool call. They are
  * signed against the conversation prefix, and Studio's replay does

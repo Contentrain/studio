@@ -157,7 +157,7 @@ export interface AIStreamEvent {
   toolName?: string
   toolInput?: unknown
   // message_start / message_end
-  stopReason?: 'end_turn' | 'tool_use' | 'max_tokens'
+  stopReason?: 'end_turn' | 'tool_use' | 'max_tokens' | 'refusal'
   usage?: AIUsage
   // error
   error?: string
@@ -180,7 +180,7 @@ export interface AICompletionRequest {
 
 export interface AICompletionResponse {
   content: AIContentBlock[]
-  stopReason: 'end_turn' | 'tool_use' | 'max_tokens'
+  stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'refusal'
   usage: AIUsage
 }
 

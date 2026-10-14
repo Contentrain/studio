@@ -22,11 +22,14 @@
  */
 import type { AIUsage } from '../providers/ai'
 import type { ModelPricing } from '../../shared/utils/ai-models'
+import type { MessageUsage, TokenBuckets } from '../../shared/utils/ai-credits'
 import {
   CACHE_WRITE_MULTIPLIER,
   cacheReadMultiplierFor,
   estimateMessageCostUsd,
   pricingForModel,
+  promptTokensOf,
+  ratesForPrompt,
 } from '../../shared/utils/ai-credits'
 import { thinkingModeFor } from '../../shared/utils/ai-models'
 
@@ -98,10 +101,19 @@ export interface PromptEstimate {
   fresh: number
 }
 
+/**
+ * The rates a call with this prompt pays: a model's long-prompt card
+ * (Haiku 5.5 over 100K) applies to the whole request, output included.
+ */
+export function ratesForEstimate(prompt: PromptEstimate, pricing: ModelPricing): ModelPricing {
+  return ratesForPrompt(pricing, prompt.cached + prompt.fresh)
+}
+
 export function promptCostUsd(prompt: PromptEstimate, pricing: ModelPricing): number {
+  const rates = ratesForEstimate(prompt, pricing)
   return (
-    prompt.fresh * pricing.inputPerMTok * CACHE_WRITE_MULTIPLIER
-    + prompt.cached * pricing.inputPerMTok * cacheReadMultiplierFor(pricing)
+    prompt.fresh * rates.inputPerMTok * CACHE_WRITE_MULTIPLIER
+    + prompt.cached * rates.inputPerMTok * cacheReadMultiplierFor(rates)
   ) / 1e6
 }
 
@@ -126,7 +138,7 @@ export function planCall(input: {
 }): CallPlan {
   const pricing = pricingForModel(input.model)
   const remaining = input.budget.maxUsd - input.spentUsd - (input.reserveUsd ?? 0) - promptCostUsd(input.prompt, pricing)
-  const affordable = Math.floor(remaining / (pricing.outputPerMTok / 1e6))
+  const affordable = Math.floor(remaining / (ratesForEstimate(input.prompt, pricing).outputPerMTok / 1e6))
   if (affordable < input.minOutputTokens) return { ok: false }
   const maxTokens = Math.min(input.maxOutputTokens, affordable)
   return { ok: true, maxTokens, limited: maxTokens < input.maxOutputTokens }
@@ -145,10 +157,11 @@ export function closeReserveUsd(model: string, prompt: PromptEstimate, maxOutput
     cached: prompt.cached + prompt.fresh,
     fresh: maxOutputTokens + CLOSE_TOOL_RESULT_ALLOWANCE_TOKENS,
   }
-  return promptCostUsd(closePrompt, pricing) + outputFloorsFor(model).close * pricing.outputPerMTok / 1e6
+  return promptCostUsd(closePrompt, pricing) + outputFloorsFor(model).close * ratesForEstimate(closePrompt, pricing).outputPerMTok / 1e6
 }
 
-export function usageCostUsd(model: string, usage: AIUsage): number {
+/** List-price cost of token totals; `longPrompt` as in `MessageUsage`. */
+export function usageCostUsd(model: string, usage: AIUsage & { longPrompt?: TokenBuckets }): number {
   return estimateMessageCostUsd({ model, ...usage })
 }
 
@@ -186,10 +199,14 @@ function addUsage(a: AIUsage, b: Partial<AIUsage> | undefined): AIUsage {
  * arrive: `message_start` books the prompt, streamed text and tool
  * input book an output estimate, `message_end` replaces the estimate
  * with the real figures. `snapshot()` is what the turn has cost so far,
- * at any point, and is what the chat route settles in `finally`.
+ * at any point; `pricedUsage(model)` is the same with the per-request
+ * long-prompt split (`MessageUsage.longPrompt`) and is what the chat
+ * route settles in `finally`.
  */
 export class TurnUsageTracker {
   private completed: AIUsage = { ...ZERO_USAGE }
+  /** Each completed call on its own: a long-prompt card is chosen per request. */
+  private calls: AIUsage[] = []
   private inFlight: AIUsage | null = null
   private inFlightOutputChars = 0
 
@@ -206,6 +223,7 @@ export class TurnUsageTracker {
 
   endCall(usage: Partial<AIUsage> | undefined): void {
     this.completed = addUsage(this.completed, usage)
+    this.calls.push(addUsage(ZERO_USAGE, usage))
     this.inFlight = null
     this.inFlightOutputChars = 0
   }
@@ -215,13 +233,35 @@ export class TurnUsageTracker {
     return { ...this.completed }
   }
 
-  snapshot(): AIUsage {
-    if (!this.inFlight) return { ...this.completed }
+  /** The call in flight with its output estimate, or null. */
+  private inFlightEstimate(): AIUsage | null {
+    if (!this.inFlight) return null
     // Same ratio the history budget uses for ASCII text (~3.5 chars/token).
     const estimatedOutput = Math.ceil(this.inFlightOutputChars / 3.5)
-    return addUsage(this.completed, {
-      ...this.inFlight,
-      outputTokens: Math.max(this.inFlight.outputTokens, estimatedOutput),
-    })
+    return { ...this.inFlight, outputTokens: Math.max(this.inFlight.outputTokens, estimatedOutput) }
+  }
+
+  snapshot(): AIUsage {
+    const inFlight = this.inFlightEstimate()
+    return inFlight ? addUsage(this.completed, inFlight) : { ...this.completed }
+  }
+
+  /**
+   * `snapshot()` for pricing on `model`: when the model has a long-prompt
+   * card, `longPrompt` sums the calls whose own prompt crossed its
+   * threshold (the call in flight included — its prompt is known from
+   * `message_start`). Anthropic picks the card per request, so summed
+   * totals alone would misprice a multi-call turn.
+   */
+  pricedUsage(model: string): MessageUsage {
+    const totals = this.snapshot()
+    const long = pricingForModel(model).longPrompt
+    if (!long) return { model, ...totals }
+    const inFlight = this.inFlightEstimate()
+    let longPrompt: TokenBuckets = { ...ZERO_USAGE }
+    for (const call of inFlight ? [...this.calls, inFlight] : this.calls) {
+      if (promptTokensOf(call) > long.overTokens) longPrompt = addUsage(longPrompt, call)
+    }
+    return { model, ...totals, longPrompt }
   }
 }
