@@ -327,7 +327,11 @@ describe('billing webhook integration', () => {
     })
     const handler = await mockPluginAndLoadHandler()
     await handler({ context: {} } as never)
-    expect(setPaymentAccountCreditUnit).toHaveBeenCalledWith({ workspaceId: 'ws-1', unit: '0.01', periodKey: '2026-09-15' })
+    // The period being consumed is read against today's clock (a fixed key goes stale once the period ends):
+    // the key the quota gates count in for this subscription right now.
+    const { usagePeriodFrom } = await import('../../server/utils/usage-period')
+    const periodKey = usagePeriodFrom({ subscription_status: 'active', current_period_start: '2026-09-15T00:00:00.000Z', current_period_end: '2026-10-15T00:00:00.000Z' }).key
+    expect(setPaymentAccountCreditUnit).toHaveBeenCalledWith({ workspaceId: 'ws-1', unit: '0.01', periodKey })
   })
 
   it('keeps the Migrate mark next to what the account already records', async () => {
