@@ -49,6 +49,10 @@
       "description": "Optional quoted user text, usually a single {param}; rendered as plain escaped text",
       "type": "string"
     },
+    "reply": {
+      "description": "Paragraph that invites a reply, added after the notes only when NUXT_EMAIL_REPLY_TO is set — same markup as lead",
+      "type": "text"
+    },
     "slug": {
       "description": "Template identifier used in code (e.g. invite-added)",
       "required": true,

@@ -120,7 +120,13 @@ interface EmailTemplateEntry {
   cta_label?: string
   cta_url?: string
   notes?: string
+  reply?: string
   about?: string
+}
+
+/** Where replies go (`NUXT_EMAIL_REPLY_TO`); empty when unset, and then no email invites a reply. */
+function emailReplyTo(): string {
+  return String(useRuntimeConfig().emailReplyTo ?? '').trim()
 }
 
 export interface RenderedTemplate {
@@ -157,6 +163,11 @@ export function emailTemplate(
       return { label, value: rich(rest.join('|'), p) }
     })
     for (const f of extras?.facts ?? []) facts.push({ label: f.label, value: rich('{value}', { value: f.value }) })
+    // The "reply to this email" line only when a reply reaches someone: the Reply-To header is set from the same key.
+    const notes = [
+      ...(entry.notes ? entry.notes.split(/\n{2,}/) : []),
+      ...(entry.reply && emailReplyTo() ? [entry.reply] : []),
+    ]
     const rendered = renderEmail({
       heading: rich(entry.heading ?? subject, p),
       ...(entry.preheader ? { preheader: rich(entry.preheader, p) } : {}),
@@ -164,7 +175,7 @@ export function emailTemplate(
       ...(facts.length ? { facts } : {}),
       ...(entry.quote ? { quote: rich(entry.quote, p).text } : {}),
       ...(entry.cta_label && /^https?:\/\//i.test(ctaUrl) ? { cta: { label: entry.cta_label, url: ctaUrl } } : {}),
-      ...(entry.notes ? { notes: entry.notes.split(/\n{2,}/).map(n => rich(n.trim(), p)) } : {}),
+      ...(notes.length ? { notes: notes.map(n => rich(n.trim(), p)) } : {}),
       ...(entry.about ? { about: entry.about } : {}),
     }, emailChrome(locale), emailEnv())
     return { subject, ...rendered }
