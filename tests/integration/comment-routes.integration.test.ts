@@ -241,7 +241,7 @@ describe('public comment routes', () => {
         comment: { ...approvedRoot, id: '33333333-3333-4333-8333-333333333333', body: input.body, author_name: input.author_name, status: input.status },
       }))
       vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
-      vi.stubGlobal('emailTemplate', vi.fn((slug: string, params: Record<string, string>) => ({ subject: `${slug}:${params.projectName}`, body: `${params.authorName}|${params.excerptHtml}|${params.moderationUrl}|${params.entryId}` })))
+      vi.stubGlobal('emailTemplate', vi.fn((slug: string, params: Record<string, string>) => ({ subject: `${slug}:${params.projectName}`, html: `${params.authorName}|${params.excerpt}|${params.moderationUrl}|${params.entryId}`, text: '' })))
       vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://studio.test' } }))
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
         getProjectById: vi.fn().mockResolvedValue({ id: PROJECT, workspace_id: WORKSPACE, repo_full_name: 'acme/site', content_root: '.contentrain' }),
@@ -264,13 +264,13 @@ describe('public comment routes', () => {
       return { sendEmail, listWorkspaceNotificationRecipients }
     }
 
-    it('a comment waiting for approval asks for review, escaped, with a link to the project', async () => {
+    it('a comment waiting for approval asks for review with the raw text (the layout escapes it), with a link to the project', async () => {
       const { sendEmail, listWorkspaceNotificationRecipients } = await submit({ requireApproval: true }, { author: 'Ada', body: 'a < b & c' })
       expect(listWorkspaceNotificationRecipients).toHaveBeenCalledWith(WORKSPACE)
       expect(sendEmail).toHaveBeenCalledTimes(2)
       expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'owner@acme.dev', subject: 'comment-pending:acme/site' }))
       expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'admin@acme.dev' }))
-      expect(sendEmail.mock.calls[0]![0].html).toBe('Ada|a &lt; b &amp; c|https://studio.test/w/acme/projects/project-1|entry-1')
+      expect(sendEmail.mock.calls[0]![0].html).toBe('Ada|a < b & c|https://studio.test/w/acme/projects/project-1|entry-1')
     })
 
     it('an auto-approved comment says it is already published', async () => {

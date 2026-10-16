@@ -545,7 +545,7 @@ export function createManagedAuthProvider(): AuthProvider {
 
       // Copy lives in the email-templates content model (auth-magic-link).
       const tpl = emailTemplate('auth-magic-link', { url })
-      await emailProvider.sendEmail({ to: email_, subject: tpl.subject, html: tpl.body })
+      await emailProvider.sendEmail({ to: email_, subject: tpl.subject, html: tpl.html, text: tpl.text })
     },
 
     async inviteUserByEmail(email, options) {
@@ -566,7 +566,7 @@ export function createManagedAuthProvider(): AuthProvider {
 
       // Copy lives in the email-templates content model (auth-invite).
       const tpl = emailTemplate('auth-invite', { url })
-      await emailProvider.sendEmail({ to: row.email, subject: tpl.subject, html: tpl.body })
+      await emailProvider.sendEmail({ to: row.email, subject: tpl.subject, html: tpl.html, text: tpl.text })
 
       return { userId: row.id }
     },

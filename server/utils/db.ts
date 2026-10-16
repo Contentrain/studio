@@ -218,7 +218,8 @@ export async function inviteOrLookupUser(
         emailProvider.sendEmail({
           to: email,
           subject: tpl.subject,
-          html: tpl.body,
+          html: tpl.html,
+          text: tpl.text,
         }).catch(() => { /* best-effort notification */ })
       }
     }

@@ -160,6 +160,17 @@ export default defineNitroPlugin(() => {
       warnings.push('NUXT_OAUTH_GITHUB_CLIENT_ID differs from NUXT_GITHUB_CLIENT_ID — GitHub login must use the GitHub App\'s client credentials, otherwise installing or connecting the App fails with 403')
   }
 
+  // Emails — every Studio email links to and loads its logo from public.siteUrl (`server/utils/email-layout.ts`). Without an
+  // absolute address an email's button is left out (no dead relative link) and its logo breaks; over http in production
+  // inbox providers refuse the logo. Said at boot, once, rather than an email at a time.
+  if (config.resend?.apiKey) {
+    const emailSiteUrl = String((config.public as { siteUrl?: string } | undefined)?.siteUrl ?? '').trim()
+    if (!/^https?:\/\/[^/\s]+/i.test(emailSiteUrl))
+      warnings.push('NUXT_PUBLIC_SITE_URL is not an absolute URL — emails go out without their button and with a broken logo')
+    else if (process.env.NODE_ENV === 'production' && !emailSiteUrl.startsWith('https://'))
+      warnings.push('NUXT_PUBLIC_SITE_URL is not https — email logos and links are served over http (inboxes may block the logo)')
+  }
+
   // Anthropic — optional (BYOA fallback available)
   if (!config.anthropic.apiKey)
     warnings.push('NUXT_ANTHROPIC_API_KEY is not set — chat requires user BYOA keys')

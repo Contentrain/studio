@@ -5,16 +5,48 @@
   "domain": "system",
   "i18n": true,
   "title_field": "name",
-  "description": "Transactional email templates with subject and HTML body. Supports {variable} interpolation at runtime.",
+  "description": "Transactional email copy. Each entry fills the shared layout (server/utils/email-layout.ts): heading, lead, facts, quote, button, notes. Values are escaped at render time; no HTML.",
   "fields": {
-    "body": {
-      "description": "Email HTML body — supports {variable} interpolation",
+    "about": {
+      "description": "What the email is about, for the footer (\"This email is about …\"); plain text",
+      "type": "string"
+    },
+    "cta_label": {
+      "description": "Button label",
+      "type": "string"
+    },
+    "cta_url": {
+      "description": "Button URL, a single {param} that holds an absolute URL",
+      "type": "string"
+    },
+    "facts": {
+      "description": "Optional key/value rows, one per line as \"Label|value\" — values support {param}, **bold**, `code`",
+      "type": "text"
+    },
+    "heading": {
+      "description": "Email heading (h1) — supports {param} interpolation",
       "required": true,
-      "type": "richtext"
+      "type": "string"
+    },
+    "lead": {
+      "description": "Lead paragraph — {param} interpolation, **bold**, `code`, [label]({urlParam})",
+      "type": "text"
     },
     "name": {
       "description": "Human-readable template name for admin reference",
       "required": true,
+      "type": "string"
+    },
+    "notes": {
+      "description": "Secondary paragraphs below the rule, separated by a blank line — same markup as lead",
+      "type": "text"
+    },
+    "preheader": {
+      "description": "Hidden inbox preview text — supports {param} interpolation",
+      "type": "string"
+    },
+    "quote": {
+      "description": "Optional quoted user text, usually a single {param}; rendered as plain escaped text",
       "type": "string"
     },
     "slug": {
@@ -24,7 +56,7 @@
       "unique": true
     },
     "subject": {
-      "description": "Email subject line — supports {variable} interpolation",
+      "description": "Email subject line — supports {param} interpolation (plain text)",
       "required": true,
       "type": "string"
     }

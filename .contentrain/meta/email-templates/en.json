@@ -68,5 +68,20 @@
     "source": "import",
     "status": "draft",
     "updated_by": "contentrain-mcp"
+  },
+  "supabase-confirmation": {
+    "source": "human",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "supabase-invite": {
+    "source": "human",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "supabase-magic-link": {
+    "source": "human",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
   }
 }

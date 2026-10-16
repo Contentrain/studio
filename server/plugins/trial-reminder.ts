@@ -117,7 +117,8 @@ async function runTrialReminders(): Promise<void> {
         await email.sendEmail({
           to: user.email,
           subject: tpl.subject,
-          html: tpl.body,
+          html: tpl.html,
+          text: tpl.text,
         })
         await db.setTrialReminderStage(ws.id as string, window.stage)
       }

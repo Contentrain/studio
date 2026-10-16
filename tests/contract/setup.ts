@@ -21,7 +21,8 @@ vi.stubGlobal('errorMessage', (key: string, _params?: Record<string, unknown>) =
 // provider's URL/token behavior, not template copy.
 vi.stubGlobal('emailTemplate', (slug: string, params?: Record<string, string | number>) => ({
   subject: slug,
-  body: `<p><a href="${params?.url ?? ''}">${slug}</a></p>`,
+  html: `<p><a href="${params?.url ?? ''}">${slug}</a></p>`,
+  text: `${slug}: ${params?.url ?? ''}`,
 }))
 
 vi.stubGlobal('useRuntimeConfig', () => ({

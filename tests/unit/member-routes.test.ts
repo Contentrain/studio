@@ -12,7 +12,8 @@ describe('member routes', () => {
     vi.stubGlobal('errorMessage', vi.fn((key: string) => key))
     vi.stubGlobal('emailTemplate', vi.fn((slug: string) => ({
       subject: `${slug}.subject`,
-      body: `<p>${slug}.body</p>`,
+      html: `<p>${slug}.body</p>`,
+      text: `${slug}.body`,
     })))
     vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({
       user: { id: 'user-1' },
