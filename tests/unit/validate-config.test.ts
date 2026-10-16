@@ -220,4 +220,29 @@ describe('00.validate-config boot validation', () => {
     const warned = warnSpy.mock.calls.some(call => String(call[0]).includes('NUXT_SESSION_PASSWORD'))
     expect(warned).toBe(false)
   })
+
+  it('warns when emails are on and the public site URL cannot carry their links and logo', async () => {
+    const emailWarn = async (siteUrl: string, env?: string) => {
+      vi.resetModules()
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      warnSpy.mockClear()
+      if (env) vi.stubEnv('NODE_ENV', env)
+      const plugin = await loadPlugin(baseConfig({ resend: { apiKey: 're_x' }, public: { siteUrl } }))
+      expect(runAndCapture(plugin)).toBeNull()
+      vi.unstubAllEnvs()
+      return warnSpy.mock.calls.map(call => String(call[0])).filter(w => w.includes('email'))
+    }
+    expect(await emailWarn('')).toEqual([expect.stringContaining('not an absolute URL')])
+    expect(await emailWarn('/studio')).toEqual([expect.stringContaining('not an absolute URL')])
+    expect(await emailWarn('http://studio.example.com', 'production')).toEqual([expect.stringContaining('not https')])
+    expect(await emailWarn('http://localhost:3000', 'development')).toEqual([])
+    expect(await emailWarn('https://studio.example.com', 'production')).toEqual([])
+  })
+
+  it('stays quiet about the site URL when no email provider is configured', async () => {
+    const warnSpy = vi.spyOn(console, 'warn')
+    const plugin = await loadPlugin(baseConfig({ public: { siteUrl: '' } }))
+    expect(runAndCapture(plugin)).toBeNull()
+    expect(warnSpy.mock.calls.some(call => String(call[0]).includes('email'))).toBe(false)
+  })
 })
