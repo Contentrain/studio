@@ -76,7 +76,7 @@ export function resolveProjectDefaultLocale(brain: { config?: { locales?: { defa
   return typeof value === 'string' && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value) ? value : 'en'
 }
 
-/** Short, escaped field summary for a notification email (first few string values). */
+/** Short field summary for a notification email (first few string values). */
 export function summarizeSubmissionData(data: Record<string, unknown>, max = 6): Array<{ field: string, value: string }> {
   const rows: Array<{ field: string, value: string }> = []
   for (const [field, raw] of Object.entries(data)) {
@@ -91,10 +91,6 @@ export function summarizeSubmissionData(data: Record<string, unknown>, max = 6):
     rows.push({ field, value })
   }
   return rows
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 /**
@@ -123,19 +119,15 @@ export async function notifyFormSubmission(input: {
   const config = useRuntimeConfig()
   const submissionsUrl = `${config.public.siteUrl}/w/${input.workspaceSlug}/projects/${input.projectId}`
   const rows = summarizeSubmissionData(input.data)
-  const summaryHtml = rows.length > 0
-    ? `<table>${rows.map(r => `<tr><td><strong>${escapeHtml(r.field)}</strong></td><td>${escapeHtml(r.value)}</td></tr>`).join('')}</table>`
-    : ''
 
   const tpl = emailTemplate('form-submitted', {
     workspaceName: input.workspaceName,
     projectName: input.projectName,
     modelName: input.modelName,
-    summaryHtml,
     submissionsUrl,
-  })
+  }, 'en', { facts: rows.map(r => ({ label: r.field, value: r.value })) })
 
-  await Promise.all(recipients.map(r => email.sendEmail({ to: r.email, subject: tpl.subject, html: tpl.body }).catch(() => {})))
+  await Promise.all(recipients.map(r => email.sendEmail({ to: r.email, subject: tpl.subject, html: tpl.html, text: tpl.text }).catch(() => {})))
 }
 
 /**

@@ -190,6 +190,12 @@ export default defineNuxtConfig({
     },
     emailSenderAddress: '', // NUXT_EMAIL_SENDER_ADDRESS
     emailSenderName: '', // NUXT_EMAIL_SENDER_NAME
+    emailReplyTo: 'support@contentrain.io', // NUXT_EMAIL_REPLY_TO — where a reply to any Studio email goes (copy says "reply to this email")
+    emailLinks: {
+      websiteUrl: 'https://contentrain.io', // NUXT_EMAIL_LINKS_WEBSITE_URL — footer links of every email
+      githubUrl: 'https://github.com/Contentrain', // NUXT_EMAIL_LINKS_GITHUB_URL
+      privacyUrl: 'https://contentrain.io/legal/privacy-policy', // NUXT_EMAIL_LINKS_PRIVACY_URL
+    },
   },
 
   alias: {

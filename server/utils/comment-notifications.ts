@@ -1,5 +1,3 @@
-import { escapeHtml } from './email-layout'
-
 const EXCERPT_LENGTH = 400
 
 /**
@@ -32,14 +30,14 @@ export async function notifyCommentSubmitted(input: {
   const excerpt = input.body.length > EXCERPT_LENGTH ? `${input.body.slice(0, EXCERPT_LENGTH).trimEnd()}…` : input.body
 
   const tpl = emailTemplate(input.status === 'pending' ? 'comment-pending' : 'comment-published', {
-    workspaceName: escapeHtml(input.workspaceName),
-    projectName: escapeHtml(input.projectName),
-    modelName: escapeHtml(input.modelId),
-    entryId: escapeHtml(input.entryId),
-    authorName: escapeHtml(input.authorName),
-    excerptHtml: escapeHtml(excerpt),
+    workspaceName: input.workspaceName,
+    projectName: input.projectName,
+    modelName: input.modelId,
+    entryId: input.entryId,
+    authorName: input.authorName,
+    excerpt,
     moderationUrl: `${config.public.siteUrl}/w/${input.workspaceSlug}/projects/${input.projectId}`,
   })
 
-  await Promise.all(recipients.map(r => email.sendEmail({ to: r.email, subject: tpl.subject, html: tpl.body }).catch(() => {})))
+  await Promise.all(recipients.map(r => email.sendEmail({ to: r.email, subject: tpl.subject, html: tpl.html, text: tpl.text }).catch(() => {})))
 }

@@ -96,7 +96,7 @@ type AlertDatabase = Pick<DatabaseProvider,
 
 export interface UsageAlertDeps {
   db: AlertDatabase
-  sendEmail: (message: { to: string, subject: string, html: string }) => Promise<unknown>
+  sendEmail: (message: { to: string, subject: string, html: string, text?: string }) => Promise<unknown>
   ownerEmail: (ownerId: string) => Promise<string | null>
   siteUrl: string
   now?: Date
@@ -210,7 +210,7 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
           billingUrl,
         })
         try {
-          await deps.sendEmail({ to, subject: tpl.subject, html: tpl.body })
+          await deps.sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
           sent.push({ ...key, template: alert.template })
         }
         catch (err) {

@@ -66,7 +66,8 @@ export default defineEventHandler(async (event) => {
       await emailProvider.sendEmail({
         to: invitedEmail,
         subject: tpl.subject,
-        html: tpl.body,
+        html: tpl.html,
+        text: tpl.text,
       })
       emailSent = true
     }

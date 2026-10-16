@@ -13,6 +13,7 @@ export function createResendEmailProvider(apiKey: string): EmailProvider {
   const senderEmail = (config.emailSenderAddress as string) || 'noreply@contentrain.io'
   const senderName = (config.emailSenderName as string) || 'Contentrain Studio'
   const defaultFrom = `${senderName} <${senderEmail}>`
+  const replyTo = ((config.emailReplyTo as string) || '').trim()
 
   return {
     async sendEmail(options) {
@@ -21,6 +22,8 @@ export function createResendEmailProvider(apiKey: string): EmailProvider {
         to: options.to,
         subject: options.subject,
         html: options.html,
+        ...(options.text ? { text: options.text } : {}),
+        ...(replyTo ? { replyTo } : {}),
       })
     },
   }

@@ -66,7 +66,7 @@ function stubFormGlobals(options: {
     turnstile: { secretKey: '' },
     resend: { apiKey: 'test' },
   }))
-  vi.stubGlobal('emailTemplate', vi.fn((slug: string, params: Record<string, string>) => ({ subject: `${slug}:${params.modelName}`, body: params.summaryHtml ?? '' })))
+  vi.stubGlobal('emailTemplate', vi.fn((slug: string, params: Record<string, string>, _locale?: string, extras?: { facts?: Array<{ label: string, value: string }> }) => ({ subject: `${slug}:${params.modelName}`, html: (extras?.facts ?? []).map(f => `${f.label}=${f.value}`).join(';'), text: '' })))
 
   return { form, features }
 }

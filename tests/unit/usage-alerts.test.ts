@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { planUsageAlerts, runUsageAlerts } from '../../server/utils/usage-alerts'
 import type { UsageAlertKey } from '../../server/providers/database'
 
@@ -55,6 +55,14 @@ function pricesByteMeters(db: ReturnType<typeof fakeDb>) {
     plugin_metadata: { billable_meters: ['ai_credits_1c', 'api_credits_1c', 'mcp_calls', 'form_submissions', 'cdn_origin_gb', 'media_storage_gb_months'] },
   })
 }
+
+// The email layout reads the public base URL and footer links from runtime config.
+beforeEach(() => {
+  vi.stubGlobal('useRuntimeConfig', () => ({
+    public: { siteUrl: 'https://studio.test' },
+    emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+  }))
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -122,7 +130,11 @@ describe('usage alerts', () => {
   })
 
   it('CDN with overage on: 100 % says it is billed, the 10x ceiling says it stopped — and offers an upgrade, not overage', async () => {
-    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+    vi.stubGlobal('useRuntimeConfig', () => ({
+      cdn: { originMeter: true, storageMeter: true },
+      public: { siteUrl: 'https://studio.test' },
+      emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+    }))
     // Pro: 60 GB, overage on → billed past 60, stops at 600.
     const billed = fakeDb({ cdn: 65 }, { overage_settings: { cdn_bandwidth: true } })
     pricesByteMeters(billed)
@@ -142,7 +154,11 @@ describe('usage alerts', () => {
   })
 
   it('storage with overage on stops at 10x the plan, and that alert re-arms well below the ceiling', async () => {
-    vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
+    vi.stubGlobal('useRuntimeConfig', () => ({
+      cdn: { originMeter: true, storageMeter: true },
+      public: { siteUrl: 'https://studio.test' },
+      emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+    }))
     const at = (gb: number) => [{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: { media_storage: true }, media_storage_bytes: gb * 1024 ** 3 }]
     const db = fakeDb({}, { overage_settings: { media_storage: true }, media_storage_bytes: 251 * 1024 ** 3 })
     pricesByteMeters(db)
@@ -228,7 +244,7 @@ describe('usage alerts', () => {
     await runUsageAlerts(deps(db, sendEmail))
     const html = (sendEmail.mock.calls[0]![0] as { html: string }).html
     expect(html).toContain('Storage does not reset each month')
-    expect(html).not.toContain('resets on <strong></strong>')
+    expect(html).not.toContain('The count resets on')
   })
 
   it('skips a meter it cannot read instead of counting it as 0, and still alerts on the others (AI-15)', async () => {

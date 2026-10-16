@@ -249,7 +249,8 @@ async function sendDlqAlert(
       emailProvider.sendEmail({
         to: admin.email,
         subject: tpl.subject,
-        html: tpl.body,
+        html: tpl.html,
+        text: tpl.text,
       }).catch(() => { /* best-effort */ })
     }
   }

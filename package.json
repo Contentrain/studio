@@ -19,6 +19,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "check:strings": "node ./scripts/check-dictionary-keys.mjs",
+    "email:previews": "EMAIL_PREVIEW_DIR=${EMAIL_PREVIEW_DIR:-.tmp/email-previews} vitest run --project unit tests/unit/email-templates.test.ts -t previews",
+    "email:supabase": "EMAIL_SUPABASE_WRITE=1 vitest run --project unit tests/unit/email-templates.test.ts -t \"supabase auth templates\"",
     "test": "vitest --project unit --project integration --project nuxt",
     "test:watch": "vitest --project unit --project integration --project nuxt",
     "test:unit": "vitest run --project unit",

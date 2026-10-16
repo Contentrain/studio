@@ -83,6 +83,7 @@ Managed + postgres pair (plain PostgreSQL, no Supabase):
 - Set `NUXT_RESEND_API_KEY` (optional on the supabase pair; **required** on the managed pair — magic link + invites)
 - Set `NUXT_EMAIL_SENDER_ADDRESS`
 - Set `NUXT_EMAIL_SENDER_NAME`
+- Optional: `NUXT_EMAIL_REPLY_TO` (default `support@contentrain.io`) and `NUXT_EMAIL_LINKS_*` (footer links). Emails load their logo from `<NUXT_PUBLIC_SITE_URL>/email/logo.png`, so the public URL must be reachable from inbox providers
 - If local Supabase auth SMTP is in use, also set `RESEND_API_KEY`
 
 ### AI

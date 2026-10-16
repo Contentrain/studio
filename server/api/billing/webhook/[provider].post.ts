@@ -221,7 +221,8 @@ async function sendBillingEmail(
   await email.sendEmail({
     to: user.email,
     subject: tpl.subject,
-    html: tpl.body,
+    html: tpl.html,
+    text: tpl.text,
   }).catch((err) => {
     // eslint-disable-next-line no-console -- surface delivery failures without aborting the webhook
     console.error('[billing-webhook] Failed to send', templateSlug, 'email:', err)
