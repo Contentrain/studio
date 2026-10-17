@@ -11,7 +11,8 @@
 import { OVERAGE_SETTINGS_KEYS, OVERAGE_PRICING } from '../../../../shared/utils/license'
 import { USAGE_METER_LIST } from '../../../../shared/utils/usage-meters'
 import { isOverageSellable } from '../../../../server/utils/overage'
-import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import { resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
+import { companionUsageOn } from '../../../../server/utils/companion-subscription'
 import { syncOverageOnSince } from '../../../../server/utils/overage-meter-gate'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
 
@@ -24,7 +25,9 @@ function lockedError(lock: OverageLock) {
           ? new Date(lock.until).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
           : 'the end of your trial',
       })
-    : errorMessage(lock.reason === 'yearly_plan' ? 'billing.overage_locked_yearly' : 'billing.overage_locked_subscription')
+    : errorMessage(lock.reason === 'yearly_plan'
+        ? 'billing.overage_locked_yearly'
+        : lock.reason === 'yearly_pending' ? 'billing.overage_locked_yearly_pending' : 'billing.overage_locked_subscription')
   return createError({ statusCode: 409, message, data: { code: 'overage_locked', reason: lock.reason, until: lock.until } })
 }
 
@@ -71,7 +74,7 @@ export default defineEventHandler(async (event) => {
 
   // What the subscription can bill. Decided here, never by the client: a
   // toggle the provider cannot invoice would sell usage for free.
-  const locks = resolveOverageLocks(account as OverageLockAccount)
+  const locks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount), companionUsageOn())
 
   // Validate keys — only accept known overage settings keys
   const validUpdates: Record<string, boolean> = {}

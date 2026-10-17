@@ -829,8 +829,9 @@ async function syncProduct(
 /**
  * The monthly usage product a yearly plan's companion subscription is opened on (`ensureCompanionSubscription` in
  * the Polar plugin): a free base price, the plan's metered prices and its monthly meter credits, so overage is billed
- * monthly whatever the plan's billing frequency. Create-if-missing; an existing product only has its meter credits
- * reconciled. Metered price drift is not rotated here: it is reported, then fixed in the dashboard.
+ * monthly whatever the plan's billing frequency. Create-if-missing; an existing product gets the metered prices it
+ * lacks (a meter sold after it was created) and has its meter credits reconciled. Metered price drift is not rotated
+ * here: it is reported, then fixed in the dashboard.
  * Nothing on a subscription uses it until `NUXT_POLAR_COMPANION_USAGE` is on.
  */
 async function syncCompanionProduct(
@@ -845,11 +846,33 @@ async function syncCompanionProduct(
     summary.products[`${slug}#companion`] = existing.id
     const attached = new Set(existing.prices.filter(p => !isPriceArchived(p)).filter(p => getPriceType(p) === 'metered_unit').map(p => getMeteredPriceMeterId(p)))
     const missing = blueprint.filter(m => !attached.has(m.meterId))
-    if (missing.length > 0) {
-      summary.warnings.push(`"${name}" has no metered price for: ${missing.map(m => m.meterName).join(', ')}. Add them in the Polar dashboard (archive-and-recreate is not automated for the companion).`)
+    if (missing.length === 0) {
+      console.log(`  ✓ product "${name}" in sync (${existing.id})`)
+    }
+    else if (!APPLY) {
+      console.log(`  ~ product "${name}" would be updated — +${missing.length} metered price(s): ${missing.map(m => m.meterName).join(', ')}`)
     }
     else {
-      console.log(`  ✓ product "${name}" in sync (${existing.id})`)
+      // Same write as the monthly products: every active price kept by id (the free base and the metered prices it
+      // already sells, which its subscriptions use), the missing ones appended. A companion opened before this keeps its
+      // old prices (Polar never moves a subscription), so this runs before companions are switched on.
+      try {
+        await polar.products.update({
+          id: existing.id,
+          productUpdate: {
+            prices: [
+              ...existing.prices.filter(p => !isPriceArchived(p)).map(p => ({ id: (p as unknown as ProductPriceRow).id })),
+              ...missing.map(m => ({ amountType: 'metered_unit' as const, meterId: m.meterId, unitAmount: m.unitAmountCents })),
+            ],
+          },
+        })
+        console.log(`  ~ product "${name}" updated (${existing.id}) — +${missing.length} metered price(s): ${missing.map(m => m.meterName).join(', ')}`)
+      }
+      catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        summary.warnings.push(`Failed to add metered prices to "${name}": ${msg}`)
+        console.error(`  ✗ product "${name}" update failed: ${msg}`)
+      }
     }
     await syncMeterCredits(slug, existing.id, meterIdByName, existing.benefits ?? [], 'companion')
     return

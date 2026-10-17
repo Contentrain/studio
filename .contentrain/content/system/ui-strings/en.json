@@ -120,6 +120,7 @@
   "billing.overage_locked_trial": "Available after your trial ends on {date}",
   "billing.overage_locked_trial_undated": "Available after your trial ends",
   "billing.overage_locked_yearly": "Not available on yearly plans yet — usage stops at your limit and resets every month",
+  "billing.overage_locked_yearly_pending": "Billed monthly on yearly plans — being set up; until then usage stops at your limit and resets every month",
   "billing.overage_not_available": "This limit is a hard cap — extra usage is not sold on this plan.",
   "billing.overage_requires_subscription": "Overage billing requires an active subscription with a payment method on file.",
   "billing.overage_unit_price": "{price} {unit} past the limit",

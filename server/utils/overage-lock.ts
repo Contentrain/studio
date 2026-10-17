@@ -34,7 +34,7 @@ import { OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
 import { USAGE_METERS, USAGE_METER_LIST } from '../../shared/utils/usage-meters'
 import { CURRENT_CREDIT_UNIT, creditTermsFor, creditUnitFromMeters } from '../../shared/utils/credit-unit'
 
-export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan'
+export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan' | 'yearly_pending'
 
 export interface OverageLock {
   reason: OverageLockReason
@@ -110,6 +110,17 @@ export function readBillableMeters(pluginMetadata: unknown): string[] | null {
   const companion = readCompanionMeters(pluginMetadata)
   if (!companion.length) return own
   return [...new Set([...(own ?? []), ...companion])].toSorted()
+}
+
+/**
+ * The locks as shown to the workspace. With companion usage subscriptions on, a yearly plan's lock is only waiting:
+ * its companion opens on the plan's next event or the reconciler's run (`companion-subscription.ts`) and lifts it, so
+ * `yearly_plan` ("not available on yearly plans") becomes `yearly_pending` ("billed monthly, opening"). With them
+ * off, yearly plans have no overage and the lock says so.
+ */
+export function withCompanionPending(locks: Record<string, OverageLock>, companionUsage: boolean): Record<string, OverageLock> {
+  if (!companionUsage) return locks
+  return Object.fromEntries(Object.entries(locks).map(([key, lock]) => [key, lock.reason === 'yearly_plan' ? { ...lock, reason: 'yearly_pending' as const } : lock]))
 }
 
 /** Locks every `requiresKnownPrice` toggle not already locked. */

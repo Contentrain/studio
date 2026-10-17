@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isYearlyPeriod, reconcileOverageLock, resolveOverageLocks, withoutLockedOverage } from '../../server/utils/overage-lock'
+import { isYearlyPeriod, reconcileOverageLock, resolveOverageLocks, withCompanionPending, withoutLockedOverage } from '../../server/utils/overage-lock'
 
 // What a Polar subscription created before the credit meters carries, and
 // what one on current prices carries (`scripts/polar-sync.ts`).
@@ -213,5 +213,26 @@ describe('companion usage subscription meters', () => {
       account: yearly,
     })
     expect(result.settings).toEqual({ ai_messages: true })
+  })
+})
+
+describe('withCompanionPending', () => {
+  const yearly = resolveOverageLocks({
+    subscription_status: 'active',
+    current_period_start: '2026-10-04T00:00:00.000Z',
+    current_period_end: '2027-10-04T00:00:00.000Z',
+    plugin_metadata: { billable_meters: [] },
+  })
+
+  it('with companions on, shows a yearly lock as waiting for its monthly usage subscription', () => {
+    const shown = withCompanionPending(yearly, true)
+    expect(Object.values(shown).every(lock => lock.reason === 'yearly_pending')).toBe(true)
+    expect(Object.keys(shown)).toEqual(Object.keys(yearly))
+  })
+
+  it('with companions off, and for any other lock, changes nothing', () => {
+    expect(withCompanionPending(yearly, false)).toEqual(yearly)
+    const trial = resolveOverageLocks({ subscription_status: 'trialing', trial_ends_at: '2026-10-20T00:00:00.000Z' })
+    expect(withCompanionPending(trial, true)).toEqual(trial)
   })
 })

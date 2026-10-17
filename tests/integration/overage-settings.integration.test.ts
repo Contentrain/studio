@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const companion = vi.hoisted(() => ({ on: false }))
+vi.mock('../../server/utils/companion-subscription', async importOriginal => ({
+  ...await importOriginal<typeof import('../../server/utils/companion-subscription')>(),
+  companionUsageOn: () => companion.on,
+}))
+
 describe('overage settings API', () => {
   const updateWorkspace = vi.fn().mockResolvedValue({})
   const setPaymentAccountMetadataKey = vi.fn().mockResolvedValue(true)
@@ -275,6 +281,29 @@ describe('overage settings API', () => {
         data: { code: 'overage_locked', reason: 'yearly_plan' },
       })
       expect(updateWorkspace).not.toHaveBeenCalled()
+    })
+
+    it('with companion usage subscriptions on, says a yearly plan\'s overage is being set up, not unavailable', async () => {
+      companion.on = true
+      try {
+        mockDb({ paymentAccount: {
+          current_period_start: '2026-10-04T00:00:00.000Z',
+          current_period_end: '2027-10-04T00:00:00.000Z',
+          plugin_metadata: { billable_meters: [] },
+        } })
+        vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
+
+        const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+        await expect(handler({} as never)).rejects.toMatchObject({
+          statusCode: 409,
+          message: 'billing.overage_locked_yearly_pending',
+          data: { code: 'overage_locked', reason: 'yearly_pending' },
+        })
+        expect(updateWorkspace).not.toHaveBeenCalled()
+      }
+      finally {
+        companion.on = false
+      }
     })
 
     it('allows overage on a meter the subscription prices', async () => {
