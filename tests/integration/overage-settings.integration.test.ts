@@ -289,6 +289,7 @@ describe('overage settings API', () => {
         mockDb({ paymentAccount: {
           current_period_start: '2026-10-04T00:00:00.000Z',
           current_period_end: '2027-10-04T00:00:00.000Z',
+          plan: 'pro',
           plugin_metadata: { billable_meters: [] },
         } })
         vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
@@ -300,6 +301,25 @@ describe('overage settings API', () => {
           data: { code: 'overage_locked', reason: 'yearly_pending' },
         })
         expect(updateWorkspace).not.toHaveBeenCalled()
+      }
+      finally {
+        companion.on = false
+      }
+    })
+
+    it('with companion usage subscriptions on, a yearly plan whose product gets no companion still says yearly plans have none', async () => {
+      companion.on = true
+      try {
+        mockDb({ paymentAccount: {
+          plan: 'pro',
+          current_period_start: '2026-10-04T00:00:00.000Z',
+          current_period_end: '2027-10-04T00:00:00.000Z',
+          plugin_metadata: { billable_meters: [], companion_claim: 'skipped:prod_other' },
+        } })
+        vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
+
+        const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+        await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 409, data: { code: 'overage_locked', reason: 'yearly_plan' } })
       }
       finally {
         companion.on = false

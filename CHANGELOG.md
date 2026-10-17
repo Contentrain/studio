@@ -8,7 +8,7 @@
 The founder's rule is that overage is billed monthly whatever the plan's billing frequency. `pnpm polar:sync` now adds the metered prices a companion usage product lacks (on production today: `cdn_origin_gb` and `media_storage_gb_months`) the same way it does for the monthly products, keeping every active price by id; the dry run prints `+N metered price(s)`. Polar never moves a subscription to new prices, so a companion opened before this keeps its old prices: apply the sync (dry run, then `--apply --server=production`) before setting `NUXT_POLAR_COMPANION_USAGE=true`. With companions on, the reconciler also opens one for every active yearly or bundle subscription that has none (a $0 monthly subscription in the customer's Polar portal); nothing is billed unless the workspace turns overage on.
 
 **2. A yearly plan's lock says it is being set up while companions are on.**
-With `NUXT_POLAR_COMPANION_USAGE` on, a yearly plan whose companion is not open yet shows "billed monthly — being set up" (lock reason `yearly_pending`) instead of "not available on yearly plans"; with it off, the old text stays.
+With `NUXT_POLAR_COMPANION_USAGE` on, a Starter or Pro yearly plan whose companion is not open yet (and was not skipped for its product) shows "billed monthly — being set up" (lock reason `yearly_pending`) instead of "not available on yearly plans"; with it off, the old text stays.
 
 ## v0.4.10
 

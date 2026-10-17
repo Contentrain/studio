@@ -74,7 +74,7 @@ export default defineEventHandler(async (event) => {
 
   // What the subscription can bill. Decided here, never by the client: a
   // toggle the provider cannot invoice would sell usage for free.
-  const locks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount), companionUsageOn())
+  const locks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount), companionUsageOn(), account as { plan?: unknown, plugin_metadata?: unknown } | null)
 
   // Validate keys — only accept known overage settings keys
   const validUpdates: Record<string, boolean> = {}

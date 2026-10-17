@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
   let account: unknown = null
   try {
     account = await db.getActivePaymentAccount(workspaceId)
-    overageLocks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount | null), companionUsageOn())
+    overageLocks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount | null), companionUsageOn(), account as { plan?: unknown, plugin_metadata?: unknown } | null)
   }
   catch {
     // Billing metadata unreadable: show the toggles as stored.

@@ -115,11 +115,20 @@ export function readBillableMeters(pluginMetadata: unknown): string[] | null {
 /**
  * The locks as shown to the workspace. With companion usage subscriptions on, a yearly plan's lock is only waiting:
  * its companion opens on the plan's next event or the reconciler's run (`companion-subscription.ts`) and lifts it, so
- * `yearly_plan` ("not available on yearly plans") becomes `yearly_pending` ("billed monthly, opening"). With them
- * off, yearly plans have no overage and the lock says so.
+ * `yearly_plan` ("not available on yearly plans") becomes `yearly_pending` ("billed monthly, being set up"). Only where
+ * a companion will open: a Starter or Pro plan (`openCompanionSubscription` skips any other) whose claim is not
+ * `skipped:` (the provider has no companion for its product; the reconciler never retries it). With companions off,
+ * yearly plans have no overage and the lock says so.
  */
-export function withCompanionPending(locks: Record<string, OverageLock>, companionUsage: boolean): Record<string, OverageLock> {
-  if (!companionUsage) return locks
+export function withCompanionPending(
+  locks: Record<string, OverageLock>,
+  companionUsage: boolean,
+  account: { plan?: unknown, plugin_metadata?: unknown } | null,
+): Record<string, OverageLock> {
+  if (!companionUsage || (account?.plan !== 'starter' && account?.plan !== 'pro')) return locks
+  const meta = account.plugin_metadata && typeof account.plugin_metadata === 'object' ? account.plugin_metadata as Record<string, unknown> : {}
+  const claim = meta[COMPANION_CLAIM_KEY]
+  if (typeof claim === 'string' && claim.startsWith('skipped:')) return locks
   return Object.fromEntries(Object.entries(locks).map(([key, lock]) => [key, lock.reason === 'yearly_plan' ? { ...lock, reason: 'yearly_pending' as const } : lock]))
 }
 

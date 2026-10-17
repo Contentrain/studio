@@ -217,22 +217,33 @@ describe('companion usage subscription meters', () => {
 })
 
 describe('withCompanionPending', () => {
-  const yearly = resolveOverageLocks({
+  const yearlyAccount = {
+    plan: 'pro',
     subscription_status: 'active',
     current_period_start: '2026-10-04T00:00:00.000Z',
     current_period_end: '2027-10-04T00:00:00.000Z',
-    plugin_metadata: { billable_meters: [] },
-  })
+    plugin_metadata: { billable_meters: [] } as Record<string, unknown>,
+  }
+  const yearly = resolveOverageLocks(yearlyAccount)
 
-  it('with companions on, shows a yearly lock as waiting for its monthly usage subscription', () => {
-    const shown = withCompanionPending(yearly, true)
+  it('with companions on, shows a Starter/Pro yearly lock as waiting for its monthly usage subscription', () => {
+    const shown = withCompanionPending(yearly, true, yearlyAccount)
     expect(Object.values(shown).every(lock => lock.reason === 'yearly_pending')).toBe(true)
     expect(Object.keys(shown)).toEqual(Object.keys(yearly))
+    // A failed or in-progress opening is retried by the reconciler: still waiting.
+    for (const claim of ['failed', `opening:${Date.now()}`])
+      expect(Object.values(withCompanionPending(yearly, true, { ...yearlyAccount, plugin_metadata: { companion_claim: claim } })).every(lock => lock.reason === 'yearly_pending')).toBe(true)
+  })
+
+  it('keeps "not available" where no companion will open: a skipped claim, or a plan other than Starter/Pro', () => {
+    expect(withCompanionPending(yearly, true, { ...yearlyAccount, plugin_metadata: { companion_claim: 'skipped:prod_yearly' } })).toEqual(yearly)
+    expect(withCompanionPending(yearly, true, { ...yearlyAccount, plan: 'enterprise' })).toEqual(yearly)
+    expect(withCompanionPending(yearly, true, null)).toEqual(yearly)
   })
 
   it('with companions off, and for any other lock, changes nothing', () => {
-    expect(withCompanionPending(yearly, false)).toEqual(yearly)
+    expect(withCompanionPending(yearly, false, yearlyAccount)).toEqual(yearly)
     const trial = resolveOverageLocks({ subscription_status: 'trialing', trial_ends_at: '2026-10-20T00:00:00.000Z' })
-    expect(withCompanionPending(trial, true)).toEqual(trial)
+    expect(withCompanionPending(trial, true, { plan: 'pro' })).toEqual(trial)
   })
 })
