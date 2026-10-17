@@ -23,7 +23,18 @@
  */
 import type { DatabaseProvider, DatabaseRow } from '../providers/database'
 import type { PaymentProvider } from '../providers/payment/types'
+import { usePaymentProvider } from './providers'
 import { COMPANION_CLAIM_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, isYearlyPeriod } from './overage-lock'
+
+/** Whether companion usage subscriptions are on for this deployment's payment provider; false when it cannot be read. */
+export function companionUsageOn(): boolean {
+  try {
+    return usePaymentProvider()?.companionUsageEnabled?.() === true
+  }
+  catch {
+    return false
+  }
+}
 
 type Db = Pick<DatabaseProvider, 'setPaymentAccountMetadataKey' | 'getActivePaymentAccount'>
 

@@ -34,7 +34,7 @@ import { OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
 import { USAGE_METERS, USAGE_METER_LIST } from '../../shared/utils/usage-meters'
 import { CURRENT_CREDIT_UNIT, creditTermsFor, creditUnitFromMeters } from '../../shared/utils/credit-unit'
 
-export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan'
+export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan' | 'yearly_pending'
 
 export interface OverageLock {
   reason: OverageLockReason
@@ -110,6 +110,26 @@ export function readBillableMeters(pluginMetadata: unknown): string[] | null {
   const companion = readCompanionMeters(pluginMetadata)
   if (!companion.length) return own
   return [...new Set([...(own ?? []), ...companion])].toSorted()
+}
+
+/**
+ * The locks as shown to the workspace. With companion usage subscriptions on, a yearly plan's lock is only waiting:
+ * its companion opens on the plan's next event or the reconciler's run (`companion-subscription.ts`) and lifts it, so
+ * `yearly_plan` ("not available on yearly plans") becomes `yearly_pending` ("billed monthly, being set up"). Only where
+ * a companion will open: a Starter or Pro plan (`openCompanionSubscription` skips any other) whose claim is not
+ * `skipped:` (the provider has no companion for its product; the reconciler never retries it). With companions off,
+ * yearly plans have no overage and the lock says so.
+ */
+export function withCompanionPending(
+  locks: Record<string, OverageLock>,
+  companionUsage: boolean,
+  account: { plan?: unknown, plugin_metadata?: unknown } | null,
+): Record<string, OverageLock> {
+  if (!companionUsage || (account?.plan !== 'starter' && account?.plan !== 'pro')) return locks
+  const meta = account.plugin_metadata && typeof account.plugin_metadata === 'object' ? account.plugin_metadata as Record<string, unknown> : {}
+  const claim = meta[COMPANION_CLAIM_KEY]
+  if (typeof claim === 'string' && claim.startsWith('skipped:')) return locks
+  return Object.fromEntries(Object.entries(locks).map(([key, lock]) => [key, lock.reason === 'yearly_plan' ? { ...lock, reason: 'yearly_pending' as const } : lock]))
 }
 
 /** Locks every `requiresKnownPrice` toggle not already locked. */

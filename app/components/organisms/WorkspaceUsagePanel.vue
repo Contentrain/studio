@@ -31,6 +31,7 @@ function overageLockText(lock: NonNullable<UsageCategory['overageLock']>): strin
       : t('billing.overage_locked_trial_undated')
   }
   if (lock.reason === 'yearly_plan') return t('billing.overage_locked_yearly')
+  if (lock.reason === 'yearly_pending') return t('billing.overage_locked_yearly_pending')
   return t('billing.overage_locked_subscription')
 }
 

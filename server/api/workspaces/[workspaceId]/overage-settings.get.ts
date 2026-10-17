@@ -9,7 +9,8 @@ import { OVERAGE_PRICING, getPlanLimitForPlan, normalizePlan } from '../../../..
 import { isOverageSellable } from '../../../../server/utils/overage'
 import { resolveCreditUnit } from '../../../../server/utils/billing'
 import { creditTermsFor, isCreditLimitKey } from '../../../../shared/utils/credit-unit'
-import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import { resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
+import { companionUsageOn } from '../../../../server/utils/companion-subscription'
 import type { OverageLockAccount } from '../../../../server/utils/overage-lock'
 
 export default defineEventHandler(async (event) => {
@@ -38,7 +39,7 @@ export default defineEventHandler(async (event) => {
   const accountStatus = (account?.subscription_status as string | null) ?? null
   const hasActiveSubscription = ['trialing', 'active', 'past_due'].includes(accountStatus ?? '')
 
-  const locks = resolveOverageLocks(account as OverageLockAccount | null)
+  const locks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount | null), companionUsageOn(), account as { plan?: unknown, plugin_metadata?: unknown } | null)
   // Credit limits and every overage price in the terms the account's own
   // product was sold with (`credit-unit.ts`): a pre-v2 subscription is shown
   // its $0.03 credits and $0.08 overage, not the v2 catalog's.

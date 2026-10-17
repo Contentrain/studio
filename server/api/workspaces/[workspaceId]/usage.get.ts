@@ -14,7 +14,8 @@
 import { resolveCreditUnit } from '../../../../server/utils/billing'
 import { normalizePlan } from '../../../../shared/utils/license'
 import { resolveUsagePeriod } from '../../../../server/utils/usage-period'
-import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import { resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
+import { companionUsageOn } from '../../../../server/utils/companion-subscription'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
 import { computeWorkspaceUsage } from '../../../../server/utils/workspace-usage'
 
@@ -49,7 +50,7 @@ export default defineEventHandler(async (event) => {
   let account: unknown = null
   try {
     account = await db.getActivePaymentAccount(workspaceId)
-    overageLocks = resolveOverageLocks(account as OverageLockAccount | null)
+    overageLocks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount | null), companionUsageOn(), account as { plan?: unknown, plugin_metadata?: unknown } | null)
   }
   catch {
     // Billing metadata unreadable: show the toggles as stored.
