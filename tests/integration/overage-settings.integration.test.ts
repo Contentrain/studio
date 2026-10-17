@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('overage settings API', () => {
   const updateWorkspace = vi.fn().mockResolvedValue({})
+  const setPaymentAccountMetadataKey = vi.fn().mockResolvedValue(true)
+  const setPaymentAccountMetadataJson = vi.fn().mockResolvedValue(true)
 
   function mockDb(overrides: {
     workspace?: Record<string, unknown>
@@ -26,6 +28,8 @@ describe('overage settings API', () => {
       getWorkspaceForUser,
       getActivePaymentAccount,
       updateWorkspace,
+      setPaymentAccountMetadataKey,
+      setPaymentAccountMetadataJson,
     }))
     return { getWorkspaceForUser, getActivePaymentAccount }
   }
@@ -38,6 +42,8 @@ describe('overage settings API', () => {
   }
 
   beforeEach(() => {
+    setPaymentAccountMetadataKey.mockClear()
+    setPaymentAccountMetadataJson.mockClear()
     mockAuth()
     vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
       if (key === 'workspaceId') return 'ws-1'
@@ -141,6 +147,9 @@ describe('overage settings API', () => {
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
       await expect(handler({} as never)).resolves.toEqual({ overageSettings: { cdn_bandwidth: true, media_storage: true } })
+      // Their meters bill past the plan only from this instant on.
+      for (const key of ['overage_on_since_cdn_bandwidth', 'overage_on_since_media_storage'])
+        expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key, value: expect.any(String), when: 'different' })
     })
 
     it('refuses CDN overage on a subscription that has no price for it yet', async () => {
@@ -177,6 +186,8 @@ describe('overage settings API', () => {
       const result = await handler({} as never)
 
       expect(result.overageSettings).toEqual({ cdn_bandwidth: false })
+      expect(setPaymentAccountMetadataJson).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'overage_on_since_cdn_bandwidth', value: null })
+      expect(setPaymentAccountMetadataKey).not.toHaveBeenCalled()
     })
 
     it('can disable an existing overage category', async () => {

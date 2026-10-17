@@ -19,6 +19,7 @@ import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
 import { emailTemplate } from '../../../utils/content-strings'
 import { BILLABLE_METERS_KEY, COMPANION_CLAIM_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, OVERAGE_SUSPENDED_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
 import type { OverageLockAccount } from '../../../utils/overage-lock'
+import { OVERAGE_ON_SINCE_KEYS, syncOverageOnSince } from '../../../utils/overage-meter-gate'
 import { cancelCompanionSubscription, companionClaimOf, companionSubscriptionIdOf, openCompanionSubscription } from '../../../utils/companion-subscription'
 import type { WebhookResult } from '../../../providers/payment/types'
 
@@ -47,7 +48,7 @@ const RECOVERY_EMAIL_KEY = 'recovery_email'
  */
 /** The companion's own keys: preserved by every plan upsert, including the first one, which sets the activation mark itself. */
 const COMPANION_METADATA_KEYS = [COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY]
-const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY]
+const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY, ...OVERAGE_ON_SINCE_KEYS]
 
 /** The past-due episode a read row is in, as its recovery claim value. */
 function pastDueEpisode(row: Record<string, unknown> | null | undefined): string {
@@ -128,6 +129,7 @@ async function planOverageLock(db: Db, input: {
       commit: async () => {},
     }
   }
+  const before = settings
   const plan = reconcileOverageLock({
     settings,
     pluginMetadata: input.storedPluginMetadata,
@@ -137,8 +139,10 @@ async function planOverageLock(db: Db, input: {
   return {
     pluginMetadata: plan.pluginMetadata,
     commit: async () => {
-      if (plan.settings)
-        await db.updateWorkspace('', input.workspaceId, { overage_settings: plan.settings })
+      if (!plan.settings) return
+      await db.updateWorkspace('', input.workspaceId, { overage_settings: plan.settings })
+      // A suspended CDN/storage toggle forgets when it went on; a lifted one counts from now.
+      await syncOverageOnSince(db, input.workspaceId, before, plan.settings, new Date())
     },
   }
 }

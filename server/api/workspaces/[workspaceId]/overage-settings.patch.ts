@@ -12,6 +12,7 @@ import { OVERAGE_SETTINGS_KEYS, OVERAGE_PRICING } from '../../../../shared/utils
 import { USAGE_METER_LIST } from '../../../../shared/utils/usage-meters'
 import { isOverageSellable } from '../../../../server/utils/overage'
 import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import { syncOverageOnSince } from '../../../../server/utils/overage-meter-gate'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
 
 /** settingsKey → limitKey, so a toggle can be checked against its limit. */
@@ -98,6 +99,10 @@ export default defineEventHandler(async (event) => {
   const merged = { ...existing, ...validUpdates }
 
   await db.updateWorkspace('', workspaceId, { overage_settings: merged })
+
+  // A CDN or storage toggle's daily meter bills a day past the plan only if the toggle covered all of it
+  // (`server/utils/overage-meter-gate.ts`): record when it went on, forget it when it goes off.
+  await syncOverageOnSince(db, workspaceId, existing, merged, new Date())
 
   return { overageSettings: merged }
 })

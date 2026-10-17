@@ -16,10 +16,16 @@
  * less. Workspaces without a payment customer are skipped — nothing would
  * bill them, and the outbox would retry their rows until it dropped them.
  *
+ * The sample is billed in full only when storage overage was on, and sellable,
+ * since the day began (`overageDayGate`); otherwise it is capped at the plan's
+ * GB, so a period's events never pass the included units without overage (a
+ * plan change can leave more stored than the new plan holds).
+ *
  * Off unless `NUXT_CDN_STORAGE_METER` is set — the meter has to exist in
  * the payment provider first (polar-sync). Self-hosted deployments without
  * billing record nothing either way (`recordUsage`).
  */
+import { overageDayGate, planLimitBytes } from '../utils/overage-meter-gate'
 import { useDatabaseProvider } from '../utils/providers'
 import { recordMediaStorageDay } from '../utils/usage-metering'
 import { usagePeriodFrom } from '../utils/usage-period'
@@ -70,7 +76,17 @@ export async function meterMediaStorageDay(now: Date = new Date()): Promise<numb
       continue
     }
     if (!account?.customer_id) continue
-    await recordMediaStorageDay({ workspaceId, day, bytes, periodDays: periodDays(usagePeriodFrom(account, now)) })
+    let gate: Awaited<ReturnType<typeof overageDayGate>>
+    try {
+      gate = await overageDayGate({ workspaceId, settingsKey: 'media_storage', dayStart: new Date(`${day}T00:00:00Z`), now, db })
+    }
+    catch (err) {
+      // Same rule as the account read: skip this one, the next run samples it.
+      logFailure(err)
+      continue
+    }
+    const billable = gate.covered ? bytes : Math.min(bytes, planLimitBytes(gate.plan, 'media.storage_gb'))
+    await recordMediaStorageDay({ workspaceId, day, bytes: billable, periodDays: periodDays(usagePeriodFrom(account, now)) })
     recorded++
   }
   return recorded
