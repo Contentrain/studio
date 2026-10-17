@@ -16,9 +16,11 @@ const SUPABASE_SITE = 'https://supabase-site.invalid'
 const SUPABASE_URL = 'https://supabase-url.invalid/confirm'
 
 let site = SITE
+let replyTo = ''
 beforeAll(() => {
   vi.stubGlobal('useRuntimeConfig', () => ({
     public: { siteUrl: site },
+    emailReplyTo: replyTo,
     emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
   }))
 })
@@ -75,6 +77,35 @@ describe('email templates', () => {
     expect(out.html).not.toContain('bgcolor="#0331FC"')
     const js = emailTemplate('payment-recovered', { ...EMAIL_SAMPLES['payment-recovered']!.params, billingUrl: 'javascript:alert(1)' })
     expect(js.html).not.toContain('javascript:')
+  })
+
+  const REPLY_SLUGS = ['payment-failed', 'subscription-activated', 'subscription-cancel-scheduled', 'subscription-canceled', 'trial-ending']
+
+  it.each(REPLY_SLUGS)('%s invites no reply when NUXT_EMAIL_REPLY_TO is unset', (slug) => {
+    const out = emailTemplate(slug, EMAIL_SAMPLES[slug]!.params)
+    expect(out.html).not.toMatch(/reply to this email/i)
+    expect(out.text).not.toMatch(/reply to this email/i)
+    expect(out.text).toContain('Thanks,')
+  })
+
+  it.each(REPLY_SLUGS)('%s invites a reply when NUXT_EMAIL_REPLY_TO is set', (slug) => {
+    replyTo = 'support@studio.example.com'
+    try {
+      const out = emailTemplate(slug, EMAIL_SAMPLES[slug]!.params)
+      expect(out.html).toMatch(/reply to this email/i)
+      expect(out.text).toMatch(/reply to this email/i)
+    }
+    finally { replyTo = '' }
+  })
+
+  it('no template invites a reply outside the reply field', () => {
+    const file = JSON.parse(readFileSync('.contentrain/content/system/email-templates/en.json', 'utf8')) as Record<string, Record<string, string>>
+    for (const entry of Object.values(file)) {
+      for (const [key, value] of Object.entries(entry)) {
+        if (key !== 'reply') expect(value, `${entry.slug}.${key}`).not.toMatch(/reply to this email/i)
+      }
+    }
+    expect(Object.values(file).filter(e => e.reply).map(e => e.slug).sort()).toEqual([...REPLY_SLUGS].sort())
   })
 })
 
