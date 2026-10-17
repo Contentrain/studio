@@ -15,13 +15,24 @@ const SITE = 'https://studio.example.com'
 const SUPABASE_SITE = 'https://supabase-site.invalid'
 const SUPABASE_URL = 'https://supabase-url.invalid/confirm'
 
+// The footer links as nuxt.config.ts resolves them: NUXT_EMAIL_LINKS_* when set, else the defaults. So
+// `pnpm email:supabase` writes the operator's links into supabase/templates; unset, the drift test checks the defaults.
+const env = (key: string, fallback: string): string => process.env[`NUXT_EMAIL_LINKS_${key}_URL`] ?? fallback
+const EMAIL_LINKS = {
+  websiteUrl: env('WEBSITE', 'https://contentrain.io'),
+  githubUrl: env('GITHUB', 'https://github.com/Contentrain'),
+  linkedinUrl: env('LINKEDIN', 'https://www.linkedin.com/company/contentrain'),
+  xUrl: env('X', 'https://x.com/Contentrain_io'),
+  privacyUrl: env('PRIVACY', 'https://contentrain.io/legal/privacy-policy'),
+}
+
 let site = SITE
 let replyTo = ''
 beforeAll(() => {
   vi.stubGlobal('useRuntimeConfig', () => ({
     public: { siteUrl: site },
     emailReplyTo: replyTo,
-    emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', linkedinUrl: 'https://www.linkedin.com/company/contentrain', xUrl: 'https://x.com/Contentrain_io', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+    emailLinks: EMAIL_LINKS,
   }))
 })
 
@@ -46,7 +57,7 @@ describe('email templates', () => {
     expect(out.text.length).toBeGreaterThan(40)
     expect(out.text).not.toMatch(/<\/?(p|a|td|table|strong)\b/)
     for (const [, href] of out.html.matchAll(/href="([^"]*)"/g)) expect(href).toMatch(/^https?:\/\//)
-    expect(out.text).toContain('https://contentrain.io/legal/privacy-policy')
+    expect(out.text).toContain(EMAIL_LINKS.privacyUrl)
   })
 
   it('shows the button URL in the text part', () => {
