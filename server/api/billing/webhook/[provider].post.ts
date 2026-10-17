@@ -19,6 +19,7 @@ import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
 import { emailTemplate } from '../../../utils/content-strings'
 import { BILLABLE_METERS_KEY, COMPANION_CLAIM_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, OVERAGE_SUSPENDED_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
 import type { OverageLockAccount } from '../../../utils/overage-lock'
+import { OVERAGE_ON_SINCE_KEYS } from '../../../utils/overage-meter-gate'
 import { cancelCompanionSubscription, companionClaimOf, companionSubscriptionIdOf, openCompanionSubscription } from '../../../utils/companion-subscription'
 import type { WebhookResult } from '../../../providers/payment/types'
 
@@ -47,7 +48,7 @@ const RECOVERY_EMAIL_KEY = 'recovery_email'
  */
 /** The companion's own keys: preserved by every plan upsert, including the first one, which sets the activation mark itself. */
 const COMPANION_METADATA_KEYS = [COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY]
-const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY]
+const CLAIMED_METADATA_KEYS = [ACTIVATION_EMAIL_KEY, RECOVERY_EMAIL_KEY, COMPANION_SUBSCRIPTION_KEY, COMPANION_METERS_KEY, COMPANION_CLAIM_KEY, ...OVERAGE_ON_SINCE_KEYS]
 
 /** The past-due episode a read row is in, as its recovery claim value. */
 function pastDueEpisode(row: Record<string, unknown> | null | undefined): string {

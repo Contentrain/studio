@@ -12,6 +12,7 @@ import { OVERAGE_SETTINGS_KEYS, OVERAGE_PRICING } from '../../../../shared/utils
 import { USAGE_METER_LIST } from '../../../../shared/utils/usage-meters'
 import { isOverageSellable } from '../../../../server/utils/overage'
 import { resolveOverageLocks } from '../../../../server/utils/overage-lock'
+import { overageOnSinceKey } from '../../../../server/utils/overage-meter-gate'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
 
 /** settingsKey → limitKey, so a toggle can be checked against its limit. */
@@ -98,6 +99,18 @@ export default defineEventHandler(async (event) => {
   const merged = { ...existing, ...validUpdates }
 
   await db.updateWorkspace('', workspaceId, { overage_settings: merged })
+
+  // When a per-unit-cost toggle (CDN, storage) went on or off: its daily meter
+  // bills a day past the plan only if the toggle covered all of it
+  // (`server/utils/overage-meter-gate.ts`). Turning one on twice keeps the first instant.
+  for (const meter of USAGE_METER_LIST) {
+    if (!meter.requiresKnownPrice || !(meter.settingsKey in validUpdates)) continue
+    const key = overageOnSinceKey(meter.settingsKey)
+    if (validUpdates[meter.settingsKey])
+      await db.setPaymentAccountMetadataKey({ workspaceId, key, value: new Date().toISOString(), when: 'absent' })
+    else
+      await db.setPaymentAccountMetadataJson({ workspaceId, key, value: null })
+  }
 
   return { overageSettings: merged }
 })

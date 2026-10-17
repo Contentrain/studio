@@ -6,12 +6,20 @@
  * (`recordCDNOriginUsage`). Runs hourly; the event is keyed by workspace +
  * day, so re-runs and several instances record each day once.
  *
+ * A day is billed in full only when CDN overage was on, and sellable, for all
+ * of it (`overageDayGate`). Any other day reports only the part of its bytes
+ * that still fits under the plan for the period so far, which the included
+ * units absorb: the grace past the plan without overage stays unbilled.
+ *
  * Off unless `NUXT_CDN_ORIGIN_METER` is set — the meter has to exist in the
  * payment provider first (polar-sync). Self-hosted deployments without
  * billing record nothing either way (`recordUsage`).
  */
+import { bytesUnderLimit, overageDayGate, planLimitBytes } from '../utils/overage-meter-gate'
 import { useDatabaseProvider } from '../utils/providers'
 import { recordCDNOriginUsage } from '../utils/usage-metering'
+import { usagePeriodFrom } from '../utils/usage-period'
+import type { UsagePeriodAccount } from '../utils/usage-period'
 
 const INTERVAL_MS = 60 * 60 * 1000
 /** How many finished days each run covers — a missed day is picked up. */
@@ -54,9 +62,38 @@ export async function meterCdnOriginDays(now: Date = new Date()): Promise<number
   for (const day of finishedDays(now, LOOKBACK_DAYS)) {
     const totals = await db.listWorkspaceCDNBandwidthForDay(day)
     for (const { workspaceId, bytes } of totals) {
-      await recordCDNOriginUsage({ workspaceId, day, bytes })
+      let billable: number
+      try {
+        billable = await billableDayBytes(workspaceId, day, bytes, now)
+      }
+      catch (err) {
+        // One unreadable workspace must not stop the others; the lookback retries its day next run.
+        logFailure(err)
+        continue
+      }
+      await recordCDNOriginUsage({ workspaceId, day, bytes: billable })
       recorded++
     }
   }
   return recorded
+}
+
+/**
+ * The bytes of `day` the meter may report: all of them when overage covered
+ * the day, else only what fits under the plan given the period's earlier days.
+ */
+export async function billableDayBytes(workspaceId: string, day: string, bytes: number, now: Date): Promise<number> {
+  const db = useDatabaseProvider()
+  const dayStart = new Date(`${day}T00:00:00Z`)
+  const gate = await overageDayGate({ workspaceId, settingsKey: 'cdn_bandwidth', dayStart, now, db })
+  if (gate.covered) return bytes
+  const limit = planLimitBytes(gate.plan, 'cdn.bandwidth_gb')
+  if (!Number.isFinite(limit)) return bytes
+  // The billing slice the day belongs to, read up to the day itself.
+  const account = await db.getActivePaymentAccount(workspaceId) as UsagePeriodAccount | null
+  const period = usagePeriodFrom(account, new Date(dayStart.getTime() + 12 * 60 * 60 * 1000))
+  const before = period.startsAt.substring(0, 10) < day
+    ? await db.getWorkspaceMonthlyCDNBandwidth(workspaceId, period.key, { from: period.startsAt, to: dayStart.toISOString() })
+    : 0
+  return bytesUnderLimit(before, bytes, limit)
 }
