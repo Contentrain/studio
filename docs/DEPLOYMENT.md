@@ -83,7 +83,7 @@ Managed + postgres pair (plain PostgreSQL, no Supabase):
 - Set `NUXT_RESEND_API_KEY` (optional on the supabase pair; **required** on the managed pair — magic link + invites)
 - Set `NUXT_EMAIL_SENDER_ADDRESS`
 - Set `NUXT_EMAIL_SENDER_NAME`
-- Optional: `NUXT_EMAIL_REPLY_TO` (unset = no Reply-To header, and emails do not invite a reply) and `NUXT_EMAIL_LINKS_*` (footer links). Emails load their logo from `<NUXT_PUBLIC_SITE_URL>/email/logo.png`, so the public URL must be an absolute https address reachable from inbox providers (boot warns otherwise). On the supabase pair the auth emails take the same logo and links from GoTrue's Site URL (`{{ .SiteURL }}`), so set it to the same public https address
+- Optional: `NUXT_EMAIL_REPLY_TO` (unset = no Reply-To header, and emails do not invite a reply) and `NUXT_EMAIL_LINKS_*` (footer links: website, GitHub, LinkedIn, X, privacy; an empty social link is left out). They apply to the emails Studio renders. The supabase-pair auth emails come from the committed templates in `supabase/templates/`, which carry the default links; to change them, run `pnpm email:supabase` with the same `NUXT_EMAIL_LINKS_*` exported in the shell (the script reads the process environment, not `.env`) and deploy the regenerated templates. Emails load their logo from `<NUXT_PUBLIC_SITE_URL>/email/logo.png`, so the public URL must be an absolute https address reachable from inbox providers (boot warns otherwise). On the supabase pair the auth emails take the same logo and links from GoTrue's Site URL (`{{ .SiteURL }}`), so set it to the same public https address
 - If local Supabase auth SMTP is in use, also set `RESEND_API_KEY`
 
 ### AI

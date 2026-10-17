@@ -9,6 +9,8 @@ const chrome: EmailChrome = {
   linkWebsite: 'Website',
   linkProduct: 'Studio',
   linkGitHub: 'GitHub',
+  linkLinkedIn: 'LinkedIn',
+  linkX: 'X',
   aboutLine: 'This email is about {about}.',
   aboutDefault: 'your account',
   privacy: 'Privacy',
@@ -19,6 +21,8 @@ const env: EmailEnv = {
   siteUrl: 'https://studio.example.com/',
   websiteUrl: 'https://contentrain.io',
   githubUrl: 'https://github.com/Contentrain',
+  linkedinUrl: 'https://www.linkedin.com/company/contentrain',
+  xUrl: 'https://x.com/Contentrain_io',
   privacyUrl: 'https://contentrain.io/legal/privacy-policy',
 }
 
@@ -88,6 +92,27 @@ describe('renderEmail', () => {
     expect(html).not.toContain('The Contentrain team')
     expect(html).not.toContain('fact-k" style')
     expect(html).toContain('This email is about your account.')
+  })
+
+  it('links Website / Studio / GitHub / LinkedIn / X in one row, in html and text', () => {
+    const { html, text } = renderEmail(parts, chrome, env)
+    const row = html.match(/<p style="margin:0 0 20px;">([\s\S]*?)<\/p>/)![1]!
+    expect([...row.matchAll(/href="([^"]+)"/g)].map(m => m[1])).toEqual([
+      'https://contentrain.io',
+      'https://studio.example.com',
+      'https://github.com/Contentrain',
+      'https://www.linkedin.com/company/contentrain',
+      'https://x.com/Contentrain_io',
+    ])
+    expect(text).toContain('LinkedIn: https://www.linkedin.com/company/contentrain\nX: https://x.com/Contentrain_io')
+  })
+
+  it('leaves an unset social link out of the row instead of rendering it empty', () => {
+    const { html, text } = renderEmail(parts, chrome, { ...env, linkedinUrl: '', xUrl: undefined })
+    expect(html).not.toContain('LinkedIn')
+    expect(html).not.toContain('>X<')
+    expect(html).not.toContain('href=""')
+    expect(text).not.toMatch(/^(LinkedIn|X):/m)
   })
 
   it('escapes the helper the same way for attributes', () => {

@@ -194,6 +194,8 @@ export default defineNuxtConfig({
     emailLinks: {
       websiteUrl: 'https://contentrain.io', // NUXT_EMAIL_LINKS_WEBSITE_URL — footer links of every email
       githubUrl: 'https://github.com/Contentrain', // NUXT_EMAIL_LINKS_GITHUB_URL
+      linkedinUrl: 'https://www.linkedin.com/company/contentrain', // NUXT_EMAIL_LINKS_LINKEDIN_URL — empty leaves it out
+      xUrl: 'https://x.com/Contentrain_io', // NUXT_EMAIL_LINKS_X_URL — empty leaves it out
       privacyUrl: 'https://contentrain.io/legal/privacy-policy', // NUXT_EMAIL_LINKS_PRIVACY_URL
     },
   },
