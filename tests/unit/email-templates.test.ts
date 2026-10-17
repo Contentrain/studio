@@ -21,7 +21,7 @@ beforeAll(() => {
   vi.stubGlobal('useRuntimeConfig', () => ({
     public: { siteUrl: site },
     emailReplyTo: replyTo,
-    emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+    emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', linkedinUrl: 'https://www.linkedin.com/company/contentrain', xUrl: 'https://x.com/Contentrain_io', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
   }))
 })
 

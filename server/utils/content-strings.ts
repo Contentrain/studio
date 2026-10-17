@@ -85,6 +85,8 @@ function emailChrome(locale: string): EmailChrome {
     linkWebsite: get('email.link_website'),
     linkProduct: get('email.link_product'),
     linkGitHub: get('email.link_github'),
+    linkLinkedIn: get('email.link_linkedin'),
+    linkX: get('email.link_x'),
     aboutLine: get('email.about_line'),
     aboutDefault: get('email.about_default'),
     privacy: get('email.privacy'),
@@ -96,11 +98,13 @@ function emailChrome(locale: string): EmailChrome {
 /** Absolute links of the layout, from runtime config; `emailLinks` in nuxt.config.ts holds the defaults. */
 function emailEnv(): EmailEnv {
   const config = useRuntimeConfig()
-  const links = (config.emailLinks ?? {}) as { websiteUrl?: string, githubUrl?: string, privacyUrl?: string }
+  const links = (config.emailLinks ?? {}) as { websiteUrl?: string, githubUrl?: string, linkedinUrl?: string, xUrl?: string, privacyUrl?: string }
   return {
     siteUrl: String((config.public as { siteUrl?: string } | undefined)?.siteUrl ?? ''),
     websiteUrl: links.websiteUrl ?? '',
     githubUrl: links.githubUrl ?? '',
+    linkedinUrl: links.linkedinUrl ?? '',
+    xUrl: links.xUrl ?? '',
     privacyUrl: links.privacyUrl ?? '',
   }
 }

@@ -96,6 +96,8 @@ export interface EmailChrome {
   linkWebsite: string
   linkProduct: string
   linkGitHub: string
+  linkLinkedIn: string
+  linkX: string
   /** Template with `{about}`, e.g. "This email is about {about}." */
   aboutLine: string
   /** Used when a template names no subject of its own. */
@@ -112,6 +114,9 @@ export interface EmailEnv {
   siteUrl: string
   websiteUrl: string
   githubUrl: string
+  /** Footer social links; an empty one is left out of the row. */
+  linkedinUrl?: string
+  xUrl?: string
   privacyUrl: string
   logoWidth?: number
   logoHeight?: number
@@ -199,6 +204,14 @@ export function renderEmail(parts: EmailParts, chrome: EmailChrome, env: EmailEn
 
   const link = (label: string, href: string): string =>
     `<a href="${escapeHtml(href)}" style="color:#0F172A;font-weight:600;text-decoration:underline;">${escapeHtml(label)}</a>`
+  // Website / Studio / GitHub / LinkedIn / X — a link with no URL is left out, never rendered empty.
+  const footerLinks = ([
+    [chrome.linkWebsite, env.websiteUrl],
+    [chrome.linkProduct, home],
+    [chrome.linkGitHub, env.githubUrl],
+    [chrome.linkLinkedIn, env.linkedinUrl ?? ''],
+    [chrome.linkX, env.xUrl ?? ''],
+  ] as Array<[string, string]>).filter(([, href]) => href)
   const sep = ' <span style="color:#94A3B8;">/</span> '
   const preheader = parts.preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${parts.preheader.html}${'&#8203;&#847;'.repeat(8)}</div>`
@@ -241,7 +254,7 @@ ${body.join('\n')}
 
     <tr><td class="px" style="padding:0 24px;${base('font-size:14px;line-height:22px;color:#64748B;')}">
       <p style="margin:0 0 20px;">
-        ${link(chrome.linkWebsite, env.websiteUrl)}${sep}${link(chrome.linkProduct, home)}${sep}${link(chrome.linkGitHub, env.githubUrl)}
+        ${footerLinks.map(([label, href]) => link(label, href)).join(sep)}
       </p>
       <p style="margin:0;font-size:12px;line-height:18px;color:#94A3B8;">
         ${about.html}
@@ -266,9 +279,7 @@ ${body.join('\n')}
   if (signoff) textParts.push(`${chrome.thanks}\n${chrome.team}`)
   textParts.push([
     '--',
-    `${chrome.linkWebsite}: ${env.websiteUrl}`,
-    `${chrome.linkProduct}: ${home}`,
-    `${chrome.linkGitHub}: ${env.githubUrl}`,
+    ...footerLinks.map(([label, href]) => `${label}: ${href}`),
     `${about.text} ${chrome.privacy}: ${env.privacyUrl}`,
     product.text,
   ].join('\n'))

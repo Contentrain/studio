@@ -60,7 +60,7 @@ function pricesByteMeters(db: ReturnType<typeof fakeDb>) {
 beforeEach(() => {
   vi.stubGlobal('useRuntimeConfig', () => ({
     public: { siteUrl: 'https://studio.test' },
-    emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+    emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', linkedinUrl: 'https://www.linkedin.com/company/contentrain', xUrl: 'https://x.com/Contentrain_io', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
   }))
 })
 
@@ -133,7 +133,7 @@ describe('usage alerts', () => {
     vi.stubGlobal('useRuntimeConfig', () => ({
       cdn: { originMeter: true, storageMeter: true },
       public: { siteUrl: 'https://studio.test' },
-      emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+      emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', linkedinUrl: 'https://www.linkedin.com/company/contentrain', xUrl: 'https://x.com/Contentrain_io', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
     }))
     // Pro: 60 GB, overage on → billed past 60, stops at 600.
     const billed = fakeDb({ cdn: 65 }, { overage_settings: { cdn_bandwidth: true } })
@@ -157,7 +157,7 @@ describe('usage alerts', () => {
     vi.stubGlobal('useRuntimeConfig', () => ({
       cdn: { originMeter: true, storageMeter: true },
       public: { siteUrl: 'https://studio.test' },
-      emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
+      emailLinks: { websiteUrl: 'https://contentrain.io', githubUrl: 'https://github.com/Contentrain', linkedinUrl: 'https://www.linkedin.com/company/contentrain', xUrl: 'https://x.com/Contentrain_io', privacyUrl: 'https://contentrain.io/legal/privacy-policy' },
     }))
     const at = (gb: number) => [{ id: 'ws-1', name: 'Lanista', slug: 'lanista', type: 'team', plan: 'pro', owner_id: 'owner-1', overage_settings: { media_storage: true }, media_storage_bytes: gb * 1024 ** 3 }]
     const db = fakeDb({}, { overage_settings: { media_storage: true }, media_storage_bytes: 251 * 1024 ** 3 })
