@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.4.10
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.9...v0.4.10)
+
+### ⚠️ Upgrade notes
+
+**1. No migrations.** The image swaps alone; rolling it back alone is safe.
+
+**2. CDN and storage meters bill past the plan only for a day overage covered.**
+With `NUXT_CDN_ORIGIN_METER` / `NUXT_CDN_STORAGE_METER` on, a day is billed in full only when the workspace's overage toggle was on, and sellable (not trialing, the meter priced on the subscription, not a yearly plan), from the start of that day. Any other day reports only what still fits under the plan for the period, which the included units absorb: the CDN grace up to 120% without overage stays Studio's, and the two-day CDN lookback never bills a day from before the toggle went on. When a toggle went on is kept in the active payment account's `plugin_metadata` (`overage_on_since_cdn_bandwidth`, `overage_on_since_media_storage`); a toggle already on before this version counts from the meter's first run that sees it (no earlier day is billed past the plan). Both flags still default to `false`; turning them on stays a separate owner step (flags, then `pnpm polar:sync` dry run and `--apply --server=production`), together with the pricing page and docs copy.
+
+**3. Emails: one layout, Reply-To only when configured.**
+Every Studio email renders through one layout with a plain-text part and loads its logo from `<NUXT_PUBLIC_SITE_URL>/email/logo.png`, so the public URL must be an absolute https address (boot warns otherwise). New optional variables: `NUXT_EMAIL_REPLY_TO` (unset = no Reply-To header and no "reply to this email" line) and `NUXT_EMAIL_LINKS_WEBSITE_URL`, `_GITHUB_URL`, `_LINKEDIN_URL`, `_X_URL`, `_PRIVACY_URL` (footer links; the defaults point at contentrain.io, an empty social link is left out). Contentrain's own deployment sets `NUXT_EMAIL_REPLY_TO` to keep replies reaching support. On the Supabase pair, deploy the regenerated `supabase/templates/` (`pnpm email:supabase`).
+
+### 🚀 Enhancements
+
+- **email:** one shared layout for every Studio email, with a plain-text part and a hosted logo; copy stays structured in the content layer (#463)
+- **email:** LinkedIn and X in the footer link row (#466)
+
+### 🩹 Fixes
+
+- **billing:** CDN and storage meters bill past the plan only while overage covers the day; a webhook suspend or lift resets when a toggle went on (#467)
+- **email:** no default Reply-To; emails invite a reply only when `NUXT_EMAIL_REPLY_TO` is set (#465)
+
+### 🏡 Chore
+
+- **test:** the v2-move period key follows today's clock, not a fixed date (#464)
+
 ## v0.4.9
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.8...v0.4.9)
