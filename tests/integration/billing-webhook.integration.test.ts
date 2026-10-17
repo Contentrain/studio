@@ -459,11 +459,13 @@ describe('billing webhook integration', () => {
 
   describe('trial end and overage the subscription cannot bill', () => {
     const getWorkspaceById = vi.fn()
+    const setPaymentAccountMetadataJson = vi.fn().mockResolvedValue(true)
     const LEGACY_PRICES = ['ai_messages', 'api_messages', 'cdn_bandwidth_bytes', 'form_submissions', 'mcp_calls', 'media_storage_byte_hours']
     const CURRENT_PRICES = ['ai_credits', 'api_credits', 'form_submissions', 'mcp_calls']
 
     beforeEach(() => {
       getWorkspaceById.mockReset().mockResolvedValue({ id: 'ws-1', overage_settings: {} })
+      setPaymentAccountMetadataJson.mockClear()
       vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue(null))
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
         upsertPaymentAccount,
@@ -473,8 +475,49 @@ describe('billing webhook integration', () => {
         markWorkspaceTrialConsumed,
         setPaymentAccountMetadataKey,
         setPaymentAccountCreditUnit,
+        setPaymentAccountMetadataJson,
         getWorkspaceById,
       }))
+    })
+
+    it('forgets when CDN and storage overage went on once a trial suspends them, and counts a lifted one from now', async () => {
+      // Suspended: the meters must not bill the suspended days as covered by the old instant.
+      getWorkspaceById.mockResolvedValue({ id: 'ws-1', overage_settings: { cdn_bandwidth: true, media_storage: true } })
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.created',
+        workspaceId: 'ws-1',
+        plan: 'pro',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        subscriptionStatus: 'trialing',
+        trialEndsAt: '2026-10-05T08:06:40.869Z',
+        billableMeters: ['ai_credits_1c', 'cdn_origin_gb', 'media_storage_gb_months'],
+      })
+      let handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+      expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { cdn_bandwidth: false, media_storage: false } })
+      for (const key of ['overage_on_since_cdn_bandwidth', 'overage_on_since_media_storage'])
+        expect(setPaymentAccountMetadataJson).toHaveBeenCalledWith({ workspaceId: 'ws-1', key, value: null })
+
+      // Lifted when the trial ends: the instant restarts, whatever an earlier one said.
+      getWorkspaceById.mockResolvedValue({ id: 'ws-1', overage_settings: { cdn_bandwidth: false } })
+      getActivePaymentAccount.mockResolvedValue({ subscription_status: 'trialing', plugin_metadata: { billable_meters: ['cdn_origin_gb'], overage_suspended: ['cdn_bandwidth'] } })
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.updated',
+        workspaceId: 'ws-1',
+        plan: 'pro',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        subscriptionStatus: 'active',
+        currentPeriodStart: '2026-10-05T08:06:40.869Z',
+        currentPeriodEnd: '2026-11-05T08:06:40.869Z',
+        billableMeters: ['ai_credits_1c', 'cdn_origin_gb'],
+      })
+      setPaymentAccountMetadataKey.mockClear()
+      handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+      expect(updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { overage_settings: { cdn_bandwidth: true } })
+      expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'overage_on_since_cdn_bandwidth', value: expect.any(String), when: 'different' })
     })
 
     it('moves the usage window to the paid period when the trial ends', async () => {

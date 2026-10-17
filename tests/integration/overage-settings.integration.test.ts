@@ -147,9 +147,9 @@ describe('overage settings API', () => {
 
       const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
       await expect(handler({} as never)).resolves.toEqual({ overageSettings: { cdn_bandwidth: true, media_storage: true } })
-      // Their meters bill past the plan only from this instant on; a second "on" keeps the first.
+      // Their meters bill past the plan only from this instant on.
       for (const key of ['overage_on_since_cdn_bandwidth', 'overage_on_since_media_storage'])
-        expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key, value: expect.any(String), when: 'absent' })
+        expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key, value: expect.any(String), when: 'different' })
     })
 
     it('refuses CDN overage on a subscription that has no price for it yet', async () => {

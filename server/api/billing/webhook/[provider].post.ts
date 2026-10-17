@@ -19,7 +19,7 @@ import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
 import { emailTemplate } from '../../../utils/content-strings'
 import { BILLABLE_METERS_KEY, COMPANION_CLAIM_KEY, COMPANION_METERS_KEY, COMPANION_SUBSCRIPTION_KEY, OVERAGE_SUSPENDED_KEY, reconcileOverageLock } from '../../../utils/overage-lock'
 import type { OverageLockAccount } from '../../../utils/overage-lock'
-import { OVERAGE_ON_SINCE_KEYS } from '../../../utils/overage-meter-gate'
+import { OVERAGE_ON_SINCE_KEYS, syncOverageOnSince } from '../../../utils/overage-meter-gate'
 import { cancelCompanionSubscription, companionClaimOf, companionSubscriptionIdOf, openCompanionSubscription } from '../../../utils/companion-subscription'
 import type { WebhookResult } from '../../../providers/payment/types'
 
@@ -129,6 +129,7 @@ async function planOverageLock(db: Db, input: {
       commit: async () => {},
     }
   }
+  const before = settings
   const plan = reconcileOverageLock({
     settings,
     pluginMetadata: input.storedPluginMetadata,
@@ -138,8 +139,10 @@ async function planOverageLock(db: Db, input: {
   return {
     pluginMetadata: plan.pluginMetadata,
     commit: async () => {
-      if (plan.settings)
-        await db.updateWorkspace('', input.workspaceId, { overage_settings: plan.settings })
+      if (!plan.settings) return
+      await db.updateWorkspace('', input.workspaceId, { overage_settings: plan.settings })
+      // A suspended CDN/storage toggle forgets when it went on; a lifted one counts from now.
+      await syncOverageOnSince(db, input.workspaceId, before, plan.settings, new Date())
     },
   }
 }

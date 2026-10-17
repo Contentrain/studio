@@ -14,7 +14,7 @@
  * after it has ended (and the CDN meter looks back two days), so the state at run
  * time alone would bill a day that ran without overage. The instant is kept on the
  * active payment account (`plugin_metadata`, one key per toggle): the toggle route
- * writes and clears it, and the meter sets it the first time it sees a toggle that
+ * and the billing webhook write and clear it (`syncOverageOnSince`), and the meter sets it the first time it sees a toggle that
  * is on without one (a toggle from before this rule, one the billing webhook
  * re-enabled). A missing or lost instant only ever bills less.
  */
@@ -83,6 +83,28 @@ export async function overageDayGate(input: {
     return { plan, covered: false }
   }
   return { plan, covered: since.getTime() <= input.dayStart.getTime() }
+}
+
+type SinceDb = Pick<GateDb, 'setPaymentAccountMetadataKey' | 'setPaymentAccountMetadataJson'>
+
+/**
+ * Keep the "on since" instants in step with a change of the toggles from
+ * `before` to `after`: one turned on counts from `now` (replacing any stale
+ * instant), one turned off forgets it. Every writer of `overage_settings`
+ * that can flip a CDN or storage toggle calls this after its write (the
+ * toggle route, the billing webhook's suspend/lift), so a day the toggle
+ * spent off is never billed as covered.
+ */
+export async function syncOverageOnSince(db: SinceDb, workspaceId: string, before: Record<string, boolean>, after: Record<string, boolean>, now: Date): Promise<void> {
+  for (const meter of USAGE_METER_LIST) {
+    if (!meter.requiresKnownPrice) continue
+    const was = before[meter.settingsKey] === true
+    const is = after[meter.settingsKey] === true
+    if (was === is) continue
+    const key = overageOnSinceKey(meter.settingsKey)
+    if (is) await db.setPaymentAccountMetadataKey({ workspaceId, key, value: now.toISOString(), when: 'different' })
+    else await db.setPaymentAccountMetadataJson({ workspaceId, key, value: null })
+  }
 }
 
 /** The plan's limit for `limitKey` in bytes (GB-valued limits), or Infinity when it has none. */

@@ -87,3 +87,26 @@ describe('planLimitBytes / bytesUnderLimit', () => {
     expect(bytesUnderLimit(5 * GB, 1 * GB, Infinity)).toBe(1 * GB)
   })
 })
+
+describe('syncOverageOnSince', () => {
+  it('counts a CDN/storage toggle turned on from now, forgets one turned off, and leaves the rest alone', async () => {
+    const { syncOverageOnSince } = await import('../../server/utils/overage-meter-gate')
+    const db = gateDb(null, null)
+    const now = new Date('2026-10-17T12:00:00Z')
+    await syncOverageOnSince(db, 'ws-1',
+      { cdn_bandwidth: false, media_storage: true, ai_messages: false },
+      { cdn_bandwidth: true, media_storage: false, ai_messages: true },
+      now)
+    // A re-enabled toggle replaces any stale instant: the days it spent suspended are not covered.
+    expect(db.setPaymentAccountMetadataKey).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'ws-1', key: 'overage_on_since_cdn_bandwidth', value: now.toISOString(), when: 'different' })
+    expect(db.setPaymentAccountMetadataJson).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'ws-1', key: 'overage_on_since_media_storage', value: null })
+  })
+
+  it('writes nothing when no CDN/storage toggle changed', async () => {
+    const { syncOverageOnSince } = await import('../../server/utils/overage-meter-gate')
+    const db = gateDb(null, null)
+    await syncOverageOnSince(db, 'ws-1', { cdn_bandwidth: true }, { cdn_bandwidth: true, ai_messages: false }, new Date())
+    expect(db.setPaymentAccountMetadataKey).not.toHaveBeenCalled()
+    expect(db.setPaymentAccountMetadataJson).not.toHaveBeenCalled()
+  })
+})
