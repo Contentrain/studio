@@ -323,3 +323,52 @@ describe('ingestMediaBytes — the repository source shares the upload path', ()
     expect(media.upload).not.toHaveBeenCalled()
   })
 })
+
+describe('svg sanitizer: an <image>\'s embedded raster (migrate #1046, an Illustrator/Canva/Photoshop logo)', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
+  // The first bytes of each kind, base64: what the signature check reads.
+  const BODIES = { png: 'iVBORw0KGgoAAAANSUhEUg==', jpeg: '/9j/4AAQSkZJRgABAQ==', gif: 'R0lGODlhAQABAIAAAA==', webp: 'UklGRiQAAABXRUJQVlA4IA==' }
+
+  it('a base64 PNG, JPEG, WebP or GIF on <image> is kept, by href or xlink:href, and the result passes the check', () => {
+    for (const [type, body] of Object.entries(BODIES)) {
+      const svg = `<svg ${NS} width="863" height="1048"><image id="Layer_0" width="863" height="1023" xlink:href="data:image/${type};base64,${body}"/></svg>`
+      const r = sanitizeSvg(Buffer.from(svg))
+      expect(r.ok && r.bytes.toString('utf8')).toBe(svg)
+      expect(r.ok && r.removed).toEqual([])
+      expect(svgProblems(Buffer.from(svg))).toBeNull()
+    }
+  })
+
+  it('a body broken over lines, or a type Photoshop writes (`img/png`), is written in the standard form', () => {
+    expect(clean(`<svg ${NS}><image width="1" href="data:image/png;base64,iVBORw0K\n  GgoAAAANSUhEUg=="/></svg>`)).toBe(`<svg ${NS}><image width="1" href="${PNG}"/></svg>`)
+    expect(clean(`<svg ${NS}><image width="1" xlink:href="data:img/png;base64,iVBORw0KGgoAAAANSUhEUg=="/></svg>`)).toBe(`<svg ${NS}><image width="1" xlink:href="${PNG}"/></svg>`)
+  })
+
+  const STILL_REMOVED: Array<[string, string]> = [
+    ['svg+xml on <image>', `<svg ${NS}><image width="1" href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="/></svg>`],
+    ['an svg+xml that is not base64', `<svg ${NS}><image width="1" href="data:image/svg+xml,&lt;svg onload=alert(1)&gt;"/></svg>`],
+    ['a declared PNG whose bytes are an SVG', `<svg ${NS}><image width="1" href="data:image/png;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+"/></svg>`],
+    ['a PNG that is not base64', `<svg ${NS}><image width="1" href="data:image/png,abc"/></svg>`],
+    ['text/html on <image>', `<svg ${NS}><image width="1" href="data:text/html;base64,PHNjcmlwdD4="/></svg>`],
+    ['an external picture on <image>', `<svg ${NS}><image width="1" href="https://evil.test/p.png"/></svg>`],
+    ['a data PNG on <use>', `<svg ${NS}><use href="${PNG}"/></svg>`],
+    ['a data PNG on <feImage>', `<svg ${NS}><filter id="f"><feImage xlink:href="${PNG}"/></filter></svg>`],
+    ['a data PNG followed by a script URL', `<svg ${NS}><image width="1" href="data:image/png;base64,AAAA javascript:alert(1)"/></svg>`],
+  ]
+  for (const [name, svg] of STILL_REMOVED) {
+    it(`still removed: ${name}`, () => {
+      const r = sanitizeSvg(Buffer.from(svg))
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(r.bytes.toString('utf8')).not.toMatch(/data:|evil\.test|javascript/)
+      expect(r.removed).toContain('href')
+      expect(svgProblems(r.bytes)).toBeNull()
+    })
+  }
+
+  it('the final check refuses a data href anywhere but <image>, whoever wrote it', () => {
+    expect(svgProblems(Buffer.from(`<svg ${NS}><use href="${PNG}"/></svg>`))).toBe('@href')
+    expect(svgProblems(Buffer.from(`<svg ${NS}><image href="data:image/svg+xml;base64,PHN2Zz4="/></svg>`))).toBe('@href')
+    expect(svgProblems(Buffer.from(`<svg ${NS}><image href="${PNG}"/></svg>`))).toBeNull()
+  })
+})

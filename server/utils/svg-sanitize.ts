@@ -1,7 +1,7 @@
 /**
  * SVG sanitizing — an ALLOW-LIST (elements + attributes), not a block-list. The
  * rule set is shared with Migrate: this file is a verbatim port of
- * `packages/media/src/svg.ts` (migrate feat/v3-media e3f971e), comments in
+ * `packages/media/src/svg.ts` (migrate main 9987668b, #1046), comments in
  * English; a change to the rules lands in both.
  *
  * Applied again here because the repository an import reads from is the
@@ -16,8 +16,14 @@
  *    removed WITH its content, as is an element declaring a non-SVG namespace
  *    (`xmlns="…xhtml"`). `set`/`animate*` that animate an `href` are removed.
  *  - Attributes: only {@link ATTRIBUTES}, `aria-*`, `role`. Never `on*`.
- *  - `href`/`xlink:href`: only a `#fragment` (in-document). Everything else,
- *    `data:` included, is removed.
+ *  - `href`/`xlink:href`: only a `#fragment` (in-document). One exception: a
+ *    base64 PNG/JPEG/GIF/WebP on `<image>` (`data:image/png;base64,…`), the
+ *    export form of Illustrator, Canva and Photoshop logos. The decoded bytes'
+ *    signature decides it, not the declared type (Photoshop writes
+ *    `data:img/png`), and it is written in the standard form. A browser only
+ *    draws it as a picture; it runs no script. `svg+xml`, external addresses
+ *    and a `data:` href on `<use>`/`<feImage>` or any other element are still
+ *    removed.
  *  - In an attribute value `url(…)` may only be `url(#fragment)`; a value
  *    carrying `javascript:`/`vbscript:` is removed.
  *  - CSS (`style` attribute and `<style>`): XML entities and CSS escapes
@@ -104,6 +110,26 @@ const squash = (value: string): string =>
   [...value.replace(/\s+/g, '')].filter(ch => ch.charCodeAt(0) > 0x1F && ch.charCodeAt(0) !== 0x7F).join('')
 
 const isFragment = (value: string): boolean => /^#[\w.:-]*$/.test(squash(value))
+/** The type a base64 picture's bytes say they are: PNG, JPEG, GIF, WebP; nothing else (SVG, HTML…). */
+const rasterType = (head: Buffer): string | undefined => {
+  const at = (offset: number, ...bytes: number[]) => bytes.every((b, i) => head[offset + i] === b)
+  if (at(0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) return 'png'
+  if (at(0, 0xFF, 0xD8, 0xFF)) return 'jpeg'
+  if (at(0, 0x47, 0x49, 0x46, 0x38) && (at(4, 0x37, 0x61) || at(4, 0x39, 0x61))) return 'gif'
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'webp'
+  return undefined
+}
+/**
+ * An `<image>`'s embedded picture as it is written: a base64 raster whose bytes are a raster too (the signature decides,
+ * not the declared type: Photoshop writes `data:img/png`). Returns the standard `data:image/<type>;base64,…`, or
+ * `undefined`.
+ */
+export function dataRasterOf(value: string): string | undefined {
+  const m = /^data:(?:image|img)\/[\w.+-]+;base64,([A-Za-z0-9+/]+=*)$/i.exec(squash(value))
+  if (!m) return undefined
+  const type = rasterType(Buffer.from(m[1]!.slice(0, 24), 'base64'))
+  return type ? `data:image/${type};base64,${m[1]}` : undefined
+}
 const SCRIPT_URL = /javascript:|vbscript:/i
 /** Whether every `url(…)` in the value is a `url(#fragment)`. */
 const onlyFragmentUrls = (value: string): boolean =>
@@ -161,13 +187,13 @@ function elementAllowed(name: string, attrs: Array<[string, string]>): boolean {
 }
 
 /** Whether an attribute and its value are accepted; `style` is cleaned separately. The value is XML-decoded. */
-function attributeAllowed(attr: string, value: string): boolean {
+function attributeAllowed(attr: string, value: string, element: string): boolean {
   if (/^on/i.test(attr)) return false
   if (!(ATTRIBUTES.has(attr) || /^aria-[a-z-]+$/.test(attr))) return false
   if (attr === 'xmlns' && value !== SVG_NS) return false
   if (attr === 'xmlns:xlink' && value !== XLINK_NS) return false
   if (attr === 'xmlns:svg' && value !== SVG_NS) return false
-  if ((attr === 'href' || attr === 'xlink:href') && !isFragment(value)) return false
+  if ((attr === 'href' || attr === 'xlink:href') && !isFragment(value)) return element === 'image' && dataRasterOf(value) === squash(value)
   if (SCRIPT_URL.test(squash(value))) return false
   if (attr !== 'style' && !onlyFragmentUrls(value)) return false
   return true
@@ -248,7 +274,13 @@ export function sanitizeSvg(input: Buffer): SvgSanitized {
     if (!stack.length) roots++
     const kept: string[] = []
     for (const [attr, value] of attrs) {
-      if (!attributeAllowed(attr, value)) {
+      // An embedded picture is written in its standard form (`data:img/png` → `data:image/png`), which the final check reads.
+      const raster = (attr === 'href' || attr === 'xlink:href') && localName(name).local === 'image' ? dataRasterOf(value) : undefined
+      if (raster) {
+        kept.push(`${attr}="${raster}"`)
+        continue
+      }
+      if (!attributeAllowed(attr, value, localName(name).local)) {
         removed.add(/^on/i.test(attr) ? 'on*' : attr.includes('href') ? 'href' : `@${attr}`)
         continue
       }
@@ -303,7 +335,7 @@ export function svgProblems(bytes: Buffer): string | null {
     const attrs = parseAttrs(m[4] ?? '')
     if (!elementAllowed(m[3], attrs)) return `<${m[3]}>`
     for (const [attr, value] of attrs) {
-      if (!attributeAllowed(attr, value)) return `@${attr}`
+      if (!attributeAllowed(attr, value, localName(m[3]).local)) return `@${attr}`
       if (attr === 'style') {
         const css = cssDecode(value)
         if (CSS_FORBIDDEN.test(css) || !onlyFragmentUrls(css)) return 'style'
