@@ -3,6 +3,9 @@ const { t } = useContent()
 
 const appName = computed(() => t('app.name'))
 const appDescription = computed(() => t('auth.marketing_signin_desc'))
+// The link-preview card (1200×630 PNG under public/), on this deployment's own address so a self-hosted Studio
+// serves its own copy.
+const ogImage = `${useRuntimeConfig().public.siteUrl.replace(/\/+$/, '')}/og-studio-1200x630.png`
 
 // Global title template — each page sets a short, page-specific title and the
 // brand suffix is appended here. Pages that set no title fall back to the bare
@@ -21,9 +24,13 @@ useSeoMeta({
   ogSiteName: () => appName.value,
   ogTitle: () => appName.value,
   ogDescription: () => appDescription.value,
-  twitterCard: 'summary',
+  ogImage,
+  ogImageWidth: 1200,
+  ogImageHeight: 630,
+  twitterCard: 'summary_large_image',
   twitterTitle: () => appName.value,
   twitterDescription: () => appDescription.value,
+  twitterImage: ogImage,
 })
 </script>
 
