@@ -39,7 +39,7 @@ async function* pageGen(items: Array<{ id: string }>) {
 const emptyPage = () => pageGen([])
 const pageOf = (...ids: string[]) => pageGen(ids.map(id => ({ id })))
 
-const input = { workspaceId: 'ws-1', plan: 'pro' as const, customerId: 'cus_1', parentSubscriptionId: 'sub_1', parentProductId: 'prod_pro_y' }
+const input = { workspaceId: '00000000-0000-4000-8000-000000000001', plan: 'pro' as const, customerId: 'cus_1', parentSubscriptionId: 'sub_1', parentProductId: 'prod_pro_y' }
 
 describe('polar companion subscription', () => {
   beforeEach(() => {
@@ -53,7 +53,7 @@ describe('polar companion subscription', () => {
     expect(subscriptionsCreate).toHaveBeenCalledWith({
       productId: 'prod_pro_c',
       customerId: 'cus_1',
-      metadata: { contentrain_companion: 'true', workspace_id: 'ws-1', plan: 'pro', parent_subscription_id: 'sub_1' },
+      metadata: { contentrain_companion: 'true', workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro', parent_subscription_id: 'sub_1' },
     })
   })
 
@@ -105,7 +105,7 @@ describe('polar webhook: companion events are marked, plan events are not', () =
   const sub = (over: Record<string, unknown> = {}) => ({
     id: 'sub_c1', status: 'active', customerId: 'cus_1', productId: 'prod_pro_c', checkoutId: null,
     currentPeriodStart: '2026-10-05T00:00:00Z', currentPeriodEnd: '2026-11-05T00:00:00Z', trialEnd: null, cancelAtPeriodEnd: false,
-    metadata: { contentrain_companion: 'true', workspace_id: 'ws-1', plan: 'pro' },
+    metadata: { contentrain_companion: 'true', workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro' },
     prices: [{ amountType: 'metered_unit', meter: { name: 'ai_credits_1c' } }, { amountType: 'metered_unit', meter: { name: 'api_credits_1c' } }],
     ...over,
   })
@@ -127,14 +127,14 @@ describe('polar webhook: companion events are marked, plan events are not', () =
   })
 
   it('marks a companion\'s order, so its usage invoice never reads as the plan\'s payment', async () => {
-    const result = await handle('order.paid', { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_c1', productId: 'prod_pro_c', totalAmount: 1200, billingReason: 'subscription_cycle', metadata: {}, subscription: { metadata: { contentrain_companion: 'true', workspace_id: 'ws-1' } } })
+    const result = await handle('order.paid', { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_c1', productId: 'prod_pro_c', totalAmount: 1200, billingReason: 'subscription_cycle', metadata: {}, subscription: { metadata: { contentrain_companion: 'true', workspace_id: '00000000-0000-4000-8000-000000000001' } } })
     expect(result).toMatchObject({ event: 'invoice.paid', companion: true })
   })
 
   it('does not mark the plan subscription or its order', async () => {
-    const plan = await handle('subscription.created', sub({ id: 'sub_1', productId: 'prod_pro_y', metadata: { workspace_id: 'ws-1', plan: 'pro' }, prices: [] }))
+    const plan = await handle('subscription.created', sub({ id: 'sub_1', productId: 'prod_pro_y', metadata: { workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro' }, prices: [] }))
     expect(plan.companion).toBeUndefined()
-    const order = await handle('order.paid', { id: 'ord_2', customerId: 'cus_1', subscriptionId: 'sub_1', productId: 'prod_pro_y', totalAmount: 7200, metadata: { workspace_id: 'ws-1' } })
+    const order = await handle('order.paid', { id: 'ord_2', customerId: 'cus_1', subscriptionId: 'sub_1', productId: 'prod_pro_y', totalAmount: 7200, metadata: { workspace_id: '00000000-0000-4000-8000-000000000001' } })
     expect(order.companion).toBeUndefined()
   })
 })

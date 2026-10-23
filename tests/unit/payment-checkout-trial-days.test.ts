@@ -19,7 +19,7 @@ vi.mock('stripe', () => ({
 }))
 
 const base = {
-  workspaceId: 'ws-1',
+  workspaceId: '00000000-0000-4000-8000-000000000001',
   workspaceName: 'Acme',
   plan: 'pro' as const,
   customerEmail: 'owner@example.com',
@@ -45,7 +45,7 @@ describe('a grant\'s trial length reaches the provider checkout', () => {
       products: ['prod_pro'],
       trialInterval: 'day',
       trialIntervalCount: 60,
-      metadata: { migrate_grant_id: 'grant-1', workspace_id: 'ws-1', plan: 'pro' },
+      metadata: { migrate_grant_id: 'grant-1', workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro' },
     }))
   })
 
@@ -65,7 +65,7 @@ describe('a grant\'s trial length reaches the provider checkout', () => {
 
   it('polar: metadata cannot overwrite the workspace or plan', async () => {
     await (await polar()).createCheckoutSession({ ...base, metadata: { workspace_id: 'ws-evil', plan: 'enterprise' } })
-    expect(polarCheckoutsCreate.mock.calls[0]![0]).toMatchObject({ metadata: { workspace_id: 'ws-1', plan: 'pro' } })
+    expect(polarCheckoutsCreate.mock.calls[0]![0]).toMatchObject({ metadata: { workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro' } })
   })
 
   it('polar: reports the grant a subscription was started from', async () => {
@@ -80,7 +80,7 @@ describe('a grant\'s trial length reaches the provider checkout', () => {
         currentPeriodEnd: new Date('2026-11-22T12:00:00Z'),
         trialEnd: new Date('2026-11-22T12:00:00Z'),
         cancelAtPeriodEnd: false,
-        metadata: { workspace_id: 'ws-1', plan: 'pro', migrate_grant_id: 'grant-1' },
+        metadata: { workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro', migrate_grant_id: 'grant-1' },
       },
     })
     const result = await (await polar()).handleWebhook('{}', {})
@@ -93,7 +93,7 @@ describe('a grant\'s trial length reaches the provider checkout', () => {
 
     await stripe.createCheckoutSession({ ...base, trialDays: 60, metadata: { migrate_grant_id: 'grant-1' } })
     expect(stripeSessionsCreate.mock.calls[0]![0]).toMatchObject({
-      subscription_data: { trial_period_days: 60, metadata: { migrate_grant_id: 'grant-1', workspace_id: 'ws-1' } },
+      subscription_data: { trial_period_days: 60, metadata: { migrate_grant_id: 'grant-1', workspace_id: '00000000-0000-4000-8000-000000000001' } },
     })
 
     await stripe.createCheckoutSession(base)

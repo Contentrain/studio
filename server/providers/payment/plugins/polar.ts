@@ -95,6 +95,13 @@ function extendWithBundleProducts(cfg: PolarConfig, productMap: Record<string, s
   }
 }
 
+/** Workspace ids are uuids; anything else (another app's customer id on the shared Polar org) names no workspace. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function workspaceIdOf(value: unknown): string | undefined {
+  return typeof value === 'string' && UUID_RE.test(value) ? value : undefined
+}
+
 function isoOrUndefined(value: Date | string | null | undefined): string | undefined {
   if (!value) return undefined
   if (value instanceof Date) return value.toISOString()
@@ -167,7 +174,7 @@ function subscriptionToResult(
   productMap: Record<string, string>,
   companionProductIds: Set<string> = new Set(),
 ): WebhookResult {
-  const workspaceId = typeof sub.metadata?.workspace_id === 'string' ? sub.metadata.workspace_id : undefined
+  const workspaceId = workspaceIdOf(sub.metadata?.workspace_id)
   const planFromMeta = typeof sub.metadata?.plan === 'string' ? sub.metadata.plan : undefined
 
   return {
@@ -207,6 +214,10 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
   const companionEnabled = cfg.companionUsage === true || cfg.companionUsage === 'true'
   // Only a yearly (or bundle) subscription gets a companion: a monthly one bills its overage monthly already.
   const yearlyParentIds = new Set([cfg.starterBundleProductId, cfg.proBundleProductId, cfg.starterYearlyProductId, cfg.proYearlyProductId].filter((id): id is string => Boolean(id)))
+  // The Polar org is shared with Migrate, whose orders reach this webhook too. An event for a product
+  // Studio does not sell is not ours; with no products configured, ownership falls to the uuid check.
+  const ownProductIds = new Set([...Object.values(planMap), ...companionProductIds].filter(Boolean))
+  const isForeign = (productId: unknown) => ownProductIds.size > 0 && typeof productId === 'string' && !ownProductIds.has(productId)
 
   return {
     async createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
@@ -274,6 +285,8 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
         throw err
       }
 
+      if (isForeign((event.data as { productId?: unknown }).productId)) return { event: 'noop' }
+
       switch (event.type) {
         case 'subscription.created':
           return subscriptionToResult('subscription.created', event.data as unknown as PolarSubscriptionLike, planMap, companionProductIds)
@@ -293,7 +306,7 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
             return {
               event: 'subscription.canceled',
               ...(isCompanion(sub, companionProductIds) ? { companion: true } : {}),
-              workspaceId: typeof sub.metadata?.workspace_id === 'string' ? sub.metadata.workspace_id : undefined,
+              workspaceId: workspaceIdOf(sub.metadata?.workspace_id),
               subscriptionId: sub.id,
               customerId: sub.customerId,
               subscriptionStatus: 'canceled',
@@ -319,11 +332,9 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
           // our checkout, so it may not carry the checkout metadata. The
           // subscription's metadata and the customer's external id (set to
           // the workspace id at checkout) name the workspace too.
-          const fromMeta = (m?: Record<string, unknown>) => (typeof m?.workspace_id === 'string' ? m.workspace_id : undefined)
-          const workspaceId = fromMeta(order.metadata)
-            ?? fromMeta(order.subscription?.metadata)
-            ?? order.customer?.externalId
-            ?? undefined
+          const workspaceId = workspaceIdOf(order.metadata?.workspace_id)
+            ?? workspaceIdOf(order.subscription?.metadata?.workspace_id)
+            ?? workspaceIdOf(order.customer?.externalId)
           return {
             event: 'invoice.paid',
             workspaceId,
