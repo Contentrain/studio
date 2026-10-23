@@ -83,6 +83,7 @@ export interface MigrationMediaJobsTable {
   claim_token: string | null
   lease_until: string | null
   origin: string | null
+  migrate_grant_id: string | null
   created_at: Generated<string>
   updated_at: Generated<string>
   finished_at: string | null

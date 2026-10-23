@@ -35,6 +35,7 @@ import { createMediaIngestContext, ingestMediaBytes } from './media-bulk-ingest'
 import { inspectRepoMedia } from './media-ingest'
 import type { MigrationMediaPreflight } from './migration-media'
 import { fetchableFromOrigin, planMigrationMediaPreflight, projectPath, readMigrationMediaManifest, verifiedMediaOrigin } from './migration-media'
+import { applyMigrationMedia } from './migration-media-write'
 import { fetchFromOrigin, OriginFetchError } from './origin-fetch'
 import type { OriginFetchOptions } from './origin-fetch'
 import { resolveWorkspaceBilling } from './workspace-billing'
@@ -61,6 +62,8 @@ export interface StartMigrationMediaInput {
   defaultBranch: string
   /** The origin Migrate signed for this site (`getMigrateGrantOrigin`); without one no old-site file is queued. */
   signedOrigin: string | null
+  /** The bundle grant whose site binding starts this import (migration 052); the job is then applied when it is done. */
+  migrateGrantId?: string
 }
 
 export interface StartMigrationMediaResult {
@@ -120,6 +123,7 @@ export async function startMigrationMediaImport(input: StartMigrationMediaInput)
     manifestRef: found.ref,
     manifestCommit,
     origin,
+    ...(input.migrateGrantId ? { migrateGrantId: input.migrateGrantId } : {}),
     items,
   })
   return {
@@ -162,6 +166,8 @@ export interface MigrationMediaTickDeps {
   resolvePlan?: (workspaceId: string) => Promise<Plan | null>
   /** The fetch from the old site — only its resolver and address rule, for tests on a local server. */
   originFetch?: Pick<OriginFetchOptions, 'resolve' | 'isBlocked' | 'idleMs'> & { deadlineMs?: number }
+  /** A bundle grant's job, once done (`applyGrantMigrationMedia`). */
+  applyGrant?: (job: Record<string, unknown>, plan: Plan) => Promise<unknown>
   /** Clock for the batch budget. */
   clock?: () => number
 }
@@ -299,5 +305,40 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
 
   // Pending includes files parked for a retry: the job stays open until they are fetched or fail.
   const more = await db.listPendingMigrationMediaItems(jobId, 1)
-  return finish(more.length > 0 ? 'running' : 'done', null, settled)
+  if (more.length > 0) return finish('running', null, settled)
+  // Only the holder that closes the job applies a bundle grant's import: a lost lease applies nothing twice.
+  const closed = await db.finishMigrationMediaJob(jobId, token, 'done', null, new Date())
+  if (closed && job.migrate_grant_id) {
+    await (deps.applyGrant ?? applyGrantMigrationMedia)(job, plan).catch((error: unknown) => {
+      // eslint-disable-next-line no-console -- ops visibility: the owner's apply card stays, nothing is lost
+      console.error('[migration-media] grant apply failed', { jobId, projectId, message: (error as Error)?.message })
+    })
+  }
+  return { claimed: true, jobId, settled, deferred, status: 'done' }
+}
+
+/**
+ * A bundle grant's import (052), once done, points the site at Studio Media on its own: the media apply through the
+ * project's write path (auto-merge, or a pull request on a protected branch, or review), local files kept. A
+ * refusal (CDN off, a conflict) leaves the owner's apply card as it is.
+ */
+export async function applyGrantMigrationMedia(job: Record<string, unknown>, plan: Plan) {
+  const workspaceId = String(job.workspace_id)
+  const projectId = String(job.project_id)
+  const db = useDatabaseProvider()
+  const ctx = await resolveProjectContext(workspaceId, projectId)
+  const project = await db.getProjectById(projectId, 'cdn_enabled, cdn_public_media')
+  return applyMigrationMedia({
+    db,
+    git: ctx.git,
+    contentRoot: ctx.contentRoot,
+    projectId,
+    defaultBranch: ctx.project.default_branch ?? 'main',
+    plan,
+    project: project ?? {},
+    job,
+    dryRun: false,
+    deleteLocal: false,
+    authorEmail: null,
+  })
 }

@@ -128,4 +128,27 @@ describe('postgres-db migration media jobs (contract)', () => {
     expect(Number(settled.rows[0]!.bytes)).toBe(4096)
     expect(Number((await db.getMigrationMediaJob(other.rows[0]!.id, jobId))?.bytes_done)).toBe(4096)
   })
+
+  it('links a job to the bundle grant that started it, and keeps the job when the grant goes (052)', async () => {
+    const project = await sql<{ id: string }>`INSERT INTO public.projects (workspace_id, repo_full_name)
+      VALUES (${user.workspaceId}, 'contentrain/migration-media-grant') RETURNING id`.execute(getDb())
+    const grant = await sql<{ id: string }>`INSERT INTO public.migrate_grants (order_id, claim_jti, user_id, plan, trial_days, repo_owner, repo_name, email)
+      VALUES ('contract-media-grant', 'contract-media-grant-jti', ${user.userId}, 'pro', 30, 'contentrain', 'migration-media-grant', 'owner@example.com') RETURNING id`.execute(getDb())
+    const grantId = grant.rows[0]!.id
+    const { job, created } = await db.createMigrationMediaJob({
+      projectId: project.rows[0]!.id,
+      workspaceId: user.workspaceId,
+      createdBy: user.userId,
+      manifestRef: 'contentrain',
+      manifestCommit: null,
+      migrateGrantId: grantId,
+      items: [item('public/media/g.png')],
+    })
+    expect(created).toBe(true)
+    expect(job.migrate_grant_id).toBe(grantId)
+
+    await sql`DELETE FROM public.migrate_grants WHERE id = ${grantId}`.execute(getDb())
+    expect(await db.getMigrationMediaJob(project.rows[0]!.id, String(job.id))).toMatchObject({ id: job.id, migrate_grant_id: null })
+    await sql`UPDATE public.migration_media_jobs SET status = 'canceled' WHERE id = ${String(job.id)}`.execute(getDb())
+  })
 })

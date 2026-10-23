@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
   if (grant.kind !== 'bundle' || !grant.redeemed_at || !workspaceId || !owner || !name)
     throw createError({ statusCode: 409, message: errorMessage('migrate.connect_grant_not_ready'), data: { code: 'grant_not_ready' } })
 
-  const workspace = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'id, slug, type, plan, overage_settings, github_installation_id')
+  const workspace = await db.getWorkspaceForUser(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'], 'id, slug, type, plan, overage_settings, github_installation_id, media_storage_bytes')
   if (!workspace) throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
   const slug = workspace.slug as string
   const repoFullName = `${owner}/${name}`

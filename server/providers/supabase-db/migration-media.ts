@@ -62,6 +62,7 @@ export function migrationMediaMethods(): MigrationMediaMethods {
           manifest_ref: input.manifestRef,
           manifest_commit: input.manifestCommit,
           origin: input.origin ?? null,
+          migrate_grant_id: input.migrateGrantId ?? null,
           total: input.items.length,
           // Not claimable until every item is in: the worker only takes queued/running jobs.
           status: input.items.length === 0 ? 'done' : 'preparing',

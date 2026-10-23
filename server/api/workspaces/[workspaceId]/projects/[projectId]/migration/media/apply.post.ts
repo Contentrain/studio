@@ -26,41 +26,7 @@
  *   → 409 migration.media_cdn_disabled · migration.media_public_off · 403 cdn.upgrade
  */
 
-import { CONTENTRAIN_BRANCH } from '@contentrain/types'
-import type { EngineMergeResult } from '~~/server/utils/content-engine/types'
-import { STUDIO_AUTHOR } from '~~/server/utils/content-engine/types'
-import { createFeatureBranch, openWriteSnapshot, writeBase } from '~~/server/utils/content-engine/helpers'
-import { effectiveWorkflow } from '~~/server/utils/branch-approval'
-import { planMigrationMediaApply } from '~~/server/utils/migration-media-apply'
-import { readMigrationMediaManifest } from '~~/server/utils/migration-media'
-import { publicMediaBase, publicMediaBlock } from '~~/server/utils/media-url'
-
-/** Files listed by name in the commit a reviewer reads; the rest are counted. */
-const LISTED = 50
-
-/**
- * What a reviewer reads on the branch: the content rewrite in numbers, and every site file it touches by
- * name — studio.json and each local file it removes — so nothing outside content changes unseen.
- */
-function commitMessage(counts: Awaited<ReturnType<typeof planMigrationMediaApply>>['counts'], email: string): string {
-  const lines = [
-    'contentrain: move migrated media to Studio',
-    '',
-    `Content: ${counts.rewritten} references in ${counts.filesChanged} files now point at Studio Media.`,
-  ]
-  if (counts.drifted.length) lines.push(`Left as they are (changed since the migration): ${counts.drifted.length} references.`)
-  if (counts.studioBinding === 'written') lines.push('Site file: studio.json (Studio binding for images, forms and comments).')
-  if (counts.deletedPaths.length) {
-    lines.push(`Removed ${counts.deletedPaths.length} local media files (nothing in the project refers to them any more):`)
-    lines.push(...counts.deletedPaths.slice(0, LISTED).map(p => `  - ${p}`))
-    if (counts.deletedPaths.length > LISTED) lines.push(`  … and ${counts.deletedPaths.length - LISTED} more`)
-  }
-  lines.push('', `Co-Authored-By: ${email}`)
-  return lines.join('\n')
-}
-
-/** Every imported item in one read — a migration's media, not an unbounded list. */
-const IMPORTED_LIMIT = 50_000
+import { applyMigrationMedia } from '~~/server/utils/migration-media-write'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -88,69 +54,17 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: errorMessage('migration.media_import_rate_limited') })
 
   const { git, contentRoot, workspace, project: row } = await resolveProjectContext(workspaceId, projectId)
-  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
-  const blocked = publicMediaBlock(project, hasFeature(plan, 'cdn.delivery'))
-  if (blocked && !dryRun) {
-    if (blocked === 'plan')
-      throw createError({ statusCode: 403, message: errorMessage('cdn.upgrade', getUpgradeParams(plan)), data: { blocked } })
-    throw createError({ statusCode: 409, message: errorMessage(blocked === 'cdn_disabled' ? 'migration.media_cdn_disabled' : 'migration.media_public_off'), data: { blocked } })
-  }
-  const found = await readMigrationMediaManifest(git, contentRoot, row.default_branch ?? 'main')
-  if (!found)
-    throw createError({ statusCode: 404, message: errorMessage('migration.media_manifest_missing') })
-
-  const engine = createContentEngine({ git, contentRoot, projectId })
-  await engine.ensureContentBranch()
-  const snapshot = await openWriteSnapshot(git)
-  const imported = new Map((await db.listMigrationMediaItems(String(job.id), 'done', IMPORTED_LIMIT))
-    .filter(item => item.delivery_url)
-    .map(item => [String(item.repo_path), String(item.delivery_url)]))
-  const pub = useRuntimeConfig().public
-  const { changes, counts } = await planMigrationMediaApply({
-    manifest: found.manifest,
-    root: found.root,
-    imported,
-    read: path => snapshot.reader.readFile(path).catch(() => null),
-    studio: { baseUrl: String(pub.siteUrl ?? ''), projectId, mediaBaseUrl: publicMediaBase(projectId) },
+  return applyMigrationMedia({
+    db,
+    git,
+    contentRoot,
+    projectId,
+    defaultBranch: row.default_branch ?? 'main',
+    plan: event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace),
+    project,
+    job,
+    dryRun,
     deleteLocal,
-    // Read only when a deletion is otherwise allowed: the whole project is searched for the local URLs first.
-    listFiles: async () => (await git.getTree(snapshot.baseSha ?? CONTENTRAIN_BRANCH)).filter(e => e.type === 'blob'),
+    authorEmail: session.user.email ?? null,
   })
-
-  if (dryRun) return { status: 'dry_run', counts, ...(blocked ? { blocked } : {}) }
-  if (changes.length === 0) return { status: 'nothing_to_do', counts }
-
-  const { branchName } = await createFeatureBranch(
-    { git, pathCtx: { contentRoot }, projectId, ensureContentBranch: () => Promise.resolve() },
-    'media',
-    'migration',
-  )
-  const commit = await git.applyPlan({
-    branch: branchName,
-    changes,
-    message: commitMessage(counts, session.user.email ?? ''),
-    author: STUDIO_AUTHOR,
-    base: writeBase(snapshot),
-  })
-
-  const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
-  // Review projects hold it like any other change: it rewrites content and touches site files.
-  if (effectiveWorkflow(brain.config?.workflow, hasFeature(plan, 'workflow.review')) === 'review')
-    return { status: 'pending_review', counts, branch: branchName, commitSha: commit.sha }
-
-  let merge: EngineMergeResult
-  try {
-    merge = await engine.mergeBranch(branchName)
-  }
-  catch (error) {
-    const status = error as { status?: number, statusCode?: number }
-    if (status.status !== 409 && status.statusCode !== 409) throw error
-    merge = { merged: false, sha: null, pullRequestUrl: null, conflict: true }
-  }
-  if (merge.conflict || (!merge.merged && !merge.pullRequestUrl)) {
-    await git.deleteBranch(branchName).catch(() => {})
-    throw createError({ statusCode: 409, message: errorMessage('migration.media_apply_conflict'), data: counts })
-  }
-  invalidateBrainCache(projectId)
-  return { status: 'merged', counts, branch: branchName, commitSha: commit.sha, pullRequestUrl: merge.pullRequestUrl ?? null }
 })

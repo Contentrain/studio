@@ -1311,6 +1311,8 @@ export interface DatabaseProvider {
     manifestCommit: string | null
     /** The signed origin the manifest matched — the only host an item with `sourceUrl` may be fetched from (migrations 038, 039). */
     origin?: string | null
+    /** The bundle grant whose binding started this import (migration 052); set only by that automatic start. */
+    migrateGrantId?: string | null
     /** A repository file (`blobSha`) or a file still at the old site (`sourceUrl`, which is then its `repoPath` too). */
     items: Array<{ repoPath: string, blobSha?: string | null, sourceUrl?: string | null, bytes: number, mime: string, width?: number, height?: number, alt?: string }>
   }) => Promise<{ job: DatabaseRow, created: boolean }>

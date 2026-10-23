@@ -13,6 +13,11 @@ const helpers = vi.hoisted(() => ({
   writeBase: vi.fn(() => 'base-sha'),
 }))
 vi.mock('../../server/utils/content-engine/helpers', () => helpers)
+// The write (`server/utils/migration-media-write.ts`) imports these; each forwards to the stub `stub()` sets.
+const stubbed = (name: string) => (...a: unknown[]) => (globalThis as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!(...a)
+vi.mock('../../server/utils/content-engine', async importOriginal => ({ ...await importOriginal<object>(), createContentEngine: stubbed('createContentEngine') }))
+vi.mock('../../server/utils/brain-cache', async importOriginal => ({ ...await importOriginal<object>(), getOrBuildBrainCache: stubbed('getOrBuildBrainCache'), invalidateBrainCache: stubbed('invalidateBrainCache') }))
+vi.mock('../../server/utils/license', async importOriginal => ({ ...await importOriginal<object>(), hasFeature: stubbed('hasFeature') }))
 
 const PATH = '/api/workspaces/workspace-1/projects/project-1/migration/media/apply'
 const manifest = {

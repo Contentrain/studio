@@ -17,8 +17,13 @@ import type { DatabaseProvider, DatabaseRow } from '../providers/database'
 import { reportMigrateSiteBindingAlarm } from './alert'
 import { normalizeContentRoot } from './content-paths'
 import { publicMediaBase } from './media-url'
+import type { GitProvider } from '../providers/git'
+import type { Plan } from './license'
+import { hasFeature } from './license'
+import { migrationSignedOrigin } from './migrate-grant'
 import { ensureMigrateSiteBinding, SITE_BINDING_ALARM_ATTEMPTS, SITE_BINDING_MAX_ATTEMPTS } from './migrate-site-binding'
 import type { MigrateSiteBinding } from './migrate-site-binding'
+import { applyGrantMigrationMedia, startMigrationMediaImport } from './migration-media-import'
 import { useGitProvider } from './providers'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
@@ -27,7 +32,7 @@ type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'getProjectB
 export interface BindMigrateGrantSiteInput {
   db: BindDb
   grant: DatabaseRow
-  /** The grant's workspace: its installation and billing (`id, type, plan, overage_settings, github_installation_id`). */
+  /** The grant's workspace: its installation, billing and media use (`id, type, plan, overage_settings, github_installation_id, media_storage_bytes`). */
   workspace: DatabaseRow
   projectId: string
   repo: { owner: string, name: string }
@@ -43,17 +48,52 @@ export async function bindMigrateGrantSite(input: BindMigrateGrantSiteInput): Pr
   const git = useGitProvider({ installationId: installation, owner: input.repo.owner, repo: input.repo.name })
   const project = await input.db.getProjectById(input.projectId, 'id, content_root, default_branch')
   const plan = input.plan ?? (await resolveWorkspaceBilling(input.db, input.workspace as Parameters<typeof resolveWorkspaceBilling>[1])).effectivePlan
-  return ensureMigrateSiteBinding({
+  const contentRoot = normalizeContentRoot((project?.content_root as string | null) ?? '')
+  const defaultBranch = input.defaultBranch ?? (project?.default_branch as string | null) ?? await git.getDefaultBranch()
+  const binding = await ensureMigrateSiteBinding({
     db: input.db,
     grantId: input.grant.id as string,
     projectId: input.projectId,
     git,
-    contentRoot: normalizeContentRoot((project?.content_root as string | null) ?? ''),
-    defaultBranch: input.defaultBranch ?? (project?.default_branch as string | null) ?? await git.getDefaultBranch(),
+    contentRoot,
+    defaultBranch,
     plan,
     studio: { baseUrl: String(useRuntimeConfig().public?.siteUrl ?? ''), mediaBaseUrl: publicMediaBase(input.projectId) },
     attempts: typeof input.grant.site_binding_attempts === 'number' ? input.grant.site_binding_attempts : 0,
   })
+  if (binding.state === 'written' || binding.state === 'partial')
+    await startGrantMedia({ grant: input.grant, workspace: input.workspace, projectId: input.projectId, repo: input.repo, git, contentRoot, defaultBranch, plan })
+  return binding
+}
+
+/**
+ * A bound bundle site's media moves to Studio on its own: the import starts for the grant (one job per project, so a
+ * repeat finds it), and a job with nothing to fetch, done as it is recorded, is applied here since no tick will.
+ * Best-effort: the binding's answer never depends on it, and without a media stack or `media.upload` nothing starts.
+ */
+async function startGrantMedia(input: { grant: DatabaseRow, workspace: DatabaseRow, projectId: string, repo: { owner: string, name: string }, git: GitProvider, contentRoot: string, defaultBranch: string, plan: string }): Promise<void> {
+  const workspaceId = String(input.workspace.id)
+  try {
+    if (!useMediaProvider() || !hasFeature(input.plan, 'media.upload')) return
+    const { job, created } = await startMigrationMediaImport({
+      projectId: input.projectId,
+      workspaceId,
+      userId: String(input.grant.user_id),
+      plan: input.plan as Plan,
+      usedBytes: Number(input.workspace.media_storage_bytes ?? 0),
+      overageSettings: (input.workspace.overage_settings as Record<string, boolean> | null) ?? {},
+      git: input.git,
+      contentRoot: input.contentRoot,
+      defaultBranch: input.defaultBranch,
+      signedOrigin: await migrationSignedOrigin(workspaceId, { repo_full_name: `${input.repo.owner}/${input.repo.name}` }),
+      migrateGrantId: String(input.grant.id),
+    })
+    if (created && job.status === 'done') await applyGrantMigrationMedia(job, input.plan as Plan)
+  }
+  catch (error) {
+    // eslint-disable-next-line no-console -- ops visibility: the owner can still start the import from the project
+    console.error('[migrate-site-binding] media import not started', { grantId: input.grant.id, projectId: input.projectId, message: (error as Error)?.message })
+  }
 }
 
 export interface SiteBindingSweepSummary {
@@ -98,7 +138,7 @@ export async function sweepMigrateSiteBindings(input: { db: SweepDb, now?: () =>
       if (state === 'failed' && attempts >= SITE_BINDING_ALARM_ATTEMPTS) await alarm({ state, code: typeof detailCode === 'string' ? detailCode : 'write_failed', attempts })
       continue
     }
-    const workspace = await input.db.getWorkspaceById(row.workspace_id as string, 'id, type, plan, overage_settings, github_installation_id')
+    const workspace = await input.db.getWorkspaceById(row.workspace_id as string, 'id, type, plan, overage_settings, github_installation_id, media_storage_bytes')
     const result = workspace
       ? await bind({ db: input.db, grant: row, workspace, projectId: row.project_id as string, repo, ...(row.project_default_branch ? { defaultBranch: row.project_default_branch as string } : {}) })
       : null
