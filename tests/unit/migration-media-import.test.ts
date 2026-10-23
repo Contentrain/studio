@@ -15,7 +15,7 @@ import { runMigrationMediaTick, startMigrationMediaImport, toMigrationMediaJobVi
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4b00000000049454e44ae426082', 'hex')
 const svg = (n: number) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 ${n}"/></svg>`)
 
-interface Job { id: string, project_id: string, workspace_id: string, created_by: string, origin: string | null, status: string, total: number, done: number, failed: number, deduped: number, bytes_done: number, error: string | null, claim_token: string | null, lease_until: number | null, created_at: string, finished_at: string | null }
+interface Job { id: string, project_id: string, workspace_id: string, created_by: string, origin: string | null, migrate_grant_id: string | null, status: string, total: number, done: number, failed: number, deduped: number, bytes_done: number, error: string | null, claim_token: string | null, lease_until: number | null, created_at: string, finished_at: string | null }
 interface Item { job_id: string, repo_path: string, blob_sha: string | null, source_url: string | null, attempts: number, retry_at: number | null, bytes: number, mime: string, width: number | null, height: number | null, alt: string | null, state: string, asset_id: string | null, delivery_url: string | null, deduped: boolean, error: string | null, status_code: number | null }
 
 function memoryStore() {
@@ -26,10 +26,10 @@ function memoryStore() {
   return {
     jobs,
     items,
-    async createMigrationMediaJob(input: { projectId: string, workspaceId: string, createdBy: string, origin?: string | null, items: Array<{ repoPath: string, blobSha?: string | null, sourceUrl?: string | null, bytes: number, mime: string, width?: number, height?: number, alt?: string }> }) {
+    async createMigrationMediaJob(input: { projectId: string, workspaceId: string, createdBy: string, origin?: string | null, migrateGrantId?: string | null, items: Array<{ repoPath: string, blobSha?: string | null, sourceUrl?: string | null, bytes: number, mime: string, width?: number, height?: number, alt?: string }> }) {
       const existing = open(input.projectId)
       if (existing) return { job: existing, created: false }
-      const job: Job = { id: `job-${++n}`, project_id: input.projectId, workspace_id: input.workspaceId, created_by: input.createdBy, origin: input.origin ?? null, status: input.items.length ? 'queued' : 'done', total: input.items.length, done: 0, failed: 0, deduped: 0, bytes_done: 0, error: null, claim_token: null, lease_until: null, created_at: new Date().toISOString(), finished_at: null }
+      const job: Job = { id: `job-${++n}`, project_id: input.projectId, workspace_id: input.workspaceId, created_by: input.createdBy, origin: input.origin ?? null, migrate_grant_id: input.migrateGrantId ?? null, status: input.items.length ? 'queued' : 'done', total: input.items.length, done: 0, failed: 0, deduped: 0, bytes_done: 0, error: null, claim_token: null, lease_until: null, created_at: new Date().toISOString(), finished_at: null }
       jobs.push(job)
       for (const i of input.items) items.push({ job_id: job.id, repo_path: i.repoPath, blob_sha: i.blobSha ?? null, source_url: i.sourceUrl ?? null, attempts: 0, retry_at: null, bytes: i.bytes, mime: i.mime, width: i.width ?? null, height: i.height ?? null, alt: i.alt ?? null, state: 'pending', asset_id: null, delivery_url: null, deduped: false, error: null, status_code: null })
       return { job, created: true }
@@ -167,6 +167,33 @@ describe('migration media import', () => {
     expect(store.items.every(i => i.state === 'done' && i.delivery_url?.includes('/media/original/'))).toBe(true)
     expect(media.upload.mock.calls.map(c => (c[0] as { source: string }).source)).toEqual(['repo', 'repo', 'repo'])
     expect(await runMigrationMediaTick(new Date(), deps(git))).toEqual({ claimed: false })
+  })
+
+  it('a bundle grant\'s job is applied once, when it is done; a job the owner started is left for their dry run', async () => {
+    const git = fakeGit(files, manifest)
+    const applyGrant = vi.fn(async () => ({ status: 'merged' }))
+    await startMigrationMediaImport({ projectId: 'p-1', workspaceId: 'ws-1', userId: 'u-1', plan: 'starter', usedBytes: 0, git: git as never, contentRoot: '', defaultBranch: 'main', signedOrigin: null, migrateGrantId: 'grant-1' })
+    expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyGrant })).toMatchObject({ status: 'done' })
+    expect(applyGrant).toHaveBeenCalledTimes(1)
+    expect(applyGrant).toHaveBeenCalledWith(expect.objectContaining({ id: store.jobs[0]!.id, migrate_grant_id: 'grant-1' }), 'starter')
+
+    // Started by hand: done, and nothing applied.
+    store = memoryStore()
+    vi.stubGlobal('useDatabaseProvider', () => store)
+    await start(git)
+    const notCalled = vi.fn(async () => ({ status: 'merged' }))
+    expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyGrant: notCalled })).toMatchObject({ status: 'done' })
+    expect(notCalled).not.toHaveBeenCalled()
+  })
+
+  it('a grant job whose apply is refused still finishes done: the owner\'s apply card is left as it was', async () => {
+    const git = fakeGit(files, manifest)
+    await startMigrationMediaImport({ projectId: 'p-1', workspaceId: 'ws-1', userId: 'u-1', plan: 'starter', usedBytes: 0, git: git as never, contentRoot: '', defaultBranch: 'main', signedOrigin: null, migrateGrantId: 'grant-1' })
+    const refused = vi.fn(async () => Promise.reject(Object.assign(new Error('migration.media_cdn_disabled'), { statusCode: 409 })))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyGrant: refused })).toMatchObject({ claimed: true, status: 'done' })
+    expect(refused).toHaveBeenCalledTimes(1)
+    expect(store.jobs[0]).toMatchObject({ status: 'done' })
   })
 
   it('a file that is not what it is listed as fails alone; the job still finishes', async () => {
