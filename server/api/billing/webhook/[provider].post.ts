@@ -353,6 +353,11 @@ export default defineEventHandler(async (event) => {
 
   const db = useDatabaseProvider()
 
+  // Not shown to be Studio's by the event (the Polar org is shared with Migrate): taken only when the
+  // subscription already is, as a customer on a product no longer configured is. Anything else is not ours.
+  if (result.unowned && !(result.subscriptionId && await db.hasPaymentSubscription(providerKey, result.subscriptionId)))
+    return { received: true }
+
   // A companion usage subscription never reaches the plan subscription's branches below.
   if (result.companion) {
     await applyCompanionEvent(db, result)

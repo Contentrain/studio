@@ -20,6 +20,7 @@ describe('billing webhook integration', () => {
   const claimDefault = async ({ when }: { when: unknown }) => when === 'different'
   const setPaymentAccountMetadataKey = vi.fn(claimDefault)
   const setPaymentAccountCreditUnit = vi.fn().mockResolvedValue(false)
+  const hasPaymentSubscription = vi.fn().mockResolvedValue(false)
 
   let handleWebhookMock: ReturnType<typeof vi.fn>
   // The real util (auto-imported in Nitro) marks the grant, then moves a bundle's subscription; the
@@ -50,8 +51,10 @@ describe('billing webhook integration', () => {
       markWorkspaceTrialConsumed,
       setPaymentAccountMetadataKey,
       setPaymentAccountCreditUnit,
+      hasPaymentSubscription,
     }))
     setPaymentAccountCreditUnit.mockClear()
+    hasPaymentSubscription.mockReset().mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -85,6 +88,39 @@ describe('billing webhook integration', () => {
     })
     return (await import('../../server/api/billing/webhook/[provider].post.ts')).default
   }
+
+  describe('an event the shared Polar org sends that is not shown to be Studio\'s', () => {
+    it('answers 2xx and writes nothing for another app\'s order', async () => {
+      // Migrate's order.paid, as staging received it: a product Studio does not sell, a tenant id, no subscription.
+      handleWebhookMock.mockResolvedValue({ event: 'invoice.paid', unowned: true, customerId: 'cus_m1', invoiceId: 'ord_m1', amountPaid: 5000 })
+
+      const handler = await mockPluginAndLoadHandler()
+      expect(await handler({ context: {} } as never)).toEqual({ received: true })
+      expect(hasPaymentSubscription).not.toHaveBeenCalled()
+      expect(getActivePaymentAccount).not.toHaveBeenCalled()
+      expect(upsertPaymentAccount).not.toHaveBeenCalled()
+    })
+
+    it('still processes a subscription Studio holds on a product no longer configured', async () => {
+      hasPaymentSubscription.mockResolvedValue(true)
+      handleWebhookMock.mockResolvedValue({
+        event: 'subscription.updated',
+        unowned: true,
+        workspaceId: 'ws-1',
+        plan: 'pro',
+        customerId: 'cus_123',
+        subscriptionId: 'sub_legacy',
+        subscriptionStatus: 'active',
+        currentPeriodEnd: '2026-11-23T00:00:00.000Z',
+        cancelAtPeriodEnd: false,
+      })
+
+      const handler = await mockPluginAndLoadHandler()
+      await handler({ context: {} } as never)
+      expect(hasPaymentSubscription).toHaveBeenCalledWith('stripe', 'sub_legacy')
+      expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'ws-1', subscriptionId: 'sub_legacy', plan: 'pro' }))
+    })
+  })
 
   it('activates subscription on subscription.created', async () => {
     handleWebhookMock.mockResolvedValue({

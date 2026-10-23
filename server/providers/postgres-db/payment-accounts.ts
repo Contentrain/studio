@@ -15,6 +15,7 @@ import { getAdmin, throwDbError } from './helpers'
 type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
+  | 'hasPaymentSubscription'
   | 'listActivePaymentAccounts'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
@@ -43,6 +44,22 @@ function metadataOnUpdate(next: string, preserve: string[] | undefined) {
 
 export function paymentAccountMethods(): PaymentAccountMethods {
   return {
+    async hasPaymentSubscription(provider, subscriptionId) {
+      try {
+        const row = await getAdmin()
+          .selectFrom('payment_accounts')
+          .select('id')
+          .where('provider', '=', provider)
+          .where('subscription_id', '=', subscriptionId)
+          .limit(1)
+          .executeTakeFirst()
+        return Boolean(row)
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
     async getActivePaymentAccount(workspaceId) {
       try {
         const row = await getAdmin()

@@ -17,10 +17,10 @@ const products = {
   proYearlyProductId: 'prod_pro_y',
 }
 
-async function handle(type: string, data: Record<string, unknown>, cfg: Record<string, unknown> = products) {
+async function handle(type: string, data: Record<string, unknown>) {
   validateEvent.mockReturnValue({ type, data })
   const { polarPlugin } = await import('../../server/providers/payment/plugins/polar')
-  return polarPlugin.create({ polar: { accessToken: 'tok', webhookSecret: 'sec', ...cfg } } as never).handleWebhook('{}', {})
+  return polarPlugin.create({ polar: { accessToken: 'tok', webhookSecret: 'sec', ...products } } as never).handleWebhook('{}', {})
 }
 
 /** Migrate's own order on the shared Polar org, as staging received it (2026-10-23): its tenant id, not a workspace. */
@@ -39,14 +39,27 @@ const migrateOrder = {
 describe('polar plugin — events of another app on the shared org', () => {
   beforeEach(() => validateEvent.mockReset())
 
-  it('ignores Migrate\'s order: not one of Studio\'s products', async () => {
-    expect(await handle('order.paid', migrateOrder)).toEqual({ event: 'noop' })
+  it('marks Migrate\'s order unowned and names no workspace: its tenant id never reaches the database', async () => {
+    const result = await handle('order.paid', migrateOrder)
+    expect(result).toMatchObject({ event: 'invoice.paid', unowned: true })
+    expect(result.workspaceId).toBeUndefined()
   })
 
-  it('names no workspace for a non-uuid id when Studio has no products configured', async () => {
-    const result = await handle('order.paid', migrateOrder, {})
-    expect(result).toMatchObject({ event: 'invoice.paid' })
-    expect(result.workspaceId).toBeUndefined()
+  it('keeps a subscription on a product no longer configured: its workspace id says it is Studio\'s', async () => {
+    // Live 2026-10-23: both active subscriptions are on the first Starter/Pro products, not the ones in env.
+    const result = await handle('subscription.updated', {
+      id: 'sub_legacy',
+      status: 'active',
+      customerId: 'cus_1',
+      productId: 'prod_pro_legacy',
+      currentPeriodStart: new Date('2026-10-01T00:00:00Z'),
+      currentPeriodEnd: new Date('2026-11-01T00:00:00Z'),
+      trialEnd: null,
+      cancelAtPeriodEnd: false,
+      metadata: { workspace_id: WORKSPACE, plan: 'pro' },
+    })
+    expect(result).toMatchObject({ event: 'subscription.updated', workspaceId: WORKSPACE, plan: 'pro', subscriptionId: 'sub_legacy' })
+    expect(result.unowned).toBeUndefined()
   })
 
   it('still processes the Migrate+Studio bundle order: Studio opened that checkout on its own product', async () => {
@@ -58,5 +71,6 @@ describe('polar plugin — events of another app on the shared org', () => {
       customer: { externalId: WORKSPACE },
     })
     expect(result).toMatchObject({ event: 'invoice.paid', workspaceId: WORKSPACE, subscriptionId: 'sub_1' })
+    expect(result.unowned).toBeUndefined()
   })
 })

@@ -114,6 +114,12 @@ export interface WebhookResult {
   migrateGrantId?: string
   /** The product the subscription is on right now (subscription events). */
   productId?: string
+  /**
+   * Not shown to be Studio's by the event itself: a product Studio does not sell and no workspace id in its
+   * metadata. The org is shared with Migrate; the webhook processes it only when the subscription is already
+   * Studio's (a legacy product, `hasPaymentSubscription`), and answers 2xx for anything else.
+   */
+  unowned?: true
   /** Provider invoice/order ID (for payment events). */
   invoiceId?: string
   /**
