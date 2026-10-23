@@ -54,7 +54,7 @@ keep their result, labelled 2026-07-27 @2.3.0.
 | Unavailable tools are **not registered** (MCP's `skipTools`) | ✅ |
 | Every remote tool is grantable by a scope (`mcp-tool-classes.ts` → `scopes.ts`) | ✅ from code |
 | Read/write split — no catch-all `api_request` | ✅ |
-| **Server `instructions` (507 chars) name `contentrain_apply`, which this surface never registers** | ❌ **open — §4.1 defect 5, owned by `Contentrain/ai`** |
+| Server `instructions` name only registered tools: at MCP 3.11.12 this surface gets 456 chars without the `contentrain_apply` clause (§4.1 defect 5) | ✅ fixed upstream in 3.11.12 (ai#651), pinned 2026-10-23; from the published tarball, not re-read live |
 | §3 post-bump check for 2.3.0 → 3.11.2 (tarball diff + one real staging content save) | ⏳ **not done** |
 | DCR → 201, review account, prod-origin E2E (write chain, media, step-up, revocation) | ✅ 2026-07-27 @2.3.0; **not re-run at 3.11.2** |
 | Legal URLs, public documentation | ✅ (unchanged; not re-fetched) |
@@ -127,7 +127,7 @@ the build that answers (`version`, `commit`): check it before any prod pass.
   endpoint, domain, or user interface". It is an attestation, not a challenge
   — and it binds both directories.
 
-## 3. Upstream `@contentrain/mcp` — pinned 3.11.2 (history below from 2.1.x–2.3.0)
+## 3. Upstream `@contentrain/mcp` — pinned 3.11.12 (history below from 2.1.x–3.11.12)
 
 **The 2.1.0 → 2.1.1 bump is submission-relevant, not housekeeping.** 2.1.0's
 `DEFAULT_INSTRUCTIONS` told every client to *"Preview writes with
@@ -159,6 +159,15 @@ exposed to the new envelope.
       names ≤ 64 chars; `openWorldHint` present (`media_ingest` only).
 - [x] `sessionFingerprint` wired in Studio (`mcp-cloud-server.ts` →
       `mcpTenantFingerprint`); `TOOL_REQUIREMENTS` drives the media scope→tool map.
+- [x] **3.11.2 → 3.11.12 (2026-10-23), by tarball diff:** the only `dist/`
+      deltas are the `version` string, `defaultInstructions(available)` (the
+      `contentrain_apply` clause only where that tool is registered; with every
+      tool available `DEFAULT_INSTRUCTIONS` is byte-identical) and the HTTP
+      entries passing an optional `instructions` through. No tool, schema,
+      annotation or provider change. Its `@contentrain/types` is 1.73.0, so
+      Studio's `types` (1.73.0) and `query` (7.6.54) moved with it to keep one
+      copy. The instructions change counts for the OpenAI resubmission rule
+      below; it lands before the scan. The staging content save is not done.
 - [ ] **2.3.0 → 3.11.2: not done yet.** Diff the published tarballs' `dist/`
       and do one real staging content save (the rule below). The surface grew
       from 24 to 27 tools (`contentrain_describe_format`,
@@ -302,7 +311,10 @@ can leave a response describing a world the caller is not in.
    now gated on `isToolAvailable(...)`, so it is simply not emitted here.
 
 5. **Server instructions name a tool this surface never registers — `ai`,
-   OPEN (found 2026-10-23 at 3.11.2).** `DEFAULT_INSTRUCTIONS` (507 chars)
+   FIXED in 3.11.12 (found 2026-10-23 at 3.11.2).** The default is now built
+   from the session's registered tools, and the HTTP entry takes
+   `instructions`; this surface gets 456 chars with no `contentrain_apply`.
+   As found: `DEFAULT_INSTRUCTIONS` (507 chars)
    ends with *"preview contentrain_apply with dry_run:true first"*, but
    `contentrain_apply` is `projectRoot`-gated and never on `/api/mcp/remote`.
    Studio cannot override it: `startHttpMcpServerWith` calls
