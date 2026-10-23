@@ -32,7 +32,7 @@ async function polar(config: Record<string, unknown> = polarConfig) {
 }
 
 const input = {
-  workspaceId: 'ws-1',
+  workspaceId: '00000000-0000-4000-8000-000000000001',
   plan: 'pro' as const,
   customerEmail: 'owner@example.com',
   amountCents: 64100,
@@ -52,7 +52,7 @@ describe('polar bundle checkout', () => {
       products: ['prod_pro_bundle'],
       prices: { prod_pro_bundle: [{ amountType: 'fixed', priceCurrency: 'usd', priceAmount: 64100 }] },
       customerEmail: 'owner@example.com',
-      externalCustomerId: 'ws-1',
+      externalCustomerId: '00000000-0000-4000-8000-000000000001',
       successUrl: input.successUrl,
       allowTrial: false,
       allowDiscountCodes: false,
@@ -68,7 +68,7 @@ describe('polar bundle checkout', () => {
   it('carries order, tenant and grant to the subscription, and metadata cannot overwrite the workspace or plan', async () => {
     await (await polar()).createBundleCheckout(input)
     expect(checkoutsCreate.mock.calls[0]![0]).toMatchObject({
-      metadata: { order_id: 'ord_1', tenant_id: 'ten_1', migrate_grant_id: 'grant-1', workspace_id: 'ws-1', plan: 'pro' },
+      metadata: { order_id: 'ord_1', tenant_id: 'ten_1', migrate_grant_id: 'grant-1', workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro' },
     })
   })
 
@@ -131,8 +131,8 @@ describe('polar webhook: bundle and yearly products read as their plan', () => {
     ['prod_starter_y', 'starter'],
     ['prod_pro_m', 'pro'],
   ])('%s is %s, and the result names the product', async (productId, plan) => {
-    validateEvent.mockReturnValue(subscription(productId, { workspace_id: 'ws-1', migrate_grant_id: 'grant-1' }))
+    validateEvent.mockReturnValue(subscription(productId, { workspace_id: '00000000-0000-4000-8000-000000000001', migrate_grant_id: 'grant-1' }))
     const result = await (await polar()).handleWebhook('{}', {})
-    expect(result).toMatchObject({ event: 'subscription.created', plan, productId, migrateGrantId: 'grant-1', workspaceId: 'ws-1' })
+    expect(result).toMatchObject({ event: 'subscription.created', plan, productId, migrateGrantId: 'grant-1', workspaceId: '00000000-0000-4000-8000-000000000001' })
   })
 })

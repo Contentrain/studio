@@ -1048,6 +1048,9 @@ export interface DatabaseProvider {
   /** Return the single active payment account for a workspace, if any. */
   getActivePaymentAccount: (workspaceId: string) => Promise<DatabaseRow | null>
 
+  /** Whether this provider subscription is one of Studio's (any payment account, active or archived, names it). */
+  hasPaymentSubscription: (provider: string, subscriptionId: string) => Promise<boolean>
+
   /** Active payment accounts of one provider, oldest first (ops jobs; filter the rows in the caller). */
   listActivePaymentAccounts: (provider: string, limit: number) => Promise<DatabaseRow[]>
 

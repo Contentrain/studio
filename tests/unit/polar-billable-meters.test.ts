@@ -17,7 +17,7 @@ function subscription(prices: unknown) {
     currentPeriodEnd: new Date('2026-10-29T07:36:51.653Z'),
     trialEnd: null,
     cancelAtPeriodEnd: false,
-    metadata: { workspace_id: 'ws-1' },
+    metadata: { workspace_id: '00000000-0000-4000-8000-000000000001' },
     prices,
   }
 }
@@ -56,11 +56,11 @@ describe('polar plugin — order.paid', () => {
   it('names the workspace from the customer when a renewal order carries no checkout metadata, and reports the amount', async () => {
     validateEvent.mockReturnValue({
       type: 'order.paid',
-      data: { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_1', totalAmount: 4900, metadata: {}, subscription: { metadata: {} }, customer: { externalId: 'ws-1' } },
+      data: { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_1', totalAmount: 4900, metadata: {}, subscription: { metadata: {} }, customer: { externalId: '00000000-0000-4000-8000-000000000001' } },
     })
     const { polarPlugin } = await import('../../server/providers/payment/plugins/polar')
     const provider = polarPlugin.create({ polar: { accessToken: 'tok', webhookSecret: 'sec' } } as never)
-    await expect(provider.handleWebhook('{}', {})).resolves.toMatchObject({ event: 'invoice.paid', workspaceId: 'ws-1', amountPaid: 4900 })
+    await expect(provider.handleWebhook('{}', {})).resolves.toMatchObject({ event: 'invoice.paid', workspaceId: '00000000-0000-4000-8000-000000000001', amountPaid: 4900 })
   })
 
   it('reports why the order was charged, so a $0 conversion is told apart from the $0 order that starts a trial', async () => {
@@ -69,7 +69,7 @@ describe('polar plugin — order.paid', () => {
     for (const [billingReason, expected] of [['subscription_cycle', 'subscription_cycle'], ['subscription_create', 'subscription_create'], ['purchase', 'other']]) {
       validateEvent.mockReturnValue({
         type: 'order.paid',
-        data: { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_1', totalAmount: 0, billingReason, metadata: { workspace_id: 'ws-1' } },
+        data: { id: 'ord_1', customerId: 'cus_1', subscriptionId: 'sub_1', totalAmount: 0, billingReason, metadata: { workspace_id: '00000000-0000-4000-8000-000000000001' } },
       })
       await expect(provider.handleWebhook('{}', {})).resolves.toMatchObject({ amountPaid: 0, billingReason: expected })
     }

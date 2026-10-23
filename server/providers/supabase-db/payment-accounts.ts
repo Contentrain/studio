@@ -12,6 +12,7 @@ import { getAdmin } from './helpers'
 type PaymentAccountMethods = Pick<
   DatabaseProvider,
   | 'getActivePaymentAccount'
+  | 'hasPaymentSubscription'
   | 'listActivePaymentAccounts'
   | 'upsertPaymentAccount'
   | 'setPaymentAccountMetadataKey'
@@ -26,6 +27,17 @@ type PaymentAccountMethods = Pick<
 
 export function paymentAccountMethods(): PaymentAccountMethods {
   return {
+    async hasPaymentSubscription(provider, subscriptionId) {
+      const { data, error } = await getAdmin()
+        .from('payment_accounts')
+        .select('id')
+        .eq('provider', provider)
+        .eq('subscription_id', subscriptionId)
+        .limit(1)
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data ?? []).length > 0
+    },
+
     async getActivePaymentAccount(workspaceId) {
       const { data, error } = await getAdmin()
         .from('payment_accounts')

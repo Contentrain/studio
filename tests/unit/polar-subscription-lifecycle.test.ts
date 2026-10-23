@@ -30,7 +30,7 @@ function subscription(overrides: Record<string, unknown>) {
     canceledAt: null,
     endsAt: null,
     endedAt: null,
-    metadata: { workspace_id: 'ws-1' },
+    metadata: { workspace_id: '00000000-0000-4000-8000-000000000001' },
     ...overrides,
   }
 }
@@ -56,7 +56,7 @@ describe('polar plugin — cancel and revoke keep what was paid for', () => {
 
     expect(result).toMatchObject({
       event: 'subscription.updated',
-      workspaceId: 'ws-1',
+      workspaceId: '00000000-0000-4000-8000-000000000001',
       plan: 'pro',
       subscriptionStatus: 'active',
       cancelAtPeriodEnd: true,
@@ -98,7 +98,7 @@ describe('polar plugin — cancel and revoke keep what was paid for', () => {
 
       expect(result).toMatchObject({
         event: 'subscription.canceled',
-        workspaceId: 'ws-1',
+        workspaceId: '00000000-0000-4000-8000-000000000001',
         subscriptionId: 'sub_1',
         subscriptionStatus: 'canceled',
       })
