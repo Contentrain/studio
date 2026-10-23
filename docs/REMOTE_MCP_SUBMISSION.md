@@ -33,32 +33,43 @@ User-facing docs live in [REMOTE_MCP.md](./REMOTE_MCP.md).
 > string must match the entered URL exactly, incl. path. Never change the
 > PRM `resource` string or the AS `issuer` after listing.
 
-## 0. Status at a glance (verified against prod 2026-07-27)
+## 0. Status at a glance (re-verified 2026-10-23: Studio `0.4.10`, MCP `3.11.2`)
+
+Re-verified from code (Studio `main` f7ca93ac, whose MCP surface is identical
+to the `v0.4.10` tag; `@contentrain/mcp` pinned exactly `3.11.2` in
+`package.json` and the lockfile) plus read-only GETs of the public endpoints
+on prod. No login and no POSTs, so nothing behind auth was re-run: those rows
+keep their result, labelled 2026-07-27 @2.3.0.
 
 | Area | State |
 |------|-------|
-| Prod origin live (`studio.contentrain.io`), v0.2.0 tagged | ✅ |
-| PRM (RFC 9728) — `resource` = endpoint, `authorization_servers[0]` = origin | ✅ 200 on prod |
-| ASM (RFC 8414) — issuer + authorize/token/register, `S256`, CIMD advertised | ✅ 200 on prod |
-| Bare `POST /api/mcp/remote` → 401 + `WWW-Authenticate` w/ `resource_metadata` + `scope` | ✅ on prod |
-| **`POST /oauth/register` (DCR) → 201** — proves `016`/`017`/`018` applied to the prod DB | ✅ **the old §2.1 blocker is closed** |
-| Tool annotations @ MCP **2.3.0** — 24 tools, all `title` + `readOnlyHint`/`destructiveHint`, names ≤64, `openWorldHint` only on `media_ingest` | ✅ zero gaps |
-| Unavailable tools are **not registered** (MCP's `skipTools`) — no listed-but-always-erroring tool | ✅ |
+| Prod answers `0.4.10`: `GET /api/health` → `version` `0.4.10`, `commit` ee497e45 (the `v0.4.10` tag) | ✅ 2026-10-23 |
+| PRM (RFC 9728) at `/.well-known/oauth-protected-resource/api/mcp/remote` and the bare `/.well-known/oauth-protected-resource`: `resource` = `https://studio.contentrain.io/api/mcp/remote`, `authorization_servers` = [origin], all 6 scopes (media advertised), `bearer_methods_supported: [header]` | ✅ 200, `max-age=300`, 2026-10-23 |
+| ASM (RFC 8414) at `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`: issuer = origin, authorize/token/register, `S256`, `token_endpoint_auth_methods: [none]`, `client_id_metadata_document_supported: true` (CIMD) | ✅ 200, `max-age=300`, 2026-10-23 |
+| `resource` string and `issuer` unchanged since listing prep (§7) | ✅ |
+| Bare request to `/api/mcp/remote` → 401 + `WWW-Authenticate` with `resource_metadata` + `scope="content:read content:write project:metadata"` | ✅ tested with **GET** 2026-10-23 (the handler authenticates before anything else, so POST gets the same) |
+| `/.well-known/openai-apps-challenge` → 404 while `NUXT_OPENAI_APPS_CHALLENGE` is unset (correct until §6 step 1) | ✅ 2026-10-23 |
+| Tool annotations @ MCP **3.11.2**: 27 tools, all with `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
+| Remote `tools/list` = **16** for a media-eligible project, **11** otherwise (see §4) | ✅ from code; not re-listed live |
+| Unavailable tools are **not registered** (MCP's `skipTools`) | ✅ |
+| Every remote tool is grantable by a scope (`mcp-tool-classes.ts` → `scopes.ts`) | ✅ from code |
 | Read/write split — no catch-all `api_request` | ✅ |
-| Legal URLs live on contentrain.io (`/legal/privacy-policy`, `/legal/terms`, `/legal/cookie-policy`, `/legal/mcp-connector-privacy`) | ✅ |
-| Public documentation (`docs.contentrain.io/developer/mcp-connector`, `contentrain.io/docs/mcp-connector`) | ✅ |
-| **Review account** — provisioned on prod against a populated, media-eligible demo workspace | ✅ |
-| **Prod-origin E2E** — all 14 tools, write chain, media, scope step-up, revocation | ✅ (§4) |
-| Refresh rotation (needs a >1h connection) | ⏳ pending |
-| **Claude Team/Enterprise org** | ❌ **open — the only remaining gate** |
+| **Server `instructions` (507 chars) name `contentrain_apply`, which this surface never registers** | ❌ **open — §4.1 defect 5, owned by `Contentrain/ai`** |
+| §3 post-bump check for 2.3.0 → 3.11.2 (tarball diff + one real staging content save) | ⏳ **not done** |
+| DCR → 201, review account, prod-origin E2E (write chain, media, step-up, revocation) | ✅ 2026-07-27 @2.3.0; **not re-run at 3.11.2** |
+| Legal URLs, public documentation | ✅ (unchanged; not re-fetched) |
+| Live client passes (#2 Claude connector, #4 ChatGPT, #5 Codex, #7 refresh > 1h) | ⏳ need a human (§4) |
+| **Claude Team/Enterprise org** | ❌ open |
 
-Everything technical is verified against production, and all four defects the
-E2E run surfaced (§4.1) are fixed. What is left is operational.
+What is left: one upstream fix (defect 5) that must land **before** the
+OpenAI tool scan, because the scan snapshots the instructions; the §3
+post-bump check; the human client passes; the org gate.
 
 **One sequencing trap:** Railway auto-deploys `main` to *staging*; production
 deploys only on a `v*` tag. Fixes merged to `main` are therefore not on the
 origin being submitted until a release is cut. Cut the tag before submitting,
-or reviewers meet the bugs the fixes already closed.
+or reviewers meet the bugs the fixes already closed. `GET /api/health` names
+the build that answers (`version`, `commit`): check it before any prod pass.
 
 ## 1. Organizational prerequisites (weeks of lead time — start first)
 
@@ -116,7 +127,7 @@ or reviewers meet the bugs the fixes already closed.
   endpoint, domain, or user interface". It is an attestation, not a challenge
   — and it binds both directories.
 
-## 3. Upstream `@contentrain/mcp` — pinned 2.3.0
+## 3. Upstream `@contentrain/mcp` — pinned 3.11.2 (history below from 2.1.x–2.3.0)
 
 **The 2.1.0 → 2.1.1 bump is submission-relevant, not housekeeping.** 2.1.0's
 `DEFAULT_INSTRUCTIONS` told every client to *"Preview writes with
@@ -148,6 +159,11 @@ exposed to the new envelope.
       names ≤ 64 chars; `openWorldHint` present (`media_ingest` only).
 - [x] `sessionFingerprint` wired in Studio (`mcp-cloud-server.ts` →
       `mcpTenantFingerprint`); `TOOL_REQUIREMENTS` drives the media scope→tool map.
+- [ ] **2.3.0 → 3.11.2: not done yet.** Diff the published tarballs' `dist/`
+      and do one real staging content save (the rule below). The surface grew
+      from 24 to 27 tools (`contentrain_describe_format`,
+      `contentrain_vocabulary_save`, `contentrain_vocabulary_delete`);
+      `contentrain_doctor` is now `projectRoot`-gated.
 - [ ] After any future MCP bump: diff the published tarballs' `dist/` and do a
       real staging content save before trusting the mocked suite. A bump that
       changes tool names/descriptions/schemas/annotations/**instructions**
@@ -159,41 +175,74 @@ exposed to the new envelope.
 CIMD is the primary path; DCR is the fallback (Codex, and Claude when CIMD
 selection fails).
 
-**Verified against the production origin 2026-07-27.** The whole dance —
-review-login → DCR → authorize → consent → code → token (all 6 scopes +
-refresh) → `initialize` → `tools/list` — then every one of the 14 tools, the
-full write chain (`content_save`/`model_save` → `cr/*` → auto-merge →
-`contentrain` → `context.json` regeneration → `cr/*` auto-deletion), real
-`media_ingest` (webp + variants + blurhash), scope step-up and revocation.
-The demo repo was left in its original state and the probe grants were
-deleted from Connected Apps.
+**Last full pass: production origin, 2026-07-27, at MCP 2.3.0.** The whole
+dance — review-login → DCR → authorize → consent → code → token (all 6 scopes +
+refresh) → `initialize` → `tools/list` — then every tool, the full write chain
+(`content_save`/`model_save` → `cr/*` → auto-merge → `contentrain` →
+`context.json` regeneration → `cr/*` auto-deletion), real `media_ingest` (webp +
+variants + blurhash), scope step-up and revocation. The demo repo was left in
+its original state and the probe grants were deleted from Connected Apps.
+**None of the authenticated rows has been re-run at 3.11.2** (2026-10-23 was
+code + public GETs only); the ✅ marks below are that pass, labelled 2026-07-27 @2.3.0.
 
-`tools/list` returns **14**, not 24: the 10 `projectRoot`/`localWorktree`
-tools are never registered on this provider (MCP's `skipTools`). That is
-correct — expect 14 in the portal's tool sync.
+**Expected `tools/list` at 3.11.2: 16** for a media-eligible project, 11
+without media. 27 tools exist; 11 are never registered here because they need
+a local `projectRoot` (MCP's `skipTools`): `init`, `scaffold`, `doctor`,
+`bulk`, `submit`, `merge`, `reconcile`, `branch_list`, `branch_delete`,
+`scan`, `apply`. The 16 (all `contentrain_*`):
 
-One honest caveat: the pass above ran through a raw HTTP harness. The portal
+| Tool | read | destr. | idem. | openWorld | Scope |
+|------|:---:|:---:|:---:|:---:|-------|
+| `status` | ✓ | – | ✓ | – | `project:metadata` |
+| `describe` | ✓ | – | ✓ | – | `project:metadata` |
+| `describe_format` | ✓ | – | ✓ | – | `project:metadata` |
+| `content_list` | ✓ | – | ✓ | – | `content:read` |
+| `model_save` | – | – | ✓ | – | `content:write` |
+| `model_delete` | – | ✓ | – | – | `content:write` |
+| `vocabulary_save` | – | – | ✓ | – | `content:write` |
+| `vocabulary_delete` | – | ✓ | – | – | `content:write` |
+| `content_save` | – | – | ✓ | – | `content:write` |
+| `content_delete` | – | ✓ | – | – | `content:write` |
+| `validate` | – | – | ✓ | – | `content:write` (MCP marks it a write: `fix: true`) |
+| `media_list` | ✓ | – | ✓ | – | `media:read` |
+| `media_get` | ✓ | – | ✓ | – | `media:read` |
+| `media_ingest` | – | – | – | **✓** | `media:write` |
+| `media_update` | – | – | ✓ | – | `media:write` |
+| `media_delete` | – | ✓ | – | – | `media:write` |
+
+The 5 media tools appear only when the proxy attests media eligibility (plan +
+`cdn_enabled` + media stack); prod advertises the `media:*` scopes, so the
+review account must be media-eligible (§2) or the portal syncs 11.
+
+One honest caveat: the 2.3.0 pass ran through a raw HTTP harness. The portal
 asks you to confirm you exercised the tools *"via MCP Inspector or as a custom
 connector in Claude"*. Functionally equivalent, but do one pass through a real
 client before ticking that box.
 
 | # | Client | Pass criteria | Prod |
 |---|--------|---------------|------|
-| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 14/14 (raw harness — see caveat above) |
-| 2 | Claude custom connector | Connect card appears from the bare 401; consent shows the client host; tools run | ⏳ do one pass for the attestation |
+| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 2026-07-27 @2.3.0: 14/14 (raw harness); ⏳ **human** at 3.11.2: 16/16 in a real client |
+| 2 | Claude custom connector | Connect card appears from the bare 401; consent shows the client host; tools run | ⏳ **human** |
 | 3 | Claude Code | `claude mcp add --transport http contentrain <url>`; RFC 8252 loopback callback works | ✅ on staging 2026-07-14 |
-| 4 | ChatGPT developer mode | CIMD/DCR registration + consent complete; tools listed | ○ |
-| 5 | Codex | `codex mcp login contentrain`; DCR path completes | ○ |
-| 6 | Scope step-up | 403 `insufficient_scope` → client re-prompts consent → retry succeeds | ✅ 403 + `WWW-Authenticate: insufficient_scope` with `scope` + `resource_metadata`; reads keep working |
-| 7 | Refresh rotation | Stay connected > 1h; silent refresh, no re-auth prompt | ⏳ needs the wait |
-| 8 | Revocation | Client's next call prompts a clean re-authorization | ✅ 401 + `invalid_token`; **refresh token rejected too** (family revoked) |
-| 9 | Write path | `cr/*` lands + auto-merge reconcile fires | ✅ merge + `context.json` regeneration + `cr/*` auto-deletion all confirmed on GitHub |
-| 10 | Media | Tools appear in `tools/list` and return real assets | ✅ all 5; `media_ingest` produced webp + og/card variants + blurhash |
+| 4 | ChatGPT developer mode | CIMD/DCR registration + consent complete; tools listed | ⏳ **human** |
+| 5 | Codex | `codex mcp login contentrain`; DCR path completes | ⏳ **human** |
+| 6 | Scope step-up | 403 `insufficient_scope` → client re-prompts consent → retry succeeds | ✅ 2026-07-27 @2.3.0: 403 + `WWW-Authenticate: insufficient_scope` with `scope` + `resource_metadata`; reads keep working |
+| 7 | Refresh rotation | Stay connected > 1h; silent refresh, no re-auth prompt | ⏳ **human** (needs the wait) |
+| 8 | Revocation | Client's next call prompts a clean re-authorization | ✅ 2026-07-27 @2.3.0: 401 + `invalid_token`; **refresh token rejected too** (family revoked) |
+| 9 | Write path | `cr/*` lands + auto-merge reconcile fires | ✅ 2026-07-27 @2.3.0 on GitHub; ⏳ one real pass at 3.11.2 (§3 post-bump rule) |
+| 10 | Media | Tools appear in `tools/list` and return real assets | ✅ 2026-07-27 @2.3.0, all 5; ⏳ one real pass at 3.11.2 |
+
+**Needs a human** (a real client account, a browser consent, or a wait):
+#1 in a real client, #2 Claude custom connector, #4 ChatGPT developer mode,
+#5 Codex, #7 refresh after > 1h, and the 3.11.2 passes of #9 and #10. Run them
+after defect 5 is fixed and released, so the instructions the clients see are
+the ones submitted.
 
 ### 4.1 Defects found while running the matrix
 
-Four, in review-risk order. **All four are fixed** — two here, two upstream in
-`Contentrain/ai` (2.3.0). They are the same class the 2.1.1 `dry_run` fix
+Four found in the 2.3.0 run, in review-risk order, **all four fixed** — two
+here, two upstream in `Contentrain/ai` (2.3.0) — and a fifth found on the
+3.11.2 re-verify, **open** upstream. They are the same class the 2.1.1 `dry_run` fix
 belonged to: *a response that does not match what the surface actually does.*
 Anthropic's criteria call this out twice — descriptions must match behaviour,
 and errors must be actionable.
@@ -251,6 +300,18 @@ can leave a response describing a world the caller is not in.
    2.3.0.** Its `next_steps` said "Run contentrain_submit to push changes", but
    `submit` is `localWorktree`-gated and absent from this surface. The hint is
    now gated on `isToolAvailable(...)`, so it is simply not emitted here.
+
+5. **Server instructions name a tool this surface never registers — `ai`,
+   OPEN (found 2026-10-23 at 3.11.2).** `DEFAULT_INSTRUCTIONS` (507 chars)
+   ends with *"preview contentrain_apply with dry_run:true first"*, but
+   `contentrain_apply` is `projectRoot`-gated and never on `/api/mcp/remote`.
+   Studio cannot override it: `startHttpMcpServerWith` calls
+   `createServer({ provider, projectRoot })` with no `instructions`, so the
+   default is always sent. It is defect 4's class (a hint for an unavailable
+   tool), at `initialize`, where reviewers read it and where OpenAI's scan
+   snapshots it. Fix upstream: make the default availability-aware, or let the
+   HTTP entry take `instructions`. **It must land before the OpenAI scan**,
+   or the fix later forces a version resubmission.
 
 ## 5. Claude submission (claude.ai → Admin settings → Directory)
 
