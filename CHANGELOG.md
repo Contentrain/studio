@@ -1,14 +1,43 @@
 # Changelog
 
-## v0.4.11 (unreleased)
+## v0.4.11
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.10...v0.4.11)
 
 ### ⚠️ Upgrade notes
 
-**1. Yearly plans: overage is billed monthly through the companion usage subscription; run `polar:sync` before turning companions on.**
-The founder's rule is that overage is billed monthly whatever the plan's billing frequency. `pnpm polar:sync` now adds the metered prices a companion usage product lacks (on production today: `cdn_origin_gb` and `media_storage_gb_months`) the same way it does for the monthly products, keeping every active price by id; the dry run prints `+N metered price(s)`. Polar never moves a subscription to new prices, so a companion opened before this keeps its old prices: apply the sync (dry run, then `--apply --server=production`) before setting `NUXT_POLAR_COMPANION_USAGE=true`. With companions on, the reconciler also opens one for every active yearly or bundle subscription that has none (a $0 monthly subscription in the customer's Polar portal); nothing is billed unless the workspace turns overage on.
+**1. Migration 052, additive.**
+`052_migration_media_job_grant.sql` adds `migration_media_jobs.migrate_grant_id` (nullable uuid, FK `migrate_grants(id)`, `ON DELETE SET NULL`). The Railway pre-deploy command (`node scripts/migrate-postgres.mjs`) runs it; on the Supabase pair, the Supabase CLI. The previous image never reads or writes the column, so rolling back the image alone is safe. Staging applied it on 68f7081d.
 
-**2. A yearly plan's lock says it is being set up while companions are on.**
-With `NUXT_POLAR_COMPANION_USAGE` on, a Starter or Pro yearly plan whose companion is not open yet (and was not skipped for its product) shows "billed monthly — being set up" (lock reason `yearly_pending`) instead of "not available on yearly plans"; with it off, the old text stays.
+**2. Polar webhook: events that are not Studio's get 2xx with no write.**
+The Polar organization is shared with Migrate. An event is Studio's when its `metadata.workspace_id` is a Studio workspace uuid, else when its product is one Studio sells (the plan products and the companions), else when its subscription id is one Studio already holds in `payment_accounts`. Anything else, such as a Migrate order, is answered `{ received: true }` with no database write instead of failing with 500. The two live subscriptions on legacy products (Starter product 7a806912, Pro product f8167576) stay Studio's through their uuid `metadata.workspace_id`.
+
+**3. Yearly plans: overage billed monthly through the companion usage subscription. Nothing to run for this deploy.**
+The founder's rule is that overage is billed monthly whatever the plan's billing frequency. `pnpm polar:sync` now adds the metered prices a companion usage product lacks (on production today: `cdn_origin_gb` and `media_storage_gb_months`) the same way it does for the monthly products, keeping every active price by id; the dry run prints `+N metered price(s)`.
+- **This deploy: none.** Production keeps `NUXT_POLAR_COMPANION_USAGE` off, and with it off nothing in this release reads the companion prices or changes the yearly lock.
+- **Before turning companions on** (a separate owner step), run the sync first, because Polar never moves a subscription to new prices and a companion opened earlier would keep its old ones:
+  1. `npx tsx --env-file=.env.prod scripts/polar-sync.ts` (dry run: `+2 metered price(s)` on each companion, nothing else)
+  2. `npx tsx --env-file=.env.prod scripts/polar-sync.ts --apply --server=production`
+  3. set `NUXT_POLAR_COMPANION_USAGE=true`.
+- With companions on, the reconciler opens one for every active yearly or bundle subscription that has none (a $0 monthly subscription in the customer's Polar portal); nothing is billed unless the workspace turns overage on. A Starter or Pro yearly plan whose companion is not open yet (and was not skipped for its product) shows "billed monthly — being set up" (lock reason `yearly_pending`) instead of "not available on yearly plans"; with the flag off, the old text stays.
+
+**4. Bundle media auto-import: no new flag or variable.**
+It runs where the media import already runs on production (R2 `NUXT_CDN_R2_*` with the ee media stack, and the plan's `media.upload`, Starter and up) and starts only from a Migrate bundle grant's site binding. A workspace without a bundle grant sees no change, and a media import its owner starts by hand is still applied only by the owner, after a dry run.
+
+### 🚀 Enhancements
+
+- **migration:** a Migrate bundle grant's site binding starts the project's media import with the grant's signed origin, and the finished import is applied through the same write path (#479)
+- **billing:** `polar:sync` adds the missing metered prices to the companion usage products; a yearly plan's lock says "being set up" while companions are on (#469)
+- **seo:** a large link-preview card for Studio links (#476)
+
+### 🩹 Fixes
+
+- **billing:** a Polar event is Studio's by workspace uuid, then product, then stored subscription; anything else gets 2xx with no write (#478)
+- **media:** an SVG logo keeps its embedded raster picture on `<image>`, decided by the decoded bytes (#470)
+
+### 📖 Documentation
+
+- **mcp:** the remote MCP submission runbook re-verified at Studio 0.4.10 / MCP 3.11.2 (#477)
 
 ## v0.4.10
 
