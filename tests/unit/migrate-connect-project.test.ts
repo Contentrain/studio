@@ -66,6 +66,7 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
     vi.stubGlobal('getRouterParam', () => 'grant-1')
     vi.stubGlobal('useRuntimeConfig', () => ({ migrate: { claimPublicKey: '-----BEGIN PUBLIC KEY-----\\nMCow\\n-----END PUBLIC KEY-----' }, public: { siteUrl: 'https://studio.example' } }))
     vi.stubGlobal('useDatabaseProvider', () => db)
+    vi.stubGlobal('useMediaProvider', () => null)
     vi.stubGlobal('useGitProvider', () => git)
     vi.stubGlobal('ensureContentBranch', vi.fn().mockResolvedValue(undefined))
     vi.stubGlobal('normalizeContentRoot', (v: string) => v)

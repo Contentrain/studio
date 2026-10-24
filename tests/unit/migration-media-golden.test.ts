@@ -60,7 +60,7 @@ describe('Migrate\'s golden media.json', () => {
     ]))
     const tree = manifest.assets.map(a => ({ path: a.repoPath, type: 'blob' as const, sha: a.sha256.slice(0, 40), size: a.bytes }))
     const preflight = planMigrationMediaPreflight({ manifest, tree, plan: 'pro', usedBytes: 0, signedOrigin: golden.origin })
-    expect(preflight.onOrigin).toEqual({ count: 2, knownBytes: 2000, overSize: [{ url: `${golden.origin}/wp-content/uploads/huge.mp4`, bytes: 900 * 1024 * 1024 }], offOrigin: 1, unverified: 0, refs: 2 })
+    expect(preflight.onOrigin).toEqual({ count: 2, knownBytes: 2000, overSize: [{ url: `${golden.origin}/wp-content/uploads/huge.mp4`, bytes: 900 * 1024 * 1024, reason: 'file-too-large' }], offOrigin: 1, unverified: 0, refs: 2 })
     // Without the origin Migrate signed, none of them is fetched.
     expect(planMigrationMediaPreflight({ manifest, tree, plan: 'pro', usedBytes: 0 }).onOrigin).toMatchObject({ count: 0, offOrigin: 0, unverified: 4 })
   })

@@ -144,6 +144,13 @@ export interface MigrateGrantsTable {
   site_binding_attempts: Generated<number>
   site_binding_next_at: string | null
   site_binding_alerted_at: string | null
+  /** Where the grant's media move stands, with its retries and alarm (053). */
+  media_state: string | null
+  media_detail: unknown | null
+  media_at: string | null
+  media_attempts: Generated<number>
+  media_next_at: string | null
+  media_alerted_at: string | null
   created_at: Generated<string>
 }
 

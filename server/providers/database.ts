@@ -181,6 +181,20 @@ export interface MigrateSiteBindingWrite {
   nextAt?: Date | null
 }
 
+/** Where a bundle grant's media move stands (migration 053, `migrate-grant-media.ts`). */
+export type MigrateGrantMediaState = 'none' | 'importing' | 'paused_quota' | 'failed' | 'pending' | 'review' | 'connected'
+
+/**
+ * One write of a grant's media state (053): the state and its detail, and the retry bookkeeping, as for the site
+ * binding. `attempts` is the failed attempts in a row, `nextAt` when the sweep may try a `failed` one again.
+ */
+export interface MigrateGrantMediaWrite {
+  state: MigrateGrantMediaState
+  detail: Record<string, unknown>
+  attempts?: number
+  nextAt?: Date | null
+}
+
 export interface MigrateCommentsExportRow {
   grantId: string
   status: 'ready' | 'unavailable' | 'imported' | 'expired'
@@ -1245,6 +1259,21 @@ export interface DatabaseProvider {
 
   /** Mark the grant's site-binding alarm as raised (050). True only for the call that set it: one alarm per grant. */
   markMigrateSiteBindingAlerted: (grantId: string) => Promise<boolean>
+
+  /** Record where a bundle grant's media move stands (053). Each call replaces the last; `connected` clears the alarm mark. */
+  setMigrateGrantMedia: (grantId: string, media: MigrateGrantMediaWrite) => Promise<void>
+
+  /**
+   * The media sweep's work list (053): redeemed, unrevoked bundle grants whose site was connected (a binding was
+   * tried) and whose repository is a project in the grant's workspace, with media not settled: never looked at,
+   * importing, paused for storage, pending, in review, a `failed` one under `maxAttempts`, or a `failed` one whose
+   * alarm is not raised yet. `none` and `connected` are settled and left out. Each row is the grant plus `project_id`,
+   * `project_default_branch` and `project_content_root`. Earliest retry first (never tried before all).
+   */
+  listMigrateGrantMediaWork: (limit: number, maxAttempts: number) => Promise<DatabaseRow[]>
+
+  /** Mark the grant's media alarm as raised (053). True only for the call that set it: one alarm per grant. */
+  markMigrateGrantMediaAlerted: (grantId: string) => Promise<boolean>
 
   /**
    * The signed origin of the grant behind a workspace's project: the newest
