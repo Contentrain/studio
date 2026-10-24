@@ -248,8 +248,7 @@ export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff, optio
     provider: String(o.provider),
     supported: o.provider !== 'studio_managed' || STUDIO_MANAGED_CAPABILITIES.has(String(o.capability)),
     ...(o.warning ? { warning: o.warning } : {}),
-    // `HandoffOffer.chosen` (@contentrain/types, Migrate's writer): read as data until the types release carries it.
-    ...((o as { chosen?: unknown }).chosen === true ? { chosen: true as const } : {}),
+    ...(o.chosen === true ? { chosen: true as const } : {}),
   }))
   const chosenOffers = offers
     .filter((o, i) => o.chosen && o.supported && offers.findIndex(x => x.capability === o.capability && x.chosen) === i)
