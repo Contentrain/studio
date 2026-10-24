@@ -217,13 +217,17 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
     expect(recorded()).toMatchObject({ state: 'pr_open', detail: { branch: 'cr/studio/binding/1', review: true } })
   })
 
-  it('a retry merges the recorded branch first, never a second binding branch', async () => {
+  it('a retry merges the recorded branch first, never a second binding branch; older duplicates are listed, never deleted', async () => {
     workflow = 'review'
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await bind()
     branches['cr/studio/binding/2'] = new Map(branches['cr/studio/binding/1']!)
     expect(await bind({ approver: OWNER, recordedBranch: 'cr/studio/binding/1' })).toEqual({ state: 'written' })
     expect(commits).toHaveLength(1)
     expect(merged).toEqual(new Set(['cr/studio/binding/1']))
+    expect(recorded()).toMatchObject({ state: 'written', detail: { change: 'written', duplicateBranches: ['cr/studio/binding/2'] } })
+    expect(warn).toHaveBeenCalledWith('[migrate-site-binding] duplicate binding branches (list only)', { grantId: 'grant-1', projectId: 'proj-1', branches: ['cr/studio/binding/2'] })
+    expect(branches['cr/studio/binding/2']).toBeDefined()
   })
 
   it('a review project with no owner to approve: the change waits on its branch for review (pr_open, no address), nothing merged', async () => {

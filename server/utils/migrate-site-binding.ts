@@ -109,16 +109,20 @@ function bindingOf(source: string): { baseUrl: string, projectId: string } | nul
 
 const sameStudio = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
 
-/** The unmerged binding branch that holds this project's binding — the recorded one first, then the newest — or null. */
-async function waitingBindingBranch(git: GitProvider, path: string, projectId: string, baseUrl: string, recorded?: string | null): Promise<string | null> {
+/**
+ * The unmerged binding branches that hold this project's binding: `branch`, the one to use (the recorded one first,
+ * then the newest), or null; `others`, the duplicates earlier retries left (before a retry reused its branch).
+ */
+async function waitingBindingBranches(git: GitProvider, path: string, projectId: string, baseUrl: string, recorded?: string | null): Promise<{ branch: string | null, others: string[] }> {
   const listed = (await git.listBranches(SITE_BINDING_BRANCH_PREFIX)).map(b => b.name).sort().reverse()
   const names = recorded && listed.includes(recorded) ? [recorded, ...listed.filter(n => n !== recorded)] : listed
+  const found: string[] = []
   for (const name of names) {
     if (await git.isMerged(name)) continue
     const there = bindingOf(await git.readFile(path, name).catch(() => ''))
-    if (there && there.projectId === projectId && sameStudio(there.baseUrl, baseUrl)) return name
+    if (there && there.projectId === projectId && sameStudio(there.baseUrl, baseUrl)) found.push(name)
   }
-  return null
+  return { branch: found[0] ?? null, others: found.slice(1) }
 }
 
 export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): Promise<MigrateSiteBinding> {
@@ -175,12 +179,19 @@ export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): 
 
     // An earlier attempt's binding branch still waiting (a review project's, or one whose merge did not finish): the
     // same branch again, never a second one (each retry used to open another, until branch health blocked the project).
-    const branchName = await waitingBindingBranch(git, path, projectId, input.studio.baseUrl, input.recordedBranch) ?? await writeBindingBranch()
+    const waiting = await waitingBindingBranches(git, path, projectId, input.studio.baseUrl, input.recordedBranch)
+    // Duplicates are only reported: they are the customer's branches, and deleting them is a person's decision.
+    if (waiting.others.length) {
+      // eslint-disable-next-line no-console -- ops visibility: binding branches older retries left in the customer's repository
+      console.warn('[migrate-site-binding] duplicate binding branches (list only)', { grantId: input.grantId, projectId, branches: waiting.others })
+    }
+    const duplicates = waiting.others.length ? { duplicateBranches: waiting.others } : {}
+    const branchName = waiting.branch ?? await writeBindingBranch()
     const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(input.plan, 'workflow.review'))
     const startedAt = now().toISOString()
     let approval: Awaited<ReturnType<typeof resolveMergeApproval>> = null
     if (workflow === 'review') {
-      const waits = () => record('pr_open', { path, branch: branchName, review: true }, { prUrl: null })
+      const waits = () => record('pr_open', { path, branch: branchName, review: true, ...duplicates }, { prUrl: null })
       // A review project's binding is approved by the Connect that asked for it: the grant's owner, recorded against this
       // branch's plan and tip like any reviewer's grant, then merged under it. Its one file is a site config, not
       // content, so its plan is the lowest rung with nothing in scope for a reviewer to read.
@@ -210,7 +221,7 @@ export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): 
     // The receipt says who let it in; it also clears the grant (`recordMergeReceipt`).
     if (approval && input.approver && merge.merged)
       await recordMergeReceipt({ projectId, workspaceId: input.approver.workspaceId, branch: branchName, approval, actor: actorFromEmail(input.approver.email), startedAt })
-    if (merge.merged) return done(writtenState, { path, change: 'written' })
+    if (merge.merged) return done(writtenState, { path, change: 'written', ...duplicates })
     if (merge.pullRequestUrl) return record('pr_open', { path, prUrl: merge.pullRequestUrl }, { prUrl: merge.pullRequestUrl })
     return record('failed', { path, code: merge.conflict ? 'merge_conflict' : 'merge_not_done', branch: branchName })
   }

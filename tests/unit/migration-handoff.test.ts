@@ -45,7 +45,7 @@ function makeHandoff(overrides: Partial<MigrationHandoff> = {}): MigrationHandof
       { capability: 'comments', provider: 'studio_managed' },
       { capability: 'comments', provider: 'keep_wordpress', warning: 'the WordPress server stays live' },
     ],
-    notes: ['build ok', 'quality gate ok'],
+    notes: ['content store: .contentrain', 'form model: contact', 'comments: 3 threads', 'comments export: comments.json'],
     ...overrides,
   }
 }
@@ -265,6 +265,40 @@ describe('summarizeMigrationHandoff — what Studio cannot take over', () => {
     expect(block).toContain('- Not available in Studio (offered as studio_managed, no Studio runtime): search, ecommerce')
     expect(block).toContain('- Runtime not bound yet (the generated site is not pointed at this project): forms, comments')
     expect(block).toContain('- No preview URL in the handoff')
+  })
+
+  it('Studio\'s own binding counts as bound: no runtime_unbound once the site sends to this project', () => {
+    const summary = summarizeMigrationHandoff(makeHandoff({ preview_url: 'https://preview.example' }), { runtimeBound: true })
+    expect(summary.issues).toEqual([])
+    expect(summarizeMigrationHandoff(makeHandoff({ preview_url: 'https://preview.example' }), { runtimeBound: false }).issues.map(i => i.code)).toEqual(['runtime_unbound'])
+  })
+
+  it('the offer Migrate marked chosen, one per capability; its alternatives close, an unmarked capability stays open', () => {
+    const summary = summarizeMigrationHandoff(makeHandoff({
+      capabilities: [
+        { key: 'forms', disposition: 'needs_runtime' },
+        { key: 'comments', disposition: 'needs_runtime' },
+        { key: 'ecommerce', disposition: 'kept_on_wordpress' },
+        { key: 'search', disposition: 'dropped' },
+      ],
+      offers: [
+        { capability: 'forms', provider: 'studio_managed', chosen: true },
+        { capability: 'forms', provider: 'keep_wordpress' },
+        { capability: 'comments', provider: 'studio_managed', chosen: true },
+        { capability: 'comments', provider: 'keep_wordpress' },
+        { capability: 'ecommerce', provider: 'keep_wordpress', chosen: true },
+        { capability: 'search', provider: 'keep_wordpress' },
+        { capability: 'search', provider: 'adapter' },
+      ] as never,
+    }))
+    expect(summary.chosenOffers).toEqual([
+      { capability: 'forms', provider: 'studio_managed' },
+      { capability: 'comments', provider: 'studio_managed' },
+      { capability: 'ecommerce', provider: 'keep_wordpress' },
+    ])
+    const block = renderMigrationHandoffForAgent(summary)
+    expect(block).toContain('- Chosen: forms → studio_managed; comments → studio_managed; ecommerce → keep_wordpress')
+    expect(block).toContain('- Open offers: search → keep_wordpress; search → adapter')
   })
 
   it('stays quiet once the preview URL and runtime binding are there', () => {

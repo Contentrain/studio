@@ -130,6 +130,16 @@ function replaceIn(text: string, from: string, to: string): { text: string, coun
 const hasOccurrence = (text: string, url: string): boolean =>
   occurrence(url).test(text) || text.includes(url.replace(/\//g, '\\/'))
 
+/**
+ * Whether text points at THIS project's Studio media (`…/api/cdn/v1/<projectId>/media/…`, any Studio host, plain or
+ * `\/`-escaped): Studio's own media commit, or an earlier switch from another host (the CDN host or the site's own
+ * origin). Such a reference is switched already, never drift.
+ */
+function onOwnMedia(text: string, projectId: string): boolean {
+  if (!projectId) return false
+  return new RegExp(`https?://[^\\s"'()<>]+/api/cdn/v1/${escapeRegExp(projectId)}/media/`).test(text.replace(/\\\//g, '/'))
+}
+
 function decodePointer(pointer: string): string[] {
   if (pointer === '') return []
   return pointer.slice(1).split('/').map(p => p.replace(/~1/g, '/').replace(/~0/g, '~'))
@@ -211,7 +221,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
           file.dirty = true
           counts.rewritten += count
         }
-        else if (file.text.includes(to)) {
+        else if (file.text.includes(to) || onOwnMedia(file.text, input.studio.projectId)) {
           counts.alreadyRewritten++
         }
         else {
@@ -232,7 +242,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
           file.dirty = true
           counts.rewritten++
         }
-        else if (value === to) {
+        else if (value === to || onOwnMedia(value, input.studio.projectId)) {
           counts.alreadyRewritten++
         }
         else {
@@ -246,7 +256,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
         file.dirty = true
         counts.rewritten += count
       }
-      else if (value.includes(to)) {
+      else if (value.includes(to) || onOwnMedia(value, input.studio.projectId)) {
         counts.alreadyRewritten++
       }
       else {

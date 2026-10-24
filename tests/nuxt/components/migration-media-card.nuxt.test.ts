@@ -21,8 +21,12 @@ const preflight = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-function stubFetch(state: Record<string, unknown>) {
-  const fetcher = vi.fn(async (url: string, opts?: { method?: string }) => {
+const counts = (over: Record<string, unknown> = {}) => ({ filesChanged: 2, rewritten: 12, alreadyRewritten: 0, drifted: [], notImported: [], remaining: [], deleted: 0, keptBecause: 'not_requested', ...over })
+
+function stubFetch(state: Record<string, unknown>, check: Record<string, unknown> = counts()) {
+  const fetcher = vi.fn(async (url: string, opts?: { method?: string, body?: { dryRun?: boolean } }) => {
+    if (url.endsWith('/migration/media/apply'))
+      return opts?.body?.dryRun === false ? { status: 'applied' } : { status: 'dry_run', counts: check, ...(state.deliveryBlocked ? { blocked: state.deliveryBlocked } : {}) }
     if (url.endsWith('/migration/media') && opts?.method === 'POST')
       return { job: { id: 'job-1', status: 'queued', total: 12, done: 0, failed: 0, deduped: 0, pending: 12, bytesDone: 0, error: null } }
     return state
@@ -31,8 +35,8 @@ function stubFetch(state: Record<string, unknown>) {
   return fetcher
 }
 
-async function mount(state: Record<string, unknown>, query: Record<string, string> = {}) {
-  const fetcher = stubFetch(state)
+async function mount(state: Record<string, unknown>, query: Record<string, string> = {}, check?: Record<string, unknown>) {
+  const fetcher = stubFetch(state, check)
   routeQuery.value = query
   const wrapper = await mountSuspended(MigrationMediaCard, { props: { workspaceId: 'w', projectId: 'p', editable: true } })
   await flushPromises()
@@ -101,14 +105,14 @@ describe('MigrationMediaCard', () => {
     await notice.findAll('button').find(b => b.text() === 'Open CDN delivery')!.trigger('click')
     expect(routerReplace).toHaveBeenCalledWith({ query: { cdn: 'true' } })
 
-    fetcher.mockImplementation(async () => ({ status: 'dry_run', blocked: 'cdn_disabled', counts: { filesChanged: 2, rewritten: 12, drifted: [], notImported: [], remaining: [], deleted: 0, keptBecause: 'not_requested' } }))
+    fetcher.mockImplementation(async () => ({ status: 'dry_run', blocked: 'cdn_disabled', counts: counts() }))
     await wrapper.findAll('button').find(b => b.text() === 'Check the addresses')!.trigger('click')
     await flushPromises()
     const switchButton = wrapper.findAll('button').find(b => b.text() === 'Switch to Studio addresses')!
     expect(switchButton.attributes('disabled')).toBeDefined()
 
     // CDN turned on in the meantime: the next check clears the notice and frees the switch.
-    fetcher.mockImplementation(async () => ({ status: 'dry_run', counts: { filesChanged: 2, rewritten: 12, drifted: [], notImported: [], remaining: [], deleted: 0, keptBecause: 'not_requested' } }))
+    fetcher.mockImplementation(async () => ({ status: 'dry_run', counts: counts() }))
     await wrapper.findAll('button').find(b => b.text() === 'Check the addresses')!.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid=migration-media-delivery]').exists()).toBe(false)
@@ -129,5 +133,37 @@ describe('MigrationMediaCard', () => {
     expect(notice.findAll('button')).toHaveLength(0)
     // "served from public addresses" would contradict the notice right below it.
     expect(wrapper.find('[data-testid=migration-media-public-note]').exists()).toBe(false)
+  })
+
+  describe('a finished move', () => {
+    const done = { id: 'job-1', status: 'done', total: 11, done: 11, failed: 0, deduped: 0, pending: 0, bytesDone: 0, error: null }
+    const buttons = (wrapper: Awaited<ReturnType<typeof mount>>['wrapper']) => wrapper.findAll('button').map(b => b.text())
+
+    it('is checked once by itself: what is left to switch, and the switch', async () => {
+      const { wrapper, fetcher } = await mount({ present: true, uploadAllowed: true, job: done, preflight: preflight() })
+      expect(fetcher).toHaveBeenCalledWith('/api/workspaces/w/projects/p/migration/media/apply', { method: 'POST', body: { dryRun: true, deleteLocal: false } })
+      expect(wrapper.text()).toContain('12 references in 2 files will point at Studio.')
+      expect(buttons(wrapper)).toEqual(expect.arrayContaining(['Check the addresses', 'Switch to Studio addresses']))
+    })
+
+    it('nothing left to switch (Studio\'s own media commit landed): done, no switch or check, only removing the copies', async () => {
+      const { wrapper, fetcher } = await mount({ present: true, uploadAllowed: true, job: done, preflight: preflight() }, {}, counts({ filesChanged: 0, rewritten: 0, alreadyRewritten: 8 }))
+      const apply = wrapper.find('[data-testid=migration-media-apply]')
+      expect(apply.attributes('data-switched')).toBe('true')
+      expect(apply.text()).toContain('8 references switched, none left.')
+      expect(apply.text()).not.toContain('will point at Studio')
+      expect(buttons(wrapper)).not.toContain('Check the addresses')
+      expect(buttons(wrapper)).not.toContain('Switch to Studio addresses')
+
+      // Removing the copies: the toggle, checked again, then its own button once nothing keeps them.
+      fetcher.mockImplementation(async (_url: string, opts?: { body?: { dryRun?: boolean } }) => (opts?.body?.dryRun === false ? { status: 'applied' } : { status: 'dry_run', counts: counts({ filesChanged: 0, rewritten: 0, alreadyRewritten: 8, keptBecause: null }) }))
+      await wrapper.find('input[type=checkbox], [role=switch]').trigger('click')
+      await flushPromises()
+      const remove = wrapper.findAll('button').find(b => b.text() === 'Remove the copies')
+      expect(remove).toBeTruthy()
+      await remove!.trigger('click')
+      await flushPromises()
+      expect(fetcher).toHaveBeenCalledWith('/api/workspaces/w/projects/p/migration/media/apply', { method: 'POST', body: { dryRun: false, deleteLocal: true } })
+    })
   })
 })

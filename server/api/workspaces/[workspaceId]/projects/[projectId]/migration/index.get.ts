@@ -1,6 +1,7 @@
 /**
  * The project's migration handoff (`.contentrain/migrate/handoff.json` as synced) plus
- * a summary and the comments import state, for the overview card.
+ * a summary and the comments import state, for the overview card. The summary's runtime state counts Studio's own
+ * site binding (the grant's, `getMigrateGrantSiteBindingState`), not only what the handoff knew at delivery.
  *
  * `claimExport` is the comments export held on this repository's Migrate grant
  * (İP-2c) — status and count only, never the payload. It can exist before any
@@ -71,10 +72,12 @@ export default defineEventHandler(async (event) => {
   if (!handoff)
     return { present: false, syncedAt: null, summary: null, commentsImported, claimExport }
 
+  // The site sends to this project once Studio's binding is on its default branch (recorded on the grant).
+  const binding = repoFullName ? await db.getMigrateGrantSiteBindingState(workspaceId, repoFullName) : null
   return {
     present: true,
     syncedAt,
-    summary: summarizeMigrationHandoff(handoff),
+    summary: summarizeMigrationHandoff(handoff, { runtimeBound: binding === 'written' || binding === 'partial' }),
     commentsImported,
     claimExport,
   }

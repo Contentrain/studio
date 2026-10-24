@@ -1255,6 +1255,12 @@ export interface DatabaseProvider {
   getMigrateGrantOrigin: (workspaceId: string, repoFullName: string) => Promise<string | null>
 
   /**
+   * Where the site binding (studio.json, 049) of the grant behind a workspace's project stands: the newest grant
+   * bound to `workspaceId` for `repoFullName` (owner/name, any case) that has tried it. Null when none has.
+   */
+  getMigrateGrantSiteBindingState: (workspaceId: string, repoFullName: string) => Promise<string | null>
+
+  /**
    * Remember the `jti` of a Migrate server-to-server request (migration 042).
    * True the first time, false when it was seen before (a replay). Entries
    * past `expiresAt` are dropped lazily.

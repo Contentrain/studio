@@ -26,6 +26,7 @@ type MigrateGrantMethods = Pick<
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
   | 'getMigrateGrantOrigin'
+  | 'getMigrateGrantSiteBindingState'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
   | 'listOwnedWorkspacesAdmin'
@@ -392,6 +393,27 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .limit(1)
           .executeTakeFirst()
         return row?.origin ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getMigrateGrantSiteBindingState(workspaceId, repoFullName) {
+      const [owner, name] = repoFullName.toLowerCase().split('/')
+      if (!owner || !name) return null
+      try {
+        const row = await getAdmin()
+          .selectFrom('migrate_grants')
+          .select('site_binding_state')
+          .where('workspace_id', '=', workspaceId)
+          .where(eb => eb.fn('lower', ['repo_owner']), '=', owner)
+          .where(eb => eb.fn('lower', ['repo_name']), '=', name)
+          .where('site_binding_state', 'is not', null)
+          .orderBy('created_at', 'desc')
+          .limit(1)
+          .executeTakeFirst()
+        return row?.site_binding_state ?? null
       }
       catch (error) {
         throwDbError(error)
