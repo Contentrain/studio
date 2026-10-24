@@ -401,4 +401,51 @@ describe('postgres-db migrate-grants (contract)', () => {
       await sql`DELETE FROM public.projects WHERE id = ${projectId}`.execute(getDb())
     }
   })
+
+  it('the media work list (053): a connected bundle site whose media is not settled; settled, capped or alarmed ones drop out', async () => {
+    const mediaOrder = `${orderId}-media`
+    const { grant } = await methods.claimMigrateGrant({ orderId: mediaOrder, claimJti: `${mediaOrder}-jti`, userId: owner.userId, plan: 'pro', trialDays: 60, repoOwner: 'acme', repoName: 'media', email: 'owner@example.com' })
+    const id = grant.id as string
+    await sql`UPDATE public.migrate_grants SET kind = 'bundle', redeemed_at = now(), workspace_id = ${owner.workspaceId}, bound_at = now() WHERE id = ${id}`.execute(getDb())
+    const project = await sql<{ id: string }>`INSERT INTO public.projects (workspace_id, repo_full_name, default_branch) VALUES (${owner.workspaceId}, 'acme/media', 'main') RETURNING id`.execute(getDb())
+    const projectId = project.rows[0]!.id
+    const listed = async () => (await methods.listMigrateGrantMediaWork(500, 5)).find(r => r.id === id)
+    try {
+      // Not connected yet (no binding tried): the binding's sweep comes first.
+      expect(await listed()).toBeUndefined()
+      await methods.setMigrateGrantSiteBinding(id, { state: 'pr_open', detail: {} })
+      expect(await listed()).toMatchObject({ project_id: projectId, media_state: null, media_attempts: 0 })
+
+      await methods.setMigrateGrantMedia(id, { state: 'importing', detail: { jobId: 'job-1', refusedTooLarge: 0 } })
+      const row = await methods.getMigrateGrantById(id)
+      expect(row).toMatchObject({ media_state: 'importing', media_detail: { jobId: 'job-1', refusedTooLarge: 0 } })
+      expect(row!.media_at).not.toBeNull()
+      for (const state of ['paused_quota', 'pending', 'review'] as const) {
+        await methods.setMigrateGrantMedia(id, { state, detail: {} })
+        expect(await listed()).toMatchObject({ media_state: state })
+      }
+
+      // A failure under the cap is listed with its retry time; at the cap only until its alarm, raised once.
+      const next = new Date(Date.now() + 30 * 60_000)
+      await methods.setMigrateGrantMedia(id, { state: 'failed', detail: { code: 'start_failed' }, attempts: 1, nextAt: next })
+      expect(new Date(String((await listed())!.media_next_at)).getTime()).toBe(next.getTime())
+      await methods.setMigrateGrantMedia(id, { state: 'failed', detail: { code: 'start_failed' }, attempts: 5, nextAt: null })
+      expect(await listed()).toBeDefined()
+      expect(await methods.markMigrateGrantMediaAlerted(id)).toBe(true)
+      expect(await methods.markMigrateGrantMediaAlerted(id)).toBe(false)
+      expect(await listed()).toBeUndefined()
+
+      // Settled: connected clears the alarm mark; none and connected leave the list.
+      await methods.setMigrateGrantMedia(id, { state: 'connected', detail: {}, attempts: 0, nextAt: null })
+      expect(await methods.getMigrateGrantById(id)).toMatchObject({ media_alerted_at: null, media_attempts: 0 })
+      expect(await listed()).toBeUndefined()
+      await methods.setMigrateGrantMedia(id, { state: 'none', detail: {} })
+      expect(await listed()).toBeUndefined()
+
+      await expect(methods.setMigrateGrantMedia(id, { state: 'done' as never, detail: {} })).rejects.toBeDefined()
+    }
+    finally {
+      await sql`DELETE FROM public.projects WHERE id = ${projectId}`.execute(getDb())
+    }
+  })
 })

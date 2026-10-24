@@ -143,3 +143,34 @@ export async function applyMigrationMedia(input: ApplyMigrationMediaInput): Prom
   invalidateBrainCache(projectId)
   return { status: 'merged', counts, branch: branchName, commitSha: commit.sha, pullRequestUrl: merge.pullRequestUrl ?? null }
 }
+
+/**
+ * Whether a done import's new addresses are on the site: the apply planned against the DEFAULT branch (what the site
+ * builds from, not `contentrain`) would rewrite nothing. A review held on `cr/media/*`, or a pull request into a
+ * protected default branch, is not landed. Files Studio never took (over the file cap, failed) have no new address,
+ * so they never hold it back. `studio.json` is not counted: the site binding owns it.
+ */
+export async function migrationMediaLanded(input: {
+  db: Pick<ApplyMigrationMediaInput['db'], 'listMigrationMediaItems'>
+  git: GitProvider
+  contentRoot: string
+  projectId: string
+  defaultBranch: string
+  job: DatabaseRow
+}): Promise<boolean> {
+  const found = await readMigrationMediaManifest(input.git, input.contentRoot, input.defaultBranch)
+  if (!found) return false
+  const imported = new Map((await input.db.listMigrationMediaItems(String(input.job.id), 'done', IMPORTED_LIMIT))
+    .filter(item => item.delivery_url)
+    .map(item => [String(item.repo_path), String(item.delivery_url)]))
+  const pub = useRuntimeConfig().public
+  const { counts } = await planMigrationMediaApply({
+    manifest: found.manifest,
+    root: found.root,
+    imported,
+    read: path => input.git.readFile(path, input.defaultBranch).catch(() => null),
+    studio: { baseUrl: String(pub.siteUrl ?? ''), projectId: input.projectId, mediaBaseUrl: publicMediaBase(input.projectId) },
+    deleteLocal: false,
+  })
+  return counts.rewritten === 0 && counts.relations === 0
+}

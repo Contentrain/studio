@@ -149,6 +149,7 @@ describe('a covered bundle grant: provision → claim → connect-project → si
       migrate: { origins: 'https://migrate.contentrain.io', claimPublicKey: '-----BEGIN PUBLIC KEY-----\\nMCow\\n-----END PUBLIC KEY-----' },
     }))
     vi.stubGlobal('useDatabaseProvider', () => db)
+    vi.stubGlobal('useMediaProvider', () => null)
     vi.stubGlobal('useAuthProvider', () => ({ ensureUserForProviderAccount: async () => USER }))
     vi.stubGlobal('usePaymentProvider', () => null)
     vi.stubGlobal('useGitProvider', (input: unknown) => {

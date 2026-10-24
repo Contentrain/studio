@@ -25,6 +25,7 @@
 - [ ] No raw Tailwind color families were introduced outside the approved Studio palette
 - [ ] No new hardcoded user-facing strings were introduced where dictionary-backed content is required
 - [ ] No AGPL core / `ee/` boundary violations were introduced
+- [ ] A PR that changes a media, comments or forms limit in plan-features: tell the Migrate team, whose offer mirrors these limits.
 
 ## Verification
 

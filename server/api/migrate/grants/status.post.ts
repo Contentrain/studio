@@ -9,12 +9,12 @@
  * Answers only the state, what kind of Studio the order has (`kind`, `plan`, its end and whether the plan
  * has ended — `migrateGrantStatusDetail`) and whether Studio's GitHub App is installed for the
  * grant's workspace and, if so, the GitHub account it is installed on (`workspace_github_account`, so the delivery
- * defaults to it), and for a bundle where its forms and comments stand (`capabilities`, `migrateGrantCapabilities`)
- * — never a Studio workspace or email. An order Studio
- * holds no grant for is a 404.
+ * defaults to it), and for a bundle where its forms, comments and media stand (`capabilities`,
+ * `migrateGrantCapabilities`) and how many old-site files Studio refused as too large (`media_refused_too_large`)
+ * — never a Studio workspace or email. An order Studio holds no grant for is a 404.
  */
 import { validateMigrateGrantStatusRequest, validateMigrateGrantStatusResponse } from '@contentrain/types'
-import { migrateGrantCapabilities, migrateGrantGithubAccount, migrateGrantInstallation, migrateGrantStateOf, migrateGrantStatusDetail } from '../../../utils/migrate-grant-status'
+import { migrateGrantCapabilities, migrateGrantGithubAccount, migrateGrantInstallation, migrateGrantMediaRefusedTooLarge, migrateGrantStateOf, migrateGrantStatusDetail } from '../../../utils/migrate-grant-status'
 import { readMigrateS2sRequest } from '../../../utils/migrate-s2s-route'
 
 export default defineEventHandler(async (event) => {
@@ -29,7 +29,15 @@ export default defineEventHandler(async (event) => {
   const live = state === 'redeemed' || state === 'revoked'
   const account = installed && live ? await migrateGrantGithubAccount(workspace) : null
   const capabilities = await migrateGrantCapabilities(grant)
-  const response = { state, installed: installed && live, ...await migrateGrantStatusDetail(grant), ...(account ? { workspace_github_account: account } : {}), ...(Object.keys(capabilities).length ? { capabilities } : {}) }
+  const refused = await migrateGrantMediaRefusedTooLarge(grant)
+  const response = {
+    state,
+    installed: installed && live,
+    ...await migrateGrantStatusDetail(grant),
+    ...(account ? { workspace_github_account: account } : {}),
+    ...(Object.keys(capabilities).length ? { capabilities } : {}),
+    ...(refused === undefined ? {} : { media_refused_too_large: refused }),
+  }
   // Fail closed on our own answer: Migrate shows it to a customer.
   if (!validateMigrateGrantStatusResponse(response).ok)
     throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })

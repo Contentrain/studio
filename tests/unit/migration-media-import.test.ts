@@ -69,6 +69,13 @@ function memoryStore() {
       Object.assign(job, { status, error, claim_token: null, lease_until: null, finished_at: ['done', 'failed'].includes(status) ? 'now' : null })
       return true
     },
+    grantMedia: [] as Array<{ grantId: string, state: string, detail: Record<string, unknown> }>,
+    async getMigrateGrantById(grantId: string) {
+      return { id: grantId }
+    },
+    async setMigrateGrantMedia(grantId: string, media: { state: string, detail: Record<string, unknown> }) {
+      this.grantMedia.push({ grantId, state: media.state, detail: media.detail })
+    },
     async resumeMigrationMediaJob(projectId: string, jobId: string) {
       const job = jobs.find(j => j.id === jobId && j.project_id === projectId && j.status === 'paused_quota')
       if (!job) return null
@@ -176,6 +183,8 @@ describe('migration media import', () => {
     expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyGrant })).toMatchObject({ status: 'done' })
     expect(applyGrant).toHaveBeenCalledTimes(1)
     expect(applyGrant).toHaveBeenCalledWith(expect.objectContaining({ id: store.jobs[0]!.id, migrate_grant_id: 'grant-1' }), 'starter')
+    // The outcome is recorded on the grant (053).
+    expect(store.grantMedia).toEqual([{ grantId: 'grant-1', state: 'connected', detail: expect.objectContaining({ appliedJobId: store.jobs[0]!.id }) }])
 
     // Started by hand: done, and nothing applied.
     store = memoryStore()
@@ -194,6 +203,8 @@ describe('migration media import', () => {
     expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyGrant: refused })).toMatchObject({ claimed: true, status: 'done' })
     expect(refused).toHaveBeenCalledTimes(1)
     expect(store.jobs[0]).toMatchObject({ status: 'done' })
+    // Failed on the grant, not marked applied: the media sweep sends it again.
+    expect(store.grantMedia).toEqual([{ grantId: 'grant-1', state: 'failed', detail: expect.not.objectContaining({ appliedJobId: expect.anything() }) }])
   })
 
   it('a file that is not what it is listed as fails alone; the job still finishes', async () => {
@@ -270,6 +281,7 @@ describe('migration media import — files still at the old site', () => {
         return res.writeHead(200, { 'content-type': 'image/png' }).end(PNG)
       }
       if (req.url === '/wp-content/uploads/page.png') return res.writeHead(200, { 'content-type': 'text/html' }).end('<html>')
+      if (req.url === '/wp-content/uploads/grown.png') return res.writeHead(200, { 'content-type': 'image/png' }).end(Buffer.alloc(6 * 1024 * 1024))
       res.writeHead(404).end()
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -304,7 +316,7 @@ describe('migration media import — files still at the old site', () => {
       { url: url('huge.mp4'), reason: 'file-too-large', bytes: 50 * 1024 * 1024, refs: refTo },
     ]))
     const { skipped } = await start(git, origin())
-    expect(skipped.onOrigin).toEqual({ overSize: [{ url: url('huge.mp4'), bytes: 50 * 1024 * 1024 }], offOrigin: 1, unverified: 0 })
+    expect(skipped.onOrigin).toEqual({ overSize: [{ url: url('huge.mp4'), bytes: 50 * 1024 * 1024, reason: 'file-too-large' }], offOrigin: 1, unverified: 0 })
     expect(store.jobs[0]!.origin).toBe(origin())
     expect(store.items.map(i => [i.repo_path, i.source_url])).toEqual([['public/media/a.png', null], [url('big.png'), url('big.png')]])
 
@@ -353,6 +365,13 @@ describe('migration media import — files still at the old site', () => {
     const later = await runMigrationMediaTick(new Date(flaky.retry_at! + 1), originDeps(git))
     expect(later).toMatchObject({ settled: 1, status: 'done' })
     expect(flaky.state).toBe('done')
+  })
+
+  it('a file larger than the plan takes, learned on download, fails as 413: Migrate\'s status counts it as refused', async () => {
+    const git = fakeGit({}, { ...withOrigin([{ url: url('grown.png'), reason: 'count-cap', refs: refTo }]), assets: [] })
+    await start(git, origin())
+    await runMigrationMediaTick(new Date(), originDeps(git))
+    expect(store.items[0]).toMatchObject({ state: 'failed', status_code: 413, attempts: 0 })
   })
 
   it('after the last retry the file fails', async () => {

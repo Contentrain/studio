@@ -239,7 +239,8 @@ export interface MigrationMediaPreflight {
     count: number
     /** What Migrate measured of them; the rest is learned on fetch. */
     knownBytes: number
-    overSize: Array<{ url: string, bytes: number }>
+    /** `reason` is Migrate's (`studioRecommended[].reason`): a `file-too-large` one Migrate already counts as staying. */
+    overSize: Array<{ url: string, bytes: number, reason: string }>
     /** On another host (a CDN, another site): not fetched, left as they are. */
     offOrigin: number
     /** No signed origin matches the manifest's (`verifiedMediaOrigin`): none are fetched, all stay where they are. */
@@ -324,7 +325,7 @@ export function planMigrationMediaPreflight(input: {
     const bytes = file.bytes ?? 0
     largest = Math.max(largest, bytes)
     if (maxFileBytes !== null && bytes > maxFileBytes) {
-      onOrigin.overSize.push({ url: file.url, bytes })
+      onOrigin.overSize.push({ url: file.url, bytes, reason: file.reason })
       continue
     }
     onOrigin.count++

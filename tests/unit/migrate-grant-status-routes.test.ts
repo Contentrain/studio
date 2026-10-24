@@ -58,6 +58,7 @@ describe('Migrate grant status and install-url routes', () => {
       getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', type: 'secondary', plan: 'pro', overage_settings: {}, github_installation_id: null }),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
       getMigrateCommentsExportState: vi.fn().mockResolvedValue(null),
+      listMigrationMediaItems: vi.fn().mockResolvedValue([]),
       claimMigrateS2sJti: vi.fn(async (jti: string, purpose: string) => {
         if (taken.has(`${purpose}:${jti}`)) return false
         taken.add(`${purpose}:${jti}`)
@@ -176,6 +177,58 @@ describe('Migrate grant status and install-url routes', () => {
         db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', site_binding_state: 'written', site_binding_detail: { formModels: 0 } }))
         await status()
         expect((await call('status') as { capabilities: Record<string, string> }).capabilities).toEqual({ comments: 'connected' })
+      })
+
+      it.each([
+        ['importing', 'pending'],
+        ['failed', 'pending'],
+        ['pending', 'pending'],
+        ['paused_quota', 'paused'],
+        ['review', 'review'],
+        ['connected', 'connected'],
+      ])('media: the grant\'s %s move is %s in the contract, which Migrate\'s reader keeps', async (mediaState, expected) => {
+        db.getActivePaymentAccount.mockResolvedValue(account())
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', media_state: mediaState, media_detail: { jobId: 'job-1', refusedTooLarge: 0 } }))
+        await status()
+        const answer = await call('status')
+        expect(answer).toMatchObject({ capabilities: { media: expected }, media_refused_too_large: 0 })
+        expect(validateMigrateGrantStatusResponse(answer)).toMatchObject({ ok: true, response: { capabilities: { media: expected }, media_refused_too_large: 0 } })
+      })
+
+      it('media: no key before the first pass or with nothing to move, and no count before a job', async () => {
+        db.getActivePaymentAccount.mockResolvedValue(account())
+        for (const over of [{}, { media_state: 'none', media_detail: { code: 'manifest_missing' } }]) {
+          db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', ...over }))
+          await status()
+          const answer = await call('status') as Record<string, unknown>
+          expect(answer).not.toHaveProperty('capabilities')
+          expect(answer).not.toHaveProperty('media_refused_too_large')
+        }
+        // Every offered file over the per-file limit: nothing moved, and the count still says why.
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', media_state: 'none', media_detail: { jobId: 'job-1', refusedTooLarge: 3, code: 'nothing_to_move' } }))
+        await status()
+        const answer = await call('status') as Record<string, unknown>
+        expect(answer).not.toHaveProperty('capabilities')
+        expect(answer.media_refused_too_large).toBe(3)
+      })
+
+      it('media_refused_too_large: refused before fetching plus refused on download (413), never other failures', async () => {
+        db.getActivePaymentAccount.mockResolvedValue(account())
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', media_state: 'connected', media_detail: { jobId: 'job-1', refusedTooLarge: 2 } }))
+        db.listMigrationMediaItems.mockResolvedValue([
+          { source_url: 'https://old.example/a.mp4', status_code: 413 },
+          { source_url: 'https://old.example/b.jpg', status_code: 404 },
+          { source_url: 'https://old.example/c.jpg', status_code: 400 },
+          { source_url: null, status_code: 413 },
+        ])
+        await status()
+        expect(await call('status')).toMatchObject({ capabilities: { media: 'connected' }, media_refused_too_large: 3 })
+        expect(db.listMigrationMediaItems).toHaveBeenCalledWith('job-1', 'failed', expect.any(Number))
+
+        // An owner's job whose manifest could not be read: not known, so absent.
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', media_state: 'pending', media_detail: { jobId: 'job-2', startedBy: 'owner' } }))
+        await status()
+        expect(await call('status')).not.toHaveProperty('media_refused_too_large')
       })
 
       it('plan ended (canceled and its period is over): says so, with Studio\'s own text for Migrate to show as is', async () => {

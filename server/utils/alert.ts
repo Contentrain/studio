@@ -157,3 +157,29 @@ export function reportMigrateSiteBindingAlarm(context: MigrateSiteBindingAlarmCo
     })
     .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
 }
+
+export interface MigrateGrantMediaAlarmContext {
+  grantId: string
+  projectId: string
+  /** `owner/name` of the delivered repository. */
+  repo: string
+  /** The recorded machine code (`start_failed`, `job_failed`, `apply_failed`…). Never a message or file content. */
+  code: string
+  attempts: number
+}
+
+/** A bundle grant's media move failed again and again (053): the site still loads its media from the old host. */
+export function reportMigrateGrantMediaAlarm(context: MigrateGrantMediaAlarmContext): void {
+  // eslint-disable-next-line no-console -- the alarm: watched by the platform's log alert
+  console.error(`[migrate-grant-media] ALARM grant ${context.grantId}: the delivered site's media did not move to Studio (${context.code}, ${context.attempts} attempts)`, context)
+
+  void import('@sentry/nuxt')
+    .then((Sentry) => {
+      Sentry.captureMessage('migrate grant media failed', {
+        level: 'error',
+        tags: { migrate_grant_media: 'true', code: context.code },
+        extra: { ...context },
+      })
+    })
+    .catch(() => { /* Sentry unavailable — the console.error above is the fallback */ })
+}

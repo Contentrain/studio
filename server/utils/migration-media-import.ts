@@ -35,6 +35,7 @@ import { createMediaIngestContext, ingestMediaBytes } from './media-bulk-ingest'
 import { inspectRepoMedia } from './media-ingest'
 import type { MigrationMediaPreflight } from './migration-media'
 import { fetchableFromOrigin, planMigrationMediaPreflight, projectPath, readMigrationMediaManifest, verifiedMediaOrigin } from './migration-media'
+import { recordGrantMediaApply } from './migrate-grant-media'
 import { applyMigrationMedia } from './migration-media-write'
 import { fetchFromOrigin, OriginFetchError } from './origin-fetch'
 import type { OriginFetchOptions } from './origin-fetch'
@@ -167,7 +168,7 @@ export interface MigrationMediaTickDeps {
   /** The fetch from the old site — only its resolver and address rule, for tests on a local server. */
   originFetch?: Pick<OriginFetchOptions, 'resolve' | 'isBlocked' | 'idleMs'> & { deadlineMs?: number }
   /** A bundle grant's job, once done (`applyGrantMigrationMedia`). */
-  applyGrant?: (job: Record<string, unknown>, plan: Plan) => Promise<unknown>
+  applyGrant?: typeof applyGrantMigrationMedia
   /** Clock for the batch budget. */
   clock?: () => number
 }
@@ -274,7 +275,8 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
           deferred++
           continue
         }
-        result = { url: repoPath, ok: false, error: reason, statusCode: error.status ?? 400 }
+        // 413 marks a file over the plan's per-file limit, learned on download: Migrate's status counts these.
+        result = { url: repoPath, ok: false, error: reason, statusCode: error.code === 'too_large' ? 413 : (error.status ?? 400) }
       }
       else {
         const e = error as { message?: string, statusCode?: number }
@@ -309,7 +311,11 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
   // Only the holder that closes the job applies a bundle grant's import: a lost lease applies nothing twice.
   const closed = await db.finishMigrationMediaJob(jobId, token, 'done', null, new Date())
   if (closed && job.migrate_grant_id) {
-    await (deps.applyGrant ?? applyGrantMigrationMedia)(job, plan).catch((error: unknown) => {
+    // The outcome is recorded on the grant (053): landed, held for a review, or refused and tried again by the sweep.
+    const grant = await db.getMigrateGrantById(String(job.migrate_grant_id)).catch(() => null)
+    const apply = () => (deps.applyGrant ?? applyGrantMigrationMedia)(job, plan)
+    if (grant) await recordGrantMediaApply(db, grant, job, apply, { attempts: 0 })
+    else await apply().catch((error: unknown) => {
       // eslint-disable-next-line no-console -- ops visibility: the owner's apply card stays, nothing is lost
       console.error('[migration-media] grant apply failed', { jobId, projectId, message: (error as Error)?.message })
     })

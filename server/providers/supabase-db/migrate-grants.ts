@@ -24,6 +24,9 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantSiteBinding'
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
+  | 'setMigrateGrantMedia'
+  | 'listMigrateGrantMediaWork'
+  | 'markMigrateGrantMediaAlerted'
   | 'getMigrateGrantOrigin'
   | 'getMigrateGrantSiteBindingState'
   | 'claimMigrateS2sJti'
@@ -326,6 +329,64 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .update({ site_binding_alerted_at: new Date().toISOString() })
         .eq('id', grantId)
         .is('site_binding_alerted_at', null)
+        .select('id')
+      if (error) fail(error.message)
+      return (data ?? []).length > 0
+    },
+
+    async setMigrateGrantMedia(grantId, media) {
+      const { error } = await getAdmin()
+        .from('migrate_grants')
+        .update({
+          media_state: media.state,
+          media_detail: media.detail,
+          media_at: new Date().toISOString(),
+          ...(media.attempts === undefined ? {} : { media_attempts: media.attempts }),
+          ...(media.nextAt === undefined ? {} : { media_next_at: media.nextAt ? media.nextAt.toISOString() : null }),
+          ...(media.state === 'connected' ? { media_alerted_at: null } : {}),
+        })
+        .eq('id', grantId)
+      if (error) fail(error.message)
+    },
+
+    async listMigrateGrantMediaWork(limit, maxAttempts) {
+      // PostgREST has no join without a foreign key: the grants first, then each one's project in its workspace.
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('*')
+        .eq('kind', 'bundle')
+        .not('redeemed_at', 'is', null)
+        .is('revoked_at', null)
+        .not('workspace_id', 'is', null)
+        .not('repo_owner', 'is', null)
+        .not('site_binding_state', 'is', null)
+        .or(`media_state.is.null,media_state.in.(importing,paused_quota,pending,review),and(media_state.eq.failed,media_attempts.lt.${Math.trunc(maxAttempts)}),and(media_state.eq.failed,media_alerted_at.is.null)`)
+        .order('media_next_at', { ascending: true, nullsFirst: true })
+        .order('media_at', { ascending: true, nullsFirst: true })
+        .limit(limit)
+      if (error) fail(error.message)
+      const rows: DatabaseRow[] = []
+      for (const grant of (data ?? []) as DatabaseRow[]) {
+        const repo = `${String(grant.repo_owner)}/${String(grant.repo_name)}`
+        const { data: project, error: projectError } = await getAdmin()
+          .from('projects')
+          .select('id, default_branch, content_root')
+          .eq('workspace_id', grant.workspace_id as string)
+          .ilike('repo_full_name', repo.replace(/[\\%_]/g, '\\$&'))
+          .limit(1)
+          .maybeSingle()
+        if (projectError) fail(projectError.message)
+        if (project) rows.push({ ...grant, project_id: project.id, project_default_branch: project.default_branch, project_content_root: project.content_root })
+      }
+      return rows
+    },
+
+    async markMigrateGrantMediaAlerted(grantId) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ media_alerted_at: new Date().toISOString() })
+        .eq('id', grantId)
+        .is('media_alerted_at', null)
         .select('id')
       if (error) fail(error.message)
       return (data ?? []).length > 0

@@ -25,6 +25,9 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantSiteBinding'
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
+  | 'setMigrateGrantMedia'
+  | 'listMigrateGrantMediaWork'
+  | 'markMigrateGrantMediaAlerted'
   | 'getMigrateGrantOrigin'
   | 'getMigrateGrantSiteBindingState'
   | 'claimMigrateS2sJti'
@@ -369,6 +372,74 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .set(eb => ({ site_binding_alerted_at: eb.fn<string>('now', []) }))
           .where('id', '=', grantId)
           .where('site_binding_alerted_at', 'is', null)
+          .returning('id')
+          .executeTakeFirst()
+        return !!row
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async setMigrateGrantMedia(grantId, media) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({
+            media_state: media.state,
+            media_detail: JSON.stringify(media.detail),
+            media_at: eb.fn<string>('now', []),
+            ...(media.attempts === undefined ? {} : { media_attempts: media.attempts }),
+            ...(media.nextAt === undefined ? {} : { media_next_at: media.nextAt ? media.nextAt.toISOString() : null }),
+            ...(media.state === 'connected' ? { media_alerted_at: null } : {}),
+          }))
+          .where('id', '=', grantId)
+          .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async listMigrateGrantMediaWork(limit, maxAttempts) {
+      try {
+        const rows = await getAdmin()
+          .selectFrom('migrate_grants as g')
+          .innerJoin('projects as p', join => join
+            .onRef('p.workspace_id', '=', 'g.workspace_id')
+            .on(eb => eb(eb.fn('lower', [eb.ref('p.repo_full_name')]), '=', eb.fn('lower', [sql<string>`g.repo_owner || '/' || g.repo_name`]))))
+          .selectAll('g')
+          .select(['p.id as project_id', 'p.default_branch as project_default_branch', 'p.content_root as project_content_root'])
+          .where('g.kind', '=', 'bundle')
+          .where('g.redeemed_at', 'is not', null)
+          .where('g.revoked_at', 'is', null)
+          .where('g.workspace_id', 'is not', null)
+          .where('g.repo_owner', 'is not', null)
+          .where('g.site_binding_state', 'is not', null)
+          .where(eb => eb.or([
+            eb('g.media_state', 'is', null),
+            eb('g.media_state', 'in', ['importing', 'paused_quota', 'pending', 'review']),
+            eb.and([eb('g.media_state', '=', 'failed'), eb('g.media_attempts', '<', maxAttempts)]),
+            eb.and([eb('g.media_state', '=', 'failed'), eb('g.media_alerted_at', 'is', null)]),
+          ]))
+          .orderBy('g.media_next_at', ob => ob.asc().nullsFirst())
+          .orderBy('g.media_at', ob => ob.asc().nullsFirst())
+          .limit(limit)
+          .execute()
+        return rows as DatabaseRow[]
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async markMigrateGrantMediaAlerted(grantId) {
+      try {
+        const row = await getAdmin()
+          .updateTable('migrate_grants')
+          .set(eb => ({ media_alerted_at: eb.fn<string>('now', []) }))
+          .where('id', '=', grantId)
+          .where('media_alerted_at', 'is', null)
           .returning('id')
           .executeTakeFirst()
         return !!row
