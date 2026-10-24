@@ -382,12 +382,12 @@ describe('postgres-db migrate-grants (contract)', () => {
       expect(await methods.markMigrateSiteBindingAlerted(id)).toBe(false)
       expect(await listed()).toBeUndefined()
 
-      // A binding that goes through clears the mark and leaves the list; pr_open is never listed.
+      // A binding that goes through clears the mark and leaves the list; pr_open is listed, to be checked for its merge.
       await methods.setMigrateGrantSiteBinding(id, { state: 'written', detail: {}, attempts: 0, nextAt: null })
       expect(await methods.getMigrateGrantById(id)).toMatchObject({ site_binding_alerted_at: null, site_binding_attempts: 0 })
       expect(await listed()).toBeUndefined()
       await methods.setMigrateGrantSiteBinding(id, { state: 'pr_open', detail: {} })
-      expect(await listed()).toBeUndefined()
+      expect(await listed()).toMatchObject({ site_binding_state: 'pr_open' })
 
       // A conflict: listed until alarmed, then left to a person.
       await methods.setMigrateGrantSiteBinding(id, { state: 'conflict', detail: {}, attempts: 0, nextAt: null })

@@ -12,7 +12,8 @@
  *
  * Then the site is bound to the project (`bindMigrateGrantSite` → `ensureMigrateSiteBinding`: studio.json, so its forms and comments are
  * Studio's) and the answer says how that went (`siteBinding`). Every answer binds, the "already a project" ones too:
- * the claim screen's retry is this same call, and the binding is idempotent.
+ * the claim screen's retry is this same call, and the binding is idempotent. A project made here gets CDN delivery on
+ * when the plan has it (the site's media is served from there).
  */
 import { resolveWorkspaceBilling } from '../../../../utils/workspace-billing'
 import { isBillingLocked } from '../../../../utils/billing'
@@ -20,6 +21,8 @@ import { migrateClaimPublicKey } from '../../../../utils/migrate-grant'
 import { connectWorkspaceProject } from '../../../../utils/project-connect'
 import { useGitAppProvider, useGitProvider } from '../../../../utils/providers'
 import { bindMigrateGrantSite } from '../../../../utils/migrate-site-binding-run'
+import { bustProjectDeliveryCache } from '../../../../utils/cdn-delivery-cache'
+import { hasFeature } from '../../../../utils/license'
 import type { MigrateSiteBinding } from '../../../../utils/migrate-site-binding'
 
 export default defineEventHandler(async (event) => {
@@ -105,5 +108,11 @@ export default defineEventHandler(async (event) => {
     detectedStack: detection.stack,
     hasContentrain: detection.hasContentDir,
   })
+  // The delivered site's media is served from Studio's CDN: on with the project when the plan delivers it. Only for the
+  // project made here, so a customer who turned CDN off on an existing project keeps it off.
+  if (hasFeature(effectivePlan, 'cdn.delivery')) {
+    await db.updateProject(project.id as string, { cdn_enabled: true }, 'cdn_enabled')
+    bustProjectDeliveryCache(project.id as string)
+  }
   return { projectId: project.id as string, workspaceSlug: slug, created: true, siteBinding: await bind(project.id as string, { owner, name }, defaultBranch) }
 })

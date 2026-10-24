@@ -7,8 +7,9 @@
  * - **binds** a connected bundle site that was never bound (no state: connected before the binding existed, or its
  *   connect answered before the binding was recorded), and **retries** a `failed` one when its time comes
  *   (`site_binding_next_at`), up to `SITE_BINDING_MAX_ATTEMPTS` in a row;
- * - leaves `conflict` alone (a person decides) and never sees `pr_open` (it waits on the customer's merge; the claim
- *   screen's retry re-checks it);
+ * - leaves `conflict` alone (a person decides) and re-checks `pr_open` on every pass: a review merged in Studio, or a
+ *   pull request merged on GitHub, turns it `written` and starts the grant's media (a binding branch merged in Studio
+ *   runs the sweep at once, `server/api/.../branches/[branch]/merge.post.ts`);
  * - raises the ops alarm once per grant (`markMigrateSiteBindingAlerted`): after `SITE_BINDING_ALARM_ATTEMPTS` failed
  *   attempts in a row, or on any conflict. The alarm carries ids, the repository, the state and a code — never a
  *   secret, never the file's content.
@@ -27,7 +28,7 @@ import { applyGrantMigrationMedia, startMigrationMediaImport } from './migration
 import { useGitProvider } from './providers'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
-type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'getProjectById' | 'getActivePaymentAccount'>
+type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'recordApproval' | 'getProjectById' | 'getActivePaymentAccount'>
 
 export interface BindMigrateGrantSiteInput {
   db: BindDb
@@ -50,10 +51,19 @@ export async function bindMigrateGrantSite(input: BindMigrateGrantSiteInput): Pr
   const plan = input.plan ?? (await resolveWorkspaceBilling(input.db, input.workspace as Parameters<typeof resolveWorkspaceBilling>[1])).effectivePlan
   const contentRoot = normalizeContentRoot((project?.content_root as string | null) ?? '')
   const defaultBranch = input.defaultBranch ?? (project?.default_branch as string | null) ?? await git.getDefaultBranch()
+  // The grant's owner connected the site (redeemed, then Connect as the workspace's owner or admin): their consent is the
+  // approval of the binding on a review project, on the sweep's unattended pass as on the Connect itself.
+  const grant = input.grant
+  const approver = typeof grant.user_id === 'string' && typeof grant.email === 'string' && grant.redeemed_at != null
+    ? { id: grant.user_id, email: grant.email, workspaceId: String(input.workspace.id) }
+    : undefined
+  const recordedBranch = (grant.site_binding_detail as { branch?: unknown } | null)?.branch
   const binding = await ensureMigrateSiteBinding({
     db: input.db,
     grantId: input.grant.id as string,
     projectId: input.projectId,
+    ...(approver ? { approver } : {}),
+    ...(typeof recordedBranch === 'string' ? { recordedBranch } : {}),
     git,
     contentRoot,
     defaultBranch,
@@ -61,15 +71,16 @@ export async function bindMigrateGrantSite(input: BindMigrateGrantSiteInput): Pr
     studio: { baseUrl: String(useRuntimeConfig().public?.siteUrl ?? ''), mediaBaseUrl: publicMediaBase(input.projectId) },
     attempts: typeof input.grant.site_binding_attempts === 'number' ? input.grant.site_binding_attempts : 0,
   })
-  if (binding.state === 'written' || binding.state === 'partial')
-    await startGrantMedia({ grant: input.grant, workspace: input.workspace, projectId: input.projectId, repo: input.repo, git, contentRoot, defaultBranch, plan })
+  // The media move does not wait on the binding: studio.json decides forms and comments, not where the files live.
+  await startGrantMedia({ grant: input.grant, workspace: input.workspace, projectId: input.projectId, repo: input.repo, git, contentRoot, defaultBranch, plan })
   return binding
 }
 
 /**
- * A bound bundle site's media moves to Studio on its own: the import starts for the grant (one job per project, so a
+ * A bundle site's media moves to Studio on its own, whatever its binding's state: the import starts for the grant (one job per project, so a
  * repeat finds it), and a job with nothing to fetch, done as it is recorded, is applied here since no tick will.
- * Best-effort: the binding's answer never depends on it, and without a media stack or `media.upload` nothing starts.
+ * Best-effort: the binding's answer never depends on it, and without a media stack or `media.upload` nothing starts. Every pass of
+ * the sweep over a waiting binding comes here again; the import is one job per project, so a repeat starts nothing new.
  */
 async function startGrantMedia(input: { grant: DatabaseRow, workspace: DatabaseRow, projectId: string, repo: { owner: string, name: string }, git: GitProvider, contentRoot: string, defaultBranch: string, plan: string }): Promise<void> {
   const workspaceId = String(input.workspace.id)
@@ -132,7 +143,7 @@ export async function sweepMigrateSiteBindings(input: { db: SweepDb, now?: () =>
       await alarm({ state, code: 'conflict', attempts })
       continue
     }
-    const due = state === null || (state === 'failed' && attempts < SITE_BINDING_MAX_ATTEMPTS && (time(row.site_binding_next_at) ?? 0) <= now().getTime())
+    const due = state === null || state === 'pr_open' || (state === 'failed' && attempts < SITE_BINDING_MAX_ATTEMPTS && (time(row.site_binding_next_at) ?? 0) <= now().getTime())
     if (!due) {
       summary.waiting++
       if (state === 'failed' && attempts >= SITE_BINDING_ALARM_ATTEMPTS) await alarm({ state, code: typeof detailCode === 'string' ? detailCode : 'write_failed', attempts })
@@ -149,6 +160,11 @@ export async function sweepMigrateSiteBindings(input: { db: SweepDb, now?: () =>
     if (result.state === 'failed') {
       summary.failed++
       if ((result.attempts ?? attempts + 1) >= SITE_BINDING_ALARM_ATTEMPTS) await alarm({ state: 'failed', code: result.code ?? 'write_failed', attempts: result.attempts ?? attempts + 1 })
+      continue
+    }
+    // Still waiting on its review or pull request: nothing new.
+    if (result.state === 'pr_open') {
+      summary.waiting++
       continue
     }
     if (result.state === 'conflict') {

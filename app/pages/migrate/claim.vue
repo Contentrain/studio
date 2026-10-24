@@ -57,7 +57,8 @@ interface GrantView {
   /** How writing studio.json to the delivered site went; absent until it was tried. */
   siteBinding?: SiteBinding
 }
-interface SiteBinding { state: string, prUrl: string | null, overLimit: string[], limit: number | null }
+/** `branch`: the binding change waiting for review in the project (a review project, no pull request). */
+interface SiteBinding { state: string, prUrl: string | null, branch: string | null, overLimit: string[], limit: number | null }
 interface Destination { workspaceSlug: string, projectId: string | null }
 /** How a bundle grant's workspace plan stands. */
 interface BundleStatus { planState: 'active' | 'ending' | 'ended', workspaceSlug: string, periodEndsAt: number | null }
@@ -230,6 +231,15 @@ const siteBindingText = computed(() => {
   if (b.state === 'failed') return t('migrate_claim.site_binding_failed')
   return t('migrate_claim.site_binding_written')
 })
+/** The binding's review in the project, where it is approved (the project opens that branch's review). */
+const siteBindingReviewPath = computed(() => {
+  const d = destination.value
+  const branch = siteBinding.value?.state === 'pr_open' ? siteBinding.value.branch : null
+  if (!d?.projectId || !branch) return null
+  return { path: `/w/${d.workspaceSlug}/projects/${d.projectId}`, query: { branch } }
+})
+/** Waiting on the customer (a pull request to merge or a review to approve) is a next step, not a fault: no warning. */
+const siteBindingWaiting = computed(() => !!siteBinding.value && siteBinding.value.state === 'pr_open' && (!!siteBinding.value.prUrl || !!siteBindingReviewPath.value))
 
 async function connectProject() {
   if (!grant.value || connecting.value) return
@@ -372,7 +382,7 @@ async function startTrial() {
             </AtomsBaseButton>
           </div>
           <!-- The site's forms: studio.json written, waiting on a pull request, or why not (never silently broken). -->
-          <div v-if="siteBinding && projectPath" class="rounded-lg border px-4 py-3 text-sm" :class="siteBinding.state === 'written' ? 'border-border dark:border-secondary-800' : 'border-warning-300 dark:border-warning-700'" role="status" data-testid="claim-site-binding" :data-state="siteBinding.state">
+          <div v-if="siteBinding && projectPath" class="rounded-lg border px-4 py-3 text-sm" :class="siteBinding.state === 'written' || siteBindingWaiting ? 'border-border dark:border-secondary-800' : 'border-warning-300 dark:border-warning-700'" role="status" data-testid="claim-site-binding" :data-state="siteBinding.state">
             <p class="text-body dark:text-secondary-300">
               {{ siteBindingText }}
             </p>
@@ -380,7 +390,10 @@ async function startTrial() {
               <a v-if="siteBinding.state === 'pr_open' && siteBinding.prUrl" :href="siteBinding.prUrl" target="_blank" rel="noopener" class="rounded text-sm font-medium text-primary-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-300" data-testid="claim-site-binding-pr">
                 {{ t('migrate_claim.site_binding_pr_link') }}
               </a>
-              <AtomsBaseButton variant="secondary" :disabled="connecting" data-testid="claim-site-binding-retry" @click="connectProject">
+              <NuxtLink v-else-if="siteBindingReviewPath" :to="siteBindingReviewPath" class="rounded text-sm font-medium text-primary-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-300" data-testid="claim-site-binding-review">
+                {{ t('migrate_claim.site_binding_review_link') }}
+              </NuxtLink>
+              <AtomsBaseButton v-if="!siteBindingReviewPath" variant="secondary" :disabled="connecting" data-testid="claim-site-binding-retry" @click="connectProject">
                 {{ t('migrate_claim.site_binding_retry') }}
               </AtomsBaseButton>
             </div>

@@ -12,10 +12,14 @@
  * - **Never over another binding.** No studio.json: one commit. The same project: nothing to do. Another project, or
  *   a file that does not read as a binding: left untouched, state `conflict`, with both values for support.
  * - **The write is Studio's own path** (`createFeatureBranch` → `applyPlan` → `mergeBranch`): a protected default
- *   branch gets a pull request with the same single file (`pr_open`, its address), a review project leaves it on its
- *   `cr/*` branch for review (`pr_open`).
- * - **Idempotent**: the claim screen's retry calls it again. A binding already on `contentrain` but not yet on the
- *   default branch (its pull request still open) is not committed twice: only the merge is asked for again.
+ *   branch gets a pull request with the same single file (`pr_open`, its address). On a review project the owner's
+ *   Connect is the approval: it is recorded against the branch's plan (approver = the grant's user) and the branch is
+ *   merged under it, with a receipt; a policy that wants more than that grant leaves it for review (`pr_open`).
+ * - **Idempotent**: the claim screen's retry and the sweep call it again. A binding already on `contentrain` but not yet
+ *   on the default branch (its pull request still open) is not committed twice: only the merge is asked for again. A
+ *   binding branch still waiting (a review project's) is found again (`cr/studio/binding/*` holding this project's
+ *   binding, the recorded `detail.branch` first), never written a second time; once it is merged, the next call finds
+ *   studio.json live and answers written.
  *
  * The outcome is recorded on the grant (`setMigrateGrantSiteBinding`, migrations 049/050) and returned; a failure is
  * recorded too, with its retry time, and never thrown, so connecting the project never fails because of it. The
@@ -24,13 +28,16 @@
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { DatabaseProvider, MigrateSiteBindingState } from '../providers/database'
 import type { GitProvider } from '../providers/git'
-import { effectiveWorkflow } from './branch-approval'
+import { gateForPlan } from './approval-gate'
+import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
 import { getOrBuildBrainCache, invalidateBrainCache } from './brain-cache'
 import { createContentEngine } from './content-engine'
 import { createFeatureBranch, openWriteSnapshot, writeBase } from './content-engine/helpers'
+import { actorFromEmail } from './execution-plan'
 import { STUDIO_AUTHOR } from './content-engine/types'
 import { getFormConfig } from './form-types'
 import { getPlanLimit, hasFeature } from './license'
+import { SITE_BINDING_BRANCH_PREFIX } from './migrate-grant'
 import { projectPath, readMigrationMediaManifest } from './migration-media'
 import { STUDIO_BINDING_FILE, studioBindingSource } from './migration-media-apply'
 
@@ -63,10 +70,21 @@ export interface MigrateSiteBinding {
   code?: string
 }
 
+/** The note on the approval a review project's binding is merged with. */
+export const SITE_BINDING_APPROVAL_NOTE = 'connect this site to Studio'
+
 export interface MigrateSiteBindingInput {
-  db: Pick<DatabaseProvider, 'setMigrateGrantSiteBinding'>
+  db: Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'recordApproval'>
   grantId: string
   projectId: string
+  /**
+   * The grant's owner, whose Connect is the approval of the binding on a review project (they connected the site as its
+   * workspace's owner or admin, `connect-project`): the grant's user, its email, its workspace. Without it a review
+   * project's binding waits for a reviewer.
+   */
+  approver?: { id: string, email: string, workspaceId: string }
+  /** The binding branch an earlier attempt recorded (`site_binding_detail.branch`): tried first on a retry. */
+  recordedBranch?: string | null
   git: GitProvider
   contentRoot: string
   defaultBranch: string
@@ -90,6 +108,22 @@ function bindingOf(source: string): { baseUrl: string, projectId: string } | nul
 }
 
 const sameStudio = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
+
+/**
+ * The unmerged binding branches that hold this project's binding: `branch`, the one to use (the recorded one first,
+ * then the newest), or null; `others`, the duplicates earlier retries left (before a retry reused its branch).
+ */
+async function waitingBindingBranches(git: GitProvider, path: string, projectId: string, baseUrl: string, recorded?: string | null): Promise<{ branch: string | null, others: string[] }> {
+  const listed = (await git.listBranches(SITE_BINDING_BRANCH_PREFIX)).map(b => b.name).sort().reverse()
+  const names = recorded && listed.includes(recorded) ? [recorded, ...listed.filter(n => n !== recorded)] : listed
+  const found: string[] = []
+  for (const name of names) {
+    if (await git.isMerged(name)) continue
+    const there = bindingOf(await git.readFile(path, name).catch(() => ''))
+    if (there && there.projectId === projectId && sameStudio(there.baseUrl, baseUrl)) found.push(name)
+  }
+  return { branch: found[0] ?? null, others: found.slice(1) }
+}
 
 export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): Promise<MigrateSiteBinding> {
   const now = input.now ?? (() => new Date())
@@ -116,6 +150,12 @@ export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): 
     const done = (state: 'written' | 'partial', detail: Record<string, unknown>) =>
       record(state, { ...detail, formModels: formIds.length, limit: Number.isFinite(limit) ? limit : null, ...(state === 'partial' ? { overLimit } : {}) }, state === 'partial' ? { overLimit } : {})
     const writtenState = overLimit.length ? 'partial' as const : 'written' as const
+    const writeBindingBranch = async (): Promise<string> => {
+      const snapshot = await openWriteSnapshot(git)
+      const { branchName } = await createFeatureBranch({ git, pathCtx: { contentRoot }, projectId, ensureContentBranch: () => Promise.resolve() }, 'studio', 'binding')
+      await git.applyPlan({ branch: branchName, changes: [{ path, content: binding }], message: SITE_BINDING_MESSAGE, author: STUDIO_AUTHOR, base: writeBase(snapshot) })
+      return branchName
+    }
 
     // What the site builds from: the default branch. Another binding there is never overwritten.
     const live = await git.readFile(path, defaultBranch).catch(() => null)
@@ -137,15 +177,51 @@ export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): 
       return record('failed', { path, code: 'merge_not_done' })
     }
 
-    const snapshot = await openWriteSnapshot(git)
-    const { branchName } = await createFeatureBranch({ git, pathCtx: { contentRoot }, projectId, ensureContentBranch: () => Promise.resolve() }, 'studio', 'binding')
-    await git.applyPlan({ branch: branchName, changes: [{ path, content: binding }], message: SITE_BINDING_MESSAGE, author: STUDIO_AUTHOR, base: writeBase(snapshot) })
-    // A review project holds it like any other change: it waits on its branch for a reviewer.
-    if (effectiveWorkflow(brain.config?.workflow, hasFeature(input.plan, 'workflow.review')) === 'review')
-      return record('pr_open', { path, branch: branchName, review: true }, { prUrl: null })
-    const merge = await engine.mergeBranch(branchName)
+    // An earlier attempt's binding branch still waiting (a review project's, or one whose merge did not finish): the
+    // same branch again, never a second one (each retry used to open another, until branch health blocked the project).
+    const waiting = await waitingBindingBranches(git, path, projectId, input.studio.baseUrl, input.recordedBranch)
+    // Duplicates are only reported: they are the customer's branches, and deleting them is a person's decision.
+    if (waiting.others.length) {
+      // eslint-disable-next-line no-console -- ops visibility: binding branches older retries left in the customer's repository
+      console.warn('[migrate-site-binding] duplicate binding branches (list only)', { grantId: input.grantId, projectId, branches: waiting.others })
+    }
+    const duplicates = waiting.others.length ? { duplicateBranches: waiting.others } : {}
+    const branchName = waiting.branch ?? await writeBindingBranch()
+    const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(input.plan, 'workflow.review'))
+    const startedAt = now().toISOString()
+    let approval: Awaited<ReturnType<typeof resolveMergeApproval>> = null
+    if (workflow === 'review') {
+      const waits = () => record('pr_open', { path, branch: branchName, review: true, ...duplicates }, { prUrl: null })
+      // A review project's binding is approved by the Connect that asked for it: the grant's owner, recorded against this
+      // branch's plan and tip like any reviewer's grant, then merged under it. Its one file is a site config, not
+      // content, so its plan is the lowest rung with nothing in scope for a reviewer to read.
+      if (!input.approver) return waits()
+      const ask = () => resolveMergeApproval({ git, contentRoot, projectId, branch: branchName, workflow, policy: brain.approvalPolicy ?? null })
+      const before = await ask()
+      if (!before) return waits()
+      await input.db.recordApproval({
+        projectId,
+        workspaceId: input.approver.workspaceId,
+        target: branchName,
+        gate: gateForPlan(before.decision),
+        planHash: before.plan.plan_hash,
+        commitSha: before.commitSha ?? null,
+        approverId: input.approver.id,
+        approverEmail: input.approver.email,
+        // Their role now is not known here (an owner or an admin connected it); the grant answers who, not as what.
+        approverRole: null,
+        note: SITE_BINDING_APPROVAL_NOTE,
+      })
+      approval = await ask()
+      // A policy that asks for more than the owner's grant (more approvals, another role) keeps it for its reviewers.
+      if (!approval?.decision.allowed) return waits()
+    }
+    const merge = await engine.mergeBranch(branchName, approval?.commitSha ? { expectedHead: approval.commitSha } : {})
     invalidateBrainCache(projectId)
-    if (merge.merged) return done(writtenState, { path, change: 'written' })
+    // The receipt says who let it in; it also clears the grant (`recordMergeReceipt`).
+    if (approval && input.approver && merge.merged)
+      await recordMergeReceipt({ projectId, workspaceId: input.approver.workspaceId, branch: branchName, approval, actor: actorFromEmail(input.approver.email), startedAt })
+    if (merge.merged) return done(writtenState, { path, change: 'written', ...duplicates })
     if (merge.pullRequestUrl) return record('pr_open', { path, prUrl: merge.pullRequestUrl }, { prUrl: merge.pullRequestUrl })
     return record('failed', { path, code: merge.conflict ? 'merge_conflict' : 'merge_not_done', branch: branchName })
   }

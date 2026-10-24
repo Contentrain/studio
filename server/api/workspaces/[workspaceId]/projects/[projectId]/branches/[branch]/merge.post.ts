@@ -12,6 +12,8 @@ import { clearBranchRequestSafe } from '~~/server/utils/branch-requests'
 import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from '~~/server/utils/branch-approval'
 import { actorFromEmail } from '~~/server/utils/execution-plan'
 import { isBranchMoved, isBranchTipUnreadable } from '~~/server/utils/content-engine/errors'
+import { SITE_BINDING_BRANCH_PREFIX } from '~~/server/utils/migrate-grant'
+import { sweepMigrateSiteBindings } from '~~/server/utils/migrate-site-binding-run'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -77,6 +79,11 @@ export default defineEventHandler(async (event) => {
       startedAt,
     })
   }
+
+  // A Migrate bundle's site binding reviewed and merged: the sweep finds it live at once, records it written and starts
+  // the site's media move, instead of on its next pass (fire-and-forget).
+  if (mergeResult.merged && branch.startsWith(SITE_BINDING_BRANCH_PREFIX))
+    sweepMigrateSiteBindings({ db: useDatabaseProvider() }).catch(() => {})
 
   // Emit webhook event (fire-and-forget)
   emitWebhookEvent(projectId, workspaceId, 'branch.merged', {

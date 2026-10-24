@@ -299,7 +299,7 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .is('revoked_at', null)
         .not('workspace_id', 'is', null)
         .not('repo_owner', 'is', null)
-        .or(`site_binding_state.is.null,and(site_binding_state.eq.failed,site_binding_attempts.lt.${Math.trunc(maxAttempts)}),and(site_binding_state.in.(failed,conflict),site_binding_alerted_at.is.null)`)
+        .or(`site_binding_state.is.null,site_binding_state.eq.pr_open,and(site_binding_state.eq.failed,site_binding_attempts.lt.${Math.trunc(maxAttempts)}),and(site_binding_state.in.(failed,conflict),site_binding_alerted_at.is.null)`)
         .order('site_binding_next_at', { ascending: true, nullsFirst: true })
         .order('site_binding_at', { ascending: true, nullsFirst: true })
         .limit(limit)

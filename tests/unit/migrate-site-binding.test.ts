@@ -20,6 +20,8 @@ let failWrite: boolean
 let branches: Record<string, Map<string, string>>
 let commits: Array<{ branch: string, changes: Array<{ path: string, content: string }>, message: string }>
 let finalizeCalls: number
+let merged: Set<string>
+let policyWantsMore: boolean
 const PR = 'https://github.com/ABB65/formchickens/pull/12'
 
 vi.mock('../../server/utils/brain-cache', () => ({
@@ -39,6 +41,22 @@ vi.mock('../../server/utils/content-engine/helpers', () => ({
   openWriteSnapshot: async () => ({ baseSha: 'base' }),
   writeBase: () => 'base',
 }))
+// The approval a merge answers to, over the grants recorded: allowed once the owner's grant is on the branch, unless the
+// policy wants more than one person.
+const receipts = vi.fn(async (_input: unknown) => {})
+vi.mock('../../server/utils/branch-approval', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../server/utils/branch-approval')>()),
+  resolveMergeApproval: async (input: { branch: string }) => {
+    const granted = db.recordApproval.mock.calls.some(([grant]) => grant.target === input.branch)
+    return {
+      plan: { plan_hash: `hash-${input.branch}` },
+      grants: [],
+      commitSha: 'tip',
+      decision: { allowed: granted && !policyWantsMore, risk: 'low_risk_content', planHash: `hash-${input.branch}`, intent: '', scope: {}, reasons: [], requirements: [{ gate: 'plan' }], rejectedGrants: [] },
+    }
+  },
+  recordMergeReceipt: (input: unknown) => receipts(input),
+}))
 // Studio's two-step merge: cr/* → contentrain, then contentrain → main (a pull request when main is protected).
 const finalize = () => {
   if (protectedMain) return { merged: false, sha: null, pullRequestUrl: PR }
@@ -50,6 +68,7 @@ vi.mock('../../server/utils/content-engine', () => ({
     ensureContentBranch: async () => {},
     mergeBranch: async (branch: string) => {
       for (const [path, content] of branches[branch]!) branches[CONTENTRAIN_BRANCH]!.set(path, content)
+      merged.add(branch)
       return finalize()
     },
     finalizeContentrain: async () => {
@@ -71,14 +90,20 @@ const git = {
     branches[input.branch] = new Map(input.changes.map(c => [c.path, c.content]))
     return { sha: 'c1' }
   },
+  listBranches: async (prefix?: string) => Object.keys(branches).filter(name => !prefix || name.startsWith(prefix)).map(name => ({ name })),
+  isMerged: async (branch: string) => merged.has(branch),
 }
 
-const db = { setMigrateGrantSiteBinding: vi.fn(async (_id: string, _b: unknown) => {}) }
+const db = {
+  setMigrateGrantSiteBinding: vi.fn(async (_id: string, _b: unknown) => {}),
+  recordApproval: vi.fn(async (input: { target: string } & Record<string, unknown>) => input),
+}
+const OWNER = { id: 'user-1', email: 'owner@example.com', workspaceId: 'ws-1' }
 const STUDIO = { baseUrl: 'https://studio.contentrain.io', mediaBaseUrl: 'https://studio.contentrain.io/api/cdn/v1/proj-1' }
 
-async function bind(over: { projectId?: string } = {}) {
+async function bind(over: { projectId?: string, approver?: typeof OWNER, recordedBranch?: string } = {}) {
   const { ensureMigrateSiteBinding } = await import('../../server/utils/migrate-site-binding')
-  return ensureMigrateSiteBinding({ db, grantId: 'grant-1', projectId: over.projectId ?? 'proj-1', git: git as never, contentRoot: '', defaultBranch: 'main', plan: 'pro', studio: STUDIO })
+  return ensureMigrateSiteBinding({ db, grantId: 'grant-1', projectId: over.projectId ?? 'proj-1', git: git as never, contentRoot: '', defaultBranch: 'main', plan: 'pro', studio: STUDIO, ...(over.approver ? { approver: over.approver } : {}), ...(over.recordedBranch ? { recordedBranch: over.recordedBranch } : {}) })
 }
 const recorded = () => db.setMigrateGrantSiteBinding.mock.calls.at(-1)?.[1] as { state: string, detail: Record<string, unknown>, attempts?: number, nextAt?: Date | null }
 
@@ -92,7 +117,11 @@ beforeEach(() => {
   branches = { main: new Map(), [CONTENTRAIN_BRANCH]: new Map() }
   commits = []
   finalizeCalls = 0
+  merged = new Set()
+  policyWantsMore = false
   db.setMigrateGrantSiteBinding.mockClear()
+  db.recordApproval.mockClear()
+  receipts.mockClear()
 })
 
 describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
@@ -158,11 +187,78 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
     expect(commits).toHaveLength(1)
   })
 
-  it('a review project: the change waits on its branch for review (pr_open, no address), nothing merged', async () => {
+  it('a review project: the owner\'s Connect is the approval — recorded on the branch\'s plan, merged under it, receipt; written', async () => {
+    workflow = 'review'
+    expect(await bind({ approver: OWNER })).toEqual({ state: 'written' })
+    expect(db.recordApproval).toHaveBeenCalledTimes(1)
+    expect(db.recordApproval.mock.calls[0]![0]).toEqual({
+      projectId: 'proj-1',
+      workspaceId: 'ws-1',
+      target: 'cr/studio/binding/1',
+      gate: 'plan',
+      planHash: 'hash-cr/studio/binding/1',
+      commitSha: 'tip',
+      approverId: 'user-1',
+      approverEmail: 'owner@example.com',
+      approverRole: null,
+      note: 'connect this site to Studio',
+    })
+    expect(branches.main!.get('studio.json')).toBe(commits[0]!.changes[0]!.content)
+    expect(receipts).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1', workspaceId: 'ws-1', branch: 'cr/studio/binding/1', actor: { kind: 'human', id: 'owner@example.com', name: 'owner@example.com' } }))
+    expect(recorded()).toMatchObject({ state: 'written', detail: { change: 'written' } })
+  })
+
+  it('a review project whose policy wants more than the owner\'s grant: the binding waits for its reviewers (pr_open), nothing merged', async () => {
+    workflow = 'review'
+    policyWantsMore = true
+    expect(await bind({ approver: OWNER })).toEqual({ state: 'pr_open', prUrl: null })
+    expect(branches[CONTENTRAIN_BRANCH]!.has('studio.json')).toBe(false)
+    expect(receipts).not.toHaveBeenCalled()
+    expect(recorded()).toMatchObject({ state: 'pr_open', detail: { branch: 'cr/studio/binding/1', review: true } })
+  })
+
+  it('a retry merges the recorded branch first, never a second binding branch; older duplicates are listed, never deleted', async () => {
+    workflow = 'review'
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await bind()
+    branches['cr/studio/binding/2'] = new Map(branches['cr/studio/binding/1']!)
+    expect(await bind({ approver: OWNER, recordedBranch: 'cr/studio/binding/1' })).toEqual({ state: 'written' })
+    expect(commits).toHaveLength(1)
+    expect(merged).toEqual(new Set(['cr/studio/binding/1']))
+    expect(recorded()).toMatchObject({ state: 'written', detail: { change: 'written', duplicateBranches: ['cr/studio/binding/2'] } })
+    expect(warn).toHaveBeenCalledWith('[migrate-site-binding] duplicate binding branches (list only)', { grantId: 'grant-1', projectId: 'proj-1', branches: ['cr/studio/binding/2'] })
+    expect(branches['cr/studio/binding/2']).toBeDefined()
+  })
+
+  it('a review project with no owner to approve: the change waits on its branch for review (pr_open, no address), nothing merged', async () => {
     workflow = 'review'
     expect(await bind()).toEqual({ state: 'pr_open', prUrl: null })
     expect(branches[CONTENTRAIN_BRANCH]!.has('studio.json')).toBe(false)
     expect(recorded()).toMatchObject({ state: 'pr_open', detail: { branch: 'cr/studio/binding/1', review: true } })
+  })
+
+  it('a review project: Try again finds the branch already waiting and commits nothing; once the review is merged, written', async () => {
+    workflow = 'review'
+    await bind()
+    expect(await bind()).toEqual({ state: 'pr_open', prUrl: null })
+    expect(await bind()).toEqual({ state: 'pr_open', prUrl: null })
+    expect(commits).toHaveLength(1)
+    expect(recorded()).toMatchObject({ state: 'pr_open', detail: { branch: 'cr/studio/binding/1' } })
+
+    // The reviewer approves in Studio: the branch lands on contentrain, then on main.
+    for (const [path, content] of branches['cr/studio/binding/1']!) branches[CONTENTRAIN_BRANCH]!.set(path, content)
+    merged.add('cr/studio/binding/1')
+    finalize()
+    expect(await bind()).toEqual({ state: 'written' })
+    expect(commits).toHaveLength(1)
+  })
+
+  it('a waiting binding branch for another project is not reused', async () => {
+    workflow = 'review'
+    branches['cr/studio/binding/0'] = new Map([['studio.json', JSON.stringify({ baseUrl: 'https://studio.contentrain.io', projectId: 'someone-else' })]])
+    await bind()
+    expect(commits).toHaveLength(1)
+    expect(commits[0]!.branch).toBe('cr/studio/binding/1')
   })
 
   it('a write that fails is recorded as failed and never thrown; the next try writes once', async () => {

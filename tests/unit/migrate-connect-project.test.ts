@@ -21,6 +21,8 @@ vi.mock('../../server/utils/migration-handoff', () => ({ syncMigrationHandoff: (
 const ensureMigrateSiteBinding = vi.fn()
 vi.mock('../../server/utils/migrate-site-binding', () => ({ ensureMigrateSiteBinding: (...a: unknown[]) => ensureMigrateSiteBinding(...a) }))
 vi.mock('../../server/utils/media-url', () => ({ publicMediaBase: (id: string) => `https://studio.example/api/cdn/v1/${id}` }))
+const bustProjectDeliveryCache = vi.fn()
+vi.mock('../../server/utils/cdn-delivery-cache', () => ({ bustProjectDeliveryCache: (...a: unknown[]) => bustProjectDeliveryCache(...a) }))
 
 const grantRow = {
   id: 'grant-1', order_id: 'ord_123', user_id: 'user-1', kind: 'bundle', plan: 'pro', trial_days: null,
@@ -54,7 +56,9 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
       createProject: vi.fn().mockResolvedValue({ id: 'proj-new' }),
       updateMigrateGrantRepo: vi.fn().mockResolvedValue(undefined),
       getProjectById: vi.fn().mockResolvedValue({ id: 'proj-new', content_root: '', default_branch: 'main' }),
+      updateProject: vi.fn().mockResolvedValue({ id: 'proj-new', cdn_enabled: true }),
     }
+    bustProjectDeliveryCache.mockReset()
     vi.stubGlobal('defineEventHandler', (h: unknown) => h)
     vi.stubGlobal('createError', createErrorLike)
     vi.stubGlobal('errorMessage', (key: string) => key)
@@ -94,6 +98,19 @@ describe('POST /api/migrate/grants/:grantId/connect-project', () => {
     expect(ensureMigrateSiteBinding).toHaveBeenCalledTimes(2)
     expect(ensureMigrateSiteBinding.mock.calls[1]![0]).toMatchObject({ projectId: 'proj-old', defaultBranch: 'trunk' })
     expect(db.createProject).not.toHaveBeenCalled()
+  })
+
+  it('the project made here gets CDN delivery on when the plan has it, and its delivery cache is dropped', async () => {
+    await route()
+    expect(db.updateProject).toHaveBeenCalledWith('proj-new', { cdn_enabled: true }, 'cdn_enabled')
+    expect(bustProjectDeliveryCache).toHaveBeenCalledWith('proj-new')
+  })
+
+  it('an existing project keeps its CDN setting: the customer may have turned it off', async () => {
+    db.listWorkspaceProjects.mockResolvedValue([{ id: 'proj-old', repo_full_name: 'ABB65/formchickens' }])
+    await route()
+    expect(db.updateProject).not.toHaveBeenCalled()
+    expect(bustProjectDeliveryCache).not.toHaveBeenCalled()
   })
 
   it('a binding that did not go through never fails the connect: the project is the answer, the state says why', async () => {
