@@ -1,6 +1,6 @@
 import type { CommentsExport, MigrationHandoff } from '@contentrain/types'
 import { GitHubProvider } from '@contentrain/mcp/providers/github'
-import { COMMENTS_EXPORT_FORMAT } from '@contentrain/types'
+import { COMMENTS_EXPORT_FORMAT, MIGRATION_HANDOFF_GOLDEN } from '@contentrain/types'
 import { describe, expect, it, vi } from 'vitest'
 import {
   describeOversizedManifest,
@@ -91,6 +91,16 @@ describe('summarizeMigrationHandoff / renderMigrationHandoffForAgent', () => {
     expect(block).toContain('1009')
     expect(block).toContain('export available')
     expect(block.split('\n').length).toBeLessThan(15)
+  })
+})
+
+describe('the published handoff golden', () => {
+  it('reads its chosen offers, one per capability, never a verdict out of its notes', () => {
+    expect(validateMigrationHandoff(MIGRATION_HANDOFF_GOLDEN)).toBeNull()
+    const summary = summarizeMigrationHandoff(MIGRATION_HANDOFF_GOLDEN)
+    const chosen = (MIGRATION_HANDOFF_GOLDEN.offers ?? []).filter(o => o.chosen).map(o => o.capability)
+    expect(summary.chosenOffers.map(o => o.capability).sort()).toEqual([...new Set(chosen)].sort())
+    expect(renderMigrationHandoffForAgent(summary)).not.toMatch(/quality gate|build passed/)
   })
 })
 

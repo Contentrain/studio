@@ -3,7 +3,7 @@
  * gate. Lifecycle: migration 031 (claimed → bound → redeemed), and `revoked`
  * (migration 045) from any of them, which wins over the rest.
  */
-import type { MigrateGrantState } from '@contentrain/types'
+import type { MigrateGrantState, MigrateGrantStatusResponse } from '@contentrain/types'
 import type { DatabaseRow } from '../providers/database'
 import { migrateBundleStatus } from './migrate-grant'
 import { useGitAppProvider } from './providers'
@@ -81,18 +81,15 @@ export async function migrateGrantGithubAccount(workspace: DatabaseRow | null): 
 }
 
 /**
- * Where the delivered site's Studio capabilities stand, for Migrate's "turn off WordPress" checklist (additive to
- * `MigrateGrantStatusResponse` until `@contentrain/types` carries it). A key is sent only for a capability Studio
+ * Where the delivered site's Studio capabilities stand, for Migrate's "turn off WordPress" checklist
+ * (`MigrateGrantStatusResponse.capabilities`). A key is sent only for a capability Studio
  * serves on this site; an absent key reads as `pending`.
  * - `forms`: the site has form models (the binding counted them). `connected` once studio.json on the default branch
  *   names this project (`written`, or `partial` when the plan serves fewer forms than the site has).
  * - `comments`: the order had a comments export. `connected` once the site is bound the same way and the export is
  *   imported into the project.
  */
-export interface MigrateGrantCapabilities {
-  forms?: 'connected' | 'pending'
-  comments?: 'connected' | 'pending'
-}
+export type MigrateGrantCapabilities = NonNullable<MigrateGrantStatusResponse['capabilities']>
 
 export async function migrateGrantCapabilities(grant: DatabaseRow): Promise<MigrateGrantCapabilities> {
   if (grant.kind !== 'bundle') return {}

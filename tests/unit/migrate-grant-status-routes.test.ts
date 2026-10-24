@@ -1,6 +1,6 @@
 import { exportSPKI, generateKeyPair, SignJWT } from 'jose'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MIGRATE_STUDIO_CLAIM_AUDIENCE, MIGRATE_STUDIO_CLAIM_ISSUER } from '@contentrain/types'
+import { MIGRATE_STUDIO_CLAIM_AUDIENCE, MIGRATE_STUDIO_CLAIM_ISSUER, validateMigrateGrantStatusResponse } from '@contentrain/types'
 import { verifyMigrateInstallState } from '../../server/utils/migrate-install-state'
 
 vi.mock('../../server/utils/deployment', () => ({ resolveDeployment: () => ({ planSource: 'subscription' }) }))
@@ -167,7 +167,10 @@ describe('Migrate grant status and install-url routes', () => {
         expect(await call('status')).toMatchObject({ capabilities: { forms: 'connected', comments: 'pending' } })
         db.getMigrateCommentsExportState.mockResolvedValue({ status: 'imported', comments: 4 })
         await status()
-        expect(await call('status')).toMatchObject({ capabilities: { forms: 'connected', comments: 'connected' } })
+        const connected = await call('status')
+        expect(connected).toMatchObject({ capabilities: { forms: 'connected', comments: 'connected' } })
+        // Migrate's reader validates the response with the published contract.
+        expect(validateMigrateGrantStatusResponse(connected)).toMatchObject({ ok: true })
 
         // A site with no forms gets no forms key.
         db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', site_binding_state: 'written', site_binding_detail: { formModels: 0 } }))
