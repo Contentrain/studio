@@ -1236,7 +1236,7 @@ export interface DatabaseProvider {
 
   /**
    * The sweep's work list (050): redeemed, unrevoked bundle grants whose repository is a project in the grant's
-   * workspace and that still need the sweep: no binding yet, a `failed` one under `maxAttempts`, or a `failed` /
+   * workspace and that still need the sweep: no binding yet, a `pr_open` one (re-checked for its merge), a `failed` one under `maxAttempts`, or a `failed` /
    * `conflict` one whose alarm is not raised yet. A capped failure or a conflict already alarmed is left out, so they
    * never crowd the list. Each row is the grant plus `project_id`, `project_default_branch` and
    * `project_content_root`. Earliest retry first (never tried before all); the sweep decides what is due.

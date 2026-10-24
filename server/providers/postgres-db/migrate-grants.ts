@@ -346,6 +346,7 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .where('g.repo_owner', 'is not', null)
           .where(eb => eb.or([
             eb('g.site_binding_state', 'is', null),
+            eb('g.site_binding_state', '=', 'pr_open'),
             eb.and([eb('g.site_binding_state', '=', 'failed'), eb('g.site_binding_attempts', '<', maxAttempts)]),
             eb.and([eb('g.site_binding_state', 'in', ['failed', 'conflict']), eb('g.site_binding_alerted_at', 'is', null)]),
           ]))

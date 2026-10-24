@@ -81,10 +81,19 @@ describe('sweepMigrateSiteBindings', () => {
     expect(alarms).toHaveLength(1)
   })
 
-  it('pr_open and written grants are not the sweep\'s: the list hands them over only by mistake, and then nothing is done', async () => {
-    rows = [grant('pr', { site_binding_state: 'pr_open' }), grant('ok', { site_binding_state: 'written' })]
-    expect(await sweep()).toMatchObject({ bound: 0, waiting: 2, alarms: 0 })
+  it('a written grant is not the sweep\'s: the list hands it over only by mistake, and then nothing is done', async () => {
+    rows = [grant('ok', { site_binding_state: 'written' })]
+    expect(await sweep()).toMatchObject({ bound: 0, waiting: 1, alarms: 0 })
     expect(bound).toEqual([])
+  })
+
+  it('pr_open is checked again on every pass: still waiting counts as waiting, merged counts as bound', async () => {
+    rows = [grant('pr', { site_binding_state: 'pr_open' })]
+    outcome = () => ({ state: 'pr_open', prUrl: null })
+    expect(await sweep()).toMatchObject({ bound: 0, failed: 0, waiting: 1, alarms: 0 })
+    expect(bound).toEqual(['pr→proj-pr@main'])
+    outcome = () => ({ state: 'written' })
+    expect(await sweep()).toMatchObject({ bound: 1, waiting: 0 })
   })
 
   it('the third failure in a row raises the alarm once, with the recorded code; the fourth does not again', async () => {

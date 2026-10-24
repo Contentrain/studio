@@ -913,6 +913,7 @@
   "migrate_claim.site_binding_pr_open": "Your repository’s main branch is protected, so we opened a pull request with one file, studio.json. Merge this PR to switch your forms on; your host rebuilds the site on that commit.",
   "migrate_claim.site_binding_retry": "Try again",
   "migrate_claim.site_binding_review": "The change that switches your forms on (studio.json) waits for review in this project. Approve it to switch your forms on; your host rebuilds the site on that commit.",
+  "migrate_claim.site_binding_review_link": "Open the review",
   "migrate_claim.site_binding_written": "Your site’s forms and comments send to Studio once your host rebuilds the site: studio.json is in your repository.",
   "migrate_claim.start": "Start {days}-day Studio trial — $0 today",
   "migrate_claim.then": "After the included days",

@@ -22,6 +22,9 @@ export function migrateClaimPublicKey(): string | null {
   return raw.replace(/\\n/g, '\n')
 }
 
+/** The prefix of the branches a bundle's site binding is written on (`createFeatureBranch(…, 'studio', 'binding')`). */
+export const SITE_BINDING_BRANCH_PREFIX = 'cr/studio/binding/'
+
 export type MigrateGrantState = 'claimed' | 'bound' | 'redeemed'
 
 export interface MigrateGrantView {
@@ -38,9 +41,10 @@ export interface MigrateGrantView {
   state: MigrateGrantState
   /**
    * How writing studio.json to the delivered site went (049, `migrate-site-binding.ts`); absent until it was tried.
-   * `prUrl`: the pull request to merge (`pr_open`); `overLimit`: the form models the plan does not serve (`partial`).
+   * `prUrl`: the pull request to merge (`pr_open`); `branch`: the binding branch waiting for review in Studio (`pr_open`
+   * on a review project, no pull request); `overLimit`: the form models the plan does not serve (`partial`).
    */
-  siteBinding?: { state: string, prUrl: string | null, overLimit: string[], limit: number | null }
+  siteBinding?: { state: string, prUrl: string | null, branch: string | null, overLimit: string[], limit: number | null }
 }
 
 /** What the claim screen may see of a grant. */
@@ -59,13 +63,14 @@ export function migrateGrantView(row: DatabaseRow): MigrateGrantView {
   }
 }
 
-/** Only what the claim screen says: the state, the pull request's address, the form models over the plan and its limit. */
+/** Only what the claim screen says: the state, the pull request's address or the review branch, the form models over the plan and its limit. */
 function siteBindingView(state: string, raw: unknown): NonNullable<MigrateGrantView['siteBinding']> {
-  const detail = (raw && typeof raw === 'object' ? raw : {}) as { prUrl?: unknown, overLimit?: unknown, limit?: unknown }
+  const detail = (raw && typeof raw === 'object' ? raw : {}) as { prUrl?: unknown, branch?: unknown, overLimit?: unknown, limit?: unknown }
   return {
     state,
     limit: typeof detail.limit === 'number' ? detail.limit : null,
     prUrl: typeof detail.prUrl === 'string' && detail.prUrl.startsWith('https://') ? detail.prUrl : null,
+    branch: state === 'pr_open' && typeof detail.branch === 'string' && detail.branch.startsWith(SITE_BINDING_BRANCH_PREFIX) ? detail.branch : null,
     overLimit: Array.isArray(detail.overLimit) ? detail.overLimit.filter((id): id is string => typeof id === 'string') : [],
   }
 }

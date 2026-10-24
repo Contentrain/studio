@@ -125,6 +125,7 @@ describe('a covered bundle grant: provision → claim → connect-project → si
         return row
       }),
       getProjectById: vi.fn(async () => ({ id: 'proj-covered', content_root: '', default_branch: 'main' })),
+      updateProject: vi.fn(async () => {}),
     }
     resolveMigrateAccountState.mockReset().mockResolvedValue({ state: 'covers', plan: 'pro', year1_cents: 0, current_plan: 'pro' })
     coveringWorkspace.mockReset().mockResolvedValue({ id: WORKSPACE.id, slug: WORKSPACE.slug })
@@ -177,6 +178,8 @@ describe('a covered bundle grant: provision → claim → connect-project → si
     const connect = (await import('../../server/api/migrate/grants/[grantId]/connect-project.post')).default as unknown as (e: unknown) => Promise<unknown>
     expect(await connect({})).toEqual({ projectId: 'proj-covered', workspaceSlug: 'agency', created: true, siteBinding: { state: 'written' } })
     expect(db.createProject).toHaveBeenCalledWith('t', expect.objectContaining({ workspace_id: 'ws-paid', repo_full_name: 'ABB65/covered-site' }))
+    // The new project delivers its content and media from Studio's CDN.
+    expect(db.updateProject).toHaveBeenCalledWith('proj-covered', { cdn_enabled: true }, 'cdn_enabled')
     expect(ensureMigrateSiteBinding).toHaveBeenCalledWith(expect.objectContaining({ grantId: 'grant-covered', projectId: 'proj-covered', defaultBranch: 'main', studio: expect.objectContaining({ baseUrl: 'https://studio.example.com' }) }))
     // The write goes to the delivered repository, through the workspace's own installation.
     expect(gitFor).toHaveBeenLastCalledWith({ installationId: 4242, owner: 'ABB65', repo: 'covered-site' })

@@ -57,6 +57,7 @@ describe('Migrate grant status and install-url routes', () => {
       getMigrateGrantByOrderId: vi.fn().mockResolvedValue(grant()),
       getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', type: 'secondary', plan: 'pro', overage_settings: {}, github_installation_id: null }),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
+      getMigrateCommentsExportState: vi.fn().mockResolvedValue(null),
       claimMigrateS2sJti: vi.fn(async (jti: string, purpose: string) => {
         if (taken.has(`${purpose}:${jti}`)) return false
         taken.add(`${purpose}:${jti}`)
@@ -145,6 +146,33 @@ describe('Migrate grant status and install-url routes', () => {
         db.getActivePaymentAccount.mockResolvedValue(account())
         await status()
         expect(await call('status')).toMatchObject({ kind: 'bundle' })
+      })
+
+      it('capabilities: only those Studio serves on the site; connected once studio.json names the project (and comments are imported)', async () => {
+        db.getActivePaymentAccount.mockResolvedValue(account())
+        // Not bound yet, no form models counted, no comments export: nothing to say (absent reads as pending).
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1' }))
+        await status()
+        expect(await call('status')).not.toHaveProperty('capabilities')
+
+        // Waiting on its review: both pending.
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', site_binding_state: 'pr_open', site_binding_detail: { formModels: 1 } }))
+        db.getMigrateCommentsExportState.mockResolvedValue({ status: 'ready', comments: 4 })
+        await status()
+        expect(await call('status')).toMatchObject({ capabilities: { forms: 'pending', comments: 'pending' } })
+
+        // Bound: forms connected; comments only once imported.
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', site_binding_state: 'partial', site_binding_detail: { formModels: 2, limit: 1 } }))
+        await status()
+        expect(await call('status')).toMatchObject({ capabilities: { forms: 'connected', comments: 'pending' } })
+        db.getMigrateCommentsExportState.mockResolvedValue({ status: 'imported', comments: 4 })
+        await status()
+        expect(await call('status')).toMatchObject({ capabilities: { forms: 'connected', comments: 'connected' } })
+
+        // A site with no forms gets no forms key.
+        db.getMigrateGrantByOrderId.mockResolvedValue(bundle({ redeemed_subscription_id: 'sub_1', site_binding_state: 'written', site_binding_detail: { formModels: 0 } }))
+        await status()
+        expect((await call('status') as { capabilities: Record<string, string> }).capabilities).toEqual({ comments: 'connected' })
       })
 
       it('plan ended (canceled and its period is over): says so, with Studio\'s own text for Migrate to show as is', async () => {
