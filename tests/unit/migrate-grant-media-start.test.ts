@@ -28,6 +28,7 @@ const db = {
   setMigrateGrantSiteBinding: vi.fn(),
   getProjectById: vi.fn(async () => ({ id: 'p-1', content_root: '', default_branch: 'main' })),
   getActivePaymentAccount: vi.fn(),
+  getLatestMigrationMediaJob: vi.fn(async (_projectId: string): Promise<Record<string, unknown> | null> => null),
 }
 
 async function bind(plan = 'pro') {
@@ -40,6 +41,7 @@ describe('a bundle grant\'s binding starts its media import', () => {
     ensureMigrateSiteBinding.mockReset()
     startMigrationMediaImport.mockReset().mockResolvedValue({ job: { id: 'job-1', status: 'queued' }, created: true })
     applyGrantMigrationMedia.mockReset()
+    db.getLatestMigrationMediaJob.mockReset().mockResolvedValue(null)
     vi.stubGlobal('useMediaProvider', () => ({}))
     vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://studio.test' } }))
   })
@@ -61,12 +63,18 @@ describe('a bundle grant\'s binding starts its media import', () => {
     expect(applyGrantMigrationMedia).not.toHaveBeenCalled()
   })
 
-  it('a repeat finds the open job and starts nothing new; a job with nothing to fetch is applied at once', async () => {
-    ensureMigrateSiteBinding.mockResolvedValue({ state: 'written' })
-    startMigrationMediaImport.mockResolvedValue({ job: { id: 'job-1', status: 'queued' }, created: false })
+  it.each(['queued', 'running', 'paused_quota', 'done', 'failed', 'canceled'])('a project with a %s import job already: the pass starts nothing and applies nothing again', async (status) => {
+    ensureMigrateSiteBinding.mockResolvedValue({ state: 'pr_open', prUrl: 'https://github.com/acme/site/pull/1' })
+    db.getLatestMigrationMediaJob.mockResolvedValue({ id: 'job-1', status, migrate_grant_id: 'grant-1' })
     await bind()
+    await bind()
+    expect(db.getLatestMigrationMediaJob).toHaveBeenCalledWith('p-1')
+    expect(startMigrationMediaImport).not.toHaveBeenCalled()
     expect(applyGrantMigrationMedia).not.toHaveBeenCalled()
+  })
 
+  it('a job with nothing to fetch is applied at once', async () => {
+    ensureMigrateSiteBinding.mockResolvedValue({ state: 'written' })
     const empty = { id: 'job-2', status: 'done', migrate_grant_id: 'grant-1' }
     startMigrationMediaImport.mockResolvedValue({ job: empty, created: true })
     await bind()

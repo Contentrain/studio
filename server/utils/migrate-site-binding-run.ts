@@ -28,7 +28,7 @@ import { applyGrantMigrationMedia, startMigrationMediaImport } from './migration
 import { useGitProvider } from './providers'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
-type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'recordApproval' | 'getProjectById' | 'getActivePaymentAccount'>
+type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'recordApproval' | 'getProjectById' | 'getActivePaymentAccount' | 'getLatestMigrationMediaJob'>
 
 export interface BindMigrateGrantSiteInput {
   db: BindDb
@@ -72,20 +72,23 @@ export async function bindMigrateGrantSite(input: BindMigrateGrantSiteInput): Pr
     attempts: typeof input.grant.site_binding_attempts === 'number' ? input.grant.site_binding_attempts : 0,
   })
   // The media move does not wait on the binding: studio.json decides forms and comments, not where the files live.
-  await startGrantMedia({ grant: input.grant, workspace: input.workspace, projectId: input.projectId, repo: input.repo, git, contentRoot, defaultBranch, plan })
+  await startGrantMedia({ db: input.db, grant: input.grant, workspace: input.workspace, projectId: input.projectId, repo: input.repo, git, contentRoot, defaultBranch, plan })
   return binding
 }
 
 /**
- * A bundle site's media moves to Studio on its own, whatever its binding's state: the import starts for the grant (one job per project, so a
- * repeat finds it), and a job with nothing to fetch, done as it is recorded, is applied here since no tick will.
- * Best-effort: the binding's answer never depends on it, and without a media stack or `media.upload` nothing starts. Every pass of
- * the sweep over a waiting binding comes here again; the import is one job per project, so a repeat starts nothing new.
+ * A bundle site's media moves to Studio on its own, whatever its binding's state: the import starts for the grant, and a job with
+ * nothing to fetch, done as it is recorded, is applied here since no tick will.
+ * Best-effort: the binding's answer never depends on it, and without a media stack or `media.upload` nothing starts.
+ * **Once per project:** every pass of the sweep over a waiting binding, and every Connect retry, comes here again. A project that
+ * already has an import job — open, done, failed or canceled, the grant's or the owner's own — starts nothing: a done one is never
+ * fetched and applied a second time, and a failed or canceled one is the owner's to start again from the media card.
  */
-async function startGrantMedia(input: { grant: DatabaseRow, workspace: DatabaseRow, projectId: string, repo: { owner: string, name: string }, git: GitProvider, contentRoot: string, defaultBranch: string, plan: string }): Promise<void> {
+async function startGrantMedia(input: { db: Pick<DatabaseProvider, 'getLatestMigrationMediaJob'>, grant: DatabaseRow, workspace: DatabaseRow, projectId: string, repo: { owner: string, name: string }, git: GitProvider, contentRoot: string, defaultBranch: string, plan: string }): Promise<void> {
   const workspaceId = String(input.workspace.id)
   try {
     if (!useMediaProvider() || !hasFeature(input.plan, 'media.upload')) return
+    if (await input.db.getLatestMigrationMediaJob(input.projectId)) return
     const { job, created } = await startMigrationMediaImport({
       projectId: input.projectId,
       workspaceId,
