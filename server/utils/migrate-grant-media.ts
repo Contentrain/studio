@@ -131,7 +131,7 @@ export async function advanceGrantMedia(input: AdvanceGrantMediaInput): Promise<
       await record('paused_quota', jobDetail)
       return { state: 'paused_quota', acted: false }
     }
-    // An owner's failed or canceled import, and a canceled grant job: the owner's to start again from the media card.
+    // An owner's failed or canceled import, and a canceled grant job: the owner's to start again from the setup's images step.
     if (status !== 'done') {
       await record('pending', { ...jobDetail, code: status === 'canceled' ? 'canceled' : 'job_failed' })
       return { state: 'pending', acted: false }

@@ -1,6 +1,6 @@
 /**
  * Land a migration's comments export into this project's comments — the
- * one-click path from the overview card. Same fidelity contract and plan gate
+ * setup wizard's comments step. Same fidelity contract and plan gate
  * as the manual upload.
  *
  * Two places can hold the export:

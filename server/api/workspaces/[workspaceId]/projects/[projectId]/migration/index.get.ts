@@ -1,6 +1,6 @@
 /**
  * The project's migration handoff (`.contentrain/migrate/handoff.json` as synced) plus
- * a summary and the comments import state, for the overview card. The summary's runtime state counts Studio's own
+ * a summary and the comments import state, for the setup wizard. The summary's runtime state counts Studio's own
  * site binding (the grant's, `getMigrateGrantSiteBindingState`), not only what the handoff knew at delivery.
  *
  * `claimExport` is the comments export held on this repository's Migrate grant
