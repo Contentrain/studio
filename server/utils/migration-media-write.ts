@@ -2,8 +2,14 @@
  * The write of the media apply (`migration-media-apply.ts` plans it): one commit on a `cr/media/…` branch forked
  * from the snapshot the files were read at, then the project's own workflow decides. Auto-merge lands it
  * (`contentrain`, then `main`, or a pull request on a protected default branch), the same path every content save
- * and the bundle's site binding take; review leaves it pending for a reviewer. A write that landed since the read
- * makes the merge a conflict, never an overwrite.
+ * and the bundle's site binding take. A write that landed since the read makes the merge a conflict, never an
+ * overwrite.
+ *
+ * On a review project the owner's or admin's click is the approval (F2), as Connect is for the site binding: it is
+ * recorded against the branch's plan and tip (approver, role, `MEDIA_APPLY_APPROVAL_NOTE`), the branch is merged under
+ * it and a receipt is kept. A policy that wants more than that one grant leaves it pending for its reviewers. With no
+ * approver (the bundle's own apply, run by the worker or the sweep), review leaves it pending: nothing unattended
+ * approves it.
  *
  * Two callers: the owner's apply (`POST …/migration/media/apply`, dry run first) and a bundle grant's import when it
  * finishes (`runMigrationMediaTick`), which never deletes the local files.
@@ -12,20 +18,25 @@
  * them (`publicMediaBlock`); a dry run reports the same reason as `blocked`.
  */
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
-import type { DatabaseRow } from '../providers/database'
+import type { DatabaseProvider, DatabaseRow } from '../providers/database'
 import type { GitProvider } from '../providers/git'
-import { effectiveWorkflow } from './branch-approval'
+import { gateForPlan } from './approval-gate'
+import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
 import { getOrBuildBrainCache, invalidateBrainCache } from './brain-cache'
 import { createContentEngine } from './content-engine'
 import { createFeatureBranch, openWriteSnapshot, writeBase } from './content-engine/helpers'
 import type { EngineMergeResult } from './content-engine/types'
 import { STUDIO_AUTHOR } from './content-engine/types'
+import { actorFromEmail } from './execution-plan'
 import { hasFeature } from './license'
 import { readMigrationMediaManifest } from './migration-media'
 import { planMigrationMediaApply } from './migration-media-apply'
 import type { MigrationMediaApplyCounts } from './migration-media-apply'
 import { publicMediaBase, publicMediaBlock } from './media-url'
 import type { PublicMediaBlock } from './media-url'
+
+/** The note on the approval a review project's media apply is merged with: the click that asked for it. */
+export const MEDIA_APPLY_APPROVAL_NOTE = 'move this site\'s media to Studio'
 
 /** Files listed by name in the commit a reviewer reads; the rest are counted. */
 const LISTED = 50
@@ -55,7 +66,7 @@ function commitMessage(counts: MigrationMediaApplyCounts, email: string | null):
 }
 
 export interface ApplyMigrationMediaInput {
-  db: { listMigrationMediaItems: (jobId: string, state: 'done' | 'failed', limit: number) => Promise<DatabaseRow[]> }
+  db: Pick<DatabaseProvider, 'listMigrationMediaItems' | 'recordApproval'>
   git: GitProvider
   contentRoot: string
   projectId: string
@@ -68,6 +79,11 @@ export interface ApplyMigrationMediaInput {
   deleteLocal: boolean
   /** Who asked, on the commit; null for the bundle's own apply. */
   authorEmail: string | null
+  /**
+   * The owner or admin whose click asked for it: on a review project the click is their approval. Absent for the
+   * bundle's own apply, which stays for a reviewer.
+   */
+  approver?: { id: string, email: string, role: string | null, workspaceId: string }
 }
 
 export type ApplyMigrationMediaResult
@@ -123,13 +139,36 @@ export async function applyMigrationMedia(input: ApplyMigrationMediaInput): Prom
   })
 
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
-  // Review projects hold it like any other change: it rewrites content and touches site files.
-  if (effectiveWorkflow(brain.config?.workflow, hasFeature(plan, 'workflow.review')) === 'review')
-    return { status: 'pending_review', counts, branch: branchName, commitSha: commit.sha }
+  const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(plan, 'workflow.review'))
+  const startedAt = new Date().toISOString()
+  let approval: Awaited<ReturnType<typeof resolveMergeApproval>> = null
+  // Review projects hold it like any other change (it rewrites content and touches site files), until it is approved.
+  if (workflow === 'review') {
+    const held = { status: 'pending_review' as const, counts, branch: branchName, commitSha: commit.sha }
+    if (!input.approver) return held
+    const ask = () => resolveMergeApproval({ git, contentRoot, projectId, branch: branchName, workflow, policy: brain.approvalPolicy ?? null })
+    const before = await ask()
+    if (!before) return held
+    await input.db.recordApproval({
+      projectId,
+      workspaceId: input.approver.workspaceId,
+      target: branchName,
+      gate: gateForPlan(before.decision),
+      planHash: before.plan.plan_hash,
+      commitSha: before.commitSha ?? null,
+      approverId: input.approver.id,
+      approverEmail: input.approver.email,
+      approverRole: input.approver.role,
+      note: MEDIA_APPLY_APPROVAL_NOTE,
+    })
+    approval = await ask()
+    // A policy that asks for more than this one grant (more approvals, another role) keeps it for its reviewers.
+    if (!approval?.decision.allowed) return held
+  }
 
   let merge: EngineMergeResult
   try {
-    merge = await engine.mergeBranch(branchName)
+    merge = await engine.mergeBranch(branchName, approval?.commitSha ? { expectedHead: approval.commitSha } : {})
   }
   catch (error) {
     const status = error as { status?: number, statusCode?: number }
@@ -141,6 +180,9 @@ export async function applyMigrationMedia(input: ApplyMigrationMediaInput): Prom
     throw createError({ statusCode: 409, message: errorMessage('migration.media_apply_conflict'), data: counts })
   }
   invalidateBrainCache(projectId)
+  // The receipt says who let it in; it also clears the grant (`recordMergeReceipt`).
+  if (approval && input.approver && merge.merged)
+    await recordMergeReceipt({ projectId, workspaceId: input.approver.workspaceId, branch: branchName, approval, actor: actorFromEmail(input.approver.email), startedAt })
   return { status: 'merged', counts, branch: branchName, commitSha: commit.sha, pullRequestUrl: merge.pullRequestUrl ?? null }
 }
 

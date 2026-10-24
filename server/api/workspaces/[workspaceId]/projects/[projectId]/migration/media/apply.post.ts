@@ -7,9 +7,14 @@
  *
  * One commit on a `cr/media/…` branch forked from the snapshot the files were
  * read at, then the project's own workflow decides: auto-merge lands it
- * (`contentrain`, then `main` — the same path every content save takes);
- * review leaves it pending for a reviewer, like any held change. A write that
- * landed since the read makes the merge a conflict, never an overwrite.
+ * (`contentrain`, then `main` — the same path every content save takes). On a
+ * review project this click is the caller's approval (F2): recorded with their
+ * role and the note, then merged under it with a receipt; a policy that wants
+ * more than one grant leaves it pending for its reviewers. A write that landed
+ * since the read makes the merge a conflict, never an overwrite.
+ *
+ * The one place the UI moves the media from (the project's media card, or any
+ * setup step that offers it): the approval rides on this call, not on a page.
  *
  * Owner/admin only. `dryRun` defaults to true: the counts, nothing written.
  *
@@ -36,7 +41,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
   const db = useDatabaseProvider()
-  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
+  const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
   const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id, cdn_enabled, cdn_public_media')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
@@ -66,5 +71,6 @@ export default defineEventHandler(async (event) => {
     dryRun,
     deleteLocal,
     authorEmail: session.user.email ?? null,
+    ...(session.user.email ? { approver: { id: session.user.id, email: session.user.email, role: role ?? null, workspaceId } } : {}),
   })
 })

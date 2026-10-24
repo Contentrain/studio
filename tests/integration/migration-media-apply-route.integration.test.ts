@@ -18,6 +18,11 @@ const stubbed = (name: string) => (...a: unknown[]) => (globalThis as unknown as
 vi.mock('../../server/utils/content-engine', async importOriginal => ({ ...await importOriginal<object>(), createContentEngine: stubbed('createContentEngine') }))
 vi.mock('../../server/utils/brain-cache', async importOriginal => ({ ...await importOriginal<object>(), getOrBuildBrainCache: stubbed('getOrBuildBrainCache'), invalidateBrainCache: stubbed('invalidateBrainCache') }))
 vi.mock('../../server/utils/license', async importOriginal => ({ ...await importOriginal<object>(), hasFeature: stubbed('hasFeature') }))
+vi.mock('../../server/utils/branch-approval', async importOriginal => ({
+  ...await importOriginal<object>(),
+  resolveMergeApproval: stubbed('resolveMergeApproval'),
+  recordMergeReceipt: stubbed('recordMergeReceipt'),
+}))
 
 const PATH = '/api/workspaces/workspace-1/projects/project-1/migration/media/apply'
 const manifest = {
@@ -29,8 +34,13 @@ const DELIVERY = 'https://studio.test/api/cdn/v1/project-1/media/original/a.png'
 let applyPlan: ReturnType<typeof vi.fn>
 let mergeBranch: ReturnType<typeof vi.fn>
 let deleteBranch: ReturnType<typeof vi.fn>
+let recordApproval: ReturnType<typeof vi.fn>
+let recordMergeReceipt: ReturnType<typeof vi.fn>
+// What the bundle's own apply is handed, outside the route.
+let gitStub: unknown
+let dbStub: unknown
 
-function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: string, mergeResult?: unknown, mergeThrows?: boolean, project?: Record<string, unknown>, cdnDelivery?: boolean } = {}) {
+function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: string, mergeResult?: unknown, mergeThrows?: boolean, project?: Record<string, unknown>, cdnDelivery?: boolean, role?: string, policyWantsMore?: boolean } = {}) {
   vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => (key === 'workspaceId' ? 'workspace-1' : key === 'projectId' ? 'project-1' : undefined)))
   vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'user-1', email: 'owner@acme.dev' }, accessToken: 't' }))
   vi.stubGlobal('checkRateLimit', vi.fn().mockResolvedValue({ allowed: true }))
@@ -59,18 +69,31 @@ function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: st
     deleteBranch,
     getTree: vi.fn(async () => Object.keys(files).map(path => ({ path, type: 'blob', sha: path, size: files[path]!.length }))),
   }
+  gitStub = git
   helpers.openWriteSnapshot.mockResolvedValue({ baseSha: 'base-sha', reader: { readFile: async (path: string) => files[path] ?? Promise.reject(new Error('nf')) } })
   vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git, contentRoot: '', workspace: { plan: 'pro' }, project: { default_branch: 'main' } }))
   vi.stubGlobal('createContentEngine', vi.fn(() => ({ ensureContentBranch: vi.fn(async () => {}), mergeBranch })))
-  vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
-    requireWorkspaceRole: vi.fn().mockResolvedValue('owner'),
+  // The approval a merge answers to: allowed once a grant is recorded on the branch, unless the policy wants more.
+  recordApproval = vi.fn(async (input: Record<string, unknown>) => input)
+  recordMergeReceipt = vi.fn(async () => {})
+  vi.stubGlobal('recordMergeReceipt', recordMergeReceipt)
+  vi.stubGlobal('resolveMergeApproval', vi.fn(async (input: { branch: string }) => ({
+    plan: { plan_hash: `hash-${input.branch}` },
+    grants: [],
+    commitSha: 'tip',
+    decision: { allowed: recordApproval.mock.calls.length > 0 && !opts.policyWantsMore, requirements: [{ gate: 'plan', remaining: 0 }] },
+  })))
+  dbStub = {
+    recordApproval,
+    requireWorkspaceRole: vi.fn().mockResolvedValue(opts.role ?? 'owner'),
     getProjectForWorkspace: vi.fn(async (_t: string, _w: string, _p: string, fields = 'id') => {
       const row: Record<string, unknown> = { id: 'project-1', cdn_enabled: true, cdn_public_media: true, ...opts.project }
       return Object.fromEntries(fields.split(',').map(f => f.trim()).map(f => [f, row[f]]))
     }),
     getLatestMigrationMediaJob: vi.fn().mockResolvedValue({ id: 'job-1', status: opts.jobStatus ?? 'done' }),
     listMigrationMediaItems: vi.fn().mockResolvedValue([{ repo_path: 'public/media/a.png', delivery_url: DELIVERY }]),
-  }))
+  }
+  vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub))
 }
 
 async function call(body: Record<string, unknown>): Promise<{ status: number, body: Record<string, unknown> }> {
@@ -105,7 +128,8 @@ describe('migration media apply route', () => {
     expect(input.changes.map(c => [c.path, c.content === null])).toEqual([
       ['content/blog/en.json', false], ['public/media/a.png', true], ['studio.json', false],
     ])
-    expect(mergeBranch).toHaveBeenCalledWith('cr/media/migration/1')
+    expect(mergeBranch).toHaveBeenCalledWith('cr/media/migration/1', {})
+    expect(recordApproval).not.toHaveBeenCalled()
     // What a reviewer reads on the branch names every site file it touches.
     const message = (applyPlan.mock.calls[0]![0] as { message: string }).message
     expect(message).toContain('Site file: studio.json')
@@ -113,10 +137,62 @@ describe('migration media apply route', () => {
     expect(message).toContain('  - public/media/a.png')
   })
 
-  it('review workflow: the branch is left pending for a reviewer', async () => {
-    stub({ workflow: 'review' })
+  it('review workflow: the click is the caller\'s approval, recorded with their role and why, then merged under it', async () => {
+    stub({ workflow: 'review', role: 'admin' })
+    const { body } = await call({ dryRun: false })
+    expect(body).toMatchObject({ status: 'merged', branch: 'cr/media/migration/1' })
+    expect(recordApproval).toHaveBeenCalledTimes(1)
+    expect(recordApproval.mock.calls[0]![0]).toEqual({
+      projectId: 'project-1',
+      workspaceId: 'workspace-1',
+      target: 'cr/media/migration/1',
+      gate: 'plan',
+      planHash: 'hash-cr/media/migration/1',
+      commitSha: 'tip',
+      approverId: 'user-1',
+      approverEmail: 'owner@acme.dev',
+      approverRole: 'admin',
+      note: 'move this site\'s media to Studio',
+    })
+    // Merged under the approved tip, and the receipt says who let it in.
+    expect(mergeBranch).toHaveBeenCalledWith('cr/media/migration/1', { expectedHead: 'tip' })
+    expect(recordMergeReceipt).toHaveBeenCalledWith(expect.objectContaining({ branch: 'cr/media/migration/1', workspaceId: 'workspace-1' }))
+  })
+
+  it('review workflow: a policy that wants more than this one grant keeps it pending for its reviewers', async () => {
+    stub({ workflow: 'review', policyWantsMore: true })
     const { body } = await call({ dryRun: false })
     expect(body).toMatchObject({ status: 'pending_review', branch: 'cr/media/migration/1' })
+    expect(recordApproval).toHaveBeenCalledTimes(1)
+    expect(mergeBranch).not.toHaveBeenCalled()
+    expect(recordMergeReceipt).not.toHaveBeenCalled()
+  })
+
+  it('review workflow: a dry run approves nothing', async () => {
+    stub({ workflow: 'review' })
+    const { body } = await call({})
+    expect(body).toMatchObject({ status: 'dry_run' })
+    expect(recordApproval).not.toHaveBeenCalled()
+  })
+
+  it('review workflow: the bundle\'s own apply (no one clicked) is never approved, it waits for a reviewer', async () => {
+    stub({ workflow: 'review' })
+    const { applyMigrationMedia } = await import('../../server/utils/migration-media-write')
+    const result = await applyMigrationMedia({
+      db: dbStub as never,
+      git: gitStub as never,
+      contentRoot: '',
+      projectId: 'project-1',
+      defaultBranch: 'main',
+      plan: 'pro',
+      project: { cdn_enabled: true, cdn_public_media: true },
+      job: { id: 'job-1', status: 'done' },
+      dryRun: false,
+      deleteLocal: false,
+      authorEmail: null,
+    })
+    expect(result).toMatchObject({ status: 'pending_review', branch: 'cr/media/migration/1' })
+    expect(recordApproval).not.toHaveBeenCalled()
     expect(mergeBranch).not.toHaveBeenCalled()
   })
 
