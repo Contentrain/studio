@@ -19,8 +19,10 @@
  * - the size cap is applied while the body streams (and to a declared
  *   Content-Length before it), never after buffering it all;
  * - an HTML or other non-media response type is refused before its body is
- *   read; the bytes are then checked like any upload by the caller
- *   (`inspectRepoMedia`: sniffed type, allowlist, SVG sanitizer, pixel cap);
+ *   read (a caller may name the types it reads instead, `acceptType`: the
+ *   setup's live-site check reads a text file); the bytes are then checked
+ *   like any upload by the caller (`inspectRepoMedia`: sniffed type,
+ *   allowlist, SVG sanitizer, pixel cap);
  * - a deadline covers the whole fetch, and an idle socket times out sooner.
  *
  * Failures carry `retryable`: a timeout, a dropped connection, 429 or 5xx may
@@ -140,6 +142,8 @@ export interface OriginFetchOptions {
   deadlineMs?: number
   /** A socket with no activity for this long is dropped. */
   idleMs?: number
+  /** The response types read (without parameters); the media types by default. */
+  acceptType?: (type: string) => boolean
   /** Test seams: the resolver, and the address rule (never set outside tests). */
   resolve?: (host: string) => Promise<LookupAddress[]>
   isBlocked?: (address: string) => boolean
@@ -190,7 +194,7 @@ export async function fetchFromOrigin(rawUrl: string, rawOrigin: string, options
     }
 
     const contentType = String(response.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase()
-    if (!isMediaResponseType(contentType)) {
+    if (!(options.acceptType ?? isMediaResponseType)(contentType)) {
       response.destroy()
       throw new OriginFetchError('not_media', false)
     }

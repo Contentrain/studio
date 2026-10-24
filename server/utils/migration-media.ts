@@ -233,6 +233,8 @@ export interface MigrationMediaPreflight {
   fontsKept: number
   /** How many content places refer to the assets — what a later rewrite touches. */
   refs: number
+  /** How many content files show any of them (repository and old-site files alike): the pages the move points anew. */
+  files: number
   /** Files still at the old site's address, fetched from its origin by the same import. */
   onOrigin: {
     /** Fetchable: on the origin's host, and not over the plan's file cap as far as known. */
@@ -360,6 +362,7 @@ export function planMigrationMediaPreflight(input: {
     missing,
     fontsKept: input.manifest.assets.length - media.length,
     refs: media.reduce((sum, a) => sum + a.refs.length, 0),
+    files: new Set([...media, ...input.manifest.onOrigin].flatMap(a => a.refs.map(r => r.file))).size,
     onOrigin,
     limits: { maxFileBytes, storageBytes },
     storage: { usedBytes, remainingBytes },

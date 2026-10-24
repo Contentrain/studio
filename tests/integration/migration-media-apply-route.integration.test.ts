@@ -92,6 +92,7 @@ function stub(opts: { workflow?: string, reviewFeature?: boolean, jobStatus?: st
     }),
     getLatestMigrationMediaJob: vi.fn().mockResolvedValue({ id: 'job-1', status: opts.jobStatus ?? 'done' }),
     listMigrationMediaItems: vi.fn().mockResolvedValue([{ repo_path: 'public/media/a.png', delivery_url: DELIVERY }]),
+    mergeProjectMigrationSetup: vi.fn(async () => ({})),
   }
   vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue(dbStub))
 }
@@ -135,6 +136,8 @@ describe('migration media apply route', () => {
     expect(message).toContain('Site file: studio.json')
     expect(message).toContain('Removed 1 local media files')
     expect(message).toContain('  - public/media/a.png')
+    // The setup's images step reads what the apply did (054).
+    expect((dbStub as { mergeProjectMigrationSetup: ReturnType<typeof vi.fn> }).mergeProjectMigrationSetup).toHaveBeenCalledWith('project-1', { media_apply: expect.objectContaining({ jobId: 'job-1', status: 'merged', branch: 'cr/media/migration/1' }) })
   })
 
   it('review workflow: the click is the caller\'s approval, recorded with their role and why, then merged under it', async () => {

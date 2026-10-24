@@ -15,7 +15,7 @@ import { runMigrationMediaTick, startMigrationMediaImport, toMigrationMediaJobVi
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4b00000000049454e44ae426082', 'hex')
 const svg = (n: number) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 ${n}"/></svg>`)
 
-interface Job { id: string, project_id: string, workspace_id: string, created_by: string, origin: string | null, migrate_grant_id: string | null, status: string, total: number, done: number, failed: number, deduped: number, bytes_done: number, error: string | null, claim_token: string | null, lease_until: number | null, created_at: string, finished_at: string | null }
+interface Job { id: string, project_id: string, workspace_id: string, created_by: string, origin: string | null, migrate_grant_id: string | null, status: string, total: number, done: number, failed: number, deduped: number, bytes_done: number, error: string | null, claim_token: string | null, lease_until: number | null, created_at: string, finished_at: string | null, apply_approver?: unknown }
 interface Item { job_id: string, repo_path: string, blob_sha: string | null, source_url: string | null, attempts: number, retry_at: number | null, bytes: number, mime: string, width: number | null, height: number | null, alt: string | null, state: string, asset_id: string | null, delivery_url: string | null, deduped: boolean, error: string | null, status_code: number | null }
 
 function memoryStore() {
@@ -68,6 +68,20 @@ function memoryStore() {
       if (!job) return false
       Object.assign(job, { status, error, claim_token: null, lease_until: null, finished_at: ['done', 'failed'].includes(status) ? 'now' : null })
       return true
+    },
+    async getMigrationMediaJob(projectId: string, jobId: string) {
+      return jobs.find(j => j.id === jobId && j.project_id === projectId) ?? null
+    },
+    async setMigrationMediaJobApplyApprover(projectId: string, jobId: string, approver: unknown) {
+      const job = jobs.find(j => j.id === jobId && j.project_id === projectId && ['preparing', 'queued', 'running', 'paused_quota'].includes(j.status))
+      if (!job) return false
+      job.apply_approver = approver
+      return true
+    },
+    setup: {} as Record<string, unknown>,
+    async mergeProjectMigrationSetup(_projectId: string, patch: Record<string, unknown>) {
+      Object.assign(this.setup, patch)
+      return this.setup
     },
     grantMedia: [] as Array<{ grantId: string, state: string, detail: Record<string, unknown> }>,
     async getMigrateGrantById(grantId: string) {
@@ -193,6 +207,20 @@ describe('migration media import', () => {
     const notCalled = vi.fn(async () => ({ status: 'merged' }))
     expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyGrant: notCalled })).toMatchObject({ status: 'done' })
     expect(notCalled).not.toHaveBeenCalled()
+  })
+
+  it('a Move click recorded on the job: the tick that closes it applies under the clicker; the setup records the outcome', async () => {
+    const git = fakeGit(files, manifest)
+    const { job } = await start(git)
+    const approver = { id: 'u-1', email: 'owner@example.com', role: 'owner', workspaceId: 'ws-1', deleteLocal: true }
+    expect(await store.setMigrationMediaJobApplyApprover('p-1', job.id as string, approver)).toBe(true)
+    const applyClicked = vi.fn(async () => ({ status: 'merged' as const, counts: {} as never, branch: 'cr/media/1', commitSha: 'c1', pullRequestUrl: null }))
+    const applyGrant = vi.fn(async () => ({ status: 'merged' }))
+    expect(await runMigrationMediaTick(new Date(), { ...deps(git), applyClicked, applyGrant })).toMatchObject({ status: 'done' })
+    expect(applyClicked).toHaveBeenCalledTimes(1)
+    expect(applyClicked).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), 'starter', approver)
+    expect(applyGrant).not.toHaveBeenCalled()
+    expect(store.setup.media_apply).toMatchObject({ jobId: job.id, status: 'merged', branch: 'cr/media/1' })
   })
 
   it('a grant job whose apply is refused still finishes done: the owner\'s apply card is left as it was', async () => {

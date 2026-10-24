@@ -37,6 +37,8 @@ export interface BindMigrateGrantSiteInput {
   /** Known to the caller already (connect-project): skips a read. */
   defaultBranch?: string
   plan?: string
+  /** The owner or admin whose click in Studio asks for it (the setup's retry): their approval instead of the grant's. */
+  approver?: { id: string, email: string, workspaceId: string, role: string | null }
 }
 
 /** Bind the grant's delivered site to the project; null when the workspace has no installation to write with. */
@@ -51,9 +53,9 @@ export async function bindMigrateGrantSite(input: BindMigrateGrantSiteInput): Pr
   // The grant's owner connected the site (redeemed, then Connect as the workspace's owner or admin): their consent is the
   // approval of the binding on a review project, on the sweep's unattended pass as on the Connect itself.
   const grant = input.grant
-  const approver = typeof grant.user_id === 'string' && typeof grant.email === 'string' && grant.redeemed_at != null
+  const approver = input.approver ?? (typeof grant.user_id === 'string' && typeof grant.email === 'string' && grant.redeemed_at != null
     ? { id: grant.user_id, email: grant.email, workspaceId: String(input.workspace.id) }
-    : undefined
+    : undefined)
   const recordedBranch = (grant.site_binding_detail as { branch?: unknown } | null)?.branch
   const binding = await ensureMigrateSiteBinding({
     db: input.db,

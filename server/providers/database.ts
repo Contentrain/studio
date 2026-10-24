@@ -347,6 +347,11 @@ export interface DatabaseProvider {
   updateProject: (projectId: string, updates: Record<string, unknown>, fields?: string) => Promise<DatabaseRow>
   /** Store (or clear with null) the validated `MigrationHandoff` document on a project; stamps `migration_handoff_synced_at`. */
   setProjectMigrationHandoff: (projectId: string, handoff: Record<string, unknown> | null) => Promise<void>
+  /**
+   * Merge `patch` into the project's setup record key by key (migration 054, `merge_project_migration_setup`): a key
+   * it names is replaced, every other key is kept. Returns the record as it now is.
+   */
+  mergeProjectMigrationSetup: (projectId: string, patch: Record<string, unknown>) => Promise<Record<string, unknown>>
   deleteProject: (projectId: string, workspaceId: string) => Promise<void>
   getProjectMediaStorageSum: (projectId: string) => Promise<number>
   listWorkspaceProjects: (accessToken: string, workspaceId: string) => Promise<DatabaseRow[]>
@@ -1290,6 +1295,12 @@ export interface DatabaseProvider {
   getMigrateGrantSiteBindingState: (workspaceId: string, repoFullName: string) => Promise<string | null>
 
   /**
+   * The grant behind a workspace's project, the whole row: the newest grant bound to `workspaceId` for `repoFullName`
+   * (owner/name, any case). Null when the project did not come from Migrate.
+   */
+  getMigrateGrantForProject: (workspaceId: string, repoFullName: string) => Promise<DatabaseRow | null>
+
+  /**
    * Remember the `jti` of a Migrate server-to-server request (migration 042).
    * True the first time, false when it was seen before (a replay). Entries
    * past `expiresAt` are dropped lazily.
@@ -1360,6 +1371,12 @@ export interface DatabaseProvider {
 
   /** The project's most recent job, open or finished. */
   getLatestMigrationMediaJob: (projectId: string) => Promise<DatabaseRow | null>
+
+  /**
+   * Who asked for a job to be applied once it is done (054, `apply_approver`), or null to clear it. Only an open or
+   * just-created job of this project; true when one was updated.
+   */
+  setMigrationMediaJobApplyApprover: (projectId: string, jobId: string, approver: Record<string, unknown> | null) => Promise<boolean>
 
   /** Atomically take the oldest claimable job (queued, or running with an expired lease) under a new lease. */
   claimMigrationMediaJob: (now: Date, leaseSeconds: number) => Promise<DatabaseRow | null>

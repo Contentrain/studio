@@ -7,14 +7,18 @@
  * the branch holds as listed and within the plan's file cap; the rest come
  * back as `skipped` (the preflight, `GET …/migration/media`, lists them first).
  *
+ * `{ applyWhenDone: true, deleteLocal? }` is the setup's Move click: the clicker is recorded on the job
+ * (`apply_approver`, migration 054) and the worker that closes it applies it under their approval, so the move goes
+ * on when the window closes. A job that closed before the click was recorded is applied here at once.
+ *
  * POST /api/workspaces/{workspaceId}/projects/{projectId}/migration/media
- *   → 200 { job, created, skipped: { overSize, missing, fontsKept } }
+ *   → 200 { job, created, skipped: { overSize, missing, fontsKept }, applied? }
  *   → 403 media.upload_upgrade · 404 migration.media_manifest_missing
  *   → 422 migration.media_manifest_invalid · 429 · 503 media.storage_not_configured
  */
 
 import { migrationSignedOrigin } from '~~/server/utils/migrate-grant'
-import { startMigrationMediaImport, toMigrationMediaJobView } from '~~/server/utils/migration-media-import'
+import { applyClickedMigrationMedia, recordMediaApplyOutcome, startMigrationMediaImport, toMigrationMediaJobView } from '~~/server/utils/migration-media-import'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -23,8 +27,9 @@ export default defineEventHandler(async (event) => {
   if (!workspaceId || !projectId)
     throw createError({ statusCode: 400, message: errorMessage('validation.project_id_required') })
 
+  const body = await readBody<{ applyWhenDone?: unknown, deleteLocal?: unknown }>(event).catch(() => null)
   const db = useDatabaseProvider()
-  await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
+  const role = await db.requireWorkspaceRole(session.accessToken, session.user.id, workspaceId, ['owner', 'admin'])
   const project = await db.getProjectForWorkspace(session.accessToken, workspaceId, projectId, 'id, repo_full_name')
   if (!project)
     throw createError({ statusCode: 404, message: errorMessage('project.not_found') })
@@ -54,5 +59,18 @@ export default defineEventHandler(async (event) => {
     defaultBranch: ctx.project.default_branch ?? 'main',
     signedOrigin: await migrationSignedOrigin(workspaceId, project),
   })
-  return { job: toMigrationMediaJobView(result.job), created: result.created, skipped: result.skipped }
+  const job = result.job
+  if (body?.applyWhenDone !== true || !session.user.email)
+    return { job: toMigrationMediaJobView(job), created: result.created, skipped: result.skipped }
+
+  const approver = { id: session.user.id, email: session.user.email, role: role ?? null, workspaceId, deleteLocal: body.deleteLocal === true }
+  if (await db.setMigrationMediaJobApplyApprover(projectId, String(job.id), approver))
+    return { job: toMigrationMediaJobView(job), created: result.created, skipped: result.skipped }
+  // Closed before the click was recorded (nothing left to fetch): the owner's own job is applied now. A grant's own
+  // job is applied by the worker that closed it; its outcome is on the grant.
+  const fresh = await db.getMigrationMediaJob(projectId, String(job.id))
+  if (fresh?.status !== 'done' || fresh.migrate_grant_id)
+    return { job: toMigrationMediaJobView(fresh ?? job), created: result.created, skipped: result.skipped }
+  const applied = await recordMediaApplyOutcome(projectId, String(fresh.id), () => applyClickedMigrationMedia(fresh, plan, approver))
+  return { job: toMigrationMediaJobView(fresh), created: result.created, skipped: result.skipped, applied: { status: applied.status } }
 })
