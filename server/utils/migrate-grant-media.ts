@@ -26,6 +26,7 @@ import { normalizeContentRoot } from './content-paths'
 import type { Plan } from './license'
 import { getPlanLimit, hasFeature } from './license'
 import { migrationSignedOrigin } from './migrate-grant'
+import { planMigrationMediaPreflight, readMigrationMediaManifest } from './migration-media'
 import { applyGrantMigrationMedia, startMigrationMediaImport } from './migration-media-import'
 import { migrationMediaLanded } from './migration-media-write'
 import { getEffectiveLimit } from './overage'
@@ -111,7 +112,10 @@ export async function advanceGrantMedia(input: AdvanceGrantMediaInput): Promise<
       if (!due) return { state: 'failed', acted: false }
       return await startForGrant(input, record, fail, job ? { previousJobId: String(job.id) } : {})
     }
-    const jobDetail = { jobId: String(job.id), startedBy: own ? 'grant' : 'owner', ...kept(detail, String(job.id)) }
+    const known = kept(detail, String(job.id))
+    // An owner's job counts its refusals the way the grant's start does, read once from the manifest and then kept.
+    const refused = own || 'refusedTooLarge' in known ? {} : await ownerRefusedTooLarge(input, job)
+    const jobDetail = { jobId: String(job.id), startedBy: own ? 'grant' : 'owner', ...known, ...refused }
     if (status && OPEN.has(status)) {
       await record('importing', jobDetail)
       return { state: 'importing', acted: false }
@@ -192,7 +196,7 @@ async function startForGrant(
   // Old-site files the import refused before fetching, as larger than the plan's file cap, that Migrate left there for
   // another cap (count, total): Migrate already counts its own `file-too-large` ones. Files refused while fetching
   // (sizes Migrate did not know) are the job's failed items; the status route adds those.
-  const refusedTooLarge = skipped.onOrigin.overSize.filter(f => f.reason !== 'file-too-large').length
+  const refusedTooLarge = refusedTooLargeOf(skipped.onOrigin.overSize)
   const jobDetail = { ...extra, jobId: String(job.id), startedBy: 'grant', refusedTooLarge }
   if (Number(job.total ?? 0) === 0 && String(job.status) === 'done') {
     // Nothing Studio takes (every file over the cap, or none at all): nothing to point at Studio either.
@@ -249,6 +253,34 @@ export async function recordGrantMediaApply(
 }
 
 /** What a job's record keeps from one pass to the next: the refusal count taken when the grant started it. */
+/**
+ * Of the old-site files Migrate offered (its count-cap and total-cap rows), how many are larger than the plan takes
+ * for one file. Its own `file-too-large` rows are never offered, and Migrate counts them itself.
+ */
+export function refusedTooLargeOf(overSize: Array<{ reason: string }>): number {
+  return overSize.filter(f => f.reason !== 'file-too-large').length
+}
+
+/** The same count for a job the owner started, from the manifest on the site and the plan; nothing when unreadable. */
+async function ownerRefusedTooLarge(input: AdvanceGrantMediaInput, job: DatabaseRow): Promise<{ refusedTooLarge?: number }> {
+  try {
+    const found = await readMigrationMediaManifest(input.git, input.contentRoot, input.defaultBranch)
+    if (!found) return {}
+    const preflight = planMigrationMediaPreflight({
+      manifest: found.manifest,
+      tree: [],
+      plan: input.plan as Plan,
+      usedBytes: 0,
+      root: found.root,
+      signedOrigin: typeof job.origin === 'string' ? job.origin : null,
+    })
+    return { refusedTooLarge: refusedTooLargeOf(preflight.onOrigin.overSize) }
+  }
+  catch {
+    return {}
+  }
+}
+
 function kept(detail: Record<string, unknown>, jobId: string): Record<string, unknown> {
   return detail.jobId === jobId && typeof detail.refusedTooLarge === 'number' ? { refusedTooLarge: detail.refusedTooLarge } : {}
 }

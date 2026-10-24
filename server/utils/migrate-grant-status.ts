@@ -4,7 +4,7 @@
  * (migration 045) from any of them, which wins over the rest.
  */
 import type { MigrateGrantState, MigrateGrantStatusResponse } from '@contentrain/types'
-import type { DatabaseRow } from '../providers/database'
+import type { DatabaseRow, MigrateGrantMediaState as GrantMediaRowState } from '../providers/database'
 import { migrateBundleStatus } from './migrate-grant'
 import { useGitAppProvider } from './providers'
 
@@ -88,8 +88,19 @@ export async function migrateGrantGithubAccount(workspace: DatabaseRow | null): 
  *   names this project (`written`, or `partial` when the plan serves fewer forms than the site has).
  * - `comments`: the order had a comments export. `connected` once the site is bound the same way and the export is
  *   imported into the project.
+ * - `media`: the grant's `media_state` (053) in the contract's words; no key before the first pass or with nothing
+ *   to move (`none`). A failed start that is still being tried again is `pending`, like one not started yet.
  */
 export type MigrateGrantCapabilities = NonNullable<MigrateGrantStatusResponse['capabilities']>
+
+const MEDIA_CAPABILITY: Partial<Record<GrantMediaRowState, MigrateGrantCapabilities['media']>> = {
+  importing: 'pending',
+  failed: 'pending',
+  pending: 'pending',
+  paused_quota: 'paused',
+  review: 'review',
+  connected: 'connected',
+}
 
 export async function migrateGrantCapabilities(grant: DatabaseRow): Promise<MigrateGrantCapabilities> {
   if (grant.kind !== 'bundle') return {}
@@ -100,5 +111,24 @@ export async function migrateGrantCapabilities(grant: DatabaseRow): Promise<Migr
   if (typeof detail.formModels === 'number' && detail.formModels > 0) capabilities.forms = bound ? 'connected' : 'pending'
   const comments = await useDatabaseProvider().getMigrateCommentsExportState(grant.id as string)
   if (comments) capabilities.comments = bound && comments.status === 'imported' ? 'connected' : 'pending'
+  const media = MEDIA_CAPABILITY[grant.media_state as GrantMediaRowState]
+  if (media) capabilities.media = media
   return capabilities
+}
+
+/** Enough to read every failed item of one import: a manifest names far fewer old-site files. */
+const FAILED_ITEMS_LIMIT = 10_000
+
+/**
+ * `media_refused_too_large`: of the old-site files Migrate offered, how many Studio refused as larger than the plan
+ * takes for one file. Those known before fetching (`media_detail.refusedTooLarge`, `refusedTooLargeOf`) plus those
+ * refused on download (the job's failed old-site items, 413). Other failures are not counted. 0 when none; absent
+ * before the grant's media has a job, or when the count could not be read for an owner's job.
+ */
+export async function migrateGrantMediaRefusedTooLarge(grant: DatabaseRow): Promise<number | undefined> {
+  if (grant.kind !== 'bundle') return undefined
+  const detail = (grant.media_detail && typeof grant.media_detail === 'object' ? grant.media_detail : {}) as { jobId?: unknown, refusedTooLarge?: unknown }
+  if (typeof detail.jobId !== 'string' || typeof detail.refusedTooLarge !== 'number') return undefined
+  const failed = await useDatabaseProvider().listMigrationMediaItems(detail.jobId, 'failed', FAILED_ITEMS_LIMIT)
+  return detail.refusedTooLarge + failed.filter(item => item.source_url && Number(item.status_code) === 413).length
 }

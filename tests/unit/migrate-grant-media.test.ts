@@ -27,6 +27,9 @@ const NOW = new Date('2026-10-24T12:00:00.000Z')
 const git = {
   listBranches: vi.fn(async (): Promise<Array<{ name: string }>> => []),
   isMerged: vi.fn(async () => false),
+  readFile: vi.fn(async (_path: string, _ref?: string): Promise<string> => {
+    throw new Error('not found')
+  }),
   getDefaultBranch: async () => 'main',
 }
 const db = {
@@ -65,7 +68,8 @@ const skipped = (overSize = 0, reasons: string[] = []) => ({ overSize: Array.fro
 
 describe('a bundle grant\'s media move', () => {
   beforeEach(() => {
-    for (const fn of [startMigrationMediaImport, applyGrantMigrationMedia, migrationMediaLanded, git.listBranches, git.isMerged, ...Object.values(db)]) fn.mockReset()
+    for (const fn of [startMigrationMediaImport, applyGrantMigrationMedia, migrationMediaLanded, git.listBranches, git.isMerged, git.readFile, ...Object.values(db)]) fn.mockReset()
+    git.readFile.mockRejectedValue(new Error('not found'))
     db.getLatestMigrationMediaJob.mockResolvedValue(null)
     db.listPendingMigrationMediaItems.mockResolvedValue([])
     db.markMigrateGrantMediaAlerted.mockResolvedValue(true)
@@ -74,6 +78,10 @@ describe('a bundle grant\'s media move', () => {
     migrationMediaLanded.mockResolvedValue(false)
     alarms.length = 0
     vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Auto-imported in the app: the manifest preflight reads the plan's limits through them.
+    vi.stubGlobal('getPlanLimit', () => 1)
+    vi.stubGlobal('getPlanLimitForPlan', () => 0)
+    vi.stubGlobal('getUpgradeParams', () => ({}))
   })
 
   it('no job yet: starts one for the grant and records it importing, with the old-site files it refused as too large that Migrate did not', async () => {
@@ -160,6 +168,31 @@ describe('a bundle grant\'s media move', () => {
     git.listBranches.mockResolvedValue([])
     expect((await advance()).state).toBe('pending')
     expect(applyGrantMigrationMedia).not.toHaveBeenCalled()
+  })
+
+  it('an owner\'s job counts the offered files over the plan\'s file limit from the manifest, once, as the grant\'s start does', async () => {
+    const MB = 1024 * 1024
+    const file = (name: string, reason: string, bytes?: number) => ({ url: `https://old.example.com/${name}`, reason, ...(bytes === undefined ? {} : { bytes }), refs: [] })
+    git.readFile.mockImplementation(async (path: string) => {
+      if (path !== '.contentrain/migrate/media.json') throw new Error('not found')
+      return JSON.stringify({
+        version: 1,
+        origin: 'https://old.example.com',
+        assets: [],
+        studioRecommended: [file('big.mp4', 'count-cap', 3 * MB), file('huge.mp4', 'file-too-large', 9 * MB), file('small.jpg', 'total-cap', 100), file('unknown.jpg', 'count-cap')],
+      })
+    })
+    const job = { id: 'job-9', status: 'running', migrate_grant_id: null, origin: 'https://old.example.com' }
+    db.getLatestMigrationMediaJob.mockResolvedValue(job)
+    expect((await advance()).state).toBe('importing')
+    // The plan takes 1 MB a file here: only big.mp4 is refused; Migrate counts huge.mp4 itself; unknown sizes are learned on fetch.
+    expect(recorded()[0]?.detail).toMatchObject({ jobId: 'job-9', startedBy: 'owner', refusedTooLarge: 1 })
+
+    // Kept for that job: the manifest is not read again.
+    git.readFile.mockClear()
+    await advance(grant({ media_state: 'importing', media_detail: recorded()[0]?.detail }))
+    expect(git.readFile).not.toHaveBeenCalled()
+    expect(recorded()[1]?.detail).toMatchObject({ refusedTooLarge: 1 })
   })
 
   it('the grant\'s own done job, never applied: applied once and recorded; held for review it stays under review', async () => {

@@ -281,6 +281,7 @@ describe('migration media import — files still at the old site', () => {
         return res.writeHead(200, { 'content-type': 'image/png' }).end(PNG)
       }
       if (req.url === '/wp-content/uploads/page.png') return res.writeHead(200, { 'content-type': 'text/html' }).end('<html>')
+      if (req.url === '/wp-content/uploads/grown.png') return res.writeHead(200, { 'content-type': 'image/png' }).end(Buffer.alloc(6 * 1024 * 1024))
       res.writeHead(404).end()
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -364,6 +365,13 @@ describe('migration media import — files still at the old site', () => {
     const later = await runMigrationMediaTick(new Date(flaky.retry_at! + 1), originDeps(git))
     expect(later).toMatchObject({ settled: 1, status: 'done' })
     expect(flaky.state).toBe('done')
+  })
+
+  it('a file larger than the plan takes, learned on download, fails as 413: Migrate\'s status counts it as refused', async () => {
+    const git = fakeGit({}, { ...withOrigin([{ url: url('grown.png'), reason: 'count-cap', refs: refTo }]), assets: [] })
+    await start(git, origin())
+    await runMigrationMediaTick(new Date(), originDeps(git))
+    expect(store.items[0]).toMatchObject({ state: 'failed', status_code: 413, attempts: 0 })
   })
 
   it('after the last retry the file fails', async () => {

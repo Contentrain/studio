@@ -275,7 +275,8 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
           deferred++
           continue
         }
-        result = { url: repoPath, ok: false, error: reason, statusCode: error.status ?? 400 }
+        // 413 marks a file over the plan's per-file limit, learned on download: Migrate's status counts these.
+        result = { url: repoPath, ok: false, error: reason, statusCode: error.code === 'too_large' ? 413 : (error.status ?? 400) }
       }
       else {
         const e = error as { message?: string, statusCode?: number }
