@@ -5,7 +5,8 @@
  * The wizard opens itself for an owner or admin while the setup is not over, unless this browser closed it for the
  * project; "Continue setup" opens it at the first step still open, "Setup details" at the start, with every step
  * (skipped ones too) one click away. `?setup=<step>` (the claim screen's way here) opens it at that step.
- * A "needs you" line shows only when something is left: files the plan refused, which still load from WordPress.
+ * A "needs you" line shows only when something is left: files the plan refused, which still load from WordPress;
+ * its "What to do" opens the images step, where the advice is.
  */
 import type { MigrationSetupScreen, MigrationSetupStepName } from '~/composables/useMigrationSetup'
 
@@ -134,6 +135,14 @@ const refused = computed(() => setup.value?.media.refusedTooLarge ?? 0)
       <p class="text-xs text-body dark:text-secondary-300">
         <span class="font-medium text-heading dark:text-secondary-100">{{ t('migration_setup.summary_refused_title', { count: refused }) }}</span>
         {{ t('migration_setup.summary_refused_body') }}
+        <button
+          v-if="isOwnerOrAdmin"
+          type="button"
+          class="ml-1 rounded font-medium text-primary-600 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:text-primary-400"
+          @click="openAt('images')"
+        >
+          {{ t('migration_setup.summary_refused_action') }}
+        </button>
       </p>
     </div>
 
