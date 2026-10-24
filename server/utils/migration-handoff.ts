@@ -14,7 +14,7 @@
  *     the project row with `repository` filled in; the export itself never
  *     does — the row keeps only where to get it again (`studio_intake`);
  *   - summarise the manifest for the chat agent's request context and the
- *     overview card, including what Studio cannot take over;
+ *     setup wizard, including what Studio cannot take over;
  *   - land the comments export — re-read inline from the file, or fetched
  *     from its URL — through the same import path as the upload.
  */
@@ -40,7 +40,7 @@ export const HANDOFF_FILE_MAX_BYTES = 100 * 1024 * 1024
 export const HANDOFF_MANIFEST_MAX_BYTES = 1024 * 1024
 /** Inline or fetched comments export, same ceiling as the URL fetch. */
 export const EXPORT_MAX_BYTES = 50 * 1024 * 1024
-/** `comments.unresolved` is one row per comment; the card and agent need the count, not the list. */
+/** `comments.unresolved` is one row per comment; the setup and agent need the count, not the list. */
 const STORED_UNRESOLVED_LIMIT = 100
 /**
  * Capabilities Studio can actually run when Migrate offers them as

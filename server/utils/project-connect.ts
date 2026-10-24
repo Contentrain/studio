@@ -87,9 +87,9 @@ export async function connectWorkspaceProject(
   })
 
   // A repository produced by Contentrain Migrate carries a migration handoff;
-  // pick it up now so the overview card and the agent see the migration on the
+  // pick it up now so the setup wizard and the agent see the migration on the
   // very first visit. Best-effort — a missing or malformed file never blocks the
-  // connect (the project can re-sync from the overview card).
+  // connect (the migration GET re-syncs it for an owner or admin).
   if (installationId && project?.id) {
     try {
       const [owner = '', repo = ''] = body.repoFullName.split('/')
@@ -101,7 +101,7 @@ export async function connectWorkspaceProject(
       }).catch(() => {})
     }
     catch {
-      // Best-effort: the project is connected; the handoff can be re-read from the overview card.
+      // Best-effort: the project is connected; the migration GET re-reads the handoff.
     }
   }
 

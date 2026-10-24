@@ -15,7 +15,7 @@ what to offer.
 Migrate ──► GitHub repo (.contentrain/ + contentrain-handoff.json)
                  │
                  ▼  connect repository
-Studio ── sync ─► projects.migration_handoff ──► overview card · agent context · one-click comments import
+Studio ── sync ─► projects.migration_handoff ──► setup wizard · agent context
 ```
 
 ## What Studio does with it
@@ -42,15 +42,17 @@ Studio ── sync ─► projects.migration_handoff ──► overview card · 
   manifest up to 1 MB, an inline or fetched export up to 50 MB. An oversized
   manifest is `413` naming the field (`manifest 2.0 MB > 1.0 MB; largest
   field: notes (2.0 MB)`). An oversized inline export does **not** fail the
-  sync: the manifest is stored and the card/agent report
+  sync: the manifest is stored and the agent reports
   `comments_export_too_large` with its size. The v2 cohort (24 real handoffs)
   stores 1.7–34 KB manifests; the largest file (3.5 MB) stores 3.6 KB.
-- **Overview card** (`MigrationHandoffCard`): source site, generation date,
-  content summary, capabilities grouped by disposition (`needs_runtime`,
-  `migrated_static`, `external_adapter`, `kept_on_wordpress`, `archived`,
-  `dropped`), open offers Studio can fulfil, notes, a "Needs attention" list
-  (see *Issues*), and the comments state with a one-click import when the
-  handoff carries an export.
+- **Setup wizard** (`MigrationSetupWizard`, opened from the overview's
+  `MigrationSetupSummary` line): for an owner or admin, "your site is in
+  Studio", then four steps read from `GET …/migration` `setup` — forms and
+  comments run with Studio (the site binding), the comments import, the images
+  to Studio Media (one Move click through to the merge), and a test change
+  checked on the live site. Each step is done, waiting, needs you or skipped;
+  once every step is done or skipped the wizard stops opening itself and the
+  overview shows one summary line.
 - **Agent context**: a compact `## Migration (from WordPress)` block travels in
   the per-request context (never the cached system prompt) with a rule telling
   the agent which offers Studio can fulfil (comments, forms) and which it

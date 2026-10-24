@@ -13,8 +13,8 @@
  * more than one grant leaves it pending for its reviewers. A write that landed
  * since the read makes the merge a conflict, never an overwrite.
  *
- * The one place the UI moves the media from (the project's media card, or any
- * setup step that offers it): the approval rides on this call, not on a page.
+ * The one place the UI points the site at the moved media (the setup's images
+ * step): the approval rides on this call, not on a page.
  *
  * Owner/admin only. `dryRun` defaults to true: the counts, nothing written.
  *
@@ -22,7 +22,7 @@
  * while the CDN route would not serve them (`publicMediaBlock`: CDN off,
  * public media off, plan without `cdn.delivery`) — written anyway, every
  * image 403s and a site build that fetches them fails. The dry run reports
- * the same reason as `blocked` so the card can say what to turn on first.
+ * the same reason as `blocked` so the images step can say what to turn on first.
  *
  * What a real apply did goes on the project's setup record (migration 054, `media_apply`): the setup's images step
  * reads it.

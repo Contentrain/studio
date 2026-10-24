@@ -32,7 +32,7 @@
  *
  * Once the grant's trial has started, the screen is also the way back to
  * the delivered site: its project once the repo is connected there (straight
- * to the migration's media with `?focus=media`, Migrate's "move the media to
+ * to the setup's images step with `?focus=media`, Migrate's "move the media to
  * Studio"), the workspace until then.
  */
 import { ENTERPRISE_CONTACT_EMAIL, PLAN_PRICING } from '~~/shared/utils/license'
@@ -74,7 +74,7 @@ useHead({ title: () => t('migrate_claim.title') })
 
 const grant = ref<GrantView | null>(null)
 const destination = ref<Destination | null>(null)
-/** Migrate's "move the media to Studio" opens the migration's media card. */
+/** Migrate's "move the media to Studio" opens the setup at its images step. */
 const focusMedia = route.query.focus === 'media'
 /** Why this plan — only present when opened from the claim link. */
 const planEvidence = ref<Array<{ limit_key: string, measured: number, limit: number, capability?: string }>>([])
@@ -94,7 +94,7 @@ const planPricing = computed(() => (grant.value ? PLAN_PRICING[grant.value.plan]
 const projectPath = computed(() => {
   const d = destination.value
   if (!d?.projectId) return null
-  return `/w/${d.workspaceSlug}/projects/${d.projectId}${focusMedia ? '?focus=migration-media' : ''}`
+  return `/w/${d.workspaceSlug}/projects/${d.projectId}${focusMedia ? '?setup=images' : ''}`
 })
 
 type WorkspaceItem = (typeof workspaces.value)[number]
@@ -249,7 +249,7 @@ async function connectProject() {
     const result = await $fetch<{ projectId: string, workspaceSlug: string, siteBinding?: SiteBinding | null }>(`/api/migrate/grants/${encodeURIComponent(grant.value.id)}/connect-project`, { method: 'POST' })
     // The forms are bound (or nothing could be tried): on to the project. Anything else is said here first.
     if (!result.siteBinding || result.siteBinding.state === 'written') {
-      await navigateTo(`/w/${result.workspaceSlug}/projects/${result.projectId}${focusMedia ? '?focus=migration-media' : ''}`)
+      await navigateTo(`/w/${result.workspaceSlug}/projects/${result.projectId}${focusMedia ? '?setup=images' : ''}`)
       return
     }
     await reloadGrant()

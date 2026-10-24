@@ -526,12 +526,14 @@ provide(sendChatPromptKey, sendChatPrompt)
           />
         </div>
         <template v-else-if="snapshot && snapshot.models.length > 0">
-          <!-- Migration handoff (only renders when the repo came from Contentrain Migrate) -->
-          <OrganismsMigrationHandoffCard
+          <!-- Migration setup (only renders when the repo came from Contentrain Migrate) -->
+          <OrganismsMigrationSetupSummary
             v-if="workspaceId && projectId"
             :workspace-id="workspaceId"
             :project-id="projectId"
-            :editable="editable"
+            :models="snapshot.models"
+            :content="snapshot.content"
+            :review-workflow="reviewWorkflow"
           />
           <!-- Project stats bar -->
           <MoleculesContentStatsBar
