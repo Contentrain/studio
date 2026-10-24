@@ -152,6 +152,13 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.getMigrateGrantOrigin(other.workspaceId, 'acme/site')).toBeNull()
     expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme/blog')).toBeNull()
     expect(await methods.getMigrateGrantOrigin(owner.workspaceId, 'acme')).toBeNull()
+
+    // The site binding's state, by the same grant: none until it was tried.
+    expect(await methods.getMigrateGrantSiteBindingState(owner.workspaceId, 'acme/site')).toBeNull()
+    await methods.setMigrateGrantSiteBinding(first.grant.id as string, { state: 'written', detail: {} })
+    expect(await methods.getMigrateGrantSiteBindingState(owner.workspaceId, 'ACME/Site')).toBe('written')
+    expect(await methods.getMigrateGrantSiteBindingState(other.workspaceId, 'acme/site')).toBeNull()
+    expect(await methods.getMigrateGrantSiteBindingState(owner.workspaceId, 'acme')).toBeNull()
   })
 
   describe('bundle grants (migration 044)', () => {

@@ -60,6 +60,7 @@ function stubSession(role = 'owner') {
     getProjectForWorkspace: vi.fn().mockResolvedValue({ id: PROJECT }),
     getProjectMember: vi.fn().mockResolvedValue({ id: 'pm-1', role: 'editor' }),
     getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, plan: 'pro', github_installation_id: 42 }),
+    getMigrateGrantSiteBindingState: vi.fn().mockResolvedValue(null),
   }
 }
 
@@ -81,6 +82,25 @@ describe('migration handoff routes', () => {
       expect(second.commentsImported).toBe(2)
       expect(second.summary).toMatchObject({ siteUrl: 'https://carriedils.com', needsRuntime: ['comments'], comments: { total: 2, hasExport: true } })
       expect(base.getProjectMember).toHaveBeenCalledWith(PROJECT, 'user-1')
+    })
+  })
+
+  it('GET counts Studio\'s own site binding: runtime_unbound until the grant\'s binding is written, then not', async () => {
+    const base = stubSession('member')
+    const getProjectById = vi.fn().mockResolvedValue({ id: PROJECT, repo_full_name: 'Acme/Site', migration_handoff: handoff, migration_handoff_synced_at: '2026-09-03T11:00:00.000Z' })
+    const countCommentsByStatus = vi.fn().mockResolvedValue({ pending: 0, approved: 0, spam: 0, rejected: 0 })
+    const getMigrateCommentsExport = vi.fn().mockResolvedValue(null)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({ ...base, getProjectById, countCommentsByStatus, getMigrateCommentsExport }))
+
+    await withTestServer({
+      routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
+    }, async ({ request }) => {
+      const codes = async () => ((await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()) as { summary: MigrationHandoffSummary }).summary.issues.map(i => i.code)
+      base.getMigrateGrantSiteBindingState.mockResolvedValue('pr_open')
+      expect(await codes()).toContain('runtime_unbound')
+      base.getMigrateGrantSiteBindingState.mockResolvedValue('written')
+      expect(await codes()).not.toContain('runtime_unbound')
+      expect(base.getMigrateGrantSiteBindingState).toHaveBeenCalledWith(WORKSPACE, 'Acme/Site')
     })
   })
 

@@ -202,7 +202,12 @@ export interface MigrationHandoffSummary {
   capabilities: Array<{ key: string, disposition: string, detail?: string }>
   /** Capabilities that need a live service — the ones Studio can take over. */
   needsRuntime: string[]
-  offers: Array<{ capability: string, provider: string, supported: boolean, warning?: string }>
+  offers: Array<{ capability: string, provider: string, supported: boolean, warning?: string, chosen?: true }>
+  /**
+   * The offer each capability went with: the one Migrate marked `chosen` (at most one per capability). Its alternatives
+   * are no longer open. A capability with no chosen offer recorded no choice: all its offers stay open.
+   */
+  chosenOffers: Array<{ capability: string, provider: string }>
   comments?: { total: number, hasExport: boolean, source: HandoffCommentsSource['kind'], unresolved: number }
   notes: string[]
   previewUrl?: string
@@ -231,7 +236,11 @@ export function readOrderId(value: unknown): string | undefined {
   return typeof value === 'string' && /^ord_[0-9a-f]{24}$/.test(value) ? value : undefined
 }
 
-export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff): MigrationHandoffSummary {
+/**
+ * `runtimeBound`: the site already sends to this project — Studio's own binding (studio.json on the default branch,
+ * as recorded on the project's Migrate grant). The handoff's `runtime` is only what Migrate knew at delivery.
+ */
+export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff, options: { runtimeBound?: boolean } = {}): MigrationHandoffSummary {
   const capabilities = (handoff.capabilities ?? []).map(c => ({ key: String(c.key), disposition: String(c.disposition), ...(c.detail ? { detail: c.detail } : {}) }))
   const needsRuntime = capabilities.filter(c => c.disposition === 'needs_runtime').map(c => c.key)
   const offers = (handoff.offers ?? []).map(o => ({
@@ -239,14 +248,19 @@ export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff): Migr
     provider: String(o.provider),
     supported: o.provider !== 'studio_managed' || STUDIO_MANAGED_CAPABILITIES.has(String(o.capability)),
     ...(o.warning ? { warning: o.warning } : {}),
+    // `HandoffOffer.chosen` (@contentrain/types, Migrate's writer): read as data until the types release carries it.
+    ...((o as { chosen?: unknown }).chosen === true ? { chosen: true as const } : {}),
   }))
+  const chosenOffers = offers
+    .filter((o, i) => o.chosen && o.supported && offers.findIndex(x => x.capability === o.capability && x.chosen) === i)
+    .map(o => ({ capability: o.capability, provider: o.provider }))
   const commentsSource = commentsSourceOf(handoff)
 
   const issues: MigrationHandoffIssue[] = []
   const unsupported = [...new Set(offers.filter(o => !o.supported).map(o => o.capability))]
   if (unsupported.length) issues.push({ code: 'offer_unsupported', capabilities: unsupported })
   const unbound = needsRuntime.filter(key => STUDIO_MANAGED_CAPABILITIES.has(key))
-  if (unbound.length && !handoff.runtime) issues.push({ code: 'runtime_unbound', capabilities: unbound })
+  if (unbound.length && !handoff.runtime && !options.runtimeBound) issues.push({ code: 'runtime_unbound', capabilities: unbound })
   if (!handoff.preview_url) issues.push({ code: 'preview_url_missing' })
   const tooLarge = handoff.studio_intake?.commentsTooLarge
   if (tooLarge)
@@ -263,6 +277,7 @@ export function summarizeMigrationHandoff(handoff: StoredMigrationHandoff): Migr
     capabilities,
     needsRuntime,
     offers,
+    chosenOffers,
     comments: handoff.comments
       ? {
           total: handoff.comments.total,
@@ -291,7 +306,10 @@ export function renderMigrationHandoffForAgent(summary: MigrationHandoffSummary)
   }
   for (const [disposition, keys] of byDisposition)
     lines.push(`- ${disposition}: ${keys.join(', ')}`)
-  const openOffers = summary.offers.filter(o => o.supported)
+  if (summary.chosenOffers.length > 0)
+    lines.push(`- Chosen: ${summary.chosenOffers.map(o => `${o.capability} → ${o.provider}`).join('; ')}`)
+  const decided = new Set(summary.chosenOffers.map(o => o.capability))
+  const openOffers = summary.offers.filter(o => o.supported && !decided.has(o.capability))
   if (openOffers.length > 0)
     lines.push(`- Open offers: ${openOffers.map(o => `${o.capability} → ${o.provider}`).join('; ')}`)
   if (summary.comments)

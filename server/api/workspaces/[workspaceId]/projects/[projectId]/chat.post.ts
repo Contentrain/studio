@@ -288,6 +288,18 @@ export default defineEventHandler(async (event) => {
     const intent = classifyIntent(body.message, uiContext, phase)
 
     // === BUILD SYSTEM PROMPT (bounded, context-aware) ===
+    // Studio's own site binding (the project's Migrate grant): the handoff's runtime is only what Migrate knew at delivery.
+    const migrationRuntimeBound = async (): Promise<boolean> => {
+      const repo = typeof project.repo_full_name === 'string' ? project.repo_full_name : ''
+      try {
+        const state = repo ? await db.getMigrateGrantSiteBindingState(workspaceId, repo) : null
+        return state === 'written' || state === 'partial'
+      }
+      catch {
+        // The prompt reads as the handoff says; a lookup that failed never stops the chat.
+        return false
+      }
+    }
     const projectState = {
       initialized: !!projectConfig,
       pendingBranches,
@@ -295,7 +307,7 @@ export default defineEventHandler(async (event) => {
       phase,
       contentContext,
       migrationHandoff: project.migration_handoff
-        ? renderMigrationHandoffForAgent(summarizeMigrationHandoff(project.migration_handoff as unknown as MigrationHandoff))
+        ? renderMigrationHandoffForAgent(summarizeMigrationHandoff(project.migration_handoff as unknown as MigrationHandoff, { runtimeBound: await migrationRuntimeBound() }))
         : null,
     }
 

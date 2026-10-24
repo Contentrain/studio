@@ -64,6 +64,8 @@ interface MediaState {
 interface ApplyCounts {
   filesChanged: number
   rewritten: number
+  /** References already on this project's Studio media (an earlier switch, or Studio's own media commit). */
+  alreadyRewritten?: number
   drifted: unknown[]
   notImported: string[]
   originNotImported?: string[]
@@ -189,6 +191,8 @@ async function apply() {
     const result = await $fetch<{ status: string }>(`${base()}/apply`, { method: 'POST', body: { dryRun: false, deleteLocal: deleteLocal.value } })
     toast.success(t(result.status === 'pending_review' ? 'migration.media_apply_pending' : result.status === 'nothing_to_do' ? 'migration.media_apply_nothing' : 'migration.media_apply_done'))
     applyPreview.value = null
+    busy.value = null
+    void preview()
   }
   catch (error) {
     const blocked = (error as { data?: { data?: { blocked?: DeliveryBlock } } }).data?.data?.blocked
@@ -203,6 +207,13 @@ async function apply() {
 watch(deleteLocal, () => {
   if (applyPreview.value) void preview()
 })
+
+/** Nothing left to point at Studio: the switch is done, and only removing the repository copies stays on offer. */
+const switched = computed(() => !!applyPreview.value && applyPreview.value.rewritten === 0)
+// A finished move is checked once by itself, so a switch already made reads as done without a click.
+watch(() => props.editable && job.value?.status === 'done', (finished) => {
+  if (finished && !applyPreview.value && busy.value === null) void preview()
+}, { immediate: true })
 </script>
 
 <template>
@@ -295,8 +306,13 @@ watch(deleteLocal, () => {
       </p>
       <template v-if="editable">
         <AtomsFormSwitch v-model="deleteLocal" :label="t('migration.media_delete_local')" />
-        <div v-if="applyPreview" class="text-xs text-body dark:text-secondary-300">
-          <p>{{ t('migration.media_apply_preview', { refs: applyPreview.rewritten, files: applyPreview.filesChanged }) }}</p>
+        <div v-if="applyPreview" class="text-xs text-body dark:text-secondary-300" data-testid="migration-media-apply" :data-switched="switched">
+          <p v-if="switched">
+            {{ t('migration.media_apply_switched', { refs: applyPreview.alreadyRewritten ?? 0 }) }}
+          </p>
+          <p v-else>
+            {{ t('migration.media_apply_preview', { refs: applyPreview.rewritten, files: applyPreview.filesChanged }) }}
+          </p>
           <p v-if="applyPreview.drifted.length" class="text-warning-700 dark:text-warning-300">
             {{ t('migration.media_apply_drifted', { count: applyPreview.drifted.length }) }}
           </p>
@@ -307,7 +323,12 @@ watch(deleteLocal, () => {
             {{ t(`migration.media_kept_${applyPreview.keptBecause}`) }}
           </p>
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div v-if="switched" class="flex flex-wrap gap-2">
+          <AtomsBaseButton v-if="deleteLocal && applyPreview?.keptBecause === null" type="button" variant="secondary" size="sm" :disabled="busy !== null" @click="apply">
+            {{ busy === 'apply' ? t('common.loading') : t('migration.media_delete_local_apply') }}
+          </AtomsBaseButton>
+        </div>
+        <div v-else class="flex flex-wrap gap-2">
           <AtomsBaseButton type="button" variant="secondary" size="sm" :disabled="busy !== null" @click="preview">
             {{ busy === 'preview' ? t('common.loading') : t('migration.media_apply_check') }}
           </AtomsBaseButton>

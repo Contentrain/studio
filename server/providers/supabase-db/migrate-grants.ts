@@ -25,6 +25,7 @@ type MigrateGrantMethods = Pick<
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
   | 'getMigrateGrantOrigin'
+  | 'getMigrateGrantSiteBindingState'
   | 'claimMigrateS2sJti'
   | 'releaseMigrateS2sJti'
   | 'listOwnedWorkspacesAdmin'
@@ -345,6 +346,23 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .maybeSingle()
       if (error) fail(error.message)
       return (data?.origin as string | null | undefined) ?? null
+    },
+
+    async getMigrateGrantSiteBindingState(workspaceId, repoFullName) {
+      const [owner, name] = repoFullName.split('/')
+      if (!owner || !name) return null
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('site_binding_state')
+        .eq('workspace_id', workspaceId)
+        .ilike('repo_owner', owner.replace(/[\\%_]/g, '\\$&'))
+        .ilike('repo_name', name.replace(/[\\%_]/g, '\\$&'))
+        .not('site_binding_state', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) fail(error.message)
+      return (data?.site_binding_state as string | null | undefined) ?? null
     },
 
     async saveMigrateCommentsExport(grantId, input) {

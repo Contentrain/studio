@@ -130,6 +130,29 @@ describe('planMigrationMediaApply', () => {
     expect(second.counts).toMatchObject({ rewritten: 0, alreadyRewritten: 5, drifted: [] })
   })
 
+  it('a ref Studio already switched to this project\'s media (another host or file name, plain or \\/-escaped) is done, not drift', async () => {
+    const OWN = 'https://cdn.studio.test/api/cdn/v1/p-1/media/original/a-1f2e.png'
+    const switched = {
+      'post-1': {
+        cover: OWN,
+        cover_id: 'a',
+        body: `<img src="${OWN}"><img src="${B}"><!-- wp:image {"url":"${OWN.replace(/\//g, '\\/')}"} -->`,
+      },
+    }
+    const { changes, counts } = await plan({ files: repo({
+      'content/blog/en.json': canonicalStringify(switched),
+      'content/media/en.json': canonicalStringify({ a: { url: OWN.replace(/\//g, '\\/') } }),
+      'content/pages/about.md': `![Team](${OWN})\n`,
+    }) })
+    expect(counts).toMatchObject({ rewritten: 0, alreadyRewritten: 5, drifted: [] })
+    expect(contentOf(changes, 'content/blog/en.json')).toBeUndefined()
+
+    // Another project's Studio media is not this one's: still drift.
+    const other = { 'post-1': { ...blog['post-1'], cover: 'https://studio.test/api/cdn/v1/p-2/media/original/a.png' } }
+    const theirs = await plan({ files: repo({ 'content/blog/en.json': canonicalStringify(other) }) })
+    expect(theirs.counts.drifted).toEqual([{ file: 'content/blog/en.json', pointer: '/post-1/cover', repoPath: 'public/media/2024/a.png' }])
+  })
+
   it('a file nothing was rewritten in is not reformatted', async () => {
     const m = manifest([{ id: 'c', repoPath: 'public/media/c.png', localUrl: '/media/c.png', sha256: H, bytes: 1, mime: 'image/png', refs: [{ file: 'content/other/en.json', pointer: '/x', match: 'exact' }] }])
     const { changes } = await plan({ m, files: repo({ 'content/other/en.json': '{"x":"/media/elsewhere.png","b":1}' }) })
