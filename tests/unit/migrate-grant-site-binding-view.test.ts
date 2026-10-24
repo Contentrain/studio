@@ -18,11 +18,18 @@ describe('migrateGrantView: siteBinding', () => {
   it('pr_open carries its pull request; partial its form models over the plan and the limit; a conflict shows no values', async () => {
     const { migrateGrantView } = await import('../../server/utils/migrate-grant')
     expect(migrateGrantView(row({ site_binding_state: 'pr_open', site_binding_detail: { path: 'studio.json', prUrl: 'https://github.com/ABB65/formchickens/pull/3' } })).siteBinding)
-      .toEqual({ state: 'pr_open', prUrl: 'https://github.com/ABB65/formchickens/pull/3', overLimit: [], limit: null })
+      .toEqual({ state: 'pr_open', prUrl: 'https://github.com/ABB65/formchickens/pull/3', branch: null, overLimit: [], limit: null })
     expect(migrateGrantView(row({ site_binding_state: 'partial', site_binding_detail: { overLimit: ['newsletter', 7], limit: 1, formModels: 2 } })).siteBinding)
-      .toEqual({ state: 'partial', prUrl: null, overLimit: ['newsletter'], limit: 1 })
+      .toEqual({ state: 'partial', prUrl: null, branch: null, overLimit: ['newsletter'], limit: 1 })
     expect(migrateGrantView(row({ site_binding_state: 'conflict', site_binding_detail: { found: { projectId: 'other' }, expected: { projectId: 'proj-1' } } })).siteBinding)
-      .toEqual({ state: 'conflict', prUrl: null, overLimit: [], limit: null })
+      .toEqual({ state: 'conflict', prUrl: null, branch: null, overLimit: [], limit: null })
+  })
+
+  it('a binding waiting for review in the project carries its branch; any other branch or state carries none', async () => {
+    const { migrateGrantView } = await import('../../server/utils/migrate-grant')
+    expect(migrateGrantView(row({ site_binding_state: 'pr_open', site_binding_detail: { branch: 'cr/studio/binding/1-ab', review: true } })).siteBinding?.branch).toBe('cr/studio/binding/1-ab')
+    expect(migrateGrantView(row({ site_binding_state: 'pr_open', site_binding_detail: { branch: 'main' } })).siteBinding?.branch).toBeNull()
+    expect(migrateGrantView(row({ site_binding_state: 'failed', site_binding_detail: { branch: 'cr/studio/binding/1-ab' } })).siteBinding?.branch).toBeNull()
   })
 
   it('a pull request address that is not https is not passed on as a link', async () => {

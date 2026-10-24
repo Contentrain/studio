@@ -79,3 +79,29 @@ export async function migrateGrantGithubAccount(workspace: DatabaseRow | null): 
     return null
   }
 }
+
+/**
+ * Where the delivered site's Studio capabilities stand, for Migrate's "turn off WordPress" checklist (additive to
+ * `MigrateGrantStatusResponse` until `@contentrain/types` carries it). A key is sent only for a capability Studio
+ * serves on this site; an absent key reads as `pending`.
+ * - `forms`: the site has form models (the binding counted them). `connected` once studio.json on the default branch
+ *   names this project (`written`, or `partial` when the plan serves fewer forms than the site has).
+ * - `comments`: the order had a comments export. `connected` once the site is bound the same way and the export is
+ *   imported into the project.
+ */
+export interface MigrateGrantCapabilities {
+  forms?: 'connected' | 'pending'
+  comments?: 'connected' | 'pending'
+}
+
+export async function migrateGrantCapabilities(grant: DatabaseRow): Promise<MigrateGrantCapabilities> {
+  if (grant.kind !== 'bundle') return {}
+  const state = grant.site_binding_state as string | null
+  const detail = (grant.site_binding_detail && typeof grant.site_binding_detail === 'object' ? grant.site_binding_detail : {}) as { formModels?: unknown }
+  const bound = state === 'written' || state === 'partial'
+  const capabilities: MigrateGrantCapabilities = {}
+  if (typeof detail.formModels === 'number' && detail.formModels > 0) capabilities.forms = bound ? 'connected' : 'pending'
+  const comments = await useDatabaseProvider().getMigrateCommentsExportState(grant.id as string)
+  if (comments) capabilities.comments = bound && comments.status === 'imported' ? 'connected' : 'pending'
+  return capabilities
+}

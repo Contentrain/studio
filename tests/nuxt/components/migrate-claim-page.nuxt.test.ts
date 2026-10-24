@@ -206,7 +206,7 @@ describe('/migrate/claim', () => {
     const copy = strings as Record<string, string>
     const PR = 'https://github.com/acme/blog/pull/3'
     const bound = (siteBinding: Record<string, unknown>) => ({
-      grant: bundleView({ siteBinding: { prUrl: null, overLimit: [], limit: null, ...siteBinding } }),
+      grant: bundleView({ siteBinding: { prUrl: null, branch: null, overLimit: [], limit: null, ...siteBinding } }),
       destination: { workspaceSlug: 'acme', projectId: 'proj-1' },
       bundle: { planState: 'active', workspaceSlug: 'acme', periodEndsAt: null },
       comments: null,
@@ -240,11 +240,16 @@ describe('/migrate/claim', () => {
       expect(wrapper.find('[data-testid="claim-site-binding-retry"]').exists()).toBe(true)
     })
 
-    it('pr_open waiting for review: the review copy and no link', async () => {
-      stubFetch(bound({ state: 'pr_open', prUrl: null }))
+    it('pr_open waiting for review: the review copy, a link to that review in the project, no warning and no retry', async () => {
+      stubFetch(bound({ state: 'pr_open', prUrl: null, branch: 'cr/studio/binding/1-ab' }))
       const wrapper = await mount()
       expect(note(wrapper).text()).toContain(copy['migrate_claim.site_binding_review'])
+      expect(note(wrapper).classes()).not.toContain('border-warning-300')
       expect(wrapper.find('[data-testid="claim-site-binding-pr"]').exists()).toBe(false)
+      const review = wrapper.find('[data-testid="claim-site-binding-review"]')
+      expect(review.text()).toBe(copy['migrate_claim.site_binding_review_link'])
+      expect(review.attributes('href')).toBe('/w/acme/projects/proj-1?branch=cr/studio/binding/1-ab')
+      expect(wrapper.find('[data-testid="claim-site-binding-retry"]').exists()).toBe(false)
     })
 
     it('conflict: says the file was left as it is', async () => {

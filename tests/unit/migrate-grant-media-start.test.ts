@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * A bundle grant's site binding starts the project's media import for that grant once the site is bound, and only
- * then. The import itself (`startMigrationMediaImport`) and the binding's write (`ensureMigrateSiteBinding`) are
+ * A bundle grant's site binding starts the project's media import for that grant, whatever the binding's state: the
+ * media move does not wait on studio.json. The import itself (`startMigrationMediaImport`) and the binding's write (`ensureMigrateSiteBinding`) are
  * covered on their own; here, what the binding hands the import and when.
  */
 const ensureMigrateSiteBinding = vi.fn()
@@ -73,10 +73,11 @@ describe('a bundle grant\'s binding starts its media import', () => {
     expect(applyGrantMigrationMedia).toHaveBeenCalledWith(empty, 'pro')
   })
 
-  it.each(['conflict', 'failed', 'pr_open'])('a %s binding starts nothing', async (state) => {
+  it.each(['conflict', 'failed', 'pr_open'])('a %s binding does not hold the import back', async (state) => {
     ensureMigrateSiteBinding.mockResolvedValue({ state })
-    await bind()
-    expect(startMigrationMediaImport).not.toHaveBeenCalled()
+    expect(await bind()).toEqual({ state })
+    expect(startMigrationMediaImport).toHaveBeenCalledTimes(1)
+    expect(startMigrationMediaImport).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p-1', migrateGrantId: 'grant-1' }))
   })
 
   it('without a media stack or the plan\'s media upload nothing starts; an import that fails leaves the binding as it is', async () => {

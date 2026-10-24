@@ -9,11 +9,12 @@
  * Answers only the state, what kind of Studio the order has (`kind`, `plan`, its end and whether the plan
  * has ended — `migrateGrantStatusDetail`) and whether Studio's GitHub App is installed for the
  * grant's workspace and, if so, the GitHub account it is installed on (`workspace_github_account`, so the delivery
- * defaults to it) — never a Studio workspace or email. An order Studio
+ * defaults to it), and for a bundle where its forms and comments stand (`capabilities`, `migrateGrantCapabilities`)
+ * — never a Studio workspace or email. An order Studio
  * holds no grant for is a 404.
  */
 import { validateMigrateGrantStatusRequest, validateMigrateGrantStatusResponse } from '@contentrain/types'
-import { migrateGrantGithubAccount, migrateGrantInstallation, migrateGrantStateOf, migrateGrantStatusDetail } from '../../../utils/migrate-grant-status'
+import { migrateGrantCapabilities, migrateGrantGithubAccount, migrateGrantInstallation, migrateGrantStateOf, migrateGrantStatusDetail } from '../../../utils/migrate-grant-status'
 import { readMigrateS2sRequest } from '../../../utils/migrate-s2s-route'
 
 export default defineEventHandler(async (event) => {
@@ -27,7 +28,8 @@ export default defineEventHandler(async (event) => {
   // An install only counts once the subscription ran (the contract refuses it earlier); a revoked grant keeps one made before.
   const live = state === 'redeemed' || state === 'revoked'
   const account = installed && live ? await migrateGrantGithubAccount(workspace) : null
-  const response = { state, installed: installed && live, ...await migrateGrantStatusDetail(grant), ...(account ? { workspace_github_account: account } : {}) }
+  const capabilities = await migrateGrantCapabilities(grant)
+  const response = { state, installed: installed && live, ...await migrateGrantStatusDetail(grant), ...(account ? { workspace_github_account: account } : {}), ...(Object.keys(capabilities).length ? { capabilities } : {}) }
   // Fail closed on our own answer: Migrate shows it to a customer.
   if (!validateMigrateGrantStatusResponse(response).ok)
     throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })
