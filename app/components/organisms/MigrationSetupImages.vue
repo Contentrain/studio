@@ -325,8 +325,8 @@ function openCdn() {
         </p>
       </template>
 
-      <!-- Files the plan refused: they still load from WordPress -->
-      <div v-if="refusedCount && (moving || reason === 'moved')" class="rounded-lg border border-warning-200 bg-warning-50 px-3.5 py-3 dark:border-warning-800 dark:bg-warning-900/20" data-testid="setup-images-refused">
+      <!-- Files the plan refused: they still load from WordPress (the summary's "What to do" lands here) -->
+      <div v-if="refusedCount && (moving || reason === 'moved' || refusedTooLarge)" class="rounded-lg border border-warning-200 bg-warning-50 px-3.5 py-3 dark:border-warning-800 dark:bg-warning-900/20" data-testid="setup-images-refused">
         <p class="text-sm font-medium text-heading dark:text-secondary-100">
           {{ t('migration_setup.images_refused_title', { count: refusedCount }) }}
         </p>
