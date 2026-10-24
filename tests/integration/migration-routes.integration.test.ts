@@ -61,6 +61,7 @@ function stubSession(role = 'owner') {
     getProjectMember: vi.fn().mockResolvedValue({ id: 'pm-1', role: 'editor' }),
     getWorkspaceById: vi.fn().mockResolvedValue({ id: WORKSPACE, plan: 'pro', github_installation_id: 42 }),
     getMigrateGrantSiteBindingState: vi.fn().mockResolvedValue(null),
+    getMigrateGrantForProject: vi.fn().mockResolvedValue(null),
   }
 }
 
@@ -75,7 +76,7 @@ describe('migration handoff routes', () => {
     await withTestServer({
       routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
     }, async ({ request }) => {
-      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null, setup: null })
 
       const second = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as Record<string, unknown>
       expect(second.present).toBe(true)
@@ -102,6 +103,40 @@ describe('migration handoff routes', () => {
       expect(await codes()).not.toContain('runtime_unbound')
       expect(base.getMigrateGrantSiteBindingState).toHaveBeenCalledWith(WORKSPACE, 'Acme/Site')
     })
+  })
+
+  it('GET carries the setup for a delivered site with its grant; an owner\'s read stamps it complete, a member\'s never', async () => {
+    const grant = { id: 'grant-1', kind: 'bundle', plan: 'pro', site_binding_state: 'written', site_binding_detail: { formModels: 2 }, media_state: 'connected', media_detail: { jobId: 'job-1' } }
+    const row = { id: PROJECT, repo_full_name: 'Acme/Site', migration_handoff: handoff, migration_handoff_synced_at: '2026-09-03T11:00:00.000Z', migration_setup: { skip_live: true }, live_site_url: null }
+    const read = async (role: string) => {
+      const base = stubSession(role)
+      base.getMigrateGrantForProject.mockResolvedValue(grant)
+      const mergeProjectMigrationSetup = vi.fn().mockResolvedValue({})
+      vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+        ...base,
+        getProjectById: vi.fn().mockResolvedValue(row),
+        countCommentsByStatus: vi.fn().mockResolvedValue({ pending: 0, approved: 2, spam: 0, rejected: 0 }),
+        getMigrateCommentsExport: vi.fn().mockResolvedValue(null),
+        getLatestMigrationMediaJob: vi.fn().mockResolvedValue({ id: 'job-1', status: 'done' }),
+        mergeProjectMigrationSetup,
+      }))
+      let body!: { setup: { grant: unknown, steps: Array<{ step: string, state: string }>, completedAt: string | null, forms: unknown } }
+      await withTestServer({
+        routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
+      }, async ({ request }) => {
+        body = await (await request('/api/workspaces/workspace-1/projects/project-1/migration')).json() as typeof body
+      })
+      return { body, mergeProjectMigrationSetup }
+    }
+
+    const owner = await read('owner')
+    expect(owner.body.setup).toMatchObject({ grant: { kind: 'bundle', plan: 'pro' }, forms: { models: 2, overLimit: 0 }, completedAt: expect.any(String) })
+    expect(owner.body.setup.steps.map(s => [s.step, s.state])).toEqual([['forms', 'done'], ['comments', 'done'], ['images', 'done'], ['live', 'skipped']])
+    expect(owner.mergeProjectMigrationSetup).toHaveBeenCalledWith(PROJECT, { completed_at: expect.any(String) })
+
+    const member = await read('member')
+    expect(member.body.setup.completedAt).toBeNull()
+    expect(member.mergeProjectMigrationSetup).not.toHaveBeenCalled()
   })
 
   it('sync reads a legacy root contentrain-handoff.json from the repo, enriches repository, and stores it', async () => {
@@ -401,7 +436,7 @@ describe('migration handoff — pushed after the project was connected', () => {
     await withTestServer({
       routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
     }, async ({ request }) => {
-      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null, setup: null })
       expect(resolveProjectContext).not.toHaveBeenCalled()
     })
 
@@ -410,7 +445,7 @@ describe('migration handoff — pushed after the project was connected', () => {
     await withTestServer({
       routes: [{ path: '/api/workspaces/workspace-1/projects/project-1/migration', handler: await loadGet() }],
     }, async ({ request }) => {
-      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null })
+      await expect((await request('/api/workspaces/workspace-1/projects/project-1/migration')).json()).resolves.toEqual({ present: false, syncedAt: null, summary: null, commentsImported: 0, claimExport: null, setup: null })
       expect(resolveProjectContext).toHaveBeenCalledTimes(1)
       expect(setProjectMigrationHandoff).not.toHaveBeenCalled()
     })

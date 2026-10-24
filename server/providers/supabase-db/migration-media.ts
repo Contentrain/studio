@@ -14,6 +14,7 @@ type MigrationMediaMethods = Pick<
   | 'createMigrationMediaJob'
   | 'getMigrationMediaJob'
   | 'getLatestMigrationMediaJob'
+  | 'setMigrationMediaJobApplyApprover'
   | 'claimMigrationMediaJob'
   | 'listPendingMigrationMediaItems'
   | 'listMigrationMediaItems'
@@ -210,6 +211,18 @@ export function migrationMediaMethods(): MigrationMediaMethods {
       })
       if (error) fail(error.message)
       return data === true
+    },
+
+    async setMigrationMediaJobApplyApprover(projectId, jobId, approver) {
+      const { data, error } = await getAdmin()
+        .from('migration_media_jobs')
+        .update({ apply_approver: approver })
+        .eq('id', jobId)
+        .eq('project_id', projectId)
+        .in('status', ['preparing', 'queued', 'running', 'paused_quota'])
+        .select('id')
+      if (error) fail(error.message)
+      return (data ?? []).length > 0
     },
 
     async resumeMigrationMediaJob(projectId, jobId) {

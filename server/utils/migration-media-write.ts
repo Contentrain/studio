@@ -20,14 +20,13 @@
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { DatabaseProvider, DatabaseRow } from '../providers/database'
 import type { GitProvider } from '../providers/git'
-import { gateForPlan } from './approval-gate'
-import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
 import { getOrBuildBrainCache, invalidateBrainCache } from './brain-cache'
+import { mergeOnClick } from './click-approval'
+import type { ClickApprover } from './click-approval'
 import { createContentEngine } from './content-engine'
 import { createFeatureBranch, openWriteSnapshot, writeBase } from './content-engine/helpers'
 import type { EngineMergeResult } from './content-engine/types'
 import { STUDIO_AUTHOR } from './content-engine/types'
-import { actorFromEmail } from './execution-plan'
 import { hasFeature } from './license'
 import { readMigrationMediaManifest } from './migration-media'
 import { planMigrationMediaApply } from './migration-media-apply'
@@ -83,7 +82,7 @@ export interface ApplyMigrationMediaInput {
    * The owner or admin whose click asked for it: on a review project the click is their approval. Absent for the
    * bundle's own apply, which stays for a reviewer.
    */
-  approver?: { id: string, email: string, role: string | null, workspaceId: string }
+  approver?: ClickApprover
 }
 
 export type ApplyMigrationMediaResult
@@ -139,36 +138,12 @@ export async function applyMigrationMedia(input: ApplyMigrationMediaInput): Prom
   })
 
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
-  const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(plan, 'workflow.review'))
-  const startedAt = new Date().toISOString()
-  let approval: Awaited<ReturnType<typeof resolveMergeApproval>> = null
-  // Review projects hold it like any other change (it rewrites content and touches site files), until it is approved.
-  if (workflow === 'review') {
-    const held = { status: 'pending_review' as const, counts, branch: branchName, commitSha: commit.sha }
-    if (!input.approver) return held
-    const ask = () => resolveMergeApproval({ git, contentRoot, projectId, branch: branchName, workflow, policy: brain.approvalPolicy ?? null })
-    const before = await ask()
-    if (!before) return held
-    await input.db.recordApproval({
-      projectId,
-      workspaceId: input.approver.workspaceId,
-      target: branchName,
-      gate: gateForPlan(before.decision),
-      planHash: before.plan.plan_hash,
-      commitSha: before.commitSha ?? null,
-      approverId: input.approver.id,
-      approverEmail: input.approver.email,
-      approverRole: input.approver.role,
-      note: MEDIA_APPLY_APPROVAL_NOTE,
-    })
-    approval = await ask()
-    // A policy that asks for more than this one grant (more approvals, another role) keeps it for its reviewers.
-    if (!approval?.decision.allowed) return held
-  }
-
   let merge: EngineMergeResult
   try {
-    merge = await engine.mergeBranch(branchName, approval?.commitSha ? { expectedHead: approval.commitSha } : {})
+    // Review projects hold it like any other change (it rewrites content and touches site files), until it is approved.
+    const landed = await mergeOnClick({ db: input.db, git, contentRoot, projectId, plan, branch: branchName, brain, engine, ...(input.approver ? { approver: input.approver } : {}), note: MEDIA_APPLY_APPROVAL_NOTE })
+    if (landed.held) return { status: 'pending_review', counts, branch: branchName, commitSha: commit.sha }
+    merge = landed.merge
   }
   catch (error) {
     const status = error as { status?: number, statusCode?: number }
@@ -180,9 +155,6 @@ export async function applyMigrationMedia(input: ApplyMigrationMediaInput): Prom
     throw createError({ statusCode: 409, message: errorMessage('migration.media_apply_conflict'), data: counts })
   }
   invalidateBrainCache(projectId)
-  // The receipt says who let it in; it also clears the grant (`recordMergeReceipt`).
-  if (approval && input.approver && merge.merged)
-    await recordMergeReceipt({ projectId, workspaceId: input.approver.workspaceId, branch: branchName, approval, actor: actorFromEmail(input.approver.email), startedAt })
   return { status: 'merged', counts, branch: branchName, commitSha: commit.sha, pullRequestUrl: merge.pullRequestUrl ?? null }
 }
 

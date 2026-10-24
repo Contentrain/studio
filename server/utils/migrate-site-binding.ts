@@ -28,15 +28,13 @@
 import { CONTENTRAIN_BRANCH } from '@contentrain/types'
 import type { DatabaseProvider, MigrateSiteBindingState } from '../providers/database'
 import type { GitProvider } from '../providers/git'
-import { gateForPlan } from './approval-gate'
-import { effectiveWorkflow, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
 import { getOrBuildBrainCache, invalidateBrainCache } from './brain-cache'
+import { mergeOnClick } from './click-approval'
 import { createContentEngine } from './content-engine'
 import { createFeatureBranch, openWriteSnapshot, writeBase } from './content-engine/helpers'
-import { actorFromEmail } from './execution-plan'
 import { STUDIO_AUTHOR } from './content-engine/types'
 import { getFormConfig } from './form-types'
-import { getPlanLimit, hasFeature } from './license'
+import { getPlanLimit } from './license'
 import { SITE_BINDING_BRANCH_PREFIX } from './migrate-grant'
 import { projectPath, readMigrationMediaManifest } from './migration-media'
 import { STUDIO_BINDING_FILE, studioBindingSource } from './migration-media-apply'
@@ -78,11 +76,11 @@ export interface MigrateSiteBindingInput {
   grantId: string
   projectId: string
   /**
-   * The grant's owner, whose Connect is the approval of the binding on a review project (they connected the site as its
-   * workspace's owner or admin, `connect-project`): the grant's user, its email, its workspace. Without it a review
-   * project's binding waits for a reviewer.
+   * Whose click is the approval of the binding on a review project: the grant's owner (they connected the site as its
+   * workspace's owner or admin, `connect-project`), or the owner or admin who asked again from the project's setup
+   * (with their role). Without it a review project's binding waits for a reviewer.
    */
-  approver?: { id: string, email: string, workspaceId: string }
+  approver?: { id: string, email: string, workspaceId: string, role?: string | null }
   /** The binding branch an earlier attempt recorded (`site_binding_detail.branch`): tried first on a retry. */
   recordedBranch?: string | null
   git: GitProvider
@@ -187,40 +185,24 @@ export async function ensureMigrateSiteBinding(input: MigrateSiteBindingInput): 
     }
     const duplicates = waiting.others.length ? { duplicateBranches: waiting.others } : {}
     const branchName = waiting.branch ?? await writeBindingBranch()
-    const workflow = effectiveWorkflow(brain.config?.workflow, hasFeature(input.plan, 'workflow.review'))
-    const startedAt = now().toISOString()
-    let approval: Awaited<ReturnType<typeof resolveMergeApproval>> = null
-    if (workflow === 'review') {
-      const waits = () => record('pr_open', { path, branch: branchName, review: true, ...duplicates }, { prUrl: null })
-      // A review project's binding is approved by the Connect that asked for it: the grant's owner, recorded against this
-      // branch's plan and tip like any reviewer's grant, then merged under it. Its one file is a site config, not
-      // content, so its plan is the lowest rung with nothing in scope for a reviewer to read.
-      if (!input.approver) return waits()
-      const ask = () => resolveMergeApproval({ git, contentRoot, projectId, branch: branchName, workflow, policy: brain.approvalPolicy ?? null })
-      const before = await ask()
-      if (!before) return waits()
-      await input.db.recordApproval({
-        projectId,
-        workspaceId: input.approver.workspaceId,
-        target: branchName,
-        gate: gateForPlan(before.decision),
-        planHash: before.plan.plan_hash,
-        commitSha: before.commitSha ?? null,
-        approverId: input.approver.id,
-        approverEmail: input.approver.email,
-        // Their role now is not known here (an owner or an admin connected it); the grant answers who, not as what.
-        approverRole: null,
-        note: SITE_BINDING_APPROVAL_NOTE,
-      })
-      approval = await ask()
-      // A policy that asks for more than the owner's grant (more approvals, another role) keeps it for its reviewers.
-      if (!approval?.decision.allowed) return waits()
-    }
-    const merge = await engine.mergeBranch(branchName, approval?.commitSha ? { expectedHead: approval.commitSha } : {})
+    // A review project's binding is approved by the click that asked for it (Connect: the grant's owner; the setup's
+    // retry: the clicker), recorded against this branch's plan and tip like any reviewer's grant, then merged under it.
+    // Its one file is a site config, not content, so its plan is the lowest rung with nothing in scope for a reviewer.
+    const landed = await mergeOnClick({
+      db: input.db,
+      git,
+      contentRoot,
+      projectId,
+      plan: input.plan,
+      branch: branchName,
+      brain,
+      engine,
+      ...(input.approver ? { approver: { ...input.approver, role: input.approver.role ?? null } } : {}),
+      note: SITE_BINDING_APPROVAL_NOTE,
+    })
+    if (landed.held) return record('pr_open', { path, branch: branchName, review: true, ...duplicates }, { prUrl: null })
+    const merge = landed.merge
     invalidateBrainCache(projectId)
-    // The receipt says who let it in; it also clears the grant (`recordMergeReceipt`).
-    if (approval && input.approver && merge.merged)
-      await recordMergeReceipt({ projectId, workspaceId: input.approver.workspaceId, branch: branchName, approval, actor: actorFromEmail(input.approver.email), startedAt })
     if (merge.merged) return done(writtenState, { path, change: 'written', ...duplicates })
     if (merge.pullRequestUrl) return record('pr_open', { path, prUrl: merge.pullRequestUrl }, { prUrl: merge.pullRequestUrl })
     return record('failed', { path, code: merge.conflict ? 'merge_conflict' : 'merge_not_done', branch: branchName })

@@ -8,6 +8,7 @@
  * implementation exactly.
  */
 import type { Kysely, Transaction } from 'kysely'
+import { sql } from 'kysely'
 import type { DatabaseProvider, DatabaseRow } from '../database'
 import type { StudioDatabase } from './types'
 import { getAdmin, pickColumns, throwDbError, withUser } from './helpers'
@@ -20,6 +21,7 @@ type ProjectMethods = Pick<
   | 'createProject'
   | 'updateProject'
   | 'setProjectMigrationHandoff'
+  | 'mergeProjectMigrationSetup'
   | 'deleteProject'
   | 'getProjectMediaStorageSum'
   | 'listWorkspaceProjects'
@@ -195,6 +197,18 @@ export function projectMethods(): ProjectMethods {
           throw createError({ statusCode: 500, message: 'Invalid database response' })
 
         return pickColumns(row as DatabaseRow, fields)
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async mergeProjectMigrationSetup(projectId, patch) {
+      try {
+        const result = await sql<{ setup: Record<string, unknown> | null }>`
+          SELECT public.merge_project_migration_setup(${projectId}::uuid, ${JSON.stringify(patch)}::jsonb) AS setup
+        `.execute(getAdmin())
+        return result.rows[0]?.setup ?? {}
       }
       catch (error) {
         throwDbError(error)

@@ -24,6 +24,9 @@
  * image 403s and a site build that fetches them fails. The dry run reports
  * the same reason as `blocked` so the card can say what to turn on first.
  *
+ * What a real apply did goes on the project's setup record (migration 054, `media_apply`): the setup's images step
+ * reads it.
+ *
  * POST /api/workspaces/{workspaceId}/projects/{projectId}/migration/media/apply
  *   { dryRun?: boolean, deleteLocal?: boolean }
  *   → 200 { status: 'dry_run' | 'nothing_to_do' | 'merged' | 'pending_review', counts, blocked?, branch?, pullRequestUrl? }
@@ -31,6 +34,7 @@
  *   → 409 migration.media_cdn_disabled · migration.media_public_off · 403 cdn.upgrade
  */
 
+import { recordMediaApplyOutcome } from '~~/server/utils/migration-media-import'
 import { applyMigrationMedia } from '~~/server/utils/migration-media-write'
 
 export default defineEventHandler(async (event) => {
@@ -59,7 +63,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: errorMessage('migration.media_import_rate_limited') })
 
   const { git, contentRoot, workspace, project: row } = await resolveProjectContext(workspaceId, projectId)
-  return applyMigrationMedia({
+  const run = () => applyMigrationMedia({
     db,
     git,
     contentRoot,
@@ -73,4 +77,5 @@ export default defineEventHandler(async (event) => {
     authorEmail: session.user.email ?? null,
     ...(session.user.email ? { approver: { id: session.user.id, email: session.user.email, role: role ?? null, workspaceId } } : {}),
   })
+  return dryRun ? run() : recordMediaApplyOutcome(projectId, String(job.id), run)
 })

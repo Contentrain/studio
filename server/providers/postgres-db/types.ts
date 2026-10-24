@@ -84,6 +84,7 @@ export interface MigrationMediaJobsTable {
   lease_until: string | null
   origin: string | null
   migrate_grant_id: string | null
+  apply_approver: unknown | null
   created_at: Generated<string>
   updated_at: Generated<string>
   finished_at: string | null
@@ -230,6 +231,8 @@ export interface ProjectsTable {
   cdn_branch: string | null
   migration_handoff: unknown | null
   migration_handoff_synced_at: string | null
+  migration_setup: unknown | null
+  live_site_url: string | null
   deploy_target: unknown | null
 }
 

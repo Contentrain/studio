@@ -26,10 +26,14 @@
  * (`MIGRATION_MEDIA_RETRY_DELAYS`) instead of failing it, and a batch stops
  * taking files once half the lease is spent, so a slow origin never outlives
  * the claim.
+ *
+ * A job a Move click asked to be applied (`apply_approver`, migration 054) is applied by the worker that closes it,
+ * under that click's approval (`applyClickedMigrationMedia`); the outcome goes on the project's setup record.
  */
 
 import type { GitProvider } from '~~/server/providers/git'
 import type { MediaProvider } from '~~/server/providers/media'
+import type { ClickApprover } from './click-approval'
 import type { Plan } from './license'
 import { createMediaIngestContext, ingestMediaBytes } from './media-bulk-ingest'
 import { inspectRepoMedia } from './media-ingest'
@@ -169,6 +173,8 @@ export interface MigrationMediaTickDeps {
   originFetch?: Pick<OriginFetchOptions, 'resolve' | 'isBlocked' | 'idleMs'> & { deadlineMs?: number }
   /** A bundle grant's job, once done (`applyGrantMigrationMedia`). */
   applyGrant?: typeof applyGrantMigrationMedia
+  /** A job a Move click asked to be applied, once done (`applyClickedMigrationMedia`). */
+  applyClicked?: typeof applyClickedMigrationMedia
   /** Clock for the batch budget. */
   clock?: () => number
 }
@@ -310,7 +316,19 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
   if (more.length > 0) return finish('running', null, settled)
   // Only the holder that closes the job applies a bundle grant's import: a lost lease applies nothing twice.
   const closed = await db.finishMigrationMediaJob(jobId, token, 'done', null, new Date())
-  if (closed && job.migrate_grant_id) {
+  // Read again: the Move click may have asked for the apply while this batch ran.
+  const clicked = closed ? migrationMediaApplyApprover((await db.getMigrationMediaJob(projectId, jobId).catch(() => null))?.apply_approver) : null
+  if (clicked) {
+    const apply = () => (deps.applyClicked ?? applyClickedMigrationMedia)(job, plan, clicked)
+    const grant = job.migrate_grant_id ? await db.getMigrateGrantById(String(job.migrate_grant_id)).catch(() => null) : null
+    // The grant's record follows its own job as it does without a click; the click's outcome is the setup's.
+    if (grant) await recordGrantMediaApply(db, grant, job, () => recordMediaApplyOutcome(projectId, jobId, apply), { attempts: 0 })
+    else await recordMediaApplyOutcome(projectId, jobId, apply).catch((error: unknown) => {
+      // eslint-disable-next-line no-console -- ops visibility: refused (CDN off, a conflict), recorded on the setup
+      console.error('[migration-media] clicked apply failed', { jobId, projectId, message: (error as Error)?.message })
+    })
+  }
+  else if (closed && job.migrate_grant_id) {
     // The outcome is recorded on the grant (053): landed, held for a review, or refused and tried again by the sweep.
     const grant = await db.getMigrateGrantById(String(job.migrate_grant_id)).catch(() => null)
     const apply = () => (deps.applyGrant ?? applyGrantMigrationMedia)(job, plan)
@@ -323,12 +341,74 @@ export async function runMigrationMediaTick(now = new Date(), deps: MigrationMed
   return { claimed: true, jobId, settled, deferred, status: 'done' }
 }
 
+/** Who a Move click said may approve the apply (054), as stored on the job; null when nobody asked. */
+export function migrationMediaApplyApprover(value: unknown): (ClickApprover & { deleteLocal: boolean }) | null {
+  const v = (typeof value === 'string' ? safeJson(value) : value) as Record<string, unknown> | null
+  if (!v || typeof v.id !== 'string' || typeof v.email !== 'string' || typeof v.workspaceId !== 'string') return null
+  return { id: v.id, email: v.email, role: typeof v.role === 'string' ? v.role : null, workspaceId: v.workspaceId, deleteLocal: v.deleteLocal === true }
+}
+
+function safeJson(value: string): unknown {
+  try {
+    return JSON.parse(value)
+  }
+  catch {
+    return null
+  }
+}
+
+/** Run an apply a click asked for and record what it did on the project's setup (054); a refusal is recorded, then thrown. */
+export async function recordMediaApplyOutcome(projectId: string, jobId: string, apply: () => ReturnType<typeof applyMigrationMedia>) {
+  const at = new Date().toISOString()
+  // Best-effort: the apply's own outcome stands whether or not the setup heard of it (a later click re-reads it).
+  const note = async (mediaApply: Record<string, unknown>) => {
+    try {
+      await useDatabaseProvider().mergeProjectMigrationSetup(projectId, { media_apply: { jobId, ...mediaApply, at } })
+    }
+    catch (error) {
+      // eslint-disable-next-line no-console -- ops visibility: the setup's images step falls back to the job and the grant
+      console.error('[migration-media] setup record failed', { jobId, projectId, message: (error as Error)?.message })
+    }
+  }
+  let result: Awaited<ReturnType<typeof applyMigrationMedia>>
+  try {
+    result = await apply()
+  }
+  catch (error) {
+    const code = String((error as { data?: { blocked?: unknown } })?.data?.blocked ?? (error as { statusCode?: number })?.statusCode ?? 'apply_failed')
+    await note({ status: 'failed', code })
+    throw error
+  }
+  if (result.status !== 'dry_run') {
+    await note({
+      status: result.status === 'merged' && result.pullRequestUrl ? 'pull_request' : result.status,
+      branch: 'branch' in result ? result.branch : null,
+      pullRequestUrl: 'pullRequestUrl' in result ? result.pullRequestUrl : null,
+    })
+  }
+  return result
+}
+
+/**
+ * A job a Move click asked to be applied, once done: the media apply through the project's write path under that
+ * click's approval (re-asked against the new branch's tip now: a policy that wants more holds it for a reviewer),
+ * local files removed only when the click said so.
+ */
+export async function applyClickedMigrationMedia(job: Record<string, unknown>, plan: Plan, approver: ClickApprover & { deleteLocal: boolean }) {
+  const { deleteLocal, ...who } = approver
+  return applyDoneMigrationMedia(job, plan, { approver: who, deleteLocal, authorEmail: who.email })
+}
+
 /**
  * A bundle grant's import (052), once done, points the site at Studio Media on its own: the media apply through the
  * project's write path (auto-merge, or a pull request on a protected branch, or review), local files kept. A
  * refusal (CDN off, a conflict) leaves the owner's apply card as it is.
  */
 export async function applyGrantMigrationMedia(job: Record<string, unknown>, plan: Plan) {
+  return applyDoneMigrationMedia(job, plan, { deleteLocal: false, authorEmail: null })
+}
+
+async function applyDoneMigrationMedia(job: Record<string, unknown>, plan: Plan, how: { approver?: ClickApprover, deleteLocal: boolean, authorEmail: string | null }) {
   const workspaceId = String(job.workspace_id)
   const projectId = String(job.project_id)
   const db = useDatabaseProvider()
@@ -344,7 +424,8 @@ export async function applyGrantMigrationMedia(job: Record<string, unknown>, pla
     project: project ?? {},
     job,
     dryRun: false,
-    deleteLocal: false,
-    authorEmail: null,
+    deleteLocal: how.deleteLocal,
+    authorEmail: how.authorEmail,
+    ...(how.approver ? { approver: how.approver } : {}),
   })
 }

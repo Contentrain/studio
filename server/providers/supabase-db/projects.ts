@@ -12,6 +12,7 @@ type ProjectMethods = Pick<
   | 'createProject'
   | 'updateProject'
   | 'setProjectMigrationHandoff'
+  | 'mergeProjectMigrationSetup'
   | 'deleteProject'
   | 'getProjectMediaStorageSum'
   | 'listWorkspaceProjects'
@@ -106,6 +107,12 @@ export function projectMethods(): ProjectMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
       return data as unknown as DatabaseRow
+    },
+
+    async mergeProjectMigrationSetup(projectId, patch) {
+      const { data, error } = await getAdmin().rpc('merge_project_migration_setup', { p_project: projectId, p_patch: patch })
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data as Record<string, unknown> | null) ?? {}
     },
 
     async setProjectMigrationHandoff(projectId, handoff) {

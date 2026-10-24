@@ -15,6 +15,7 @@ type MigrationMediaMethods = Pick<
   | 'createMigrationMediaJob'
   | 'getMigrationMediaJob'
   | 'getLatestMigrationMediaJob'
+  | 'setMigrationMediaJobApplyApprover'
   | 'claimMigrationMediaJob'
   | 'listPendingMigrationMediaItems'
   | 'listMigrationMediaItems'
@@ -199,6 +200,24 @@ export function migrationMediaMethods(): MigrationMediaMethods {
         SELECT public.finish_migration_media_job(${jobId}::uuid, ${token}::uuid, ${status}, ${error}, ${now.toISOString()}::timestamptz) AS finished
       `.execute(getAdmin())
       return result.rows[0]?.finished === true
+    },
+
+    async setMigrationMediaJobApplyApprover(projectId, jobId, approver) {
+      try {
+        const row = await getAdmin()
+          .updateTable('migration_media_jobs')
+          // jsonb: stringified so node-pg never misreads the object
+          .set({ apply_approver: approver ? JSON.stringify(approver) : null } as never)
+          .where('id', '=', jobId)
+          .where('project_id', '=', projectId)
+          .where('status', 'in', ['preparing', 'queued', 'running', 'paused_quota'])
+          .returning('id')
+          .executeTakeFirst()
+        return !!row
+      }
+      catch (error) {
+        throwDbError(error)
+      }
     },
 
     async resumeMigrationMediaJob(projectId, jobId) {

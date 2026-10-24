@@ -101,7 +101,7 @@ const db = {
 const OWNER = { id: 'user-1', email: 'owner@example.com', workspaceId: 'ws-1' }
 const STUDIO = { baseUrl: 'https://studio.contentrain.io', mediaBaseUrl: 'https://studio.contentrain.io/api/cdn/v1/proj-1' }
 
-async function bind(over: { projectId?: string, approver?: typeof OWNER, recordedBranch?: string } = {}) {
+async function bind(over: { projectId?: string, approver?: typeof OWNER & { role?: string | null }, recordedBranch?: string } = {}) {
   const { ensureMigrateSiteBinding } = await import('../../server/utils/migrate-site-binding')
   return ensureMigrateSiteBinding({ db, grantId: 'grant-1', projectId: over.projectId ?? 'proj-1', git: git as never, contentRoot: '', defaultBranch: 'main', plan: 'pro', studio: STUDIO, ...(over.approver ? { approver: over.approver } : {}), ...(over.recordedBranch ? { recordedBranch: over.recordedBranch } : {}) })
 }
@@ -206,6 +206,12 @@ describe('ensureMigrateSiteBinding (forms work on the delivered site)', () => {
     expect(branches.main!.get('studio.json')).toBe(commits[0]!.changes[0]!.content)
     expect(receipts).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1', workspaceId: 'ws-1', branch: 'cr/studio/binding/1', actor: { kind: 'human', id: 'owner@example.com', name: 'owner@example.com' } }))
     expect(recorded()).toMatchObject({ state: 'written', detail: { change: 'written' } })
+  })
+
+  it('the setup\'s retry: the clicker is the approver, with their role', async () => {
+    workflow = 'review'
+    expect(await bind({ approver: { ...OWNER, id: 'admin-2', email: 'admin@example.com', role: 'admin' } })).toEqual({ state: 'written' })
+    expect(db.recordApproval.mock.calls[0]![0]).toMatchObject({ approverId: 'admin-2', approverEmail: 'admin@example.com', approverRole: 'admin', note: 'connect this site to Studio' })
   })
 
   it('a review project whose policy wants more than the owner\'s grant: the binding waits for its reviewers (pr_open), nothing merged', async () => {
