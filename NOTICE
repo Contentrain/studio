@@ -5,8 +5,18 @@ This repository contains software released under TWO DIFFERENT LICENSES:
 
 1. AGPL-3.0-only
    Applies to:    all files EXCEPT those in the `ee/` directory.
-   License text:  LICENSE (repository root)
+   License text:  LICENSE (repository root, the unmodified AGPL-3.0 text)
    Attribution:   see top of source files.
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU Affero General Public License as
+   published by the Free Software Foundation, version 3 of the License
+   only (SPDX: AGPL-3.0-only).
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+   GNU Affero General Public License for more details.
 
 2. Contentrain Enterprise Edition License v1.0
    Applies to:    all files in the `ee/` directory.
@@ -18,8 +28,7 @@ The Enterprise Edition is NOT licensed under the AGPL-3.0. The AGPL-3.0
 grant in the root LICENSE does NOT extend to the `ee/` directory.
 
 The AGPL-3.0 core may carry additional terms under AGPL-3.0 §7; such
-terms, if any, are published in LICENSE-EXCEPTIONS or the root LICENSE
-itself. See docs/LICENSING.md for the practical overview of how the two
+terms, if any, are published in LICENSE-EXCEPTIONS. See docs/LICENSING.md for the practical overview of how the two
 licenses interact across supported deployment scenarios.
 
 Third-party components and their respective licenses are declared in
