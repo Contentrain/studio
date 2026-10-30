@@ -104,7 +104,7 @@ watch(slug, async (newSlug) => {
     <!-- Empty State: no installation -->
     <AtomsEmptyState
       v-else-if="activeWorkspace && !activeWorkspace.github_installation_id"
-      illustration="/illustrations/connect-github.png"
+      illustration="/illustrations/connect-github.svg"
       :title="t('github.install_title')"
       :description="t('github.install_description')"
     >
@@ -125,7 +125,7 @@ watch(slug, async (newSlug) => {
     <!-- Empty State: installed but no projects -->
     <AtomsEmptyState
       v-else
-      illustration="/illustrations/empty-projects.png"
+      illustration="/illustrations/empty-projects.svg"
       :title="t('projects.empty_title')"
       :description="t('projects.empty_description')"
     >
