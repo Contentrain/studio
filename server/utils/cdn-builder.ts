@@ -332,7 +332,8 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     // 4. Upload model index + definitions
     const modelSummaries = models.map(m => ({
       id: m.id,
-      name: m.name,
+      // Starter models carry no name; the id keeps the index entry labelled.
+      name: m.name ?? m.id,
       kind: m.kind,
       domain: m.domain,
       i18n: m.i18n,
@@ -357,7 +358,7 @@ export async function executeCDNBuild(options: BuildOptions): Promise<BuildResul
     let modelStep = 0
     for (const model of targetModels) {
       modelStep++
-      progress({ phase: 'model', message: `Building ${model.name}...`, current: modelStep, total: targetModels.length, modelId: model.id })
+      progress({ phase: 'model', message: `Building ${model.name ?? model.id}...`, current: modelStep, total: targetModels.length, modelId: model.id })
       for (const locale of locales) {
         // Skip non-i18n models for secondary locales
         if (!model.i18n && locale !== locales[0]) continue

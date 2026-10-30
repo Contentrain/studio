@@ -31,6 +31,9 @@ const rebuilding = ref(false)
 const newKey = ref<string | null>(null)
 const copied = ref(false)
 const loading = ref(true)
+// Revoking breaks every client using the key at once, so it asks first (as MCP Cloud keys do).
+const confirmRevokeId = ref<string | null>(null)
+const revoking = ref<string | null>(null)
 
 const activeKeys = computed(() => keys.value.filter(k => !k.revoked_at))
 
@@ -131,6 +134,7 @@ async function createKey() {
 }
 
 async function revokeKey(keyId: string) {
+  revoking.value = keyId
   try {
     await $fetch(`/api/workspaces/${props.workspaceId}/projects/${props.projectId}/cdn/keys/${keyId}`, { method: 'DELETE' })
     keys.value = keys.value.map(k => k.id === keyId ? { ...k, revoked_at: new Date().toISOString() } : k)
@@ -138,6 +142,10 @@ async function revokeKey(keyId: string) {
   }
   catch {
     toast.error(t('project_settings.save_error'))
+  }
+  finally {
+    revoking.value = null
+    confirmRevokeId.value = null
   }
 }
 
@@ -288,14 +296,24 @@ function copyKey() {
                   >{{ s }}</span>
                 </div>
               </div>
-              <button
-                v-if="canManageCDN"
-                type="button"
-                class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-danger-500 transition-colors hover:bg-danger-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger-500/50 dark:hover:bg-danger-900/20"
-                @click="revokeKey(key.id)"
-              >
-                {{ t('cdn.revoke') }}
-              </button>
+              <template v-if="canManageCDN">
+                <button
+                  v-if="confirmRevokeId !== key.id"
+                  type="button"
+                  class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-danger-500 transition-colors hover:bg-danger-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger-500/50 dark:hover:bg-danger-900/20"
+                  @click="confirmRevokeId = key.id"
+                >
+                  {{ t('cdn.revoke') }}
+                </button>
+                <div v-else class="flex shrink-0 items-center gap-1">
+                  <AtomsBaseButton variant="danger" size="sm" :disabled="revoking === key.id" data-testid="cdn-key-confirm-revoke" @click="revokeKey(key.id)">
+                    {{ t('common.revoke') }}
+                  </AtomsBaseButton>
+                  <AtomsBaseButton variant="ghost" size="sm" @click="confirmRevokeId = null">
+                    {{ t('common.cancel') }}
+                  </AtomsBaseButton>
+                </div>
+              </template>
             </div>
           </div>
           <div v-else class="flex items-center gap-2 rounded-lg border border-dashed border-secondary-200 px-3 py-3 dark:border-secondary-700">
