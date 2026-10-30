@@ -248,6 +248,17 @@ describe('engine: status in the save commit, and batch documents', () => {
     expect(result.statuses).toEqual({ n1: 'published' })
   })
 
+  it('stamps the person who saved in the form editor as human, the agent as agent', async () => {
+    const git = gitWith({ 'models/articles.json': articles, 'config.json': config, 'content/blog/articles/tr.json': {} })
+    const engine = createContentEngine({ git, contentRoot: '' })
+
+    await engine.saveContent('articles', 'tr', { n1: { title: 'Elle' } }, 'e@x.io', { mode: 'create', source: 'human' })
+    await engine.saveContent('articles', 'tr', { n2: { title: 'Ajan' } }, 'e@x.io', { mode: 'create' })
+
+    expect((writtenJson(git, 'meta/articles/tr.json', 0).n1 as { source?: string }).source).toBe('human')
+    expect((writtenJson(git, 'meta/articles/tr.json', 1).n2 as { source?: string }).source).toBe('agent')
+  })
+
   it('reports a new entry as draft when no status is asked for', async () => {
     const git = gitWith({ 'models/articles.json': articles, 'config.json': config, 'content/blog/articles/tr.json': {} })
     const engine = createContentEngine({ git, contentRoot: '' })

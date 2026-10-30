@@ -187,7 +187,8 @@ export async function approveSubmissionAsContent(
     locale,
     entryData,
     'form-submission@contentrain.io',
-    { autoPublish: false },
+    // A visitor typed it; updated_by already names the form.
+    { autoPublish: false, source: 'human' },
   )
 
   if (!writeResult.validation.valid)

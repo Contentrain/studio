@@ -46,6 +46,7 @@ const props = defineProps<{
   branchReviewLoading?: boolean
   branchRaw?: DeepReadonly<BranchRawDiff> | BranchRawDiff | null
   branchRawLoading?: boolean
+  branchMerging?: boolean
   workspaceId?: string
   projectId?: string
   editable?: boolean
@@ -360,14 +361,20 @@ provide(sendChatPromptKey, sendChatPrompt)
           size="sm"
           @click="addEntry"
         />
-        <!-- Delete model -->
-        <AtomsIconButton
+        <!-- Delete model: two clicks, keyed so a model switch disarms it -->
+        <MoleculesDeleteModelConfirm
           v-if="editable && activeModel"
-          icon="icon-[annon--trash]"
-          :label="t('content.delete_model')"
-          size="sm"
-          @click="deleteModel"
-        />
+          :key="activeModel.id"
+          v-slot="{ arm }"
+          @confirm="deleteModel"
+        >
+          <AtomsIconButton
+            icon="icon-[annon--trash]"
+            :label="t('content.delete_model')"
+            size="sm"
+            @click="arm"
+          />
+        </MoleculesDeleteModelConfirm>
         <!-- Title field. Not behind the forms gate: which field titles an entry
              is part of the model contract, not a forms feature. -->
         <PopoverRoot v-if="editable && activeModel && activeModel.kind !== 'dictionary'" v-model:open="titleFieldOpen">
@@ -446,6 +453,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           :review="(branchReview as BranchReview)"
           :raw="(branchRaw as BranchRawDiff | null)"
           :raw-loading="branchRawLoading"
+          :merging="branchMerging"
           @merge="emit('branchMerge')"
           @reject="emit('branchReject')"
           @request-changes="emit('branchRequestChanges', $event)"

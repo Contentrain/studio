@@ -311,6 +311,7 @@ async function planDocumentWrite(args: {
       reader,
       autoPublish: options?.autoPublish ?? false,
       userEmail,
+      source: options?.source,
       // Only the addressed locale's document takes a requested status; the
       // fan-out locales receive shared media/relation values, not a publish.
       ...(writtenLocale === locale && options?.status ? { status: options.status } : {}),

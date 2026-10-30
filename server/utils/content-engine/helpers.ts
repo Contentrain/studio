@@ -1,5 +1,5 @@
 import { canonicalStringify, CONTENTRAIN_BRANCH } from '@contentrain/types'
-import type { ContentrainConfig, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
+import type { ContentrainConfig, ContentSource, EntryMeta, FileChange, ModelDefinition, RepoReader } from '@contentrain/types'
 import type { ContentEntry } from '@contentrain/mcp/core/content-manager'
 import type { planContentSave } from '@contentrain/mcp/core/ops'
 import type { EngineInternalContext, GitProvider, EntrySchedule } from './types'
@@ -183,7 +183,8 @@ export async function planMatchesCurrent(reader: RepoReader, changes: FileChange
  * - `updated_by: userEmail` (MCP writes `'contentrain-mcp'`)
  * - `status`: the record's current status kept, otherwise `'published'`
  *   when `autoPublish`, else `'draft'`
- * - `updated_at`, `source: 'agent'`: stamped for this write
+ * - `updated_at`, `source`: stamped for this write — `agent` unless the
+ *   caller says a person made it (the form editor, a form submission)
  *
  * The base is the meta MCP just planned, not the file on `contentrain`.
  * MCP's `mergeEntryMeta` starts from the prior record and then applies
@@ -207,8 +208,10 @@ export async function applyStudioMetaOverrides(args: {
    * publish" is one commit instead of a save plus an update_status (#297).
    */
   status?: 'published' | 'draft'
+  /** Who made this write; the agent unless the caller says otherwise. */
+  source?: ContentSource
 }): Promise<FileChange[]> {
-  const { planChanges, metaPath, model, touchedIds, reader, autoPublish, userEmail, status } = args
+  const { planChanges, metaPath, model, touchedIds, reader, autoPublish, userEmail, status, source = 'agent' } = args
   const resolveStatus = (current: string | undefined) => status ?? (autoPublish ? 'published' : (current ?? 'draft'))
 
   let baseMeta: Record<string, unknown> = {}
@@ -242,7 +245,7 @@ export async function applyStudioMetaOverrides(args: {
       metaMap[entryId] = {
         ...(metaMap[entryId] ?? {}),
         status: resolveStatus(currentStatus),
-        source: 'agent',
+        source,
         updated_by: userEmail,
         updated_at: updatedAt,
       } as EntryMeta
@@ -254,7 +257,7 @@ export async function applyStudioMetaOverrides(args: {
     updatedMeta = {
       ...baseMeta,
       status: resolveStatus(currentStatus),
-      source: 'agent' as const,
+      source,
       updated_by: userEmail,
       updated_at: updatedAt,
     }

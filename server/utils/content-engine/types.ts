@@ -1,4 +1,4 @@
-import type { RepoReader, ValidationResult } from '@contentrain/types'
+import type { ContentSource, RepoReader, ValidationResult } from '@contentrain/types'
 import type { Branch, Commit, CommitAuthor, FileDiff, GitProvider, MergeResult } from '../../providers/git'
 
 // ── Public types (re-exported from index.ts) ────────────────────────
@@ -27,6 +27,12 @@ export interface SaveOptions {
   mode?: 'create' | 'update'
   /** Status for the entries this save touches, in the same commit (#297). */
   status?: 'published' | 'draft'
+  /**
+   * Who wrote this: the meta `source` of every entry the save touches. A
+   * person saving in the form editor, or a visitor's form submission, is
+   * `human`; absent means the chat agent's tools.
+   */
+  source?: ContentSource
   /**
    * Engine-internal: write against a snapshot the caller already read from,
    * instead of opening a new one. A write computed from what the caller read

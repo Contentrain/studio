@@ -248,6 +248,7 @@ export async function saveContent(
       reader,
       autoPublish: options?.autoPublish ?? false,
       userEmail,
+      source: options?.source,
       // A requested status is for the entries the caller addressed; the
       // fan-out locales only receive shared media/relation values.
       ...(writtenLocale === locale && options?.status ? { status: options.status } : {}),

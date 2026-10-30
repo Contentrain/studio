@@ -41,6 +41,22 @@ describe('useContentEditor', () => {
     expect(editor.saveError.value).toBeNull()
   })
 
+  it('refetches the branch list when the review workflow held the save', async () => {
+    // Pending changes reads the shared branch list; without this a held save
+    // left it empty until a reload, so the change looked lost.
+    const fetchMock = vi.fn().mockImplementation((url: string) => url.endsWith('/branches')
+      ? Promise.resolve({ branches: [] })
+      : Promise.resolve({ branch: 'cr/content/hero/en/1234567890-abcd', merged: false, validation: { valid: true, errors: [] } }))
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const editor = useContentEditor()
+    editor.startBatchEdit({ title: 'Old' })
+    editor.updateBatchField('title', 'New')
+    await editor.saveBatch('workspace-1', 'project-1', 'hero', 'en')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/workspaces/workspace-1/projects/project-1/branches')
+  })
+
   it('says which other locales a media value landed in', async () => {
     // The silent version of this is what let an editor swap a hero image in
     // `en` and wonder why the `tr` site had not changed.

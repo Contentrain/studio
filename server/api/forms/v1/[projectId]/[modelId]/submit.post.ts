@@ -236,7 +236,7 @@ export default defineEventHandler(async (event) => {
       const engine = createContentEngine({ git, contentRoot, projectId })
       const entryId = generateEntryId()
       const entryData = { [entryId]: filteredData }
-      const writeResult = await engine.saveContent(modelId, locale, entryData, 'form-auto-approve@contentrain.io', { autoPublish: false })
+      const writeResult = await engine.saveContent(modelId, locale, entryData, 'form-auto-approve@contentrain.io', { autoPublish: false, source: 'human' })
 
       // Auto-merge the content branch (form submissions go straight through)
       if (writeResult.branch) {

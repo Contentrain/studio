@@ -22,6 +22,8 @@ const props = defineProps<{
   review: BranchReview
   raw?: BranchRawDiff | null
   rawLoading?: boolean
+  /** The merge request is in flight: the actions wait for it. */
+  merging?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -417,15 +419,26 @@ function stripPrefix(path: string): string {
           type="button"
           variant="secondary"
           class="shrink-0"
-          :disabled="isEmpty"
+          :disabled="isEmpty || merging"
           @click="requesting = true"
         >
           <span class="icon-[annon--comment-text] size-4" aria-hidden="true" />
           {{ t('review.request_changes') }}
         </AtomsBaseButton>
-        <AtomsBaseButton v-if="review.canMerge" variant="primary" class="flex-1 shrink-0" :disabled="isEmpty || mergeBlocked" @click="emit('merge')">
-          <span class="icon-[annon--check] size-4" aria-hidden="true" />
-          <template v-if="mergeBlocked">
+        <AtomsBaseButton
+          v-if="review.canMerge"
+          variant="primary"
+          class="flex-1 shrink-0"
+          :disabled="isEmpty || mergeBlocked || merging"
+          :aria-busy="merging || undefined"
+          @click="emit('merge')"
+        >
+          <span v-if="merging" class="icon-[annon--loader] size-4 animate-spin" aria-hidden="true" />
+          <span v-else class="icon-[annon--check] size-4" aria-hidden="true" />
+          <template v-if="merging">
+            {{ t('review.merging') }}
+          </template>
+          <template v-else-if="mergeBlocked">
             {{ t('review.approval_blocked_merge') }}
           </template>
           <template v-else>
@@ -436,6 +449,7 @@ function stripPrefix(path: string): string {
           v-if="review.canReject"
           :variant="confirmReject ? 'danger' : 'ghost'"
           class="shrink-0"
+          :disabled="merging"
           @click="handleReject"
         >
           <span class="icon-[annon--cross] size-4" aria-hidden="true" />
