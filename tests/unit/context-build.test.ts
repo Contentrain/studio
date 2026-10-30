@@ -199,4 +199,43 @@ describe('buildContextChangeFromBrain — byte parity with MCP', () => {
     const brain = await buildBrainSnapshot(makeGit(files, DIRS) as never, '', 'parity-strategy')
     expect(buildContextChangeFromBrain(brain, { contentRoot: '' }, { tool: 'merge', model: 'posts' })).toBeNull()
   })
+
+  it('keeps the project intelligence an existing context.json carries, as MCP does', async () => {
+    // A merge regenerates version/lastOperation/stats; what an agent wrote
+    // about the project must survive it. The brain path used to rebuild the
+    // file from those three keys alone and wiped the rest on every merge.
+    const intelligence = {
+      project: { name: 'Parity', description: 'A marketing site' },
+      content: { voice: 'friendly' },
+      normalize: { status: 'done' },
+      conventions: { slugs: 'kebab-case' },
+      future_key: { kept: true },
+    }
+    const files = {
+      ...FILES,
+      '.contentrain/context.json': JSON.stringify({
+        version: '1',
+        lastOperation: { tool: 'init', model: '', locale: 'en', timestamp: '2026-01-01T00:00:00.000Z', source: 'mcp-local' },
+        stats: { models: 0, entries: 0, locales: ['en'], lastSync: '2026-01-01T00:00:00.000Z' },
+        ...intelligence,
+      }),
+    }
+
+    const { buildBrainSnapshot } = await import('../../server/utils/brain-cache')
+    const { buildContextChangeFromBrain } = await import('../../server/utils/content-engine/context-build')
+
+    const brain = await buildBrainSnapshot(makeGit(files, DIRS) as never, '', 'parity-intelligence')
+    const operation = { tool: 'merge', model: 'posts', locale: 'en' }
+
+    const studio = buildContextChangeFromBrain(brain, { contentRoot: '' }, operation)
+    const mcp = await buildContextChange(makeReader(files, DIRS) as never, operation, 'mcp-studio')
+
+    expect(studio).not.toBeNull()
+    const written = JSON.parse(studio!.content!)
+    expect(written).toMatchObject(intelligence)
+    // The regenerated keys are fresh, not carried over.
+    expect(written.lastOperation.tool).toBe('merge')
+    expect(written.stats.entries).toBe(9)
+    expect(studio!.content).toBe(mcp.content)
+  })
 })
