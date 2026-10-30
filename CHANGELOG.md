@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.4.12
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.11...v0.4.12)
+
+### ⚠️ Upgrade notes
+
+**1. Migrations 053 and 054, both additive.**
+The Railway pre-deploy command (`node scripts/migrate-postgres.mjs`) runs them; on the Supabase pair, the Supabase CLI. The previous image never reads or writes these columns or the function, so rolling back the image alone is safe. Staging applied both (053 on 2026-10-24 13:59Z, 054 on 2026-10-24 16:43Z), and every column, the index and the function below exist there.
+- `053_migrate_grant_media_state.sql` adds the following to `migrate_grants`:
+  - `media_state`, `media_detail`, `media_at`, `media_next_at` and `media_alerted_at` (all nullable);
+  - `media_attempts` (`integer NOT NULL DEFAULT 0`);
+  - a CHECK that existing rows already satisfy, because both columns are null on them;
+  - the partial index `idx_migrate_grants_media_work`.
+- `054_migration_setup.sql` adds:
+  - `projects.migration_setup` (jsonb) and `projects.live_site_url` (text);
+  - `migration_media_jobs.apply_approver` (jsonb), all nullable and `IF NOT EXISTS`;
+  - the function `merge_project_migration_setup(uuid, jsonb)`, executable by `service_role` only.
+
+**2. No new environment variables or flags.**
+`nuxt.config.ts` is unchanged since v0.4.11, so the code reads no new `NUXT_*` key, and it reads no new `process.env` key. The media-move alarm (#487) goes to the server log and Sentry, which are already configured. The live-site check (#489) fetches through the existing guarded `fetchFromOrigin`.
+
+**3. Review projects: three more writes wait for approval.**
+- Glossary edits from the Vocabulary panel are now held like every other content edit, at `low_risk_content` (#499). Each term save opens its own `cr/content/vocabulary/*` branch, and until a reviewer merges it the term does not show in the panel, the brain or delivery.
+- Deleting or renaming a dictionary key (#497) is held as `bulk_content`.
+- On a migrated site, the owner's or admin's click is the approval: Connect for the site binding (#482) and Move to Studio Media for the media apply (#488). The review history records who approved and why. `workflow: review` stays on.
+
+**4. Viewers and reviewers no longer see write controls (#498).**
+Edit, add and delete controls follow the caller's role, which `brain/sync` now returns as `access`. Server checks are unchanged and stay authoritative.
+
+**5. Dependencies.** `@contentrain/mcp` 3.11.2 → 3.11.20, `@contentrain/types` 1.64.0 → 1.79.0 and `@contentrain/query` 7.6.45 → 7.6.54 (#481, #485, #487, #500, #501).
+- MCP 3.11.20 keeps `context.json`'s project intelligence across writes.
+- Studio's own post-merge regeneration does the same (#501). Before this, every Studio merge wiped `project`, `content`, `normalize` and `conventions`.
+
+### 🚀 Enhancements
+
+- **migration:** a setup wizard for migrated sites (forms, comments, images, live check) replaces the handoff and media cards (#489, #490)
+- **migrate:** a bundle site's media is tracked per grant, retried with backoff, resumed after a storage pause, and reported to Migrate in the status answer (#487)
+- **migration-media:** on a review project, the owner's Move click is the approval (#488)
+- **content:** dictionary keys can be edited in place, added, deleted and renamed (#496, #497)
+- **migrate:** `account-state` answers a signed request that names no GitHub account, so Migrate can show the Studio line's list price before sign-in (#500)
+
+### 🩹 Fixes
+
+- **context:** a merge keeps the project intelligence in `context.json` (#501)
+- **vocabulary:** glossary edits are held for review on review projects; the branch review shows each term's text per locale (#499)
+- **content:** write controls show only to roles that may write (#498)
+- **content:** deleting an i18n dictionary key no longer fails when a locale lacks it (#495)
+- **review:** Pending changes refreshes after a held save; plus toast placement, merge feedback, meta source and delete confirmation fixes (#494)
+- **migration:** refused large files get an actionable next step (#491)
+- **migrate:** a bundle site's media import starts once per project, not on every sweep pass (#484)
+- **migration:** the media switch says when it is done, and the card shows the site's real handoff state (#483)
+- **migrate:** bundle sites bind on review projects, and waiting bindings are re-checked (#482)
+- **deps:** MCP 3.11.12 sends remote instructions built from the session's registered tools (#481)
+
+### 🏡 Chore
+
+- **deps:** `@contentrain/types` 1.76.0; status capabilities and handoff choice read from the contract (#485)
+- **license:** `LICENSE` is the verbatim AGPL-3.0 text and the project header moved to `NOTICE`; the terms are unchanged (#492)
+- **ci:** the postgres service image is pulled from mirror.gcr.io (#486)
+
+### 📖 Documentation
+
+- README: ecosystem story, an honest plan list (roadmap items marked as roadmap), repo cover (#493)
+
 ## v0.4.11
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.10...v0.4.11)
