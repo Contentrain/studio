@@ -18,6 +18,14 @@ describe('brain sync integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('requireProjectAccess', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      workspaceRole: 'member',
+      projectRole: 'editor',
+      specificModels: true,
+      allowedModels: ['posts'],
+      allowedLocales: [],
+      availableTools: ['get_content', 'save_content'],
+    }))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},
@@ -51,6 +59,8 @@ describe('brain sync integration', () => {
         vocabulary: null,
         contentContext: null,
         contentSummary: null,
+        // Per user, not per tree: a delta still says what the caller may write.
+        access: { availableTools: ['get_content', 'save_content'], specificModels: true, allowedModels: ['posts'] },
       })
     })
   })
@@ -67,6 +77,14 @@ describe('brain sync integration', () => {
       accessToken: 'token-1',
     }))
     vi.stubGlobal('requireProjectAccess', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
+      workspaceRole: 'member',
+      projectRole: 'editor',
+      specificModels: true,
+      allowedModels: ['posts'],
+      allowedLocales: [],
+      availableTools: ['get_content', 'save_content'],
+    }))
     vi.stubGlobal('useSupabaseUserClient', vi.fn().mockReturnValue({}))
     vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({
       git: {},
@@ -118,6 +136,7 @@ describe('brain sync integration', () => {
         contentSummary: {
           posts: { kind: 'collection', count: 1, locales: ['en'] },
         },
+        access: { availableTools: ['get_content', 'save_content'], specificModels: true, allowedModels: ['posts'] },
       })
     })
   })

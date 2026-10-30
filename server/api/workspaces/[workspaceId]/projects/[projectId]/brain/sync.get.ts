@@ -1,4 +1,5 @@
 import type { ModelDefinition } from '@contentrain/types'
+import type { BrainSyncAccess } from '~~/shared/utils/content-access'
 
 /**
  * Brain Sync API — unified content sync with delta detection.
@@ -8,6 +9,10 @@ import type { ModelDefinition } from '@contentrain/types'
  *
  * Delta detection: pass `?treeSha=<hash>` — if tree hasn't changed,
  * returns empty delta (0 additional Git calls after cache check).
+ *
+ * `access` rides on both answers: it belongs to the caller, not the tree, so
+ * a delta can't leave it out. The content panel reads it to hide write
+ * controls the save routes would refuse — those routes stay the authority.
  */
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -19,6 +24,12 @@ export default defineEventHandler(async (event) => {
 
   await requireProjectAccess(session.user.id, workspaceId, projectId, session.accessToken)
   const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+  const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
+  const access: BrainSyncAccess = {
+    availableTools: permissions.availableTools,
+    specificModels: permissions.specificModels,
+    allowedModels: permissions.allowedModels,
+  }
 
   const query = getQuery(event) as { treeSha?: string }
   const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
@@ -34,6 +45,7 @@ export default defineEventHandler(async (event) => {
       vocabulary: null,
       contentContext: null,
       contentSummary: null,
+      access,
     }
   }
 
@@ -65,5 +77,6 @@ export default defineEventHandler(async (event) => {
     contentContext: brain.contentContext,
     contentSummary: brain.contentSummary,
     schemaValidation: brain.schemaValidation,
+    access,
   }
 })

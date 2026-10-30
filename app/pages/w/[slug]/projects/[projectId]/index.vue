@@ -547,7 +547,6 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             :branch-merging="merging === activeBranch"
             :workspace-id="activeWorkspace?.id"
             :project-id="projectId"
-            editable
             @update:locale="localeKnown = true"
             @select-model="selectModel"
             @back="backToOverview"
