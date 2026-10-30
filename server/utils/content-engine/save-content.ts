@@ -232,6 +232,13 @@ export async function saveContent(
     }
   }
 
+  // MCP also reports every value a dictionary save replaces; that is the edit
+  // itself, not news. What is left points at a duplicate the editor may want
+  // to reuse instead.
+  const advisories = modelDef.kind === 'dictionary'
+    ? (plan.advisories ?? []).filter(note => !/: replaced \d+ existing value/.test(note))
+    : []
+
   const touchedIds = modelDef.kind === 'collection'
     ? plan.result.map(r => r.id).filter((id): id is string => typeof id === 'string')
     : []
@@ -305,6 +312,7 @@ export async function saveContent(
     validation,
     ...(fanOut.locales.length > 0 ? { sharedAcrossLocales: { fields: fanOut.fields, locales: fanOut.locales } } : {}),
     ...(entryPartition ? { entries: entryPartition } : {}),
+    ...(advisories.length > 0 ? { advisories } : {}),
     ...(Object.keys(statuses).length > 0 ? { statuses } : {}),
   }
 }

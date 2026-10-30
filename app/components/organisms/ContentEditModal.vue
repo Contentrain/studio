@@ -2,6 +2,7 @@
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'radix-vue'
 import type { RelationOption } from '~~/shared/utils/content-relations'
 import { buildRelationOptions, inferFieldType, isPolymorphicRelation } from '~~/shared/utils/content-relations'
+import { placeholderDrift } from '~~/shared/utils/dictionary-placeholders'
 import { orderedFieldIds } from '~~/shared/utils/field-label'
 import { isLocaleAgnosticField } from '~~/shared/utils/locale-agnostic-fields'
 import { getFieldLabelKey } from '~/utils/injection-keys'
@@ -35,9 +36,11 @@ const {
   projectId,
   modelId,
   locale,
+  referenceData,
+  referenceLocale,
 } = defineProps<{
   modelName: string
-  modelKind: 'collection' | 'singleton' | 'document'
+  modelKind: 'collection' | 'singleton' | 'document' | 'dictionary'
   fields: Record<string, FieldDef>
   entryId?: string
   entryData: Record<string, unknown>
@@ -46,6 +49,9 @@ const {
   projectId: string
   modelId: string
   locale: string
+  /** Dictionary only: the same keys in the default locale, shown under each input and used for the placeholder check. */
+  referenceData?: Record<string, unknown>
+  referenceLocale?: string
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +80,9 @@ const SYSTEM_FIELDS = new Set([
 ])
 
 const editableFieldIds = computed(() => {
+  // A dictionary's "fields" are its keys, handed in by the caller. A key may be
+  // named `status` or `id`; the system-field filter would hide it for good.
+  if (modelKind === 'dictionary') return Object.keys(fields)
   // Declared order (`FieldDef.order`), not alphabetical — otherwise a 16-field
   // article model opens with `author` first and `title` fifteenth.
   const ids = orderedFieldIds(fields).filter(id => !SYSTEM_FIELDS.has(id))
@@ -147,7 +156,7 @@ const hasValidationErrors = computed(() => requiredErrors.value.size > 0)
 
 // Title for the modal header
 const dialogTitle = computed(() => {
-  if (modelKind === 'singleton') return modelName
+  if (modelKind === 'singleton' || modelKind === 'dictionary') return modelName
   if (modelKind === 'document') return entryTitle ?? t('content.edit_entry')
   return entryTitle ?? t('content.edit_entry')
 })
@@ -199,6 +208,23 @@ async function loadRelationEntries() {
   }
 
   relationEntriesMap.value = map
+}
+
+/** Dictionary only: placeholders this edit drops or that differ from the reference locale. */
+function placeholderWarning(fieldId: string): string | null {
+  if (modelKind !== 'dictionary' || !batchEditData.value) return null
+  const reference = referenceLocale && referenceLocale !== locale ? referenceData?.[fieldId] : undefined
+  const { dropped, mismatched } = placeholderDrift(entryData[fieldId], batchEditData.value[fieldId], reference)
+  const list = (names: string[]) => names.map(n => `{${n}}`).join(', ')
+  if (dropped.length > 0) return t('content.placeholder_dropped', { placeholders: list(dropped) })
+  if (mismatched.length > 0) return t('content.placeholder_mismatch', { placeholders: list(mismatched), locale: (referenceLocale ?? '').toUpperCase() })
+  return null
+}
+
+function referenceValue(fieldId: string): string | null {
+  if (modelKind !== 'dictionary' || !referenceLocale || referenceLocale === locale) return null
+  const value = referenceData?.[fieldId]
+  return typeof value === 'string' && value ? value : null
 }
 
 function getFieldState(fieldId: string): 'default' | 'error' {
@@ -284,6 +310,13 @@ function confirmDiscard() {
                   @update:model-value="updateBatchField(fieldId, $event)"
                 />
               </div>
+              <p v-if="referenceValue(fieldId)" class="mt-1 text-xs text-muted" data-testid="dictionary-reference">
+                {{ referenceLocale?.toUpperCase() }}: {{ referenceValue(fieldId) }}
+              </p>
+              <p v-if="placeholderWarning(fieldId)" class="mt-1 flex items-center gap-1 text-xs text-warning-600 dark:text-warning-400" data-testid="placeholder-warning">
+                <span class="icon-[annon--alert-triangle] size-3 shrink-0" aria-hidden="true" />
+                {{ placeholderWarning(fieldId) }}
+              </p>
               <p v-if="getFieldState(fieldId) === 'error'" class="mt-1 text-xs text-danger-500">
                 {{ t('content.field_required') }}
               </p>
