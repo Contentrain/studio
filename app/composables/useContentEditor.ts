@@ -45,6 +45,8 @@ export function useContentEditor() {
     merged?: boolean
     /** Why it was held — present only when it was. */
     approval?: { risk: string, reasons: string[] }
+    /** Dictionary only: a new value that already exists under another key, or is a vocabulary term. */
+    advisories?: string[]
   }
 
   // A media or relation value lands in every locale of an i18n model; the
@@ -59,13 +61,17 @@ export function useContentEditor() {
       toast.success(t('content.saved_pending_review', { branch: result.branch }))
     }
     else {
-      toast.success(`Saved to branch: ${result.branch}`)
+      toast.success(t('content.saved_to_branch', { branch: result.branch }))
     }
     if (result.sharedAcrossLocales && result.sharedAcrossLocales.locales.length > 0) {
       toast.success(t('content.saved_shared_locales', {
         locales: result.sharedAcrossLocales.locales.join(', '),
         fields: result.sharedAcrossLocales.fields.join(', '),
       }))
+    }
+    // MCP's own words: they name the key to reuse, which a paraphrase would lose.
+    if (result.advisories && result.advisories.length > 0) {
+      toast.info(t('content.saved_advisories'), result.advisories.join('\n'))
     }
   }
 

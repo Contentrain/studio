@@ -64,6 +64,12 @@ export interface WriteResult {
    */
   sharedAcrossLocales?: { fields: string[], locales: string[] }
   /**
+   * Dictionary only: MCP's notes on the keys this save wrote — a new value that
+   * already exists under another key, or matches a vocabulary term. Absent
+   * when there is nothing to say.
+   */
+  advisories?: string[]
+  /**
    * Every locale this call actually wrote to (#284 — `delete_content` and
    * `update_status` default to the whole entry, every configured locale, not
    * just the one the caller is addressing). Absent from calls that don't

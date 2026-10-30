@@ -655,9 +655,12 @@ provide(sendChatPromptKey, sendChatPrompt)
           </div>
           <template v-else>
             <!-- Dictionary -->
+            <!-- Saves re-sync in place: the editor stays on the key table. -->
             <OrganismsContentDictionaryView
               v-if="modelContentKind === 'dictionary' && typeof modelContent === 'object' && !Array.isArray(modelContent)"
-              :content="(modelContent as Record<string, unknown>)"
+              :content="(modelContent as Record<string, unknown>)" :meta="modelContentMeta"
+              :workspace-id="workspaceId" :project-id="projectId" :model-id="activeModelId ?? undefined"
+              :locale="currentLocale" :editable="editable"
             />
             <!-- Document -->
             <OrganismsContentDocumentView
