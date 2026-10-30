@@ -684,6 +684,52 @@ describe('content engine', () => {
     expect(call.changes.some(c => c.path.startsWith('.contentrain/meta/ui-strings/') && c.content === null)).toBe(false)
   })
 
+  describe('dictionary delete across locales with a parity gap', () => {
+    // `tr` never got `b.y`. MCP throws "keys not found" for a locale missing
+    // any listed key, so the whole delete used to fail.
+    function engineWith(applyPlan: ReturnType<typeof vi.fn>) {
+      const git = createGitProvider({
+        readFile: vi.fn(async (path: string) => {
+          if (path.endsWith('/ui-strings.json')) {
+            return JSON.stringify({ id: 'ui-strings', name: 'UI strings', domain: 'system', kind: 'dictionary', i18n: true, fields: {} })
+          }
+          if (path.endsWith('/system/ui-strings/en.json')) return JSON.stringify({ 'a.x': 'A', 'b.y': 'B', 'c.keep': 'C' })
+          if (path.endsWith('/system/ui-strings/tr.json')) return JSON.stringify({ 'a.x': 'A-tr', 'c.keep': 'C-tr' })
+          if (path.endsWith('/config.json')) return JSON.stringify({ locales: { supported: ['en', 'tr'], default: 'en' } })
+          throw new Error(`Unexpected path: ${path}`)
+        }),
+        listDirectory: vi.fn().mockResolvedValue([]),
+        listBranches: vi.fn().mockResolvedValue([{ name: 'contentrain', sha: 'sha-1', protected: false }]),
+        getDefaultBranch: vi.fn().mockResolvedValue('main'),
+        applyPlan,
+        getBranchDiff: vi.fn().mockResolvedValue([]),
+      })
+      return createContentEngine({ git, contentRoot: '' })
+    }
+
+    it('removes each key from the locales that hold it, in one commit', async () => {
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const result = await engineWith(applyPlan).deleteContent('ui-strings', 'en', ['a.x', 'b.y'], 'user@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.touchedLocales).toEqual(['en', 'tr'])
+      expect(applyPlan).toHaveBeenCalledTimes(1)
+      const { changes } = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+      const file = (locale: string) => JSON.parse(changes.find(c => c.path === `.contentrain/content/system/ui-strings/${locale}.json`)!.content!)
+      expect(file('en')).toEqual({ 'c.keep': 'C' })
+      expect(file('tr')).toEqual({ 'c.keep': 'C-tr' })
+    })
+
+    it('still refuses a key no locale holds, before writing anything', async () => {
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const result = await engineWith(applyPlan).deleteContent('ui-strings', 'en', ['a.x', 'z.none'], 'user@example.com')
+
+      expect(result.validation.valid).toBe(false)
+      expect(result.validation.errors[0]?.message).toContain('z.none')
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
+  })
+
   it('updates entry status in meta without touching content files', async () => {
     const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
     const git = createGitProvider({
