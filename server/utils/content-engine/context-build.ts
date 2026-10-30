@@ -14,6 +14,12 @@
  *   { version, lastOperation: { tool, model, locale, entries, timestamp,
  *     source }, stats: { models, entries, locales, lastSync } }
  *
+ * Only those three keys are regenerated. Everything else the existing file
+ * carries — the project intelligence an agent wrote (`project`, `content`,
+ * `normalize`, `conventions`) and any key a later spec adds — is kept, via
+ * the same `mergeContextJson` MCP's own writer uses. Rebuilding the file from
+ * the three keys alone wiped that intelligence on every Studio merge.
+ *
  * Entry counting mirrors MCP `countEntries` for the default `file`
  * locale strategy (the only layout the brain reads):
  * - collection: per-locale key count, SUMMED across locales
@@ -30,7 +36,7 @@
  */
 
 import type { FileChange } from '@contentrain/types'
-import { canonicalStringify } from '@contentrain/types'
+import { canonicalStringify, mergeContextJson } from '@contentrain/types'
 import type { BrainCacheEntry } from '../brain-cache'
 import { resolveContextPath } from '../content-paths'
 
@@ -62,7 +68,7 @@ export function buildContextChangeFromBrain(
   }
 
   const timestamp = new Date().toISOString()
-  const content = canonicalStringify({
+  const content = canonicalStringify(mergeContextJson(brain.contentContext, {
     version: '1',
     lastOperation: {
       tool: operation.tool,
@@ -79,7 +85,7 @@ export function buildContextChangeFromBrain(
       locales: config.locales?.supported ?? ['en'],
       lastSync: timestamp,
     },
-  })
+  }))
 
   return { path: resolveContextPath(pathCtx), content }
 }
