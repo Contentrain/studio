@@ -23,8 +23,14 @@ All external services are accessed **only** through provider interfaces. No impl
 Provider interfaces live in `server/providers/`:
 - `server/providers/auth.ts` — AuthProvider interface
 - `server/providers/database.ts` — DatabaseProvider interface
-- `server/providers/storage.ts` — StorageProvider interface
 - `server/providers/git.ts` — GitProvider interface
+- `server/providers/ai.ts` — AIProvider interface
+- `server/providers/cdn.ts` — CDNProvider interface
+- `server/providers/media.ts` — MediaProvider interface
+- `server/providers/email.ts` — EmailProvider interface
+- `server/providers/connector.ts` — ConnectorProvider interface
+- `server/providers/deployment.ts` — DeploymentProvider interface
+- `server/providers/payment/types.ts` — PaymentProvider interface
 
 Concrete implementations live alongside interfaces in `server/providers/` (single-file `[impl]-[service].ts` or a directory for multi-module providers):
 - `server/providers/supabase-auth.ts` — SupabaseAuthProvider
