@@ -360,7 +360,7 @@ export function useChat(options?: {
   // user's stored pick would be overwritten.
   const { activeWorkspace } = useWorkspaces()
   watch([allowedModels, () => activeWorkspace.value?.id], ([allowed, workspaceId]) => {
-    if (!workspaceId || allowed.some(m => m.id === selectedModel.value)) return
+    if (!workspaceId || !allowed.length || allowed.some(m => m.id === selectedModel.value)) return
     selectedModel.value = allowed.some(m => m.id === DEFAULT_CHAT_MODEL) ? DEFAULT_CHAT_MODEL : allowed[0]!.id
   }, { immediate: true })
   // Premium models (Opus) stay in the list during a trial on the Studio
