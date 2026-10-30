@@ -49,7 +49,7 @@ function statusLabel(status: FormSubmission['status']): string {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
+  return new Date(dateStr).toLocaleString('en-US')
 }
 
 function formatValue(value: unknown): string {

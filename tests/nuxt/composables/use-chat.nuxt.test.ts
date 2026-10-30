@@ -571,6 +571,16 @@ describe('useChat', () => {
     })
   })
 
+  it('moves the pick to the plan\'s model on Starter, where the default is not listed', async () => {
+    gate.billing = 'subscribed'
+    gate.workspaceId = 'ws-1'
+    gate.features = {}
+    const chat = useChat()
+    await nextTick()
+    expect(chat.allowedModels.value.map(m => m.id)).toEqual(['claude-haiku-5-5'])
+    expect(chat.selectedModel.value).toBe('claude-haiku-5-5')
+  })
+
   describe('premium models in a trial', () => {
     const OPUS = 'claude-opus-5-5'
 

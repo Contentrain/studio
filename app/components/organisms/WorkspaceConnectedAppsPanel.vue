@@ -87,7 +87,7 @@ async function handleRevoke(grantId: string) {
 
 function formatRelative(iso: string | null): string {
   if (!iso) return t('connected_apps.never_used')
-  return t('connected_apps.last_used', { when: new Date(iso).toLocaleString() })
+  return t('connected_apps.last_used', { when: new Date(iso).toLocaleString('en-US') })
 }
 </script>
 

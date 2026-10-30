@@ -58,7 +58,7 @@ function formatTime(dateStr: string): string {
   if (diffMin < 60) return t('time.minutes_ago', { count: Math.max(1, diffMin) })
   if (diffHr < 24) return t('time.hours_ago', { count: diffHr })
   if (diffDay < 30) return t('time.days_ago', { count: diffDay })
-  return date.toLocaleDateString()
+  return date.toLocaleDateString('en-US')
 }
 
 function excerpt(body: string): string {
