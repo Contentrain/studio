@@ -37,6 +37,7 @@ import type {
   ReviewSchemaChange,
   ReviewSchemaFieldChange,
   ReviewSettingsChange,
+  ReviewTermChange,
   ReviewUnclassifiedFile,
 } from '../../shared/utils/branch-review'
 import {
@@ -646,7 +647,26 @@ function diffVocabulary(before: Vocabulary | null, after: Vocabulary | null): Re
   if (removed.length > 0) items.push({ key: 'term_removed', values: removed })
   if (changed.length > 0) items.push({ key: 'term_updated', values: changed })
 
-  return items.length > 0 ? [{ area: 'vocabulary', items }] : []
+  const terms: ReviewTermChange[] = [
+    ...added.map(term => termChange(term, 'added', undefined, afterTerms[term])),
+    ...removed.map(term => termChange(term, 'removed', beforeTerms[term], undefined)),
+    ...changed.map(term => termChange(term, 'updated', beforeTerms[term], afterTerms[term])),
+  ]
+
+  return items.length > 0 ? [{ area: 'vocabulary', items, terms }] : []
+}
+
+function termChange(
+  term: string,
+  kind: ReviewTermChange['kind'],
+  before: Record<string, string> | undefined,
+  after: Record<string, string> | undefined,
+): ReviewTermChange {
+  const text = (value: unknown): string | null => (value === undefined || value === null ? null : String(value))
+  const locales = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])].sort()
+    .map(locale => ({ locale, before: text(before?.[locale]), after: text(after?.[locale]) }))
+    .filter(row => row.before !== row.after)
+  return { term, kind, locales }
 }
 
 // ─── Entry point ──────────────────────────────────────
