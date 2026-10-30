@@ -122,9 +122,32 @@ export async function deleteContent(
     }
     // Non-i18n content is locale-agnostic (stored in one file) — MCP refuses
     // a `locale` on it outright, so it's only ever set for an i18n model.
-    case 'dictionary':
-      inputs = targetLocales.map(loc => ({ model: modelDef, keys: entryIds, ...(modelDef.i18n ? { locale: loc } : {}), defaultLocale }))
+    case 'dictionary': {
+      if (!modelDef.i18n) {
+        inputs = [{ model: modelDef, keys: entryIds, defaultLocale }]
+        break
+      }
+      // MCP throws "keys not found" when any one key is absent from the locale
+      // it plans, so a key never translated into `tr` used to fail the whole
+      // delete. Each locale gets only the keys it holds; a key no target locale
+      // holds is still refused, as MCP would.
+      inputs = []
+      const found = new Set<string>()
+      for (const loc of targetLocales) {
+        let data: Record<string, unknown> = {}
+        try {
+          data = JSON.parse(await reader.readFile(resolveContentPath(ctx.pathCtx, modelDef, loc))) as Record<string, unknown>
+        }
+        catch { /* no content file for this locale */ }
+        const keys = entryIds.filter(key => key in data)
+        for (const key of keys) found.add(key)
+        if (keys.length > 0) inputs.push({ model: modelDef, keys, locale: loc, defaultLocale })
+      }
+      const missing = entryIds.filter(key => !found.has(key))
+      if (missing.length > 0)
+        return invalid('entryIds', `Dictionary "${modelId}" (${targetLocales.join(', ')}): keys not found — [${missing.join(', ')}]`)
       break
+    }
     default:
       inputs = targetLocales.flatMap(loc => entryIds.map(id => ({ model: modelDef, id, ...(modelDef.i18n ? { locale: loc } : {}), defaultLocale })))
   }
