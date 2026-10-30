@@ -25,7 +25,7 @@ const LONG_VALUE_CHARS = 80
 const { t } = useContent()
 const brain = useContentBrain()
 const toast = useToast()
-const { saving, saveField } = useContentEditor()
+const { saving, saveField, changeDictionaryKeys } = useContentEditor()
 const searchQuery = ref('')
 const modelMeta = inject(activeModelMetaKey, computed(() => null))
 const { toggle, isPinned, startDrag, endDrag } = useChatContext()
@@ -175,6 +175,53 @@ async function addKey() {
   keyInputRef.value?.focus()
   await refresh()
 }
+
+// ── Delete / rename key ────────────────────────────────────
+// Both reach every locale holding the key, in one commit, and both break a
+// site that still reads the old key — hence the typed confirmation for a
+// delete and the warning under the rename input.
+const deleteKey = ref<string | null>(null)
+const deleteOpen = computed({
+  get: () => deleteKey.value !== null,
+  set: (open: boolean) => {
+    if (!open) deleteKey.value = null
+  },
+})
+
+async function confirmDelete() {
+  const key = deleteKey.value
+  if (!key || !props.workspaceId || !props.projectId || !props.modelId) return
+  const ok = await changeDictionaryKeys(props.workspaceId, props.projectId, props.modelId, { remove: [key] })
+  if (!ok) return
+  deleteKey.value = null
+  await refresh()
+}
+
+const renamingKey = ref<string | null>(null)
+const renameTo = ref('')
+
+function startRename(key: string) {
+  renamingKey.value = key
+  renameTo.value = key
+}
+
+async function submitRename() {
+  const from = renamingKey.value
+  const to = renameTo.value.trim()
+  if (!from || !props.workspaceId || !props.projectId || !props.modelId) return
+  if (!to || to === from) {
+    renamingKey.value = null
+    return
+  }
+  if (to in props.content) {
+    toast.error(t('content.dictionary_key_exists', { key: to }))
+    return
+  }
+  const ok = await changeDictionaryKeys(props.workspaceId, props.projectId, props.modelId, { rename: { from, to } })
+  if (!ok) return
+  renamingKey.value = null
+  await refresh()
+}
 </script>
 
 <template>
@@ -240,10 +287,31 @@ async function addKey() {
             @dragstart="onRowDragStart($event, row.key, row.value)"
             @dragend="endDrag"
           >
-            <td class="max-w-40 truncate px-5 py-2 font-mono text-xs text-muted" :title="row.key">
+            <td v-if="renamingKey === row.key" class="px-5 py-2" colspan="2">
+              <form class="flex items-center gap-2" data-testid="dictionary-rename-form" @submit.prevent="submitRename">
+                <input
+                  v-model="renameTo"
+                  type="text"
+                  :aria-label="t('content.dictionary_rename_key')"
+                  aria-describedby="dictionary-rename-hint"
+                  class="h-7 min-w-0 flex-1 rounded-lg border border-secondary-200 bg-white px-2 font-mono text-xs text-heading focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+                  @keydown.esc="renamingKey = null"
+                >
+                <AtomsBaseButton type="submit" variant="primary" size="sm" :disabled="saving">
+                  {{ t('common.save') }}
+                </AtomsBaseButton>
+                <AtomsBaseButton size="sm" @click="renamingKey = null">
+                  {{ t('common.cancel') }}
+                </AtomsBaseButton>
+              </form>
+              <p id="dictionary-rename-hint" class="mt-1 text-xs text-warning-600 dark:text-warning-400">
+                {{ t('content.dictionary_rename_hint') }}
+              </p>
+            </td>
+            <td v-else class="max-w-40 truncate px-5 py-2 font-mono text-xs text-muted" :title="row.key">
               {{ row.key }}
             </td>
-            <td class="max-w-48 truncate px-5 py-2" :title="String(row.value ?? '')">
+            <td v-if="renamingKey !== row.key" class="max-w-48 truncate px-5 py-2" :title="String(row.value ?? '')">
               <template v-if="row.missing">
                 <AtomsBadge variant="warning" size="sm" class="mr-1.5">
                   {{ t('content.dictionary_missing_badge') }}
@@ -263,6 +331,28 @@ async function addKey() {
                     @click="openEdit([row.key])"
                   >
                     <span class="icon-[annon--edit-2] size-2.5" aria-hidden="true" />
+                  </button>
+                </AtomsTooltip>
+                <AtomsTooltip v-if="editable && !row.missing" :text="t('content.dictionary_rename_key')">
+                  <button
+                    type="button"
+                    :aria-label="t('content.dictionary_rename_key')"
+                    class="reveal-on-hover shrink-0 rounded-md p-0.5 text-muted transition-[color,opacity] hover:opacity-100 group-hover:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                    data-testid="dictionary-rename-key"
+                    @click="startRename(row.key)"
+                  >
+                    <span class="icon-[annon--text] size-2.5" aria-hidden="true" />
+                  </button>
+                </AtomsTooltip>
+                <AtomsTooltip v-if="editable && !row.missing" :text="t('content.dictionary_delete_key')">
+                  <button
+                    type="button"
+                    :aria-label="t('content.dictionary_delete_key')"
+                    class="reveal-on-hover shrink-0 rounded-md p-0.5 text-muted transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+                    data-testid="dictionary-delete-key"
+                    @click="deleteKey = row.key"
+                  >
+                    <span class="icon-[annon--trash] size-2.5" aria-hidden="true" />
                   </button>
                 </AtomsTooltip>
                 <AtomsTooltip v-if="!row.missing" :text="pinLabel(row.key)">
@@ -329,6 +419,19 @@ async function addKey() {
         {{ filteredEntries.length }}{{ searchQuery || missingOnly ? ` / ${Object.keys(content).length}` : '' }} {{ t('content.keys_count') }}
       </span>
     </div>
+
+    <!-- Delete key: typed confirmation, the site's code may still read it -->
+    <MoleculesConfirmDeleteDialog
+      v-if="editable"
+      v-model:open="deleteOpen"
+      :title="t('content.dictionary_delete_key')"
+      :description="t('content.dictionary_delete_description')"
+      :confirm-text="deleteKey ?? ''"
+      :confirm-label="t('content.dictionary_delete_confirm_label')"
+      :delete-label="t('common.delete')"
+      :deleting="saving"
+      @confirm="confirmDelete"
+    />
 
     <!-- Edit modal -->
     <OrganismsContentEditModal

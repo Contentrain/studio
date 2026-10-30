@@ -48,6 +48,13 @@ export interface ReviewFieldChange {
    * then humanises the keys itself.
    */
   subLabels?: Record<string, string>
+  /** Dictionary only: the key is gone from the file — not set to `''`, which is "cleared". */
+  removed?: true
+  /**
+   * Dictionary only: this new key holds the value a removed key of the same
+   * locale had, so it is most likely that key renamed. A guess, said as one.
+   */
+  possiblyRenamedFrom?: string
 }
 
 /** One entry (collection row, singleton, dictionary key, document). */

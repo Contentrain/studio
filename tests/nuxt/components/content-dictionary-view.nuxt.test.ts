@@ -105,4 +105,46 @@ describe('ContentDictionaryView editing', () => {
     await save()
     expect(fetchMock.mock.calls[0]![1].body.data).toEqual({ 'b.count': 'You have items' })
   })
+
+  async function mountView() {
+    return mountSuspended(ContentDictionaryView, {
+      props: { content, workspaceId: 'ws-1', projectId: 'p-1', modelId: 'ui-strings', locale: 'en', editable: true },
+      attachTo: document.body,
+    })
+  }
+
+  it('renames a key through the keys route and re-reads the content', async () => {
+    const wrapper = await mountView()
+    await wrapper.findAll('[data-testid="dictionary-rename-key"]')[0]!.trigger('click')
+    await wrapper.find('[data-testid="dictionary-rename-form"] input').setValue('a.first')
+    await wrapper.find('[data-testid="dictionary-rename-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/workspaces/ws-1/projects/p-1/content/ui-strings/keys', {
+      method: 'PATCH',
+      body: { rename: { from: 'a.one', to: 'a.first' } },
+    })
+    expect(brain.sync).toHaveBeenCalledWith('ws-1', 'p-1')
+  })
+
+  it('deletes a key only after it is typed back', async () => {
+    const wrapper = await mountView()
+    await wrapper.findAll('[data-testid="dictionary-delete-key"]')[0]!.trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    const confirm = [...dialog.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === 'Delete')!
+    expect(confirm.disabled).toBe(true)
+
+    const input = dialog.querySelector<HTMLInputElement>('#confirm-delete-input')!
+    input.value = 'a.one'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    confirm.click()
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/workspaces/ws-1/projects/p-1/content/ui-strings/keys', {
+      method: 'PATCH',
+      body: { remove: ['a.one'] },
+    })
+  })
 })
