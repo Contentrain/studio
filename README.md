@@ -1,7 +1,8 @@
+<p align="center"><img src=".github/cover.png" alt="Contentrain Studio — governed content for teams and AI agents" width="100%"></p>
+
 <div align="center">
-  <img src="public/logo.svg" alt="Contentrain Studio" width="64" height="64" />
   <h1>Contentrain Studio</h1>
-  <p><strong>Conversation-first CMS for teams who manage structured content over Git.</strong></p>
+  <p><strong>The team operating surface for governed content: agent generates, human approves, Git records every change.</strong></p>
   <p>Connect a repository, define content models, edit through chat or UI, review changes through Git-native workflows, and ship through forms, media, CDN, and APIs.</p>
 
   <p>
@@ -16,7 +17,9 @@
 
 ## What Contentrain Studio Is
 
-Contentrain Studio is an open-core, Git-backed content operations platform built with [Nuxt 4](https://nuxt.com/). Teams can self-host the AGPL core or use a managed Pro/Enterprise offering while keeping Git as the source of truth.
+Contentrain Studio is part of Contentrain, the content governance ecosystem for teams and AI agents. It is an open-core, Git-backed content operations platform built with [Nuxt 4](https://nuxt.com/). Teams can self-host the AGPL core or use the managed service at [studio.contentrain.io](https://studio.contentrain.io) (Starter, Pro, Enterprise) while keeping Git as the source of truth.
+
+It is for teams whose content lives in a Git repository as structured JSON and Markdown and who need review, roles, and delivery around it — including when AI agents write the changes.
 
 The product model is:
 
@@ -26,7 +29,7 @@ The product model is:
 - changes become branches, commits, diffs, and merges
 - delivery can happen through media, CDN, and API surfaces
 
-This repository contains the AGPL core. Proprietary enterprise implementations live in [`ee/`](ee/) under a separate license. Managed Pro/Enterprise deployments can be operated on top of the same product model.
+This repository contains the AGPL core. Proprietary enterprise implementations live in [`ee/`](ee/) under a separate license. Managed Starter/Pro/Enterprise deployments are operated on top of the same product model.
 
 ## Why It Exists
 
@@ -38,7 +41,18 @@ Traditional CMS products hide content workflows behind opaque databases and admi
 - workspaces and projects map cleanly to team and repository boundaries
 - self-hosting remains a supported trust path, and managed operation is also available
 
-## Relationship to Contentrain AI
+## Where Studio Fits in Contentrain
+
+Contentrain has four parts:
+
+- **Open-source tools** ([`Contentrain/ai`](https://github.com/Contentrain/ai), MIT, [ai.contentrain.io](https://ai.contentrain.io)) — MCP, CLI, SDK, rules, and skills that developers and agents use to pull content out of code and structure it in their project.
+- **Studio** (this repository, [studio.contentrain.io](https://studio.contentrain.io), docs at [docs.contentrain.io](https://docs.contentrain.io)) — the team surface for reviewing, governing, and delivering that content.
+- **Migrate** ([migrate.contentrain.io](https://migrate.contentrain.io)) — a paid service that moves a WordPress site to Astro. Each run writes `contentrain-handoff.json` into the generated repository, and Studio reads it when that repository is connected ([Migration Handoff](docs/MIGRATION_HANDOFF.md)).
+- **Bridge** ([`Contentrain/wordpress-bridge`](https://github.com/Contentrain/wordpress-bridge), [WordPress.org](https://wordpress.org/plugins/contentrain-bridge/)) — a free WordPress plugin that exports content as a Contentrain store (JSON + Markdown) to a ZIP or your own GitHub repository.
+
+All four read and write the same `.contentrain/` contract, so a GitHub repository holding a Contentrain store — written by the tools, Migrate, or Bridge — can be connected to Studio.
+
+### Relationship to Contentrain AI
 
 Studio shares the same `.contentrain/` contract with the MIT package surface in the [`Contentrain/ai`](https://github.com/Contentrain/ai) repository. Developers usually enter the ecosystem through local-first package workflows, then move into Studio when review, roles, and delivery become operational needs.
 
@@ -67,6 +81,7 @@ Typical path:
   - dictionary
 - Multi-locale content workflows
 - Chat-driven content operations
+- MCP access for AI agents: a remote OAuth endpoint (`/api/mcp/remote`, managed provider pair only) and per-project API-key endpoints — see [Remote MCP](docs/REMOTE_MCP.md)
 - Content validation and health reporting
 - Branch, diff, merge, and review workflows
 - Team and role management
@@ -128,7 +143,7 @@ Studio ships in two editions, distinguished by whether the `ee/` directory is lo
 | `ee/` directory | Absent or not loaded | Present and loaded |
 | Billing | Off | Polar / Stripe / flat-fee / off |
 | Plan tier | Fixed `community` (unlimited) | `free` / `starter` / `pro` / `enterprise` |
-| Typical scenarios | AGPL self-host, forks, hosting resellers, local eval | Managed SaaS (contentrain.io), on-premise enterprise, managed dedicated, OEM, white-label |
+| Typical scenarios | AGPL self-host, forks, hosting resellers, local eval | Managed SaaS (studio.contentrain.io), on-premise enterprise, managed dedicated, OEM, white-label |
 
 See [docs/EDITIONS.md](docs/EDITIONS.md) for the full feature matrix.
 
@@ -149,14 +164,16 @@ See [docs/DEPLOYMENT_PROFILES.md](docs/DEPLOYMENT_PROFILES.md) for the 12-scenar
 
 Current runtime plans: `community` (auto-assigned in Community Edition, not purchasable) / `free` / `starter` / `pro` / `enterprise`.
 
+Managed pricing: Starter $9/mo, Pro $49/mo, Enterprise custom. Starter and Pro start with a 14-day trial; `free` is the structural signup shell before a trial. The Contentrain open-source tools stay free (MIT, no account).
+
 Plan-differentiated capability examples:
 
 - AI usage, Studio-hosted key, BYOA (Pro+)
-- CDN delivery, preview branches, custom domain
-- Media upload / library / custom variants
+- CDN delivery and metering; preview branches and custom CDN domain are on the roadmap
+- Media upload / library (Starter+), custom variants (Pro+)
 - Review workflow and advanced project roles (Reviewer, Viewer)
-- Conversation API and outbound webhooks
-- Enterprise-only SSO, white-label, custom MCP domain
+- Conversation API (Pro+) and outbound webhooks
+- Enterprise tier: SSO, white-label, and custom MCP domain are on the roadmap, not shipped yet
 
 The source of truth lives in [`shared/utils/license.ts`](shared/utils/license.ts) and [`.contentrain/content/system/plan-features/`](.contentrain/content/system/plan-features/). Feature gating runs through `hasFeature(plan, key)` with the current edition applied.
 
@@ -234,6 +251,7 @@ Release-facing setup and deployment docs:
 - [Comments](docs/COMMENTS.md)
 - [Migration Handoff](docs/MIGRATION_HANDOFF.md)
 - [Media Ingest](docs/MEDIA_INGEST.md)
+- [Remote MCP](docs/REMOTE_MCP.md)
 - [Deploy Hooks & Scheduled Publishing](docs/DEPLOY_HOOKS.md)
 - [Review Workflow](docs/REVIEW_WORKFLOW.md)
 - [Releasing Guide](docs/RELEASING.md)
