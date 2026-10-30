@@ -91,7 +91,7 @@ describe('content route integration', () => {
           title: 'Hello world',
           heroImage: 'media/hero.png',
         },
-      }, 'editor@example.com')
+      }, 'editor@example.com', { source: 'human' })
       expect(mergeBranch).toHaveBeenCalledWith('cr/content/posts/en/1234567890-abcd')
       expect(trackMediaUsage).toHaveBeenCalledWith({
         asset_id: 'asset-1',

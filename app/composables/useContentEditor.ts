@@ -13,6 +13,7 @@ export function useContentEditor() {
   const saving = ref(false)
   const saveError = ref<string | null>(null)
   const toast = useToast()
+  const { fetchBranches } = useBranches()
 
   // --- Batch editing state (all fields) ---
   const batchEditData = ref<Record<string, unknown> | null>(null)
@@ -68,6 +69,13 @@ export function useContentEditor() {
     }
   }
 
+  // A write the review workflow held opened a `cr/*` branch. The sidebar's
+  // Pending changes reads the shared branch list, which nothing else
+  // refetches after a form save, so it stayed empty until a reload.
+  function refreshPendingBranches(result: SaveResponse, workspaceId: string, projectId: string) {
+    if (result.merged === false) void fetchBranches(workspaceId, projectId)
+  }
+
   async function saveField(
     workspaceId: string,
     projectId: string,
@@ -101,6 +109,7 @@ export function useContentEditor() {
       }
 
       announceSave(result)
+      refreshPendingBranches(result, workspaceId, projectId)
       editingField.value = null
       editValue.value = null
       return true
@@ -196,6 +205,7 @@ export function useContentEditor() {
       }
 
       announceSave(result)
+      refreshPendingBranches(result, workspaceId, projectId)
       cancelBatchEdit()
       return true
     }

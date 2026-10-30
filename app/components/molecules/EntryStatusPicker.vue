@@ -28,6 +28,7 @@ const emit = defineEmits<{
 
 const { t } = useContent()
 const toast = useToast()
+const { fetchBranches } = useBranches()
 const { isOwnerOrAdmin } = useWorkspaceRole()
 
 // Statuses an Owner/Admin can set directly from the badge menu. Review-workflow
@@ -77,8 +78,10 @@ async function setStatus(newStatus: string) {
     })
     // A review workflow can hold the change on its branch; say so rather than
     // reporting a status the entry does not have yet.
-    if (res.approval && res.branch)
+    if (res.approval && res.branch) {
       toast.success(t('content.saved_pending_review', { branch: res.branch }))
+      void fetchBranches(props.workspaceId, props.projectId)
+    }
     else
       toast.success(t('content.status_updated'))
     emit('saved')

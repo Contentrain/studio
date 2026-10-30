@@ -14,7 +14,7 @@ const { workspaces, activeWorkspace, fetchWorkspaces, setActiveWorkspace, saveLa
 const { projects, fetchProjects } = useProjects()
 const { snapshot, loading: snapshotLoading, fetchSnapshot, primeSnapshot, clearSnapshot, hasContentrain } = useSnapshot()
 const { content: modelContent, kind: modelContentKind, meta: modelContentMeta, loading: modelContentLoading, fetchContent, followTreeChanges, clearContent } = useModelContent()
-const { branches, branchReview, branchRaw, reviewLoading, rawLoading, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
+const { branches, branchReview, branchRaw, reviewLoading, rawLoading, merging, fetchBranchReview, fetchBranchRaw, clearBranchReview, clearBranches, fetchBranches, mergeBranch, rejectBranch, requestChanges, resolveChangeRequest, setApproval } = useBranches()
 const { t } = useContent()
 
 const project = computed(() =>
@@ -248,7 +248,7 @@ async function refreshBranchesAndDropVanished(workspaceId: string): Promise<bool
 // Branch merge/reject handlers
 async function handleBranchMerge() {
   const ws = workspaces.value.find(w => w.slug === slug.value)
-  if (!ws || !activeBranch.value) return
+  if (!ws || !activeBranch.value || merging.value) return
   const merged = await mergeBranch(ws.id, projectId.value, activeBranch.value)
   if (merged) {
     // Clear branch query and refresh
@@ -544,6 +544,7 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             :branch-review-loading="reviewLoading"
             :branch-raw="branchRaw"
             :branch-raw-loading="rawLoading"
+            :branch-merging="merging === activeBranch"
             :workspace-id="activeWorkspace?.id"
             :project-id="projectId"
             editable

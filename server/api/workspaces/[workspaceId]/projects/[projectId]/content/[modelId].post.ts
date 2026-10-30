@@ -49,8 +49,8 @@ export default defineEventHandler(async (event) => {
 
   const engine = createContentEngine({ git, contentRoot, projectId })
   const result = Object.keys(schedule).length > 0
-    ? await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '', { schedule })
-    : await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '')
+    ? await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '', { schedule, source: 'human' })
+    : await engine.saveContent(modelId, body.locale ?? 'en', body.data, session.user.email ?? '', { source: 'human' })
 
   if (!result.validation.valid) {
     return result

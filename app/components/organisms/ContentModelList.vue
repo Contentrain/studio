@@ -20,8 +20,7 @@ function pinLabel(modelId: string) {
   return isPinned('model', modelId) ? t('content.unpin') : t('content.pin_model')
 }
 
-function onDelete(e: Event, model: { id: string, name: string }) {
-  e.stopPropagation()
+function onDelete(model: { id: string, name: string }) {
   sendChatPrompt(`Delete the ${model.name} model (ID: ${model.id}) and all its content.`)
 }
 
@@ -78,17 +77,19 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
         </div>
         <span class="icon-[annon--chevron-right] size-4 shrink-0 text-muted" aria-hidden="true" />
       </button>
-      <!-- Delete model -->
-      <AtomsTooltip :text="t('content.delete_model')">
-        <button
-          type="button"
-          :aria-label="t('content.delete_model')"
-          class="reveal-on-hover shrink-0 rounded-md p-1 text-muted transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
-          @click="onDelete($event, model)"
-        >
-          <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
-        </button>
-      </AtomsTooltip>
+      <!-- Delete model: two clicks -->
+      <MoleculesDeleteModelConfirm v-slot="{ arm }" @confirm="onDelete(model)">
+        <AtomsTooltip :text="t('content.delete_model')">
+          <button
+            type="button"
+            :aria-label="t('content.delete_model')"
+            class="reveal-on-hover shrink-0 rounded-md p-1 text-muted transition-[color,opacity] hover:text-danger-500 hover:opacity-100 group-hover:opacity-60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+            @click="arm"
+          >
+            <span class="icon-[annon--trash] size-3.5" aria-hidden="true" />
+          </button>
+        </AtomsTooltip>
+      </MoleculesDeleteModelConfirm>
       <!-- Pin to context -->
       <AtomsTooltip :text="pinLabel(model.id)">
         <button

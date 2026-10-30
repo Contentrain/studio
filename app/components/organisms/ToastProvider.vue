@@ -47,7 +47,7 @@ function getStyle(variant: string): VariantStyle {
 </script>
 
 <template>
-  <ToastProvider :duration="4000" swipe-direction="right">
+  <ToastProvider :duration="4000" swipe-direction="up">
     <ToastRoot
       v-for="toast in toasts"
       :key="toast.id"
@@ -86,6 +86,11 @@ function getStyle(variant: string): VariantStyle {
       </ToastClose>
     </ToastRoot>
 
-    <ToastViewport class="fixed bottom-0 right-0 z-100 flex max-w-sm flex-col gap-2 p-6 outline-none" />
+    <!-- Top centre, under the mobile header. Bottom right is where panels keep
+         their primary action (a review's merge button sat exactly under the
+         approval toast), and radix pauses a toast while the pointer is over
+         the viewport, so reaching for that button kept the toast up over it.
+         The viewport's padding takes no clicks; only the toasts do. -->
+    <ToastViewport class="pointer-events-none fixed left-1/2 top-14 z-100 flex w-full max-w-sm -translate-x-1/2 flex-col gap-2 p-4 outline-none md:top-0" />
   </ToastProvider>
 </template>

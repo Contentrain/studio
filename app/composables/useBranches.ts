@@ -21,6 +21,11 @@ export function useBranches() {
   const reviewLoading = useState('branch-review-loading', () => false)
   const rawLoading = useState('branch-raw-loading', () => false)
   const contentSync = useState<ContentSyncReport | null>('branch-sync', () => null)
+  /**
+   * The branch whose merge request is in flight. A merge can take a minute on
+   * GitHub, and a button that looks idle that long gets pressed again.
+   */
+  const merging = useState<string | null>('branch-merging', () => null)
   const toast = useToast()
 
   function branchUrl(workspaceId: string, projectId: string, branch: string) {
@@ -99,6 +104,7 @@ export function useBranches() {
 
   async function mergeBranch(workspaceId: string, projectId: string, branch: string): Promise<boolean> {
     const { t } = useContent()
+    merging.value = branch
     try {
       const result = await $fetch<{
         merged: boolean
@@ -131,6 +137,9 @@ export function useBranches() {
     catch (e: unknown) {
       toast.error(resolveApiError(e, t('branch.merge_error')))
       return false
+    }
+    finally {
+      merging.value = null
     }
   }
 
@@ -219,6 +228,7 @@ export function useBranches() {
     branchRaw: readonly(branchRaw),
     reviewLoading: readonly(reviewLoading),
     rawLoading: readonly(rawLoading),
+    merging: readonly(merging),
     fetchBranches,
     fetchBranchReview,
     fetchBranchRaw,
