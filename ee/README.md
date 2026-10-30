@@ -2,6 +2,8 @@
 
 This directory contains proprietary feature implementations for Contentrain Studio. It is licensed separately from the AGPL-3.0 core — see [`LICENSE`](LICENSE).
 
+For what Studio is and how it fits the Contentrain ecosystem, see the [root README](../README.md), [studio.contentrain.io](https://studio.contentrain.io), and [docs.contentrain.io](https://docs.contentrain.io).
+
 > **Edition is orthogonal to plan tier.** Whether the enterprise features are accessible at runtime depends on two independent checks: is `ee/` loaded (edition), and does the workspace's plan tier grant the feature (plan gate). Community Edition runs the same core without `ee/` and force-disables every `requires_ee: true` feature regardless of plan matrix values.
 
 ## Structure
