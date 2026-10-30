@@ -44,7 +44,8 @@ export interface ContextOperation {
   tool: string
   model: string
   locale?: string
-  entries?: number
+  /** Entry ids, as MCP's `buildContextChange` takes them. Merges pass none. */
+  entries?: string[]
 }
 
 /**
@@ -81,7 +82,9 @@ export function buildContextChangeFromBrain(
     },
     stats: {
       models: brain.models.size,
-      entries: computeTotalEntries(brain),
+      // `null` when a model has no readable content; canonicalStringify drops
+      // it, exactly as MCP's own `totalEntries as number` does.
+      entries: computeTotalEntries(brain) as number,
       locales: config.locales?.supported ?? ['en'],
       lastSync: timestamp,
     },
