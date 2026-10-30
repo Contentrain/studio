@@ -128,7 +128,7 @@ async function trigger() {
 function formatDate(value: string | null): string {
   if (!value) return t('deploy.never')
   const ms = Date.parse(value)
-  return Number.isNaN(ms) ? value : new Date(ms).toLocaleString()
+  return Number.isNaN(ms) ? value : new Date(ms).toLocaleString('en-US')
 }
 </script>
 

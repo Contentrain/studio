@@ -352,6 +352,17 @@ export function useChat(options?: {
   // command palette honest.
   const hasProModels = useFeature('ai.pro_models')
   const allowedModels = computed(() => CHAT_MODELS.filter(m => m.tier === 'starter' || hasProModels.value))
+  // A pick the plan doesn't list (the Sonnet default on Starter, or a Pro
+  // model stored before a downgrade) would leave the picker blank while the
+  // server runs the turn on an allowed model. Move it the way chat.post.ts
+  // does: the default when allowed, else the first allowed model. Only once
+  // the workspace is loaded: before that the plan reads as free and a Pro
+  // user's stored pick would be overwritten.
+  const { activeWorkspace } = useWorkspaces()
+  watch([allowedModels, () => activeWorkspace.value?.id], ([allowed, workspaceId]) => {
+    if (!workspaceId || allowed.some(m => m.id === selectedModel.value)) return
+    selectedModel.value = allowed.some(m => m.id === DEFAULT_CHAT_MODEL) ? DEFAULT_CHAT_MODEL : allowed[0]!.id
+  }, { immediate: true })
   // Premium models (Opus) stay in the list during a trial on the Studio
   // key, but locked with the reason — hiding them would leave the user
   // guessing. The server applies the same rule (`premiumModelsAllowed`);

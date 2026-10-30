@@ -247,7 +247,7 @@ export function useCommandPalette() {
           items.push({
             id: `conv:${conv.id}`,
             label: conv.title || ctx.t('chat.untitled'),
-            sublabel: new Date(conv.updated_at).toLocaleDateString(),
+            sublabel: new Date(conv.updated_at).toLocaleDateString('en-US'),
             icon: 'icon-[annon--comment-2]',
             group: 'Conversations',
             type: 'conversation',

@@ -40,7 +40,7 @@ function statusLabel(status: CommentStatus): string {
 }
 
 function formatDate(dateStr: string | null): string {
-  return dateStr ? new Date(dateStr).toLocaleString() : '—'
+  return dateStr ? new Date(dateStr).toLocaleString('en-US') : '—'
 }
 
 const replyText = ref('')

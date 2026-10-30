@@ -142,7 +142,7 @@ async function handleRevoke(keyId: string) {
 
 function formatRelative(iso: string | null): string {
   if (!iso) return t('mcp_cloud.never_used')
-  return t('mcp_cloud.last_used', { when: new Date(iso).toLocaleString() })
+  return t('mcp_cloud.last_used', { when: new Date(iso).toLocaleString('en-US') })
 }
 </script>
 
