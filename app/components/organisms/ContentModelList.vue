@@ -4,6 +4,8 @@ import { sendChatPromptKey } from '~/utils/injection-keys'
 defineProps<{
   models: readonly { id: string, name: string, kind: string, type: string, fields: Readonly<Record<string, unknown>>, domain: string, i18n: boolean }[]
   content: Readonly<Record<string, { count: number, locales: readonly string[] }>>
+  /** May delete models (owner/admin, the `delete_model` tool's roles). */
+  canDelete?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -78,7 +80,7 @@ function onDragStart(e: DragEvent, model: { id: string, name: string, kind: stri
         <span class="icon-[annon--chevron-right] size-4 shrink-0 text-muted" aria-hidden="true" />
       </button>
       <!-- Delete model: two clicks -->
-      <MoleculesDeleteModelConfirm v-slot="{ arm }" @confirm="onDelete(model)">
+      <MoleculesDeleteModelConfirm v-if="canDelete" v-slot="{ arm }" @confirm="onDelete(model)">
         <AtomsTooltip :text="t('content.delete_model')">
           <button
             type="button"

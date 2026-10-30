@@ -4,6 +4,7 @@ import type { FieldDef } from '@contentrain/types'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 import type { BranchReview } from '~~/shared/utils/branch-review'
 import type { BranchRawDiff } from '~/composables/useBranches'
+import { canSaveContent } from '~~/shared/utils/content-access'
 import { fieldLabel, nestedFieldLabels, orderedFieldIds } from '~~/shared/utils/field-label'
 import { activeModelMetaKey, getEntryTitleKey, getFieldLabelKey, getFieldTypeKey, getModelFieldsKey, getNestedFieldLabelsKey, getUserFieldIdsKey, relationLabelsKey, sendChatPromptKey } from '~/utils/injection-keys'
 
@@ -49,7 +50,6 @@ const props = defineProps<{
   branchMerging?: boolean
   workspaceId?: string
   projectId?: string
-  editable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -70,6 +70,17 @@ const emit = defineEmits<{
 const { t } = useContent()
 const { healthScore, hasIssues, criticalCount, errorCount, warningCount } = useProjectHealth()
 const brain = useContentBrain()
+const { isOwnerOrAdmin } = useWorkspaceRole()
+
+// Write controls follow the caller's role, from the same check the routes make
+// (they stay the authority). A viewer or reviewer used to see Edit everywhere
+// and only learn at save time.
+/** Content of the open model: `save_content`, within `allowedModels`. */
+const editable = computed(() => canSaveContent(brain.access.value, props.activeModelId))
+/** Vocabulary: `save_content`, project-wide. */
+const vocabularyEditable = computed(() => canSaveContent(brain.access.value))
+/** Model shape (add, delete, title field, form and comment settings) and moderation: owner/admin, as their routes and agent tools require. */
+const managesModels = computed(() => isOwnerOrAdmin.value)
 
 // Check if active model has form enabled (form config is on raw model definition)
 const isFormEnabled = computed(() => {
@@ -344,7 +355,7 @@ provide(sendChatPromptKey, sendChatPrompt)
         review
       </AtomsBadge>
       <!-- Overview actions -->
-      <div v-if="panelState === 'overview' && editable && snapshot?.exists" class="ml-auto">
+      <div v-if="panelState === 'overview' && managesModels && snapshot?.exists" class="ml-auto">
         <AtomsIconButton
           icon="icon-[annon--plus]"
           :label="t('content.add_model')"
@@ -363,7 +374,7 @@ provide(sendChatPromptKey, sendChatPrompt)
         />
         <!-- Delete model: two clicks, keyed so a model switch disarms it -->
         <MoleculesDeleteModelConfirm
-          v-if="editable && activeModel"
+          v-if="managesModels && activeModel"
           :key="activeModel.id"
           v-slot="{ arm }"
           @confirm="deleteModel"
@@ -377,7 +388,7 @@ provide(sendChatPromptKey, sendChatPrompt)
         </MoleculesDeleteModelConfirm>
         <!-- Title field. Not behind the forms gate: which field titles an entry
              is part of the model contract, not a forms feature. -->
-        <PopoverRoot v-if="editable && activeModel && activeModel.kind !== 'dictionary'" v-model:open="titleFieldOpen">
+        <PopoverRoot v-if="managesModels && activeModel && activeModel.kind !== 'dictionary'" v-model:open="titleFieldOpen">
           <PopoverTrigger as-child>
             <AtomsIconButton
               icon="icon-[annon--text]"
@@ -487,7 +498,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           v-if="workspaceId && projectId"
           :workspace-id="workspaceId"
           :project-id="projectId"
-          :editable="editable"
+          editable
         />
       </template>
 
@@ -496,7 +507,7 @@ provide(sendChatPromptKey, sendChatPrompt)
         <OrganismsContentVocabularyView
           :terms="vocabularyTerms"
           :locale="currentLocale"
-          :editable="editable"
+          :editable="vocabularyEditable"
           @save="emit('vocabularySave', $event)"
         />
       </template>
@@ -580,7 +591,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           <!-- Model list -->
           <OrganismsContentModelList
             :models="snapshot.models"
-            :content="snapshot.content" @select="emit('selectModel', $event)"
+            :content="snapshot.content" :can-delete="managesModels" @select="emit('selectModel', $event)"
           />
         </template>
         <div v-else class="p-5">
@@ -612,7 +623,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           :workspace-id="workspaceId"
           :project-id="projectId"
           :model-id="activeModelId"
-          :editable="editable"
+          :editable="managesModels"
         />
 
         <!-- Form settings tab -->
@@ -621,7 +632,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           :workspace-id="workspaceId"
           :project-id="projectId"
           :model-id="activeModelId"
-          :editable="editable"
+          :editable="managesModels"
         />
 
         <!-- Comments moderation tab -->
@@ -630,7 +641,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           :workspace-id="workspaceId"
           :project-id="projectId"
           :model-id="activeModelId"
-          :editable="editable"
+          :editable="managesModels"
         />
 
         <!-- Comment settings tab -->
@@ -639,7 +650,7 @@ provide(sendChatPromptKey, sendChatPrompt)
           :workspace-id="workspaceId"
           :project-id="projectId"
           :model-id="activeModelId"
-          :editable="editable"
+          :editable="managesModels"
         />
 
         <!-- Content tab (default) -->

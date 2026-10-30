@@ -16,6 +16,7 @@ describe('delete model', () => {
       props: {
         models: [{ id: 'faq', name: 'FAQ', kind: 'collection', type: 'collection', fields: {}, domain: 'marketing', i18n: true }],
         content: {},
+        canDelete: true,
       },
       global: { provide: { [sendChatPromptKey as symbol]: send } },
       attachTo: document.body,
