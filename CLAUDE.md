@@ -23,7 +23,7 @@ All external services are accessed **only** through provider interfaces. No impl
 Provider interfaces live in `server/providers/`:
 - `server/providers/auth.ts` — AuthProvider interface
 - `server/providers/database.ts` — DatabaseProvider interface
-- `server/providers/git.ts` — GitProvider interface
+- `server/providers/git.ts` — GitAppProvider interface
 - `server/providers/ai.ts` — AIProvider interface
 - `server/providers/cdn.ts` — CDNProvider interface
 - `server/providers/media.ts` — MediaProvider interface
