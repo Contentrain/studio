@@ -3,7 +3,9 @@
  *
  * Migrate asks, server to server, whether the GitHub account that will own a
  * delivery already has a Studio plan (W54), so it can price the Studio line
- * of the bundle. Body `{ token }`: a request signed with Migrate's key
+ * of the bundle. Before the customer signs in the request names no GitHub
+ * account, and the answer is the sized plan's list price (`none`).
+ * Body `{ token }`: a request signed with Migrate's key
  * (`MigrateAccountStateRequest`, `@contentrain/types`), single-use by `jti`.
  *
  * The answer never names an account, a workspace or an email: only the state,
@@ -44,7 +46,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const response = await resolveMigrateAccountState(request.github_user_id, request.plan)
+    const response = await resolveMigrateAccountState(request.github_user_id ?? null, request.plan)
     // Fail closed on our own answer: Migrate prices from it.
     if (!validateMigrateAccountStateResponse(response, { requested: request.plan }).ok)
       throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })
