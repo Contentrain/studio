@@ -226,6 +226,9 @@ describe('project config and branch route integration', () => {
       contentRoot: '',
     }))
     vi.stubGlobal('generateBranchName', vi.fn().mockReturnValue('cr/content/vocabulary/1234567890-abcd'))
+    // The vocabulary route asks the approval gate; no review plan → auto-merge.
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('openWriteSnapshot', openWriteSnapshot)
     vi.stubGlobal('writeBase', writeBase)
@@ -366,6 +369,10 @@ describe('project config and branch route integration', () => {
       contentRoot: '',
     }))
     vi.stubGlobal('generateBranchName', vi.fn(() => `cr/content/vocabulary/${merges}-abcd`))
+    // The vocabulary route asks the approval gate; no review plan → auto-merge.
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('free'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(false))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({ config: {}, approvalPolicy: null }))
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('openWriteSnapshot', openWriteSnapshot)
     vi.stubGlobal('writeBase', writeBase)

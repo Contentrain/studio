@@ -8,7 +8,7 @@ async function loadVocabularyPatchHandler() {
 
 const VOCAB_JSON = JSON.stringify({ version: 1, terms: { cta: { en: 'Get started' } } })
 
-function stubCommonGlobals(overrides: { mergeBranch: ReturnType<typeof vi.fn>, snapshots?: string[] }, git: Record<string, unknown>) {
+function stubCommonGlobals(overrides: { mergeBranch: ReturnType<typeof vi.fn>, snapshots?: string[], workflow?: 'auto-merge' | 'review' }, git: Record<string, unknown>) {
   vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => {
     if (key === 'workspaceId') return 'workspace-1'
     if (key === 'projectId') return 'project-1'
@@ -24,7 +24,13 @@ function stubCommonGlobals(overrides: { mergeBranch: ReturnType<typeof vi.fn>, s
     specificModels: false,
     allowedModels: [],
   }))
-  vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git, contentRoot: '' }))
+  vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git, contentRoot: '', workspace: { id: 'workspace-1' } }))
+  vi.stubGlobal('getWorkspacePlan', vi.fn(() => 'pro'))
+  vi.stubGlobal('hasFeature', vi.fn(() => true))
+  vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+    config: { workflow: overrides.workflow ?? 'auto-merge' },
+    approvalPolicy: null,
+  }))
   vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({
     ensureContentBranch: vi.fn().mockResolvedValue(undefined),
     mergeBranch: overrides.mergeBranch,
@@ -270,5 +276,55 @@ describe('vocabulary route — merge-conflict resilience', () => {
       expect(git.deleteBranch).not.toHaveBeenCalled()
       expect(mergeBranch).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('vocabulary route — review workflow', () => {
+  async function patch(workflow: 'auto-merge' | 'review') {
+    const mergeBranch = vi.fn().mockResolvedValue({ merged: true, sha: 'sha-2', pullRequestUrl: null })
+    const landed = JSON.stringify({ version: 1, terms: { cta: { en: 'Get started' }, signup: { en: 'Sign up' } } })
+    const git = {
+      readFile: vi.fn(async (_path: string, ref: string) => (ref === 'contentrain' ? landed : VOCAB_JSON)),
+      applyPlan: vi.fn().mockResolvedValue({ sha: 'commit-1' }),
+      deleteBranch: vi.fn().mockResolvedValue(undefined),
+    }
+    stubCommonGlobals({ mergeBranch, workflow }, git)
+
+    let payload: Record<string, unknown> = {}
+    await withTestServer({
+      routes: [
+        { path: '/api/workspaces/workspace-1/projects/project-1/vocabulary', handler: await loadVocabularyPatchHandler() },
+      ],
+    }, async ({ request }) => {
+      const response = await request('/api/workspaces/workspace-1/projects/project-1/vocabulary', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ terms: { signup: { en: 'Sign up' } } }),
+      })
+      expect(response.status).toBe(200)
+      payload = await response.json()
+    })
+    return { payload, mergeBranch, git }
+  }
+
+  it('holds the edit on its branch on a review project, like any other content write', async () => {
+    const { payload, mergeBranch, git } = await patch('review')
+
+    expect(mergeBranch).not.toHaveBeenCalled()
+    expect(git.deleteBranch).not.toHaveBeenCalled()
+    expect(git.applyPlan).toHaveBeenCalledTimes(1)
+    expect(payload).toMatchObject({
+      merged: false,
+      branch: 'cr/content/vocabulary/1234567890-abcd',
+      workflow: 'review',
+      approval: { risk: 'low_risk_content' },
+    })
+  })
+
+  it('still merges on an auto-merge project', async () => {
+    const { payload, mergeBranch } = await patch('auto-merge')
+
+    expect(mergeBranch).toHaveBeenCalledWith('cr/content/vocabulary/1234567890-abcd')
+    expect(payload).toMatchObject({ merged: true })
   })
 })

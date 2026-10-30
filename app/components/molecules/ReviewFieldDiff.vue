@@ -94,8 +94,14 @@ const afterLabel = computed(() => relationLabel(props.change.after))
   <div class="py-2">
     <div class="mb-1 flex items-center gap-2">
       <span class="text-[11px] font-medium text-label">{{ change.label }}</span>
-      <AtomsBadge v-if="isAdded && !entryIsNew" variant="success" size="sm">
+      <AtomsBadge v-if="change.possiblyRenamedFrom" variant="info" size="sm">
+        {{ t('review.key_renamed_from', { key: change.possiblyRenamedFrom }) }}
+      </AtomsBadge>
+      <AtomsBadge v-else-if="isAdded && !entryIsNew" variant="success" size="sm">
         {{ t('review.field_set') }}
+      </AtomsBadge>
+      <AtomsBadge v-else-if="change.removed" variant="danger" size="sm">
+        {{ t('review.key_removed') }}
       </AtomsBadge>
       <AtomsBadge v-else-if="isCleared" variant="danger" size="sm">
         {{ t('review.field_cleared') }}

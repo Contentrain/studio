@@ -48,6 +48,13 @@ export interface ReviewFieldChange {
    * then humanises the keys itself.
    */
   subLabels?: Record<string, string>
+  /** Dictionary only: the key is gone from the file — not set to `''`, which is "cleared". */
+  removed?: true
+  /**
+   * Dictionary only: this new key holds the value a removed key of the same
+   * locale had, so it is most likely that key renamed. A guess, said as one.
+   */
+  possiblyRenamedFrom?: string
 }
 
 /** One entry (collection row, singleton, dictionary key, document). */
@@ -121,6 +128,19 @@ export interface ReviewSchemaChange {
 export interface ReviewSettingsChange {
   area: 'locales' | 'workflow' | 'vocabulary' | 'project'
   items: Array<{ key: string, values: string[] }>
+  /**
+   * Vocabulary only: what each changed term says, per locale. A term name on
+   * its own does not let a reviewer approve a glossary edit — the text does.
+   */
+  terms?: ReviewTermChange[]
+}
+
+/** One glossary term on a branch, with only the locales whose text differs. */
+export interface ReviewTermChange {
+  term: string
+  kind: 'added' | 'removed' | 'updated'
+  /** `null` when the locale has no text on that side. */
+  locales: Array<{ locale: string, before: string | null, after: string | null }>
 }
 
 /** What a `cr/*` branch name and its meta records say about the change. */

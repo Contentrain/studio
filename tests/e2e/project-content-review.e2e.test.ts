@@ -149,6 +149,7 @@ describe('project content and review e2e', () => {
         contentSummary: {
           'site-settings': { count: 1, locales: ['en'], kind: 'singleton' },
         },
+        access: { availableTools: ['get_content', 'save_content', 'delete_content'], specificModels: false, allowedModels: [] },
       },
     })
 

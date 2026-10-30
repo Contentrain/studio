@@ -413,10 +413,16 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
   const ws = workspaces.value.find(w => w.slug === slug.value)
   if (!ws) return
   try {
-    await $fetch(`/api/workspaces/${ws.id}/projects/${projectId.value}/vocabulary`, {
+    const result = await $fetch<{ merged: boolean, branch?: string }>(`/api/workspaces/${ws.id}/projects/${projectId.value}/vocabulary`, {
       method: 'PATCH',
       body: { terms },
     })
+    // On a review project the edit waits on its branch: say so, and list the
+    // branch under Pending changes — otherwise the term just vanishes.
+    if (!result.merged && result.branch) {
+      toast.success(t('content.saved_pending_review', { branch: result.branch }))
+      void fetchBranches(ws.id, projectId.value)
+    }
     // Refresh snapshot to get updated vocabulary
     const { invalidateCache } = useSnapshot()
     await invalidateCache(projectId.value)
@@ -547,7 +553,6 @@ async function handleVocabularySave(terms: Record<string, Record<string, string>
             :branch-merging="merging === activeBranch"
             :workspace-id="activeWorkspace?.id"
             :project-id="projectId"
-            editable
             @update:locale="localeKnown = true"
             @select-model="selectModel"
             @back="backToOverview"

@@ -7,6 +7,10 @@ async function loadContentPostHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/content/[modelId].post')).default
 }
 
+async function loadContentKeysHandler() {
+  return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/content/[modelId]/keys.patch')).default
+}
+
 async function loadContentStatusHandler() {
   return (await import('../../server/api/workspaces/[workspaceId]/projects/[projectId]/content/[modelId]/status.patch')).default
 }
@@ -442,5 +446,59 @@ describe('content route integration', () => {
         }
       })
     }
+  })
+
+  it('changes dictionary keys as a delete: held on a review project, refused on other kinds', async () => {
+    // A policy that would let a one-entry content edit through: removing or
+    // renaming a key breaks the site that reads it, so it is held anyway.
+    const policy = { version: 1, default_mode: 'single', rules: [{ risk: 'low_risk_content', gate: 'change', mode: 'auto' }] }
+    const mergeBranch = vi.fn().mockResolvedValue({ merged: true })
+    const deleteContent = vi.fn().mockResolvedValue({ branch: 'cr/content/ui-strings/en/1', commit: { sha: 'd' }, diff: [], validation: { valid: true, errors: [] }, touchedLocales: ['en', 'tr'] })
+    const renameDictionaryKey = vi.fn().mockResolvedValue({ branch: 'cr/content/ui-strings/en/2', commit: { sha: 'r' }, diff: [], validation: { valid: true, errors: [] }, touchedLocales: ['en'] })
+    let modelId = 'ui-strings'
+
+    vi.stubGlobal('getRouterParam', vi.fn((_: unknown, key: string) => ({ workspaceId: 'workspace-1', projectId: 'project-1', modelId })[key]))
+    vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: 'editor-1', email: 'editor@example.com' }, accessToken: 'token-1' }))
+    vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({ workspaceRole: 'editor', availableTools: ['save_content', 'delete_content'], specificModels: false, allowedModels: [] }))
+    vi.stubGlobal('resolveProjectContext', vi.fn().mockResolvedValue({ git: {}, contentRoot: '', workspace: { plan: 'pro' } }))
+    vi.stubGlobal('getWorkspacePlan', vi.fn().mockReturnValue('pro'))
+    vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(true))
+    vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+      config: { workflow: 'review', locales: { default: 'en' } },
+      approvalPolicy: policy,
+      models: new Map([['ui-strings', { id: 'ui-strings', kind: 'dictionary' }], ['posts', { id: 'posts', kind: 'collection' }]]),
+    }))
+    vi.stubGlobal('invalidateBrainCache', vi.fn())
+    vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ deleteContent, renameDictionaryKey, mergeBranch }))
+
+    const handler = await loadContentKeysHandler()
+    const patch = (body: unknown) => withTestServer({
+      routes: [{ path: `/api/workspaces/workspace-1/projects/project-1/content/${modelId}/keys`, handler }],
+    }, async ({ request }) => {
+      const response = await request(`/api/workspaces/workspace-1/projects/project-1/content/${modelId}/keys`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, payload: await response.json() }
+    })
+
+    const removed = await patch({ remove: ['a.x'] })
+    expect(removed.status).toBe(200)
+    expect(deleteContent).toHaveBeenCalledWith('ui-strings', 'en', ['a.x'], 'editor@example.com', undefined)
+    expect(removed.payload.merged).toBe(false)
+    expect(removed.payload.approval.risk).toBe('bulk_content')
+
+    const renamed = await patch({ rename: { from: 'a.x', to: 'a.y' } })
+    expect(renameDictionaryKey).toHaveBeenCalledWith('ui-strings', 'a.x', 'a.y', 'editor@example.com')
+    expect(renamed.payload.merged).toBe(false)
+    expect(mergeBranch).not.toHaveBeenCalled()
+
+    modelId = 'posts'
+    deleteContent.mockClear()
+    const collection = await patch({ remove: ['entry1'] })
+    expect(collection.status).toBe(400)
+    expect(deleteContent).not.toHaveBeenCalled()
   })
 })

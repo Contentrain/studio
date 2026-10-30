@@ -37,6 +37,7 @@ import type {
   ReviewSchemaChange,
   ReviewSchemaFieldChange,
   ReviewSettingsChange,
+  ReviewTermChange,
   ReviewUnclassifiedFile,
 } from '../../shared/utils/branch-review'
 import {
@@ -258,6 +259,32 @@ function buildFieldChange(
   }
 }
 
+/**
+ * A dictionary's fields are its keys, so a key deleted from the file and a key
+ * set to `''` both arrive as "no value after". Only the first is a removal.
+ * A removed key and an added one carrying the same value are paired as a
+ * probable rename — Studio's rename writes exactly that, in one commit.
+ */
+function markRemovedAndRenamedKeys(
+  changed: ReviewFieldChange[],
+  before: Record<string, unknown> | undefined,
+  after: Record<string, unknown> | undefined,
+) {
+  const removedByValue = new Map<string, string[]>()
+  for (const change of changed) {
+    if (!before || !(change.fieldId in before) || (after && change.fieldId in after)) continue
+    change.removed = true
+    const value = JSON.stringify(before[change.fieldId])
+    removedByValue.set(value, [...(removedByValue.get(value) ?? []), change.fieldId])
+  }
+  for (const change of changed) {
+    if (!after || !(change.fieldId in after) || (before && change.fieldId in before)) continue
+    const candidates = removedByValue.get(JSON.stringify(after[change.fieldId]))
+    const from = candidates?.shift()
+    if (from) change.possiblyRenamedFrom = from
+  }
+}
+
 // ─── Builder ──────────────────────────────────────────
 
 interface GroupBucket {
@@ -399,6 +426,8 @@ async function buildGroup(
         humanize: model.kind !== 'dictionary',
       }))
     }
+
+    if (model.kind === 'dictionary') markRemovedAndRenamedKeys(changed, entryBefore, entryAfter)
 
     if (model.kind === 'document') {
       const bodyBefore = entryBefore?.body
@@ -618,7 +647,26 @@ function diffVocabulary(before: Vocabulary | null, after: Vocabulary | null): Re
   if (removed.length > 0) items.push({ key: 'term_removed', values: removed })
   if (changed.length > 0) items.push({ key: 'term_updated', values: changed })
 
-  return items.length > 0 ? [{ area: 'vocabulary', items }] : []
+  const terms: ReviewTermChange[] = [
+    ...added.map(term => termChange(term, 'added', undefined, afterTerms[term])),
+    ...removed.map(term => termChange(term, 'removed', beforeTerms[term], undefined)),
+    ...changed.map(term => termChange(term, 'updated', beforeTerms[term], afterTerms[term])),
+  ]
+
+  return items.length > 0 ? [{ area: 'vocabulary', items, terms }] : []
+}
+
+function termChange(
+  term: string,
+  kind: ReviewTermChange['kind'],
+  before: Record<string, string> | undefined,
+  after: Record<string, string> | undefined,
+): ReviewTermChange {
+  const text = (value: unknown): string | null => (value === undefined || value === null ? null : String(value))
+  const locales = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])].sort()
+    .map(locale => ({ locale, before: text(before?.[locale]), after: text(after?.[locale]) }))
+    .filter(row => row.before !== row.after)
+  return { term, kind, locales }
 }
 
 // ─── Entry point ──────────────────────────────────────

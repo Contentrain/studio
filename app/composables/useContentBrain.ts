@@ -15,6 +15,7 @@ import type { ContentrainConfig, ModelDefinition, ModelKind } from '@contentrain
 
 // Vite ?worker import — returns a constructor, not an instance
 import ContentBrainWorker from '~/workers/content-brain.worker.ts?worker'
+import type { BrainSyncAccess } from '~~/shared/utils/content-access'
 import { usableTreeSha } from '~~/shared/utils/tree-sha'
 
 interface BrainSyncResponse {
@@ -27,6 +28,7 @@ interface BrainSyncResponse {
   contentContext: Record<string, unknown> | null
   contentSummary: Record<string, { count: number, locales: string[], kind: ModelKind }> | null
   schemaValidation: SchemaValidationResult | null
+  access?: BrainSyncAccess
 }
 
 interface SchemaValidationWarning {
@@ -118,6 +120,10 @@ export function useContentBrain() {
   const contentContext = useState<Record<string, unknown> | null>('brain-content-context', () => null)
   const contentSummary = useState<Record<string, { count: number, locales: string[], kind: ModelKind }>>('brain-content-summary', () => ({}))
   const schemaValidation = useState<SchemaValidationResult | null>('brain-schema-validation', () => null)
+  // What this user may write here. Per user, not per tree, so it never comes
+  // from IndexedDB: until a sync answers it is null and write controls stay
+  // hidden rather than flash up for a viewer.
+  const access = useState<BrainSyncAccess | null>('brain-access', () => null)
 
   // --- Worker Lifecycle ---
 
@@ -138,6 +144,7 @@ export function useContentBrain() {
     if (sharedWorker) destroyBrain()
 
     sharedProjectId = projectId
+    access.value = null
     workerReady = new Promise<void>((resolve) => {
       resolveWorkerReady = resolve
       // A missed cache costs one full sync; a gate that never opens costs the
@@ -182,6 +189,7 @@ export function useContentBrain() {
     }
     workerAvailable.value = false
     sharedProjectId = null
+    access.value = null
     networkApplied = false
     // A sync still in flight for this project will not report back (see
     // `sync`), so it must not leave the next project looking busy.
@@ -316,6 +324,7 @@ export function useContentBrain() {
       }
 
       // Update reactive state from response (immediate, don't wait for worker)
+      access.value = response.access ?? null
 
       if (!response.delta) {
         if (response.config) config.value = response.config
@@ -468,6 +477,7 @@ export function useContentBrain() {
     contentContext: readonly(contentContext),
     contentSummary: readonly(contentSummary),
     schemaValidation: readonly(schemaValidation),
+    access: readonly(access),
     hasContentrain,
     projectStats,
 

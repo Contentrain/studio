@@ -1,6 +1,7 @@
 import type { ContentEngineContext, EngineInternalContext, EngineMergeResult, SaveOptions, WriteResult } from './types'
 import { classifyMergeFailure, createBranchGuard, finalizeContentrain, listContentBranches, mergeBranch, mergeToContentrain, rejectBranch } from './branch-ops'
 import { deleteContent } from './delete-content'
+import { renameDictionaryKey } from './rename-dictionary-key'
 import { initProject } from './init-project'
 import { saveContent } from './save-content'
 import type { DocumentInput } from './save-document'
@@ -140,6 +141,11 @@ export function createContentEngine(ctx: ContentEngineContext) {
       const touched = result.touchedLocales ?? [locale]
       if (projectId) clearEntrySchedules(projectId, modelId, entryIds, touched.length === 1 ? touched[0] : undefined).catch(() => {})
       return result
+    },
+    // One commit across every locale holding `from` — redone whole on a conflict.
+    renameDictionaryKey: async (modelId: string, from: string, to: string, userEmail: string) => {
+      const write = () => onStaleBaseRedo(() => renameDictionaryKey(internal, modelId, from, to, userEmail))
+      return remember(await write(), write)
     },
     saveDocument: async (modelId: string, locale: string, slug: string, frontmatter: Record<string, unknown>, body: string, userEmail: string, options?: SaveOptions) => {
       const write = () => onStaleBaseRedo(() => saveDocument(internal, modelId, locale, slug, frontmatter, body, userEmail, options))

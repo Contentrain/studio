@@ -3,7 +3,8 @@
  * (W54): does the GitHub account that will own the delivery already have a
  * Studio plan, and does it cover the plan discovery sized?
  *
- * - `none`: no Studio account, or none with a running paid plan → the Studio
+ * - `none`: no Studio account, or none with a running paid plan, or no GitHub
+ *   account named (the offer before sign-in) → the Studio
  *   line is year 1 of the sized plan, at the yearly list price.
  * - `covers`: a running plan at least the sized one → nothing is added.
  * - `too_small`: a running plan below it → the upgrade difference.
@@ -64,8 +65,9 @@ export async function coveringWorkspace(userId: string, needed: MigrateStudioPla
  */
 export type MigrateAccountStateWithRenewal = MigrateAccountStateResponse & Required<Pick<MigrateAccountStateResponse, 'renewal_cents' | 'monthly_list_cents'>>
 
-export async function resolveMigrateAccountState(githubUserId: string, plan: MigrateStudioPlan): Promise<MigrateAccountStateWithRenewal> {
-  const user = await useAuthProvider().getUserByProviderAccount('github', githubUserId)
+/** `githubUserId` null: the offer before sign-in asks for the sized plan's list price, which is the `none` answer. */
+export async function resolveMigrateAccountState(githubUserId: string | null, plan: MigrateStudioPlan): Promise<MigrateAccountStateWithRenewal> {
+  const user = githubUserId ? await useAuthProvider().getUserByProviderAccount('github', githubUserId) : null
   const current = user ? await highestRunningPlan(user.id) : null
 
   const monthly_list_cents = monthlyListCents(plan)

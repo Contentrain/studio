@@ -226,6 +226,43 @@ export function useContentEditor() {
     }
   }
 
+  // ═══ Dictionary keys ═══
+
+  /**
+   * Remove keys from, or rename a key of, a dictionary — one commit through
+   * the same approval gate as a delete. A refusal (the new key exists, a key
+   * is nowhere) comes back as a toast; nothing was written.
+   */
+  async function changeDictionaryKeys(
+    workspaceId: string,
+    projectId: string,
+    modelId: string,
+    change: { remove: string[] } | { rename: { from: string, to: string } },
+  ): Promise<boolean> {
+    saving.value = true
+    try {
+      const result = await $fetch<SaveResponse>(`/api/workspaces/${workspaceId}/projects/${projectId}/content/${modelId}/keys`, {
+        method: 'PATCH',
+        body: change,
+      })
+      if (!result.validation.valid) {
+        toast.error(result.validation.errors.map(e => e.message).join(', '))
+        return false
+      }
+      announceSave(result)
+      refreshPendingBranches(result, workspaceId, projectId)
+      return true
+    }
+    catch (e: unknown) {
+      const { t } = useContent()
+      toast.error(resolveApiError(e, t('content.save_error')))
+      return false
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
   const isBatchEditing = computed(() => batchEditData.value !== null)
   const hasBatchChanges = computed(() => batchDirtyFields.value.size > 0)
   const dirtyFieldCount = computed(() => batchDirtyFields.value.size)
@@ -241,6 +278,7 @@ export function useContentEditor() {
     startEdit,
     cancelEdit,
     saveField,
+    changeDictionaryKeys,
     // Batch
     batchEditData: readonly(batchEditData),
     isBatchEditing,
