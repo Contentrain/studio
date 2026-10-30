@@ -539,7 +539,7 @@ provide(sendChatPromptKey, sendChatPrompt)
         </div>
         <div v-else-if="!snapshot.exists" class="p-5">
           <AtomsEmptyState
-            illustration="/illustrations/initialize-project.svg"
+            illustration="/illustrations/initialize-project.webp"
             :title="t('content.not_found_title')"
             :description="t('content.not_found_description')"
           />

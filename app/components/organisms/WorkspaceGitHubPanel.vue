@@ -75,7 +75,7 @@ function installGitHubApp() {
     <!-- Not installed -->
     <template v-else-if="!activeWorkspace?.github_installation_id">
       <AtomsEmptyState
-        illustration="/illustrations/connect-github.svg"
+        illustration="/illustrations/connect-github.webp"
         :title="t('settings.github_not_connected_title')"
         :description="t('settings.github_not_connected_hint')"
       >

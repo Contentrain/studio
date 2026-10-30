@@ -15,14 +15,21 @@ withDefaults(defineProps<{
 
 <template>
   <div class="flex flex-col items-center text-center" :class="compact ? 'py-6' : 'py-12'">
-    <!-- Illustration (takes precedence over icon) -->
-    <NuxtImg
-      v-if="illustration"
-      :src="illustration"
-      :alt="title"
-      class="h-28 w-auto"
-      loading="lazy"
-    />
+    <!-- Illustration (takes precedence over icon); each one ships a `-dark` twin for dark mode -->
+    <template v-if="illustration">
+      <NuxtImg
+        :src="illustration"
+        :alt="title"
+        class="h-28 w-auto dark:hidden"
+        loading="lazy"
+      />
+      <NuxtImg
+        :src="illustration.replace(/\.webp$/, '-dark.webp')"
+        :alt="title"
+        class="hidden h-28 w-auto dark:block"
+        loading="lazy"
+      />
+    </template>
 
     <!-- Icon fallback -->
     <div

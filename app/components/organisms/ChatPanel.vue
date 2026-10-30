@@ -301,7 +301,7 @@ function formatConversationDate(dateStr: string): string {
         <!-- Empty state: setup project (no .contentrain/) -->
         <div v-else-if="messages.length === 0 && projectStatus === 'setup'" class="flex h-full flex-col items-center justify-center p-8">
           <AtomsEmptyState
-            illustration="/illustrations/initialize-project.svg"
+            illustration="/illustrations/initialize-project.webp"
             :title="t('content.not_found_title')"
             :description="t('content.not_found_description')"
           >
@@ -324,7 +324,7 @@ function formatConversationDate(dateStr: string): string {
            that centres with the composer, so its height comes from content. -->
         <div v-else-if="messages.length === 0" class="flex items-center justify-center p-8">
           <AtomsEmptyState
-            illustration="/illustrations/start-conversation.svg"
+            illustration="/illustrations/start-conversation.webp"
             :title="t('chat.empty_title')"
             :description="t('chat.empty_description')"
           />
@@ -408,7 +408,8 @@ function formatConversationDate(dateStr: string): string {
         role="status"
         class="flex items-center gap-3 border-t border-warning-200 bg-warning-50 px-4 py-3 dark:border-warning-500/20 dark:bg-warning-500/10"
       >
-        <NuxtImg src="/illustrations/limit-reached.svg" alt="" class="h-10 w-auto shrink-0" loading="lazy" />
+        <NuxtImg src="/illustrations/limit-reached-badge.webp" alt="" class="size-10 shrink-0 dark:hidden" loading="lazy" />
+        <NuxtImg src="/illustrations/limit-reached-badge-dark.webp" alt="" class="hidden size-10 shrink-0 dark:block" loading="lazy" />
         <div class="min-w-0 flex-1">
           <p class="text-xs font-medium text-warning-700 dark:text-warning-400">
             {{ creditsExhausted.message }}
