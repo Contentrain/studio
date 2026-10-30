@@ -165,6 +165,16 @@ describe('POST /api/migrate/account-state', () => {
     expect(auth.getUserByProviderAccount).toHaveBeenCalledWith('github', '4242')
   })
 
+  it('none without a GitHub id: the offer before sign-in gets the sized plan\'s list price, no account is looked up', async () => {
+    const token = await new SignJWT({ iss: 'contentrain-migrate', aud: 'contentrain-studio', jti: 'jti-anon', iat: nowSec(), exp: nowSec() + 300, plan: 'starter' })
+      .setProtectedHeader({ alg: 'EdDSA' })
+      .sign(privateKey)
+    const none = await call({ token })
+    expect(none).toEqual({ state: 'none', plan: 'starter', year1_cents: 9000, renewal_cents: 9000, monthly_list_cents: PLAN_PRICING.starter.priceMonthly * 1200 })
+    expect(validateMigrateAccountStateResponse(none, { requested: 'starter' }).ok).toBe(true)
+    expect(auth.getUserByProviderAccount).not.toHaveBeenCalled()
+  })
+
   it('contract: every answer passes the @contentrain/types check Migrate runs, with the S2S shape unchanged (year 1 = the renewal list price)', async () => {
     // `none`: year 1 is the list price, so it equals the renewal; monthly × 12 is above it (the struck price Migrate shows).
     auth.getUserByProviderAccount.mockResolvedValue(null)
