@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.4.13
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.12...v0.4.13)
+
+### ⚠️ Upgrade notes
+
+**1. No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.12, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+**2. Illustrations are now WebP with a `-dark` twin.**
+`public/illustrations/*.svg` and the old PNGs are gone. `EmptyState` renders `<name>.webp` in light mode and `<name>-dark.webp` in dark mode, so a custom illustration passed to it needs both files. The sign-in panel reads `auth-marketing.illustration`, now `/illustrations/auth-promo.webp`.
+
+### 🎨 UI
+
+- Sign-in and empty-state illustrations redrawn in the pencil-blueprint style, with real dark variants: sign-in, empty projects, connect GitHub, initialise project, start a conversation, and the credits-limit badge (#504, #505).
+
+### 🏡 Chore
+
+- `tailwindcss` and `@tailwindcss/vite` bumped to 4.3.3 together (#503).
+
 ## v0.4.12
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.11...v0.4.12)
