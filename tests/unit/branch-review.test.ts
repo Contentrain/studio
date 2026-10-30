@@ -383,6 +383,30 @@ describe('buildBranchReview — singletons, dictionaries, documents', () => {
     ])
   })
 
+  it('tells a removed dictionary key from a cleared one, and pairs a rename', async () => {
+    const dictionary: ModelDefinition = { id: 'ui-strings', name: 'UI Strings', kind: 'dictionary', domain: 'system', i18n: true, title_field: 'key' }
+    const path = '.contentrain/content/system/ui-strings/en.json'
+    const branchRef = 'cr/content/ui-strings/en/1755612345-a3f2'
+    const review = await run({
+      branch: branchRef,
+      branchRef,
+      models: new Map([['ui-strings', dictionary]]),
+      files: [{ path, status: 'modified' }],
+      read: reader({
+        [`contentrain:${path}`]: JSON.stringify({ 'a.old': 'Hello', 'b.gone': 'Bye', 'c.blank': 'Text' }),
+        [`${branchRef}:${path}`]: JSON.stringify({ 'a.new': 'Hello', 'c.blank': '' }),
+      }),
+    })
+
+    const fields = review.groups[0]!.entries[0]!.fields
+    const field = (id: string) => fields.find(f => f.fieldId === id)
+    expect(field('a.new')).toMatchObject({ possiblyRenamedFrom: 'a.old' })
+    expect(field('a.old')).toMatchObject({ removed: true })
+    expect(field('b.gone')).toMatchObject({ removed: true })
+    expect(field('b.gone')?.possiblyRenamedFrom).toBeUndefined()
+    expect(field('c.blank')?.removed).toBeUndefined()
+  })
+
   it('diffs a document as frontmatter plus a body that reads last', async () => {
     const article: ModelDefinition = {
       id: 'articles',

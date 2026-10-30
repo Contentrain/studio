@@ -728,6 +728,29 @@ describe('content engine', () => {
       expect(result.validation.errors[0]?.message).toContain('z.none')
       expect(applyPlan).not.toHaveBeenCalled()
     })
+
+    it('renames a key in every locale that holds it, in one commit', async () => {
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const result = await engineWith(applyPlan).renameDictionaryKey('ui-strings', 'a.x', 'a.renamed', 'user@example.com')
+
+      expect(result.validation.valid).toBe(true)
+      expect(result.touchedLocales).toEqual(['en', 'tr'])
+      expect(applyPlan).toHaveBeenCalledTimes(1)
+      const { changes } = applyPlan.mock.calls[0]?.[0] as { changes: Array<{ path: string, content: string | null }> }
+      const file = (locale: string) => JSON.parse(changes.find(c => c.path === `.contentrain/content/system/ui-strings/${locale}.json`)!.content!)
+      expect(file('en')).toEqual({ 'a.renamed': 'A', 'b.y': 'B', 'c.keep': 'C' })
+      expect(file('tr')).toEqual({ 'a.renamed': 'A-tr', 'c.keep': 'C-tr' })
+    })
+
+    it('refuses a rename onto a key that exists in any locale', async () => {
+      // Overwriting `c.keep` would lose its value in both locales.
+      const applyPlan = vi.fn().mockResolvedValue(defaultCommit)
+      const result = await engineWith(applyPlan).renameDictionaryKey('ui-strings', 'a.x', 'c.keep', 'user@example.com')
+
+      expect(result.validation.valid).toBe(false)
+      expect(result.validation.errors[0]?.message).toContain('c.keep')
+      expect(applyPlan).not.toHaveBeenCalled()
+    })
   })
 
   it('updates entry status in meta without touching content files', async () => {

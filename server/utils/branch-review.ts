@@ -258,6 +258,32 @@ function buildFieldChange(
   }
 }
 
+/**
+ * A dictionary's fields are its keys, so a key deleted from the file and a key
+ * set to `''` both arrive as "no value after". Only the first is a removal.
+ * A removed key and an added one carrying the same value are paired as a
+ * probable rename — Studio's rename writes exactly that, in one commit.
+ */
+function markRemovedAndRenamedKeys(
+  changed: ReviewFieldChange[],
+  before: Record<string, unknown> | undefined,
+  after: Record<string, unknown> | undefined,
+) {
+  const removedByValue = new Map<string, string[]>()
+  for (const change of changed) {
+    if (!before || !(change.fieldId in before) || (after && change.fieldId in after)) continue
+    change.removed = true
+    const value = JSON.stringify(before[change.fieldId])
+    removedByValue.set(value, [...(removedByValue.get(value) ?? []), change.fieldId])
+  }
+  for (const change of changed) {
+    if (!after || !(change.fieldId in after) || (before && change.fieldId in before)) continue
+    const candidates = removedByValue.get(JSON.stringify(after[change.fieldId]))
+    const from = candidates?.shift()
+    if (from) change.possiblyRenamedFrom = from
+  }
+}
+
 // ─── Builder ──────────────────────────────────────────
 
 interface GroupBucket {
@@ -399,6 +425,8 @@ async function buildGroup(
         humanize: model.kind !== 'dictionary',
       }))
     }
+
+    if (model.kind === 'dictionary') markRemovedAndRenamedKeys(changed, entryBefore, entryAfter)
 
     if (model.kind === 'document') {
       const bodyBefore = entryBefore?.body
