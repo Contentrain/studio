@@ -1,7 +1,14 @@
 /**
  * Update .contentrain/vocabulary.json terms.
  * Merges provided terms with existing. Set a term value to null to delete it.
- * Always auto-merges.
+ *
+ * The merge goes through the same approval gate as every other write, at the
+ * rung the agent's own `vocabulary` tool is judged on (`low_risk_content`), so
+ * a glossary edit is held on a review project whichever way it was made. A
+ * route that merged unconditionally let a term change land on `contentrain`
+ * past a review workflow the project had switched on. A held write leaves its
+ * branch for the branch review panel and is not verified against
+ * `contentrain` — it is not meant to be there yet.
  *
  * This is a read-modify-write over a whole file, so it needs concurrency
  * control: the vocabulary UI saves once per term, and two saves a few seconds
@@ -26,6 +33,7 @@
  */
 
 import { canonicalStringify } from '@contentrain/types'
+import { decideMerge } from '~~/server/utils/approval-gate'
 import type { TermPatch, Vocabulary } from '~~/server/utils/vocabulary-merge'
 import { applyVocabularyPatch, vocabularyPatchSatisfied } from '~~/server/utils/vocabulary-merge'
 
@@ -53,7 +61,7 @@ export default defineEventHandler(async (event) => {
   if (!permissions.availableTools.includes('save_content'))
     throw createError({ statusCode: 403, message: errorMessage('vocabulary.modify_forbidden') })
 
-  const { git, contentRoot } = await resolveProjectContext(workspaceId, projectId)
+  const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
   const vocabPath = contentRoot ? `${contentRoot}/.contentrain/vocabulary.json` : '.contentrain/vocabulary.json'
 
   /**
@@ -74,6 +82,10 @@ export default defineEventHandler(async (event) => {
   const engine = createContentEngine({ git, contentRoot, projectId })
   await engine.ensureContentBranch()
 
+  const plan = event.context.billing?.effectivePlan ?? getWorkspacePlan(workspace)
+  const brain = await getOrBuildBrainCache(git, contentRoot, projectId)
+  const workflow = hasFeature(plan, 'workflow.review') ? (brain.config?.workflow ?? 'auto-merge') : 'auto-merge'
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const snapshot = await openWriteSnapshot(git)
     const vocabulary = applyVocabularyPatch(await readVocabulary(writeBase(snapshot)), body.terms)
@@ -81,8 +93,9 @@ export default defineEventHandler(async (event) => {
     // `applyPlan` forks `base` when the branch is missing — no separate
     // createBranch, matching every other write path in the content engine.
     const branchName = generateBranchName('content', 'vocabulary')
+    let commitSha: string | undefined
     try {
-      await git.applyPlan({
+      const commit = await git.applyPlan({
         branch: branchName,
         // The serialisation every other writer (engine, MCP) uses: sorted keys.
         // Two writers ordering the same terms differently would make the 3-way
@@ -92,12 +105,26 @@ export default defineEventHandler(async (event) => {
         author: { name: 'Contentrain Studio', email: 'ai@contentrain.io' },
         base: writeBase(snapshot),
       })
+      commitSha = commit?.sha
     }
     catch (err) {
       // MCP's stale-base refusal (409): the branch is not at the snapshot.
       // Nothing was written — retry from a fresh snapshot.
       if ((err as { status?: number }).status === 409) continue
       throw err
+    }
+
+    const gate = await decideMerge({
+      workflow,
+      tool: 'vocabulary',
+      policy: brain.approvalPolicy,
+      ...(commitSha ? { commitSha } : {}),
+    })
+    if (!gate.allowed) {
+      // Held on its branch, in the shape the content and status routes use.
+      // Nothing merged, so there is no conflict to retry and nothing on
+      // `contentrain` to verify.
+      return { vocabulary, merged: false, branch: branchName, workflow, ...gate.review }
     }
 
     let mergeResult: { merged: boolean, pullRequestUrl?: string | null }

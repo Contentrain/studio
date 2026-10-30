@@ -121,6 +121,19 @@ export interface ReviewSchemaChange {
 export interface ReviewSettingsChange {
   area: 'locales' | 'workflow' | 'vocabulary' | 'project'
   items: Array<{ key: string, values: string[] }>
+  /**
+   * Vocabulary only: what each changed term says, per locale. A term name on
+   * its own does not let a reviewer approve a glossary edit — the text does.
+   */
+  terms?: ReviewTermChange[]
+}
+
+/** One glossary term on a branch, with only the locales whose text differs. */
+export interface ReviewTermChange {
+  term: string
+  kind: 'added' | 'removed' | 'updated'
+  /** `null` when the locale has no text on that side. */
+  locales: Array<{ locale: string, before: string | null, after: string | null }>
 }
 
 /** What a `cr/*` branch name and its meta records say about the change. */

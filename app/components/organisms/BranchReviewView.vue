@@ -304,6 +304,18 @@ function stripPrefix(path: string): string {
             <template v-for="(item, ii) in change.items" :key="ii">
               <span class="block">{{ t(`review.settings_${item.key}`, { values: item.values.join(', ') }) }}</span>
             </template>
+            <!-- Glossary terms: the text per locale, not just the term name -->
+            <ul v-if="change.terms?.length" class="mt-1.5 space-y-1.5">
+              <li v-for="term in change.terms" :key="term.term">
+                <span class="font-medium">{{ term.term }}</span>
+                <span v-for="row in term.locales" :key="row.locale" class="flex flex-wrap items-start gap-x-2 pl-2">
+                  <span class="shrink-0 font-mono uppercase text-muted">{{ row.locale }}</span>
+                  <span v-if="row.before !== null" class="text-danger-500 line-through opacity-70">{{ row.before }}</span>
+                  <span v-if="row.before !== null && row.after !== null" class="shrink-0 text-muted" aria-hidden="true">→</span>
+                  <span v-if="row.after !== null" class="text-success-600 dark:text-success-400">{{ row.after }}</span>
+                </span>
+              </li>
+            </ul>
           </li>
         </ul>
       </section>

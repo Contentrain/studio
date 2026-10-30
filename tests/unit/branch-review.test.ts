@@ -510,6 +510,11 @@ describe('buildBranchReview — schema and settings', () => {
         { key: 'term_added', values: ['project'] },
         { key: 'term_updated', values: ['workspace'] },
       ],
+      // The text a reviewer approves, per locale — not just the term names.
+      terms: [
+        { term: 'project', kind: 'added', locales: [{ locale: 'en', before: null, after: 'Project' }] },
+        { term: 'workspace', kind: 'updated', locales: [{ locale: 'en', before: 'Workspace', after: 'Team space' }] },
+      ],
     })
   })
 })
