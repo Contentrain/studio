@@ -54,20 +54,23 @@ function resetEmailForm() {
 </script>
 
 <template>
-  <OrganismsSigninWithProvider
-    v-if="!showEmailForm"
-    :error="error"
-    @provider="handleOAuth"
-    @show-email="showEmailForm = true"
-  />
-  <OrganismsSigninWithEmail
-    v-else
-    :loading="loading"
-    :error="error"
-    :magic-link-sent="magicLinkSent"
-    :sent-email="sentEmail"
-    @submit="handleMagicLink"
-    @provider="handleOAuth"
-    @reset="resetEmailForm"
-  />
+  <div>
+    <OrganismsSigninWithProvider
+      v-if="!showEmailForm"
+      :error="error"
+      @provider="handleOAuth"
+      @show-email="showEmailForm = true"
+    />
+    <OrganismsSigninWithEmail
+      v-else
+      :loading="loading"
+      :error="error"
+      :magic-link-sent="magicLinkSent"
+      :sent-email="sentEmail"
+      @submit="handleMagicLink"
+      @provider="handleOAuth"
+      @reset="resetEmailForm"
+    />
+    <MoleculesProductLinks class="mt-10" />
+  </div>
 </template>

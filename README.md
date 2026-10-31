@@ -81,7 +81,7 @@ Typical path:
   - dictionary
 - Multi-locale content workflows
 - Chat-driven content operations
-- MCP access for AI agents: a remote OAuth endpoint (`/api/mcp/remote`, managed provider pair only) and per-project API-key endpoints — see [Remote MCP](docs/REMOTE_MCP.md)
+- MCP access for AI agents: a remote OAuth endpoint (`/api/mcp/remote`, managed provider pair only) and per-project API-key endpoints — see [Remote MCP](docs/REMOTE_MCP.md) and the [MCP Cloud guide](https://docs.contentrain.io/developer/mcp-cloud)
 - Content validation and health reporting
 - Branch, diff, merge, and review workflows
 - Team and role management

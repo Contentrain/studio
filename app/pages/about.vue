@@ -106,5 +106,7 @@ const linkClass = 'rounded text-primary-600 underline underline-offset-2 focus-v
     <p class="mt-8 text-xs text-muted">
       {{ t('about.powered_by') }}
     </p>
+
+    <MoleculesProductLinks class="mt-6 border-t border-secondary-200 pt-6 dark:border-secondary-800" />
   </div>
 </template>
