@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.14
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.13...v0.4.14)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.13, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+### 🩹 Fixes
+
+- CDN: a model without a display name is labelled by its id in the build index and progress, and revoking a CDN key asks for an inline confirmation first (#507).
+- Dates in the UI follow the UI locale, and the chat keeps a model pick only when the workspace plan allows it, otherwise it falls back to the default model (#508).
+
+### 📖 Documentation
+
+- `CLAUDE.md` lists the real provider interfaces (#509); `AGENTS.md` is synced with it (#510).
+
 ## v0.4.13
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.12...v0.4.13)
