@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.15
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.14...v0.4.15)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.14, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+### 🚀 Enhancements
+
+- Sign-in and About show a footer row linking contentrain.io, the docs, the AI packages and Migrate (#512).
+
+### 🩹 Fixes
+
+- `/sitemap.xml` answers a real 404 instead of the app shell with a 200 (#512).
+
+### 📖 Documentation
+
+- The README links the MCP Cloud guide next to `docs/REMOTE_MCP.md` (#512).
+
+### 🏡 Chore
+
+- The release workflow pulls BuildKit from Docker Hub with the same pinned digest (#513).
+
 ## v0.4.14
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.13...v0.4.14)
