@@ -1,11 +1,12 @@
-# Base image: the ECR Public mirror of the official image, not Docker Hub (Docker Hub's anonymous pull limit stopped
-# Railway and CI builds, 2026-10-09). Pinned by the multi-arch index digest, the same on both registries on 2026-10-10:
-# docker.io/library/node:22-slim = public.ecr.aws/docker/library/node:22-slim =
+# Base image: Google's Docker Hub mirror of the official image. Docker Hub hit its anonymous pull limit (2026-10-09)
+# and ECR Public its "Data limit exceeded" (2026-10-24 in CI, 2026-10-31 in the v0.4.15 release build).
+# Pinned by the multi-arch index digest, the same on all three registries on 2026-10-31:
+# docker.io/library/node:22-slim = public.ecr.aws/docker/library/node:22-slim = mirror.gcr.io/library/node:22-slim =
 # sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 (`docker buildx imagetools inspect`).
-# To update Node: all three FROM lines together, the new digest compared on both registries.
+# To update Node: all three FROM lines together, the new digest compared on all three registries.
 
 # ── Stage 1: Install dependencies ─────────────────────────────────────────────
-FROM public.ecr.aws/docker/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS deps
+FROM mirror.gcr.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS deps
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -15,7 +16,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile --prod=false
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────────
-FROM public.ecr.aws/docker/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS build
+FROM mirror.gcr.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS build
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -36,7 +37,7 @@ ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
 RUN pnpm build
 
 # ── Stage 3: Production runtime ───────────────────────────────────────────────
-FROM public.ecr.aws/docker/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runtime
+FROM mirror.gcr.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runtime
 
 # git is required for content operations (clone, branch, commit, push)
 RUN apt-get update && apt-get install -y --no-install-recommends \

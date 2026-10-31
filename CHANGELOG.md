@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.16
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.15...v0.4.16)
+
+The v0.4.15 image never built (ECR Public "Data limit exceeded"), so v0.4.16 is the first release that ships its changes below.
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.** Rolling back the image alone is safe.
+
+### 🏡 Chore
+
+- The Docker base image comes from `mirror.gcr.io` with the same pinned digest.
+
 ## v0.4.15
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.14...v0.4.15)
