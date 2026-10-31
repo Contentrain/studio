@@ -1,7 +1,7 @@
 # Contentrain Studio
 
 Open-core product for team content management over Git. This repository contains the AGPL-3.0 core.
-Conversation-first CMS — chat with AI agent to manage structured content.
+Conversation-first content management — chat with an AI agent to manage structured content.
 
 ## Stack
 

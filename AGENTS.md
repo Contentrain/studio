@@ -1,15 +1,15 @@
 # Contentrain Studio
 
 Open-core product for team content management over Git. This repository contains the AGPL-3.0 core.
-Conversation-first CMS — chat with AI agent to manage structured content.
+Conversation-first content management — chat with an AI agent to manage structured content.
 
 ## Stack
 
 - **Framework:** Nuxt 4 (full-stack, single project — NOT monorepo)
 - **UI:** Radix Vue (headless primitives) + Tailwind CSS 4 (CSS-based config, @theme)
-- **Auth:** AuthProvider interface — current impl: Supabase Auth (GitHub OAuth, Google OAuth, Magic Link)
-- **Database:** DatabaseProvider interface — current impl: Supabase PostgreSQL with RLS
-- **Content:** Contentrain MCP + @contentrain/query SDK for UI strings
+- **Auth:** AuthProvider interface — two impls, shipped as matched pairs: `supabase-auth.ts` (Supabase Auth) and `managed-auth.ts` (Supabase-free: jose HS256 JWT + refresh rotation, nuxt-auth-utils OAuth dance, Resend magic link)
+- **Database:** DatabaseProvider interface — two impls: `supabase-db/` (Supabase PostgreSQL) and `postgres-db/` (kysely + pg over any plain PostgreSQL; same RLS policies via the `request.jwt.claim.sub` GUC contract)
+- **Content engine:** `@contentrain/mcp` (core/ops + overlay-reader + validator + providers) + `@contentrain/types` (canonical contracts) + `@contentrain/query` SDK for UI strings. Studio composes `GitHubProvider` from `@contentrain/mcp/providers/github` with Studio extensions (tree listing, framework detection, PR helpers) — see `server/providers/git.ts`
 - **Icons:** Annon custom icon set via @iconify/tailwind4
 - **Images:** @nuxt/image (NuxtImg for all images)
 
@@ -23,24 +23,51 @@ All external services are accessed **only** through provider interfaces. No impl
 Provider interfaces live in `server/providers/`:
 - `server/providers/auth.ts` — AuthProvider interface
 - `server/providers/database.ts` — DatabaseProvider interface
-- `server/providers/storage.ts` — StorageProvider interface
-- `server/providers/git.ts` — GitProvider interface
+- `server/providers/git.ts` — GitAppProvider interface
+- `server/providers/ai.ts` — AIProvider interface
+- `server/providers/cdn.ts` — CDNProvider interface
+- `server/providers/media.ts` — MediaProvider interface
+- `server/providers/email.ts` — EmailProvider interface
+- `server/providers/connector.ts` — ConnectorProvider interface
+- `server/providers/deployment.ts` — DeploymentProvider interface
+- `server/providers/payment/types.ts` — PaymentProvider interface
 
-Concrete implementations live alongside interfaces in `server/providers/`, named `[impl]-[service].ts`:
+Concrete implementations live alongside interfaces in `server/providers/` (single-file `[impl]-[service].ts` or a directory for multi-module providers):
 - `server/providers/supabase-auth.ts` — SupabaseAuthProvider
-- `server/providers/supabase-db.ts` — SupabaseDatabaseProvider (future)
+- `server/providers/managed-auth.ts` — ManagedAuthProvider (jose HS256 JWT + refresh rotation in `auth.refresh_tokens`, OAuth via nuxt-auth-utils handlers, magic link/invites via Resend)
+- `server/providers/supabase-db/` — SupabaseDatabaseProvider
+- `server/providers/postgres-db/` — PostgresDatabaseProvider (kysely + pg; user-scoped queries via `withUser()` = `SET LOCAL ROLE authenticated` + `request.jwt.claim.sub` GUC)
+
+**Provider pairs.** Auth and database providers are selected via `NUXT_AUTH_PROVIDER` (`supabase` | `managed`) and `NUXT_DATABASE_PROVIDER` (`supabase` | `postgres`) and only ship as matched pairs — `supabase+supabase` (default) or `managed+postgres`. Mixed pairs are rejected at boot by `server/plugins/00.validate-config.ts` (the Supabase DB provider authorizes RLS queries with Supabase-issued JWTs; managed-auth JWTs only the postgres provider understands). Migrations are one lineage (`postgres/migrations/000_auth_shim.sql` + `supabase/migrations/*.sql`) with two runners: Supabase CLI for the supabase pair, `scripts/migrate-postgres.mjs` (`pnpm db:migrate:pg`, verify with `pnpm db:verify:pg`) for plain PG.
 
 **Rules — never violate:**
-- NEVER import `@supabase/supabase-js` outside of `server/providers/impl/`
+- NEVER import `@supabase/supabase-js` outside `server/providers/supabase-auth.ts`, `server/providers/supabase-db/`, and `server/providers/supabase-client.ts`
 - NEVER use `useSupabaseClient()`, `useSupabaseUser()`, `useSupabaseSession()` in components or pages
 - NEVER use `@nuxtjs/supabase` auto-injected composables outside the adapter layer
 - NEVER write Supabase-specific SQL (RLS policies, `auth.users` joins) in application logic — only in migration files
 - ALL auth checks in server routes use `AuthProvider.getSession()`, never the Supabase client directly
 - Provider instances are resolved via a factory/injection in `server/utils/providers.ts`
 
-**Current implementation:** Supabase (Auth + PostgreSQL).
-**Alternative implementations** (future): standard OAuth + plain PostgreSQL, Auth0, Clerk, etc.
+**Studio's own staging/prod runs the `managed+postgres` pair** (Railway PostgreSQL); the Supabase pair remains the AGPL/community default for self-hosters.
 Any new provider implementation must satisfy the same interface — zero application code changes required.
+
+### Payment providers (plugin registry)
+
+Billing runs through a plugin registry at `server/providers/payment/`.
+Each provider ships as a `PaymentProviderPlugin` (`key`, `label`,
+`isConfigured`, `create`). The registry resolves the active plugin
+using a preference order (currently `polar` → `stripe`). Billing state
+lives on `payment_accounts` (one active row per workspace); meter
+events flow through `usage_events_outbox` and a drain cron.
+
+**Rules — never violate:**
+- NEVER call Stripe or Polar SDKs outside `server/providers/payment/plugins/<key>.ts`
+- NEVER read/write `payment_accounts` or `usage_events_outbox` outside
+  `DatabaseProvider` methods
+- To add a provider: new plugin file + one line in `bootstrapPaymentPlugins()`. No other core changes.
+- To record a usage event: call the typed helper in `server/utils/usage-metering.ts`. Don't write to the outbox directly.
+- AI/API message quotas count **credit-weighted** units (`shared/utils/ai-credits.ts`). Studio chat reserves the turn's whole ceiling atomically (`reserveAgentCredits`, migration 031), runs the loop against that as a dollar budget (`server/utils/turn-budget.ts`), and settles once in `finally` from the real token totals (`settleTurnCredits`) — refund included, cancel and error included. The Conversation API still reserves 1 and settles `credits - 1`. Never meter a studio-funded turn as a flat message, never settle a turn outside `finally`, and never sell overage below `AI_CREDIT_UNIT_USD`.
+- See `docs/PAYMENT_PROVIDERS.md` for the full setup + extension guide.
 
 ### Auth
 - Owner: GitHub OAuth (needs repo access)
@@ -69,11 +96,24 @@ This repository is the AGPL core product surface — no marketing pages. All rou
 /auth/callback ............ Auth callback (public)
 / ......................... Workspace list (or redirect to default)
 /w/:slug .................. Workspace dashboard — project list
-/w/:slug/projects/new ..... Connect repository
 /w/:slug/projects/:id ..... Project workspace (three-panel)
-/w/:slug/settings ......... Workspace settings, members, billing
-/settings ................. User/account settings
+/w/:slug/settings ......... Workspace settings (overview, members, github, ai-keys)
+/settings ................. User account settings (profile, account deletion)
 ```
+
+> Connecting a repository is a dialog (`ConnectRepoDialog.vue`), opened from the
+> sidebar, the command palette and the workspace dashboard — not a page. The old
+> `/w/:slug/projects/new` route was removed in `68345ed`; anything still linking
+> to it now falls through to `/w/:slug/projects/:id` with `id = "new"`.
+
+### Profile / Account Settings
+- `/settings` page with tabs: Profile, Account
+- Profile tab: display name (editable), avatar (read-only from OAuth), email (read-only), connected account badge
+- Account tab: danger zone — account deletion guarded by typed-email confirmation (user re-types their own address in the UI; no outbound confirmation email is sent)
+- API: `PATCH /api/profile` (update displayName), `DELETE /api/profile` (delete account — CASCADE)
+- Database: `profiles` table via DatabaseProvider (`getProfile`, `updateProfile`)
+- Auth: `AuthProvider.deleteUser()` for GDPR account deletion
+- Sidebar shows `displayName` (fallback: email prefix), clickable → `/settings`
 
 ## Color System — CRITICAL
 
@@ -141,7 +181,7 @@ Atomic design from old Contentrain CMS, refactored for Radix Vue + Tailwind 4:
 app/components/
   atoms/          — Radix Vue primitives + Tailwind (HeadingText, BaseButton, FormInput, FormLabel, Logo, Avatar, Badge)
   molecules/      — Composed atoms (ProviderButtons, AuthLink, EmailButton)
-  organisms/      — Business logic components (SigninWithProvider, SigninWithEmail)
+  organisms/      — Business logic components (SigninWithProvider, ProfileOverviewPanel, WorkspaceMembersPanel)
 ```
 
 > **Note:** No `templates/` layer — Nuxt layouts (`app/layouts/`) handle page-level wrappers.
@@ -193,67 +233,343 @@ Brand SVGs (GitHub, Google logos) stay as inline SVG — they need exact brand c
 - `default` — sidebar-first (AppSidebar 240px + full-width main). No header.
 - `workspace` — three-panel (sidebar 240px, chat, context 400px)
 
+## Content Engine — After Faz S2
+
+The write path delegates structural operations to
+`@contentrain/mcp/core/ops` instead of implementing file assembly
+itself. Every save / delete op composes:
+
+1. Studio field validation (`validateContent` — re-exported from MCP
+   since Faz S3, shape-aligned so call sites stay untouched).
+2. MCP plan helper (`planContentSave` / `planContentDelete` /
+   `planModelSave`) — produces a deterministic `FileChange[]` sorted
+   by path, with canonical JSON (or markdown frontmatter for
+   documents) already serialised via `canonicalStringify` from
+   `@contentrain/types`.
+3. Studio meta override (`applyStudioMetaOverrides` in
+   `content-engine/helpers.ts`) — replaces MCP's `defaultMeta`
+   (`status: 'draft'`, `updated_by: 'contentrain-mcp'`) with
+   Studio's `autoPublish` + existing-status preservation +
+   per-user `updated_by` semantics.
+4. `provider.applyPlan({ branch, changes, message, author, base: 'contentrain' })`
+   — atomic branch+commit via the GitHub Data API. `createBranch`
+   is no longer called separately; `applyPlan` forks `base` when the
+   branch is missing. **`context.json` is NOT part of `changes`** —
+   see the context.json invariant below.
+
+**`context.json` lifecycle (MCP 1.5.0 model)** — feature branches
+**never** carry `context.json`. Committing it per-save caused merge
+conflicts when parallel `cr/*` branches landed (each mutated the same
+file from the same base). Instead it is regenerated deterministically
+on the `contentrain` branch **after a merge**, in
+`branch-ops.ts:mergeBranch` → `regenerateContextOnContentrain`
+(`buildContextChange` over the merged tree + a dedicated
+`applyPlan` commit onto `contentrain`, best-effort). The seed
+`context.json` is still written once at `initProject` time. Brain cache
+and external readers only ever read it from `contentrain`, so post-merge
+regeneration is the single point it needs to be accurate.
+
+**Invariants to preserve** when touching this path:
+
+- Content SSOT is the `contentrain` branch. Feature branches always
+  fork from it via `applyPlan`'s default `base`. `config.repository
+  .default_branch` (`main` / `master`) is informational — never the
+  fork point.
+- Never add `context.json` to a feature-branch `applyPlan`. Only
+  `initProject` (seed) and `regenerateContextOnContentrain` (post-merge,
+  on `contentrain`) may write it.
+- Studio's `pinReaderToContentrain` wrapper defaults ref to
+  `CONTENTRAIN_BRANCH` for every MCP read (MCP's helpers call
+  `reader.readFile(path)` without a ref).
+- Scheduling (`publish_at` / `expire_at`) is meta-only and rides on the
+  `ContentEntry` (MCP 3.1.8), never inside `data`; `null` clears, absent
+  leaves alone, and it never changes `status` — `cdn-builder.ts` gates
+  delivery of a *published* entry by it. `shapeEntriesForSave` lifts any
+  undeclared `publish_at`/`expire_at` out of entry data so it cannot leak
+  into the content file. `applyStudioMetaOverrides` starts from the meta
+  MCP planned (which carries the schedule) and re-owns only `status`,
+  `updated_by`, `updated_at` — rebuilding from the prior file, as it once
+  did, dropped every key the plan had just set.
+- `saveModel` MERGES with the definition on `contentrain`
+  (`content-engine/model-merge.ts`): omitted fields and top-level keys are
+  kept, a sent field is merged property by property, removal is only via
+  `removeFields`, and a removal/type/kind/i18n change that still has
+  content behind it is refused with the affected count unless
+  `allowBreaking` is passed. MCP's own `contentrain_model_save` (and so
+  MCP Cloud) still replaces — that is MCP's contract, not Studio's.
+  Field names are snake_case for NEW fields; a legacy name the model
+  already has is kept and reported in `warnings` (MCP's `legacyFieldNames`
+  / `collectFieldPaths`, same tolerance as `contentrain_model_save`).
+- `resolveTitleFieldId` (`shared/utils/entry-title.ts`) falls back with
+  the chain MCP's `validate --fix` backfills with — name-like keys with
+  required first, then required prose, then prose, never slug/url/code —
+  plus a Studio-only last rung (first field) so a read path renders
+  something. Keep the two in step when either changes.
+- Locale-agnostic fields (`image`/`video`/`file`/`relation`/`relations`,
+  `shared/utils/locale-agnostic-fields.ts`) are written to every locale of
+  an i18n model in the same commit (`content-engine/locale-fanout.ts`),
+  only into entries that already exist there. The schema has no
+  `localized` flag yet; when `@contentrain/types` grows one, it should
+  replace the type list, not sit beside it.
+- Media references stay absolute delivery URLs (#321, option 1). Moving a
+  project to another instance or project id is `POST .../media/rehost`
+  (`server/utils/media-rehost.ts`): a textual rewrite of the old
+  `{siteUrl}/api/cdn/v1/{projectId}/media/` base across all content files,
+  one commit forked from the read snapshot, refused (409) while any
+  referenced path is missing from this project's storage. `copyAssets`
+  (same instance, caller must be owner/admin of the SOURCE workspace —
+  project ids are public) copies storage objects and then the library rows
+  (`copyMediaAssetRows`, one statement). Relative paths (option 2) wait for
+  a resolver in `@contentrain/query`.
+
+## Chat Prompt Cache Layout — CRITICAL
+
+Every agent call (Studio chat `chat.post.ts` and the ee Conversation API) renders the
+prompt in this order, and the order is what makes Anthropic's prompt cache pay:
+
+```
+tools (marker on last tool) → system: static body only (marker) → messages: replayed
+history (marker on the last block of the newest kept message) → current user turn:
+[<request_context> = content index + UI context + intent + project state, attachments, user text]
+```
+
+- **Never put per-request content in `system`.** Anything that changes between turns
+  (content index, intent, project state, UI context) goes into the user turn via
+  `buildRequestContext` (`agent-system-prompt.ts`). In `system` it would sit in front of
+  every history message and invalidate the conversation cache on every content change.
+- **The composed user turn is persisted byte-identical** (`composeUserTurn` output =
+  seed row `content_blocks`). Replaying different bytes than the live call shifts the
+  prefix at that message every turn and re-bills the whole previous turn at 2x. The
+  content index rides in the turn only when changed or stale (`shouldIncludeContentIndex`,
+  refresh every 15 turns) so history doesn't fill with repeated copies.
+- Breakpoint 4 is the engine's in-turn moving marker (`withInTurnCacheMarker`,
+  `ITERATION_CACHE_MIN_TOKENS`): multi-iteration turns with large tool results re-read
+  their segment at 0.1x instead of re-sending it per iteration.
+- To hunt a future invalidator, use Anthropic's cache-diagnosis beta
+  (`cache-diagnosis-2026-04-07`, `diagnostics.previous_message_id` -> `cache_miss_reason`)
+  rather than guessing from `cache_creation_input_tokens`.
+- Every marker is `PROMPT_CACHE_CONTROL` (`server/providers/ai.ts`, 1h TTL). Anthropic
+  requires longer-TTL markers to precede shorter ones — never mix TTLs per call site.
+- `buildPromptMessages` trims with hysteresis (`HISTORY_TRIM_TARGET`). Trimming exactly to
+  the budget every turn would shift the prefix and re-write the whole history each call.
+- History must replay byte-identically: the Anthropic adapter sorts `tool_use.input` keys
+  (jsonb does not preserve key order); persisted rows are never rewritten on replay.
+- Replayed images: base64 → placeholder; URL images older than `RECENT_IMAGE_TURNS` →
+  placeholder with the URL (Anthropic bills URL images by pixels like inline ones). PDFs stay.
+- The history budget estimator (`estimateContentTokens`) is language-aware and bills image
+  blocks at ~1.6K tokens — `chars/4` under-counted Turkish + images by 3× and let a 48K
+  budget send 150K tokens per call.
+- Verify on staging with `messages.cache_read_input_tokens`: on a warm conversation it should
+  track the whole history; `token_count_input` should stay near the per-turn delta.
+
+## MCP Cloud — HTTP MCP server for external agents
+
+Studio boots a real MCP server (`@contentrain/mcp/server/http`
+`startHttpMcpServerWith`) on a loopback port at Nitro startup
+(`server/plugins/mcp-cloud-server.ts`). The loopback server mounts at
+`/mcp`, so the public client URL is `/api/mcp/v1/{projectId}/mcp`. The
+authenticated public entry is
+`server/api/mcp/v1/[projectId]/[...slug].ts` — Bearer key validation +
+project match + `api.mcp_cloud` plan gate + per-key rate limit (with
+`Retry-After` on 429) + per-key tool allowlist (`allowed_tools`; empty =
+unrestricted) + atomic monthly quota (`increment_mcp_cloud_usage_if_allowed`)
++ usage metering + header strip + proxy to the loopback server +
+brain-cache invalidation on write tools. **Quota semantics:** only
+`tools/call` requests consume the monthly quota and produce meter events;
+protocol traffic (initialize, tools/list, SSE GET, session DELETE) is
+rate-limited but free. Keys live in `mcp_cloud_keys` (SHA-256 hashed); UI is
+`ProjectMcpKeysPanel.vue` (project settings → API keys). The whole path is implemented — **not** a stub.
+
+**Scaling note:** loopback MCP sessions are in-memory per Nitro instance
+(15 min TTL). Multiple instances need sticky sessions for `mcp-session-id`
+affinity; rate limit (Redis) and quota (DB) are already instance-safe.
+
+**Media facet (MCP 1.10.0's 5 media tools).** The facet is
+`RepoProvider.media` — absent = the tools are hidden from `tools/list`.
+Policy lives at the **proxy** (`runMcpCloudProxy` computes `mediaEligible`
+= media stack + plan `media.upload` + project `cdn_enabled` + workspace
+owner), which injects `x-cr-project-id`/`x-cr-workspace-id`/`x-cr-media-owner`/`x-cr-plan`
+ONLY when eligible; the loopback (`mcp-cloud-server.ts`) turns those into
+`buildMcpMediaFacet` (`server/utils/mcp-media-facet.ts`), a passthrough
+over the ee media stack (`useMediaProvider`) that owns SSRF/MIME/size (via
+`fetchRemoteMedia`) + storage-quota + tenant isolation. Key-surface
+exception: media tools are **never** covered by the empty-`allowed_tools`
+"unrestricted" rule — a key needs `media_enabled=true` or an explicit
+listing (else existing keys would silently gain URL ingest + destructive
+delete). OAuth advertises `media:read`/`media:write` only where the media
+stack is configured (`advertisedScopes`). The tenant fingerprint includes
+project id, so an eligibility flip re-inits the session within one request.
+
+**Two deliberate boundaries — keep them in mind when changing this path:**
+
+- **Reduced tool surface.** The loopback server runs against Studio's
+  `GitHubProvider` (`localWorktree: false`, no `projectRoot`). So every
+  localWorktree-gated tool — `contentrain_merge`, `contentrain_branch_list`,
+  `contentrain_branch_delete`, `contentrain_submit`, and also
+  `contentrain_init`, `contentrain_scaffold`, `contentrain_bulk`,
+  `contentrain_doctor`, `contentrain_scan`, `contentrain_apply`,
+  `contentrain_validate` with `fix: true` — returns a capability error over
+  MCP Cloud. The actual remote surface is: status, describe,
+  describe_format, content_list, validate (no fix), content/model
+  save+delete. The merge/review lifecycle is Studio-owned. The proxy's
+  `WRITE_TOOL_NAMES` is derived from MCP's `TOOL_ANNOTATIONS`
+  (`readOnlyHint: false`) minus the Studio-owned lifecycle tools, so a
+  future MCP release that opens e.g. `bulk` to remote providers is covered
+  automatically — keep the lifecycle exclusion list intact.
+
+- **pending-review by contract, reconciled by workflow.** MCP's remote write
+  path hardcodes `workflowAction: "pending-review"` and leaves the merge to
+  Studio. So MCP Cloud writes land as `cr/*` branches. To stay consistent
+  with the native write paths, `reconcileMcpCloudAutoMerge`
+  (`server/utils/mcp-cloud-automerge.ts`) lands those branches **only** when
+  the project's effective workflow is auto-merge — resolved with the same
+  rule everywhere: `review` requires both the `workflow.review` plan feature
+  **and** `config.workflow === 'review'`; otherwise auto-merge. It runs
+  fire-and-forget after a write so it can never affect the external caller's
+  response, and is a no-op on review-gated projects.
+
 ## Deferred TODOs
 
-Deferred roadmap and planning notes live outside the tracked repository.
-Key items:
-- GitHub webhook for installation lifecycle (Phase 2)
-- GitProvider write operations — stubs now, Phase 2
-- ⌘K Command palette (Phase 2)
-- Team workspace + personal GitHub account warning (Phase 4)
-- Workspace ownership transfer before deletion (Phase 4)
-- Admin RLS for workspace_members management (Phase 4)
-- Sidebar mobile responsive (hamburger + slide-over)
-- Supabase JWT decode for accurate token expiry
+Medium:
+- Branch health: warn/block thresholds (default 50/80, config-driven via `branchWarnLimit`/`branchBlockLimit` since MCP 1.5.0) + merged `cr/*` auto-delete are implemented (`branch-health.ts`, `branch-cleanup.ts`). Remaining: surface health status in the UI
+- Brain cache: no GitHub webhook-triggered invalidation for external pushes (TTL-only, 10min)
+- MCP Cloud: integration-test coverage for the proxy route (`/api/mcp/v1/...`) and key endpoints is still thin (logic is covered, full HTTP path is not)
+
+## Branch Model & Deploy Flow — CRITICAL
+
+Studio runs a **trunk-based Git flow**. `main` is the single integration branch and the PR target for all work (contributor, agent, internal). Staging is a Railway deployment environment fed from `main`, **not** a long-lived Git branch. This matches the OSS-SaaS norm observed in Grafana, Mastodon, Nextcloud, Supabase, PostHog, Mattermost, cal.com, and most AGPL / open-core peers.
+
+| Branch    | Role                                                     | Deploy target                 |
+|-----------|----------------------------------------------------------|-------------------------------|
+| `main`    | Trunk — default, PR target, OSS face, stable-at-HEAD     | Railway staging env (`studio-staging-5610.up.railway.app`) auto |
+| `production` | Deploy pointer — advanced to the tagged commit by `release.yml` on every stable `v*` release; no PRs, no human commits | Railway prod (`studio.contentrain.io`) auto |
+| `feat/*`  | Per-task feature branches                                | (no auto-deploy)              |
+| `fix/*`   | Per-task bug-fix branches                                | (no auto-deploy)              |
+| `cr/*`    | Contentrain MCP auto-generated content branches          | (auto-merged by MCP)          |
+
+Optional maintenance branches (`release/X.Y`, `stable-X.Y`) may be cut **from** `main` for backports to a shipped release line — they are downstream of `main`, never upstream.
+
+### Rules — never violate
+
+- **Every PR targets `main`.** There is no `staging`, `develop`, or `next` branch in this repo.
+- **Never push directly to `main`.** All changes go through PR + CI gate.
+- **Release tags (`v*`) are cut from `main`** — the release pipeline advances the `production` deploy pointer as its final step, which triggers the production deploy. See `docs/RELEASING.md`.
+- **Self-hosters deploy from tagged releases** (`v0.1.0`, `v0.2.0`), not from `main` HEAD. `main` is stable-at-HEAD for CI purposes but tags are the supported deploy contract.
+- **Staging environment ≠ staging branch.** Railway deploys every merge to `main` into the staging environment (`studio-staging-5610.up.railway.app` — `staging.contentrain.io` is NOT bound) automatically, so the pre-prod verification lives in the deploy pipeline rather than in Git topology.
+- **Commitlint is lenient for MCP auto-commits** — messages prefixed with `[contentrain]` are ignored by commitlint (see `commitlint.config.ts`). Every human commit must obey Conventional Commits.
+
+### Contributor flow
+
+1. Contributor forks, opens a branch from `main`
+2. PR targets `main` (GitHub's default base, no extra step needed)
+3. Forked PRs run CI but cannot deploy (GitHub secrets are not exposed to forks — intended security boundary)
+4. Maintainer reviews + merges → Railway auto-deploys to the staging environment
+5. When ready to ship, a maintainer cuts a version tag (`v*`) on `main` → prod deploy via `.github/workflows/release.yml`
 
 ## Dev Tooling
 
-- Conventional Commits enforced by commitlint + husky
+- Conventional Commits enforced by commitlint + husky (MCP `[contentrain]` commits ignored)
 - `pnpm lint` / `pnpm lint:fix` — @nuxt/eslint with Stylistic (no Prettier)
-- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow
+- `pnpm release` — full local release gate (`release:check`) + changelog/version/tag flow; run from `main` on a clean tree
 - lint-staged on pre-commit (only changed files)
-- GitHub Actions CI on PRs (commit lint + build)
+- GitHub Actions CI on every push/PR to `main` — two jobs: `ci` (lint, typecheck, unit+integration+nuxt, RLS + e2e against local Supabase, build) and `postgres-lineage` (migration lineage + `pnpm db:verify:pg` + contract suite + RLS suite against a plain `postgres:16` service)
 
-## Enterprise Edition (ee/) — CRITICAL
+### Test matrix (provider pairs)
 
-Studio uses **Open Core** model: AGPL core + proprietary `ee/` directory.
-The `ee/` boundary rules are enforced in code and contributor guidance; internal planning files are not tracked.
+- `pnpm test` / `test:ci` — unit + integration + nuxt (DB mocked)
+- `pnpm test:rls` — RLS contract suite; Supabase local by default, plain PG when `RLS_DB_URL` is set (global setup migrates it via `scripts/migrate-postgres.mjs`)
+- `pnpm test:contract` — postgres DatabaseProvider against a throwaway `postgres:16` (`docker run -d -p 54329:5432 -e POSTGRES_PASSWORD=postgres postgres:16`; `CONTRACT_PG_URL` overrides)
+- `pnpm test:e2e` — per-file Nuxt boots; `app-smoke` covers the supabase pair, `app-smoke-managed` boots the managed+postgres pair (no DB needed — pg connects lazily)
 
-### Rules — never violate:
+## Open Core Model & Editions — CRITICAL
 
-- **ee/ directory** has its own proprietary LICENSE — NEVER mix ee/ code into core
-- **Core must work without ee/** — starter tier (AGPL core) is a fully functional product
-- **Feature flags** via `server/utils/license.ts` → `hasFeature(plan, 'feature.name')`
-- **NEVER hardcode plan checks** — always use `hasFeature()` function
-- **Provider interfaces in core**, implementations can be in ee/ (same pattern as AuthProvider)
-- **UI conditional rendering** based on plan — use `hasFeature()` in computed properties
-- **Database schema stays in core** — ee/ columns exist but are unused/RLS-gated in starter tier
-- **Fail-closed role degradation** — if ee/ is unavailable, reject new reviewer/viewer assignments; an existing narrow role falls back to read-only viewer access, never editor
+Studio ships as **open-core**: AGPL-3.0 core + proprietary `ee/` directory under a separate license (see `ee/LICENSE`). The public-facing legal + deployment surface lives in `docs/LICENSING.md`, `docs/EDITIONS.md`, and `docs/DEPLOYMENT_PROFILES.md` — update those when policy changes.
 
-### What belongs in ee/:
-- Advanced roles (reviewer, viewer, specificModels)
-- BYOA API key management
-- Premium connectors (Canva, Figma, Recraft, Notion, Google Drive)
-- SSO (SAML, OIDC)
-- Approval chains, scheduled publish
-- Audit log, activity feed
-- White-label branding
-- Outbound webhooks
+### Editions — what actually differs
 
-### What stays in core (AGPL):
-- All auth flows, workspace/project CRUD
-- Chat engine + all agent tools
-- Content CRUD (all 4 kinds, all 27 field types)
-- Auto-merge workflow, branch creation
-- Content editor modal, all UI components
-- Owner + Editor roles
+Edition is **orthogonal to plan tier**: a managed Enterprise customer and a self-hosted Community user see different code paths, even though both models share the `free`/`starter`/`pro`/`enterprise` tier vocabulary.
+
+- **Community Edition** = `loadEnterpriseBridge()` returns `null` (either `ee/` is absent or failed to import). All workspaces resolve to the fixed `community` plan tier. Numerical limits are unenforced (self-hoster's own infrastructure). `requires_ee` features are hidden/404 regardless of plan.
+- **Enterprise Edition** = `loadEnterpriseBridge()` returns a bridge instance. Plan tier is determined by the deployment profile (`managed` / `dedicated` / `on-premise`). Full feature set available subject to plan gating.
+
+### Rules — never violate
+
+- **ee/ directory** is proprietary — NEVER mix `ee/` code into core paths. The boundary is enforced by convention + by the `EnterpriseBridge` interface in `server/utils/enterprise.ts`.
+- **Core must work without ee/** — every AGPL code path must degrade gracefully when the bridge is `null`. Current provider gaps in core (CDN provider, Media provider) are ee-resident by design; do not assume they exist in Community Edition.
+- **Feature gating goes through `hasFeature(plan, feature, { edition })`** in `shared/utils/license.ts`. The helper honors both plan tier and the `requires_ee` flag on the feature row.
+- **`requires_ee: true` is an AND gate, not OR** — even if the plan matrix grants a feature, `requires_ee` features are disabled in Community Edition.
+- **NEVER hardcode plan checks** (e.g. `if (plan === 'enterprise')`) — always route through `hasFeature()` or `getPlanLimit()`.
+- **Provider interfaces in core, implementations may be in ee/** — this is the pattern for CDN and Media today.
+- **UI conditional rendering** uses `useDeployment()` (edition + plan + billing mode) consistently. Every surface that renders plan/billing/edition info (sidebar, overview, billing tab, usage, members, plan modal, trial banner) reads from the same composable.
+- **Database schema stays in core** — `ee/`-related columns (e.g. `project_members.specific_models`) exist in migrations; RLS and application logic keep them unused in Community Edition.
+- **Graceful degradation** — bridge-null paths must return sensible defaults (role → editor, metering → no-op, optional features → hidden), never throw 500s.
+- **NEVER write to `payment_accounts` or `usage_events_outbox` outside `DatabaseProvider`** — the abstraction is part of the payment-plugin boundary.
+- **NEVER import Stripe or Polar SDKs outside `server/providers/payment/plugins/<key>.ts`**.
+
+### What belongs in ee/
+
+Under `ee/LICENSE` scope. Requires an active Contentrain subscription or separately executed agreement.
+
+- Advanced project roles: `reviewer`, `viewer`, `specificModels` (core degrades to `editor`)
+- BYOA API key management UI + key rotation + encryption (`ai.byoa`)
+- Studio-hosted AI key — the Anthropic key billed to Contentrain
+- Conversation API + conversation keys (`api.conversation*`)
+- Outbound webhooks + delivery retry (`api.webhooks_outbound`, `api.webhooks`)
+- CDN provider implementation (R2 driver, custom variants, preview branches, custom domain)
+- Media provider implementation (upload, library, image processing)
+- Spam filter (`forms.spam_filter`)
+- Form file upload (`forms.file_upload` — depends on media stack)
+- Form webhook notifications (`forms.webhook_notification` — depends on outbound webhooks)
+- Comment webhook notifications (`comments.webhook_notification`) and comment spam filter (`comments.spam_filter`, roadmap)
+- SSO (`sso.saml`, `sso.oidc`) — roadmap
+- White-label branding (`branding.white_label`) — roadmap
+- MCP Cloud custom domain + SSO — roadmap
+- Advanced audit log UI (core exposes the read API)
+- Approval chains, scheduled publish, premium connectors (Canva, Figma, Recraft, Notion, Google Drive)
+
+### What stays in core (AGPL)
+
+Always available, in every edition. Plan-independent.
+
+- All auth flows (both provider pairs: Supabase Auth, and managed auth with OAuth + magic link), workspace/project CRUD, member management (Owner/Admin/Member)
+- Chat engine + every deterministic agent tool (content CRUD, validation, branch/merge, brain, search)
+- Content CRUD — all 4 kinds (collection, singleton, document, dictionary), all 27 field types
+- Auto-merge workflow (cr/* → contentrain → main), review workflow gating via `workflow.review`
+- Content editor modal, all form components, validation, health reporting
+- Owner + Admin + Editor workspace roles; Editor project role
 - URL fetch connector
 - Single + multi-locale (config-driven, not plan-gated)
-- Comments v1 (Studio DB, never Git): public read/submit under `/api/comments/v1`, moderation + moderator replies, WordPress import (`contentrain-comments@1`); model-level `comments` config on the model definition like `form`
+- Forms core (submission storage, captcha via Turnstile, auto-approve, notifications via Resend)
+- Comments v1 (`comments` + `comment_threads` in the Studio DB — never Git; public read/submit under `/api/comments/v1`, moderation + moderator replies, WordPress import of `contentrain-comments@1` exports from `@contentrain/wp-import`; model-level `comments` config lives on the model definition like `form`)
+- AI chat with operator-provided `NUXT_ANTHROPIC_API_KEY`
 
-## Planning Docs
+### Deployment profiles
 
-Long-form planning specs and phase notes are intentionally kept out of the tracked repository.
+Four profiles, auto-detected from `ee/` presence + billing env, overridable via `NUXT_DEPLOYMENT_PROFILE`:
+
+- `managed` — ee required, subscription-driven plan (contentrain.io)
+- `dedicated` — ee required, operator-set plan, single-tenant hosted
+- `on-premise` — ee required, operator-set plan, customer infrastructure
+- `community` — agpl only, fixed `community` tier, no billing
+
+See `docs/DEPLOYMENT_PROFILES.md` for the 12-scenario matrix.
+
+### AGPL §13 + trademark notices
+
+`LICENSE-EXCEPTIONS` publishes two §7 additional terms for the core: attribution (§7(c)) and no-trademark (§7(e)). `/about` page and app footer expose the source-code link per §13. Do not remove these without legal review.
+
+### Commercial safety rails
+
+- Reselling or embedding `ee/` without an executed agreement is prohibited by `ee/LICENSE` §3.3, §3.4.
+- Commercial SaaS resale of the AGPL core is **technically permitted** by AGPL-3.0 but the Contentrain trademark cannot be used for the reseller's product identity (`LICENSE-EXCEPTIONS` §7(e)). If stronger resale control is needed in the future, the model to evaluate is BSL (Business Source License) migration — this is a roadmap-level decision, not a patch-level change.
+
+## Internal Planning
+
+Long-form product, marketing, and implementation planning docs are kept outside the tracked repository on purpose.
+
+### Roadmap
+
+See `ROADMAP.md` (project root, git-tracked) for the full public roadmap.
 
 ## Reference Codebase
 
