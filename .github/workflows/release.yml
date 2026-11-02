@@ -109,7 +109,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Start local Supabase DB
-        run: pnpm dlx supabase start --yes --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+        run: pnpm dlx supabase@2.122.0 start --yes --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
       - name: Test
         run: pnpm test:ci
