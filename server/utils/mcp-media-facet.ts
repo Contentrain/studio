@@ -171,7 +171,7 @@ export function buildMcpMediaFacet(input: McpMediaFacetInput): ContractMediaProv
       if (storageLimit > 0) {
         const reservation = await db.reserveStorageIfAllowed(input.workspaceId, remote.buffer.length, storageLimit)
         if (!reservation.allowed)
-          throw createError({ statusCode: 403, message: errorMessage('storage.quota_exceeded') })
+          throw createError({ statusCode: 403, message: errorMessage('mcp_cloud.storage_quota_exceeded') })
         storageReserved = true
       }
 
