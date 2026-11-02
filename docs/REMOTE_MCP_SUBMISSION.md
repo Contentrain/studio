@@ -470,33 +470,57 @@ code + a test, not a live run; live passes are §4.
 
 ### Review account — what it needs (founder creates it; identities stay out of this repo)
 
-1. Set `NUXT_REVIEW_ACCOUNT_EMAIL` + `NUXT_REVIEW_ACCOUNT_PASSWORD` (≥16 chars)
-   on prod **first**; the first `/auth/review-login` creates the user and its
-   `primary` workspace. Never insert the user by hand.
 **Hard line: the reviewer must see 16 tools, not 11.** Steps 2 and 3 make the
-project media-enabled; check `tools/list` returns 16 before sending credentials.
+project media-enabled; check `tools/list` returns 16 before sending
+credentials.
 
+1. Set `NUXT_REVIEW_ACCOUNT_EMAIL` + `NUXT_REVIEW_ACCOUNT_PASSWORD` (≥16
+   chars) on the prod Studio service **first**; the first
+   `/auth/review-login` creates the user and its `primary` workspace. Never
+   insert the user by hand.
 2. The workspace must resolve to a plan with `api.mcp_cloud_oauth` and
-   `media.upload` (Starter or above) **through billing**
-   (`resolveWorkspaceBilling`, which reads the payment account) — setting
-   `workspaces.plan` alone is not enough, and a lapsed trial is refused.
-3. GitHub App installed on the workspace, with one demo repository connected
-   as a project, `cdn_enabled` on, so the remote surface lists **16** tools.
-   The review user must be the workspace owner (media needs an owner).
-4. Auto-merge workflow on that project, so a reviewer's write is visible on
-   the next read.
-5. The demo dataset the §9 test cases name:
-   - collection `posts`, i18n `en` + `de`, fields `title`, `slug`,
-     `excerpt`, `cover` (image); at least 3 entries, one titled
-     "Getting started", one with an empty `excerpt`;
-   - singleton `hero`, `en` + `de`: `headline`, `subheadline`, `cta_label`;
-   - dictionary `ui-strings`, `en` + `de`: at least 10 keys, 2 of them
-     missing in `de`;
-   - document model `docs` with at least 2 pages;
-   - at least 2 images in the media library.
+   `media.upload` (Starter or above) **through billing**.
+   `resolveWorkspaceBilling` → `getEffectivePlan` returns `workspaces.plan`
+   only while the workspace has a payment account whose subscription is
+   `active` (or `trialing`, `past_due`, or canceled inside the paid period);
+   with no payment account it returns `free`
+   (`server/utils/billing.ts`, `resolveBillingState`). So setting
+   `workspaces.plan` alone gives nothing, a hand-written `payment_accounts`
+   row would be a subscription Polar does not know about, and a trial ends
+   inside a review cycle. The entitlement has to be a real subscription.
+3. A GitHub App installation on the workspace and the demo repository
+   connected as a project, with `cdn_enabled` on. An installation binds to
+   **one** workspace (`server/api/github/setup.get.ts` answers 409 when it is
+   already bound elsewhere), so the demo repository has to live where an
+   installation is free to bind to the review workspace. Media also needs the
+   workspace to have an owner (`mcp-cloud-proxy.ts`, `mediaEligible`); the
+   review user owns its `primary` workspace.
+4. The project's workflow is `auto-merge`, so a reviewer's write is visible
+   on the next read. The demo repository's `.contentrain/config.json` sets
+   it; on Starter and above `review` would hold every write for approval.
+5. The demo dataset is a private copy of `contentrain-starter-astro-blog`
+   (never the public starter itself: reviewer writes auto-merge), with one
+   added commit:
+   - models, unchanged from the starter: `site-settings`, `navigation`,
+     `footer`, `seo-defaults` (singletons, domain `system`); `author`,
+     `blog-category` (collections) and `blog-post` (documents), domain
+     `editorial`; all i18n;
+   - locales `en` (default) and `de`. `de` covers `site-settings`,
+     `navigation`, `seo-defaults`, all three categories, the author
+     `esra-yilmaz` and the post `designing-calm-interfaces`;
+   - four gaps on purpose, which `contentrain validate` reports and nothing
+     else: no `de` footer (error), no `de` entry for the author
+     `kerem-dogan`, and no `de` file for the posts
+     `shipping-with-a-clear-content-model` and
+     `what-modern-starters-actually-need` (warnings);
+   - the starter's images are remote URLs, not library assets. The media
+     library lives in Studio's storage, not in the repository, so after the
+     project is connected **upload 2 images** in the project's Media panel
+     (e.g. the starter's `media/cover.png` and `media/mobile.png`).
 6. No MFA, no email/SMS step, reachable from the public internet.
-7. Snapshot the repo before a review cycle and restore it after; rotate or
-   unset both env values when the cycle ends.
+7. After each cycle: reset the repository's `contentrain` branch to the
+   demo commit, delete media the reviewer added, revoke the grants in
+   Connected Apps, and rotate or unset both env values.
 
 ## 9. Portal answers (paste-ready, 2026-11-02)
 
@@ -565,7 +589,11 @@ below is new and written to OpenAI's limits; it follows the same spine.
   operation, (3) let non-developers and agents edit product content without
   touching source, (4) keep AI-generated copy inside a schema and a review
   workflow.
-- **Example prompts:** the three OpenAI starter prompts below work as-is.
+- **Example prompts** (against the demo project):
+  1. `What content models and locales does my Contentrain project have?`
+  2. `List the English blog posts with their authors and publish dates.`
+  3. `Which content is still missing a German translation?`
+  4. `Shorten the English excerpt of "Designing Calm Interfaces For Product Teams" to one sentence.`
 - **Test & launch:** the review account (§8 spec), then: open
   `https://studio.contentrain.io/auth/review-login`, sign in, add the server
   URL as a custom connector, approve the consent page for the demo project,
@@ -607,25 +635,30 @@ below is new and written to OpenAI's limits; it follows the same spine.
 
 - **Starter prompts** (≤3, ≤128 chars, no @mentions):
   1. `What content models and locales does my Contentrain project have?`
-  2. `List my English blog posts and point out any with a missing excerpt.`
-  3. `Find UI strings that are missing a German translation and add them.`
+  2. `List the English blog posts with their authors and publish dates.`
+  3. `Which content is still missing a German translation?`
 - **Release notes (first version):** `First release: read, create, update and delete Contentrain content and media from ChatGPT, with schema validation and Git-backed history.`
 
-### Test cases — 5 positive (against the §8 demo dataset)
+### Test cases — 5 positive (against the §8 demo project)
+
+Each write case uses a path that keeps unrelated data: a document save merges
+the frontmatter it is sent with the file's, and a new collection entry adds a
+key. A singleton save or an update to an existing collection entry replaces
+the whole entry (see the `content_save` note below), so no case depends on it.
 
 | # | Scenario | Prompt | Expected tools | Expected result |
 |---|---|---|---|---|
-| 1 | Explore the project | `What content models and locales does my Contentrain project have?` | `contentrain_status`, then `contentrain_describe` if needed | Names `posts`, `hero`, `ui-strings`, `docs` with their kinds, and the locales `en` and `de` |
-| 2 | Read entries | `List my English blog posts and point out any with a missing excerpt.` | `contentrain_content_list` | The 3+ post titles in English; the one with an empty `excerpt` is named |
-| 3 | Update a singleton | `Change the English hero headline to "Ship content faster". Leave German as it is.` | `contentrain_describe` (optional), `contentrain_content_save` | Confirms the save; a follow-up `contentrain_content_list` shows the new English headline and the unchanged German one |
-| 4 | Fill missing translations | `Find UI strings that are missing a German translation and add them.` | `contentrain_content_list` (en and de), `contentrain_content_save`, `contentrain_validate` | Names the 2 missing keys, saves German values for them, and validation reports no i18n gap for `ui-strings` |
-| 5 | Use the media library | `Show the images in my media library and set the first one as the cover of the "Getting started" post.` | `contentrain_media_list`, `contentrain_content_list`, `contentrain_content_save` | Lists the library images; the post's `cover` now points to the first image |
+| 1 | Explore the project | `What content models and locales does my Contentrain project have?` | `contentrain_status`, then `contentrain_describe` if needed | Names the 7 models — `site-settings`, `navigation`, `footer`, `seo-defaults` (singletons), `author`, `blog-category` (collections), `blog-post` (documents) — and the locales `en` (default) and `de` |
+| 2 | Read entries with relations | `List the English blog posts with their authors and publish dates.` | `contentrain_content_list` (`blog-post`, `en`; `author` if relations are not resolved) | The 3 posts — "Designing Calm Interfaces For Product Teams" (Esra Yilmaz, 2026-03-12), "Shipping Faster With A Clear Content Model" (Kerem Dogan, 2026-02-21), "What Modern Starters Actually Need" (Esra Yilmaz, 2026-01-30) |
+| 3 | Find missing translations | `Which content is still missing a German translation?` | `contentrain_validate` (or `contentrain_content_list` per locale) | Names the four gaps: the `de` footer, the author Kerem Dogan, and the posts "Shipping Faster With A Clear Content Model" and "What Modern Starters Actually Need" |
+| 4 | Fill one gap | `Add a German version of the author entry for Kerem Dogan, translating his role and bio.` | `contentrain_content_list` (`author`, `en`), `contentrain_content_save` (`author`, `de`, id `kerem-dogan`), `contentrain_validate` | Saves a `de` entry with `name`, a German `role` and `bio`, and the same `avatar`; validation no longer reports the author gap; the `en` entry is unchanged |
+| 5 | Use the media library | `Show the images in my media library and use the first one as the cover image of "Designing Calm Interfaces For Product Teams".` | `contentrain_media_list`, `contentrain_content_save` (`blog-post`, `en`, slug `designing-calm-interfaces`, `cover_image` only) | Lists the 2 uploaded images; the post's `en` `cover_image` is the first image's delivery URL, and its title, excerpt and body are unchanged |
 
 ### Test cases — 3 negative
 
 | # | Prompt | Reason | Expected response |
 |---|---|---|---|
-| 1 | `Generate a new hero image for my homepage.` | Contentrain stores and serves images; it does not generate them | Says it cannot generate images; offers to add an image from a URL the user provides (`contentrain_media_ingest`) or to pick one from the library |
+| 1 | `Generate a new cover image for my latest blog post.` | Contentrain stores and serves images; it does not generate them | Says it cannot generate images; offers to add an image from a URL the user provides (`contentrain_media_ingest`) or to pick one from the library |
 | 2 | `Merge my content changes into main and deploy the site.` | Merging and deploying are not tools on this surface; they belong to Contentrain Studio and the user's own hosting | Explains that writes already follow the project's workflow (auto-merge or review in Studio) and that deploying is outside Contentrain; calls no tool |
 | 3 | `Delete all my blog posts.` | Bulk deletion is irreversible and needs explicit confirmation | Asks the user to confirm before calling `contentrain_content_delete` (the tool itself requires `confirm: true`) |
 
@@ -641,7 +674,7 @@ below is new and written to OpenAI's limits; it follows the same spine.
 | `contentrain_media_get` | true | false | false | Reads one asset's details; changes nothing |
 | `contentrain_model_save` | false | **true** | false | Replaces a model's whole definition (not a merge), which OpenAI counts as destructive. The change lands as a Git commit on a separate content branch, never on main, and the previous definition stays in Git history. Shipped as `true` from the `Contentrain/ai` release Studio pins before the scan |
 | `contentrain_vocabulary_save` | false | false | false | Adds or updates vocabulary terms and merges with the existing ones; omitted terms are untouched; committed to Git |
-| `contentrain_content_save` | false | false | false | Creates or updates entries after schema validation, as a Git commit on a separate content branch; an updated entry's previous version stays in Git history |
+| `contentrain_content_save` | false | false | false | Creates or updates entries after schema validation, as a Git commit on a separate content branch; an updated entry's previous version stays in Git history. See the note below on what an update replaces |
 | `contentrain_validate` | false | false | false | Marked as a write because its `fix` option can rewrite content files (sorting, missing locale files); it deletes no entries |
 | `contentrain_media_update` | false | false | false | Changes an asset's alt text, tags or file name; the file itself is not touched |
 | `contentrain_model_delete` | false | true | false | Removes a model with its content and metadata; requires `confirm: true` |
@@ -650,10 +683,15 @@ below is new and written to OpenAI's limits; it follows the same spine.
 | `contentrain_media_delete` | false | true | false | Removes an asset from storage; requires `confirm: true`; entries that reference it are not rewritten |
 | `contentrain_media_ingest` | false | false | **true** | Fetches a URL the user supplies from the public internet (server-side, with SSRF, MIME-type and size checks) and stores it as a new asset; it overwrites nothing |
 
-`contentrain_content_save` stays `destructiveHint: false`: it creates or
-updates entries field by field after schema validation, and an updated entry's
-previous version stays in Git history. If a reviewer disagrees, the change is
-upstream in `Contentrain/ai` and forces an OpenAI version resubmission (§7).
+`contentrain_content_save` is `destructiveHint: false` at 3.11.20, and what an
+update replaces depends on the kind (MCP `planContentSave`): a document merges
+the frontmatter it is sent with the file's and keeps the body unless `body` is
+sent; a dictionary merges keys; a **singleton** or an existing **collection
+entry** is replaced by the data sent, so fields left out are removed. Every
+version stays in Git history. Under OpenAI's definition (overwriting counts as
+destructive) the singleton/collection case is the same class as `model_save`;
+whether it moves to `true` is an upstream `Contentrain/ai` decision, and it has
+to land before the OpenAI scan or it forces a version resubmission (§7).
 
 ### Domain challenge (OpenAI, step 1 of §6)
 
