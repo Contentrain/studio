@@ -206,7 +206,7 @@ describe('buildMcpMediaFacet', () => {
     it('403s when the storage reservation is refused, without uploading', async () => {
       state.reserveResult = { allowed: false, currentBytes: 999 }
       const facet = (await loadFacet())!
-      await expect(facet.ingest({ url: 'https://cdn.example/x.png' })).rejects.toMatchObject({ statusCode: 403, message: 'storage.quota_exceeded' })
+      await expect(facet.ingest({ url: 'https://cdn.example/x.png' })).rejects.toMatchObject({ statusCode: 403, message: 'mcp_cloud.storage_quota_exceeded' })
       expect(state.mediaProvider!.upload).not.toHaveBeenCalled()
     })
 

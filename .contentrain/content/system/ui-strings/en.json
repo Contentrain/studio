@@ -1077,7 +1077,7 @@
   "oauth_consent.ineligible_no_installation": "GitHub App not installed",
   "oauth_consent.ineligible_no_repo": "No repository connected",
   "oauth_consent.ineligible_payment_required": "Subscription inactive",
-  "oauth_consent.ineligible_plan": "Plan upgrade required",
+  "oauth_consent.ineligible_plan": "Plan does not include MCP Cloud",
   "oauth_consent.load_failed": "This authorization request is invalid or has expired. Return to the app and try connecting again.",
   "oauth_consent.loading": "Loading authorization request…",
   "oauth_consent.localhost_warning": "This application redirects to a local address on your device. Only approve if you started this connection yourself.",
