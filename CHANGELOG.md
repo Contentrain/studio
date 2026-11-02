@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.17
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.16...v0.4.17)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.16, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+### 🩹 Fixes
+
+- MCP Cloud and remote MCP errors name no plan and promote no upgrade: the monthly limit, a full media store and a plan without the remote endpoint point to the workspace settings instead (#516).
+
+### 📖 Documentation
+
+- `docs/REMOTE_MCP_SUBMISSION.md`: directory submission answers (#516), the review account and test cases against the astro blog starter (#518), and the 3.11.23 annotations.
+
+### 🏡 Chore
+
+- `@contentrain/mcp` 3.11.20 → 3.11.23, `@contentrain/types` 1.79.0 → 1.79.2 and `@contentrain/query` 7.6.54 → 7.6.63.
+  - On MCP Cloud and the remote endpoint, `contentrain_model_save` and `contentrain_content_save` are annotated `destructiveHint: true`, and `contentrain_content_save` is annotated `idempotentHint: false`. Clients that gate destructive tools ask before running them.
+  - `initialize` now sends a title, a website and icons.
+  - `url` fields accept `tel:` and `mailto:` links and `#fragment` anchors.
+- CI and the `db:*` scripts pin the Supabase CLI to 2.122.0 (#517).
+
 ## v0.4.16
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.15...v0.4.16)
