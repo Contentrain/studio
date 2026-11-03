@@ -67,7 +67,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
     "@aws-sdk/client-s3": "^3.1076.0",
-    "@contentrain/mcp": "3.12.1",
+    "@contentrain/mcp": "3.12.2",
     "@contentrain/query": "7.6.63",
     "@contentrain/types": "1.79.2",
     "@gitbeaker/rest": "^43.8.0",
