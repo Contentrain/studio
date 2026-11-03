@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.4.21
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.20...v0.4.21)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.20, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+- The remote endpoint's `tools/list` now lists only the tools the API key or OAuth grant can call. A client with a narrower key or grant sees fewer tools than before. Calling a tool outside the grant is refused, as before (#536).
+
+### 🩹 Fixes
+
+- The remote endpoint sends the media identity headers only when the caller may call a media tool: the key opted into media tools, or its allowed tools include one. A `content:read` grant gets none (#534).
+- The OAuth consent screen no longer preselects a workspace or project. The person picks both, and changing the workspace clears the project (#535).
+- The remote endpoint's `tools/list` is filtered by the same rule that refuses a call. The filter runs on both JSON and SSE responses (#536).
+- `@contentrain/mcp` 3.12.0 → 3.12.1 (#537).
+  - `contentrain_content_list` with `resolve: true` now works on MCP Cloud and the remote endpoint. 3.12.0 threw "requires local filesystem access". The tool list and annotations are the same as 3.12.0.
+
+### 📖 Documentation
+
+- `CLAUDE.md`: the MCP Cloud notes say `tools/list` follows the key's or grant's tools (#536).
+
 ## v0.4.20
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.19...v0.4.20)
