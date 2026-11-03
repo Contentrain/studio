@@ -9,7 +9,7 @@
  * workflow the project had switched on.
  */
 import { canSetEntryStatus } from '~~/server/utils/agent-permissions'
-import { decideMerge, writeSignals } from '~~/server/utils/approval-gate'
+import { decideMerge, unpublishedCount, writeSignals } from '~~/server/utils/approval-gate'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -57,7 +57,9 @@ export default defineEventHandler(async (event) => {
     workflow,
     tool: 'update_status',
     scope: { models: [modelId], locales: [locale], entries: body.entryIds },
-    signals: writeSignals('update_status', { status: body.status }),
+    // Taking a published entry down is a visibility change too, whatever
+    // status it moves to.
+    signals: { ...writeSignals('update_status', { status: body.status }), unpublishes: unpublishedCount(writeResult.statusChanges) },
     policy: brain.approvalPolicy,
     commitSha: writeResult.commit?.sha,
   })

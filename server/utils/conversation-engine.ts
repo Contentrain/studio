@@ -4,8 +4,8 @@ import { isBranchMoved, isBranchTipUnreadable } from './content-engine/errors'
 import { actorFromEmail } from './execution-plan'
 import { canPublish, canSetEntryStatus } from './agent-permissions'
 import { reportAgentToolError } from './alert'
-import type { MergeDecision, ToolScope } from './approval-gate'
-import { decideMerge, savedEntryIds, toolRisk, writeSignals } from './approval-gate'
+import type { MergeDecision, ToolScope, WriteSignals } from './approval-gate'
+import { decideMerge, savedEntryIds, toolRisk, unpublishedCount, writeSignals } from './approval-gate'
 import { getBrainCache } from './brain-cache'
 import type { ModelDefinition } from '@contentrain/types'
 import type { AIMessage, AIContentBlock, AISystemBlock, AITool, AIUsage } from '~~/server/providers/ai'
@@ -789,10 +789,10 @@ export async function executeToolWithAutoMerge(
    * write on the lowest rung, that branch's review is read to see whether it
    * empties a field or drops list items — the same count the merge will be judged by later.
    */
-  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string, kind?: string, branch?: string } = {}): Promise<MergeDecision> => {
+  const gateMerge = async (opts: { scope?: ToolScope, commitSha?: string, kind?: string, branch?: string, signals?: WriteSignals } = {}): Promise<MergeDecision> => {
     if (workflow !== 'review') return { allowed: true, review: {} }
     const cached = getBrainCache(projectId) ?? await getOrBuildBrainCache(git, contentRoot, projectId)
-    const payloadSignals = writeSignals(name, params, opts.kind)
+    const payloadSignals = { ...writeSignals(name, params, opts.kind), ...opts.signals }
     const signals = opts.branch && toolRisk(name, opts.scope, payloadSignals) === 'low_risk_content'
       ? { ...payloadSignals, ...await branchWriteSignals({ git, contentRoot, projectId, branch: opts.branch }) }
       : payloadSignals
@@ -1808,7 +1808,7 @@ export async function executeToolWithAutoMerge(
         affected.locales.push(...touchedLocales)
         affected.branchesChanged = true
         invalidateBrainCache(projectId)
-        const gate = await gateMerge({ scope: { models: [modelId], locales: touchedLocales, entries: entryIds }, commitSha: writeResult.commit?.sha })
+        const gate = await gateMerge({ scope: { models: [modelId], locales: touchedLocales, entries: entryIds }, commitSha: writeResult.commit?.sha, signals: { unpublishes: unpublishedCount(statusChanges) } })
         if (gate.allowed) {
           const mergeResult = await mergeForTool(engine, writeResult.branch, turnMerge)
           result = { ...summarizeWriteResult(writeResult, locale), ...mergeOutcome(mergeResult), statusChanges, ...remainingNote }

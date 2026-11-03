@@ -133,8 +133,24 @@ export interface WriteSignals {
    * wave the write through.
    */
   unreadBranch?: boolean
+  /**
+   * Live entries (`published`, or no status at all) the write moves to any
+   * other status — an unpublish, whatever status it lands on. From the write's own status
+   * changes, or the written branch's review: see {@link unpublishedCount}.
+   */
+  unpublishes?: number
   /** Total characters of the string values written. */
   textChars?: number
+}
+
+/**
+ * Entries a set of status transitions takes down from the site. An existing
+ * entry with no status is live — readers treat missing meta as visible — so
+ * moving it off counts as much as moving a `published` one. Callers pass only
+ * entries that existed before the write.
+ */
+export function unpublishedCount(changes: Array<{ from: string | null, to: string | null }> = []): number {
+  return changes.filter(c => (c.from === 'published' || c.from === null) && c.to !== null && c.to !== 'published').length
 }
 
 /** A text write at or above this size is a rewrite a reviewer should see. */
@@ -147,6 +163,8 @@ const VISIBILITY_STATUSES = new Set(['published', 'archived'])
 export function contentSignalReason(signals: WriteSignals = {}): string | null {
   if (signals.targetStatus && VISIBILITY_STATUSES.has(signals.targetStatus))
     return `it moves content to \`${signals.targetStatus}\``
+  if ((signals.unpublishes ?? 0) > 0)
+    return `it takes ${signals.unpublishes} published entr${signals.unpublishes === 1 ? 'y' : 'ies'} down`
   if ((signals.emptiedFields ?? 0) > 0)
     return `it empties ${signals.emptiedFields} field${signals.emptiedFields === 1 ? '' : 's'}`
   if ((signals.removedItems ?? 0) > 0)

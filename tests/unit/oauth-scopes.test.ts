@@ -142,6 +142,12 @@ describe('toolsForScope', () => {
     for (const name of WRITE_TOOL_NAMES) expect(tools.has(name), name).toBe(true)
   })
 
+  it('a status change is a content write, never a read', () => {
+    expect(WRITE_TOOL_NAMES.has('contentrain_content_status')).toBe(true)
+    expect(toolsForScope('content:write')).toContain('contentrain_content_status')
+    expect(toolsForScope('content:read')).not.toContain('contentrain_content_status')
+  })
+
   it('lifecycle tools are never granted, whatever the scope', () => {
     const everything = toolsForScope(SUPPORTED_SCOPES.join(' '))
     for (const name of STUDIO_OWNED_LIFECYCLE_TOOLS) {

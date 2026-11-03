@@ -4,9 +4,10 @@
  * Two entry routes feed it: the API-key surface (/api/mcp/v1/{projectId})
  * and the OAuth remote surface (/api/mcp/remote). They differ ONLY in how
  * the caller is authenticated and how the project is resolved — everything
- * downstream (rate limit, tool allowlist, combined monthly quota, metering,
- * x-cr-* header injection, the proxy hop, brain invalidation, auto-merge
- * reconcile) is identity-agnostic and lives here as `runMcpCloudProxy`.
+ * downstream (rate limit, tool allowlist, role gate, combined monthly quota,
+ * metering, x-cr-* header injection, the proxy hop, brain invalidation, the
+ * write landing) is shared — the role gate reads only the actor's user id —
+ * and lives here as `runMcpCloudProxy`.
  *
  * Behavior contract is pinned by tests/integration/mcp-cloud-proxy
  * .integration.test.ts — the v1 route's semantics must never drift from it.
@@ -24,7 +25,11 @@ import { checkRateLimit } from '~~/server/utils/rate-limit'
 import type { Plan } from '~~/server/utils/license'
 import { getPlanLimit, hasFeature } from '~~/server/utils/license'
 import { getEffectiveLimit } from '~~/server/utils/overage'
-import { reconcileMcpCloudAutoMerge } from '~~/server/utils/mcp-cloud-automerge'
+import type { McpCloudMergeOutcome, McpCloudWrite } from '~~/server/utils/mcp-cloud-automerge'
+import { reconcileMcpCloudWrites } from '~~/server/utils/mcp-cloud-automerge'
+import { resolveMcpActorPermissions } from '~~/server/utils/mcp-actor-permissions'
+import { readToolCallMessages, refusedToolCallsResponse, toolCallDenial } from '~~/server/utils/mcp-write-gate'
+import { annotateWriteResults, readWriteResults } from '~~/server/utils/mcp-write-result'
 import { incrementOauthUsageIfAllowed } from '~~/server/utils/oauth-server/store'
 import { mcpReadRetryAfterSeconds, mcpWriteRetryAfterSeconds } from '~~/server/utils/mcp-github-budget'
 
@@ -140,6 +145,12 @@ export interface McpProxyContext {
   meter: { kind: 'key' | 'grant', id: string }
   /** OAuth surface throws its 403 insufficient_scope challenge here. */
   onToolDenied?: (event: H3Event, tool: string) => never
+  /**
+   * The person the calls act for: the OAuth grant's user, or the API key's
+   * creator (null once that user is deleted). Their role now — not when the
+   * grant or key was made — decides what a tool call may do.
+   */
+  actorUserId: string | null
 }
 
 /**
@@ -192,6 +203,21 @@ export async function runMcpCloudProxy(
       statusCode: 403,
       message: errorMessage('mcp_cloud.tool_not_allowed', { tool: denied }),
     })
+  }
+
+  // Role gate: the scope or key says which tools may be called; the role of
+  // the person the call acts for says what this call may do — the same rule
+  // the UI routes apply. Checked before the budget and the quota so a refused
+  // call consumes nothing, and answered as a tool error the agent can read.
+  const { calls, malformed } = readToolCallMessages(rawBody)
+  if (calls.length > 0) {
+    const permissions = await resolveMcpActorPermissions(ctx.actorUserId, ctx.workspaceId, ctx.projectId)
+    const denials = calls.map(call => toolCallDenial(call, permissions))
+    if (malformed || denials.some(Boolean)) {
+      const batch = Array.isArray(JSON.parse(rawBody as string))
+      setResponseHeader(event, 'content-type', 'application/json')
+      return JSON.stringify(refusedToolCallsResponse(calls, denials, batch))
+    }
   }
 
   // GitHub budget guard: write tools stop before the installation's hourly
@@ -380,25 +406,39 @@ export async function runMcpCloudProxy(
     ...fetchOptions,
     headers: { ...getProxyRequestHeaders(event), ...proxyHeaders },
   })
-  const payload = new Uint8Array(await upstream.arrayBuffer())
+  const contentType = upstream.headers.get('content-type')
+  const body = await upstream.text()
 
   invalidateBrainCache(ctx.projectId)
 
   // MCP's remote write path always reports `pending-review` and delegates the
-  // merge to Studio. Land those branches when the project's effective workflow
-  // is auto-merge (plan + config aware), matching the native write paths.
-  // Bounded: its *outcome* still cannot change the response — failures are
-  // swallowed and a reconcile that outruns the deadline is left to finish in
-  // the background, degrading to the previous fire-and-forget behaviour rather
-  // than holding the caller open.
-  await settleAutoMerge({
+  // merge to Studio. Studio judges the branch each write result names — only
+  // that branch — through the approval gate, lands it when allowed and says
+  // in the result what happened. Bounded: a reconcile that outruns the
+  // deadline finishes in the background and the result keeps saying pending,
+  // which is still true when it goes out; failures are swallowed.
+  const callsById = new Map(calls.filter(call => call.id !== null && call.name && call.arguments).map(call => [call.id, call]))
+  const refs = readWriteResults(body, contentType)
+  // The gate already refuses a body whose call ids repeat. Should two results
+  // still answer one id, neither can be tied to its call: none is judged, and
+  // both stay pending.
+  const answers = new Map<string | number, number>()
+  for (const ref of refs) answers.set(ref.id, (answers.get(ref.id) ?? 0) + 1)
+  const writes: McpCloudWrite[] = refs.flatMap((ref) => {
+    const call = answers.get(ref.id) === 1 ? callsById.get(ref.id) : undefined
+    return call?.name && call.arguments
+      ? [{ tool: call.name, arguments: call.arguments, branch: ref.branch, ...(ref.commitSha ? { commitSha: ref.commitSha } : {}) }]
+      : []
+  })
+  const outcomes = await settleWrites({
     workspaceId: ctx.workspaceId,
     projectId: ctx.projectId,
     installationId: ctx.installationId,
     repoFullName: ctx.repoFullName,
     contentRoot: ctx.contentRoot,
     plan: ctx.plan,
-  })
+  }, writes)
+  const payload = new TextEncoder().encode(annotateWriteResults(body, contentType, outcomes))
 
   setResponseStatus(event, upstream.status, upstream.statusText)
   for (const [name, value] of upstream.headers) {
@@ -449,16 +489,20 @@ const HOP_BY_HOP_HEADERS = new Set([
 /** How long a write may wait for its own merge before the response goes out. */
 const AUTO_MERGE_DEADLINE_MS = 15_000
 
-async function settleAutoMerge(params: Parameters<typeof reconcileMcpCloudAutoMerge>[0]): Promise<void> {
-  const reconcile = reconcileMcpCloudAutoMerge(params).catch(() => {})
+async function settleWrites(
+  params: Parameters<typeof reconcileMcpCloudWrites>[0],
+  writes: McpCloudWrite[],
+): Promise<Map<string, McpCloudMergeOutcome>> {
+  if (writes.length === 0) return new Map()
+  const reconcile = reconcileMcpCloudWrites(params, writes).catch(() => new Map<string, McpCloudMergeOutcome>())
 
   let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, AUTO_MERGE_DEADLINE_MS)
+  const deadline = new Promise<Map<string, McpCloudMergeOutcome>>((resolve) => {
+    timer = setTimeout(() => resolve(new Map()), AUTO_MERGE_DEADLINE_MS)
   })
 
   try {
-    await Promise.race([reconcile, deadline])
+    return await Promise.race([reconcile, deadline])
   }
   finally {
     if (timer) clearTimeout(timer)

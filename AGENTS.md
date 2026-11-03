@@ -417,16 +417,27 @@ project id, so an eligibility flip re-inits the session within one request.
   future MCP release that opens e.g. `bulk` to remote providers is covered
   automatically — keep the lifecycle exclusion list intact.
 
-- **pending-review by contract, reconciled by workflow.** MCP's remote write
-  path hardcodes `workflowAction: "pending-review"` and leaves the merge to
-  Studio. So MCP Cloud writes land as `cr/*` branches. To stay consistent
-  with the native write paths, `reconcileMcpCloudAutoMerge`
-  (`server/utils/mcp-cloud-automerge.ts`) lands those branches **only** when
-  the project's effective workflow is auto-merge — resolved with the same
-  rule everywhere: `review` requires both the `workflow.review` plan feature
-  **and** `config.workflow === 'review'`; otherwise auto-merge. It runs
-  fire-and-forget after a write so it can never affect the external caller's
-  response, and is a no-op on review-gated projects.
+- **Role gate at call time.** Before a `tools/call` reaches the loopback,
+  `toolCallDenial` (`server/utils/mcp-write-gate.ts`) checks it against the
+  current role of the person it acts for (`resolveMcpActorPermissions`: the
+  OAuth grant's user, or an API key's `created_by`; no accepted membership =
+  deny). Same rules as the UI routes, `content_status` follows
+  `status.patch.ts` via `canSetEntryStatus`, every message of a batch is
+  read, and it fails closed. A refusal is an `isError` tool result and
+  consumes no quota.
+
+- **pending-review by contract, judged per call.** MCP's remote write path
+  hardcodes `workflowAction: "pending-review"` and leaves the merge to
+  Studio. So MCP Cloud writes land as `cr/*` branches.
+  `reconcileMcpCloudWrites` (`server/utils/mcp-cloud-automerge.ts`) judges
+  **only** the branch the call's result names (`git.branch`, JSON or SSE),
+  with `decideMerge` and the write's real tool, scope and signals, exactly as
+  the UI routes do: auto-merge lands it; on a review project (plan
+  `workflow.review` **and** `config.workflow === 'review'`) the approval
+  policy decides. Other pending `cr/*` branches are never swept. The proxy
+  waits up to a deadline and annotates the tool result with `merge.status`
+  (`merged` / `held_for_review`); past the deadline it still reads
+  `pending-review`.
 
 ## Deferred TODOs
 

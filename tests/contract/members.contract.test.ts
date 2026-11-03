@@ -205,6 +205,14 @@ describe('postgres-db members (contract)', () => {
     expect(emails).not.toContain(extra.email) // pending member, wrong role
   })
 
+  it('getAcceptedWorkspaceRole reads the role without a token, accepted memberships only', async () => {
+    expect(await methods.getAcceptedWorkspaceRole(owner.workspaceId, owner.userId)).toBe('owner')
+    expect(await methods.getAcceptedWorkspaceRole(owner.workspaceId, invitee.userId)).toBe('admin')
+    // A pending invitation acts for nobody.
+    expect(await methods.getAcceptedWorkspaceRole(owner.workspaceId, extra.userId)).toBeNull()
+    expect(await methods.getAcceptedWorkspaceRole(owner.workspaceId, randomUUID())).toBeNull()
+  })
+
   it('AI keys: RLS-scoped CRUD with upsert rotation', async () => {
     const created = await methods.upsertUserAIKey(ownerToken, {
       workspaceId: owner.workspaceId,

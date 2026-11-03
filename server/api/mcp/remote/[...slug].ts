@@ -100,6 +100,7 @@ export default defineEventHandler(async (event) => {
     rateLimitKey: `mcp-oauth:${grant.grantId}`,
     monthlyCallLimit: null,
     meter: { kind: 'grant', id: grant.grantId },
+    actorUserId: grant.userId,
     onToolDenied: (deniedEvent, tool) => {
       const required = scopeForTool(tool)
       if (required) {

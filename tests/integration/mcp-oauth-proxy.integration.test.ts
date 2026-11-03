@@ -39,6 +39,7 @@ const state = vi.hoisted(() => ({
   upstreamFetch: vi.fn(),
   invalidateBrainCache: vi.fn(),
   reconcile: vi.fn(),
+  resolvePermissions: vi.fn(),
   recordMCPCallUsage: vi.fn(),
 }))
 
@@ -106,7 +107,11 @@ vi.mock('~~/server/utils/brain-cache', () => ({
 }))
 
 vi.mock('~~/server/utils/mcp-cloud-automerge', () => ({
-  reconcileMcpCloudAutoMerge: state.reconcile,
+  reconcileMcpCloudWrites: state.reconcile,
+}))
+
+vi.mock('~~/server/utils/mcp-actor-permissions', () => ({
+  resolveMcpActorPermissions: state.resolvePermissions,
 }))
 
 vi.mock('~~/server/utils/content-strings', () => ({
@@ -132,9 +137,16 @@ function makeEvent(overrides: Partial<FakeEvent> = {}): FakeEvent {
   }
 }
 
-function toolCallBody(name: string): string {
-  return JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } })
+/** Arguments a real client would send, so the role gate reads a model. */
+const DEFAULT_ARGS: Record<string, Record<string, unknown>> = {
+  contentrain_content_save: { model: 'posts', entries: [{ id: 'p1', data: { title: 'Hi' } }] },
 }
+
+function toolCallBody(name: string, args: Record<string, unknown> = DEFAULT_ARGS[name] ?? {}): string {
+  return JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
+}
+
+const OWNER = { workspaceRole: 'owner', projectRole: null, specificModels: false, allowedModels: [], allowedLocales: [], availableTools: ['save_content', 'update_status', 'upload_media', 'update_media', 'delete_media'] }
 
 async function loadHandler() {
   return (await import('../../server/api/mcp/remote/[...slug]')).default
@@ -179,10 +191,12 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
       owner_id: 'owner-1',
     })
     state.proxyRequest.mockResolvedValue('proxied')
-    state.reconcile.mockResolvedValue(undefined)
-    state.upstreamFetch.mockResolvedValue(
-      new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }),
-    )
+    state.reconcile.mockResolvedValue(new Map())
+    state.resolvePermissions.mockResolvedValue(OWNER)
+    state.upstreamFetch.mockImplementation(async () => new Response(
+      JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: JSON.stringify({ git: { branch: 'cr/content/posts/en/p1', action: 'pending-review', commit: 'c1' } }) }] } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
     vi.stubGlobal('fetch', state.upstreamFetch)
 
     vi.stubGlobal('recordMCPCallUsage', state.recordMCPCallUsage.mockResolvedValue(undefined))
@@ -376,7 +390,17 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
       workspaceId: 'ws-1',
       installationId: 42,
       repoFullName: 'acme/site',
-    }))
+    }), [expect.objectContaining({ branch: 'cr/content/posts/en/p1' })])
+  })
+
+  it('acts with the grant user\'s current role, and refuses when they have none', async () => {
+    state.resolvePermissions.mockResolvedValue(null)
+    const handler = await loadHandler()
+    const result = await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+
+    expect(state.resolvePermissions).toHaveBeenCalledWith('user-1', 'ws-1', 'proj-1')
+    expect(JSON.parse(result as string).result.isError).toBe(true)
+    expect(state.upstreamFetch).not.toHaveBeenCalled()
   })
 
   it('strips client-supplied x-cr-* headers and attaches Studio-signed ones', async () => {

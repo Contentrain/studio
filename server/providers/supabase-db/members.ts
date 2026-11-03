@@ -28,6 +28,7 @@ type MemberMethods = Pick<
   | 'getProjectForWorkspace'
   | 'acceptPendingInvitations'
   | 'listWorkspaceAdminEmails'
+  | 'getAcceptedWorkspaceRole'
   | 'countProjectWebhooks'
   | 'createWebhook'
 >
@@ -241,6 +242,19 @@ export function memberMethods(): MemberMethods {
           const profile = m.profiles as Record<string, unknown>
           return { email: profile.email as string, displayName: (profile.display_name as string) ?? null }
         })
+    },
+
+    async getAcceptedWorkspaceRole(workspaceId, userId) {
+      const { data, error } = await getAdmin()
+        .from('workspace_members')
+        .select('role')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .not('accepted_at', 'is', null)
+        .maybeSingle()
+
+      if (error) throw createError({ statusCode: 500, message: error.message })
+      return (data?.role as string | undefined) ?? null
     },
 
     // ─── AI Keys ───
