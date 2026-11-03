@@ -395,6 +395,22 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     expect(state.proxyRequest).not.toHaveBeenCalled()
   })
 
+  it('a session id the loopback no longer holds (a deploy restarted it) reaches the client as 404, so it re-initializes', async () => {
+    state.upstreamFetch.mockImplementation(async () => new Response(
+      JSON.stringify({ error: 'Session not found' }),
+      { status: 404, statusText: 'Not Found', headers: { 'content-type': 'application/json' } },
+    ))
+    const handler = await loadHandler()
+    const event = makeEvent({
+      __headers: { 'authorization': `Bearer crn_oat_${'a'.repeat(64)}`, 'mcp-session-id': 'f0e1d2c3-0000-4000-8000-000000000000' },
+      __body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+    const out = await handler(event as never) as Uint8Array
+
+    expect(state.setResponseStatus).toHaveBeenCalledWith(expect.anything(), 404, 'Not Found')
+    expect(JSON.parse(new TextDecoder().decode(out))).toEqual({ error: 'Session not found' })
+  })
+
   it('lifecycle tools stay a plain 403 — no step-up loop for ungrantable tools', async () => {
     const handler = await loadHandler()
     const event = makeEvent({ __body: toolCallBody('contentrain_merge') })
