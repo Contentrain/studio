@@ -410,6 +410,8 @@ describe('content route integration', () => {
       { role: 'owner', status: 'published', from: 'draft', held: true, reason: '`published`' },
       { role: 'editor', status: 'draft', from: 'in_review', held: false, reason: '' },
       { role: 'editor', status: 'draft', from: 'published', held: true, reason: 'takes 1 published entry down' },
+      // No meta status = live on the site.
+      { role: 'editor', status: 'draft', from: null, held: true, reason: 'takes 1 published entry down' },
     ] as const
 
     for (const c of cases) {

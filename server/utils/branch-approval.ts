@@ -132,7 +132,8 @@ export async function branchWriteSignals(input: {
 }): Promise<Pick<WriteSignals, 'emptiedFields' | 'removedItems' | 'unpublishes' | 'unreadBranch'>> {
   try {
     const review = await loadBranchReview({ ...input, canMerge: false, canReject: false })
-    const transitions = review.groups.flatMap(g => g.entries.map(e => ({ from: e.statusBefore, to: e.statusAfter })))
+    // A new entry has no status before it either; that is not a live one.
+    const transitions = review.groups.flatMap(g => g.entries.filter(e => e.kind !== 'added').map(e => ({ from: e.statusBefore, to: e.statusAfter })))
     return { ...contentLoss(review), unpublishes: unpublishedCount(transitions) }
   }
   catch {

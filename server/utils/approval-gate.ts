@@ -134,8 +134,8 @@ export interface WriteSignals {
    */
   unreadBranch?: boolean
   /**
-   * Entries the write moves from `published` to any other status — an
-   * unpublish, whatever status it lands on. From the write's own status
+   * Live entries (`published`, or no status at all) the write moves to any
+   * other status — an unpublish, whatever status it lands on. From the write's own status
    * changes, or the written branch's review: see {@link unpublishedCount}.
    */
   unpublishes?: number
@@ -143,9 +143,14 @@ export interface WriteSignals {
   textChars?: number
 }
 
-/** Entries a set of status transitions takes down from `published`. */
+/**
+ * Entries a set of status transitions takes down from the site. An existing
+ * entry with no status is live — readers treat missing meta as visible — so
+ * moving it off counts as much as moving a `published` one. Callers pass only
+ * entries that existed before the write.
+ */
 export function unpublishedCount(changes: Array<{ from: string | null, to: string | null }> = []): number {
-  return changes.filter(c => c.from === 'published' && c.to !== null && c.to !== 'published').length
+  return changes.filter(c => (c.from === 'published' || c.from === null) && c.to !== null && c.to !== 'published').length
 }
 
 /** A text write at or above this size is a rewrite a reviewer should see. */
