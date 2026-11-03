@@ -190,6 +190,87 @@ describe('save_content with status in a review workflow (#297)', () => {
   })
 })
 
+// ── who may publish through chat: the status route's rule ──
+
+const EDITOR: AgentPermissions = {
+  workspaceRole: 'member',
+  projectRole: 'editor',
+  specificModels: false,
+  allowedModels: [],
+  allowedLocales: [],
+  availableTools: ['save_content', 'update_status'],
+}
+const OWNER: AgentPermissions = { ...PERMISSIONS, availableTools: ['save_content', 'update_status'] }
+
+/** One chat tool call on an auto-merge project; `reviewPlan` is whether the plan has `workflow.review`. */
+async function runAs(permissions: AgentPermissions, tool: string, params: Record<string, unknown>, reviewPlan = true) {
+  const { emptyAffected } = await import('../../server/utils/agent-types')
+  vi.stubGlobal('emptyAffected', emptyAffected)
+  vi.stubGlobal('hasFeature', vi.fn().mockReturnValue(reviewPlan))
+  vi.stubGlobal('errorMessage', vi.fn((key: string) => key))
+  vi.stubGlobal('emitWebhookEvent', vi.fn().mockResolvedValue(undefined))
+  vi.stubGlobal('invalidateBrainCache', vi.fn())
+  vi.stubGlobal('findBrokenRelations', vi.fn().mockReturnValue([]))
+  vi.stubGlobal('getOrBuildBrainCache', vi.fn().mockResolvedValue({
+    config: { locales: { default: 'tr', supported: ['tr'] } },
+    content: new Map(),
+    meta: new Map(),
+    models: new Map([['articles', articles]]),
+  }))
+  const written = {
+    branch: 'cr/content/articles/tr/1',
+    commit: { sha: 'c1' },
+    diff: [],
+    validation: { valid: true, errors: [] },
+  }
+  const engine = {
+    saveContent: vi.fn().mockResolvedValue({ ...written, statuses: { a: 'draft' } }),
+    updateEntryStatus: vi.fn().mockResolvedValue({ ...written, statusChanges: [{ entryId: 'a', from: 'draft', to: 'published' }], touchedLocales: ['tr'] }),
+    mergeBranch: vi.fn().mockResolvedValue({ merged: true, branch: written.branch }),
+  }
+  const { executeToolWithAutoMerge } = await import('../../server/utils/conversation-engine')
+  const out = await executeToolWithAutoMerge(
+    tool, params, engine as never, branchGit(), 'e@x.io', 'u1', 'content', 'auto-merge', permissions, 'pro', 'p1', 'w1', UI,
+  )
+  return { ...out, engine }
+}
+
+describe('publishing through chat follows the status route\'s rule', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  it('refuses an editor\'s update_status to published, and writes nothing', async () => {
+    const { result, engine } = await runAs(EDITOR, 'update_status', { model: 'articles', status: 'published', entryIds: ['a'] })
+    expect(result).toEqual({ error: 'content.publish_owner_only' })
+    expect(engine.updateEntryStatus).not.toHaveBeenCalled()
+  })
+
+  it('refuses an editor\'s save that publishes, and writes nothing', async () => {
+    const { result, engine } = await runAs(EDITOR, 'save_content', { model: 'articles', mode: 'update', status: 'published', data: { a: { title: 'x' } } })
+    expect(result).toEqual({ error: 'content.publish_owner_only' })
+    expect(engine.saveContent).not.toHaveBeenCalled()
+  })
+
+  it('lets an owner publish with update_status', async () => {
+    const { result, engine } = await runAs(OWNER, 'update_status', { model: 'articles', status: 'published', entryIds: ['a'] })
+    expect(engine.updateEntryStatus).toHaveBeenCalled()
+    expect(engine.mergeBranch).toHaveBeenCalled()
+    expect(result).toMatchObject({ merged: true })
+  })
+
+  it('auto-publishes on a plan without review only for an owner; an editor\'s save stays a draft', async () => {
+    const save = { model: 'articles', mode: 'update', data: { a: { title: 'x' } } }
+    const editor = await runAs(EDITOR, 'save_content', save, false)
+    expect(editor.engine.saveContent.mock.calls[0]![4]).toMatchObject({ autoPublish: false })
+
+    vi.resetModules()
+    const owner = await runAs(OWNER, 'save_content', save, false)
+    expect(owner.engine.saveContent.mock.calls[0]![4]).toMatchObject({ autoPublish: true })
+  })
+})
+
 // ── through the engine ──
 
 const commit = { sha: 'c1', message: 'm', author: { name: 'bot', email: 'bot@example.com' }, timestamp: '' }
