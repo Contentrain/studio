@@ -315,12 +315,10 @@ can leave a response describing a world the caller is not in.
    resolves, so the agent already held the result. Write `tools/call`s are
    therefore **buffered instead of streamed** — they answer with a short JSON
    or single-event SSE payload, never a long-lived stream, so nothing is lost.
-   Reads still stream. A failed reconcile never changes the response: failures
-   are swallowed, and one that outruns a 15s deadline is left to finish in the
-   background, degrading to the old behaviour rather than holding the caller
-   open. (Since `reconcileMcpCloudWrites` replaced `reconcileMcpCloudAutoMerge`,
-   a reconcile that finishes in time annotates the result with `merge.status` —
-   `merged` or `held_for_review`.)
+   Reads still stream. The reconcile's *outcome* still cannot change the
+   response: failures are swallowed, and one that outruns a 15s deadline is
+   left to finish in the background, degrading to the old behaviour rather
+   than holding the caller open.
 
    **Only step 1 of the merge is awaited.** Measured on prod at `v0.2.1`, a
    write cost ~18s against ~1-2s for a read, because the reconcile ran all
