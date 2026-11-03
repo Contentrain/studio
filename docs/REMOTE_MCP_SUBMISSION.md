@@ -53,9 +53,9 @@ behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 | `resource` string and `issuer` unchanged since listing prep (§7) | ✅ |
 | Bare request to `/api/mcp/remote` → 401 + `WWW-Authenticate` with `resource_metadata` + `scope="content:read content:write project:metadata"` | ✅ tested with **GET** 2026-11-02 (the handler authenticates before anything else, so POST gets the same) |
 | `/.well-known/openai-apps-challenge` → 404 while `NUXT_OPENAI_APPS_CHALLENGE` is unset (correct until §6 step 1) | ✅ 2026-11-02 |
-| Tool annotations @ MCP **3.11.24** (re-read 2026-11-03): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise; **17 / 12** from `<mcp-pin>`, which adds `contentrain_content_status`) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
+| Tool annotations @ MCP **3.11.24** (re-read 2026-11-03): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise; **17 / 12** from `3.12.0`, which adds `contentrain_content_status`) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
 | `contentrain_model_save` and `contentrain_content_save` → `destructiveHint: true` (each replaces what it is sent: a whole definition, a singleton, an existing collection entry; OpenAI counts overwriting as destructive); `contentrain_content_save` → `idempotentHint: false` (a collection save without an id adds a new entry every call) | ✅ MCP 3.11.23; production serves it from v0.4.17, so cut that tag **before the OpenAI scan** |
-| Remote `tools/list` = **17** for a media-eligible project, **12** otherwise, from `<mcp-pin>` (see §4) | ⏳ written against the content_status contract; check from code after the `<mcp-pin>` bump, then list live |
+| Remote `tools/list` = **17** for a media-eligible project, **12** otherwise, from `3.12.0` (see §4) | ✅ from code @3.12.0 (published package: `contentrain_content_status` has no `TOOL_REQUIREMENTS` entry, so it registers remotely; `contentrain_bulk` needs `projectRoot`); Studio serves it once the pin bump (#532) ships; not listed live |
 | OAuth callbacks: `https://claude.ai/api/mcp/auth_callback` and ChatGPT's per-app URL arrive through CIMD/DCR; loopback `http://localhost/callback` / `http://127.0.0.1/callback` match on **any port** | ✅ from code + tests (§8 gap 3) |
 | Token endpoint: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | ✅ from code + contract test (§8 gap 5) |
 | Error copy on this surface names no plan and promotes no upgrade (OpenAI plugin guideline) | ✅ 2026-11-02 (§8) |
@@ -236,8 +236,8 @@ its original state and the probe grants were deleted from Connected Apps.
 **None of the authenticated rows has been re-run at 3.11.2** (2026-10-23 was
 code + public GETs only); the ✅ marks below are that pass, labelled 2026-07-27 @2.3.0.
 
-**Expected `tools/list` at `<mcp-pin>`: 17** for a media-eligible project, 12
-without media (3.11.24 listed 16 / 11; `<mcp-pin>` adds `content_status`) — that is what a reviewer sees. Eleven more MCP tools are never
+**Expected `tools/list` at `3.12.0`: 17** for a media-eligible project, 12
+without media (3.11.24 listed 16 / 11; `3.12.0` adds `content_status`) — that is what a reviewer sees. Eleven more MCP tools are never
 registered here because they need a local `projectRoot` (MCP's `skipTools`): `init`, `scaffold`, `doctor`,
 `bulk`, `submit`, `merge`, `reconcile`, `branch_list`, `branch_delete`,
 `scan`, `apply`. `bulk` stays local-only; status changes go through
@@ -274,7 +274,7 @@ client before ticking that box.
 
 | # | Client | Pass criteria | Prod |
 |---|--------|---------------|------|
-| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 2026-07-27 @2.3.0: 14/14 (raw harness); ⏳ **human** at `<mcp-pin>`: 17/17 in a real client |
+| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 2026-07-27 @2.3.0: 14/14 (raw harness); ⏳ **human** at `3.12.0`: 17/17 in a real client |
 | 2 | Claude custom connector | Connect card appears from the bare 401; consent shows the client host; tools run | ⏳ **human** |
 | 3 | Claude Code | `claude mcp add --transport http contentrain <url>`; RFC 8252 loopback callback works | ✅ on staging 2026-07-14 |
 | 4 | ChatGPT developer mode | CIMD/DCR registration + consent complete; tools listed | ⏳ **human** |
@@ -489,7 +489,7 @@ code + a test, not a live run; live passes are §4.
 | 4 | CIMD chosen: `client_id_metadata_document_supported: true` + `none` auth method | **Met** | `server/utils/oauth-server/metadata.ts:46-48` (plus `S256`, `offline_access`); `tests/unit/oauth-metadata.test.ts:28`, `:33`, `:37` |
 | 5 | `/token`: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | **Met** | `server/routes/oauth/token.post.ts:52` (`readBody` parses form and JSON), `:115` rotation; `server/utils/oauth-server/store.ts:23` 10 s grace, `:332` reuse outside grace revokes the family → `invalid_grant`; `tests/contract/oauth-server.contract.test.ts:129`. The 10 s/30 s timeouts: the path is DB-only with no outbound call, but no latency was measured |
 | 6 | Bare request → 401 with `resource_metadata` | **Met** | `server/api/mcp/remote/[...slug].ts:48-51` authenticates first; `server/utils/oauth-server/challenge.ts:17` |
-| 7 | Every tool has a `title` and explicit boolean hints | **Met** | every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) at 3.11.23 (17 / 12 from `<mcp-pin>`; `content_status` annotated in §9), read from the published package; §4 table and §9 justifications. `model_save` and `content_save` are `destructiveHint: true` from 3.11.23 (§0) |
+| 7 | Every tool has a `title` and explicit boolean hints | **Met** | every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) at 3.11.23 (17 / 12 from `3.12.0`; `content_status` annotated in §9), read from the published package; §4 table and §9 justifications. `model_save` and `content_save` are `destructiveHint: true` from 3.11.23 (§0) |
 | 8 | Consent shows who is asking | **Met** | `app/pages/oauth/consent.vue` shows `client.displayHost` and the loopback-only warning |
 | 9 | Review login with no MFA/email/magic link | **Met (route)** / **missing (account)** | `server/api/auth/review-login.post.ts`, `app/pages/auth/review-login.vue`; env-gated, 404 when unset. The populated, media-eligible account is a founder item (§2, spec below) |
 | 10 | OpenAI domain challenge | **Met** | `server/routes/.well-known/openai-apps-challenge.get.ts` serves `NUXT_OPENAI_APPS_CHALLENGE` as `text/plain`, 404 when unset |
@@ -575,7 +575,7 @@ below is new and written to OpenAI's limits; it follows the same spine.
 | Icon | `public/logo/icon-color-bg.svg` (square, 300×300 viewBox) exported to a 512×512 PNG |
 | Reads, writes, or both | Both. Reads and writes are separate tools, each annotated |
 | First-party API | Yes. The server is Contentrain's own, on Contentrain's domain |
-| Tools | 17 tools on a media-enabled project, 12 otherwise (MCP `<mcp-pin>`). The review project is media-enabled, so reviewers see 17 |
+| Tools | 17 tools on a media-enabled project, 12 otherwise (MCP `3.12.0`). The review project is media-enabled, so reviewers see 17 |
 | Demo video | founder |
 
 ### Claude listing
@@ -701,7 +701,7 @@ within seconds, so list the entries again before checking the result.
 | 2 | `Merge my content changes into main and deploy the site.` | Merging and deploying are not tools on this surface; they belong to Contentrain Studio and the user's own hosting | Explains that writes already follow the project's workflow (auto-merge or review in Studio) and that deploying is outside Contentrain; calls no tool |
 | 3 | `Delete all my blog posts.` | Bulk deletion is irreversible and needs explicit confirmation | Asks the user to confirm before calling `contentrain_content_delete` (the tool itself requires `confirm: true`) |
 
-### Annotation justifications (17 remote tools, MCP `<mcp-pin>`)
+### Annotation justifications (17 remote tools, MCP `3.12.0`)
 
 | Tool | readOnly | destructive | openWorld | Justification |
 |---|:---:|:---:|:---:|---|
