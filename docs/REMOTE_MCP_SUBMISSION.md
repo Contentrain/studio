@@ -35,11 +35,12 @@ User-facing docs live in [REMOTE_MCP.md](./REMOTE_MCP.md).
 > string must match the entered URL exactly, incl. path. Never change the
 > PRM `resource` string or the AS `issuer` after listing.
 
-## 0. Status at a glance (re-verified 2026-11-02: Studio `0.4.16`, MCP `3.11.20`)
+## 0. Status at a glance (re-verified 2026-11-02: Studio `0.4.16`, MCP `3.11.20`; MCP rows re-read at `3.11.23` for v0.4.17)
 
 Re-verified from code (Studio `main` 0a33468 = the `v0.4.16` tag,
 `@contentrain/mcp` pinned exactly `3.11.20`; annotations and instructions
-read from the installed package) plus read-only GETs of the public endpoints
+read from the installed package; v0.4.17 pins `3.11.23`, and the MCP rows
+below are re-read from that package) plus read-only GETs of the public endpoints
 on prod, which answers that same commit. No login and no POSTs, so the rows
 behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 
@@ -51,18 +52,19 @@ behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 | `resource` string and `issuer` unchanged since listing prep (§7) | ✅ |
 | Bare request to `/api/mcp/remote` → 401 + `WWW-Authenticate` with `resource_metadata` + `scope="content:read content:write project:metadata"` | ✅ tested with **GET** 2026-11-02 (the handler authenticates before anything else, so POST gets the same) |
 | `/.well-known/openai-apps-challenge` → 404 while `NUXT_OPENAI_APPS_CHALLENGE` is unset (correct until §6 step 1) | ✅ 2026-11-02 |
-| Tool annotations @ MCP **3.11.20** (re-read 2026-11-02): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
-| `contentrain_model_save` → `destructiveHint: true` (it replaces the whole definition; OpenAI counts overwriting as destructive) | ⏳ `Contentrain/ai` changes it; Studio bumps MCP to that release **before the OpenAI scan** |
-| Remote `tools/list` = **16** for a media-eligible project, **11** otherwise (see §4) | ✅ from code @3.11.20; not re-listed live |
+| Tool annotations @ MCP **3.11.23** (re-read 2026-11-02): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
+| `contentrain_model_save` and `contentrain_content_save` → `destructiveHint: true` (each replaces what it is sent: a whole definition, a singleton, an existing collection entry; OpenAI counts overwriting as destructive); `contentrain_content_save` → `idempotentHint: false` (a collection save without an id adds a new entry every call) | ✅ MCP 3.11.23; production serves it from v0.4.17, so cut that tag **before the OpenAI scan** |
+| Remote `tools/list` = **16** for a media-eligible project, **11** otherwise (see §4) | ✅ from code @3.11.23; not re-listed live |
 | OAuth callbacks: `https://claude.ai/api/mcp/auth_callback` and ChatGPT's per-app URL arrive through CIMD/DCR; loopback `http://localhost/callback` / `http://127.0.0.1/callback` match on **any port** | ✅ from code + tests (§8 gap 3) |
 | Token endpoint: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | ✅ from code + contract test (§8 gap 5) |
 | Error copy on this surface names no plan and promotes no upgrade (OpenAI plugin guideline) | ✅ 2026-11-02 (§8) |
 | Unavailable tools are **not registered** (MCP's `skipTools`) | ✅ |
 | Every remote tool is grantable by a scope (`mcp-tool-classes.ts` → `scopes.ts`) | ✅ from code |
 | Read/write split — no catch-all `api_request` | ✅ |
-| Server `instructions` name only registered tools: at MCP 3.11.12 this surface gets 456 chars without the `contentrain_apply` clause (§4.1 defect 5) | ✅ fixed upstream in 3.11.12 (ai#651); re-read at 3.11.20 2026-11-02: still 456 chars, no `contentrain_apply`; not re-read live |
+| Server `instructions` name only registered tools: at MCP 3.11.12 this surface gets 456 chars without the `contentrain_apply` clause (§4.1 defect 5) | ✅ fixed upstream in 3.11.12 (ai#651); re-read at 3.11.20 2026-11-02: still 456 chars, no `contentrain_apply`; `DEFAULT_INSTRUCTIONS` unchanged in the 3.11.20 → 3.11.23 diff; not re-read live |
 | §3 post-bump check for 2.3.0 → 3.11.2 (tarball diff + one real staging content save) | ⏳ **not done** |
 | §3 post-bump check for 3.11.12 → 3.11.20 (tarball diff + one real staging content save) | ⏳ **not done** |
+| §3 post-bump check for 3.11.20 → 3.11.23 | ✅ tarball diff 2026-11-02; ⏳ staging content save **not done** |
 | DCR → 201, review account, prod-origin E2E (write chain, media, step-up, revocation) | ✅ 2026-07-27 @2.3.0; **not re-run at 3.11.2** |
 | Legal URLs, public documentation | ✅ (unchanged; not re-fetched) |
 | Live client passes (#2 Claude connector, #4 ChatGPT, #5 Codex, #7 refresh > 1h) | ⏳ need a human (§4) |
@@ -71,8 +73,8 @@ behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 | Support URL `https://contentrain.io/support` (on 2026-11-02 it still 301s to `/`) | ⏳ being built on iterum; check it answers 200 before submitting |
 
 What is left: the §3 post-bump checks; the human client passes; the review
-account (§2); the founder/account items in §1; the support page; the
-`model_save` annotation bump; pasting §9.
+account (§2); the founder/account items in §1; the support page; cutting
+v0.4.17 so production serves MCP 3.11.23; pasting §9.
 
 **One sequencing trap:** Railway auto-deploys `main` to *staging*; production
 deploys only on a `v*` tag. Fixes merged to `main` are therefore not on the
@@ -139,7 +141,7 @@ the build that answers (`version`, `commit`): check it before any prod pass.
   endpoint, domain, or user interface". It is an attestation, not a challenge
   — and it binds both directories.
 
-## 3. Upstream `@contentrain/mcp` — pinned 3.11.20 (history below from 2.1.x–3.11.20)
+## 3. Upstream `@contentrain/mcp` — pinned 3.11.23 (history below from 2.1.x–3.11.23)
 
 **The 2.1.0 → 2.1.1 bump is submission-relevant, not housekeeping.** 2.1.0's
 `DEFAULT_INSTRUCTIONS` told every client to *"Preview writes with
@@ -185,6 +187,20 @@ exposed to the new envelope.
       unchanged (§4 table) and this surface's instructions are still 456
       chars with no `contentrain_apply` clause. The tarball diff and the
       staging content save are not done.
+- [x] **3.11.20 → 3.11.23 (2026-11-02), by tarball diff:** on this surface
+      the deltas are two annotations (`model_save` and `content_save`
+      `destructiveHint: true`; `content_save` `idempotentHint: false`), the
+      `contentrain_validate` description and `fix` text (`fix` only: backfilled
+      meta is `published`, and a fix that changes what is delivered stays on
+      its branch with `visibility_changes`; `fix` is not available here), and
+      `initialize` now sends `title`, `websiteUrl` and `icons`
+      (`SERVER_IDENTITY`, pointing at ai.contentrain.io). `DEFAULT_INSTRUCTIONS`,
+      the GitHub provider and the `core/ops` plan helpers are unchanged;
+      `core/validator` changes only under `fix`. Its `@contentrain/types` is
+      1.79.2, so Studio's `types` moved to 1.79.2 and `query` to 7.6.63 (which
+      pins the same). The annotation and description changes count for the
+      OpenAI resubmission rule below; they land before the scan. The staging
+      content save is not done.
 - [ ] **2.3.0 → 3.11.2: not done yet.** Diff the published tarballs' `dist/`
       and do one real staging content save (the rule below). The MCP registry
       gained three tools (`contentrain_describe_format`,
@@ -211,7 +227,7 @@ its original state and the probe grants were deleted from Connected Apps.
 **None of the authenticated rows has been re-run at 3.11.2** (2026-10-23 was
 code + public GETs only); the ✅ marks below are that pass, labelled 2026-07-27 @2.3.0.
 
-**Expected `tools/list` at 3.11.20: 16** for a media-eligible project, 11
+**Expected `tools/list` at 3.11.23: 16** for a media-eligible project, 11
 without media — that is what a reviewer sees. Eleven more MCP tools are never
 registered here because they need a local `projectRoot` (MCP's `skipTools`): `init`, `scaffold`, `doctor`,
 `bulk`, `submit`, `merge`, `reconcile`, `branch_list`, `branch_delete`,
@@ -223,11 +239,11 @@ registered here because they need a local `projectRoot` (MCP's `skipTools`): `in
 | `describe` | ✓ | – | ✓ | – | `project:metadata` |
 | `describe_format` | ✓ | – | ✓ | – | `project:metadata` |
 | `content_list` | ✓ | – | ✓ | – | `content:read` |
-| `model_save` | – | ✓ (from the next `Contentrain/ai` release; – at 3.11.20) | ✓ | – | `content:write` |
+| `model_save` | – | ✓ | ✓ | – | `content:write` |
 | `model_delete` | – | ✓ | – | – | `content:write` |
 | `vocabulary_save` | – | – | ✓ | – | `content:write` |
 | `vocabulary_delete` | – | ✓ | – | – | `content:write` |
-| `content_save` | – | – | ✓ | – | `content:write` |
+| `content_save` | – | ✓ | – | – | `content:write` |
 | `content_delete` | – | ✓ | – | – | `content:write` |
 | `validate` | – | – | ✓ | – | `content:write` (MCP marks it a write: `fix: true`) |
 | `media_list` | ✓ | – | ✓ | – | `media:read` |
@@ -454,12 +470,12 @@ code + a test, not a live run; live passes are §4.
 | # | Requirement | Verdict | Evidence |
 |---|---|---|---|
 | 1 | Runbook states the current Claude gate | **Fixed here** | §1, §5: any paid plan, `claude.ai/directory/manage` |
-| 2 | Real client passes at the pinned MCP | **Missing — needs a human** | §4 #1, #2, #4, #5, #7 and the 3.11.x passes of #9/#10; §3 tarball diff + staging save for 3.11.12 → 3.11.20 not done. Instructions at 3.11.20: 456 chars, no `contentrain_apply` |
+| 2 | Real client passes at the pinned MCP | **Missing — needs a human** | §4 #1, #2, #4, #5, #7 and the 3.11.x passes of #9/#10; §3 tarball diff + staging save for 3.11.12 → 3.11.20 not done; 3.11.20 → 3.11.23 tarball diff done, staging save not done. Instructions at 3.11.20: 456 chars, no `contentrain_apply`, unchanged at 3.11.23 |
 | 3 | Callbacks: `claude.ai/api/mcp/auth_callback`, ChatGPT per-app URL, loopback on any port | **Met** | `server/utils/oauth-server/redirects.ts:34` `matchRedirectUri` (exact match; loopback ignores the port, keeps scheme/host/path; `localhost` ≠ `127.0.0.1`); `tests/unit/oauth-redirects.test.ts:16`, `:22`, `:28`, `:34`. Hosted callbacks arrive through the client's CIMD document or DCR, so nothing is pre-registered |
 | 4 | CIMD chosen: `client_id_metadata_document_supported: true` + `none` auth method | **Met** | `server/utils/oauth-server/metadata.ts:46-48` (plus `S256`, `offline_access`); `tests/unit/oauth-metadata.test.ts:28`, `:33`, `:37` |
 | 5 | `/token`: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | **Met** | `server/routes/oauth/token.post.ts:52` (`readBody` parses form and JSON), `:115` rotation; `server/utils/oauth-server/store.ts:23` 10 s grace, `:332` reuse outside grace revokes the family → `invalid_grant`; `tests/contract/oauth-server.contract.test.ts:129`. The 10 s/30 s timeouts: the path is DB-only with no outbound call, but no latency was measured |
 | 6 | Bare request → 401 with `resource_metadata` | **Met** | `server/api/mcp/remote/[...slug].ts:48-51` authenticates first; `server/utils/oauth-server/challenge.ts:17` |
-| 7 | Every tool has a `title` and explicit boolean hints | **Met** | every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) at 3.11.20, read from the installed package; §4 table and §9 justifications. `model_save` moves to `destructiveHint: true` upstream (§0) |
+| 7 | Every tool has a `title` and explicit boolean hints | **Met** | every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) at 3.11.23, read from the published package; §4 table and §9 justifications. `model_save` and `content_save` are `destructiveHint: true` from 3.11.23 (§0) |
 | 8 | Consent shows who is asking | **Met** | `app/pages/oauth/consent.vue` shows `client.displayHost` and the loopback-only warning |
 | 9 | Review login with no MFA/email/magic link | **Met (route)** / **missing (account)** | `server/api/auth/review-login.post.ts`, `app/pages/auth/review-login.vue`; env-gated, 404 when unset. The populated, media-eligible account is a founder item (§2, spec below) |
 | 10 | OpenAI domain challenge | **Met** | `server/routes/.well-known/openai-apps-challenge.get.ts` serves `NUXT_OPENAI_APPS_CHALLENGE` as `text/plain`, 404 when unset |
@@ -545,7 +561,7 @@ below is new and written to OpenAI's limits; it follows the same spine.
 | Icon | `public/logo/icon-color-bg.svg` (square, 300×300 viewBox) exported to a 512×512 PNG |
 | Reads, writes, or both | Both. Reads and writes are separate tools, each annotated |
 | First-party API | Yes. The server is Contentrain's own, on Contentrain's domain |
-| Tools | 16 tools on a media-enabled project, 11 otherwise (MCP 3.11.20, from code). The review project is media-enabled, so reviewers see 16 |
+| Tools | 16 tools on a media-enabled project, 11 otherwise (MCP 3.11.23, from code). The review project is media-enabled, so reviewers see 16 |
 | Demo video | founder |
 
 ### Claude listing
@@ -662,7 +678,7 @@ the whole entry (see the `content_save` note below), so no case depends on it.
 | 2 | `Merge my content changes into main and deploy the site.` | Merging and deploying are not tools on this surface; they belong to Contentrain Studio and the user's own hosting | Explains that writes already follow the project's workflow (auto-merge or review in Studio) and that deploying is outside Contentrain; calls no tool |
 | 3 | `Delete all my blog posts.` | Bulk deletion is irreversible and needs explicit confirmation | Asks the user to confirm before calling `contentrain_content_delete` (the tool itself requires `confirm: true`) |
 
-### Annotation justifications (16 remote tools, MCP 3.11.20)
+### Annotation justifications (16 remote tools, MCP 3.11.23)
 
 | Tool | readOnly | destructive | openWorld | Justification |
 |---|:---:|:---:|:---:|---|
@@ -672,9 +688,9 @@ the whole entry (see the `content_save` note below), so no case depends on it.
 | `contentrain_content_list` | true | false | false | Lists and reads entries; changes nothing |
 | `contentrain_media_list` | true | false | false | Lists the project's media library; changes nothing |
 | `contentrain_media_get` | true | false | false | Reads one asset's details; changes nothing |
-| `contentrain_model_save` | false | **true** | false | Replaces a model's whole definition (not a merge), which OpenAI counts as destructive. The change lands as a Git commit on a separate content branch, never on main, and the previous definition stays in Git history. Shipped as `true` from the `Contentrain/ai` release Studio pins before the scan |
+| `contentrain_model_save` | false | **true** | false | Replaces a model's whole definition (not a merge), which OpenAI counts as destructive. The change lands as a Git commit on a separate content branch, never on main, and the previous definition stays in Git history |
 | `contentrain_vocabulary_save` | false | false | false | Adds or updates vocabulary terms and merges with the existing ones; omitted terms are untouched; committed to Git |
-| `contentrain_content_save` | false | false | false | Creates or updates entries after schema validation, as a Git commit on a separate content branch; an updated entry's previous version stays in Git history. See the note below on what an update replaces |
+| `contentrain_content_save` | false | **true** | false | Creates or updates entries after schema validation, as a Git commit on a separate content branch, never on main. Updating a singleton or an existing collection entry replaces it with the data sent, which OpenAI counts as destructive; the previous version stays in Git history. See the note below on what an update replaces |
 | `contentrain_validate` | false | false | false | Marked as a write because its `fix` option can rewrite content files (sorting, missing locale files); it deletes no entries |
 | `contentrain_media_update` | false | false | false | Changes an asset's alt text, tags or file name; the file itself is not touched |
 | `contentrain_model_delete` | false | true | false | Removes a model with its content and metadata; requires `confirm: true` |
@@ -683,15 +699,15 @@ the whole entry (see the `content_save` note below), so no case depends on it.
 | `contentrain_media_delete` | false | true | false | Removes an asset from storage; requires `confirm: true`; entries that reference it are not rewritten |
 | `contentrain_media_ingest` | false | false | **true** | Fetches a URL the user supplies from the public internet (server-side, with SSRF, MIME-type and size checks) and stores it as a new asset; it overwrites nothing |
 
-`contentrain_content_save` is `destructiveHint: false` at 3.11.20, and what an
-update replaces depends on the kind (MCP `planContentSave`): a document merges
-the frontmatter it is sent with the file's and keeps the body unless `body` is
-sent; a dictionary merges keys; a **singleton** or an existing **collection
-entry** is replaced by the data sent, so fields left out are removed. Every
-version stays in Git history. Under OpenAI's definition (overwriting counts as
-destructive) the singleton/collection case is the same class as `model_save`;
-whether it moves to `true` is an upstream `Contentrain/ai` decision, and it has
-to land before the OpenAI scan or it forces a version resubmission (§7).
+`contentrain_content_save` is `destructiveHint: true` and `idempotentHint:
+false` from MCP 3.11.23. What an update replaces depends on the kind (MCP
+`planContentSave`): a document merges the frontmatter it is sent with the
+file's and keeps the body unless `body` is sent; a dictionary merges keys; a
+**singleton** or an existing **collection entry** is replaced by the data
+sent, so fields left out are removed. Under OpenAI's definition (overwriting
+counts as destructive) that is the same class as `model_save`. A collection
+save without an id adds a new entry on every call, so repeating it is not a
+no-op. Every version stays in Git history.
 
 ### Domain challenge (OpenAI, step 1 of §6)
 
