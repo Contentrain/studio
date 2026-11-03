@@ -372,7 +372,7 @@ authenticated public entry is
 `server/api/mcp/v1/[projectId]/[...slug].ts` — Bearer key validation +
 project match + `api.mcp_cloud` plan gate + per-key rate limit (with
 `Retry-After` on 429) + per-key tool allowlist (`allowed_tools`; empty =
-unrestricted) + atomic monthly quota (`increment_mcp_cloud_usage_if_allowed`)
+unrestricted; `tools/list` answers are trimmed to it by the same `toolDenied`) + atomic monthly quota (`increment_mcp_cloud_usage_if_allowed`)
 + usage metering + header strip + proxy to the loopback server +
 brain-cache invalidation on write tools. **Quota semantics:** only
 `tools/call` requests consume the monthly quota and produce meter events;

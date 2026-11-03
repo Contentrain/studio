@@ -1,5 +1,6 @@
 /**
- * Reading and annotating the loopback's answer to a write `tools/call`.
+ * Reading and annotating the loopback's answer to a write `tools/call`, and
+ * trimming its answer to `tools/list`.
  *
  * The write path buffers the loopback response (see `runMcpCloudProxy`), so
  * Studio can read which branch each write produced — from the tool result's
@@ -13,7 +14,7 @@ import type { McpCloudMergeOutcome } from './mcp-cloud-automerge'
 
 interface RpcMessage {
   id?: unknown
-  result?: { isError?: boolean, content?: Array<{ type?: string, text?: unknown }> }
+  result?: { isError?: boolean, content?: Array<{ type?: string, text?: unknown }>, tools?: Array<{ name?: unknown }> }
 }
 
 /** One write result: the JSON-RPC id it answers, its branch and commit. */
@@ -116,6 +117,26 @@ export function annotateWriteResults(body: string, contentType: string | null, o
     return { ...message, result: { ...message.result, content } }
   }
 
+  if (frame.kind === 'json') {
+    const messages = frame.messages.map(rewrite)
+    return JSON.stringify(frame.batch ? messages : messages[0])
+  }
+  const lines = [...frame.lines]
+  for (const { index, message } of frame.dataLines)
+    lines[index] = `data: ${JSON.stringify(rewrite(message))}`
+  return lines.join('\n')
+}
+
+/**
+ * Keep only the tools `keep` allows in a `tools/list` answer, in the framing
+ * it came in. Returns the body unchanged when it does not parse.
+ */
+export function filterListedTools(body: string, contentType: string | null, keep: (name: string) => boolean): string {
+  const frame = parseFrame(body, contentType)
+  if (!frame) return body
+  const rewrite = (message: RpcMessage): RpcMessage => (Array.isArray(message?.result?.tools)
+    ? { ...message, result: { ...message.result, tools: message.result.tools.filter(tool => typeof tool?.name === 'string' && keep(tool.name)) } }
+    : message)
   if (frame.kind === 'json') {
     const messages = frame.messages.map(rewrite)
     return JSON.stringify(frame.batch ? messages : messages[0])
