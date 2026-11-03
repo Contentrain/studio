@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.22
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.21...v0.4.22)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.21, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+- MCP clients connected before this deploy still hold a session from the old process, which answers 400. Those clients must reconnect once after this deploy. From the next deploy on, they re-initialize on their own (#539).
+
+### 🩹 Fixes
+
+- `@contentrain/mcp` 3.12.1 → 3.12.2 (#539).
+  - Before, a session id from before a restart got `400 Server not initialized` on MCP Cloud and the remote endpoint. The connected client stayed broken until it reconnected by hand. It now gets `404 Session not found`, as the Streamable HTTP spec requires, and the client starts a new session.
+
 ## v0.4.21
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.20...v0.4.21)
