@@ -13,7 +13,7 @@
  */
 import type { H3Event } from 'h3'
 import { getHeader, getProxyRequestHeaders, proxyRequest, readRawBody, setResponseHeader, setResponseStatus } from 'h3'
-import { Agent } from 'undici'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { MEDIA_TOOL_NAMES, WRITE_TOOL_NAMES } from '~~/server/utils/mcp-tool-classes'
 import { resolveUsagePeriod } from '~~/server/utils/usage-period'
 import { errorMessage } from '~~/server/utils/content-strings'
@@ -337,13 +337,19 @@ export async function runMcpCloudProxy(
     // every quiet session died with an unhandled UND_ERR_BODY_TIMEOUT
     // (staging, 3× on 2026-08-13). The dispatcher disables the body
     // timeout for this hop only; global fetches keep their safety net.
+    // The hop uses undici's own `fetch`: Node's global fetch runs its bundled
+    // undici (6.x on Node 22), which rejects a dispatcher from the `undici`
+    // package (8.x) with UND_ERR_INVALID_ARG, and h3 turned every streamed
+    // request into a 502.
     try {
       return await proxyRequest(event, target, {
         headers: proxyHeaders,
+        fetch: undiciFetch as unknown as typeof fetch,
         fetchOptions: { ...fetchOptions, dispatcher: streamingDispatcher } as RequestInit,
       })
     }
     catch (err) {
+      logLoopbackFailure(err)
       // Once headers are flushed the response is unsalvageable — a broken
       // pump (client hung up, upstream closed mid-stream) must end the
       // socket quietly. Re-raising would hand a headers-sent response to
@@ -411,6 +417,25 @@ export async function runMcpCloudProxy(
  * answers headers immediately or not at all.
  */
 const streamingDispatcher = new Agent({ bodyTimeout: 0 })
+
+/**
+ * h3's `proxyRequest` answers 502 when the fetch to the loopback fails and
+ * logs nothing. Log the status and the error class only: no URL, headers or
+ * body.
+ */
+function logLoopbackFailure(err: unknown): void {
+  const status = (err as { statusCode?: unknown } | null)?.statusCode
+  if (status !== 502) return
+  const cause = (err as { cause?: unknown }).cause
+  const inner = (cause as { cause?: unknown } | undefined)?.cause
+  const describe = (value: unknown) => {
+    if (!value || typeof value !== 'object') return undefined
+    const { name, code } = value as { name?: unknown, code?: unknown }
+    return [name, code].filter(part => typeof part === 'string').join(' ') || undefined
+  }
+  // eslint-disable-next-line no-console -- a failed loopback hop is otherwise silent
+  console.error('[mcp-cloud] loopback proxy failed: 502', describe(cause) ?? 'unknown', describe(inner) ?? '')
+}
 
 /** Response headers that describe the upstream framing, not the payload. */
 const HOP_BY_HOP_HEADERS = new Set([
