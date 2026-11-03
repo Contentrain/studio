@@ -355,6 +355,18 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     expect(headers).toMatchObject({ 'x-cr-project-id': 'proj-1', 'x-cr-media-owner': 'owner-1', 'x-cr-plan': 'pro' })
   })
 
+  it('grants without a media scope get no media headers, so the loopback lists no media tool', async () => {
+    state.mediaProvider = { listAssets: vi.fn() }
+    state.grant!.scope = 'content:read project:metadata'
+    const handler = await loadHandler()
+    await expect(handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)).resolves.toBe('proxied')
+
+    const headers = (state.proxyRequest.mock.calls.at(-1)![2] as { headers: Record<string, unknown> }).headers
+    expect(headers['x-cr-project-id']).toBeUndefined()
+    expect(headers['x-cr-media-owner']).toBeUndefined()
+    expect(headers['x-cr-plan']).toBeUndefined()
+  })
+
   it('grants without a media scope get the 403 insufficient_scope step-up on a media tool', async () => {
     state.mediaProvider = { listAssets: vi.fn() }
     state.grant!.scope = 'content:read content:write project:metadata'

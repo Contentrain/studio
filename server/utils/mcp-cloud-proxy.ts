@@ -323,12 +323,15 @@ export async function runMcpCloudProxy(
   // loopback turns into the media facet; when not, omit them so the
   // loopback builds a facet-less provider and the media tools stay hidden
   // from tools/list. Requires: the media stack (ee + R2), the plan's
-  // media feature, project CDN delivery, and a workspace owner for
-  // `uploaded_by`.
+  // media feature, project CDN delivery, a workspace owner for
+  // `uploaded_by`, and a caller that may call a media tool at all (a
+  // media:* grant, a key listing one, or the key's media opt-in): a grant
+  // without media scope must not be shown tools that only answer 403.
   const mediaEligible = useMediaProvider() !== null
     && hasFeature(ctx.plan, 'media.upload')
     && ctx.cdnEnabled
     && ctx.mediaOwnerId !== null
+    && (ctx.mediaToolsOptIn === true || ctx.allowedTools.some(name => MEDIA_TOOL_NAMES.has(name)))
 
   const proxyHeaders = {
     'x-cr-installation-id': String(ctx.installationId),
