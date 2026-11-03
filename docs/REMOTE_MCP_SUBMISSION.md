@@ -284,6 +284,7 @@ client before ticking that box.
 | 8 | Revocation | Client's next call prompts a clean re-authorization | ✅ 2026-07-27 @2.3.0: 401 + `invalid_token`; **refresh token rejected too** (family revoked) |
 | 9 | Write path | `cr/*` lands + auto-merge reconcile fires | ✅ 2026-07-27 @2.3.0 on GitHub; ⏳ one real pass at 3.11.2 (§3 post-bump rule) |
 | 10 | Media | Tools appear in `tools/list` and return real assets | ✅ 2026-07-27 @2.3.0, all 5; ⏳ one real pass at 3.11.2 |
+| 11 | Publish role gate (internal; not a portal case: the review account is an owner) | A project editor's `contentrain_content_status` publish is refused with the owner/admin message, nothing is committed, and the entry keeps its status | ⏳ verified by us: route/integration test + the W3 gate, same rule as `content/[modelId]/status.patch.ts:34-37` |
 
 **Needs a human** (a real client account, a browser consent, or a wait):
 #1 in a real client, #2 Claude custom connector, #4 ChatGPT developer mode,
@@ -691,14 +692,13 @@ After a write (cases 4 and 5), `contentrain_content_save` and `contentrain_conte
 `git.action: pending-review` even on this auto-merge project. The merge lands
 within seconds, so list the entries again before checking the result.
 
-### Test cases — 4 negative
+### Test cases — 3 negative
 
 | # | Prompt | Reason | Expected response |
 |---|---|---|---|
 | 1 | `Generate a new cover image for my latest blog post.` | Contentrain stores and serves images; it does not generate them | Says it cannot generate images; offers to add an image from a URL the user provides (`contentrain_media_ingest`) or to pick one from the library |
 | 2 | `Merge my content changes into main and deploy the site.` | Merging and deploying are not tools on this surface; they belong to Contentrain Studio and the user's own hosting | Explains that writes already follow the project's workflow (auto-merge or review in Studio) and that deploying is outside Contentrain; calls no tool |
 | 3 | `Delete all my blog posts.` | Bulk deletion is irreversible and needs explicit confirmation | Asks the user to confirm before calling `contentrain_content_delete` (the tool itself requires `confirm: true`) |
-| 4 | `Publish the blog post "Shipping Faster With A Clear Content Model".` — run on a connection authorized by a project **editor** (not the review owner) | Publishing changes the live site and is limited to workspace owners and admins, the same rule as Studio's own status route | `contentrain_content_status` returns an error saying only workspace owners and admins can publish (Studio's `content.publish_owner_only` text); nothing is committed and the post stays `draft`; the assistant says an owner or admin has to publish it |
 
 ### Annotation justifications (17 remote tools, MCP `<mcp-pin>`)
 
