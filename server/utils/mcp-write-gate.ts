@@ -34,7 +34,10 @@ export interface ToolCallMessage {
 /**
  * Every `tools/call` in a JSON-RPC body, with its id and arguments — batch
  * arrays included. `malformed` is set when a tools/call message cannot be read
- * (no string name, arguments that are not an object): the gate refuses those.
+ * (no string name, arguments that are not an object) or cannot be told apart
+ * from another one (no id, or an id two calls share): the gate refuses those.
+ * A write result is matched back to its call by id, so an id that is not
+ * unique would let one call be judged as another.
  */
 export function readToolCallMessages(rawBody: string | undefined): { calls: ToolCallMessage[], malformed: boolean } {
   if (!rawBody) return { calls: [], malformed: false }
@@ -48,6 +51,7 @@ export function readToolCallMessages(rawBody: string | undefined): { calls: Tool
   }
   const messages = Array.isArray(parsed) ? parsed : [parsed]
   const calls: ToolCallMessage[] = []
+  const ids = new Set<string | number>()
   let malformed = false
   for (const message of messages) {
     if (!message || typeof message !== 'object') continue
@@ -58,8 +62,10 @@ export function readToolCallMessages(rawBody: string | undefined): { calls: Tool
     const args = p.arguments === undefined
       ? {}
       : p.arguments && typeof p.arguments === 'object' && !Array.isArray(p.arguments) ? p.arguments as Record<string, unknown> : null
-    if (!name || !args) malformed = true
-    calls.push({ id: typeof id === 'string' || typeof id === 'number' ? id : null, name, arguments: args })
+    const callId = typeof id === 'string' || typeof id === 'number' ? id : null
+    if (!name || !args || callId === null || ids.has(callId)) malformed = true
+    if (callId !== null) ids.add(callId)
+    calls.push({ id: callId, name, arguments: args })
   }
   return { calls, malformed }
 }

@@ -404,14 +404,21 @@ describe('content route integration', () => {
     vi.stubGlobal('invalidateBrainCache', vi.fn())
     vi.stubGlobal('createContentEngine', vi.fn().mockReturnValue({ updateEntryStatus, mergeBranch }))
 
+    // Taking a published entry back to draft is an unpublish: held like a publish.
     const cases = [
-      { role: 'editor', status: 'archived', held: true },
-      { role: 'owner', status: 'published', held: true },
-      { role: 'editor', status: 'draft', held: false },
+      { role: 'editor', status: 'archived', from: 'draft', held: true, reason: '`archived`' },
+      { role: 'owner', status: 'published', from: 'draft', held: true, reason: '`published`' },
+      { role: 'editor', status: 'draft', from: 'in_review', held: false, reason: '' },
+      { role: 'editor', status: 'draft', from: 'published', held: true, reason: 'takes 1 published entry down' },
     ] as const
 
     for (const c of cases) {
       mergeBranch.mockClear()
+      updateEntryStatus.mockResolvedValue({
+        branch: 'cr/content/posts/en/1234567890-ijkl',
+        commit: { sha: 'status-sha' },
+        statusChanges: [{ entryId: 'entry1', from: c.from, to: c.status }],
+      })
       vi.stubGlobal('requireAuth', vi.fn().mockReturnValue({ user: { id: `${c.role}-1`, email: `${c.role}@example.com` }, accessToken: 'token-1' }))
       vi.stubGlobal('resolveAgentPermissions', vi.fn().mockResolvedValue({
         workspaceRole: c.role,
@@ -437,7 +444,7 @@ describe('content route integration', () => {
           expect(payload.merged).toBe(false)
           expect(payload.branch).toBe('cr/content/posts/en/1234567890-ijkl')
           expect(payload.approval.risk).toBe('bulk_content')
-          expect(payload.approval.reasons[0]).toContain(`\`${c.status}\``)
+          expect(payload.approval.reasons[0]).toContain(c.reason)
           expect(mergeBranch).not.toHaveBeenCalled()
         }
         else {

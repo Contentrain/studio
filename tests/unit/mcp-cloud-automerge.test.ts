@@ -109,6 +109,20 @@ describe('reconcileMcpCloudWrites', () => {
     expect(engine.mergeToContentrain).not.toHaveBeenCalled()
   })
 
+  it('holds a content_status that takes a published entry down, whatever status it lands on', async () => {
+    brain.config = { ...brain.config, workflow: 'review' }
+    brain.approvalPolicy = autoContent
+    branchWriteSignals.mockResolvedValue({ unpublishes: 1 })
+    const toDraft = { tool: 'contentrain_content_status', arguments: { model: 'posts', status: 'draft', entry_ids: ['p1'], locale: 'en' }, branch: 'cr/status/posts' }
+
+    const outcomes = await reconcileMcpCloudWrites(baseParams, [toDraft])
+
+    const outcome = outcomes.get('cr/status/posts')
+    expect(outcome?.status).toBe('held')
+    expect(outcome && 'approval' in outcome ? outcome.approval?.risk : null).toBe('bulk_content')
+    expect(engine.mergeToContentrain).not.toHaveBeenCalled()
+  })
+
   it('counts every supported locale when content_status names none', async () => {
     brain.config = { ...brain.config, workflow: 'review' }
     const { mcpWriteScope } = await import('../../server/utils/mcp-cloud-automerge')

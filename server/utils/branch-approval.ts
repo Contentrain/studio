@@ -17,7 +17,7 @@ import { BranchMovedError, BranchTipUnreadableError } from './content-engine/err
 import type { BranchReview } from '../../shared/utils/branch-review'
 import type { PlanDecision } from '../../shared/utils/approval'
 import type { WriteSignals } from './approval-gate'
-import { evaluatePlan } from './approval-gate'
+import { evaluatePlan, unpublishedCount } from './approval-gate'
 import { buildBranchPlan, buildReceipt, contentLoss, grantFromRow } from './execution-plan'
 
 export interface BranchApproval {
@@ -118,7 +118,8 @@ export async function loadBranchReview(input: {
  * emptied fields and dropped list items from that same review here is what
  * keeps the two answers from drifting: a save that clears `seo.title` or
  * deletes two FAQ items is `bulk_content` when it is written and again when
- * someone presses Merge.
+ * someone presses Merge. Entries it takes down from `published` are read off
+ * the same review.
  *
  * A branch that cannot be read back reports `unreadBranch` rather than zero —
  * an unanswered question lifts the write, it does not let it through.
@@ -128,10 +129,11 @@ export async function branchWriteSignals(input: {
   contentRoot: string
   projectId: string
   branch: string
-}): Promise<Pick<WriteSignals, 'emptiedFields' | 'removedItems' | 'unreadBranch'>> {
+}): Promise<Pick<WriteSignals, 'emptiedFields' | 'removedItems' | 'unpublishes' | 'unreadBranch'>> {
   try {
     const review = await loadBranchReview({ ...input, canMerge: false, canReject: false })
-    return contentLoss(review)
+    const transitions = review.groups.flatMap(g => g.entries.map(e => ({ from: e.statusBefore, to: e.statusAfter })))
+    return { ...contentLoss(review), unpublishes: unpublishedCount(transitions) }
   }
   catch {
     return { unreadBranch: true }

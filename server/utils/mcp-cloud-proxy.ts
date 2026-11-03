@@ -418,8 +418,14 @@ export async function runMcpCloudProxy(
   // deadline finishes in the background and the result keeps saying pending,
   // which is still true when it goes out; failures are swallowed.
   const callsById = new Map(calls.filter(call => call.id !== null && call.name && call.arguments).map(call => [call.id, call]))
-  const writes: McpCloudWrite[] = readWriteResults(body, contentType).flatMap((ref) => {
-    const call = callsById.get(ref.id)
+  const refs = readWriteResults(body, contentType)
+  // The gate already refuses a body whose call ids repeat. Should two results
+  // still answer one id, neither can be tied to its call: none is judged, and
+  // both stay pending.
+  const answers = new Map<string | number, number>()
+  for (const ref of refs) answers.set(ref.id, (answers.get(ref.id) ?? 0) + 1)
+  const writes: McpCloudWrite[] = refs.flatMap((ref) => {
+    const call = answers.get(ref.id) === 1 ? callsById.get(ref.id) : undefined
     return call?.name && call.arguments
       ? [{ tool: call.name, arguments: call.arguments, branch: ref.branch, ...(ref.commitSha ? { commitSha: ref.commitSha } : {}) }]
       : []

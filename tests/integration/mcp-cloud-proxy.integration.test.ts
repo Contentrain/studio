@@ -785,6 +785,32 @@ describe('MCP Cloud proxy gating', () => {
       expect(state.proxyRequest).not.toHaveBeenCalled()
     })
 
+    it('refuses a batch whose calls share an id, and lands nothing', async () => {
+      state.permissions = OWNER
+      const body = JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_delete', arguments: { model: 'posts', id: 'p1' } } },
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_save', arguments: DEFAULT_ARGS.contentrain_content_save } },
+      ])
+      const handler = await loadHandler()
+      const result = JSON.parse(await handler(makeEvent({ __body: body }) as never) as string) as Array<{ result: { isError: boolean } }>
+      expect(result.map(r => r.result.isError)).toEqual([true, true])
+      expect(state.upstreamFetch).not.toHaveBeenCalled()
+      expect(state.reconcile).not.toHaveBeenCalled()
+    })
+
+    it('judges no write when two results answer the same call id', async () => {
+      const text = JSON.stringify({ status: 'committed', git: { branch: 'cr/content/posts/en/p1', action: 'pending-review', commit: 'c1' } })
+      const message = { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text }] } }
+      state.upstreamFetch.mockImplementation(async () => new Response(JSON.stringify([message, message]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.upstreamFetch).toHaveBeenCalled()
+      expect(state.reconcile).not.toHaveBeenCalled()
+    })
+
     it('fails closed on a tools/call whose arguments are not an object', async () => {
       const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_save', arguments: 'x' } })
       const handler = await loadHandler()
