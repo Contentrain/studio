@@ -670,6 +670,10 @@ the whole entry (see the `content_save` note below), so no case depends on it.
 | 4 | Fill one gap | `Add a German version of the author entry for Kerem Dogan, translating his role and bio.` | `contentrain_content_list` (`author`, `en`), `contentrain_content_save` (`author`, `de`, id `kerem-dogan`), `contentrain_validate` | Saves a `de` entry with `name`, a German `role` and `bio`, and the same `avatar`; validation no longer reports the author gap; the `en` entry is unchanged |
 | 5 | Use the media library | `Show the images in my media library and use the first one as the cover image of "Designing Calm Interfaces For Product Teams".` | `contentrain_media_list`, `contentrain_content_save` (`blog-post`, `en`, slug `designing-calm-interfaces`, `cover_image` only) | Lists the 2 uploaded images; the post's `en` `cover_image` is the first image's delivery URL, and its title, excerpt and body are unchanged |
 
+After a write (cases 4 and 5), `contentrain_content_save` may report
+`git.action: pending-review` even on this auto-merge project. The merge lands
+within seconds, so list the entries again before checking the result.
+
 ### Test cases — 3 negative
 
 | # | Prompt | Reason | Expected response |
