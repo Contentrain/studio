@@ -22,7 +22,7 @@ export interface AgentPermissions {
 }
 
 // Tool → minimum role required
-const TOOL_ROLES: Record<string, string[]> = {
+export const TOOL_ROLES: Record<string, string[]> = {
   list_models: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   get_content: ['viewer', 'reviewer', 'editor', 'admin', 'owner'],
   save_content: ['editor', 'admin', 'owner'],

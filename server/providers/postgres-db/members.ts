@@ -29,6 +29,7 @@ type MemberMethods = Pick<
   | 'getProjectForWorkspace'
   | 'acceptPendingInvitations'
   | 'listWorkspaceAdminEmails'
+  | 'getAcceptedWorkspaceRole'
   | 'countProjectWebhooks'
   | 'createWebhook'
 >
@@ -402,6 +403,22 @@ export function memberMethods(): MemberMethods {
         return rows
           .filter(row => row.email)
           .map(row => ({ email: row.email as string, displayName: row.display_name ?? null }))
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getAcceptedWorkspaceRole(workspaceId, userId) {
+      try {
+        const row = await getAdmin()
+          .selectFrom('workspace_members')
+          .select('role')
+          .where('workspace_id', '=', workspaceId)
+          .where('user_id', '=', userId)
+          .where('accepted_at', 'is not', null)
+          .executeTakeFirst()
+        return row?.role ?? null
       }
       catch (error) {
         throwDbError(error)

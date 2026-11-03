@@ -334,6 +334,12 @@ export interface DatabaseProvider {
   ensureWorkspaceMember: (accessToken: string, workspaceId: string, userId: string, email: string, role?: string) => Promise<void>
   acceptPendingInvitations: (userId: string, workspaceId: string) => Promise<boolean>
   listWorkspaceAdminEmails: (workspaceId: string) => Promise<{ email: string, displayName: string | null }[]>
+  /**
+   * The user's role in the workspace, read without a session token — for callers that act for a user
+   * who is not in the request (MCP Cloud: an OAuth grant's user, an API key's creator). Accepted
+   * memberships only; null when there is none.
+   */
+  getAcceptedWorkspaceRole: (workspaceId: string, userId: string) => Promise<string | null>
 
   // ═══════════════════════════════════════════════════
   // PROJECTS

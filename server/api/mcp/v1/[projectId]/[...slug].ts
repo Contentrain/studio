@@ -83,5 +83,8 @@ export default defineEventHandler(async (event) => {
     rateLimitKey: `mcp-cloud:${keyData.keyId}`,
     monthlyCallLimit: keyData.monthlyCallLimit,
     meter: { kind: 'key', id: keyData.keyId },
+    // A key acts with its creator's current role: a creator who was demoted,
+    // removed or deleted takes the key's write rights with them.
+    actorUserId: keyData.createdBy,
   })
 })
