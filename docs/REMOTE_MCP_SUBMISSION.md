@@ -597,8 +597,9 @@ below is new and written to OpenAI's limits; it follows the same spine.
   > cannot invent a field, break a locale, or corrupt a model.
   >
   > • Ask what content exists — models, fields, entries, locales, branch status
-  > • Draft, update, delete and publish entries; publishing is owner/admin
-  >   only and follows the review workflow
+  > • Draft, update, delete and publish entries across collections,
+  >   singletons, documents, and dictionaries; publishing is owner/admin only
+  >   and follows the review workflow
   > • Work in any configured locale and keep translations consistent
   > • Validate a project and get an actionable report before publishing
   > • Manage media assets on eligible plans
@@ -614,8 +615,8 @@ below is new and written to OpenAI's limits; it follows the same spine.
   >
   > Requires a Contentrain Studio account with a connected repository.
 
-  The publish line is taken from `AI_DIRECTORY_POSITIONING.md` on the
-  Contentrain/ai#734 branch; re-check it against `main` once #734 merges.
+  The publish line is verbatim from `AI_DIRECTORY_POSITIONING.md` on
+  Contentrain/ai `main` (from #734).
 
 - **Use cases** (from the positioning file): (1) rescue hardcoded strings into
   governed content, (2) add and maintain locales as a normal content
