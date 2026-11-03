@@ -72,11 +72,14 @@ const canApprove = computed(() => {
   return !!project?.eligible
 })
 
+/**
+ * Nothing is chosen for the user: not the only eligible workspace, not its only eligible project. The grant opens one
+ * project's content to an outside app, so the user picks both by hand and Approve stays off until they do.
+ */
 function selectWorkspace(workspace: ConsentWorkspace) {
   if (!workspace.eligible) return
+  if (selectedWorkspaceId.value !== workspace.id) selectedProjectId.value = null
   selectedWorkspaceId.value = workspace.id
-  const eligibleProjects = workspace.projects.filter(p => p.eligible)
-  selectedProjectId.value = eligibleProjects.length === 1 ? eligibleProjects[0]!.id : null
 }
 
 function ineligibleLabel(reason: string | null): string {
@@ -90,9 +93,6 @@ onMounted(async () => {
   try {
     const result = await $fetch<ConsentData>('/api/oauth/consent')
     data.value = result
-
-    const eligible = result.workspaces.filter(w => w.eligible && w.projects.some(p => p.eligible))
-    if (eligible.length === 1) selectWorkspace(eligible[0]!)
   }
   catch (e: unknown) {
     loadError.value = resolveApiError(e, t('oauth_consent.load_failed'))
