@@ -595,9 +595,8 @@ below is new and written to OpenAI's limits; it follows the same spine.
   > cannot invent a field, break a locale, or corrupt a model.
   >
   > • Ask what content exists — models, fields, entries, locales, branch status
-  > • Draft, update, delete, and publish entries across collections,
-  >   singletons, documents, and dictionaries (publishing is limited to
-  >   workspace owners and admins)
+  > • Draft, update, delete and publish entries; publishing is owner/admin
+  >   only and follows the review workflow
   > • Work in any configured locale and keep translations consistent
   > • Validate a project and get an actionable report before publishing
   > • Manage media assets on eligible plans
@@ -613,9 +612,8 @@ below is new and written to OpenAI's limits; it follows the same spine.
   >
   > Requires a Contentrain Studio account with a connected repository.
 
-  The publish line is ahead of `AI_DIRECTORY_POSITIONING.md`: the same
-  wording has to land there (Contentrain/ai) before submitting, so the two
-  stay identical.
+  The publish line is taken from `AI_DIRECTORY_POSITIONING.md` on the
+  Contentrain/ai#734 branch; re-check it against `main` once #734 merges.
 
 - **Use cases** (from the positioning file): (1) rescue hardcoded strings into
   governed content, (2) add and maintain locales as a normal content
@@ -685,7 +683,7 @@ the whole entry (see the `content_save` note below), so no case depends on it.
 | 1 | Explore the project | `What content models and locales does my Contentrain project have?` | `contentrain_status`, then `contentrain_describe` if needed | Names the 7 models — `site-settings`, `navigation`, `footer`, `seo-defaults` (singletons), `author`, `blog-category` (collections), `blog-post` (documents) — and the locales `en` (default) and `de` |
 | 2 | Read entries with relations | `List the English blog posts with their authors and publish dates.` | `contentrain_content_list` (`blog-post`, `en`; `author` if relations are not resolved) | The 3 posts — "Designing Calm Interfaces For Product Teams" (Esra Yilmaz, 2026-03-12), "Shipping Faster With A Clear Content Model" (Kerem Dogan, 2026-02-21), "What Modern Starters Actually Need" (Esra Yilmaz, 2026-01-30) |
 | 3 | Find missing translations | `Which content is still missing a German translation?` | `contentrain_validate` (or `contentrain_content_list` per locale) | Names the four gaps: the `de` footer, the author Kerem Dogan, and the posts "Shipping Faster With A Clear Content Model" and "What Modern Starters Actually Need" |
-| 4 | Fill one gap and publish it | `Add a German version of the author entry for Kerem Dogan, translating his role and bio, then publish it.` | `contentrain_content_list` (`author`, `en`), `contentrain_content_save` (`author`, `de`, id `kerem-dogan`), `contentrain_validate`, `contentrain_content_status` (`author`, `status: published`, `entry_ids: [kerem-dogan]`, `locale: de`) | Saves a `de` entry with `name`, a German `role` and `bio`, and the same `avatar`; validation no longer reports the author gap; `contentrain_content_status` reports `kerem-dogan` `de` going to `published`, and listing `author` in `de` shows it as `published`; the `en` entry is unchanged |
+| 4 | Fill one gap and publish it | `Add a German version of the author entry for Kerem Dogan, translating his role and bio, then publish it.` | `contentrain_content_list` (`author`, `en`), `contentrain_content_save` (`author`, `de`, id `kerem-dogan`), `contentrain_validate`, `contentrain_content_status` (`author`, `status: published`, `entry_ids: [kerem-dogan]`, `locale: de`) | Saves a `de` entry with `name`, a German `role` and `bio`, and the same `avatar`; validation no longer reports the author gap; `contentrain_content_status` reports `kerem-dogan` `de` going to `published`, and in the `contentrain_content_list` response for `author` in `de` the entry's `meta.status` is `published`; the `en` entry is unchanged |
 | 5 | Use the media library | `Show the images in my media library and use the first one as the cover image of "Designing Calm Interfaces For Product Teams".` | `contentrain_media_list`, `contentrain_content_save` (`blog-post`, `en`, slug `designing-calm-interfaces`, `cover_image` only) | Lists the 2 uploaded images; the post's `en` `cover_image` is the first image's delivery URL, and its title, excerpt and body are unchanged |
 
 After a write (cases 4 and 5), `contentrain_content_save` and `contentrain_content_status` may report
