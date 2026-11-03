@@ -60,6 +60,37 @@ const TOOL_ROLES: Record<string, string[]> = {
   reply_comment: ['reviewer', 'admin', 'owner'],
 }
 
+/** Why a status change is refused: an error-message key and its params. */
+export interface EntryStatusDenial {
+  key: 'content.publish_owner_only' | 'content.insufficient_permissions' | 'content.model_no_access'
+  params?: Record<string, string>
+}
+
+/**
+ * May these permissions set entries of `modelId` to `status`?
+ *
+ * One rule for every surface that changes status (the status route, the chat
+ * agent, the MCP surface): publishing is the workspace owner's or admin's,
+ * any other status needs `save_content`, and a model restriction applies
+ * either way. Returns the denial, or `null` when the change is allowed.
+ */
+export function canSetEntryStatus(permissions: AgentPermissions, status: string, modelId: string): EntryStatusDenial | null {
+  if (status === 'published') {
+    if (!canPublish(permissions)) return { key: 'content.publish_owner_only' }
+  }
+  else if (!permissions.availableTools.includes('save_content')) {
+    return { key: 'content.insufficient_permissions' }
+  }
+  if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
+    return { key: 'content.model_no_access', params: { model: modelId } }
+  return null
+}
+
+/** Publishing — by a status change or by a save — is the workspace owner's or admin's. */
+export function canPublish(permissions: AgentPermissions): boolean {
+  return permissions.workspaceRole === 'owner' || permissions.workspaceRole === 'admin'
+}
+
 export async function resolveAgentPermissions(
   userId: string,
   workspaceId: string,

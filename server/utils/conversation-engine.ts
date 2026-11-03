@@ -2,6 +2,7 @@ import { clearBranchRequestSafe } from './branch-requests'
 import { branchWriteSignals, recordMergeReceipt, resolveMergeApproval } from './branch-approval'
 import { isBranchMoved, isBranchTipUnreadable } from './content-engine/errors'
 import { actorFromEmail } from './execution-plan'
+import { canPublish, canSetEntryStatus } from './agent-permissions'
 import { reportAgentToolError } from './alert'
 import type { MergeDecision, ToolScope } from './approval-gate'
 import { decideMerge, savedEntryIds, toolRisk, writeSignals } from './approval-gate'
@@ -771,8 +772,9 @@ export async function executeToolWithAutoMerge(
   let params = (input ?? {}) as Record<string, unknown>
   let promotedAttachments: PromotedAttachment[] = []
   const affected: AffectedResources = emptyAffected()
-  // Plans without review workflow support always auto-publish on save.
-  const autoPublish = !hasFeature(plan, 'workflow.review')
+  // Plans without review workflow support auto-publish on save, but only for
+  // the people who may publish (owner/admin); an editor's save stays a draft.
+  const autoPublish = !hasFeature(plan, 'workflow.review') && canPublish(permissions)
 
   /**
    * May the write this tool just made merge itself?
@@ -921,6 +923,12 @@ export async function executeToolWithAutoMerge(
         const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
+          break
+        }
+        // "Create and publish" is a publish: the same rule as update_status.
+        const publishDenial = params.status === 'published' ? canSetEntryStatus(permissions, 'published', modelId) : null
+        if (publishDenial) {
+          result = { error: errorMessage(publishDenial.key, publishDenial.params) }
           break
         }
 
@@ -1747,18 +1755,20 @@ export async function executeToolWithAutoMerge(
 
       case 'update_status': {
         const modelId = params.model as string
-        if (permissions.specificModels && !permissions.allowedModels.includes(modelId)) {
-          result = { error: `${errorMessage('model.access_denied')}: ${modelId}` }
+        const status = params.status as string
+        if (status !== 'draft' && status !== 'published' && status !== 'archived') {
+          result = { error: agentMessage('content.invalid_status', { status: String(status) }) }
+          break
+        }
+        // The status route's rule: publishing is owner/admin's, within the model restriction.
+        const statusDenial = canSetEntryStatus(permissions, status, modelId)
+        if (statusDenial) {
+          result = { error: errorMessage(statusDenial.key, statusDenial.params) }
           break
         }
         const locale = await resolveLocale()
         if (permissions.allowedLocales?.length && !permissions.allowedLocales.includes(locale)) {
           result = { error: `Locale "${locale}" is not allowed for this API key` }
-          break
-        }
-        const status = params.status as string
-        if (status !== 'draft' && status !== 'published' && status !== 'archived') {
-          result = { error: agentMessage('content.invalid_status', { status: String(status) }) }
           break
         }
         const entryIds = Array.isArray(params.entryIds) ? params.entryIds as string[] : []
