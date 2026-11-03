@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.4.20
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.19...v0.4.20)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.19, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+- `DatabaseProvider` has a new method, `getAcceptedWorkspaceRole(workspaceId, userId)`. It is implemented for both pairs and reads the existing `workspace_members` table. A custom provider needs it (#532).
+- MCP Cloud calls now use the current workspace role of the person behind them: an API key's creator, or an OAuth grant's user. A key whose creator has left the workspace can no longer write; replace it with a key made by a current member (#532).
+- MCP Cloud no longer sweeps every pending `cr/*` branch after a write; it lands only the branch that call wrote. On an auto-merge project, a branch an earlier call left pending stays until it is merged from the branch panel (#532).
+- On plans without `workflow.review`, chat saves now auto-publish only for workspace owners and admins. Other members' chat saves, including a form submission approved from chat, stay drafts (#531).
+
+### 🚀 Features
+
+- `@contentrain/mcp` 3.11.24 → 3.12.0 (#532).
+  - `contentrain_content_status` publishes, unpublishes and archives entries from MCP Cloud and the remote endpoint. The remote surface is now 17 tools on a media-enabled project, 12 otherwise.
+  - `contentrain_content_list` shows each entry's status under `meta`.
+  - `contentrain_bulk` no longer offers `update_status`. These surfaces did not offer `bulk` before, and still don't.
+
+### 🩹 Fixes
+
+Role alignment: every surface now follows the role rules of the Studio UI.
+
+- Chat: setting an entry status follows the status route's rule. Publishing is for workspace owners and admins. Other statuses need content edit rights. A model restriction applies either way. This covers `update_status` and a save that publishes. The status route and chat share one helper (#531).
+- MCP Cloud and the remote endpoint: each write tool call is checked against that person's role, with the same rules as the Studio UI. A refused call returns a tool error and uses no quota (#532).
+- MCP Cloud and the remote endpoint: only the branch a call wrote is landed, through the project's approval policy. The tool result says whether it merged or is held for review (#532).
+- Moving a published entry to any other status now counts as a visibility change, so a review policy holds it the same way it holds publishing and archiving (#532).
+
+### 📖 Documentation
+
+- `docs/REMOTE_MCP_SUBMISSION.md`: the pins move to MCP 3.11.24 (#529). `contentrain_content_status`, the 17/12 tool counts and the publish step of test case 4 are added (#530).
+- `CLAUDE.md` and `AGENTS.md`: the MCP Cloud notes match the new landing rules (#532).
+
 ## v0.4.19
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.18...v0.4.19)
