@@ -284,7 +284,7 @@ client before ticking that box.
 | 8 | Revocation | Client's next call prompts a clean re-authorization | ✅ 2026-07-27 @2.3.0: 401 + `invalid_token`; **refresh token rejected too** (family revoked) |
 | 9 | Write path | `cr/*` lands + auto-merge reconcile fires | ✅ 2026-07-27 @2.3.0 on GitHub; ⏳ one real pass at 3.11.2 (§3 post-bump rule) |
 | 10 | Media | Tools appear in `tools/list` and return real assets | ✅ 2026-07-27 @2.3.0, all 5; ⏳ one real pass at 3.11.2 |
-| 11 | Publish role gate (internal; not a portal case: the review account is an owner) | A project editor's `contentrain_content_status` publish is refused with the owner/admin message, nothing is committed, and the entry keeps its status | ⏳ verified by us: route/integration test + the W3 gate, same rule as `content/[modelId]/status.patch.ts:34-37` |
+| 11 | Publish role gate (internal; not a portal case: the review account is an owner) | A project editor's `contentrain_content_status` publish returns an `isError` tool result "Only workspace owners and admins can publish content." (`content.publish_owner_only`); nothing is committed, no quota is used, and the entry keeps its status | ✅ verified by us: `tests/integration/mcp-cloud-proxy.integration.test.ts:727`; gate `server/utils/mcp-write-gate.ts:107` → `canSetEntryStatus` (`server/utils/agent-permissions.ts:77`), same rule as `content/[modelId]/status.patch.ts:36` |
 
 **Needs a human** (a real client account, a browser consent, or a wait):
 #1 in a real client, #2 Claude custom connector, #4 ChatGPT developer mode,

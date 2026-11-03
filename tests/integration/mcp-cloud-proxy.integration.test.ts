@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
     mediaEnabled: false,
     rateLimitPerMinute: 60,
     monthlyCallLimit: null as number | null,
+    createdBy: 'owner-1' as string | null,
   },
   rateCheck: { allowed: true, remaining: 59, retryAfterMs: 0 },
   quota: { allowed: true, used: 1 },
@@ -40,6 +41,9 @@ const state = vi.hoisted(() => ({
   invalidateBrainCache: vi.fn(),
   reconcile: vi.fn(),
   recordMCPCallUsage: vi.fn(),
+  /** What the call-time role resolver answers for the key's creator. */
+  permissions: null as unknown,
+  resolvePermissions: vi.fn(),
 }))
 
 vi.mock('h3', async () => {
@@ -122,7 +126,11 @@ vi.mock('~~/server/utils/brain-cache', () => ({
 }))
 
 vi.mock('~~/server/utils/mcp-cloud-automerge', () => ({
-  reconcileMcpCloudAutoMerge: state.reconcile,
+  reconcileMcpCloudWrites: state.reconcile,
+}))
+
+vi.mock('~~/server/utils/mcp-actor-permissions', () => ({
+  resolveMcpActorPermissions: state.resolvePermissions,
 }))
 
 vi.mock('~~/server/utils/content-strings', () => ({
@@ -148,8 +156,38 @@ function makeEvent(overrides: Partial<FakeEvent> = {}): FakeEvent {
   }
 }
 
-function toolCallBody(name: string): string {
-  return JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } })
+/** Arguments a real client would send, so the role gate reads a model. */
+const DEFAULT_ARGS: Record<string, Record<string, unknown>> = {
+  contentrain_content_save: { model: 'posts', entries: [{ id: 'p1', locale: 'en', data: { title: 'Hi' } }] },
+  contentrain_content_delete: { model: 'posts', id: 'p1' },
+  contentrain_model_save: { id: 'posts', name: 'Posts', kind: 'collection', domain: 'blog' },
+  contentrain_model_delete: { model: 'posts' },
+}
+
+function toolCallBody(name: string, args: Record<string, unknown> = DEFAULT_ARGS[name] ?? {}): string {
+  return JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
+}
+
+const OWNER = {
+  workspaceRole: 'owner',
+  projectRole: null,
+  specificModels: false,
+  allowedModels: [],
+  allowedLocales: [],
+  availableTools: ['save_content', 'delete_content', 'save_model', 'delete_model', 'update_status', 'vocabulary', 'upload_media', 'update_media', 'delete_media'],
+}
+
+/** The loopback's answer to a write: a tool result naming the branch it made. */
+function writeResult(branch: string, id = 1): Response {
+  const text = JSON.stringify({ status: 'committed', git: { branch, action: 'pending-review', commit: 'c1' } })
+  return new Response(JSON.stringify({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function decode(payload: unknown): Record<string, unknown> {
+  return JSON.parse(new TextDecoder().decode(payload as Uint8Array)) as Record<string, unknown>
 }
 
 async function loadHandler() {
@@ -185,10 +223,11 @@ describe('MCP Cloud proxy gating', () => {
     })
     state.db.incrementMcpCloudUsageIfAllowed.mockImplementation(async () => state.quota)
     state.proxyRequest.mockResolvedValue('proxied')
-    state.reconcile.mockResolvedValue(undefined)
-    state.upstreamFetch.mockResolvedValue(
-      new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }),
-    )
+    state.reconcile.mockResolvedValue(new Map())
+    state.keyData.createdBy = 'owner-1'
+    state.permissions = OWNER
+    state.resolvePermissions.mockImplementation(async () => state.permissions)
+    state.upstreamFetch.mockImplementation(async () => writeResult('cr/content/posts/en/p1'))
     vi.stubGlobal('fetch', state.upstreamFetch)
 
     vi.stubGlobal('recordMCPCallUsage', state.recordMCPCallUsage.mockResolvedValue(undefined))
@@ -454,26 +493,29 @@ describe('MCP Cloud proxy gating', () => {
     })
   })
 
-  it('invalidates brain cache and reconciles auto-merge on write tools', async () => {
-    state.reconcile.mockResolvedValue(undefined)
+  it('invalidates brain cache and judges the branch the write result names', async () => {
     const handler = await loadHandler()
     const event = makeEvent({ __body: toolCallBody('contentrain_content_save') })
 
     await handler(event as never)
 
     expect(state.invalidateBrainCache).toHaveBeenCalledWith('proj-1')
-    expect(state.reconcile).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1' }))
+    expect(state.reconcile).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'proj-1' }),
+      [{ tool: 'contentrain_content_save', arguments: DEFAULT_ARGS.contentrain_content_save, branch: 'cr/content/posts/en/p1', commitSha: 'c1' }],
+    )
   })
 
   it('lands the merge before the write response is produced', async () => {
     const order: string[] = []
     state.upstreamFetch.mockImplementation(async () => {
       order.push('upstream')
-      return new Response('{"ok":true}', { status: 200 })
+      return writeResult('cr/content/posts/en/p1')
     })
     state.reconcile.mockImplementation(async () => {
       await new Promise(resolve => setTimeout(resolve, 5))
       order.push('reconcile')
+      return new Map()
     })
 
     const handler = await loadHandler()
@@ -638,6 +680,184 @@ describe('MCP Cloud proxy gating', () => {
       state.proxyRequest.mockClear()
       await expect(handler(makeEvent({ __body: toolCallBody('contentrain_media_delete') }) as never))
         .rejects.toMatchObject({ statusCode: 403 })
+    })
+  })
+
+  describe('call-time role gate', () => {
+    const EDITOR = { ...OWNER, workspaceRole: 'member', projectRole: 'editor', availableTools: ['save_content', 'delete_content', 'update_status', 'vocabulary', 'upload_media', 'update_media', 'delete_media'] }
+    const VIEWER = { ...OWNER, workspaceRole: 'member', projectRole: 'viewer', availableTools: [] }
+
+    /** The tool error the gate answered with, and proof nothing ran or was counted. */
+    function expectRefused(result: unknown, text: string) {
+      const message = JSON.parse(result as string) as { id: number, result: { isError: boolean, content: Array<{ text: string }> } }
+      expect(message.id).toBe(1)
+      expect(message.result.isError).toBe(true)
+      expect(message.result.content[0]!.text).toBe(text)
+      expect(state.upstreamFetch).not.toHaveBeenCalled()
+      expect(state.proxyRequest).not.toHaveBeenCalled()
+      expect(state.db.incrementMcpCloudUsageIfAllowed).not.toHaveBeenCalled()
+    }
+
+    it('acts with the key creator\'s current role', async () => {
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.resolvePermissions).toHaveBeenCalledWith('owner-1', 'ws-1', 'proj-1')
+    })
+
+    it('refuses a viewer\'s content_save as a tool error, before the loopback and the quota', async () => {
+      state.permissions = VIEWER
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expectRefused(result, 'content.insufficient_permissions')
+    })
+
+    it('refuses an editor\'s model_save', async () => {
+      state.permissions = EDITOR
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: toolCallBody('contentrain_model_save') }) as never)
+      expectRefused(result, 'content.insufficient_permissions')
+    })
+
+    it('refuses an editor\'s publish through content_status', async () => {
+      state.permissions = EDITOR
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({
+        __body: toolCallBody('contentrain_content_status', { model: 'posts', status: 'published', entry_ids: ['p1'] }),
+      }) as never)
+      expectRefused(result, 'content.publish_owner_only')
+    })
+
+    it('lets an editor move entries back to draft', async () => {
+      state.permissions = EDITOR
+      const handler = await loadHandler()
+      await handler(makeEvent({
+        __body: toolCallBody('contentrain_content_status', { model: 'posts', status: 'draft', entry_ids: ['p1'] }),
+      }) as never)
+      expect(state.proxyRequest.mock.calls.length + state.upstreamFetch.mock.calls.length).toBe(1)
+    })
+
+    it('lets an owner publish through content_status', async () => {
+      const handler = await loadHandler()
+      await handler(makeEvent({
+        __body: toolCallBody('contentrain_content_status', { model: 'posts', status: 'published', entry_ids: ['p1'] }),
+      }) as never)
+      expect(state.proxyRequest.mock.calls.length + state.upstreamFetch.mock.calls.length).toBe(1)
+    })
+
+    it('refuses a model outside a model-restricted editor\'s list', async () => {
+      state.permissions = { ...EDITOR, specificModels: true, allowedModels: ['pages'] }
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expectRefused(result, 'content.model_no_access')
+    })
+
+    it('refuses everything for a removed or demoted member (no permissions)', async () => {
+      state.permissions = null
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: toolCallBody('contentrain_content_list', { model: 'posts' }) }) as never)
+      expectRefused(result, 'content.insufficient_permissions')
+    })
+
+    it('refuses a key whose creator is gone', async () => {
+      state.keyData.createdBy = null
+      state.resolvePermissions.mockImplementation(async (userId: string | null) => (userId ? OWNER : null))
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expectRefused(result, 'content.insufficient_permissions')
+    })
+
+    it('fails closed on a content_status without a status', async () => {
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: toolCallBody('contentrain_content_status', { model: 'posts' }) }) as never)
+      expectRefused(result, 'validation.status_invalid')
+    })
+
+    it('reads every message of a batch: one refused write stops the batch', async () => {
+      state.permissions = EDITOR
+      const body = JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_list', arguments: { model: 'posts' } } },
+        { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'contentrain_model_delete', arguments: { model: 'posts' } } },
+      ])
+      const handler = await loadHandler()
+      const result = JSON.parse(await handler(makeEvent({ __body: body }) as never) as string) as Array<{ id: number, result: { isError: boolean } }>
+      expect(result.map(r => [r.id, r.result.isError])).toEqual([[1, true], [2, true]])
+      expect(state.upstreamFetch).not.toHaveBeenCalled()
+      expect(state.proxyRequest).not.toHaveBeenCalled()
+    })
+
+    it('refuses a batch whose calls share an id, and lands nothing', async () => {
+      state.permissions = OWNER
+      const body = JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_delete', arguments: { model: 'posts', id: 'p1' } } },
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_save', arguments: DEFAULT_ARGS.contentrain_content_save } },
+      ])
+      const handler = await loadHandler()
+      const result = JSON.parse(await handler(makeEvent({ __body: body }) as never) as string) as Array<{ result: { isError: boolean } }>
+      expect(result.map(r => r.result.isError)).toEqual([true, true])
+      expect(state.upstreamFetch).not.toHaveBeenCalled()
+      expect(state.reconcile).not.toHaveBeenCalled()
+    })
+
+    it('judges no write when two results answer the same call id', async () => {
+      const text = JSON.stringify({ status: 'committed', git: { branch: 'cr/content/posts/en/p1', action: 'pending-review', commit: 'c1' } })
+      const message = { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text }] } }
+      state.upstreamFetch.mockImplementation(async () => new Response(JSON.stringify([message, message]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.upstreamFetch).toHaveBeenCalled()
+      expect(state.reconcile).not.toHaveBeenCalled()
+    })
+
+    it('fails closed on a tools/call whose arguments are not an object', async () => {
+      const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'contentrain_content_save', arguments: 'x' } })
+      const handler = await loadHandler()
+      const result = await handler(makeEvent({ __body: body }) as never)
+      expectRefused(result, 'content.insufficient_permissions')
+    })
+  })
+
+  describe('write landing result', () => {
+    it('tells the agent its branch was merged', async () => {
+      state.reconcile.mockResolvedValue(new Map([['cr/content/posts/en/p1', { status: 'merged' }]]))
+      const handler = await loadHandler()
+      const response = decode(await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never))
+      const text = JSON.parse((response.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(text.git.action).toBe('merged')
+      expect(text.merge.status).toBe('merged')
+    })
+
+    it('tells the agent its branch is held for review, and why', async () => {
+      const approval = { risk: 'low_risk_content', reasons: ['needs review'], outstanding: [] }
+      state.reconcile.mockResolvedValue(new Map([['cr/content/posts/en/p1', { status: 'held', approval }]]))
+      const handler = await loadHandler()
+      const response = decode(await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never))
+      const text = JSON.parse((response.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(text.git.action).toBe('pending-review')
+      expect(text.merge).toMatchObject({ status: 'held_for_review', approval })
+    })
+
+    it('reads the branch from an SSE-framed result', async () => {
+      const inner = JSON.stringify({ status: 'committed', git: { branch: 'cr/content/posts/en/p1', action: 'pending-review', commit: 'c1' } })
+      state.upstreamFetch.mockImplementation(async () => new Response(
+        `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: inner }] } })}\n\n`,
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      ))
+      state.reconcile.mockResolvedValue(new Map([['cr/content/posts/en/p1', { status: 'merged' }]]))
+      const handler = await loadHandler()
+      const out = new TextDecoder().decode(await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never) as Uint8Array)
+      expect(state.reconcile).toHaveBeenCalledWith(expect.anything(), [expect.objectContaining({ branch: 'cr/content/posts/en/p1' })])
+      const data = JSON.parse(out.split('\n').find(l => l.startsWith('data:'))!.slice(5))
+      expect(JSON.parse(data.result.content[0].text).merge.status).toBe('merged')
+    })
+
+    it('judges nothing when the result names no branch', async () => {
+      state.upstreamFetch.mockImplementation(async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }))
+      const handler = await loadHandler()
+      await handler(makeEvent({ __body: toolCallBody('contentrain_content_save') }) as never)
+      expect(state.reconcile).not.toHaveBeenCalled()
     })
   })
 })

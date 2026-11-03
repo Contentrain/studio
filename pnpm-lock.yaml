@@ -23,8 +23,8 @@ importers:
         specifier: ^3.1076.0
         version: 3.1076.0
       '@contentrain/mcp':
-        specifier: 3.11.24
-        version: 3.11.24(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
+        specifier: 3.12.0
+        version: 3.12.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)
       '@contentrain/query':
         specifier: 7.6.63
         version: 7.6.63
@@ -678,8 +678,8 @@ packages:
     resolution: {integrity: sha512-sGEA473TlCvhCGNoTBY9OXZVWdscIXdGt0dm8EpB+2MRfmt8LNh/X56P/T3nCtEB+eH5qGEa3odphSAoUxSfSQ==}
     engines: {node: '>=22.12.0'}
 
-  '@contentrain/mcp@3.11.24':
-    resolution: {integrity: sha512-nIpqAb+HMxFgkzdBRB4JqNxPZvNxB8mRCYhzicr0CKI2fU7yKe2xgiPO8Vlh7CspoD+CNOtf2P3rIc+2RvUT+w==}
+  '@contentrain/mcp@3.12.0':
+    resolution: {integrity: sha512-Mm93LwtifBpqTj63Rum85aZHGhttzBnB/4T0XsoJf2BFYXtaGgMkpk6gpzbkhBkNE+ywdMdkNMc/bFbBDIkMOQ==}
     hasBin: true
     peerDependencies:
       '@gitbeaker/rest': '>=43.0.0'
@@ -8073,7 +8073,7 @@ snapshots:
       conventional-commits-parser: 7.1.2
       picocolors: 1.1.1
 
-  '@contentrain/mcp@3.11.24(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
+  '@contentrain/mcp@3.12.0(@gitbeaker/rest@43.8.0)(@octokit/rest@22.0.1)':
     dependencies:
       '@contentrain/types': 1.79.2
       '@modelcontextprotocol/sdk': 1.30.0(zod@3.25.76)

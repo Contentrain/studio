@@ -20,7 +20,7 @@ const PERMISSIONS: AgentPermissions = {
   specificModels: false,
   allowedModels: [],
   allowedLocales: [],
-  availableTools: ['brain_query', 'not_a_real_tool', 'update_status'],
+  availableTools: ['brain_query', 'not_a_real_tool', 'update_status', 'save_content'],
 }
 
 const UI_CONTEXT: ChatUIContext = {

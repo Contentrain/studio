@@ -8,7 +8,8 @@
  * unconditionally let an editor archive — or an owner publish — past a review
  * workflow the project had switched on.
  */
-import { decideMerge, writeSignals } from '~~/server/utils/approval-gate'
+import { canSetEntryStatus } from '~~/server/utils/agent-permissions'
+import { decideMerge, unpublishedCount, writeSignals } from '~~/server/utils/approval-gate'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -30,20 +31,11 @@ export default defineEventHandler(async (event) => {
   if (!['draft', 'published', 'archived'].includes(body.status))
     throw createError({ statusCode: 400, message: errorMessage('validation.status_invalid') })
 
-  // Permission check: publish requires owner/admin, draft/archive requires editor+
+  // Publish requires owner/admin, draft/archive requires editor+, within the model restriction
   const permissions = await resolveAgentPermissions(session.user.id, workspaceId, projectId, session.accessToken)
-
-  if (body.status === 'published') {
-    if (permissions.workspaceRole !== 'owner' && permissions.workspaceRole !== 'admin')
-      throw createError({ statusCode: 403, message: errorMessage('content.publish_owner_only') })
-  }
-  else if (!permissions.availableTools.includes('save_content')) {
-    throw createError({ statusCode: 403, message: errorMessage('content.insufficient_permissions') })
-  }
-
-  // Model restriction
-  if (permissions.specificModels && !permissions.allowedModels.includes(modelId))
-    throw createError({ statusCode: 403, message: errorMessage('content.model_no_access', { model: modelId }) })
+  const denial = canSetEntryStatus(permissions, body.status, modelId)
+  if (denial)
+    throw createError({ statusCode: 403, message: errorMessage(denial.key, denial.params) })
 
   const { git, contentRoot, workspace } = await resolveProjectContext(workspaceId, projectId)
 
@@ -65,7 +57,9 @@ export default defineEventHandler(async (event) => {
     workflow,
     tool: 'update_status',
     scope: { models: [modelId], locales: [locale], entries: body.entryIds },
-    signals: writeSignals('update_status', { status: body.status }),
+    // Taking a published entry down is a visibility change too, whatever
+    // status it moves to.
+    signals: { ...writeSignals('update_status', { status: body.status }), unpublishes: unpublishedCount(writeResult.statusChanges) },
     policy: brain.approvalPolicy,
     commitSha: writeResult.commit?.sha,
   })

@@ -54,6 +54,8 @@ export interface McpCloudKeyData {
   mediaEnabled: boolean
   rateLimitPerMinute: number
   monthlyCallLimit: number | null
+  /** The member who made the key; null once that user is deleted (migration 048). */
+  createdBy: string | null
 }
 
 /**
@@ -90,5 +92,6 @@ export async function validateMcpCloudKey(authHeader: string | undefined): Promi
     mediaEnabled: row.media_enabled === true,
     rateLimitPerMinute: (row.rate_limit_per_minute as number | null) ?? 60,
     monthlyCallLimit: (row.monthly_call_limit as number | null) ?? null,
+    createdBy: (row.created_by as string | null) ?? null,
   }
 }
