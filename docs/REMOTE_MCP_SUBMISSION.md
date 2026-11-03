@@ -53,9 +53,9 @@ behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 | `resource` string and `issuer` unchanged since listing prep (§7) | ✅ |
 | Bare request to `/api/mcp/remote` → 401 + `WWW-Authenticate` with `resource_metadata` + `scope="content:read content:write project:metadata"` | ✅ tested with **GET** 2026-11-02 (the handler authenticates before anything else, so POST gets the same) |
 | `/.well-known/openai-apps-challenge` → 404 while `NUXT_OPENAI_APPS_CHALLENGE` is unset (correct until §6 step 1) | ✅ 2026-11-02 |
-| Tool annotations @ MCP **3.11.24** (re-read 2026-11-03): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
+| Tool annotations @ MCP **3.11.24** (re-read 2026-11-03): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise; **17 / 12** from `3.12.0`, which adds `contentrain_content_status`) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
 | `contentrain_model_save` and `contentrain_content_save` → `destructiveHint: true` (each replaces what it is sent: a whole definition, a singleton, an existing collection entry; OpenAI counts overwriting as destructive); `contentrain_content_save` → `idempotentHint: false` (a collection save without an id adds a new entry every call) | ✅ MCP 3.11.23; production serves it from v0.4.17, so cut that tag **before the OpenAI scan** |
-| Remote `tools/list` = **16** for a media-eligible project, **11** otherwise (see §4) | ✅ from code @3.11.24; not re-listed live |
+| Remote `tools/list` = **17** for a media-eligible project, **12** otherwise, from `3.12.0` (see §4) | ✅ from code @3.12.0 (published package: `contentrain_content_status` has no `TOOL_REQUIREMENTS` entry, so it registers remotely; `contentrain_bulk` needs `projectRoot`); Studio serves it once the pin bump (#532) ships; not listed live |
 | OAuth callbacks: `https://claude.ai/api/mcp/auth_callback` and ChatGPT's per-app URL arrive through CIMD/DCR; loopback `http://localhost/callback` / `http://127.0.0.1/callback` match on **any port** | ✅ from code + tests (§8 gap 3) |
 | Token endpoint: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | ✅ from code + contract test (§8 gap 5) |
 | Error copy on this surface names no plan and promotes no upgrade (OpenAI plugin guideline) | ✅ 2026-11-02 (§8) |
@@ -125,10 +125,10 @@ the build that answers (`version`, `commit`): check it before any prod pass.
 
       **Hard requirement: the review project must be media-enabled**
       (Starter or above through billing, `cdn_enabled` on, the review user
-      as workspace owner), so the reviewer sees **16 tools, not 11**. The
+      as workspace owner), so the reviewer sees **17 tools, not 12**. The
       portal syncs tools from the connected server; a project without media
       means the 5 media tools are never listed and never reviewed. Do not
-      hand out credentials until `tools/list` returns 16. Rotate/unset after
+      hand out credentials until `tools/list` returns 17. Rotate/unset after
       each cycle.
 
       Operator specifics for Contentrain's own review account (identities,
@@ -236,11 +236,12 @@ its original state and the probe grants were deleted from Connected Apps.
 **None of the authenticated rows has been re-run at 3.11.2** (2026-10-23 was
 code + public GETs only); the ✅ marks below are that pass, labelled 2026-07-27 @2.3.0.
 
-**Expected `tools/list` at 3.11.24: 16** for a media-eligible project, 11
-without media — that is what a reviewer sees. Eleven more MCP tools are never
+**Expected `tools/list` at `3.12.0`: 17** for a media-eligible project, 12
+without media (3.11.24 listed 16 / 11; `3.12.0` adds `content_status`) — that is what a reviewer sees. Eleven more MCP tools are never
 registered here because they need a local `projectRoot` (MCP's `skipTools`): `init`, `scaffold`, `doctor`,
 `bulk`, `submit`, `merge`, `reconcile`, `branch_list`, `branch_delete`,
-`scan`, `apply`. The 16 (all `contentrain_*`):
+`scan`, `apply`. `bulk` stays local-only; status changes go through
+`content_status`, and `bulk` no longer offers `update_status`. The 17 (all `contentrain_*`):
 
 | Tool | read | destr. | idem. | openWorld | Scope |
 |------|:---:|:---:|:---:|:---:|-------|
@@ -254,6 +255,7 @@ registered here because they need a local `projectRoot` (MCP's `skipTools`): `in
 | `vocabulary_delete` | – | ✓ | – | – | `content:write` |
 | `content_save` | – | ✓ | – | – | `content:write` |
 | `content_delete` | – | ✓ | – | – | `content:write` |
+| `content_status` | – | ✓ | ✓ | – | `content:write` (publishing is owner/admin only) |
 | `validate` | – | – | ✓ | – | `content:write` (MCP marks it a write: `fix: true`) |
 | `media_list` | ✓ | – | ✓ | – | `media:read` |
 | `media_get` | ✓ | – | ✓ | – | `media:read` |
@@ -263,7 +265,7 @@ registered here because they need a local `projectRoot` (MCP's `skipTools`): `in
 
 The 5 media tools appear only when the proxy attests media eligibility (plan +
 `cdn_enabled` + media stack); prod advertises the `media:*` scopes, so the
-review account must be media-eligible (§2) or the portal syncs 11.
+review account must be media-eligible (§2) or the portal syncs 12.
 
 One honest caveat: the 2.3.0 pass ran through a raw HTTP harness. The portal
 asks you to confirm you exercised the tools *"via MCP Inspector or as a custom
@@ -272,7 +274,7 @@ client before ticking that box.
 
 | # | Client | Pass criteria | Prod |
 |---|--------|---------------|------|
-| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 2026-07-27 @2.3.0: 14/14 (raw harness); ⏳ **human** at 3.11.2: 16/16 in a real client |
+| 1 | MCP Inspector | Walk discovery → CIMD/register → consent → `tools/list`; exercise EVERY tool once, each returning a non-generic response | ✅ 2026-07-27 @2.3.0: 14/14 (raw harness); ⏳ **human** at `3.12.0`: 17/17 in a real client |
 | 2 | Claude custom connector | Connect card appears from the bare 401; consent shows the client host; tools run | ⏳ **human** |
 | 3 | Claude Code | `claude mcp add --transport http contentrain <url>`; RFC 8252 loopback callback works | ✅ on staging 2026-07-14 |
 | 4 | ChatGPT developer mode | CIMD/DCR registration + consent complete; tools listed | ⏳ **human** |
@@ -282,6 +284,7 @@ client before ticking that box.
 | 8 | Revocation | Client's next call prompts a clean re-authorization | ✅ 2026-07-27 @2.3.0: 401 + `invalid_token`; **refresh token rejected too** (family revoked) |
 | 9 | Write path | `cr/*` lands + auto-merge reconcile fires | ✅ 2026-07-27 @2.3.0 on GitHub; ⏳ one real pass at 3.11.2 (§3 post-bump rule) |
 | 10 | Media | Tools appear in `tools/list` and return real assets | ✅ 2026-07-27 @2.3.0, all 5; ⏳ one real pass at 3.11.2 |
+| 11 | Publish role gate (internal; not a portal case: the review account is an owner) | A project editor's `contentrain_content_status` publish returns an `isError` tool result "Only workspace owners and admins can publish content." (`content.publish_owner_only`); nothing is committed, no quota is used, and the entry keeps its status | ✅ verified by us: `tests/integration/mcp-cloud-proxy.integration.test.ts:727`; gate `server/utils/mcp-write-gate.ts:107` → `canSetEntryStatus` (`server/utils/agent-permissions.ts:77`), same rule as `content/[modelId]/status.patch.ts:36` |
 
 **Needs a human** (a real client account, a browser consent, or a wait):
 #1 in a real client, #2 Claude custom connector, #4 ChatGPT developer mode,
@@ -315,10 +318,12 @@ can leave a response describing a world the caller is not in.
    resolves, so the agent already held the result. Write `tools/call`s are
    therefore **buffered instead of streamed** — they answer with a short JSON
    or single-event SSE payload, never a long-lived stream, so nothing is lost.
-   Reads still stream. The reconcile's *outcome* still cannot change the
-   response: failures are swallowed, and one that outruns a 15s deadline is
-   left to finish in the background, degrading to the old behaviour rather
-   than holding the caller open.
+   Reads still stream. A failed reconcile never changes the response:
+   failures are swallowed, and one that outruns a 15s deadline is left to
+   finish in the background, degrading to the old behaviour rather than
+   holding the caller open. (Since `reconcileMcpCloudWrites` replaced
+   `reconcileMcpCloudAutoMerge`, a reconcile that finishes in time annotates
+   the result with `merge.status` — `merged` or `held_for_review`.)
 
    **Only step 1 of the merge is awaited.** Measured on prod at `v0.2.1`, a
    write cost ~18s against ~1-2s for a read, because the reconcile ran all
@@ -484,7 +489,7 @@ code + a test, not a live run; live passes are §4.
 | 4 | CIMD chosen: `client_id_metadata_document_supported: true` + `none` auth method | **Met** | `server/utils/oauth-server/metadata.ts:46-48` (plus `S256`, `offline_access`); `tests/unit/oauth-metadata.test.ts:28`, `:33`, `:37` |
 | 5 | `/token`: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | **Met** | `server/routes/oauth/token.post.ts:52` (`readBody` parses form and JSON), `:115` rotation; `server/utils/oauth-server/store.ts:23` 10 s grace, `:332` reuse outside grace revokes the family → `invalid_grant`; `tests/contract/oauth-server.contract.test.ts:129`. The 10 s/30 s timeouts: the path is DB-only with no outbound call, but no latency was measured |
 | 6 | Bare request → 401 with `resource_metadata` | **Met** | `server/api/mcp/remote/[...slug].ts:48-51` authenticates first; `server/utils/oauth-server/challenge.ts:17` |
-| 7 | Every tool has a `title` and explicit boolean hints | **Met** | every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) at 3.11.23, read from the published package; §4 table and §9 justifications. `model_save` and `content_save` are `destructiveHint: true` from 3.11.23 (§0) |
+| 7 | Every tool has a `title` and explicit boolean hints | **Met** | every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) at 3.11.23 (17 / 12 from `3.12.0`; `content_status` annotated in §9), read from the published package; §4 table and §9 justifications. `model_save` and `content_save` are `destructiveHint: true` from 3.11.23 (§0) |
 | 8 | Consent shows who is asking | **Met** | `app/pages/oauth/consent.vue` shows `client.displayHost` and the loopback-only warning |
 | 9 | Review login with no MFA/email/magic link | **Met (route)** / **missing (account)** | `server/api/auth/review-login.post.ts`, `app/pages/auth/review-login.vue`; env-gated, 404 when unset. The populated, media-eligible account is a founder item (§2, spec below) |
 | 10 | OpenAI domain challenge | **Met** | `server/routes/.well-known/openai-apps-challenge.get.ts` serves `NUXT_OPENAI_APPS_CHALLENGE` as `text/plain`, 404 when unset |
@@ -495,8 +500,8 @@ code + a test, not a live run; live passes are §4.
 
 ### Review account — what it needs (founder creates it; identities stay out of this repo)
 
-**Hard line: the reviewer must see 16 tools, not 11.** Steps 2 and 3 make the
-project media-enabled; check `tools/list` returns 16 before sending
+**Hard line: the reviewer must see 17 tools, not 12.** Steps 2 and 3 make the
+project media-enabled; check `tools/list` returns 17 before sending
 credentials.
 
 1. Set `NUXT_REVIEW_ACCOUNT_EMAIL` + `NUXT_REVIEW_ACCOUNT_PASSWORD` (≥16
@@ -570,7 +575,7 @@ below is new and written to OpenAI's limits; it follows the same spine.
 | Icon | `public/logo/icon-color-bg.svg` (square, 300×300 viewBox) exported to a 512×512 PNG |
 | Reads, writes, or both | Both. Reads and writes are separate tools, each annotated |
 | First-party API | Yes. The server is Contentrain's own, on Contentrain's domain |
-| Tools | 16 tools on a media-enabled project, 11 otherwise (MCP 3.11.24, from code). The review project is media-enabled, so reviewers see 16 |
+| Tools | 17 tools on a media-enabled project, 12 otherwise (MCP `3.12.0`). The review project is media-enabled, so reviewers see 17 |
 | Demo video | founder |
 
 ### Claude listing
@@ -592,8 +597,9 @@ below is new and written to OpenAI's limits; it follows the same spine.
   > cannot invent a field, break a locale, or corrupt a model.
   >
   > • Ask what content exists — models, fields, entries, locales, branch status
-  > • Draft, update, and delete entries across collections, singletons,
-  >   documents, and dictionaries
+  > • Draft, update, delete and publish entries across collections,
+  >   singletons, documents, and dictionaries; publishing is owner/admin only
+  >   and follows the review workflow
   > • Work in any configured locale and keep translations consistent
   > • Validate a project and get an actionable report before publishing
   > • Manage media assets on eligible plans
@@ -608,6 +614,9 @@ below is new and written to OpenAI's limits; it follows the same spine.
   > and the Studio core is open source.
   >
   > Requires a Contentrain Studio account with a connected repository.
+
+  The publish line is verbatim from `AI_DIRECTORY_POSITIONING.md` on
+  Contentrain/ai `main` (from #734).
 
 - **Use cases** (from the positioning file): (1) rescue hardcoded strings into
   governed content, (2) add and maintain locales as a normal content
@@ -637,8 +646,9 @@ below is new and written to OpenAI's limits; it follows the same spine.
   >
   > After you connect a Contentrain Studio project, you can ask what content
   > exists, list and read entries in any configured locale, and create,
-  > update or delete entries in collections, singletons, documents and
-  > dictionaries. Every write is validated against the project's schema
+  > update, delete or publish entries in collections, singletons, documents
+  > and dictionaries. Publishing and unpublishing are limited to workspace
+  > owners and admins. Every write is validated against the project's schema
   > before it is committed, so a field that does not exist or a value of the
   > wrong type is refused with a message saying what to fix. Writes land as
   > Git commits on a separate content branch and then follow the project's
@@ -662,7 +672,7 @@ below is new and written to OpenAI's limits; it follows the same spine.
   1. `What content models and locales does my Contentrain project have?`
   2. `List the English blog posts with their authors and publish dates.`
   3. `Which content is still missing a German translation?`
-- **Release notes (first version):** `First release: read, create, update and delete Contentrain content and media from ChatGPT, with schema validation and Git-backed history.`
+- **Release notes (first version):** `First release: read, create, update, delete and publish Contentrain content and media from ChatGPT, with schema validation and Git-backed history.`
 
 ### Test cases — 5 positive (against the §8 demo project)
 
@@ -676,10 +686,10 @@ the whole entry (see the `content_save` note below), so no case depends on it.
 | 1 | Explore the project | `What content models and locales does my Contentrain project have?` | `contentrain_status`, then `contentrain_describe` if needed | Names the 7 models — `site-settings`, `navigation`, `footer`, `seo-defaults` (singletons), `author`, `blog-category` (collections), `blog-post` (documents) — and the locales `en` (default) and `de` |
 | 2 | Read entries with relations | `List the English blog posts with their authors and publish dates.` | `contentrain_content_list` (`blog-post`, `en`; `author` if relations are not resolved) | The 3 posts — "Designing Calm Interfaces For Product Teams" (Esra Yilmaz, 2026-03-12), "Shipping Faster With A Clear Content Model" (Kerem Dogan, 2026-02-21), "What Modern Starters Actually Need" (Esra Yilmaz, 2026-01-30) |
 | 3 | Find missing translations | `Which content is still missing a German translation?` | `contentrain_validate` (or `contentrain_content_list` per locale) | Names the four gaps: the `de` footer, the author Kerem Dogan, and the posts "Shipping Faster With A Clear Content Model" and "What Modern Starters Actually Need" |
-| 4 | Fill one gap | `Add a German version of the author entry for Kerem Dogan, translating his role and bio.` | `contentrain_content_list` (`author`, `en`), `contentrain_content_save` (`author`, `de`, id `kerem-dogan`), `contentrain_validate` | Saves a `de` entry with `name`, a German `role` and `bio`, and the same `avatar`; validation no longer reports the author gap; the `en` entry is unchanged |
+| 4 | Fill one gap and publish it | `Add a German version of the author entry for Kerem Dogan, translating his role and bio, then publish it.` | `contentrain_content_list` (`author`, `en`), `contentrain_content_save` (`author`, `de`, id `kerem-dogan`), `contentrain_validate`, `contentrain_content_status` (`author`, `status: published`, `entry_ids: [kerem-dogan]`, `locale: de`) | Saves a `de` entry with `name`, a German `role` and `bio`, and the same `avatar`; validation no longer reports the author gap; `contentrain_content_status` reports `kerem-dogan` `de` going to `published`, and in the `contentrain_content_list` response for `author` in `de` the entry's `meta.status` is `published`; the `en` entry is unchanged |
 | 5 | Use the media library | `Show the images in my media library and use the first one as the cover image of "Designing Calm Interfaces For Product Teams".` | `contentrain_media_list`, `contentrain_content_save` (`blog-post`, `en`, slug `designing-calm-interfaces`, `cover_image` only) | Lists the 2 uploaded images; the post's `en` `cover_image` is the first image's delivery URL, and its title, excerpt and body are unchanged |
 
-After a write (cases 4 and 5), `contentrain_content_save` may report
+After a write (cases 4 and 5), `contentrain_content_save` and `contentrain_content_status` may report
 `git.action: pending-review` even on this auto-merge project. The merge lands
 within seconds, so list the entries again before checking the result.
 
@@ -691,7 +701,7 @@ within seconds, so list the entries again before checking the result.
 | 2 | `Merge my content changes into main and deploy the site.` | Merging and deploying are not tools on this surface; they belong to Contentrain Studio and the user's own hosting | Explains that writes already follow the project's workflow (auto-merge or review in Studio) and that deploying is outside Contentrain; calls no tool |
 | 3 | `Delete all my blog posts.` | Bulk deletion is irreversible and needs explicit confirmation | Asks the user to confirm before calling `contentrain_content_delete` (the tool itself requires `confirm: true`) |
 
-### Annotation justifications (16 remote tools, MCP 3.11.24)
+### Annotation justifications (17 remote tools, MCP `3.12.0`)
 
 | Tool | readOnly | destructive | openWorld | Justification |
 |---|:---:|:---:|:---:|---|
@@ -709,6 +719,7 @@ within seconds, so list the entries again before checking the result.
 | `contentrain_model_delete` | false | true | false | Removes a model with its content and metadata; requires `confirm: true` |
 | `contentrain_vocabulary_delete` | false | true | false | Removes vocabulary terms; requires `confirm: true` |
 | `contentrain_content_delete` | false | true | false | Removes entries or dictionary keys; requires `confirm: true` |
+| `contentrain_content_status` | false | **true** | false | Changes entries' status (draft, in review, published, rejected, archived). Publishing or unpublishing changes what the live site shows, so it is marked destructive. Only workspace owners and admins can publish; publishing validates the targeted entries first and commits nothing if they fail. The change lands as a Git commit on a separate `cr/status/…` branch, never on main, and follows the project's workflow. Setting a status an entry already has is a no-op (idempotent) |
 | `contentrain_media_delete` | false | true | false | Removes an asset from storage; requires `confirm: true`; entries that reference it are not rewritten |
 | `contentrain_media_ingest` | false | false | **true** | Fetches a URL the user supplies from the public internet (server-side, with SSRF, MIME-type and size checks) and stores it as a new asset; it overwrites nothing |
 
