@@ -35,12 +35,13 @@ User-facing docs live in [REMOTE_MCP.md](./REMOTE_MCP.md).
 > string must match the entered URL exactly, incl. path. Never change the
 > PRM `resource` string or the AS `issuer` after listing.
 
-## 0. Status at a glance (re-verified 2026-11-02: Studio `0.4.16`, MCP `3.11.20`; MCP rows re-read at `3.11.23` for v0.4.17)
+## 0. Status at a glance (re-verified 2026-11-02: Studio `0.4.16`, MCP `3.11.20`; MCP rows re-read at `3.11.23` for v0.4.17; pin `3.11.24` from v0.4.19)
 
 Re-verified from code (Studio `main` 0a33468 = the `v0.4.16` tag,
 `@contentrain/mcp` pinned exactly `3.11.20`; annotations and instructions
 read from the installed package; v0.4.17 pins `3.11.23`, and the MCP rows
-below are re-read from that package) plus read-only GETs of the public endpoints
+below are re-read from that package; v0.4.19 pins `3.11.24`, which leaves them
+unchanged) plus read-only GETs of the public endpoints
 on prod, which answers that same commit. No login and no POSTs, so the rows
 behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 
@@ -52,9 +53,9 @@ behind auth keep 2026-07-27 @2.3.0. The per-gap evidence is in §8.
 | `resource` string and `issuer` unchanged since listing prep (§7) | ✅ |
 | Bare request to `/api/mcp/remote` → 401 + `WWW-Authenticate` with `resource_metadata` + `scope="content:read content:write project:metadata"` | ✅ tested with **GET** 2026-11-02 (the handler authenticates before anything else, so POST gets the same) |
 | `/.well-known/openai-apps-challenge` → 404 while `NUXT_OPENAI_APPS_CHALLENGE` is unset (correct until §6 step 1) | ✅ 2026-11-02 |
-| Tool annotations @ MCP **3.11.23** (re-read 2026-11-02): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
+| Tool annotations @ MCP **3.11.24** (re-read 2026-11-03): every tool the reviewer sees (16 on a media-enabled project, 11 otherwise) has `title` + `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`, names ≤64, `openWorldHint: true` only on `media_ingest` | ✅ from code |
 | `contentrain_model_save` and `contentrain_content_save` → `destructiveHint: true` (each replaces what it is sent: a whole definition, a singleton, an existing collection entry; OpenAI counts overwriting as destructive); `contentrain_content_save` → `idempotentHint: false` (a collection save without an id adds a new entry every call) | ✅ MCP 3.11.23; production serves it from v0.4.17, so cut that tag **before the OpenAI scan** |
-| Remote `tools/list` = **16** for a media-eligible project, **11** otherwise (see §4) | ✅ from code @3.11.23; not re-listed live |
+| Remote `tools/list` = **16** for a media-eligible project, **11** otherwise (see §4) | ✅ from code @3.11.24; not re-listed live |
 | OAuth callbacks: `https://claude.ai/api/mcp/auth_callback` and ChatGPT's per-app URL arrive through CIMD/DCR; loopback `http://localhost/callback` / `http://127.0.0.1/callback` match on **any port** | ✅ from code + tests (§8 gap 3) |
 | Token endpoint: form-urlencoded, rotation in the same response, `invalid_grant` for a dead refresh token | ✅ from code + contract test (§8 gap 5) |
 | Error copy on this surface names no plan and promotes no upgrade (OpenAI plugin guideline) | ✅ 2026-11-02 (§8) |
@@ -141,7 +142,7 @@ the build that answers (`version`, `commit`): check it before any prod pass.
   endpoint, domain, or user interface". It is an attestation, not a challenge
   — and it binds both directories.
 
-## 3. Upstream `@contentrain/mcp` — pinned 3.11.23 (history below from 2.1.x–3.11.23)
+## 3. Upstream `@contentrain/mcp` — pinned 3.11.24 (history below from 2.1.x–3.11.24)
 
 **The 2.1.0 → 2.1.1 bump is submission-relevant, not housekeeping.** 2.1.0's
 `DEFAULT_INSTRUCTIONS` told every client to *"Preview writes with
@@ -201,6 +202,14 @@ exposed to the new envelope.
       pins the same). The annotation and description changes count for the
       OpenAI resubmission rule below; they land before the scan. The staging
       content save is not done.
+- [x] **3.11.23 → 3.11.24 (2026-11-03), by tarball diff:** on this surface
+      `contentrain_content_save` names `contentrain_bulk` only where that tool
+      is registered (`publish_at` description, `scheduling_note`,
+      `next_steps`), and the validator's publish-state drift notice says to set
+      the status back to published. Annotations, tool names and
+      `DEFAULT_INSTRUCTIONS` are unchanged; `@contentrain/types` stays 1.79.2.
+      The `publish_at` description change counts for the OpenAI resubmission
+      rule below.
 - [ ] **2.3.0 → 3.11.2: not done yet.** Diff the published tarballs' `dist/`
       and do one real staging content save (the rule below). The MCP registry
       gained three tools (`contentrain_describe_format`,
@@ -227,7 +236,7 @@ its original state and the probe grants were deleted from Connected Apps.
 **None of the authenticated rows has been re-run at 3.11.2** (2026-10-23 was
 code + public GETs only); the ✅ marks below are that pass, labelled 2026-07-27 @2.3.0.
 
-**Expected `tools/list` at 3.11.23: 16** for a media-eligible project, 11
+**Expected `tools/list` at 3.11.24: 16** for a media-eligible project, 11
 without media — that is what a reviewer sees. Eleven more MCP tools are never
 registered here because they need a local `projectRoot` (MCP's `skipTools`): `init`, `scaffold`, `doctor`,
 `bulk`, `submit`, `merge`, `reconcile`, `branch_list`, `branch_delete`,
@@ -561,7 +570,7 @@ below is new and written to OpenAI's limits; it follows the same spine.
 | Icon | `public/logo/icon-color-bg.svg` (square, 300×300 viewBox) exported to a 512×512 PNG |
 | Reads, writes, or both | Both. Reads and writes are separate tools, each annotated |
 | First-party API | Yes. The server is Contentrain's own, on Contentrain's domain |
-| Tools | 16 tools on a media-enabled project, 11 otherwise (MCP 3.11.23, from code). The review project is media-enabled, so reviewers see 16 |
+| Tools | 16 tools on a media-enabled project, 11 otherwise (MCP 3.11.24, from code). The review project is media-enabled, so reviewers see 16 |
 | Demo video | founder |
 
 ### Claude listing
@@ -682,7 +691,7 @@ within seconds, so list the entries again before checking the result.
 | 2 | `Merge my content changes into main and deploy the site.` | Merging and deploying are not tools on this surface; they belong to Contentrain Studio and the user's own hosting | Explains that writes already follow the project's workflow (auto-merge or review in Studio) and that deploying is outside Contentrain; calls no tool |
 | 3 | `Delete all my blog posts.` | Bulk deletion is irreversible and needs explicit confirmation | Asks the user to confirm before calling `contentrain_content_delete` (the tool itself requires `confirm: true`) |
 
-### Annotation justifications (16 remote tools, MCP 3.11.23)
+### Annotation justifications (16 remote tools, MCP 3.11.24)
 
 | Tool | readOnly | destructive | openWorld | Justification |
 |---|:---:|:---:|:---:|---|
