@@ -29,7 +29,7 @@ import type { McpCloudMergeOutcome, McpCloudWrite } from '~~/server/utils/mcp-cl
 import { reconcileMcpCloudWrites } from '~~/server/utils/mcp-cloud-automerge'
 import { resolveMcpActorPermissions } from '~~/server/utils/mcp-actor-permissions'
 import { readToolCallMessages, refusedToolCallsResponse, toolCallDenial } from '~~/server/utils/mcp-write-gate'
-import { annotateWriteResults, readWriteResults } from '~~/server/utils/mcp-write-result'
+import { annotateWriteResults, filterListedTools, readWriteResults } from '~~/server/utils/mcp-write-result'
 import { incrementOauthUsageIfAllowed } from '~~/server/utils/oauth-server/store'
 import { mcpReadRetryAfterSeconds, mcpWriteRetryAfterSeconds } from '~~/server/utils/mcp-github-budget'
 
@@ -96,6 +96,35 @@ export function extractToolCalls(rawBody: string | undefined): string[] {
   }
   catch {
     return []
+  }
+}
+
+/**
+ * Whether the caller's key or grant may not call `name`. Non-media tools:
+ * empty allowlist = unrestricted, non-empty = whitelist. Media tools are
+ * NEVER covered by the empty "unrestricted" semantics: a key minted before
+ * the media facet existed must not silently gain URL ingest / destructive
+ * delete. They pass only when explicitly listed or (key surface) via the
+ * `media_enabled` opt-in. OAuth always passes a concrete `toolsForScope`
+ * list, so a media:* grant keeps working and a missing scope still triggers
+ * step-up. The call gate and the `tools/list` filter both use this, so a
+ * caller is listed exactly the tools it can call.
+ */
+export function toolDenied(ctx: Pick<McpProxyContext, 'allowedTools' | 'mediaToolsOptIn'>, name: string): boolean {
+  if (MEDIA_TOOL_NAMES.has(name))
+    return !ctx.allowedTools.includes(name) && ctx.mediaToolsOptIn !== true
+  return ctx.allowedTools.length > 0 && !ctx.allowedTools.includes(name)
+}
+
+/** Whether the JSON-RPC body asks for `tools/list` (any message of a legacy batch). */
+function asksToolList(rawBody: string | undefined): boolean {
+  if (!rawBody) return false
+  try {
+    const parsed = JSON.parse(rawBody) as unknown
+    return (Array.isArray(parsed) ? parsed : [parsed]).some(message => (message as { method?: unknown } | null)?.method === 'tools/list')
+  }
+  catch {
+    return false
   }
 }
 
@@ -185,18 +214,8 @@ export async function runMcpCloudProxy(
     : undefined
   const toolCalls = extractToolCalls(rawBody)
 
-  // Tool allowlist. Non-media tools: empty = unrestricted, non-empty =
-  // whitelist. Media tools are NEVER covered by the empty "unrestricted"
-  // semantics — a key minted before the media facet existed must not
-  // silently gain URL ingest / destructive delete. They pass only when
-  // explicitly listed or (key surface) via the `media_enabled` opt-in.
-  // OAuth always passes a concrete `toolsForScope` list, so a media:*
-  // grant keeps working and a missing scope still triggers step-up.
-  const denied = toolCalls.find((name) => {
-    if (MEDIA_TOOL_NAMES.has(name))
-      return !ctx.allowedTools.includes(name) && ctx.mediaToolsOptIn !== true
-    return ctx.allowedTools.length > 0 && !ctx.allowedTools.includes(name)
-  })
+  // Tool allowlist (`toolDenied`).
+  const denied = toolCalls.find(name => toolDenied(ctx, name))
   if (denied) {
     if (ctx.onToolDenied) ctx.onToolDenied(event, denied)
     throw createError({
@@ -292,6 +311,7 @@ export async function runMcpCloudProxy(
   }
 
   const shouldInvalidateBrain = toolCalls.some(name => WRITE_TOOL_NAMES.has(name))
+  const listsTools = asksToolList(rawBody)
 
   const [owner, repoName] = ctx.repoFullName.split('/')
   if (!owner || !repoName) {
@@ -356,7 +376,7 @@ export async function runMcpCloudProxy(
 
   const fetchOptions = { method: event.method, body: rawBody }
 
-  if (!shouldInvalidateBrain) {
+  if (!shouldInvalidateBrain && !listsTools) {
     // Streaming branch: an MCP session's GET is a long-lived SSE stream
     // that legitimately idles far past undici's 300s default bodyTimeout —
     // nothing pings it (neither the SDK transport nor the loopback), so
@@ -387,6 +407,18 @@ export async function runMcpCloudProxy(
       }
       throw err
     }
+  }
+
+  // `tools/list` is buffered too, and the answer keeps only the tools the
+  // caller may call (`toolDenied`): a tool listed to a grant without its
+  // scope only ever answers 403. A short JSON or single-event SSE payload.
+  if (!shouldInvalidateBrain) {
+    const upstream = await fetch(target, {
+      ...fetchOptions,
+      headers: { ...getProxyRequestHeaders(event), ...proxyHeaders },
+    })
+    const body = filterListedTools(await upstream.text(), upstream.headers.get('content-type'), name => !toolDenied(ctx, name))
+    return sendBuffered(event, upstream, body)
   }
 
   // Write call — this one is buffered instead of streamed.
@@ -438,8 +470,11 @@ export async function runMcpCloudProxy(
     contentRoot: ctx.contentRoot,
     plan: ctx.plan,
   }, writes)
-  const payload = new TextEncoder().encode(annotateWriteResults(body, contentType, outcomes))
+  return sendBuffered(event, upstream, annotateWriteResults(body, contentType, outcomes))
+}
 
+/** Answers with a buffered loopback response: its status and headers, and `body` in place of its own. */
+function sendBuffered(event: H3Event, upstream: Response, body: string): Uint8Array {
   setResponseStatus(event, upstream.status, upstream.statusText)
   for (const [name, value] of upstream.headers) {
     // The body was buffered and `fetch` already decoded it, so the upstream
@@ -447,8 +482,7 @@ export async function runMcpCloudProxy(
     if (HOP_BY_HOP_HEADERS.has(name.toLowerCase())) continue
     setResponseHeader(event, name, value)
   }
-
-  return payload
+  return new TextEncoder().encode(body)
 }
 
 /**

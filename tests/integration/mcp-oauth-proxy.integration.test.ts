@@ -367,6 +367,22 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     expect(state.proxyRequest).not.toHaveBeenCalled()
   })
 
+  it('tools/list lists only what the grant can call: no write or media tool for content:read', async () => {
+    state.grant!.scope = 'content:read project:metadata'
+    const listed = ['contentrain_describe', 'contentrain_content_list', 'contentrain_content_save', 'contentrain_media_list', 'contentrain_media_ingest']
+    state.upstreamFetch.mockImplementation(async () => new Response(
+      `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: listed.map(name => ({ name })) } })}\n\n`,
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ))
+    const handler = await loadHandler()
+    const out = await handler(makeEvent({ __body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) }) as never) as Uint8Array
+
+    const data = new TextDecoder().decode(out).split('\n').find(line => line.startsWith('data:'))!
+    const tools = (JSON.parse(data.slice(5)) as { result: { tools: Array<{ name: string }> } }).result.tools
+    expect(tools.map(tool => tool.name)).toEqual(['contentrain_describe', 'contentrain_content_list'])
+    expect(state.proxyRequest).not.toHaveBeenCalled()
+  })
+
   it('lifecycle tools stay a plain 403 — no step-up loop for ungrantable tools', async () => {
     const handler = await loadHandler()
     const event = makeEvent({ __body: toolCallBody('contentrain_merge') })
