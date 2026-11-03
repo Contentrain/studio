@@ -605,6 +605,7 @@ describe('MCP Cloud proxy gating', () => {
 
     it('injects the four media identity headers when fully eligible', async () => {
       state.mediaProvider = { listAssets: vi.fn() }
+      state.keyData.mediaEnabled = true
       const handler = await loadHandler()
       await handler(makeEvent({ __body: toolCallBody('contentrain_content_list') }) as never)
 
