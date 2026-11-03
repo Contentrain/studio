@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.18
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.17...v0.4.18)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.17, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+### 🩹 Fixes
+
+- MCP Cloud and the remote MCP endpoint answered every streamed request (`initialize`, `tools/list`, reads) with a 502. The proxy now uses the same `undici` for the request and its connection settings. A failed proxy request is now logged with its error class and code (#525).
+
 ## v0.4.17
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.16...v0.4.17)
