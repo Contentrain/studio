@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.19
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.18...v0.4.19)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.18, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+### 📖 Documentation
+
+- `docs/REMOTE_MCP_SUBMISSION.md`: after a write, the reviewer lists the entries again, because the save can report `pending-review` before the auto-merge lands (#527).
+
+### 🏡 Chore
+
+- `@contentrain/mcp` 3.11.23 → 3.11.24.
+  - On MCP Cloud and the remote endpoint, `contentrain_content_save` and `contentrain_validate` no longer point to `contentrain_bulk`, which these surfaces do not offer. The publish-state drift notice now says to set the status back to published.
+
 ## v0.4.18
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.17...v0.4.18)

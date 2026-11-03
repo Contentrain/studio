@@ -1,6 +1,6 @@
 {
   "name": "contentrain-studio",
-  "version": "0.4.18",
+  "version": "0.4.19",
   "type": "module",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -67,7 +67,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
     "@aws-sdk/client-s3": "^3.1076.0",
-    "@contentrain/mcp": "3.11.23",
+    "@contentrain/mcp": "3.11.24",
     "@contentrain/query": "7.6.63",
     "@contentrain/types": "1.79.2",
     "@gitbeaker/rest": "^43.8.0",
