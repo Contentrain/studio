@@ -235,7 +235,8 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     const asked = /scope="([^"]+)"/.exec(wwwAuthenticate()!)![1]!
     expect(asked).toBe('content:read content:write project:metadata media:read media:write')
 
-    // 2. /oauth/authorize keeps every scope the client requested (+ offline_access from scopes_supported).
+    // 2. /oauth/authorize keeps every scope the client requested (+ offline_access from scopes_supported);
+    //    consent keeps media on an eligible project (oauth-consent suite).
     const granted = normalizeScope(`${asked} offline_access`)!
     expect(granted).toContain('media:read')
     expect(granted).toContain('media:write')

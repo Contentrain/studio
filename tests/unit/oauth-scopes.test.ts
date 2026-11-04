@@ -9,6 +9,7 @@ import {
   scopeForTool,
   scopeIncludes,
   toolsForScope,
+  withoutMediaScopes,
 } from '../../server/utils/oauth-server/scopes'
 import {
   MEDIA_READ_TOOL_NAMES,
@@ -78,6 +79,19 @@ describe('challengeScopes', () => {
     // The authorize endpoint must not drop what the challenge asked for.
     expect(normalizeScope(`${scopes.join(' ')} offline_access`))
       .toBe('content:read content:write project:metadata media:read media:write offline_access')
+  })
+})
+
+describe('withoutMediaScopes', () => {
+  it('drops media:read/media:write and keeps everything else in order', () => {
+    expect(withoutMediaScopes('content:read content:write project:metadata media:read media:write offline_access'))
+      .toBe('content:read content:write project:metadata offline_access')
+    expect(withoutMediaScopes('content:read project:metadata')).toBe('content:read project:metadata')
+  })
+
+  it('never leaves a grant with nothing callable', () => {
+    expect(withoutMediaScopes('media:read media:write offline_access')).toBe('content:read project:metadata offline_access')
+    expect(withoutMediaScopes('media:read')).toBe('content:read project:metadata')
   })
 })
 

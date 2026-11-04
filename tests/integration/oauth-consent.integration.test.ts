@@ -14,6 +14,11 @@ const state = vi.hoisted(() => ({
   planOk: true,
   effectivePlan: 'pro' as string,
   locked: false,
+  /** The plan's media.upload feature (media eligibility), apart from the OAuth plan gate. */
+  mediaPlanOk: true,
+  mediaProvider: null as unknown,
+  /** What the client asks /oauth/authorize for. */
+  scope: 'content:read offline_access',
   dcrClient: {
     clientId: 'dcr_test1234',
     kind: 'dcr' as const,
@@ -51,6 +56,7 @@ vi.mock('~~/server/utils/rate-limit', () => ({
 
 vi.mock('~~/server/utils/providers', () => ({
   useDatabaseProvider: vi.fn(() => state.db),
+  useMediaProvider: vi.fn(() => state.mediaProvider),
 }))
 
 vi.mock('~~/server/utils/db', () => ({
@@ -68,7 +74,7 @@ vi.mock('~~/server/utils/workspace-billing', () => ({
 
 vi.mock('~~/server/utils/license', () => ({
   getWorkspacePlan: vi.fn(() => 'pro'),
-  hasFeature: vi.fn(() => state.planOk),
+  hasFeature: vi.fn((_plan: string, feature: string) => (feature === 'media.upload' ? state.mediaPlanOk : state.planOk)),
 }))
 
 vi.mock('~~/server/utils/content-strings', () => ({
@@ -86,7 +92,7 @@ function authorizeQuery(): string {
     response_type: 'code',
     client_id: state.dcrClient.clientId,
     redirect_uri: 'http://localhost:54321/callback',
-    scope: 'content:read offline_access',
+    scope: state.scope,
     state: 'client-state-1',
     code_challenge: 'a'.repeat(43),
     code_challenge_method: 'S256',
@@ -136,6 +142,9 @@ describe('OAuth consent flow', () => {
     state.planOk = true
     state.effectivePlan = 'pro'
     state.locked = false
+    state.mediaPlanOk = true
+    state.mediaProvider = null
+    state.scope = 'content:read offline_access'
     state.createdCodes = []
     state.db = {
       listUserWorkspaces: vi.fn(async () => [
@@ -218,6 +227,71 @@ describe('OAuth consent flow', () => {
       jar.absorb(response)
       const replay = await request('/api/oauth/consent', { headers: { cookie: jar.header() } })
       expect(replay.status).toBe(400)
+    })
+  })
+
+  describe('media scopes follow the chosen project', () => {
+    const MEDIA_CHALLENGE = 'content:read content:write project:metadata media:read media:write offline_access'
+
+    beforeEach(() => {
+      // A media deployment, and a client that asked for what the 401 challenge names.
+      state.mediaProvider = { listAssets: vi.fn() }
+      state.scope = MEDIA_CHALLENGE
+      state.db.listUserWorkspaces = vi.fn(async () => [
+        { id: 'ws-1', name: 'Acme', slug: 'acme', plan: 'pro', github_installation_id: 42, overage_settings: {}, owner_id: 'owner-1', workspace_members: [{ role: 'owner' }] },
+      ])
+      state.db.listWorkspaceProjects = vi.fn(async () => [
+        { id: 'proj-1', repo_full_name: 'acme/site', cdn_enabled: true },
+        { id: 'proj-2', repo_full_name: 'acme/docs', cdn_enabled: false },
+      ])
+      state.db.getWorkspaceById = vi.fn(async () => ({ id: 'ws-1', github_installation_id: 42, plan: 'pro', overage_settings: {}, owner_id: 'owner-1' }))
+    })
+
+    async function approve(projectId: string, cdnEnabled: boolean): Promise<Record<string, unknown>> {
+      state.db.getProjectById = vi.fn(async () => ({ id: projectId, repo_full_name: 'acme/site', workspace_id: 'ws-1', cdn_enabled: cdnEnabled }))
+      let code: Record<string, unknown> | undefined
+      await withConsentServer(async ({ request }) => {
+        const jar = await startDance(request)
+        const response = await request('/api/oauth/consent', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'cookie': jar.header(), 'origin': 'http://localhost:3000' },
+          body: JSON.stringify({ decision: 'approve', workspaceId: 'ws-1', projectId }),
+        })
+        expect(response.status).toBe(200)
+        code = state.createdCodes.at(-1)
+      })
+      return code!
+    }
+
+    it('flags each project media-eligible or not, with the proxy\'s own rule', async () => {
+      await withConsentServer(async ({ request }) => {
+        const jar = await startDance(request)
+        const json = await (await request('/api/oauth/consent', { headers: { cookie: jar.header() } })).json()
+
+        expect(json.scopes).toEqual(MEDIA_CHALLENGE.split(' '))
+        expect(json.workspaces[0].projects).toMatchObject([
+          { id: 'proj-1', mediaEligible: true },
+          { id: 'proj-2', mediaEligible: false },
+        ])
+      })
+    })
+
+    it('an eligible project\'s grant carries the media scopes', async () => {
+      expect((await approve('proj-1', true)).scope).toBe(MEDIA_CHALLENGE)
+    })
+
+    it('a project without CDN delivery gets the grant without media', async () => {
+      expect((await approve('proj-2', false)).scope).toBe('content:read content:write project:metadata offline_access')
+    })
+
+    it('a plan without media.upload gets the grant without media', async () => {
+      state.mediaPlanOk = false
+      expect((await approve('proj-1', true)).scope).toBe('content:read content:write project:metadata offline_access')
+    })
+
+    it('a deployment without the media stack gets the grant without media', async () => {
+      state.mediaProvider = null
+      expect((await approve('proj-1', true)).scope).toBe('content:read content:write project:metadata offline_access')
     })
   })
 

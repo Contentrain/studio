@@ -62,6 +62,16 @@ export function challengeScopes(opts: { mediaAvailable: boolean }): SupportedSco
   return SUPPORTED_SCOPES.filter(scope => withMedia.has(scope))
 }
 
+/**
+ * A scope without `media:*` — what consent grants on a project that is not
+ * media-eligible. OAuth lets the server grant less than was requested; the
+ * token response carries the scope actually granted.
+ */
+export function withoutMediaScopes(scope: string): string {
+  // Through normalizeScope, so a media-only request still grants the least-privilege default.
+  return normalizeScope(scope.split(' ').filter(part => part !== 'media:read' && part !== 'media:write').join(' '))!
+}
+
 const SUPPORTED = new Set<string>(SUPPORTED_SCOPES)
 
 /** Requested scope absent → least-privilege default. */

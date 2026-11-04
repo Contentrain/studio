@@ -18,6 +18,7 @@ interface ConsentProject {
   repoFullName: string | null
   eligible: boolean
   reason: string | null
+  mediaEligible: boolean
 }
 
 interface ConsentWorkspace {
@@ -65,6 +66,15 @@ const SCOPE_LABEL_KEYS: Record<string, string> = {
 const selectedWorkspace = computed(() =>
   data.value?.workspaces.find(w => w.id === selectedWorkspaceId.value) ?? null,
 )
+
+const MEDIA_SCOPES = new Set(['media:read', 'media:write'])
+
+/** The scopes the approval grants: media only on a media-eligible project (the server narrows the same way). */
+const grantedScopes = computed(() => {
+  const project = selectedWorkspace.value?.projects.find(p => p.id === selectedProjectId.value)
+  const scopes = data.value?.scopes ?? []
+  return project?.mediaEligible ? scopes : scopes.filter(scope => !MEDIA_SCOPES.has(scope))
+})
 
 const canApprove = computed(() => {
   if (!selectedWorkspace.value?.eligible || !selectedProjectId.value) return false
@@ -161,7 +171,7 @@ async function decide(decision: 'approve' | 'deny') {
           <AtomsSectionLabel :label="t('oauth_consent.permissions_label')" />
           <ul class="mt-2 space-y-1.5">
             <li
-              v-for="scope in data.scopes"
+              v-for="scope in grantedScopes"
               :key="scope"
               class="flex items-center gap-2 text-sm text-body dark:text-secondary-300"
             >

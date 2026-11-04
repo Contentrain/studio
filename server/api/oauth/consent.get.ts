@@ -14,12 +14,15 @@ import { isBillingLocked } from '~~/server/utils/billing'
 import { hasFeature } from '~~/server/utils/license'
 import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { useDatabaseProvider } from '~~/server/utils/providers'
+import { projectMediaEligible } from '~~/server/utils/media-eligibility'
 
 interface ConsentProject {
   id: string
   repoFullName: string | null
   eligible: boolean
   reason: string | null
+  /** Media-eligible: a grant on this project keeps the media:* scopes. */
+  mediaEligible: boolean
 }
 
 interface ConsentWorkspace {
@@ -78,6 +81,11 @@ export default defineEventHandler(async (event) => {
         repoFullName,
         eligible: reason === null,
         reason,
+        mediaEligible: projectMediaEligible({
+          plan: billing.effectivePlan,
+          cdnEnabled: project.cdn_enabled === true,
+          mediaOwnerId: (row.owner_id as string | null) ?? null,
+        }),
       }
     })
 
