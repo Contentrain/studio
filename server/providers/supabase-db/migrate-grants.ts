@@ -22,6 +22,11 @@ type MigrateGrantMethods = Pick<
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
   | 'recordMigrateGrantPrepaid'
+  | 'getLivePrepaidGrant'
+  | 'recordMigrateGrantRenewal'
+  | 'clearMigrateGrantRenewal'
+  | 'listPrepaidYearsDue'
+  | 'setPrepaidReminderStage'
   | 'setMigrateGrantSiteBinding'
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
@@ -279,6 +284,80 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .maybeSingle()
       if (error) fail(error.message)
       return (data as DatabaseRow | null) ?? null
+    },
+
+    async getLivePrepaidGrant(workspaceId) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .eq('collector', 'migrate')
+        .is('revoked_at', null)
+        .not('payment_ref', 'is', null)
+        .gt('prepaid_ends_at', new Date().toISOString())
+        .order('prepaid_ends_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) fail(error.message)
+      return (data as DatabaseRow | null) ?? null
+    },
+
+    async recordMigrateGrantRenewal(grantId, subscriptionId) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ renewal_subscription_id: subscriptionId })
+        .eq('id', grantId)
+        .eq('collector', 'migrate')
+        .is('revoked_at', null)
+        .or(`renewal_subscription_id.is.null,renewal_subscription_id.eq.${JSON.stringify(subscriptionId)}`)
+        .select('*')
+        .maybeSingle()
+      if (error) fail(error.message)
+      return (data as DatabaseRow | null) ?? null
+    },
+
+    async clearMigrateGrantRenewal(grantId, subscriptionId) {
+      const { error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ renewal_subscription_id: null })
+        .eq('id', grantId)
+        .eq('renewal_subscription_id', subscriptionId)
+      if (error) fail(error.message)
+    },
+
+    async listPrepaidYearsDue({ from, to, requiredStage }) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .select('id, plan, prepaid_ends_at, renewal_subscription_id, workspaces:workspace_id!inner(id, name, slug, owner_id, prepaid_until)')
+        .eq('collector', 'migrate')
+        .is('revoked_at', null)
+        .gte('prepaid_ends_at', from)
+        .lte('prepaid_ends_at', to)
+        .lt('prepaid_reminder_stage', requiredStage)
+      if (error) fail(error.message)
+      type Row = { id: string, plan: string, prepaid_ends_at: string, renewal_subscription_id: string | null, workspaces: { id: string, name: string, slug: string, owner_id: string | null, prepaid_until: string | null } }
+      // PostgREST cannot compare two columns: the "still held by the workspace" match is done here.
+      return ((data ?? []) as unknown as Row[])
+        .filter(r => r.workspaces.prepaid_until !== null && new Date(r.workspaces.prepaid_until).getTime() === new Date(r.prepaid_ends_at).getTime())
+        .map(r => ({
+          grant_id: r.id,
+          plan: r.plan,
+          prepaid_ends_at: r.prepaid_ends_at,
+          renewal_subscription_id: r.renewal_subscription_id,
+          workspace_id: r.workspaces.id,
+          workspace_name: r.workspaces.name,
+          workspace_slug: r.workspaces.slug,
+          owner_id: r.workspaces.owner_id,
+        }))
+    },
+
+    async setPrepaidReminderStage(grantId, stage) {
+      const { error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ prepaid_reminder_stage: stage })
+        .eq('id', grantId)
+        .lt('prepaid_reminder_stage', stage)
+      if (error) fail(error.message)
     },
 
     async markMigrateGrantRevoked(grantId, reason) {

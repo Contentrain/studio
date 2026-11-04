@@ -7,10 +7,13 @@ describe('postgres-db usage-alerts (contract)', () => {
   const methods = usageAlertMethods()
   let subscribed: SeededUser
   let unsubscribed: SeededUser
+  let prepaid: SeededUser
 
   beforeAll(async () => {
     subscribed = await seedUser('usage-alert-sub')
     unsubscribed = await seedUser('usage-alert-free')
+    prepaid = await seedUser('usage-alert-prepaid')
+    await sql`UPDATE public.workspaces SET prepaid_until = now() + interval '200 days', prepaid_plan = 'pro' WHERE id = ${prepaid.workspaceId}`.execute(getDb())
     await sql`
       INSERT INTO public.payment_accounts (workspace_id, provider, customer_id, subscription_status, is_active)
       VALUES (${subscribed.workspaceId}, 'polar', ${`cus_${subscribed.workspaceId.slice(0, 8)}`}, 'active', true)
@@ -18,19 +21,22 @@ describe('postgres-db usage-alerts (contract)', () => {
   })
 
   afterAll(async () => {
-    for (const user of [subscribed, unsubscribed])
+    for (const user of [subscribed, unsubscribed, prepaid])
       await deleteSeededUser(user.userId) // payment_accounts and usage_alerts cascade via workspace
   })
 
-  it('lists only workspaces with an active payment account, with the fields the job reads', async () => {
+  it('lists workspaces with an active payment account or a live prepaid year, with the fields the job reads', async () => {
     const rows = await methods.listWorkspacesForUsageAlerts()
     const ids = rows.map(r => r.id)
     expect(ids).toContain(subscribed.workspaceId)
+    expect(ids).toContain(prepaid.workspaceId)
     expect(ids).not.toContain(unsubscribed.workspaceId)
+    expect(ids.filter(id => id === prepaid.workspaceId)).toHaveLength(1)
     const row = rows.find(r => r.id === subscribed.workspaceId)!
     expect(Object.keys(row).sort()).toEqual(
-      ['id', 'media_storage_bytes', 'name', 'overage_settings', 'owner_id', 'plan', 'slug', 'type'],
+      ['id', 'media_storage_bytes', 'name', 'overage_settings', 'owner_id', 'plan', 'prepaid_plan', 'prepaid_until', 'slug', 'type'],
     )
+    expect(rows.find(r => r.id === prepaid.workspaceId)).toMatchObject({ prepaid_plan: 'pro' })
   })
 
   it('a claim wins once per workspace, meter, period and threshold; release lets it win again', async () => {

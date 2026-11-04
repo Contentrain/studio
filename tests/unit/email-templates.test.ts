@@ -90,7 +90,7 @@ describe('email templates', () => {
     expect(js.html).not.toContain('javascript:')
   })
 
-  const REPLY_SLUGS = ['payment-failed', 'subscription-activated', 'subscription-cancel-scheduled', 'subscription-canceled', 'trial-ending']
+  const REPLY_SLUGS = ['payment-failed', 'prepaid-ending', 'prepaid-ended', 'prepaid-renewed', 'subscription-activated', 'subscription-cancel-scheduled', 'subscription-canceled', 'trial-ending']
 
   it.each(REPLY_SLUGS)('%s invites no reply when NUXT_EMAIL_REPLY_TO is unset', (slug) => {
     const out = emailTemplate(slug, EMAIL_SAMPLES[slug]!.params)

@@ -155,6 +155,7 @@ const shellPanelStorage = {
             class="md:w-auto"
             @choose-plan="showPlanModal()"
             @manage-billing="openPortal()"
+            @keep-studio="navigateTo(`${route.path.split('/').slice(0, 3).join('/')}/settings?tab=billing`)"
           />
           <MoleculesUsageAlertBanner />
         </div>

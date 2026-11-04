@@ -13,6 +13,8 @@
 
 import { creditUnitFromMeters } from '../../../../shared/utils/credit-unit'
 import { usagePeriodFrom } from '../../../utils/usage-period'
+import { isPrepaidLive } from '../../../utils/billing'
+import { STUDIO_YEARLY_LIST_CENTS } from '../../../../shared/utils/migrate-bundle'
 import { bootstrapPaymentPlugins, resolvePlugin } from '../../../providers/payment'
 import type { PaymentPluginConfig } from '../../../providers/payment'
 import { PLAN_PRICING, normalizePlan } from '../../../../shared/utils/license'
@@ -147,21 +149,45 @@ async function planOverageLock(db: Db, input: {
   }
 }
 
+type TrialOrigin = 'migrate' | 'prepaid_renewal'
+
 /**
- * Mark a subscription started from a Migrate grant in its account's
- * `plugin_metadata` (`trial_origin: 'migrate'`), on top of whatever the
- * overage lock is writing. The trial cap reads it (`resolveTrialContext`).
+ * Where a subscription's trial came from: a Migrate grant's checkout (`migrate`), or "Keep Studio" after a
+ * prepaid Studio year (`prepaid_renewal`: the trial only bridges to the year's end and is no trial of the
+ * workspace). Undefined for a plain checkout.
+ */
+function trialOriginOf(result: { migrateGrantId?: string, migrateRenewalGrantId?: string }): TrialOrigin | undefined {
+  if (result.migrateGrantId) return 'migrate'
+  return result.migrateRenewalGrantId ? 'prepaid_renewal' : undefined
+}
+
+/**
+ * Mark a subscription's trial origin in its account's `plugin_metadata`
+ * (`trial_origin`), on top of whatever the overage lock is writing. The trial
+ * cap reads it (`resolveTrialContext`).
  * Returns undefined when nothing needs writing (the stored value is kept).
  */
 function withTrialOrigin(
   planned: Record<string, unknown> | undefined,
   stored: unknown,
-  migrateGrantId: string | undefined,
+  origin: TrialOrigin | undefined,
 ): Record<string, unknown> | undefined {
-  if (!migrateGrantId) return planned
+  if (!origin) return planned
   const base = planned ?? ((stored && typeof stored === 'object') ? stored as Record<string, unknown> : {})
-  if (base.trial_origin === 'migrate') return planned
-  return { ...base, trial_origin: 'migrate' }
+  if (base.trial_origin === origin) return planned
+  return { ...base, trial_origin: origin }
+}
+
+/**
+ * Link the subscription opened by "Keep Studio" to the prepaid year's grant (`renewal_subscription_id`). The
+ * year keeps priority until it ends. A grant revoked meanwhile, or one already renewed by another subscription,
+ * is not linked: logged as an ALARM for ops, the subscription itself is the customer's.
+ */
+async function linkPrepaidRenewal(db: ReturnType<typeof useDatabaseProvider>, grantId: string, subscriptionId: string | undefined): Promise<void> {
+  if (!subscriptionId) return
+  if (await db.recordMigrateGrantRenewal(grantId, subscriptionId)) return
+  // eslint-disable-next-line no-console -- ops visibility: a renewal that no prepaid year takes
+  console.error(`[billing-webhook] ALARM renewal subscription ${subscriptionId} could not be linked to grant ${grantId}`)
 }
 
 /** Extract every request header as a plain `{[key]: string | undefined}` object. */
@@ -214,10 +240,21 @@ async function sendBillingEmail(
   const planKey = normalizePlan(planHint ?? (ws.plan as string | null))
   const pricing = PLAN_PRICING[planKey]
 
-  const tpl = emailTemplate(templateSlug, {
+  // "Keep Studio" after a prepaid year is a yearly plan: its first charge is told as such, not as a monthly one.
+  let slug = templateSlug
+  let planPrice = pricing.priceMonthly > 0 ? `$${pricing.priceMonthly}` : 'custom pricing'
+  if (templateSlug === 'subscription-activated' && (planKey === 'starter' || planKey === 'pro')) {
+    const account = await db.getActivePaymentAccount(workspaceId).catch(() => null)
+    if (metadataObject(account?.plugin_metadata).trial_origin === 'prepaid_renewal') {
+      slug = 'prepaid-renewed'
+      planPrice = `$${STUDIO_YEARLY_LIST_CENTS[planKey] / 100}`
+    }
+  }
+
+  const tpl = emailTemplate(slug, {
     workspaceName: (ws.name as string | null) ?? wsSlug,
     planName: pricing.name,
-    planPrice: pricing.priceMonthly > 0 ? `$${pricing.priceMonthly}` : 'custom pricing',
+    planPrice,
     billingUrl,
     ...extraParams,
   })
@@ -229,7 +266,7 @@ async function sendBillingEmail(
     text: tpl.text,
   }).catch((err) => {
     // eslint-disable-next-line no-console -- surface delivery failures without aborting the webhook
-    console.error('[billing-webhook] Failed to send', templateSlug, 'email:', err)
+    console.error('[billing-webhook] Failed to send', slug, 'email:', err)
   })
 }
 
@@ -401,8 +438,8 @@ export default defineEventHandler(async (event) => {
         // activation email goes out below, and is recorded as sent so the
         // first order's `invoice.paid` does not send it again.
         pluginMetadata: result.subscriptionStatus === 'active'
-          ? { ...metadataObject(withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId)), [ACTIVATION_EMAIL_KEY]: 'sent' }
-          : withTrialOrigin(overageLock.pluginMetadata, null, result.migrateGrantId),
+          ? { ...metadataObject(withTrialOrigin(overageLock.pluginMetadata, null, trialOriginOf(result))), [ACTIVATION_EMAIL_KEY]: 'sent' }
+          : withTrialOrigin(overageLock.pluginMetadata, null, trialOriginOf(result)),
         // The credit unit follows the meters the subscription is priced on:
         // a v2 product meters `_1c` credits, a pre-v2 one $0.03 credits. No
         // credit meter in the list says nothing: the stored unit stays.
@@ -426,6 +463,7 @@ export default defineEventHandler(async (event) => {
       if (result.migrateGrantId) {
         await redeemMigrateGrant(provider, result.migrateGrantId, result.subscriptionId ?? null, result.checkoutId ?? null)
       }
+      if (result.migrateRenewalGrantId) await linkPrepaidRenewal(db, result.migrateRenewalGrantId, result.subscriptionId)
       // First 'trialing' observation consumes the workspace's one-time
       // trial, so a later re-checkout (after cancel/expiry) gets a paid
       // checkout with no new trial. Idempotent (set once, never moved).
@@ -513,7 +551,7 @@ export default defineEventHandler(async (event) => {
         cancelAtPeriodEnd: result.cancelAtPeriodEnd ?? false,
         gracePeriodEndsAt: gracePeriodEnd,
         plan: result.plan ?? null,
-        pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, existingAccount?.plugin_metadata, result.migrateGrantId),
+        pluginMetadata: withTrialOrigin(overageLock.pluginMetadata, existingAccount?.plugin_metadata, trialOriginOf(result)),
         // Written only through `setPaymentAccountMetadataKey`: this write is
         // built from a read an `invoice.paid` may have overtaken.
         preserveMetadataKeys: CLAIMED_METADATA_KEYS,
@@ -548,6 +586,7 @@ export default defineEventHandler(async (event) => {
       if (result.migrateGrantId) {
         await redeemMigrateGrant(provider, result.migrateGrantId, result.subscriptionId ?? null, result.checkoutId ?? null)
       }
+      if (result.migrateRenewalGrantId) await linkPrepaidRenewal(db, result.migrateRenewalGrantId, result.subscriptionId)
 
       const workspaceUpdate: Record<string, unknown> = {}
       if (result.plan) workspaceUpdate.plan = result.plan
@@ -609,10 +648,17 @@ export default defineEventHandler(async (event) => {
         plan: 'free',
         trial_reminder_stage: 0,
       })
+      // A "Keep Studio" subscription that ended no longer keeps the prepaid year going; the year itself
+      // (`prepaid_plan`) is untouched and the owner can choose again.
+      if (result.migrateRenewalGrantId && result.subscriptionId) await db.clearMigrateGrantRenewal(result.migrateRenewalGrantId, result.subscriptionId)
+      // Not while that year still runs: "now on the free plan" would be untrue; the year-end mails tell the owner.
+      const prepaidYearRuns = result.migrateRenewalGrantId
+        ? isPrepaidLive((await db.getWorkspaceById(result.workspaceId, 'prepaid_until').catch(() => null))?.prepaid_until)
+        : false
       // One ending arrives as several events (Polar: updated, canceled,
       // revoked — all `canceled`). Only the one that found the account
       // still active tells the owner.
-      if (priorAccount) {
+      if (priorAccount && !prepaidYearRuns) {
         await sendBillingEmail(result.workspaceId, 'subscription-canceled', canceledPlan)
       }
       break

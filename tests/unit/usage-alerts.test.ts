@@ -278,6 +278,17 @@ describe('usage alerts', () => {
     expect(await runUsageAlerts(deps(fakeDb({ ai: 1036 }), sendEmail))).toEqual([expect.objectContaining({ meter: 'ai_messages', threshold: 100 })])
   })
 
+  it('a prepaid Studio year is measured against its own plan, with or without an account beside it', async () => {
+    // `plan` reads free: a canceled subscription's webhook reset it. The year's plan is `prepaid_plan`.
+    const prepaid = { plan: 'free', prepaid_until: '2027-09-01T00:00:00Z', prepaid_plan: 'pro', media_storage_bytes: 20.5 * 1024 ** 3 }
+    const alone = fakeDb({}, prepaid)
+    alone.getActivePaymentAccount.mockResolvedValue(null)
+    expect(await runUsageAlerts(deps(alone))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 80 })])
+    const besideOld = fakeDb({}, prepaid)
+    besideOld.getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_old', subscription_status: 'canceled', trial_ends_at: null, grace_period_ends_at: null })
+    expect(await runUsageAlerts(deps(besideOld))).toEqual([expect.objectContaining({ meter: 'media_storage', threshold: 80 })])
+  })
+
   it('storage is re-armed when files are removed: crossing the limit again alerts again', async () => {
     const db = fakeDb({}, { media_storage_bytes: 26 * 1024 ** 3 }) // over Pro's 25 GB
     const sendEmail = vi.fn().mockResolvedValue(undefined)

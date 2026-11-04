@@ -18,7 +18,9 @@
  *   subscription: its prepaid year ends on the workspace now, the way an ended
  *   subscription leaves it (plan `free` unless a subscription of its own runs there).
  *   Only the year this grant started is taken off, and before the grant is marked,
- *   so a failure leaves the grant live and Migrate calls again.
+ *   so a failure leaves the grant live and Migrate calls again. The subscription opened
+ *   to keep Studio after the year ("Keep Studio", `renewal_subscription_id`) is
+ *   cancelled first, like a bound one.
  */
 import type { MigrateRevokeReason, MigrateRevokeResponse } from '@contentrain/types'
 import { validateMigrateRevokeResponse } from '@contentrain/types'
@@ -32,7 +34,10 @@ export async function revokeMigrateGrant(grant: DatabaseRow, reason: MigrateRevo
 
   let canceled = false
   if (!grant.revoked_at) {
-    const subscriptionId = grant.redeemed_subscription_id as string | null
+    // A prepaid year has no subscription of its own; the one opened to keep Studio after it (`renewal_subscription_id`)
+    // goes with it, companion included, by the same path.
+    const renewalId = (grant.renewal_subscription_id as string | null | undefined) ?? null
+    const subscriptionId = (grant.redeemed_subscription_id as string | null) ?? renewalId
     if (subscriptionId) {
       const payment = usePaymentProvider()
       if (!payment) throw createError({ statusCode: 503, message: errorMessage('generic.server_error') })
@@ -50,11 +55,15 @@ export async function revokeMigrateGrant(grant: DatabaseRow, reason: MigrateRevo
       }
     }
     // Ended before the mark, so a failure here leaves the grant live and Migrate's retry finishes it.
-    if (isPrepaidGrant(grant)) await endPrepaidYear(String(grant.workspace_id), grant.prepaid_ends_at)
+    if (isPrepaidGrant(grant)) await endPrepaidYear(String(grant.workspace_id), grant.prepaid_ends_at, renewalId)
     const fresh = await db.markMigrateGrantRevoked(String(grant.id), reason)
     // An activate that ran after this route read the grant started a year the row above did not carry: the
     // revoked row is the fresh one, so end that year too. A second call is a no-op (it matches the year's end).
-    if (fresh && isPrepaidGrant(fresh)) await endPrepaidYear(String(fresh.workspace_id), fresh.prepaid_ends_at)
+    if (fresh && isPrepaidGrant(fresh)) await endPrepaidYear(String(fresh.workspace_id), fresh.prepaid_ends_at, renewalId)
+  }
+  // A repeat after the mark: a year the call before could not take off (it threw after marking) is taken off now.
+  else if (isPrepaidGrant(grant)) {
+    await endPrepaidYear(String(grant.workspace_id), grant.prepaid_ends_at, (grant.renewal_subscription_id as string | null | undefined) ?? null)
   }
 
   const response: MigrateRevokeResponse = { state: 'revoked', installed, subscription_canceled: canceled }
@@ -66,8 +75,12 @@ export async function revokeMigrateGrant(grant: DatabaseRow, reason: MigrateRevo
 
 const isPrepaidGrant = (grant: Record<string, unknown>): boolean => grant.collector === 'migrate' && Boolean(grant.prepaid_ends_at) && Boolean(grant.workspace_id)
 
-/** Take a grant's prepaid year off its workspace: only when the workspace still holds that year. */
-async function endPrepaidYear(workspaceId: string, grantEndsAt: unknown): Promise<void> {
+/**
+ * Take a grant's prepaid year off its workspace: only when the workspace still holds that year. The plan falls
+ * back to free unless a subscription of the workspace's own runs there; `endingSubscriptionId` (a renewal being
+ * cancelled with the year) does not count as one.
+ */
+export async function endPrepaidYear(workspaceId: string, grantEndsAt: unknown, endingSubscriptionId: string | null = null): Promise<void> {
   const db = useDatabaseProvider()
   const workspace = await db.getWorkspaceById(workspaceId, 'id, prepaid_until')
   if (!workspace?.prepaid_until) return
@@ -77,6 +90,7 @@ async function endPrepaidYear(workspaceId: string, grantEndsAt: unknown): Promis
     prepaid_until: null,
     prepaid_plan: null,
     // A subscription of the workspace's own keeps its plan; without one it falls back like an ended subscription.
-    ...(account?.subscription_id ? {} : { plan: 'free', trial_reminder_stage: 0 }),
+    // The renewal being cancelled with the year is not one (its cancel webhook may not have landed yet).
+    ...(account?.subscription_id && account.subscription_id !== endingSubscriptionId ? {} : { plan: 'free', trial_reminder_stage: 0 }),
   })
 }

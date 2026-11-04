@@ -150,6 +150,50 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.recordMigrateGrantPrepaid(revoked.id as string, year)).toBeNull()
   })
 
+  it('a prepaid year: found while live, renewed by one subscription, listed for its year end, cursor only forward (056)', async () => {
+    const DAY = 24 * 60 * 60 * 1000
+    const user = await seedUser('grant-prepaid')
+    try {
+      const ws = user.workspaceId
+      const order = `${orderId}-year`
+      const { grant } = await methods.claimMigrateGrant({ orderId: order, claimJti: `jti-${order}`, userId: user.userId, plan: 'pro', email: 'owner@example.com', kind: 'bundle', collector: 'migrate' })
+      const id = grant.id as string
+      const endsAt = new Date(Date.now() + 20 * DAY).toISOString()
+      await methods.bindMigrateGrantWorkspace(id, ws)
+      await methods.recordMigrateGrantPrepaid(id, { paymentRef: `txn-${order}`, startsAt: new Date(Date.now() - 345 * DAY).toISOString(), endsAt })
+      await sql`UPDATE public.workspaces SET prepaid_until = ${endsAt}, prepaid_plan = 'pro' WHERE id = ${ws}`.execute(getDb())
+
+      expect(await methods.getLivePrepaidGrant(ws)).toMatchObject({ id, renewal_subscription_id: null, prepaid_reminder_stage: 0 })
+
+      // One renewal per year: the same subscription again is fine, another is refused; a cancel clears only its own.
+      expect(await methods.recordMigrateGrantRenewal(id, 'sub_keep')).toMatchObject({ renewal_subscription_id: 'sub_keep' })
+      expect(await methods.recordMigrateGrantRenewal(id, 'sub_keep')).toMatchObject({ renewal_subscription_id: 'sub_keep' })
+      expect(await methods.recordMigrateGrantRenewal(id, 'sub_other')).toBeNull()
+      await methods.clearMigrateGrantRenewal(id, 'sub_other')
+      expect(await methods.getLivePrepaidGrant(ws)).toMatchObject({ renewal_subscription_id: 'sub_keep' })
+      await methods.clearMigrateGrantRenewal(id, 'sub_keep')
+      expect(await methods.getLivePrepaidGrant(ws)).toMatchObject({ renewal_subscription_id: null })
+
+      const window = { from: new Date(Date.now() + 7 * DAY).toISOString(), to: new Date(Date.now() + 31 * DAY).toISOString() }
+      expect(await methods.listPrepaidYearsDue({ ...window, requiredStage: 1 })).toEqual([
+        expect.objectContaining({ grant_id: id, plan: 'pro', workspace_id: ws, owner_id: user.userId, renewal_subscription_id: null }),
+      ])
+      await methods.setPrepaidReminderStage(id, 2)
+      await methods.setPrepaidReminderStage(id, 1)
+      expect(await methods.getLivePrepaidGrant(ws)).toMatchObject({ prepaid_reminder_stage: 2 })
+      expect((await methods.listPrepaidYearsDue({ ...window, requiredStage: 1 })).filter(r => r.grant_id === id)).toEqual([])
+
+      // A year the workspace no longer holds (revoked or replaced) is no one's year end.
+      await sql`UPDATE public.workspaces SET prepaid_until = NULL, prepaid_plan = NULL WHERE id = ${ws}`.execute(getDb())
+      expect((await methods.listPrepaidYearsDue({ ...window, requiredStage: 3 })).filter(r => r.grant_id === id)).toEqual([])
+      await expect(sql`UPDATE public.migrate_grants SET prepaid_reminder_stage = 4 WHERE id = ${id}`.execute(getDb())).rejects.toThrow()
+    }
+    finally {
+      await sql`DELETE FROM public.migrate_grants WHERE user_id = ${user.userId}`.execute(getDb())
+      await deleteSeededUser(user.userId)
+    }
+  })
+
   it('keeps the signed origin: taken once, never replaced, found by workspace and repo', async () => {
     const order = `${orderId}-origin`
     const claimSite = (origin?: string) => methods.claimMigrateGrant({

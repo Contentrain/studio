@@ -158,6 +158,7 @@ export interface MigrateGrantsTable {
   prepaid_starts_at: string | null
   prepaid_ends_at: string | null
   renewal_subscription_id: string | null
+  prepaid_reminder_stage: Generated<number>
   created_at: Generated<string>
 }
 

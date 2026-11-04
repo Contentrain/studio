@@ -11,15 +11,15 @@
  * panel rendered nothing at all.
  */
 
-import { resolveCreditUnit } from '../../../../server/utils/billing'
+import { isPrepaidLive, resolveCreditUnit } from '../../../../server/utils/billing'
 import { normalizePlan } from '../../../../shared/utils/license'
 import { resolveUsagePeriod } from '../../../../server/utils/usage-period'
-import { resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
+import { prepaidOverageLocks, resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
 import { companionUsageOn } from '../../../../server/utils/companion-subscription'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
 import { computeWorkspaceUsage } from '../../../../server/utils/workspace-usage'
 
-const WORKSPACE_FIELDS = 'id, plan, overage_settings, media_storage_bytes'
+const WORKSPACE_FIELDS = 'id, plan, overage_settings, media_storage_bytes, prepaid_until'
 
 export default defineEventHandler(async (event) => {
   const session = requireAuth(event)
@@ -50,7 +50,8 @@ export default defineEventHandler(async (event) => {
   let account: unknown = null
   try {
     account = await db.getActivePaymentAccount(workspaceId)
-    overageLocks = withCompanionPending(resolveOverageLocks(account as OverageLockAccount | null), companionUsageOn(), account as { plan?: unknown, plugin_metadata?: unknown } | null)
+    // A prepaid year has no subscription to bill past the plan, whatever account sits beside it ("Keep Studio").
+    overageLocks = isPrepaidLive(workspace.prepaid_until) ? prepaidOverageLocks(workspace.prepaid_until) : withCompanionPending(resolveOverageLocks(account as OverageLockAccount | null), companionUsageOn(), account as { plan?: unknown, plugin_metadata?: unknown } | null)
   }
   catch {
     // Billing metadata unreadable: show the toggles as stored.

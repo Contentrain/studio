@@ -157,6 +157,40 @@ NUXT_POLAR_PRO_YEARLY_PRODUCT_ID=…
 NUXT_MIGRATE_ORIGINS=https://migrate.contentrain.io   # the only hosts a return_url may name
 ```
 
+## Prepaid Studio year (Migrate collects the bundle)
+
+When Migrate takes the whole bundle payment itself (`billing.collector: 'migrate'`
+on provision), no Studio checkout runs. `POST /api/migrate/grants/activate`
+gives the workspace a prepaid year instead: `workspaces.prepaid_until` and
+`prepaid_plan` (migration 055). While it runs:
+
+- the billing state is `prepaid` and the plan is `prepaid_plan`, whatever
+  `workspaces.plan` or a payment account says;
+- every overage toggle is locked (reason `prepaid`): nothing bills usage past
+  the plan, usage stops at the limit and resets every calendar month. Moving
+  up a plan before the year ends goes through support;
+- an ordinary checkout is refused (`prepaid_active`); the billing page shows
+  "Prepaid through {date}" and no portal.
+
+**Year end.** Nothing renews by itself. The `migrate-prepaid-sweep` plugin
+(every 6 hours) mails the owner at T−30 and T−7 (`prepaid-ending`) and, at the
+end, takes the year off the workspace. The per-grant cursor is
+`migrate_grants.prepaid_reminder_stage` (migration 056), so a missed run
+catches up and nothing is mailed twice. Without a renewal the workspace falls
+back to free and the owner gets `prepaid-ended`.
+
+**Keep Studio.** From 30 days before the end, an owner or admin can choose a
+yearly plan (`POST /api/billing/keep-studio`). It is the plan's yearly list
+product (`NUXT_POLAR_*_YEARLY_PRODUCT_ID`, the same products the bundle renews
+on) with a trial that ends when the year does, so nothing is charged before
+then. The subscription carries `migrate_renewal_grant_id` (never
+`migrate_grant_id`: it uses no grant and gets no Migrate trial caps,
+`trial_origin = 'prepaid_renewal'`). The webhook links it to the grant
+(`renewal_subscription_id`), and from the year's end it is the workspace's
+plan. If it is cancelled before then, the link is cleared and the owner can
+choose again. A grant revoked during the year also cancels its renewal. Stripe
+has no yearly products, so Keep Studio is Polar only.
+
 ## Studio included with a Migrate order (managed)
 
 A paid Contentrain Migrate order can include N days of a Studio plan. Migrate

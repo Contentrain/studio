@@ -32,6 +32,11 @@ export interface CheckoutInput {
   trialDays?: number
   /** Extra metadata copied onto the checkout and the subscription. */
   metadata?: Record<string, string>
+  /**
+   * The billing cycle of the product sold. Defaults to the plan's monthly product. `year` is the yearly list
+   * product, which "Keep Studio" after a prepaid Studio year opens; a provider without one throws.
+   */
+  interval?: 'month' | 'year'
 }
 
 export interface CheckoutResult {
@@ -112,6 +117,12 @@ export interface WebhookResult {
    * webhook mark the grant used.
    */
   migrateGrantId?: string
+  /**
+   * The Migrate grant whose prepaid Studio year this subscription continues ("Keep Studio", metadata
+   * `migrate_renewal_grant_id`). Kept apart from `migrateGrantId`: a renewal uses no grant, brings no Migrate
+   * trial and is no duplicate of a bundle payment.
+   */
+  migrateRenewalGrantId?: string
   /** The product the subscription is on right now (subscription events). */
   productId?: string
   /**

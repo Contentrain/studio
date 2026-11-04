@@ -32,6 +32,7 @@ function overageLockText(lock: NonNullable<UsageCategory['overageLock']>): strin
   }
   if (lock.reason === 'yearly_plan') return t('billing.overage_locked_yearly')
   if (lock.reason === 'yearly_pending') return t('billing.overage_locked_yearly_pending')
+  if (lock.reason === 'prepaid') return t('billing.overage_locked_prepaid')
   return t('billing.overage_locked_subscription')
 }
 
@@ -111,6 +112,8 @@ function atCeiling(category: UsageCategory): boolean {
 /** What to say when a meter is at its limit and nothing extra is billed. */
 function limitReachedText(category: UsageCategory): string {
   if (!canManage.value) return t('billing.limit_reached_member', { name: category.name })
+  // A prepaid year's plan is moved up by support, not in Billing.
+  if (category.overageLock?.reason === 'prepaid') return t('billing.limit_reached_prepaid', { name: category.name })
   if (category.overageSellable === false || category.overageLock) return t('billing.limit_reached_fixed', { name: category.name })
   return t('billing.limit_reached_manage', { name: category.name })
 }

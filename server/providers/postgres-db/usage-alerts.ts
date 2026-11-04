@@ -3,6 +3,7 @@
  * (`supabase/migrations/033_usage_alerts.sql`). Same contract as the Supabase
  * implementation: the primary key is the claim.
  */
+import { sql } from 'kysely'
 import type { DatabaseProvider, DatabaseRow } from '../database'
 import { getAdmin, throwDbError } from './helpers'
 
@@ -19,7 +20,6 @@ export function usageAlertMethods(): UsageAlertMethods {
       try {
         const rows = await getAdmin()
           .selectFrom('workspaces')
-          .innerJoin('payment_accounts', 'payment_accounts.workspace_id', 'workspaces.id')
           .select([
             'workspaces.id',
             'workspaces.name',
@@ -29,8 +29,14 @@ export function usageAlertMethods(): UsageAlertMethods {
             'workspaces.owner_id',
             'workspaces.overage_settings',
             'workspaces.media_storage_bytes',
+            'workspaces.prepaid_until',
+            'workspaces.prepaid_plan',
           ])
-          .where('payment_accounts.is_active', '=', true)
+          // A workspace with an active account, or one on a prepaid Studio year (migration 055), which has none.
+          .where(eb => eb.or([
+            eb.exists(eb.selectFrom('payment_accounts').select('payment_accounts.id').whereRef('payment_accounts.workspace_id', '=', 'workspaces.id').where('payment_accounts.is_active', '=', true)),
+            eb('workspaces.prepaid_until', '>', sql<string>`now()`),
+          ]))
           .execute()
         return rows as unknown as DatabaseRow[]
       }

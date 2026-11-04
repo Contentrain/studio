@@ -6,6 +6,7 @@
  * stays on `workspaces`. Here the stage filter moves into SQL (the Supabase
  * impl filters client-side after an !inner join).
  */
+import { sql } from 'kysely'
 import type { DatabaseProvider, DatabaseRow } from '../database'
 import { getAdmin, throwDbError } from './helpers'
 
@@ -36,6 +37,8 @@ export function trialReminderMethods(): TrialReminderMethods {
           .where('payment_accounts.trial_ends_at', '>=', from)
           .where('payment_accounts.trial_ends_at', '<=', to)
           .where('workspaces.trial_reminder_stage', '<', requiredStage)
+          // "Keep Studio" after a prepaid year: its trial only bridges to the year's end, the prepaid sweep mails it.
+          .where(sql<boolean>`coalesce(payment_accounts.plugin_metadata->>'trial_origin', '') <> 'prepaid_renewal'`)
           .execute()
 
         return rows as unknown as DatabaseRow[]

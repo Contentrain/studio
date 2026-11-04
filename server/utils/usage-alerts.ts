@@ -33,7 +33,7 @@ import type { DatabaseProvider, UsageAlertKey } from '../providers/database'
 import { emailTemplate, errorMessage } from './content-strings'
 import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveCreditUnit } from './billing'
 import type { PaymentAccountState, WorkspaceBillingRow } from './billing'
-import { resolveOverageLocks } from './overage-lock'
+import { prepaidOverageLocks, resolveOverageLocks } from './overage-lock'
 import type { OverageLockAccount } from './overage-lock'
 import { usagePeriodFrom } from './usage-period'
 import type { UsagePeriodAccount } from './usage-period'
@@ -148,10 +148,14 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
         type: (ws.type as string) ?? 'team',
         plan: (ws.plan as string | null) ?? null,
         payment_account: (account as unknown as PaymentAccountState | null) ?? null,
+        // A prepaid Studio year (migration 055) is measured against its own plan, not an account beside it.
+        prepaid_until: (ws.prepaid_until as string | null | undefined) ?? null,
+        prepaid_plan: (ws.prepaid_plan as string | null | undefined) ?? null,
       }
+      const state = resolveBillingState(billingRow)
       // A locked workspace (expired trial, expired grace) is behind the paywall: measuring it
       // against free limits and mailing "resets on …" would be wrong on both counts.
-      if (isBillingLocked(resolveBillingState(billingRow))) continue
+      if (isBillingLocked(state)) continue
       // The plan the limits are enforced against — an expired trial is not Pro.
       const plan = getEffectivePlan(billingRow)
       const usage = await computeWorkspaceUsage(db, {
@@ -160,7 +164,7 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
         overageSettings: (ws.overage_settings as Record<string, boolean> | null) ?? {},
         storageBytes: Number(ws.media_storage_bytes ?? 0),
         period: usagePeriodFrom(account as UsagePeriodAccount | null, now),
-        overageLocks: resolveOverageLocks(account as OverageLockAccount | null),
+        overageLocks: state === 'prepaid' ? prepaidOverageLocks(billingRow.prepaid_until) : resolveOverageLocks(account as OverageLockAccount | null),
         now,
         // An unreadable meter is skipped (reported, never alerted on as 0);
         // the meters that were read still alert.
@@ -205,7 +209,10 @@ export async function runUsageAlerts(deps: UsageAlertDeps): Promise<Array<UsageA
             : errorMessage('usage_alert.resets_on', { date: formatDate(c.resetsAt) }),
           // Overage is offered only where it can be turned on: sold, and not locked for this subscription.
           // Already on (the ceiling was reached): only a plan change helps.
-          nextStep: errorMessage(c.overageSellable && !c.overageLock && !c.overageEnabled ? 'usage_alert.next_overage' : 'usage_alert.next_upgrade'),
+          // A prepaid year's plan is not changed in Billing: support moves it up.
+          nextStep: errorMessage(state === 'prepaid'
+            ? 'usage_alert.next_prepaid'
+            : c.overageSellable && !c.overageLock && !c.overageEnabled ? 'usage_alert.next_overage' : 'usage_alert.next_upgrade'),
           unitPrice: `$${c.overageUnitPrice}`,
           billingUrl,
         })

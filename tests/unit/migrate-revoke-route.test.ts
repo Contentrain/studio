@@ -209,6 +209,26 @@ describe('POST /api/migrate/grants/revoke', () => {
       expect(db.markMigrateGrantRevoked.mock.invocationCallOrder[0]).toBeLessThan(db.updateWorkspace.mock.invocationCallOrder[0]!)
     })
 
+    it('cancels the subscription opened to keep Studio, and the plan still ends with the year', async () => {
+      db.getMigrateGrantByOrderId.mockResolvedValue({ ...prepaidGrant, renewal_subscription_id: 'sub_renewal' })
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2027-11-04T10:00:00Z' })
+      // The renewal is the workspace's account until its cancel webhook lands.
+      db.getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_renewal', plugin_metadata: { companion_subscription_id: 'sub_companion' } })
+      await request()
+      expect(await call()).toEqual({ state: 'revoked', installed: false, subscription_canceled: true })
+      expect(payment!.cancelSubscription.mock.calls.map(c => c[0])).toEqual(['sub_companion', 'sub_renewal'])
+      expect(db.updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { prepaid_until: null, prepaid_plan: null, plan: 'free', trial_reminder_stage: 0 })
+    })
+
+    it('a repeat on a revoked grant still takes off a year the first call left (it threw after the mark)', async () => {
+      db.getMigrateGrantByOrderId.mockResolvedValue({ ...prepaidGrant, revoked_at: '2026-11-04T10:01:00Z' })
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2027-11-04T10:00:00Z' })
+      await request()
+      expect(await call()).toEqual({ state: 'revoked', installed: false, subscription_canceled: false })
+      expect(db.updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { prepaid_until: null, prepaid_plan: null, plan: 'free', trial_reminder_stage: 0 })
+      expect(db.markMigrateGrantRevoked).not.toHaveBeenCalled()
+    })
+
     it('leaves a workspace alone that no longer holds this grant\'s year', async () => {
       db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2028-01-01T00:00:00Z' })
       await request()
