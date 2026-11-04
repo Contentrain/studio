@@ -49,8 +49,12 @@ export async function revokeMigrateGrant(grant: DatabaseRow, reason: MigrateRevo
         throw createError({ statusCode: 502, message: errorMessage('billing.provider_unavailable') })
       }
     }
-    if (grant.collector === 'migrate' && grant.prepaid_ends_at && grant.workspace_id) await endPrepaidYear(String(grant.workspace_id), grant.prepaid_ends_at)
-    await db.markMigrateGrantRevoked(String(grant.id), reason)
+    // Ended before the mark, so a failure here leaves the grant live and Migrate's retry finishes it.
+    if (isPrepaidGrant(grant)) await endPrepaidYear(String(grant.workspace_id), grant.prepaid_ends_at)
+    const fresh = await db.markMigrateGrantRevoked(String(grant.id), reason)
+    // An activate that ran after this route read the grant started a year the row above did not carry: the
+    // revoked row is the fresh one, so end that year too. A second call is a no-op (it matches the year's end).
+    if (fresh && isPrepaidGrant(fresh)) await endPrepaidYear(String(fresh.workspace_id), fresh.prepaid_ends_at)
   }
 
   const response: MigrateRevokeResponse = { state: 'revoked', installed, subscription_canceled: canceled }
@@ -59,6 +63,8 @@ export async function revokeMigrateGrant(grant: DatabaseRow, reason: MigrateRevo
     throw createError({ statusCode: 500, message: errorMessage('migrate.s2s_invalid') })
   return response
 }
+
+const isPrepaidGrant = (grant: Record<string, unknown>): boolean => grant.collector === 'migrate' && Boolean(grant.prepaid_ends_at) && Boolean(grant.workspace_id)
 
 /** Take a grant's prepaid year off its workspace: only when the workspace still holds that year. */
 async function endPrepaidYear(workspaceId: string, grantEndsAt: unknown): Promise<void> {
