@@ -20,10 +20,11 @@ import { resolveUsagePeriod } from '~~/server/utils/usage-period'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { invalidateBrainCache } from '~~/server/utils/brain-cache'
 import { publicMediaBase } from '~~/server/utils/media-url'
-import { useDatabaseProvider, useMediaProvider } from '~~/server/utils/providers'
+import { projectMediaEligible } from '~~/server/utils/media-eligibility'
+import { useDatabaseProvider } from '~~/server/utils/providers'
 import { checkRateLimit } from '~~/server/utils/rate-limit'
 import type { Plan } from '~~/server/utils/license'
-import { getPlanLimit, hasFeature } from '~~/server/utils/license'
+import { getPlanLimit } from '~~/server/utils/license'
 import { getEffectiveLimit } from '~~/server/utils/overage'
 import type { McpCloudMergeOutcome, McpCloudWrite } from '~~/server/utils/mcp-cloud-automerge'
 import { reconcileMcpCloudWrites } from '~~/server/utils/mcp-cloud-automerge'
@@ -338,19 +339,15 @@ export async function runMcpCloudProxy(
 
   const target = slug.length > 0 ? `${mcpUrl}/${slug}` : mcpUrl
 
-  // Media facet eligibility — the policy decision lives HERE (once, for
-  // both surfaces). When eligible, inject the identity headers the
-  // loopback turns into the media facet; when not, omit them so the
-  // loopback builds a facet-less provider and the media tools stay hidden
-  // from tools/list. Requires: the media stack (ee + R2), the plan's
-  // media feature, project CDN delivery, a workspace owner for
-  // `uploaded_by`, and a caller that may call a media tool at all (a
-  // media:* grant, a key listing one, or the key's media opt-in): a grant
-  // without media scope must not be shown tools that only answer 403.
-  const mediaEligible = useMediaProvider() !== null
-    && hasFeature(ctx.plan, 'media.upload')
-    && ctx.cdnEnabled
-    && ctx.mediaOwnerId !== null
+  // Media facet eligibility, decided here for both surfaces. When
+  // eligible, inject the identity headers the loopback turns into the
+  // media facet; when not, omit them so the loopback builds a facet-less
+  // provider and the media tools stay hidden from tools/list. Requires a
+  // media-eligible project (`projectMediaEligible`, which OAuth consent
+  // shares) and a caller that may call a media tool at all (a media:*
+  // grant, a key listing one, or the key's media opt-in): a grant without
+  // media scope must not be shown tools that only answer 403.
+  const mediaEligible = projectMediaEligible(ctx)
     && (ctx.mediaToolsOptIn === true || ctx.allowedTools.some(name => MEDIA_TOOL_NAMES.has(name)))
 
   const proxyHeaders = {

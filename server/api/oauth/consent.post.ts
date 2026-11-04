@@ -20,6 +20,8 @@ import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { useDatabaseProvider } from '~~/server/utils/providers'
 import { requireProjectAccess } from '~~/server/utils/db'
 import { canonicalSiteUrl } from '~~/server/utils/oauth-server/metadata'
+import { withoutMediaScopes } from '~~/server/utils/oauth-server/scopes'
+import { projectMediaEligible } from '~~/server/utils/media-eligibility'
 
 function clientRedirect(redirectUri: string, params: Record<string, string | null>): string {
   const target = new URL(redirectUri)
@@ -70,20 +72,33 @@ export default defineEventHandler(async (event) => {
   await requireProjectAccess(session.user.id, body.workspaceId, body.projectId, session.accessToken)
 
   const db = useDatabaseProvider()
-  const project = await db.getProjectById(body.projectId, 'id, repo_full_name, workspace_id')
+  const project = await db.getProjectById(body.projectId, 'id, repo_full_name, workspace_id, cdn_enabled')
   if (!project || project.workspace_id !== body.workspaceId || !project.repo_full_name) {
     throw createError({ statusCode: 400, message: errorMessage('oauth.project_ineligible') })
   }
 
-  const workspace = await db.getWorkspaceById(body.workspaceId, 'id, github_installation_id, type, plan, overage_settings')
+  const workspace = await db.getWorkspaceById(body.workspaceId, 'id, github_installation_id, type, plan, overage_settings, owner_id')
   if (!workspace?.github_installation_id) {
     throw createError({ statusCode: 400, message: errorMessage('oauth.project_ineligible') })
   }
   // Same billing-derived plan the MCP OAuth route gates on — consent must
   // not grant what the route will then refuse.
-  if (!hasFeature((await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })).effectivePlan, 'api.mcp_cloud_oauth')) {
+  const plan = (await resolveWorkspaceBilling(db, workspace as { id: string }, { requireAccess: true })).effectivePlan
+  if (!hasFeature(plan, 'api.mcp_cloud_oauth')) {
     throw createError({ statusCode: 403, message: errorMessage('oauth.plan_required') })
   }
+
+  // Grant media:* only where this project can use it (the proxy's own
+  // eligibility): the challenge asks for media on every media deployment,
+  // and a grant should not carry URL ingest + delete it cannot reach. The
+  // token response carries this narrowed scope. A project that becomes
+  // eligible later needs a reconnect.
+  const mediaEligible = projectMediaEligible({
+    plan,
+    cdnEnabled: project.cdn_enabled === true,
+    mediaOwnerId: (workspace.owner_id as string | null) ?? null,
+  })
+  const scope = mediaEligible ? pending.scope : withoutMediaScopes(pending.scope)
 
   const code = await createAuthorizationCode({
     clientId: pending.clientId,
@@ -91,7 +106,7 @@ export default defineEventHandler(async (event) => {
     workspaceId: body.workspaceId,
     projectId: body.projectId,
     redirectUri: pending.redirectUri,
-    scope: pending.scope,
+    scope,
     codeChallenge: pending.codeChallenge,
     resource: pending.resource,
   })

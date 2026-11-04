@@ -397,7 +397,12 @@ exception: media tools are **never** covered by the empty-`allowed_tools`
 "unrestricted" rule — a key needs `media_enabled=true` or an explicit
 listing (else existing keys would silently gain URL ingest + destructive
 delete). OAuth advertises `media:read`/`media:write` only where the media
-stack is configured (`advertisedScopes`). The tenant fingerprint includes
+stack is configured (`advertisedScopes`), and there the 401 challenge asks
+for them too (`challengeScopes`): step-up cannot add them, since tools/list
+hides media tools from a grant without a media scope and the model never
+calls one. Consent then grants `media:*` only on a project that passes
+`projectMediaEligible` (the proxy's own rule) and drops them otherwise; a
+project that becomes eligible later needs a reconnect. The tenant fingerprint includes
 project id, so an eligibility flip re-inits the session within one request.
 
 **Two deliberate boundaries — keep them in mind when changing this path:**

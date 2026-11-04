@@ -26,7 +26,7 @@
 import { getHeader, getRouterParam } from 'h3'
 import { errorMessage } from '~~/server/utils/content-strings'
 import { getInternalMcpUrl } from '~~/server/utils/mcp-cloud-runtime'
-import { useDatabaseProvider } from '~~/server/utils/providers'
+import { useDatabaseProvider, useMediaProvider } from '~~/server/utils/providers'
 import { hasFeature } from '~~/server/utils/license'
 import { resolveWorkspaceBilling } from '~~/server/utils/workspace-billing'
 import { runMcpCloudProxy } from '~~/server/utils/mcp-cloud-proxy'
@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
   // server is still booting.
   const grant = await verifyMcpAccessToken(getHeader(event, 'authorization'))
   if (!grant) {
-    mcpUnauthorized(event)
+    mcpUnauthorized(event, undefined, { mediaAvailable: useMediaProvider() !== null })
   }
 
   const db = useDatabaseProvider()

@@ -44,7 +44,8 @@ The `media:*` scopes are **advertised only on deployments where the media
 stack is configured** (Enterprise + object storage). The media tools
 additionally require the workspace plan's `media.upload` feature and the
 project's CDN delivery being enabled — where any of those is missing, the
-tools don't appear at all. Ingest is **URL-only** (MCP has no binary
+tools don't appear at all, and the connection is granted without the
+`media:*` scopes (reconnect once the project qualifies). Ingest is **URL-only** (MCP has no binary
 channel) and the fetch is SSRF-guarded, MIME-whitelisted and size-capped
 server-side. Studio's merge/review lifecycle tools are never exposed over
 remote MCP — content writes land as `cr/*` branches and follow the
