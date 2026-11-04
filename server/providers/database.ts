@@ -1190,6 +1190,11 @@ export interface DatabaseProvider {
     origin?: string | null
     /** `bundle` for a grant opened by a provision; defaults to `trial`. */
     kind?: 'trial' | 'bundle'
+    /**
+     * Who takes the bundle's payment (055): Studio's own checkout (`studio_polar`, the default) or Migrate.
+     * Only the first claim sets it; a repeat returns the stored one for the caller to compare.
+     */
+    collector?: 'studio_polar' | 'migrate'
   }) => Promise<{ grant: DatabaseRow, created: boolean }>
 
   /** A grant by id (admin read; the billing webhook and the reconciler have no user). */
@@ -1246,6 +1251,14 @@ export interface DatabaseProvider {
    * step found it through the old one). Unlike `setMigrateGrantRepo` it rewrites a repository that is set.
    */
   updateMigrateGrantRepo: (grantId: string, repo: { owner: string, name: string }) => Promise<void>
+
+  /**
+   * Record the payment Migrate collected for a `collector='migrate'` grant and the prepaid year it buys (055).
+   * Atomic and idempotent per transaction: it applies only to an unrevoked migrate-collected grant whose
+   * `payment_ref` is unset or already `paymentRef` (the same values again), and returns the grant afterwards;
+   * null when the grant is revoked, collected by Studio, or already paid by another transaction.
+   */
+  recordMigrateGrantPrepaid: (grantId: string, input: { paymentRef: string, startsAt: string, endsAt: string }) => Promise<DatabaseRow | null>
 
   /**
    * Withdraw a grant (Migrate's revoke): records when and why. Only the first call counts, so the

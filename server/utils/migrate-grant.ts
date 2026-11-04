@@ -104,7 +104,8 @@ export async function migrateGrantDestination(session: { accessToken: string, us
 /**
  * Where a bundle grant's Studio plan stands, for the claim screen. The site lives in the grant's workspace
  * and follows that workspace's plan like any other project, by the workspace's billing state:
- * - `active`: the subscription runs (also a trial, and `past_due` while its grace period lasts: still accessible).
+ * - `active`: the subscription runs (also a trial, and `past_due` while its grace period lasts: still accessible), or a
+ *   prepaid Studio year does (055; `periodEndsAt` is its end).
  * - `ending`: set to end at the period's end (`cancel_at_period_end`), or canceled with the paid period still
  *   running. `periodEndsAt` is when.
  * - `ended`: only what locks the workspace — canceled and past its period, grace period over, trial over — or no
@@ -121,12 +122,17 @@ export async function migrateBundleStatus(row: DatabaseRow): Promise<MigrateBund
   const workspaceId = row.workspace_id as string | null
   if (row.kind !== 'bundle' || !workspaceId) return null
   const db = useDatabaseProvider()
-  const workspace = await db.getWorkspaceById(workspaceId, 'id, slug, type, plan, overage_settings')
+  const workspace = await db.getWorkspaceById(workspaceId, 'id, slug, type, plan, overage_settings, prepaid_until, prepaid_plan')
   if (!workspace) return null
   const billing = await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId })
   const slug = workspace.slug as string
   // No subscription (a free workspace), or one that locks the workspace.
   if (billing.state === 'free' || isBillingLocked(billing.state)) return { planState: 'ended', workspaceSlug: slug, periodEndsAt: null }
+  // A prepaid year (055) runs until its end; nothing renews it by itself, so the claim screen says when.
+  if (billing.state === 'prepaid') {
+    const end = Date.parse(String(workspace.prepaid_until))
+    return { planState: 'active', workspaceSlug: slug, periodEndsAt: Number.isFinite(end) ? Math.floor(end / 1000) : null }
+  }
 
   const account = await db.getActivePaymentAccount(workspaceId)
   const end = account?.current_period_end ? Date.parse(String(account.current_period_end)) : Number.NaN

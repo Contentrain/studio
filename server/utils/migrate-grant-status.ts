@@ -3,7 +3,7 @@
  * gate. Lifecycle: migration 031 (claimed → bound → redeemed), and `revoked`
  * (migration 045) from any of them, which wins over the rest.
  */
-import type { MigrateGrantState, MigrateGrantStatusResponse } from '@contentrain/types'
+import type { MigrateGrantRenewal, MigrateGrantState, MigrateGrantStatusResponse } from '@contentrain/types'
 import type { DatabaseRow, MigrateGrantMediaState as GrantMediaRowState } from '../providers/database'
 import { migrateBundleStatus } from './migrate-grant'
 import { useGitAppProvider } from './providers'
@@ -24,13 +24,16 @@ export async function migrateGrantInstallation(grant: DatabaseRow): Promise<{ wo
 /**
  * What Migrate shows besides the state (additive to `MigrateGrantStatusResponse`):
  * - `kind`: `trial` (included days), `bundle` (Studio year paid with the order) or `covered` (the order was
- *   covered by a plan the account already had: a bundle grant redeemed with no subscription of its own).
+ *   covered by a plan the account already had: a bundle grant redeemed with no subscription of its own and no
+ *   payment Migrate collected for it).
+ * - `renewal`: only for a Studio year Migrate collected (055): whether a subscription continues it after the year.
  * - `ends_at`: the trial's end, or the end of the workspace plan's running period (seconds since the epoch).
  * - `ended` + `notice`: the plan the site lives on has ended; `notice` is Studio's own text, shown as is.
  */
 export interface MigrateGrantStatusDetail {
   kind: 'trial' | 'bundle' | 'covered'
   plan: 'starter' | 'pro'
+  renewal?: MigrateGrantRenewal
   trial_days?: number
   ends_at?: number
   ended?: boolean
@@ -54,7 +57,10 @@ export async function migrateGrantStatusDetail(grant: DatabaseRow): Promise<Migr
     if (Number.isFinite(end)) detail.ends_at = Math.floor(end / 1000)
     return detail
   }
-  const detail: MigrateGrantStatusDetail = { kind: grant.redeemed_at && !grant.redeemed_subscription_id ? 'covered' : 'bundle', plan }
+  // A prepaid year (055) has no subscription either: its payment is what tells it from a covered order.
+  const covered = Boolean(grant.redeemed_at && !grant.redeemed_subscription_id && !grant.payment_ref)
+  const detail: MigrateGrantStatusDetail = { kind: covered ? 'covered' : 'bundle', plan }
+  if (!covered && grant.collector === 'migrate' && grant.payment_ref) detail.renewal = grant.renewal_subscription_id ? 'scheduled' : 'none'
   const status = await migrateBundleStatus(grant)
   if (!status) return detail
   if (status.periodEndsAt) detail.ends_at = status.periodEndsAt

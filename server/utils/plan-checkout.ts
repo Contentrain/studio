@@ -1,10 +1,11 @@
 /**
  * Start a plan checkout for a workspace — the part every checkout entry
  * shares (`/api/billing/checkout`, a Migrate grant's checkout): refuse a
- * second subscription, throttle double clicks, and turn a provider failure
+ * second subscription or one beside a prepaid Studio year, throttle double clicks, and turn a provider failure
  * into a clean 502. The caller decides the trial.
  */
 import type { CheckoutInput } from '../providers/payment/types'
+import { isPrepaidLive } from './billing'
 
 export interface PlanCheckoutInput {
   workspace: { id: string, slug: string, name: string }
@@ -20,6 +21,17 @@ export interface PlanCheckoutInput {
 
 export async function startPlanCheckout(input: PlanCheckoutInput): Promise<{ url: string }> {
   const db = useDatabaseProvider()
+
+  // A prepaid Studio year (055) is the workspace's plan until it ends: a subscription now would bill a year
+  // already paid. Keeping Studio after it has its own path.
+  const prepaid = await db.getWorkspaceById(input.workspace.id, 'prepaid_until')
+  if (isPrepaidLive(prepaid?.prepaid_until)) {
+    throw createError({
+      statusCode: 409,
+      message: errorMessage('billing.subscription_exists'),
+      data: { code: 'prepaid_active' },
+    })
+  }
 
   // Guard: prevent duplicate subscriptions via the active payment account.
   const account = await db.getActivePaymentAccount(input.workspace.id)

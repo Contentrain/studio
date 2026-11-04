@@ -35,6 +35,9 @@ export interface Workspace {
   overage_settings?: Record<string, boolean> | null
   /** Active subscription row from `payment_accounts`, or null when no subscription. */
   payment_account?: WorkspacePaymentAccount | null
+  /** End of a Studio year prepaid with a Migrate order, and its plan (migration 055). */
+  prepaid_until?: string | null
+  prepaid_plan?: string | null
 }
 
 /** Get user's role in active workspace */

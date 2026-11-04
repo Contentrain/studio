@@ -26,11 +26,15 @@ export type BillingState
     | 'grace_expired'
     | 'canceled'
     | 'canceled_expired'
+    | 'prepaid'
 
 function resolveState(ws: Workspace | null): BillingState {
   if (!ws) return 'free'
   const account = ws.payment_account ?? null
   const now = Date.now()
+
+  // Same rule as the server (`server/utils/billing.ts`): a live prepaid year wins over any subscription row.
+  if (ws.prepaid_until && new Date(ws.prepaid_until).getTime() > now) return 'prepaid'
 
   if (account) {
     const { subscription_status, subscription_id, trial_ends_at, grace_period_ends_at, current_period_end } = account
@@ -67,6 +71,8 @@ function resolveEffectivePlan(ws: Workspace | null, state: BillingState): Studio
     case 'past_due':
     case 'canceled':
       return normalizePlan(ws?.plan)
+    case 'prepaid':
+      return normalizePlan(ws?.prepaid_plan)
     default:
       return 'free'
   }

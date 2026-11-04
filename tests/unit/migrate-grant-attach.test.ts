@@ -25,6 +25,7 @@ describe('POST /api/migrate/grants/:grantId/attach', () => {
     db = {
       getMigrateGrantForUser: vi.fn().mockResolvedValue(grantRow),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', name: 'Acme', type: 'secondary', plan: 'pro', overage_settings: {} }),
+      getWorkspaceById: vi.fn().mockResolvedValue(null),
       getActivePaymentAccount: vi.fn().mockResolvedValue(account()),
       bindMigrateGrantWorkspace: vi.fn().mockResolvedValue({ ...grantRow, workspace_id: 'ws-1', bound_at: '2026-10-03T10:00:00Z' }),
       markMigrateGrantRedeemed: vi.fn().mockResolvedValue(undefined),

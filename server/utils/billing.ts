@@ -25,6 +25,7 @@ export type BillingState
     | 'grace_expired' // Grace period ended — workspace locked
     | 'canceled' // Subscription canceled, still within paid period
     | 'canceled_expired' // Paid period ended after cancel — workspace locked
+    | 'prepaid' // A Studio year paid with a Migrate order (migration 055) — no subscription behind it
 
 /** Active payment account fields required by the state machine. */
 export interface PaymentAccountState {
@@ -42,10 +43,21 @@ export interface WorkspaceBillingRow {
   /** Active payment account — null when workspace has no subscription. */
   payment_account: PaymentAccountState | null
   overage_settings?: Record<string, boolean> | null
+  /** End of the workspace's prepaid Studio year (migration 055); null or absent when it has none. */
+  prepaid_until?: string | null
+  /** The plan that year pays for. */
+  prepaid_plan?: string | null
 }
 
 /** Columns needed for billing state resolution (workspaces table only). */
-export const WORKSPACE_BILLING_SELECT_FIELDS = 'type, plan, overage_settings'
+export const WORKSPACE_BILLING_SELECT_FIELDS = 'type, plan, overage_settings, prepaid_until, prepaid_plan'
+
+/** A prepaid year that is still running at `now`. */
+export function isPrepaidLive(prepaidUntil: unknown, now: number = Date.now()): boolean {
+  if (prepaidUntil == null) return false
+  const end = new Date(prepaidUntil as string).getTime()
+  return Number.isFinite(end) && end > now
+}
 
 /**
  * Resolve the billing state of a workspace.
@@ -57,6 +69,10 @@ export const WORKSPACE_BILLING_SELECT_FIELDS = 'type, plan, overage_settings'
 export function resolveBillingState(workspace: WorkspaceBillingRow): BillingState {
   const account = workspace.payment_account
   const now = Date.now()
+
+  // A prepaid year runs on its own: no subscription bills it, and a subscription opened to keep Studio
+  // after it (a trial until the year ends) does not steer the workspace before then.
+  if (isPrepaidLive(workspace.prepaid_until, now)) return 'prepaid'
 
   if (account) {
     const { subscription_status, subscription_id, trial_ends_at, grace_period_ends_at, current_period_end } = account
@@ -109,6 +125,7 @@ const ACCESSIBLE_STATES: ReadonlySet<BillingState> = new Set([
   'subscribed',
   'past_due',
   'canceled',
+  'prepaid',
 ])
 
 /** States that require payment (402 response). */
@@ -146,6 +163,9 @@ export function getEffectivePlan(workspace: WorkspaceBillingRow): StudioPlan {
     case 'past_due':
     case 'canceled':
       return normalizePlan(workspace.plan)
+    // From its own column: a subscription webhook rewrites `plan`.
+    case 'prepaid':
+      return normalizePlan(workspace.prepaid_plan)
     case 'trial_expired':
     case 'grace_expired':
     case 'canceled_expired':

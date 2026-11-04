@@ -46,6 +46,7 @@ describe('Migrate grant routes', () => {
       getMigrateGrantForUser: vi.fn().mockResolvedValue(grantRow),
       bindMigrateGrantWorkspace: vi.fn().mockResolvedValue({ ...grantRow, workspace_id: 'ws-1', bound_at: '2026-09-23T12:00:00Z' }),
       getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'ws-1', slug: 'acme', name: 'Acme', trial_consumed_at: '2026-01-01T00:00:00Z' }),
+      getWorkspaceById: vi.fn().mockResolvedValue(null),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
       listWorkspaceProjects: vi.fn().mockResolvedValue([]),
       getMigrateCommentsExportState: vi.fn().mockResolvedValue(null),

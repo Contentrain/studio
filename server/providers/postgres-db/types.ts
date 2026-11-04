@@ -152,6 +152,12 @@ export interface MigrateGrantsTable {
   media_attempts: Generated<number>
   media_next_at: string | null
   media_alerted_at: string | null
+  /** Who takes the bundle's payment, and the prepaid year Migrate's payment bought (055). */
+  collector: Generated<string>
+  payment_ref: string | null
+  prepaid_starts_at: string | null
+  prepaid_ends_at: string | null
+  renewal_subscription_id: string | null
   created_at: Generated<string>
 }
 
@@ -194,6 +200,9 @@ export interface WorkspacesTable {
   grace_period_ends_at: string | null
   overage_settings: Generated<unknown>
   trial_reminder_stage: Generated<number>
+  /** A Studio year prepaid with a Migrate order: its end and plan (055). */
+  prepaid_until: string | null
+  prepaid_plan: string | null
 }
 
 export interface WorkspaceMembersTable {

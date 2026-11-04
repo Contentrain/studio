@@ -33,7 +33,8 @@ const stateLabel = computed(() => {
   switch (billingState.value) {
     case 'free': return t('billing.state_free')
     case 'trial_active': return t('billing.state_trialing')
-    case 'subscribed': return t('billing.state_active')
+    case 'subscribed':
+    case 'prepaid': return t('billing.state_active')
     case 'past_due': return t('billing.state_past_due')
     case 'canceled': return t('billing.state_canceled')
     case 'trial_expired':
@@ -45,7 +46,8 @@ const stateLabel = computed(() => {
 
 const stateBadgeVariant = computed(() => {
   switch (billingState.value) {
-    case 'subscribed': return 'success' as const
+    case 'subscribed':
+    case 'prepaid': return 'success' as const
     case 'trial_active': return 'primary' as const
     case 'past_due': return 'warning' as const
     case 'canceled':

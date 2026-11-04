@@ -6,7 +6,7 @@
  * plan, and no second subscription (and no trial) starts. The grant is tied
  * to the workspace and marked used with no subscription of its own, so the
  * claim screen goes straight to the site. Only a paid, active plan that is not
- * ending qualifies: a trial, a plan set to end at the period's close, or an
+ * ending (or a prepaid Studio year) qualifies: a trial, a plan set to end at the period's close, or an
  * overdue one is refused with a reason the screen shows (a grant is a one-time
  * credit, and a plan that is about to lapse would take the site's Studio with
  * it). The visitor then fixes the plan, or picks another workspace.
@@ -49,8 +49,9 @@ export default defineEventHandler(async (event) => {
 
   const billing = await resolveWorkspaceBilling(db, { ...workspace, id: workspaceId } as Parameters<typeof resolveWorkspaceBilling>[1])
   if (billing.state === 'past_due') throw createError({ statusCode: 409, message: errorMessage('migrate.attach_past_due'), data: { code: 'attach_past_due' } })
-  const account = await db.getActivePaymentAccount(workspaceId)
-  if (billing.state !== 'subscribed' || account?.cancel_at_period_end === true)
+  // A prepaid Studio year (migration 055) is a running plan like an active subscription that is not ending.
+  const account = billing.state === 'prepaid' ? null : await db.getActivePaymentAccount(workspaceId)
+  if (billing.state !== 'prepaid' && (billing.state !== 'subscribed' || account?.cancel_at_period_end === true))
     throw createError({ statusCode: 409, message: errorMessage('migrate.attach_no_plan'), data: { code: 'attach_no_plan' } })
   const current = billing.effectivePlan === 'enterprise' ? 'pro' : billing.effectivePlan
   if ((current !== 'starter' && current !== 'pro') || !planCovers(current as MigrateStudioPlan, grant.plan as MigrateStudioPlan))

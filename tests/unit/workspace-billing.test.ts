@@ -9,7 +9,7 @@ vi.mock('../../server/utils/license', () => ({
 const { resolveWorkspaceBilling } = await import('../../server/utils/workspace-billing')
 
 function dbWith(account: Record<string, unknown> | null) {
-  return { getActivePaymentAccount: vi.fn(async () => account) }
+  return { getActivePaymentAccount: vi.fn(async () => account), getWorkspaceById: vi.fn(async () => null) }
 }
 
 const LEGACY_PRICES = ['ai_messages', 'api_messages', 'form_submissions', 'mcp_calls']
@@ -110,5 +110,30 @@ describe('resolveConversationModel', () => {
     expect(resolveConversationModel('claude-opus-4-8')).toBe('claude-sonnet-5-5')
     expect(toConversationApiModel('claude-opus-4-8')).toBeNull()
     expect(toConversationApiModel('claude-haiku-4-5')).toBe('claude-haiku-5-5')
+  })
+})
+
+describe('resolveWorkspaceBilling with a prepaid Studio year (migration 055)', () => {
+  const FUTURE = '2099-01-01T00:00:00.000Z'
+
+  beforeEach(() => {
+    deployment.planSource = 'subscription'
+  })
+
+  it('serves the prepaid plan and sells no overage: nothing would bill it', async () => {
+    const db = { getActivePaymentAccount: vi.fn(async () => null), getWorkspaceById: vi.fn() }
+    const billing = await resolveWorkspaceBilling(db, {
+      id: 'ws-1', type: 'primary', plan: 'free', overage_settings: { ai_messages: true, api_messages: true }, prepaid_until: FUTURE, prepaid_plan: 'pro',
+    })
+    expect(billing).toMatchObject({ state: 'prepaid', effectivePlan: 'pro', overageSettings: { ai_messages: false, api_messages: false } })
+    expect(billing.trial.trialing).toBe(false)
+    expect(db.getWorkspaceById).not.toHaveBeenCalled()
+  })
+
+  it('reads the year itself when the caller selected its own columns without it', async () => {
+    const db = { getActivePaymentAccount: vi.fn(async () => null), getWorkspaceById: vi.fn(async () => ({ prepaid_until: FUTURE, prepaid_plan: 'starter' })) }
+    const billing = await resolveWorkspaceBilling(db, { id: 'ws-1', type: 'primary', plan: 'free' })
+    expect(db.getWorkspaceById).toHaveBeenCalledWith('ws-1', 'prepaid_until, prepaid_plan')
+    expect(billing).toMatchObject({ state: 'prepaid', effectivePlan: 'starter' })
   })
 })

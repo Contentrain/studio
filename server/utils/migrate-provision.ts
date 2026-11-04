@@ -17,13 +17,21 @@
  *   wrong amount;
  * - the return address must be on this Studio's Migrate allowlist.
  *
+ * Who takes the money is the claim's `billing.collector`. Absent (`studio_polar`) is
+ * the Polar checkout above. `migrate`: Migrate's own checkout takes the whole bundle,
+ * so Studio opens none. It reserves the grant on the workspace and answers the Studio
+ * line it agreed (`MigrateProvisionReserved`). The year starts when Migrate reports the
+ * payment (`grants/activate`, `migrate-activate.ts`). One order keeps the collector it
+ * was first provisioned with: a repeat that asks for the other one is `quote_changed`.
+ *
  * One grant per order. A repeated provision returns the checkout the grant
  * already opened while it is still payable and the amount is unchanged; it
  * never opens a second one that could be paid twice.
  */
-import type { MigrateProvisionResponse, MigrateStudioClaimV2 } from '@contentrain/types'
+import type { MigrateBundleCollector, MigrateProvisionResponse, MigrateStudioClaimV2 } from '@contentrain/types'
 import { validateMigrateProvisionResponse } from '@contentrain/types'
 import { IdentityConflictError } from '../providers/auth'
+import { isPrepaidLive } from './billing'
 import { coveringWorkspace, resolveMigrateAccountState } from './migrate-account-state'
 import { migrateExportOrigins } from './migrate-comments-export'
 
@@ -55,7 +63,7 @@ export function isAllowedReturnUrl(returnUrl: string, origins: string[]): boolea
   }
 }
 
-/** A workspace that still carries a subscription (even one scheduled to end) cannot take a second one. */
+/** A workspace that still carries a subscription (even one scheduled to end) cannot take a second one. A prepaid year counts as one. */
 const hasLiveSubscription = (account: Record<string, unknown> | null | undefined) => {
   const status = account?.subscription_status as string | null | undefined
   return Boolean(account?.subscription_id && status && !['canceled', 'incomplete_expired'].includes(status))
@@ -73,6 +81,7 @@ async function bundleWorkspace(userId: string): Promise<{ workspace: { id: strin
   const ordered = [...owned.filter(w => w.type === 'primary'), ...owned.filter(w => w.type !== 'primary')]
   let chosen: (typeof owned)[number] | undefined
   for (const w of ordered) {
+    if (isPrepaidLive(w.prepaid_until)) continue
     if (hasLiveSubscription(await db.getActivePaymentAccount(String(w.id)))) continue
     chosen = w
     break
@@ -88,8 +97,11 @@ async function bundleWorkspace(userId: string): Promise<{ workspace: { id: strin
   return { workspace: { id: String(row.id), slug: String(row.slug), name: String(row.name) } }
 }
 
+/** The collector an existing grant was opened with; grants before migration 055 were all Studio's. */
+const collectorOf = (grant: Record<string, unknown>): MigrateBundleCollector => grant.collector === 'migrate' ? 'migrate' : 'studio_polar'
+
 /** A running plan already covers the order: join its workspace, charge Studio nothing, open no checkout. */
-async function provisionCovered(claim: MigrateStudioClaimV2, userId: string): Promise<MigrateProvisionResponse> {
+async function provisionCovered(claim: MigrateStudioClaimV2, userId: string, collector: MigrateBundleCollector): Promise<MigrateProvisionResponse> {
   const db = useDatabaseProvider()
   const workspace = await coveringWorkspace(userId, claim.plan)
   // The plan covered a moment ago and no longer does: Migrate re-asks the account state and re-quotes.
@@ -102,11 +114,18 @@ async function provisionCovered(claim: MigrateStudioClaimV2, userId: string): Pr
     email: claim.email,
     origin: claim.origin ?? null,
     kind: 'bundle',
+    collector,
   })
   if (grant.user_id !== userId || grant.kind !== 'bundle') fail(409, 'migrate.claim_taken')
   if (grant.revoked_at) fail(409, 'migrate.grant_revoked')
+  if (collectorOf(grant) !== collector) fail(409, 'migrate.quote_changed')
   // A grant that was opened with a checkout (the account had no plan then) is not a covered one.
   if (grant.checkout_url && !grant.redeemed_at) fail(409, 'migrate.quote_changed')
+  // Nor one reserved for Migrate's payment (the Studio line was quoted then): Migrate re-quotes rather than
+  // turning an order that may be paid with the Studio year into a covered one.
+  if (collector === 'migrate' && !grant.redeemed_at && grant.bound_at) fail(409, 'migrate.quote_changed')
+  // Paid for its own Studio year: not a covered order whatever the account holds now.
+  if (grant.payment_ref) fail(409, 'migrate.grant_used')
   // A repeat finds the grant already tied to a workspace (its own, or the one the bundle was paid on): keep it.
   let target = workspace
   if (grant.workspace_id && grant.workspace_id !== workspace.id) {
@@ -148,7 +167,8 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
   }
 
   const db = useDatabaseProvider()
-  if (account.state === 'covers') return provisionCovered(claim, user.id)
+  const collector: MigrateBundleCollector = claim.billing.collector ?? 'studio_polar'
+  if (account.state === 'covers') return provisionCovered(claim, user.id, collector)
 
   // No owned workspace is free of a subscription (e.g. the only one is on a plan that is ending): never a second one on it.
   // `data.code` is the stable handle Migrate matches on (the message is localised text); `workspace_slug` (a workspace the
@@ -169,16 +189,36 @@ export async function provisionMigrateBundle(claim: MigrateStudioClaimV2, now: D
     email: claim.email,
     origin: claim.origin ?? null,
     kind: 'bundle',
+    collector,
   })
   // The order belongs to another account, or was opened as something else: never reuse it.
   if (grant.user_id !== user.id || grant.kind !== 'bundle') fail(409, 'migrate.claim_taken')
   // Withdrawn after a refund or a failed delivery: a repeated provision must not reopen it.
   if (grant.revoked_at) fail(409, 'migrate.grant_revoked')
   if (grant.redeemed_at) fail(409, 'migrate.grant_used')
+  // Opened for the other collector (a Polar checkout exists, or Migrate was to take the money): one payment per order.
+  if (collectorOf(grant) !== collector) fail(409, 'migrate.quote_changed')
   const bound = await db.bindMigrateGrantWorkspace(String(grant.id), workspace.id)
   if (!bound) fail(409, 'migrate.grant_bound_elsewhere')
   // Paid in the same moment: the checkout answer never says redeemed, so refuse rather than hand out a used one.
   if (bound.redeemed_at) fail(409, 'migrate.grant_used')
+
+  if (collector === 'migrate') {
+    // Migrate's checkout takes the money: no Polar call, the grant waits bound for `grants/activate`.
+    const reserved: MigrateProvisionResponse = {
+      grant_id: String(grant.id),
+      state: 'bound',
+      collector: 'migrate',
+      plan: claim.plan,
+      workspace_slug: workspace.slug,
+      amount_cents: account.year1_cents,
+    }
+    return answerOrFail(reserved, claim.order_id, {
+      quoted_total_cents: claim.billing.quoted_total_cents,
+      collector: 'migrate',
+      migrate_fee_cents: claim.billing.migrate_fee_cents,
+    })
+  }
 
   const quoted = claim.billing.quoted_total_cents
   const storedExpires = grant.checkout_expires_at ? new Date(String(grant.checkout_expires_at)) : null

@@ -36,6 +36,7 @@ describe('billing checkout route', () => {
         slug: 'team',
         name: 'Team',
       }),
+      getWorkspaceById: vi.fn().mockResolvedValue(null),
       getActivePaymentAccount: vi.fn().mockResolvedValue({
         provider: 'polar',
         customer_id: 'cus_123',
@@ -72,6 +73,7 @@ describe('billing checkout route', () => {
         slug: 'team',
         name: 'Team',
       }),
+      getWorkspaceById: vi.fn().mockResolvedValue(null),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
     }))
     vi.stubGlobal('checkRateLimit', checkRateLimit)
@@ -101,6 +103,7 @@ describe('billing checkout route', () => {
         name: 'Team',
         trial_consumed_at: null,
       }),
+      getWorkspaceById: vi.fn().mockResolvedValue(null),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
     }))
     vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({ allowed: true, remaining: 1, retryAfterMs: 0 }))
@@ -122,6 +125,7 @@ describe('billing checkout route', () => {
       vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ workspaceId: 'workspace-1', plan: 'starter', ...(returnTo === undefined ? {} : { returnTo }) }))
       vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
         getWorkspaceForUser: vi.fn().mockResolvedValue({ id: 'workspace-1', slug: 'team', name: 'Team' }),
+        getWorkspaceById: vi.fn().mockResolvedValue(null),
         getActivePaymentAccount: vi.fn().mockResolvedValue(null),
       }))
       vi.stubGlobal('checkRateLimit', vi.fn().mockReturnValue({ allowed: true, remaining: 1, retryAfterMs: 0 }))
