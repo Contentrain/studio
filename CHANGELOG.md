@@ -16,6 +16,7 @@
 - The connector now gets the media tools on projects that can use them (#541).
   - Before, a new connection never asked for `media:read`/`media:write`. The media tools stayed hidden, so the client never called one and never got the prompt to add them.
   - On deployments with the media stack, a new connection now asks for the media scopes. Consent grants them only when the chosen project can use media: plan with media, CDN delivery on, and a workspace owner. Otherwise the connection is granted without them, and the consent screen lists media permissions only for such a project.
+- The Migrate revoke route's 404 names its code, `grant_not_found` (#544).
 
 ### 📖 Documentation
 
