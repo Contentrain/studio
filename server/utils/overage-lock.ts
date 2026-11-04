@@ -141,6 +141,15 @@ function lockUnknownPrices(locks: Record<string, OverageLock>): Record<string, O
   return locks
 }
 
+/**
+ * A prepaid Studio year (a Migrate order, migration 055) has no subscription that could bill usage past the
+ * plan: every toggle is locked until the year ends. The plan's own allowance is untouched.
+ */
+export function prepaidOverageLocks(prepaidUntil: unknown): Record<string, OverageLock> {
+  const until = toIso(prepaidUntil as string | Date | null | undefined)
+  return Object.fromEntries(OVERAGE_SETTINGS_KEYS.map(key => [key, { reason: 'not_in_subscription' as const, until }]))
+}
+
 /** Locked overage settings keys, each with why and until when. */
 export function resolveOverageLocks(account: OverageLockAccount | null | undefined): Record<string, OverageLock> {
   const locks: Record<string, OverageLock> = {}

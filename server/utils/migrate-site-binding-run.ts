@@ -25,7 +25,7 @@ import type { MigrateSiteBinding } from './migrate-site-binding'
 import { useGitProvider } from './providers'
 import { resolveWorkspaceBilling } from './workspace-billing'
 
-type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'recordApproval' | 'getProjectById'> & GrantMediaDb
+type BindDb = Pick<DatabaseProvider, 'setMigrateGrantSiteBinding' | 'recordApproval' | 'getProjectById' | 'getWorkspaceById'> & GrantMediaDb
 
 export interface BindMigrateGrantSiteInput {
   db: BindDb

@@ -233,3 +233,26 @@ describe('getEffectivePlan', () => {
     }))).toBe('free')
   })
 })
+
+describe('a prepaid Studio year (migration 055)', () => {
+  it('is its own running state, on the plan it pays for, whatever the plan column says', () => {
+    const row = makeWorkspace({ plan: 'free', prepaid_until: FUTURE, prepaid_plan: 'pro' })
+    expect(resolveBillingState(row)).toBe('prepaid')
+    expect(isBillingAccessible('prepaid')).toBe(true)
+    expect(isBillingLocked('prepaid')).toBe(false)
+    expect(getEffectivePlan(row)).toBe('pro')
+  })
+
+  it('wins over a subscription opened to keep Studio after the year, until the year ends', () => {
+    const renewal = makeAccount({ subscription_status: 'trialing', subscription_id: 'sub_renew', trial_ends_at: FUTURE })
+    expect(resolveBillingState(makeWorkspace({ prepaid_until: FUTURE, prepaid_plan: 'starter', payment_account: renewal }))).toBe('prepaid')
+    const converted = makeAccount({ subscription_status: 'active', subscription_id: 'sub_renew' })
+    expect(resolveBillingState(makeWorkspace({ plan: 'pro', prepaid_until: PAST, prepaid_plan: 'starter', payment_account: converted }))).toBe('subscribed')
+  })
+
+  it('an ended year with nothing after it is free', () => {
+    const row = makeWorkspace({ type: 'primary', plan: 'pro', prepaid_until: PAST, prepaid_plan: 'pro' })
+    expect(resolveBillingState(row)).toBe('free')
+    expect(getEffectivePlan(row)).toBe('free')
+  })
+})

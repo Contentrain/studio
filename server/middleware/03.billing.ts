@@ -23,7 +23,7 @@ import { CURRENT_CREDIT_UNIT } from '../../shared/utils/credit-unit'
 import type { PaymentAccountState, WorkspaceBillingRow } from '../utils/billing'
 import { getWorkspacePlan } from '../utils/license'
 import { resolveDeployment } from '../utils/deployment'
-import { resolveOverageLocks, withoutLockedOverage } from '../utils/overage-lock'
+import { prepaidOverageLocks, resolveOverageLocks, withoutLockedOverage } from '../utils/overage-lock'
 import type { OverageLockAccount } from '../utils/overage-lock'
 
 const WORKSPACE_ROUTE_PREFIX = '/api/workspaces/'
@@ -87,6 +87,8 @@ export default defineEventHandler(async (event) => {
     plan: (workspace.plan as string | null) ?? null,
     payment_account: (account as unknown as PaymentAccountState | null) ?? null,
     overage_settings: (workspace.overage_settings as Record<string, boolean> | null | undefined) ?? undefined,
+    prepaid_until: (workspace.prepaid_until as string | null | undefined) ?? null,
+    prepaid_plan: (workspace.prepaid_plan as string | null | undefined) ?? null,
   }
 
   const state = resolveBillingState(billingRow)
@@ -95,11 +97,12 @@ export default defineEventHandler(async (event) => {
   // A stored toggle the subscription cannot bill (trial, or a meter it has
   // no price for) is off here, whatever the row says — the webhook turns it
   // off in the row too, this covers the time before it does.
+  // A prepaid year (055) has no subscription to bill anything past the plan: every toggle is off.
   const overageSettings = withoutLockedOverage(
     billingRow.overage_settings,
-    resolveOverageLocks(account as OverageLockAccount | null),
+    state === 'prepaid' ? prepaidOverageLocks(billingRow.prepaid_until) : resolveOverageLocks(account as OverageLockAccount | null),
   )
-  const trial = resolveTrialContext(state, account)
+  const trial = resolveTrialContext(state, state === 'prepaid' ? null : account)
   // Every credit figure downstream (quota, turn ceiling, settle, meter) is
   // read in the unit this account is billed in (`credit-unit.ts`).
   const creditUnit = resolveCreditUnit(account)

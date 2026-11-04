@@ -21,6 +21,7 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantRepo'
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
+  | 'recordMigrateGrantPrepaid'
   | 'setMigrateGrantSiteBinding'
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
@@ -103,7 +104,7 @@ export function migrateGrantMethods(): MigrateGrantMethods {
     async listOwnedWorkspacesAdmin(userId) {
       const { data, error } = await getAdmin()
         .from('workspaces')
-        .select('id, type, plan, overage_settings')
+        .select('id, type, plan, overage_settings, prepaid_until, prepaid_plan')
         .eq('owner_id', userId)
       if (error) fail(error.message)
       return (data ?? []) as DatabaseRow[]
@@ -124,6 +125,7 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           email: input.email,
           origin: input.origin ?? null,
           kind: input.kind ?? 'trial',
+          collector: input.collector ?? 'studio_polar',
         }, { onConflict: 'order_id', ignoreDuplicates: true })
         .select()
       if (error) fail(error.message)
@@ -263,6 +265,20 @@ export function migrateGrantMethods(): MigrateGrantMethods {
         .update({ repo_owner: repo.owner, repo_name: repo.name })
         .eq('id', grantId)
       if (error) fail(error.message)
+    },
+
+    async recordMigrateGrantPrepaid(grantId, input) {
+      const { data, error } = await getAdmin()
+        .from('migrate_grants')
+        .update({ payment_ref: input.paymentRef, prepaid_starts_at: input.startsAt, prepaid_ends_at: input.endsAt })
+        .eq('id', grantId)
+        .eq('collector', 'migrate')
+        .is('revoked_at', null)
+        .or(`payment_ref.is.null,payment_ref.eq.${JSON.stringify(input.paymentRef)}`)
+        .select('*')
+        .maybeSingle()
+      if (error) fail(error.message)
+      return (data as DatabaseRow | null) ?? null
     },
 
     async markMigrateGrantRevoked(grantId, reason) {

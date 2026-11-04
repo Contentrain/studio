@@ -12,18 +12,31 @@
  */
 
 import { createError } from 'h3'
-import { getEffectivePlan, isBillingLocked, resolveBillingState, resolveCreditUnit, resolveTrialContext } from './billing'
+import { getEffectivePlan, isBillingLocked, isPrepaidLive, resolveBillingState, resolveCreditUnit, resolveTrialContext } from './billing'
 import { CURRENT_CREDIT_UNIT } from '../../shared/utils/credit-unit'
 import type { CreditUnit } from '../../shared/utils/credit-unit'
 import type { BillingState, PaymentAccountState, WorkspaceBillingRow } from './billing'
 import { getWorkspacePlan } from './license'
 import { resolveDeployment } from './deployment'
-import { resolveOverageLocks, withoutLockedOverage } from './overage-lock'
+import { prepaidOverageLocks, resolveOverageLocks, withoutLockedOverage } from './overage-lock'
 import type { OverageLockAccount } from './overage-lock'
 import type { StudioPlan, TrialContext } from '../../shared/utils/license'
 
 /** Workspace columns `resolveWorkspaceBilling` reads. Select them with the rest. */
-export const WORKSPACE_BILLING_COLUMNS = ['type', 'plan', 'overage_settings'] as const
+export const WORKSPACE_BILLING_COLUMNS = ['type', 'plan', 'overage_settings', 'prepaid_until', 'prepaid_plan'] as const
+
+type BillingDb = Pick<ReturnType<typeof useDatabaseProvider>, 'getActivePaymentAccount' | 'getWorkspaceById'>
+
+/**
+ * The workspace's prepaid year (migration 055). Callers select their own workspace columns; one that left these
+ * out gets them read here, so no caller can miss a prepaid year and serve the workspace as free.
+ */
+async function prepaidColumns(db: BillingDb, workspace: { id: string, prepaid_until?: unknown, prepaid_plan?: unknown }): Promise<{ prepaid_until: string | null, prepaid_plan: string | null }> {
+  if (workspace.prepaid_until !== undefined)
+    return { prepaid_until: (workspace.prepaid_until as string | null) ?? null, prepaid_plan: (workspace.prepaid_plan as string | null) ?? null }
+  const row = await db.getWorkspaceById(workspace.id, 'prepaid_until, prepaid_plan')
+  return { prepaid_until: (row?.prepaid_until as string | null) ?? null, prepaid_plan: (row?.prepaid_plan as string | null) ?? null }
+}
 
 export interface WorkspaceBilling {
   state: BillingState
@@ -50,8 +63,8 @@ export interface WorkspaceBilling {
  * state.
  */
 export async function resolveWorkspaceBilling(
-  db: Pick<ReturnType<typeof useDatabaseProvider>, 'getActivePaymentAccount'>,
-  workspace: { id: string, type?: unknown, plan?: unknown, overage_settings?: unknown },
+  db: BillingDb,
+  workspace: { id: string, type?: unknown, plan?: unknown, overage_settings?: unknown, prepaid_until?: unknown, prepaid_plan?: unknown },
   options: { requireAccess?: boolean } = {},
 ): Promise<WorkspaceBilling> {
   const storedOverage = (workspace.overage_settings as Record<string, boolean> | null | undefined) ?? {}
@@ -68,12 +81,13 @@ export async function resolveWorkspaceBilling(
     }
   }
 
-  const account = await db.getActivePaymentAccount(workspace.id)
+  const [account, prepaid] = await Promise.all([db.getActivePaymentAccount(workspace.id), prepaidColumns(db, workspace)])
   const row: WorkspaceBillingRow = {
     type: (workspace.type as string | undefined) ?? '',
     plan: (workspace.plan as string | null) ?? null,
     payment_account: (account as unknown as PaymentAccountState | null) ?? null,
     overage_settings: storedOverage,
+    ...prepaid,
   }
   const state = resolveBillingState(row)
   if (options.requireAccess && isBillingLocked(state)) {
@@ -86,8 +100,9 @@ export async function resolveWorkspaceBilling(
   return {
     state,
     effectivePlan: getEffectivePlan(row),
-    overageSettings: withoutLockedOverage(storedOverage, resolveOverageLocks(account as OverageLockAccount | null)),
-    trial: resolveTrialContext(state, account as { plugin_metadata?: unknown } | null),
+    overageSettings: withoutLockedOverage(storedOverage, state === 'prepaid' ? prepaidOverageLocks(prepaid.prepaid_until) : resolveOverageLocks(account as OverageLockAccount | null)),
+    // A subscription waiting beside a prepaid year is not a trial of the workspace.
+    trial: resolveTrialContext(state, state === 'prepaid' ? null : account as { plugin_metadata?: unknown } | null),
     creditUnit: resolveCreditUnit(account as { credit_unit?: unknown } | null),
   }
 }
@@ -100,7 +115,7 @@ export async function resolveWorkspaceBilling(
  * account turns them all off — usage stops at the plan, never past it unbilled.
  */
 export async function billableOverageSettings(
-  db: Pick<ReturnType<typeof useDatabaseProvider>, 'getActivePaymentAccount'>,
+  db: BillingDb,
   workspaceId: string,
   stored: unknown,
 ): Promise<Record<string, boolean>> {
@@ -109,7 +124,8 @@ export async function billableOverageSettings(
   // No subscription state machine (self-hosted, dedicated): nothing is billed, nothing locks.
   if (resolveDeployment().planSource !== 'subscription') return settings
   try {
-    const account = await db.getActivePaymentAccount(workspaceId)
+    const [account, prepaid] = await Promise.all([db.getActivePaymentAccount(workspaceId), prepaidColumns(db, { id: workspaceId })])
+    if (isPrepaidLive(prepaid.prepaid_until)) return withoutLockedOverage(settings, prepaidOverageLocks(prepaid.prepaid_until))
     return withoutLockedOverage(settings, resolveOverageLocks(account as OverageLockAccount | null))
   }
   catch {

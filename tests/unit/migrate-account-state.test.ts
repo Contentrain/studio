@@ -137,6 +137,7 @@ describe('POST /api/migrate/account-state', () => {
       releaseMigrateS2sJti: vi.fn(async (jti: string) => { seen.delete(jti) }),
       listOwnedWorkspacesAdmin: vi.fn().mockResolvedValue([]),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
+      getWorkspaceById: vi.fn().mockResolvedValue(null),
     }
     auth = { getUserByProviderAccount: vi.fn().mockResolvedValue({ id: 'user-1' }) }
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -209,6 +210,13 @@ describe('POST /api/migrate/account-state', () => {
     db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'secondary', plan: 'pro' }])
     db.getActivePaymentAccount.mockResolvedValue(account('pro'))
     expect(await ask('starter')).toEqual({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, monthly_list_cents: 10800, current_plan: 'pro' })
+  })
+
+  it('covers: a prepaid Studio year runs like a paid plan, so a second order does not pay the year again', async () => {
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'free', prepaid_until: '2099-01-01T00:00:00Z', prepaid_plan: 'pro' }])
+    expect(await ask('pro')).toMatchObject({ state: 'covers', plan: 'pro', year1_cents: 0, current_plan: 'pro' })
+    db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', plan: 'pro', prepaid_until: '2020-01-01T00:00:00Z', prepaid_plan: 'pro' }])
+    expect(await ask('pro')).toMatchObject({ state: 'none', year1_cents: 49000 })
   })
 
   it('none: a plan that is ending (cancel_at_period_end) is not Studio included — the normal bundle applies', async () => {

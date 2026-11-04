@@ -22,6 +22,7 @@ type MigrateGrantMethods = Pick<
   | 'setMigrateGrantRepo'
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
+  | 'recordMigrateGrantPrepaid'
   | 'setMigrateGrantSiteBinding'
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
@@ -88,7 +89,7 @@ export function migrateGrantMethods(): MigrateGrantMethods {
     async listOwnedWorkspacesAdmin(userId) {
       const rows = await getAdmin()
         .selectFrom('workspaces')
-        .select(['id', 'type', 'plan', 'overage_settings'])
+        .select(['id', 'type', 'plan', 'overage_settings', 'prepaid_until', 'prepaid_plan'])
         .where('owner_id', '=', userId)
         .execute()
       return rows as DatabaseRow[]
@@ -109,6 +110,7 @@ export function migrateGrantMethods(): MigrateGrantMethods {
             email: input.email,
             origin: input.origin ?? null,
             kind: input.kind ?? 'trial',
+            collector: input.collector ?? 'studio_polar',
           })
           .onConflict(oc => oc.column('order_id').doNothing())
           .returningAll()
@@ -292,6 +294,24 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .set({ repo_owner: repo.owner, repo_name: repo.name })
           .where('id', '=', grantId)
           .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async recordMigrateGrantPrepaid(grantId, input) {
+      try {
+        const row = await getAdmin()
+          .updateTable('migrate_grants')
+          .set({ payment_ref: input.paymentRef, prepaid_starts_at: input.startsAt, prepaid_ends_at: input.endsAt })
+          .where('id', '=', grantId)
+          .where('collector', '=', 'migrate')
+          .where('revoked_at', 'is', null)
+          .where(eb => eb.or([eb('payment_ref', 'is', null), eb('payment_ref', '=', input.paymentRef)]))
+          .returningAll()
+          .executeTakeFirst()
+        return (row as DatabaseRow | undefined) ?? null
       }
       catch (error) {
         throwDbError(error)

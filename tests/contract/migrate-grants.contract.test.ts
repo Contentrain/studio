@@ -125,6 +125,31 @@ describe('postgres-db migrate-grants (contract)', () => {
     expect(await methods.markMigrateGrantRevoked(`00000000-0000-0000-0000-000000000000`, 'ops')).toBeNull()
   })
 
+  it('records Migrate\'s payment once per transaction; another transaction, a Polar grant or a revoked one is refused (055)', async () => {
+    const bundle = (order: string, collector?: 'migrate') => methods.claimMigrateGrant({
+      orderId: order, claimJti: `jti-${order}`, userId: owner.userId, plan: 'pro', email: 'owner@example.com', kind: 'bundle', ...(collector ? { collector } : {}),
+    })
+    const year = { paymentRef: 'txn_1', startsAt: '2026-11-04T10:00:00.000Z', endsAt: '2027-11-04T10:00:00.000Z' }
+
+    const { grant } = await bundle(`${orderId}-prepaid`, 'migrate')
+    expect(grant).toMatchObject({ collector: 'migrate', payment_ref: null, prepaid_starts_at: null })
+    const recorded = await methods.recordMigrateGrantPrepaid(grant.id as string, year)
+    expect(recorded).toMatchObject({ payment_ref: 'txn_1' })
+    expect(new Date(String(recorded!.prepaid_ends_at)).toISOString()).toBe(year.endsAt)
+    expect(await methods.recordMigrateGrantPrepaid(grant.id as string, year)).toMatchObject({ payment_ref: 'txn_1' })
+    expect(await methods.recordMigrateGrantPrepaid(grant.id as string, { ...year, paymentRef: 'txn_2' })).toBeNull()
+    // A repeat claim keeps the collector the order was first opened with.
+    expect((await bundle(`${orderId}-prepaid`)).grant).toMatchObject({ collector: 'migrate' })
+
+    const polar = (await bundle(`${orderId}-polar`)).grant
+    expect(polar).toMatchObject({ collector: 'studio_polar' })
+    expect(await methods.recordMigrateGrantPrepaid(polar.id as string, year)).toBeNull()
+
+    const revoked = (await bundle(`${orderId}-revoked`, 'migrate')).grant
+    expect(await methods.markMigrateGrantRevoked(revoked.id as string, 'studio_not_delivered')).toMatchObject({ revoked_reason: 'studio_not_delivered' })
+    expect(await methods.recordMigrateGrantPrepaid(revoked.id as string, year)).toBeNull()
+  })
+
   it('keeps the signed origin: taken once, never replaced, found by workspace and repo', async () => {
     const order = `${orderId}-origin`
     const claimSite = (origin?: string) => methods.claimMigrateGrant({

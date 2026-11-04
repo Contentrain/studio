@@ -171,4 +171,50 @@ describe('POST /api/migrate/grants/revoke', () => {
     await call()
     expect([...taken]).toEqual([expect.stringMatching(/^revoke:/)])
   })
+
+  describe('a Studio year Migrate collected', () => {
+    const prepaidGrant = grant({ collector: 'migrate', redeemed_subscription_id: null, payment_ref: 'txn_1', prepaid_starts_at: '2026-11-04T10:00:00Z', prepaid_ends_at: '2027-11-04T10:00:00Z' })
+
+    beforeEach(() => {
+      db.getMigrateGrantByOrderId.mockResolvedValue(prepaidGrant)
+      db.updateWorkspace = vi.fn().mockResolvedValue({})
+    })
+
+    it('ends the prepaid year on the workspace before marking the grant, and cancels nothing', async () => {
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2027-11-04T10:00:00.000Z' })
+      await request({ reason: 'studio_not_delivered' })
+      expect(await call()).toEqual({ state: 'revoked', installed: false, subscription_canceled: false })
+      expect(payment!.cancelSubscription).not.toHaveBeenCalled()
+      expect(db.updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { prepaid_until: null, prepaid_plan: null, plan: 'free', trial_reminder_stage: 0 })
+      expect(db.updateWorkspace.mock.invocationCallOrder[0]).toBeLessThan(db.markMigrateGrantRevoked.mock.invocationCallOrder[0]!)
+      expect(db.markMigrateGrantRevoked).toHaveBeenCalledWith('grant-1', 'studio_not_delivered')
+    })
+
+    it('keeps the plan of a subscription the workspace has of its own', async () => {
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2027-11-04T10:00:00Z' })
+      db.getActivePaymentAccount.mockResolvedValue({ subscription_id: 'sub_own' })
+      await request()
+      await call()
+      expect(db.updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { prepaid_until: null, prepaid_plan: null })
+    })
+
+    it('ends a year an activate started after the grant was read: the revoked row carries it', async () => {
+      // revoke reads the grant before activate wrote it; activate then starts the year and marks it redeemed.
+      db.getMigrateGrantByOrderId.mockResolvedValue(grant({ collector: 'migrate', redeemed_at: null, redeemed_subscription_id: null }))
+      db.markMigrateGrantRevoked.mockResolvedValue({ ...prepaidGrant, revoked_at: '2026-11-04T10:01:00Z' })
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2027-11-04T10:00:00Z' })
+      await request()
+      await call()
+      expect(db.updateWorkspace).toHaveBeenCalledWith('', 'ws-1', { prepaid_until: null, prepaid_plan: null, plan: 'free', trial_reminder_stage: 0 })
+      expect(db.markMigrateGrantRevoked.mock.invocationCallOrder[0]).toBeLessThan(db.updateWorkspace.mock.invocationCallOrder[0]!)
+    })
+
+    it('leaves a workspace alone that no longer holds this grant\'s year', async () => {
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', github_installation_id: null, prepaid_until: '2028-01-01T00:00:00Z' })
+      await request()
+      await call()
+      expect(db.updateWorkspace).not.toHaveBeenCalled()
+      expect(db.markMigrateGrantRevoked).toHaveBeenCalled()
+    })
+  })
 })

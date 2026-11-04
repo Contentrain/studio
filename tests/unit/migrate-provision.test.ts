@@ -59,7 +59,8 @@ describe('provisionMigrateBundle', () => {
       listOwnedWorkspacesAdmin: vi.fn().mockResolvedValue([{ id: 'ws-other', type: 'team' }, { id: 'ws-1', type: 'primary' }]),
       getWorkspaceById: vi.fn().mockResolvedValue(workspace),
       getActivePaymentAccount: vi.fn().mockResolvedValue(null),
-      claimMigrateGrant: vi.fn().mockResolvedValue({ grant: bundleRow(), created: true }),
+      // The insert stores the collector it was given, as the providers do.
+      claimMigrateGrant: vi.fn(async (input: { collector?: string }) => ({ grant: bundleRow(input.collector ? { collector: input.collector } : {}), created: true })),
       bindMigrateGrantWorkspace: vi.fn().mockResolvedValue(bundleRow({ workspace_id: 'ws-1', bound_at: '2026-10-10T12:00:00Z' })),
       saveMigrateGrantCheckout: vi.fn().mockResolvedValue(undefined),
     }
@@ -322,6 +323,50 @@ describe('provisionMigrateBundle', () => {
   it('takes the personal workspace over the first one it finds', async () => {
     await run()
     expect(db.getWorkspaceById).toHaveBeenCalledWith('ws-1', 'id, slug, name')
+  })
+
+  describe('when Migrate collects the bundle (billing.collector migrate)', () => {
+    const migrateClaim = (overrides: Record<string, unknown> = {}) => claim({ billing: { migrate_fee_cents: 24900, quoted_total_cents: 73900, currency: 'usd', collector: 'migrate' }, ...overrides })
+
+    it('reserves the grant on the workspace and answers the Studio line, with no checkout and no Polar call', async () => {
+      const response = await run(migrateClaim())
+      expect(db.claimMigrateGrant).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'ord_1', kind: 'bundle', collector: 'migrate' }))
+      expect(db.bindMigrateGrantWorkspace).toHaveBeenCalledWith('grant-1', 'ws-1')
+      expect(payment.createBundleCheckout).not.toHaveBeenCalled()
+      expect(db.saveMigrateGrantCheckout).not.toHaveBeenCalled()
+      expect(response).toEqual({ grant_id: 'grant-1', state: 'bound', collector: 'migrate', plan: 'pro', workspace_slug: 'owner-abc', amount_cents: 49000 })
+    })
+
+    it('a repeat answers the same reservation; a paid one is used', async () => {
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ collector: 'migrate', workspace_id: 'ws-1', bound_at: '2026-10-10T12:00:00Z' }), created: false })
+      expect(await run(migrateClaim())).toMatchObject({ state: 'bound', collector: 'migrate', amount_cents: 49000 })
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ collector: 'migrate', redeemed_at: '2026-10-10T12:30:00Z', payment_ref: 'txn_1' }), created: false })
+      expect(await refused(migrateClaim())).toEqual({ status: 409, key: 'migrate.grant_used' })
+    })
+
+    it('keeps one collector per order: a Polar grant is never reserved for Migrate, nor the other way', async () => {
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ collector: 'studio_polar', checkout_url: 'https://sandbox.polar.sh/checkout/c_1' }), created: false })
+      expect(await refused(migrateClaim())).toEqual({ status: 409, key: 'migrate.quote_changed' })
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ collector: 'migrate' }), created: false })
+      expect(await refused()).toEqual({ status: 409, key: 'migrate.quote_changed' })
+      expect(payment.createBundleCheckout).not.toHaveBeenCalled()
+    })
+
+    it('never puts a second year on a workspace whose prepaid year runs', async () => {
+      db.listOwnedWorkspacesAdmin.mockResolvedValue([{ id: 'ws-1', type: 'primary', prepaid_until: '2027-10-10T12:00:00Z', prepaid_plan: 'pro' }])
+      db.getWorkspaceById.mockResolvedValue({ id: 'ws-1', slug: 'owner-abc' })
+      const err = await run(migrateClaim()).catch((e: { statusCode: number, data?: { code?: string } }) => e)
+      expect(err).toMatchObject({ statusCode: 409, data: { code: 'subscription_exists' } })
+      expect(db.claimMigrateGrant).not.toHaveBeenCalled()
+    })
+
+    it('a reservation the account now covers is re-quoted, not turned into a covered order', async () => {
+      resolveMigrateAccountState.mockResolvedValue({ state: 'covers', plan: 'pro', year1_cents: 0, renewal_cents: 0, current_plan: 'pro' })
+      db.claimMigrateGrant.mockResolvedValue({ grant: bundleRow({ collector: 'migrate', workspace_id: 'ws-1', bound_at: '2026-10-10T12:00:00Z' }), created: false })
+      const quote = { billing: { migrate_fee_cents: 24900, quoted_total_cents: 24900, currency: 'usd', collector: 'migrate' } }
+      expect(await refused(claim(quote))).toEqual({ status: 409, key: 'migrate.quote_changed' })
+      expect(db.markMigrateGrantRedeemed).toBeUndefined()
+    })
   })
 })
 
