@@ -6,7 +6,8 @@
  * (`MigrateRevokeRequest`, `@contentrain/types`), single-use by `jti`, keyed by
  * `order_id`. Not a user surface: no session. The subscription is cancelled in
  * Polar and the grant marked `revoked`; see `revokeMigrateGrant`. An order Studio
- * holds no grant for is a 404.
+ * holds no grant for is a 404 with `data.code: 'grant_not_found'`: Migrate settles the order on that code alone, so a
+ * 404 from anything else (a wrong base URL, a proxy) is retried there.
  */
 import { validateMigrateRevokeRequest } from '@contentrain/types'
 import { readMigrateS2sRequest } from '../../../utils/migrate-s2s-route'
@@ -17,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const db = useDatabaseProvider()
   try {
     const grant = await db.getMigrateGrantByOrderId(request.order_id)
-    if (!grant) throw createError({ statusCode: 404, message: errorMessage('migrate.grant_not_found') })
+    if (!grant) throw createError({ statusCode: 404, message: errorMessage('migrate.grant_not_found'), data: { code: 'grant_not_found' } })
     return await revokeMigrateGrant(grant, request.reason)
   }
   catch (err) {
