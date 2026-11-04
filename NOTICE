@@ -1,5 +1,5 @@
 Contentrain Studio
-Copyright (c) 2026 Contentrain, LLC.
+Copyright (c) 2026 Contentrain, Inc.
 
 This repository contains software released under TWO DIFFERENT LICENSES:
 
@@ -22,7 +22,7 @@ This repository contains software released under TWO DIFFERENT LICENSES:
    Applies to:    all files in the `ee/` directory.
    License text:  ee/LICENSE
    Use requires:  a valid Contentrain Subscription (Pro or Enterprise)
-                  or a separately executed agreement with Contentrain, LLC.
+                  or a separately executed agreement with Contentrain, Inc.
 
 The Enterprise Edition is NOT licensed under the AGPL-3.0. The AGPL-3.0
 grant in the root LICENSE does NOT extend to the `ee/` directory.
