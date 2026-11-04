@@ -144,7 +144,7 @@ describe('POST /api/migrate/grants/revoke', () => {
   it('does not give the token back for a 404', async () => {
     db.getMigrateGrantByOrderId.mockResolvedValue(null)
     await request()
-    await expect(call()).rejects.toMatchObject({ statusCode: 404, message: 'migrate.grant_not_found' })
+    await expect(call()).rejects.toMatchObject({ statusCode: 404, message: 'migrate.grant_not_found', data: { code: 'grant_not_found' } })
     expect(db.releaseMigrateS2sJti).not.toHaveBeenCalled()
   })
 

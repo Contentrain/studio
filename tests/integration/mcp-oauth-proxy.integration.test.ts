@@ -225,6 +225,48 @@ describe('remote MCP proxy gating (OAuth surface)', () => {
     expect(challenge).toContain('scope="content:read content:write project:metadata"')
   })
 
+  it('a fresh grant on a media deployment carries the media scopes, and tools/list on an eligible project lists the media tools', async () => {
+    state.mediaProvider = { listAssets: vi.fn() }
+    const handler = await loadHandler()
+    const { normalizeScope } = await import('../../server/utils/oauth-server/scopes')
+
+    // 1. The bare 401 a client connects with: its scope is what first consent asks for.
+    await expect(handler(makeEvent({ __headers: {} }) as never)).rejects.toMatchObject({ statusCode: 401 })
+    const asked = /scope="([^"]+)"/.exec(wwwAuthenticate()!)![1]!
+    expect(asked).toBe('content:read content:write project:metadata media:read media:write')
+
+    // 2. /oauth/authorize keeps every scope the client requested (+ offline_access from scopes_supported);
+    //    consent keeps media on an eligible project (oauth-consent suite).
+    const granted = normalizeScope(`${asked} offline_access`)!
+    expect(granted).toContain('media:read')
+    expect(granted).toContain('media:write')
+
+    // 3. That grant on an eligible project (pro plan, cdn_enabled, owner): the media tools are listed.
+    state.grant!.scope = granted
+    state.setResponseHeader.mockClear()
+    const listed = ['contentrain_describe', 'contentrain_content_list', 'contentrain_media_list', 'contentrain_media_ingest']
+    state.upstreamFetch.mockImplementation(async () => new Response(
+      `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: listed.map(name => ({ name })) } })}\n\n`,
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ))
+    const out = await handler(makeEvent({ __body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) }) as never) as Uint8Array
+
+    const data = new TextDecoder().decode(out).split('\n').find(line => line.startsWith('data:'))!
+    const tools = (JSON.parse(data.slice(5)) as { result: { tools: Array<{ name: string }> } }).result.tools
+    expect(tools.map(tool => tool.name)).toEqual(listed)
+    // The loopback got the media identity, so it builds the media facet and lists those tools.
+    const sent = (state.upstreamFetch.mock.calls.at(-1)![1] as { headers: Record<string, unknown> }).headers
+    expect(sent).toMatchObject({ 'x-cr-project-id': 'proj-1', 'x-cr-media-owner': 'owner-1', 'x-cr-plan': 'pro' })
+  })
+
+  it('the 401 challenge leaves the media scopes out where the media stack is absent', async () => {
+    const handler = await loadHandler()
+
+    await expect(handler(makeEvent({ __headers: {} }) as never)).rejects.toMatchObject({ statusCode: 401 })
+    expect(wwwAuthenticate()).toContain('scope="content:read content:write project:metadata"')
+    expect(wwwAuthenticate()).not.toContain('media:')
+  })
+
   it('401s tokens with a foreign prefix without touching the store', async () => {
     const handler = await loadHandler()
     const event = makeEvent({ __headers: { authorization: 'Bearer crn_mcp_not_an_oauth_token' } })

@@ -11,16 +11,23 @@ import type { H3Event } from 'h3'
 import { setResponseHeader } from 'h3'
 import { protectedResourceMetadataUrl } from './metadata'
 import type { SupportedScope } from './scopes'
-import { CHALLENGE_SCOPES, SUPPORTED_SCOPES } from './scopes'
+import { SUPPORTED_SCOPES, challengeScopes } from './scopes'
 
-/** 401 — missing/invalid/expired token or revoked grant. */
-export function mcpUnauthorized(event: H3Event, description = 'Authentication required'): never {
+/**
+ * 401 — missing/invalid/expired token or revoked grant. `mediaAvailable`
+ * (the deployment has the media stack) adds the media scopes to the hint.
+ */
+export function mcpUnauthorized(
+  event: H3Event,
+  description = 'Authentication required',
+  opts: { mediaAvailable?: boolean } = {},
+): never {
   setResponseHeader(
     event,
     'WWW-Authenticate',
     `Bearer error="invalid_token", error_description="${description}", `
     + `resource_metadata="${protectedResourceMetadataUrl()}", `
-    + `scope="${CHALLENGE_SCOPES.join(' ')}"`,
+    + `scope="${challengeScopes({ mediaAvailable: opts.mediaAvailable === true }).join(' ')}"`,
   )
   throw createError({ statusCode: 401, message: description })
 }

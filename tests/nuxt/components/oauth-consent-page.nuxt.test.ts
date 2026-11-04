@@ -37,4 +37,33 @@ describe('/oauth/consent', () => {
     await radio.setValue(true)
     expect(approve().attributes('disabled')).toBeUndefined()
   })
+
+  it('lists the media permissions only for a media-eligible project, as the grant does', async () => {
+    const media = {
+      ...consent,
+      scope: 'content:read project:metadata media:read media:write',
+      scopes: ['content:read', 'project:metadata', 'media:read', 'media:write'],
+      workspaces: [{
+        ...consent.workspaces[0]!,
+        projects: [
+          { id: 'proj-1', repoFullName: 'acme/site', eligible: true, reason: null, mediaEligible: true },
+          { id: 'proj-2', repoFullName: 'acme/docs', eligible: true, reason: null, mediaEligible: false },
+        ],
+      }],
+    }
+    vi.stubGlobal('$fetch', vi.fn(async () => media))
+    const wrapper = await mountSuspended(ConsentPage)
+    await flushPromises()
+
+    // Nothing picked yet: no media permission is promised.
+    expect(wrapper.text()).not.toContain('View media assets')
+
+    await wrapper.findAll('button').find(b => b.text().includes('Acme'))!.trigger('click')
+    const radios = wrapper.findAll('input[type="radio"]')
+    await radios[1]!.setValue(true)
+    expect(wrapper.text()).not.toContain('View media assets')
+
+    await radios[0]!.setValue(true)
+    expect(wrapper.text()).toContain('View media assets')
+  })
 })
