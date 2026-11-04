@@ -48,6 +48,20 @@ export const CHALLENGE_SCOPES: SupportedScope[] = [
   'project:metadata',
 ]
 
+/**
+ * The 401 scope hint — what a first consent asks for. Clients request the
+ * challenge scope, so on a media deployment it carries the media scopes
+ * too: step-up alone can never add them, because tools/list hides media
+ * tools from a grant without a media scope, so the model never calls one
+ * and the 403 never fires. Per-project eligibility (plan, cdn_enabled,
+ * owner) still decides whether tools/list shows them.
+ */
+export function challengeScopes(opts: { mediaAvailable: boolean }): SupportedScope[] {
+  if (!opts.mediaAvailable) return [...CHALLENGE_SCOPES]
+  const withMedia = new Set<SupportedScope>([...CHALLENGE_SCOPES, 'media:read', 'media:write'])
+  return SUPPORTED_SCOPES.filter(scope => withMedia.has(scope))
+}
+
 const SUPPORTED = new Set<string>(SUPPORTED_SCOPES)
 
 /** Requested scope absent → least-privilege default. */

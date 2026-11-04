@@ -43,6 +43,14 @@ describe('MCP auth challenges', () => {
     )
   })
 
+  it('401 challenge on a media deployment also asks for the media scopes, in canonical order', () => {
+    expect(() => mcpUnauthorized({} as never, undefined, { mediaAvailable: true })).toThrow()
+
+    expect(headers.get('WWW-Authenticate')).toContain(
+      'scope="content:read content:write project:metadata media:read media:write"',
+    )
+  })
+
   it('403 step-up preserves current scopes and adds the required one, in canonical order', () => {
     expect(() => mcpInsufficientScope({} as never, 'content:write', 'content:read project:metadata offline_access'))
       .toThrowError(expect.objectContaining({ statusCode: 403 }))

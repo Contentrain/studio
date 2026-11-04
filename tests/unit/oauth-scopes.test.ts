@@ -3,6 +3,7 @@ import {
   ADVERTISED_SCOPES,
   SUPPORTED_SCOPES,
   advertisedScopes,
+  challengeScopes,
   normalizeScope,
   scopeAllowsTool,
   scopeForTool,
@@ -53,6 +54,30 @@ describe('advertisedScopes', () => {
       'media:write',
       'offline_access',
     ])
+  })
+})
+
+describe('challengeScopes', () => {
+  it('returns the base three when the media stack is absent', () => {
+    expect(challengeScopes({ mediaAvailable: false })).toEqual([
+      'content:read',
+      'content:write',
+      'project:metadata',
+    ])
+  })
+
+  it('adds media:read/media:write when media is available, and survives normalizeScope', () => {
+    const scopes = challengeScopes({ mediaAvailable: true })
+    expect(scopes).toEqual([
+      'content:read',
+      'content:write',
+      'project:metadata',
+      'media:read',
+      'media:write',
+    ])
+    // The authorize endpoint must not drop what the challenge asked for.
+    expect(normalizeScope(`${scopes.join(' ')} offline_access`))
+      .toBe('content:read content:write project:metadata media:read media:write offline_access')
   })
 })
 

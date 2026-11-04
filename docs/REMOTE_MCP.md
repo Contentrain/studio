@@ -41,7 +41,8 @@ different project (the old connection stays until you disconnect it).
 | `offline_access` | A refresh token (stay connected without re-approving) |
 
 The `media:*` scopes are **advertised only on deployments where the media
-stack is configured** (Enterprise + object storage). The media tools
+stack is configured** (Enterprise + object storage); there, the first
+consent asks for them along with the content scopes. The media tools
 additionally require the workspace plan's `media.upload` feature and the
 project's CDN delivery being enabled — where any of those is missing, the
 tools don't appear at all. Ingest is **URL-only** (MCP has no binary
