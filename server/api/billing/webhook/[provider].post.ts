@@ -190,6 +190,18 @@ async function linkPrepaidRenewal(db: ReturnType<typeof useDatabaseProvider>, gr
   console.error(`[billing-webhook] ALARM renewal subscription ${subscriptionId} could not be linked to grant ${grantId}`)
 }
 
+/**
+ * A later subscription of the same customer reuses the account row a "Keep Studio" renewal wrote: its
+ * `prepaid_renewal` origin is dropped there, or that subscription's activation would be told as the yearly
+ * renewal. `withTrialOrigin` keeps a stored origin when the result names none, so this one is removed here.
+ */
+async function dropStaleRenewalOrigin(db: ReturnType<typeof useDatabaseProvider>, workspaceId: string, result: { migrateRenewalGrantId?: string }): Promise<void> {
+  if (result.migrateRenewalGrantId) return
+  const account = await db.getActivePaymentAccount(workspaceId)
+  if (metadataObject(account?.plugin_metadata).trial_origin !== 'prepaid_renewal') return
+  await db.setPaymentAccountMetadataJson({ workspaceId, key: 'trial_origin', value: null })
+}
+
 /** Extract every request header as a plain `{[key]: string | undefined}` object. */
 function readAllHeaders(event: Parameters<typeof getRequestHeaders>[0]): Record<string, string | undefined> {
   const raw = getRequestHeaders(event)
@@ -448,6 +460,7 @@ export default defineEventHandler(async (event) => {
         preserveMetadataKeys: COMPANION_METADATA_KEYS,
         isActive: true,
       })
+      await dropStaleRenewalOrigin(db, result.workspaceId, result)
       await overageLock.commit()
       // A yearly plan gets its monthly usage subscription (off unless configured; never fails this webhook).
       await openCompanionSubscription(provider, db, {
@@ -569,6 +582,7 @@ export default defineEventHandler(async (event) => {
         }).key
         await db.setPaymentAccountCreditUnit({ workspaceId: result.workspaceId, unit: updatedUnit, periodKey })
       }
+      await dropStaleRenewalOrigin(db, result.workspaceId, result)
       await overageLock.commit()
       // A subscription that predates the flag, or whose companion failed to open, gets it here. Failing to
       // cancel the companion of a product the plan left throws: the webhook is retried.

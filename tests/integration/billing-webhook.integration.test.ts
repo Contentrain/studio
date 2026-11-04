@@ -540,6 +540,46 @@ describe('billing webhook integration', () => {
     expect(sent.text).not.toMatch(/month/i)
   })
 
+  it('a later plain subscription on the row a "Keep Studio" renewal used drops its origin, and is told as monthly', async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    const setPaymentAccountMetadataJson = vi.fn(async () => {
+      account.plugin_metadata = {}
+      return true
+    })
+    const account: Record<string, unknown> = {
+      provider: 'stripe', customer_id: 'cus_123', subscription_id: 'sub_monthly', subscription_status: 'active', plan: 'starter',
+      plugin_metadata: { trial_origin: 'prepaid_renewal' },
+    }
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
+    vi.stubGlobal('useAuthProvider', vi.fn().mockReturnValue({ getUserById: vi.fn().mockResolvedValue({ email: 'owner@example.com' }) }))
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({ stripe: { secretKey: 'sk_mock' }, public: { siteUrl: 'https://studio.example.com' } }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount: vi.fn(async () => account),
+      markWorkspaceTrialConsumed,
+      setPaymentAccountMetadataKey,
+      setPaymentAccountMetadataJson,
+      setPaymentAccountCreditUnit,
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'starter' }),
+    }))
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.created',
+      workspaceId: 'ws-1',
+      plan: 'starter',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_monthly',
+      subscriptionStatus: 'active',
+      cancelAtPeriodEnd: false,
+    })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(setPaymentAccountMetadataJson).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'trial_origin', value: null })
+    const sent = sendEmail.mock.calls[0]![0] as { text: string }
+    expect(sent.text).not.toContain('/year')
+  })
+
   it('does NOT collapse trialing to active on invoice.paid ($0 trial invoice)', async () => {
     getActivePaymentAccount.mockResolvedValue({
       provider: 'stripe',

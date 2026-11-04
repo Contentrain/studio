@@ -28,7 +28,8 @@ interface PrepaidWindow {
 }
 
 export const PREPAID_WINDOWS: PrepaidWindow[] = [
-  { stage: 1, fromOffsetMs: 7.5 * DAY_MS, toOffsetMs: 30.5 * DAY_MS },
+  // Not before "Keep Studio" opens (`PREPAID_RENEWAL_WINDOW_DAYS`): the mail's button must work when it arrives.
+  { stage: 1, fromOffsetMs: 7.5 * DAY_MS, toOffsetMs: 30 * DAY_MS },
   { stage: 2, fromOffsetMs: 1, toOffsetMs: 7.5 * DAY_MS },
   // Ended: any end up to now (a year never comes back from stage 3).
   { stage: 3, fromOffsetMs: -100 * 365 * DAY_MS, toOffsetMs: 0 },

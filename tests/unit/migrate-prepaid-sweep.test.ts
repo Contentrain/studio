@@ -51,7 +51,7 @@ describe('prepaid year-end sweep', () => {
     await sweep()
     const calls = db.listPrepaidYearsDue.mock.calls.map(([q]) => q as { from: string, to: string, requiredStage: number })
     expect(calls.map(c => c.requiredStage)).toEqual([1, 2, 3])
-    expect(Date.parse(calls[0]!.to) - NOW.getTime()).toBe(30.5 * DAY)
+    expect(Date.parse(calls[0]!.to) - NOW.getTime()).toBe(30 * DAY)
     expect(Date.parse(calls[0]!.from)).toBe(Date.parse(calls[1]!.to))
     expect(Date.parse(calls[2]!.to)).toBe(NOW.getTime())
   })
