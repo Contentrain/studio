@@ -34,7 +34,7 @@ import { OVERAGE_SETTINGS_KEYS } from '../../shared/utils/license'
 import { USAGE_METERS, USAGE_METER_LIST } from '../../shared/utils/usage-meters'
 import { CURRENT_CREDIT_UNIT, creditTermsFor, creditUnitFromMeters } from '../../shared/utils/credit-unit'
 
-export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan' | 'yearly_pending'
+export type OverageLockReason = 'trialing' | 'not_in_subscription' | 'yearly_plan' | 'yearly_pending' | 'prepaid'
 
 export interface OverageLock {
   reason: OverageLockReason
@@ -147,7 +147,7 @@ function lockUnknownPrices(locks: Record<string, OverageLock>): Record<string, O
  */
 export function prepaidOverageLocks(prepaidUntil: unknown): Record<string, OverageLock> {
   const until = toIso(prepaidUntil as string | Date | null | undefined)
-  return Object.fromEntries(OVERAGE_SETTINGS_KEYS.map(key => [key, { reason: 'not_in_subscription' as const, until }]))
+  return Object.fromEntries(OVERAGE_SETTINGS_KEYS.map(key => [key, { reason: 'prepaid' as const, until }]))
 }
 
 /** Locked overage settings keys, each with why and until when. */

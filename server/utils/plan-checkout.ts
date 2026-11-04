@@ -17,6 +17,13 @@ export interface PlanCheckoutInput {
   /** Where the provider sends the customer back, relative to the site. */
   successPath: string
   cancelPath: string
+  /** The billing cycle sold (default the monthly product). */
+  interval?: 'month' | 'year'
+  /**
+   * "Keep Studio" at the end of a prepaid year: the subscription is opened during the year on purpose, with a
+   * trial that ends when the year does. Only `startPrepaidRenewalCheckout` sets it, after its own checks.
+   */
+  continuesPrepaidYear?: true
 }
 
 export async function startPlanCheckout(input: PlanCheckoutInput): Promise<{ url: string }> {
@@ -24,11 +31,11 @@ export async function startPlanCheckout(input: PlanCheckoutInput): Promise<{ url
 
   // A prepaid Studio year (055) is the workspace's plan until it ends: a subscription now would bill a year
   // already paid. Keeping Studio after it has its own path.
-  const prepaid = await db.getWorkspaceById(input.workspace.id, 'prepaid_until')
+  const prepaid = input.continuesPrepaidYear ? null : await db.getWorkspaceById(input.workspace.id, 'prepaid_until')
   if (isPrepaidLive(prepaid?.prepaid_until)) {
     throw createError({
       statusCode: 409,
-      message: errorMessage('billing.subscription_exists'),
+      message: errorMessage('billing.prepaid_active'),
       data: { code: 'prepaid_active' },
     })
   }
@@ -67,6 +74,7 @@ export async function startPlanCheckout(input: PlanCheckoutInput): Promise<{ url
     withTrial: input.withTrial,
     ...(input.trialDays ? { trialDays: input.trialDays } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {}),
+    ...(input.interval ? { interval: input.interval } : {}),
   }
 
   try {

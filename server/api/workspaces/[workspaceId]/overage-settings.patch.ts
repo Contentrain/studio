@@ -11,7 +11,8 @@
 import { OVERAGE_SETTINGS_KEYS, OVERAGE_PRICING } from '../../../../shared/utils/license'
 import { USAGE_METER_LIST } from '../../../../shared/utils/usage-meters'
 import { isOverageSellable } from '../../../../server/utils/overage'
-import { resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
+import { isPrepaidLive } from '../../../../server/utils/billing'
+import { prepaidOverageLocks, resolveOverageLocks, withCompanionPending } from '../../../../server/utils/overage-lock'
 import { companionUsageOn } from '../../../../server/utils/companion-subscription'
 import { syncOverageOnSince } from '../../../../server/utils/overage-meter-gate'
 import type { OverageLock, OverageLockAccount } from '../../../../server/utils/overage-lock'
@@ -27,7 +28,9 @@ function lockedError(lock: OverageLock) {
       })
     : errorMessage(lock.reason === 'yearly_plan'
         ? 'billing.overage_locked_yearly'
-        : lock.reason === 'yearly_pending' ? 'billing.overage_locked_yearly_pending' : 'billing.overage_locked_subscription')
+        : lock.reason === 'yearly_pending'
+          ? 'billing.overage_locked_yearly_pending'
+          : lock.reason === 'prepaid' ? 'billing.overage_locked_prepaid' : 'billing.overage_locked_subscription')
   return createError({ statusCode: 409, message, data: { code: 'overage_locked', reason: lock.reason, until: lock.until } })
 }
 
@@ -54,11 +57,15 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     workspaceId,
     ['owner', 'admin'],
-    'id, plan, overage_settings',
+    'id, plan, overage_settings, prepaid_until',
   )
 
   if (!workspace)
     throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
+
+  // A prepaid year (055) bills nothing past its plan, with or without a "Keep Studio" subscription beside it.
+  if (isPrepaidLive(workspace.prepaid_until) && Object.values(body ?? {}).includes(true))
+    throw lockedError(Object.values(prepaidOverageLocks(workspace.prepaid_until))[0]!)
 
   const account = await db.getActivePaymentAccount(workspaceId)
   const status = (account?.subscription_status as string | null) ?? null

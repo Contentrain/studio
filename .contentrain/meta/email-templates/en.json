@@ -29,6 +29,21 @@
     "status": "draft",
     "updated_by": "contentrain-mcp"
   },
+  "prepaid-ended": {
+    "source": "agent",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "prepaid-ending": {
+    "source": "agent",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
+  "prepaid-renewed": {
+    "source": "agent",
+    "status": "published",
+    "updated_by": "contentrain-mcp"
+  },
   "subscription-activated": {
     "source": "agent",
     "status": "draft",

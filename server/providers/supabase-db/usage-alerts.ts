@@ -19,6 +19,8 @@ const PAGE_SIZE = 500
 /** Postgres unique_violation. */
 const UNIQUE_VIOLATION = '23505'
 
+const ALERT_WORKSPACE_COLUMNS = 'id, name, slug, type, plan, owner_id, overage_settings, media_storage_bytes, prepaid_until, prepaid_plan'
+
 export function usageAlertMethods(): UsageAlertMethods {
   return {
     async listWorkspacesForUsageAlerts() {
@@ -27,7 +29,7 @@ export function usageAlertMethods(): UsageAlertMethods {
       for (let from = 0; ; from += PAGE_SIZE) {
         const { data, error } = await getAdmin()
           .from('payment_accounts')
-          .select('workspaces:workspace_id!inner(id, name, slug, type, plan, owner_id, overage_settings, media_storage_bytes)')
+          .select(`workspaces:workspace_id!inner(${ALERT_WORKSPACE_COLUMNS})`)
           .eq('is_active', true)
           .order('workspace_id')
           .range(from, from + PAGE_SIZE - 1)
@@ -35,6 +37,21 @@ export function usageAlertMethods(): UsageAlertMethods {
         if (error) throw createError({ statusCode: 500, message: error.message })
         const page = ((data ?? []) as unknown as Array<{ workspaces: DatabaseRow }>).map(r => r.workspaces)
         rows.push(...page)
+        if (page.length < PAGE_SIZE) break
+      }
+      // A prepaid Studio year (migration 055) has no account row: those workspaces are listed too, once each.
+      const seen = new Set(rows.map(r => r.id))
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await getAdmin()
+          .from('workspaces')
+          .select(ALERT_WORKSPACE_COLUMNS)
+          .gt('prepaid_until', new Date().toISOString())
+          .order('id')
+          .range(from, from + PAGE_SIZE - 1)
+
+        if (error) throw createError({ statusCode: 500, message: error.message })
+        const page = (data ?? []) as unknown as DatabaseRow[]
+        rows.push(...page.filter(r => !seen.has(r.id)))
         if (page.length < PAGE_SIZE) return rows
       }
     },

@@ -95,6 +95,7 @@ function mapSubscriptionToResult(
       : undefined,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     migrateGrantId: subscription.metadata?.migrate_grant_id || undefined,
+    migrateRenewalGrantId: subscription.metadata?.migrate_renewal_grant_id || undefined,
   }
 }
 
@@ -111,6 +112,8 @@ function createStripeProvider(config: PaymentPluginConfig): PaymentProvider {
 
   return {
     async createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
+      // Stripe sells the monthly prices only; a yearly product is not configured for it.
+      if (input.interval === 'year') throw new Error(`No Stripe yearly price configured for plan: ${input.plan}`)
       const priceId = priceMap[input.plan]
       if (!priceId) {
         throw new Error(`No Stripe price ID configured for plan: ${input.plan}`)

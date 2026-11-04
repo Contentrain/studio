@@ -33,6 +33,7 @@ export function trialReminderMethods(): TrialReminderMethods {
         .from('payment_accounts')
         .select(`
           trial_ends_at,
+          plugin_metadata,
           workspaces:workspace_id!inner(
             id, name, slug, plan, owner_id, trial_reminder_stage
           )
@@ -44,8 +45,10 @@ export function trialReminderMethods(): TrialReminderMethods {
 
       if (error) throw createError({ statusCode: 500, message: error.message })
 
-      const rows = ((data ?? []) as unknown as Array<{ trial_ends_at: string, workspaces: WorkspaceRelation }>)
+      const rows = ((data ?? []) as unknown as Array<{ trial_ends_at: string, plugin_metadata: { trial_origin?: unknown } | null, workspaces: WorkspaceRelation }>)
         .filter(r => (r.workspaces.trial_reminder_stage ?? 0) < requiredStage)
+        // "Keep Studio" after a prepaid year: its trial only bridges to the year's end, the prepaid sweep mails it.
+        .filter(r => r.plugin_metadata?.trial_origin !== 'prepaid_renewal')
         .map(r => ({
           id: r.workspaces.id,
           name: r.workspaces.name,

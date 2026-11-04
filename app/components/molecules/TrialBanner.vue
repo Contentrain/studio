@@ -2,7 +2,7 @@
 import { PLAN_PRICING } from '~~/shared/utils/license'
 
 const { t } = useContent()
-const { billingState, trialDaysLeft, effectivePlan } = useBilling()
+const { billingState, trialDaysLeft, effectivePlan, prepaidUntil, prepaidRenewalOpen, prepaidRenewalPlan } = useBilling()
 // Choosing a plan or fixing a payment is owner/admin only. A member gets the
 // notice and who to ask instead of a button that answers 403.
 const { isOwnerOrAdmin } = useWorkspaceRole()
@@ -13,10 +13,16 @@ const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? effec
 const emit = defineEmits<{
   choosePlan: []
   manageBilling: []
+  /** "Keep Studio" lives in billing settings (a yearly plan choice), not in the monthly plan modal. */
+  keepStudio: []
 }>()
 
+/** A prepaid year in its last 30 days with nothing set to follow it: the workspace falls to free at its end. */
+const isPrepaidEnding = computed(() => !!prepaidUntil.value && prepaidRenewalOpen.value && !prepaidRenewalPlan.value)
+
 const isRelevant = computed(() =>
-  ['free', 'trial_active', 'past_due', 'trial_expired', 'grace_expired', 'canceled_expired'].includes(billingState.value),
+  isPrepaidEnding.value
+  || ['free', 'trial_active', 'past_due', 'trial_expired', 'grace_expired', 'canceled_expired'].includes(billingState.value),
 )
 
 const isExpired = computed(() =>
@@ -73,6 +79,11 @@ const isGraceExpired = computed(() => billingState.value === 'grace_expired')
 const needsPaymentFix = computed(() => isPastDue.value || isGraceExpired.value)
 
 const bannerText = computed(() => {
+  if (isPrepaidEnding.value) {
+    return t('billing.prepaid_ending_banner', {
+      date: new Date(prepaidUntil.value!).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+    })
+  }
   if (isGraceExpired.value) return t('billing.subscription_paused')
   if (billingState.value === 'canceled_expired') return t('billing.subscription_ended')
   if (isExpired.value) return t('trial.expired_text')
@@ -84,13 +95,15 @@ const bannerText = computed(() => {
 })
 
 const ctaText = computed(() => {
+  if (isPrepaidEnding.value) return t('billing.keep_studio')
   if (needsPaymentFix.value) return t('billing.update_payment')
   if (isFree.value) return t('billing.upgrade')
   return t('trial.choose_plan')
 })
 
 function handleCta() {
-  if (needsPaymentFix.value) emit('manageBilling')
+  if (isPrepaidEnding.value) emit('keepStudio')
+  else if (needsPaymentFix.value) emit('manageBilling')
   else emit('choosePlan')
 }
 </script>

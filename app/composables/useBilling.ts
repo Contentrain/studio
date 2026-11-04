@@ -201,6 +201,41 @@ export function useBilling() {
     await fetchWorkspaces()
   }
 
+  /** End of the workspace's prepaid Studio year while it runs, else null. */
+  const prepaidUntil = computed<string | null>(() =>
+    billingState.value === 'prepaid' ? activeWorkspace.value?.prepaid_until ?? null : null,
+  )
+
+  /** When "Keep Studio" opens: 30 days before the year ends (`server/utils/migrate-prepaid-renewal.ts`). */
+  const prepaidRenewalOpensAt = computed<string | null>(() =>
+    prepaidUntil.value ? new Date(new Date(prepaidUntil.value).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+  )
+  const prepaidRenewalOpen = computed(() =>
+    prepaidRenewalOpensAt.value !== null && Date.now() >= new Date(prepaidRenewalOpensAt.value).getTime(),
+  )
+
+  /**
+   * The plan Studio continues on after the prepaid year, or null when nothing is set: the "Keep Studio"
+   * subscription runs beside the year (in a trial until it ends) and its webhook writes `workspaces.plan`.
+   */
+  const prepaidRenewalPlan = computed<StudioPlan | null>(() => {
+    const account = activeAccount.value
+    if (!prepaidUntil.value || !account?.subscription_id || account.cancel_at_period_end) return null
+    if (!['trialing', 'active'].includes(account.subscription_status ?? '')) return null
+    return normalizePlan(activeWorkspace.value?.plan)
+  })
+
+  /** "Keep Studio": the yearly plan of the owner's choice, starting when the prepaid year ends. */
+  async function keepStudio(plan: 'starter' | 'pro') {
+    const ws = activeWorkspace.value
+    if (!ws) return
+    const { url } = await $fetch<{ url: string }>('/api/billing/keep-studio', {
+      method: 'POST',
+      body: { workspaceId: ws.id, plan },
+    })
+    if (url) window.location.href = url
+  }
+
   return {
     billingEnabled,
     billingState,
@@ -212,7 +247,12 @@ export function useBilling() {
     trialConsumed,
     trialDaysLeft,
     cancelsAt,
+    prepaidUntil,
+    prepaidRenewalOpensAt,
+    prepaidRenewalOpen,
+    prepaidRenewalPlan,
     activeAccount,
+    keepStudio,
     startCheckout,
     openPortal,
     refreshBilling,

@@ -6,7 +6,7 @@
  * plan, and no second subscription (and no trial) starts. The grant is tied
  * to the workspace and marked used with no subscription of its own, so the
  * claim screen goes straight to the site. Only a paid, active plan that is not
- * ending (or a prepaid Studio year) qualifies: a trial, a plan set to end at the period's close, or an
+ * ending (or a prepaid Studio year, in its last 30 days only with "Keep Studio" set) qualifies: a trial, a plan set to end at the period's close, or an
  * overdue one is refused with a reason the screen shows (a grant is a one-time
  * credit, and a plan that is about to lapse would take the site's Studio with
  * it). The visitor then fixes the plan, or picks another workspace.
@@ -14,6 +14,7 @@
 import { migrateClaimPublicKey } from '../../../../utils/migrate-grant'
 import { resolveWorkspaceBilling } from '../../../../utils/workspace-billing'
 import { planCovers } from '../../../../../shared/utils/migrate-bundle'
+import { prepaidRenewalOpensAt } from '../../../../utils/migrate-prepaid-renewal'
 import type { MigrateStudioPlan } from '@contentrain/types'
 
 export default defineEventHandler(async (event) => {
@@ -36,7 +37,7 @@ export default defineEventHandler(async (event) => {
     session.user.id,
     workspaceId,
     ['owner', 'admin'],
-    'id, slug, name, type, plan, overage_settings',
+    'id, slug, name, type, plan, overage_settings, prepaid_until, prepaid_plan',
   )
   if (!workspace) throw createError({ statusCode: 403, message: errorMessage('auth.forbidden') })
 
@@ -56,6 +57,17 @@ export default defineEventHandler(async (event) => {
   const current = billing.effectivePlan === 'enterprise' ? 'pro' : billing.effectivePlan
   if ((current !== 'starter' && current !== 'pro') || !planCovers(current as MigrateStudioPlan, grant.plan as MigrateStudioPlan))
     throw createError({ statusCode: 409, message: errorMessage('migrate.attach_plan_too_small'), data: { code: 'attach_plan_too_small' } })
+  // In its last 30 days a prepaid year is a plan about to lapse, unless "Keep Studio" continues it: then the
+  // plan that follows (the workspace's `plan`, written by the renewal's webhook) must cover the grant too.
+  const prepaidUntil = (workspace as { prepaid_until?: string | null }).prepaid_until
+  if (billing.state === 'prepaid' && prepaidUntil && Date.now() >= prepaidRenewalOpensAt(prepaidUntil).getTime()) {
+    const year = await db.getLivePrepaidGrant(workspaceId)
+    if (!year?.renewal_subscription_id)
+      throw createError({ statusCode: 409, message: errorMessage('migrate.attach_prepaid_ending'), data: { code: 'attach_prepaid_ending' } })
+    const next = (workspace as { plan?: string | null }).plan === 'enterprise' ? 'pro' : (workspace as { plan?: string | null }).plan
+    if ((next !== 'starter' && next !== 'pro') || !planCovers(next as MigrateStudioPlan, grant.plan as MigrateStudioPlan))
+      throw createError({ statusCode: 409, message: errorMessage('migrate.attach_plan_too_small'), data: { code: 'attach_plan_too_small' } })
+  }
 
   const bound = await db.bindMigrateGrantWorkspace(grantId, workspaceId)
   if (!bound) throw createError({ statusCode: 409, message: errorMessage('migrate.grant_bound_elsewhere'), data: { code: 'grant_bound_elsewhere' } })

@@ -38,6 +38,10 @@ describe('resolveTrialContext', () => {
     expect(resolveTrialContext('subscribed', { plugin_metadata: { trial_origin: 'migrate' } })).toEqual({ trialing: false, origin: 'migrate' })
     expect(resolveTrialContext('free', null)).toEqual({ trialing: false, origin: 'standard' })
   })
+
+  it('the trial bridging a prepaid year to "Keep Studio" is no trial of the workspace', () => {
+    expect(resolveTrialContext('trial_active', { plugin_metadata: { trial_origin: 'prepaid_renewal' } })).toEqual({ trialing: false, origin: 'standard' })
+  })
 })
 
 describe('premium models in a trial', () => {

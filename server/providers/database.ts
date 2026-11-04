@@ -1259,6 +1259,27 @@ export interface DatabaseProvider {
    * null when the grant is revoked, collected by Studio, or already paid by another transaction.
    */
   recordMigrateGrantPrepaid: (grantId: string, input: { paymentRef: string, startsAt: string, endsAt: string }) => Promise<DatabaseRow | null>
+  /**
+   * The workspace's live prepaid year: its unrevoked, paid, migrate-collected grant whose `prepaid_ends_at` is
+   * still ahead (the latest one, should there be two). Null when the workspace has none.
+   */
+  getLivePrepaidGrant: (workspaceId: string) => Promise<DatabaseRow | null>
+  /**
+   * Link the subscription that keeps Studio after a prepaid year ("Keep Studio") to its grant. Applies only to an
+   * unrevoked migrate-collected grant with no renewal yet, or this same one; returns the grant, or null otherwise.
+   */
+  recordMigrateGrantRenewal: (grantId: string, subscriptionId: string) => Promise<DatabaseRow | null>
+  /** Unlink an ended renewal from its grant: only when the grant still names that subscription. */
+  clearMigrateGrantRenewal: (grantId: string, subscriptionId: string) => Promise<void>
+  /**
+   * The prepaid years (056 cursor) whose end falls in `[from, to]` and whose grant's `prepaid_reminder_stage` is
+   * below `requiredStage`, still held by their workspace (`workspaces.prepaid_until` = the grant's end) and not
+   * revoked. Each row: `grant_id`, `plan`, `prepaid_ends_at`, `renewal_subscription_id`, `workspace_id`,
+   * `workspace_name`, `workspace_slug`, `owner_id`.
+   */
+  listPrepaidYearsDue: (input: { from: string, to: string, requiredStage: number }) => Promise<DatabaseRow[]>
+  /** Move a prepaid grant's year-end cursor forward (never back). */
+  setPrepaidReminderStage: (grantId: string, stage: number) => Promise<void>
 
   /**
    * Withdraw a grant (Migrate's revoke): records when and why. Only the first call counts, so the

@@ -23,6 +23,11 @@ type MigrateGrantMethods = Pick<
   | 'updateMigrateGrantRepo'
   | 'markMigrateGrantRevoked'
   | 'recordMigrateGrantPrepaid'
+  | 'getLivePrepaidGrant'
+  | 'recordMigrateGrantRenewal'
+  | 'clearMigrateGrantRenewal'
+  | 'listPrepaidYearsDue'
+  | 'setPrepaidReminderStage'
   | 'setMigrateGrantSiteBinding'
   | 'listMigrateSiteBindingWork'
   | 'markMigrateSiteBindingAlerted'
@@ -312,6 +317,101 @@ export function migrateGrantMethods(): MigrateGrantMethods {
           .returningAll()
           .executeTakeFirst()
         return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async getLivePrepaidGrant(workspaceId) {
+      try {
+        const row = await getAdmin()
+          .selectFrom('migrate_grants')
+          .selectAll()
+          .where('workspace_id', '=', workspaceId)
+          .where('collector', '=', 'migrate')
+          .where('revoked_at', 'is', null)
+          .where('payment_ref', 'is not', null)
+          .where('prepaid_ends_at', '>', sql<string>`now()`)
+          .orderBy('prepaid_ends_at', 'desc')
+          .limit(1)
+          .executeTakeFirst()
+        return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async recordMigrateGrantRenewal(grantId, subscriptionId) {
+      try {
+        const row = await getAdmin()
+          .updateTable('migrate_grants')
+          .set({ renewal_subscription_id: subscriptionId })
+          .where('id', '=', grantId)
+          .where('collector', '=', 'migrate')
+          .where('revoked_at', 'is', null)
+          .where(eb => eb.or([eb('renewal_subscription_id', 'is', null), eb('renewal_subscription_id', '=', subscriptionId)]))
+          .returningAll()
+          .executeTakeFirst()
+        return (row as DatabaseRow | undefined) ?? null
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async clearMigrateGrantRenewal(grantId, subscriptionId) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set({ renewal_subscription_id: null })
+          .where('id', '=', grantId)
+          .where('renewal_subscription_id', '=', subscriptionId)
+          .execute()
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async listPrepaidYearsDue({ from, to, requiredStage }) {
+      try {
+        const rows = await getAdmin()
+          .selectFrom('migrate_grants')
+          .innerJoin('workspaces', 'workspaces.id', 'migrate_grants.workspace_id')
+          .select([
+            'migrate_grants.id as grant_id',
+            'migrate_grants.plan',
+            'migrate_grants.prepaid_ends_at',
+            'migrate_grants.renewal_subscription_id',
+            'workspaces.id as workspace_id',
+            'workspaces.name as workspace_name',
+            'workspaces.slug as workspace_slug',
+            'workspaces.owner_id',
+          ])
+          .where('migrate_grants.collector', '=', 'migrate')
+          .where('migrate_grants.revoked_at', 'is', null)
+          .where('migrate_grants.prepaid_ends_at', '>=', from)
+          .where('migrate_grants.prepaid_ends_at', '<=', to)
+          .where('migrate_grants.prepaid_reminder_stage', '<', requiredStage)
+          .whereRef('workspaces.prepaid_until', '=', 'migrate_grants.prepaid_ends_at')
+          .execute()
+        return rows as unknown as DatabaseRow[]
+      }
+      catch (error) {
+        throwDbError(error)
+      }
+    },
+
+    async setPrepaidReminderStage(grantId, stage) {
+      try {
+        await getAdmin()
+          .updateTable('migrate_grants')
+          .set({ prepaid_reminder_stage: stage })
+          .where('id', '=', grantId)
+          .where('prepaid_reminder_stage', '<', stage)
+          .execute()
       }
       catch (error) {
         throwDbError(error)

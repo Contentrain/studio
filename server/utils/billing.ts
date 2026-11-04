@@ -185,7 +185,9 @@ export function resolveTrialContext(
 ): TrialContext {
   const meta = (account?.plugin_metadata ?? null) as { trial_origin?: unknown } | null
   return {
-    trialing: state === 'trial_active',
+    // The trial of a subscription opened to keep Studio after a prepaid year only bridges to the year's end:
+    // it is no trial of the workspace, so it brings no trial caps in the hours before the provider converts it.
+    trialing: state === 'trial_active' && meta?.trial_origin !== 'prepaid_renewal',
     origin: meta?.trial_origin === 'migrate' ? 'migrate' : 'standard',
   }
 }

@@ -116,6 +116,8 @@ export interface MigrateBundleStatus {
   workspaceSlug: string
   /** When the running plan's current period ends, seconds since the epoch; null when it has no running period. */
   periodEndsAt: number | null
+  /** A prepaid Studio year (055): paid with the order, renews nothing by itself. */
+  prepaid?: true
 }
 
 export async function migrateBundleStatus(row: DatabaseRow): Promise<MigrateBundleStatus | null> {
@@ -131,7 +133,7 @@ export async function migrateBundleStatus(row: DatabaseRow): Promise<MigrateBund
   // A prepaid year (055) runs until its end; nothing renews it by itself, so the claim screen says when.
   if (billing.state === 'prepaid') {
     const end = Date.parse(String(workspace.prepaid_until))
-    return { planState: 'active', workspaceSlug: slug, periodEndsAt: Number.isFinite(end) ? Math.floor(end / 1000) : null }
+    return { planState: 'active', workspaceSlug: slug, periodEndsAt: Number.isFinite(end) ? Math.floor(end / 1000) : null, prepaid: true }
   }
 
   const account = await db.getActivePaymentAccount(workspaceId)

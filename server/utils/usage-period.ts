@@ -47,6 +47,7 @@ export interface UsagePeriodAccount {
   current_period_start?: string | Date | null
   current_period_end?: string | Date | null
   subscription_status?: string | null
+  plugin_metadata?: unknown
 }
 
 /** Statuses that carry a real billing period. */
@@ -158,6 +159,10 @@ export function usagePeriodFrom(account: UsagePeriodAccount | null | undefined, 
 
   const status = account.subscription_status ?? null
   if (status && !BILLED_STATUSES.has(status)) return calendarPeriod(now)
+  // The trial of a "Keep Studio" subscription only bridges to a prepaid year's end: the year keeps the calendar
+  // month it was counted in. Keyed by the trial's start, opening it would hand out a fresh quota.
+  if (status === 'trialing' && (account.plugin_metadata as { trial_origin?: unknown } | null)?.trial_origin === 'prepaid_renewal')
+    return calendarPeriod(now)
 
   const end = toDate(account.current_period_end)
   let start = toDate(account.current_period_start) ?? (end ? addMonthsClamped(end, -1) : null)

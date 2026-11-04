@@ -9,7 +9,7 @@ import type { BillingState } from '../../../app/composables/useBilling'
 // watching it.
 const { billing, nav, who } = vi.hoisted(() => ({
   who: { role: 'owner' },
-  billing: { state: 'trial_active' as string },
+  billing: { state: 'trial_active' as string, prepaidUntil: null as string | null, renewalOpen: false, renewalPlan: null as string | null },
   nav: { route: null as null | { path: string } },
 }))
 
@@ -17,7 +17,11 @@ mockNuxtImport('useBilling', () => () => ({
   billingState: computed(() => billing.state as BillingState),
   trialDaysLeft: computed(() => 7),
   effectivePlan: computed(() => 'pro' as const),
+  prepaidUntil: computed(() => billing.prepaidUntil),
+  prepaidRenewalOpen: computed(() => billing.renewalOpen),
+  prepaidRenewalPlan: computed(() => billing.renewalPlan),
 }))
+
 mockNuxtImport('useWorkspaceRole', () => () => ({
   role: computed(() => who.role),
   isOwnerOrAdmin: computed(() => who.role === 'owner' || who.role === 'admin'),
@@ -33,6 +37,9 @@ describe('TrialBanner', () => {
   beforeEach(() => {
     who.role = 'owner'
     billing.state = 'trial_active'
+    billing.prepaidUntil = null
+    billing.renewalOpen = false
+    billing.renewalPlan = null
     if (nav.route) nav.route.path = '/w/acme'
     sessionStorage.clear()
   })
@@ -135,5 +142,22 @@ describe('TrialBanner', () => {
   it('says an ended subscription has ended, not that a trial expired', async () => {
     billing.state = 'canceled_expired'
     expect((await mountSuspended(TrialBanner)).text()).toContain('Your subscription has ended.')
+  })
+
+  it('a prepaid year says nothing until its last 30 days, then sends the owner to keep Studio', async () => {
+    billing.state = 'prepaid'
+    billing.prepaidUntil = '2027-11-04T10:00:00.000Z'
+    expect((await mountSuspended(TrialBanner)).text()).toBe('')
+
+    billing.renewalOpen = true
+    const wrapper = await mountSuspended(TrialBanner)
+    expect(wrapper.text()).toContain('Your prepaid Studio year ends on November 4, 2027.')
+    await wrapper.findAll('button').find(b => b.text() === 'Keep Studio')!.trigger('click')
+    expect(wrapper.emitted('keepStudio')).toHaveLength(1)
+    expect(wrapper.emitted('choosePlan')).toBeUndefined()
+
+    // With "Keep Studio" set, nothing is left to ask.
+    billing.renewalPlan = 'pro'
+    expect((await mountSuspended(TrialBanner)).text()).toBe('')
   })
 })

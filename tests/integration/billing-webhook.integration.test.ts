@@ -276,6 +276,71 @@ describe('billing webhook integration', () => {
     expect(written.pluginMetadata?.trial_origin).toBeUndefined()
   })
 
+  it('links a "Keep Studio" subscription to its prepaid year without using a grant or a Migrate trial', async () => {
+    const markMigrateGrantRedeemed = vi.fn().mockResolvedValue(undefined)
+    const recordMigrateGrantRenewal = vi.fn().mockResolvedValue(true)
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      archiveActivePaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      markWorkspaceTrialConsumed,
+      setPaymentAccountMetadataKey,
+      setPaymentAccountCreditUnit,
+      markMigrateGrantRedeemed,
+      recordMigrateGrantRenewal,
+    }))
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.created',
+      workspaceId: 'ws-1',
+      plan: 'pro',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_renewal',
+      subscriptionStatus: 'trialing',
+      trialEndsAt: '2027-11-04T10:00:00.000Z',
+      cancelAtPeriodEnd: false,
+      migrateRenewalGrantId: 'grant-1',
+    })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(recordMigrateGrantRenewal).toHaveBeenCalledWith('grant-1', 'sub_renewal')
+    expect(redeemMigrateGrant).not.toHaveBeenCalled()
+    expect(isDuplicateBundleSubscription).not.toHaveBeenCalled()
+    expect(upsertPaymentAccount).toHaveBeenCalledWith(expect.objectContaining({
+      pluginMetadata: expect.objectContaining({ trial_origin: 'prepaid_renewal' }),
+    }))
+  })
+
+  it('a "Keep Studio" subscription that ends unlinks the year, and says nothing of a free plan while the year runs', async () => {
+    const clearMigrateGrantRenewal = vi.fn().mockResolvedValue(undefined)
+    const getWorkspaceById = vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro', prepaid_until: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString() })
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
+    vi.stubGlobal('useAuthProvider', vi.fn().mockReturnValue({ getUserById: vi.fn().mockResolvedValue({ email: 'owner@example.com' }) }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      archiveActivePaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      setPaymentAccountMetadataKey,
+      clearMigrateGrantRenewal,
+      getWorkspaceById,
+    }))
+    getActivePaymentAccount.mockResolvedValue({ provider: 'stripe', subscription_id: 'sub_renewal', subscription_status: 'trialing', plan: 'pro', plugin_metadata: {} })
+    handleWebhookMock.mockResolvedValue({ event: 'subscription.canceled', workspaceId: 'ws-1', subscriptionId: 'sub_renewal', migrateRenewalGrantId: 'grant-1' })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(clearMigrateGrantRenewal).toHaveBeenCalledWith('grant-1', 'sub_renewal')
+    expect(sendEmail).not.toHaveBeenCalled()
+
+    // After the year, it is an ordinary ending.
+    getWorkspaceById.mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro', prepaid_until: null })
+    await handler({ context: {} } as never)
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+  })
+
   it('a claimed Migrate trial reaches the credit cap: webhook mark → billing state → Starter allowance', async () => {
     // QA-5 F1: the whole chain, not each link on its own. The webhook
     // writes the payment account; the billing resolution reads that row;
@@ -446,6 +511,73 @@ describe('billing webhook integration', () => {
       subscriptionStatus: 'past_due',
       gracePeriodEndsAt: expect.any(String),
     }))
+  })
+
+  it('the first charge of a "Keep Studio" subscription is told as a yearly plan, not a monthly one', async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
+    vi.stubGlobal('useAuthProvider', vi.fn().mockReturnValue({ getUserById: vi.fn().mockResolvedValue({ email: 'owner@example.com' }) }))
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({ stripe: { secretKey: 'sk_mock' }, public: { siteUrl: 'https://studio.example.com' } }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount,
+      setPaymentAccountMetadataKey: vi.fn().mockResolvedValue(true),
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'pro' }),
+    }))
+    getActivePaymentAccount.mockResolvedValue({
+      provider: 'stripe', customer_id: 'cus_123', subscription_id: 'sub_renewal', subscription_status: 'trialing', plan: 'pro',
+      plugin_metadata: { trial_origin: 'prepaid_renewal' },
+    })
+    handleWebhookMock.mockResolvedValue({ event: 'invoice.paid', workspaceId: 'ws-1', billingReason: 'subscription_cycle', amountPaid: 49000 })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const sent = sendEmail.mock.calls[0]![0] as { subject: string, text: string }
+    expect(sent.subject).toBe('Studio continues on Pro for Acme')
+    expect(sent.text).toContain('$490/year')
+    expect(sent.text).not.toMatch(/month/i)
+  })
+
+  it('a later plain subscription on the row a "Keep Studio" renewal used drops its origin, and is told as monthly', async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined)
+    const setPaymentAccountMetadataJson = vi.fn(async () => {
+      account.plugin_metadata = {}
+      return true
+    })
+    const account: Record<string, unknown> = {
+      provider: 'stripe', customer_id: 'cus_123', subscription_id: 'sub_monthly', subscription_status: 'active', plan: 'starter',
+      plugin_metadata: { trial_origin: 'prepaid_renewal' },
+    }
+    vi.stubGlobal('useEmailProvider', vi.fn().mockReturnValue({ sendEmail }))
+    vi.stubGlobal('useAuthProvider', vi.fn().mockReturnValue({ getUserById: vi.fn().mockResolvedValue({ email: 'owner@example.com' }) }))
+    vi.stubGlobal('useRuntimeConfig', vi.fn().mockReturnValue({ stripe: { secretKey: 'sk_mock' }, public: { siteUrl: 'https://studio.example.com' } }))
+    vi.stubGlobal('useDatabaseProvider', vi.fn().mockReturnValue({
+      upsertPaymentAccount,
+      updateWorkspace,
+      getActivePaymentAccount: vi.fn(async () => account),
+      markWorkspaceTrialConsumed,
+      setPaymentAccountMetadataKey,
+      setPaymentAccountMetadataJson,
+      setPaymentAccountCreditUnit,
+      getWorkspaceById: vi.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme', slug: 'acme', owner_id: 'user-1', plan: 'starter' }),
+    }))
+    handleWebhookMock.mockResolvedValue({
+      event: 'subscription.created',
+      workspaceId: 'ws-1',
+      plan: 'starter',
+      customerId: 'cus_123',
+      subscriptionId: 'sub_monthly',
+      subscriptionStatus: 'active',
+      cancelAtPeriodEnd: false,
+    })
+
+    const handler = await mockPluginAndLoadHandler()
+    await handler({ context: {} } as never)
+    expect(setPaymentAccountMetadataJson).toHaveBeenCalledWith({ workspaceId: 'ws-1', key: 'trial_origin', value: null })
+    const sent = sendEmail.mock.calls[0]![0] as { text: string }
+    expect(sent.text).not.toContain('/year')
   })
 
   it('does NOT collapse trialing to active on invoice.paid ($0 trial invoice)', async () => {

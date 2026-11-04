@@ -70,6 +70,45 @@
     "slug": "payment-recovered",
     "subject": "Payment received — {workspaceName} is active again"
   },
+  "prepaid-ended": {
+    "about": "billing for your Contentrain Studio workspace",
+    "cta_label": "Choose a plan",
+    "cta_url": "{billingUrl}",
+    "heading": "Your prepaid Studio year has ended",
+    "lead": "The Studio {planName} year that came with your Migrate order for **{workspaceName}** ended on **{endsDate}**. The workspace is now on the free plan.",
+    "name": "Prepaid Studio year ended",
+    "notes": "Nothing was charged. You can start a Studio plan any time from billing settings.",
+    "preheader": "The workspace is now on the free plan.",
+    "reply": "Questions? Reply to this email.",
+    "slug": "prepaid-ended",
+    "subject": "Your prepaid Studio year for {workspaceName} has ended"
+  },
+  "prepaid-ending": {
+    "about": "billing for your Contentrain Studio workspace",
+    "cta_label": "Keep Studio",
+    "cta_url": "{billingUrl}",
+    "heading": "Your prepaid Studio year ends {endsText}",
+    "lead": "The Studio {planName} year that came with your Migrate order for **{workspaceName}** ends on **{endsDate}**.",
+    "name": "Prepaid Studio year ending",
+    "notes": "Nothing renews by itself. To keep Studio, choose a plan in billing settings: Starter at {starterYearly}/year or Pro at {proYearly}/year. It starts when this year ends, and nothing is charged before then.\n\nIf you do nothing, the workspace moves to the free plan on {endsDate}.",
+    "preheader": "Nothing renews by itself: choose a plan to keep Studio.",
+    "reply": "Questions? Reply to this email.",
+    "slug": "prepaid-ending",
+    "subject": "Your prepaid Studio year for {workspaceName} ends {endsText}"
+  },
+  "prepaid-renewed": {
+    "about": "billing for your Contentrain Studio workspace",
+    "cta_label": "Manage billing",
+    "cta_url": "{billingUrl}",
+    "heading": "Studio continues on {planName}",
+    "lead": "The prepaid Studio year for **{workspaceName}** has ended, and the **{planName}** plan you chose has started at {planPrice}/year.",
+    "name": "Prepaid Studio year renewed",
+    "notes": "You'll be billed yearly until you cancel. You can manage your subscription anytime.",
+    "preheader": "You'll be billed yearly until you cancel.",
+    "reply": "Questions? Reply to this email.",
+    "slug": "prepaid-renewed",
+    "subject": "Studio continues on {planName} for {workspaceName}"
+  },
   "subscription-activated": {
     "about": "billing for your Contentrain Studio workspace",
     "cta_label": "Manage billing",

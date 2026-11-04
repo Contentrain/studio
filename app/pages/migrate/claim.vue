@@ -61,7 +61,7 @@ interface GrantView {
 interface SiteBinding { state: string, prUrl: string | null, branch: string | null, overLimit: string[], limit: number | null }
 interface Destination { workspaceSlug: string, projectId: string | null }
 /** How a bundle grant's workspace plan stands. */
-interface BundleStatus { planState: 'active' | 'ending' | 'ended', workspaceSlug: string, periodEndsAt: number | null }
+interface BundleStatus { planState: 'active' | 'ending' | 'ended', workspaceSlug: string, periodEndsAt: number | null, prepaid?: true }
 /** The site's comments export, taken onto the grant while the claim is made. */
 interface ClaimComments { status: 'pending' | 'ready' | 'imported' | 'unavailable' | 'expired', count: number }
 
@@ -149,6 +149,11 @@ const bundlePlanText = computed(() => {
   if (status.planState === 'ending' && status.periodEndsAt) {
     const date = new Date(status.periodEndsAt * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     return t('migrate_claim.bundle_plan_ending', { plan, date })
+  }
+  // A prepaid year: paid with the order, through its end, and nothing renews it by itself.
+  if (status.planState === 'active' && status.prepaid && status.periodEndsAt) {
+    const date = new Date(status.periodEndsAt * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    return t('migrate_claim.bundle_plan_prepaid', { plan, date })
   }
   if (status.planState === 'active' && canConnect.value) return t('migrate_claim.bundle_plan_active_connect', { plan })
   return t(`migrate_claim.bundle_plan_${status.planState}`, { plan })

@@ -25,6 +25,13 @@ describe('usage period', () => {
     })
   })
 
+  it('the trial bridging a prepaid year to "Keep Studio" keeps the calendar month: opening it hands out no fresh quota', () => {
+    const renewal = { subscription_status: 'trialing', current_period_start: '2027-10-20T09:00:00Z', current_period_end: '2027-11-04T10:00:00Z', plugin_metadata: { trial_origin: 'prepaid_renewal' } }
+    expect(usagePeriodFrom(renewal, at('2027-10-25T00:00:00Z'))).toMatchObject({ key: '2027-10', source: 'calendar' })
+    // Converted at the year's end, it is billed from its own period.
+    expect(usagePeriodFrom({ ...renewal, subscription_status: 'active', current_period_start: '2027-11-04T10:00:00Z', current_period_end: '2028-11-04T10:00:00Z' }, at('2027-11-10T00:00:00Z'))).toMatchObject({ key: '2027-11-04', source: 'billing' })
+  })
+
   describe('with a subscription', () => {
     const account = {
       subscription_status: 'active',

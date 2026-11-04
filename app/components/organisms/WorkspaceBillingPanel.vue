@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { PLAN_PRICING } from '~~/shared/utils/license'
+import { STUDIO_YEARLY_LIST_CENTS } from '~~/shared/utils/migrate-bundle'
 
 const { t } = useContent()
-const { billingState, effectivePlan, isTrialing, trialDaysLeft, cancelsAt, openPortal } = useBilling()
+const {
+  billingState,
+  effectivePlan,
+  isTrialing,
+  trialDaysLeft,
+  cancelsAt,
+  prepaidUntil,
+  prepaidRenewalOpensAt,
+  prepaidRenewalOpen,
+  prepaidRenewalPlan,
+  keepStudio,
+  openPortal,
+} = useBilling()
 const deployment = useDeployment()
 // Members see the plan and the usage; only owners and admins can act on them
 // (checkout and portal answer 403 to anyone else).
@@ -15,6 +28,29 @@ defineProps<{
 
 const planModalOpen = ref(false)
 const loading = ref(false)
+const keepingPlan = ref<'starter' | 'pro' | null>(null)
+
+const longDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+const yearlyPrice = (plan: 'starter' | 'pro') => `$${STUDIO_YEARLY_LIST_CENTS[plan] / 100}`
+const keepPlans = ['starter', 'pro'] as const
+/** The plan Studio continues on after the prepaid year, when one is set. */
+const renewalPlan = computed(() => {
+  const plan = prepaidRenewalPlan.value
+  return plan === 'starter' || plan === 'pro' ? plan : null
+})
+
+async function handleKeepStudio(plan: 'starter' | 'pro') {
+  keepingPlan.value = plan
+  try {
+    await keepStudio(plan)
+  }
+  catch (err: unknown) {
+    toast.error(resolveApiError(err, t('common.server_error')))
+  }
+  finally {
+    keepingPlan.value = null
+  }
+}
 
 const planName = computed(() => PLAN_PRICING[effectivePlan.value]?.name ?? 'Free')
 const planPrice = computed(() => PLAN_PRICING[effectivePlan.value]?.priceMonthly ?? 0)
@@ -139,7 +175,11 @@ async function handleManageSubscription() {
               {{ stateLabel }}
             </AtomsBadge>
           </div>
-          <p v-if="planPrice > 0" class="mt-1 text-sm text-muted">
+          <!-- A prepaid year was paid with the Migrate order: no monthly price, no portal behind it. -->
+          <p v-if="prepaidUntil" class="mt-1 text-sm text-muted" data-testid="prepaid-through">
+            {{ t('billing.prepaid_through', { date: longDate(prepaidUntil) }) }}
+          </p>
+          <p v-else-if="planPrice > 0" class="mt-1 text-sm text-muted">
             ${{ planPrice }}{{ t('plans.per_month') }}
           </p>
         </div>
@@ -147,6 +187,18 @@ async function handleManageSubscription() {
         <p v-if="!isOwnerOrAdmin" class="max-w-56 text-right text-xs text-muted">
           {{ t('billing.ask_owner') }}
         </p>
+        <div v-else-if="prepaidUntil" class="flex gap-2">
+          <!-- The "Keep Studio" subscription is managed (or cancelled) in the provider's portal. -->
+          <AtomsBaseButton
+            v-if="renewalPlan"
+            variant="secondary"
+            size="sm"
+            :loading="loading"
+            @click="handleManageSubscription"
+          >
+            {{ t('billing.manage_subscription') }}
+          </AtomsBaseButton>
+        </div>
         <div v-else class="flex gap-2">
           <AtomsBaseButton
             v-if="hasSubscription"
@@ -194,6 +246,38 @@ async function handleManageSubscription() {
           </AtomsBaseButton>
           <span v-else class="text-xs">{{ t('billing.ask_owner') }}</span>
         </div>
+      </div>
+
+      <!-- Prepaid year: what follows it. Nothing renews by itself. -->
+      <div v-if="prepaidUntil" class="mt-4 rounded-md bg-secondary-50 px-4 py-3 dark:bg-secondary-900" data-testid="keep-studio">
+        <p v-if="renewalPlan" class="flex items-center gap-2 text-sm text-body dark:text-secondary-300">
+          <span class="icon-[annon--check-circle] size-4 shrink-0 text-success-500" aria-hidden="true" />
+          {{ t('billing.keep_studio_scheduled', { plan: PLAN_PRICING[renewalPlan]?.name ?? renewalPlan, date: longDate(prepaidUntil), price: yearlyPrice(renewalPlan) }) }}
+        </p>
+        <template v-else-if="prepaidRenewalOpen">
+          <p class="text-sm text-body dark:text-secondary-300">
+            {{ t('billing.keep_studio_description', { date: longDate(prepaidUntil) }) }}
+          </p>
+          <div v-if="isOwnerOrAdmin" class="mt-3 flex flex-wrap gap-2">
+            <AtomsBaseButton
+              v-for="plan in keepPlans"
+              :key="plan"
+              :variant="plan === effectivePlan ? 'primary' : 'secondary'"
+              size="sm"
+              :loading="keepingPlan === plan"
+              :disabled="keepingPlan !== null"
+              @click="handleKeepStudio(plan)"
+            >
+              {{ t('billing.keep_studio_choose', { plan: PLAN_PRICING[plan]?.name ?? plan, price: yearlyPrice(plan) }) }}
+            </AtomsBaseButton>
+          </div>
+          <p v-else class="mt-2 text-xs text-muted">
+            {{ t('billing.ask_owner') }}
+          </p>
+        </template>
+        <p v-else-if="prepaidRenewalOpensAt" class="text-sm text-muted">
+          {{ t('billing.keep_studio_opens', { date: longDate(prepaidRenewalOpensAt) }) }}
+        </p>
       </div>
 
       <!-- Past due warning -->

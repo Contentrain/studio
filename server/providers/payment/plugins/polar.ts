@@ -193,6 +193,7 @@ function subscriptionToResult(
     billableMeters: billableMetersOf(sub),
     accessEndsAt: sub.cancelAtPeriodEnd ? isoOrUndefined(sub.endsAt) : undefined,
     migrateGrantId: typeof sub.metadata?.migrate_grant_id === 'string' ? sub.metadata.migrate_grant_id : undefined,
+    ...(typeof sub.metadata?.migrate_renewal_grant_id === 'string' ? { migrateRenewalGrantId: sub.metadata.migrate_renewal_grant_id } : {}),
     ...(isCompanion(sub, companionProductIds) ? { companion: true } : {}),
   }
 }
@@ -224,9 +225,10 @@ function createPolarProvider(config: PaymentPluginConfig): PaymentProvider {
 
   return {
     async createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
-      const productId = productMap[input.plan]
+      const yearlyProductId = input.plan === 'pro' ? cfg.proYearlyProductId : cfg.starterYearlyProductId
+      const productId = input.interval === 'year' ? yearlyProductId : productMap[input.plan]
       if (!productId) {
-        throw new Error(`No Polar product ID configured for plan: ${input.plan}`)
+        throw new Error(`No Polar ${input.interval === 'year' ? 'yearly ' : ''}product ID configured for plan: ${input.plan}`)
       }
 
       const checkout = await polar.checkouts.create({

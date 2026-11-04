@@ -158,6 +158,24 @@ describe('overage settings API', () => {
         expect(setPaymentAccountMetadataKey).toHaveBeenCalledWith({ workspaceId: 'ws-1', key, value: expect.any(String), when: 'different' })
     })
 
+    it('a prepaid Studio year turns nothing on, even with a "Keep Studio" subscription beside it', async () => {
+      const prepaid_until = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString()
+      mockDb({ workspace: { prepaid_until }, paymentAccount: { subscription_status: 'trialing', plugin_metadata: { trial_origin: 'prepaid_renewal' } } })
+      vi.stubGlobal('readBody', vi.fn().mockResolvedValue({ ai_messages: true }))
+
+      const handler = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.patch.ts')).default
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 409,
+        message: 'billing.overage_locked_prepaid',
+        data: { code: 'overage_locked', reason: 'prepaid', until: prepaid_until },
+      })
+      expect(updateWorkspace).not.toHaveBeenCalled()
+
+      const get = (await import('../../server/api/workspaces/[workspaceId]/overage-settings.get.ts')).default
+      const shown = await get({} as never) as { categories: Array<{ lock: { reason: string } | null }> }
+      expect(shown.categories.every(c => c.lock?.reason === 'prepaid')).toBe(true)
+    })
+
     it('refuses CDN overage on a subscription that has no price for it yet', async () => {
       vi.stubGlobal('useRuntimeConfig', () => ({ cdn: { originMeter: true, storageMeter: true } }))
       // Polar keeps a subscription's prices: one created before CDN overage

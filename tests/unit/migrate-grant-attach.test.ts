@@ -84,6 +84,35 @@ describe('POST /api/migrate/grants/:grantId/attach', () => {
     expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
   })
 
+  describe('on a prepaid Studio year', () => {
+    const DAY = 24 * 60 * 60 * 1000
+    const prepaid = (endsInDays: number, plan = 'pro') => ({
+      id: 'ws-1', slug: 'acme', name: 'Acme', type: 'secondary', plan, overage_settings: {},
+      prepaid_until: new Date(Date.now() + endsInDays * DAY).toISOString(), prepaid_plan: 'pro',
+    })
+
+    it('attaches while the year runs, with no subscription behind it', async () => {
+      db.getWorkspaceForUser.mockResolvedValue(prepaid(200, 'free'))
+      db.getActivePaymentAccount.mockResolvedValue(null)
+      await expect(attach()).resolves.toMatchObject({ ok: true })
+    })
+
+    it('refuses in its last 30 days when nothing continues after it', async () => {
+      db.getWorkspaceForUser.mockResolvedValue(prepaid(20, 'free'))
+      db.getLivePrepaidGrant = vi.fn().mockResolvedValue({ id: 'grant-0', renewal_subscription_id: null })
+      await expect(attach()).rejects.toMatchObject({ statusCode: 409, message: 'migrate.attach_prepaid_ending', data: { code: 'attach_prepaid_ending' } })
+      expect(db.markMigrateGrantRedeemed).not.toHaveBeenCalled()
+    })
+
+    it('in its last 30 days attaches when "Keep Studio" continues it on a plan that covers the grant', async () => {
+      db.getLivePrepaidGrant = vi.fn().mockResolvedValue({ id: 'grant-0', renewal_subscription_id: 'sub_renewal' })
+      db.getWorkspaceForUser.mockResolvedValue(prepaid(20, 'starter'))
+      await expect(attach()).rejects.toMatchObject({ message: 'migrate.attach_plan_too_small' })
+      db.getWorkspaceForUser.mockResolvedValue(prepaid(20, 'pro'))
+      await expect(attach()).resolves.toMatchObject({ ok: true })
+    })
+  })
+
   it.each([
     [{ redeemed_at: '2026-10-03T10:00:00Z' }, 'migrate.grant_used'],
     [{ revoked_at: '2026-10-03T10:00:00Z' }, 'migrate.grant_revoked'],

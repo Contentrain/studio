@@ -87,6 +87,28 @@ describe('a grant\'s trial length reaches the provider checkout', () => {
     expect(result).toMatchObject({ event: 'subscription.created', migrateGrantId: 'grant-1', trialEndsAt: '2026-11-22T12:00:00.000Z' })
   })
 
+  it('polar: "Keep Studio" sells the yearly list product, and its subscription reports the renewal apart from a grant', async () => {
+    const { polarPlugin } = await import('../../server/providers/payment/plugins/polar')
+    const yearly = polarPlugin.create({ polar: { accessToken: 'tok', webhookSecret: 'sec', proProductId: 'prod_pro', starterProductId: 'prod_starter', proYearlyProductId: 'prod_pro_year' } } as never)
+    await yearly.createCheckoutSession({ ...base, interval: 'year', withTrial: true, trialDays: 12, metadata: { migrate_renewal_grant_id: 'grant-1' } })
+    expect(polarCheckoutsCreate).toHaveBeenCalledWith(expect.objectContaining({ products: ['prod_pro_year'], trialIntervalCount: 12 }))
+    // No yearly product configured: refused, never the monthly one in its place.
+    await expect(yearly.createCheckoutSession({ ...base, plan: 'starter', interval: 'year' })).rejects.toThrow(/yearly/)
+
+    validateEvent.mockReturnValue({
+      type: 'subscription.created',
+      data: {
+        id: 'sub_2', status: 'trialing', customerId: 'cus_1', productId: 'prod_pro_year',
+        currentPeriodStart: new Date('2027-10-20T00:00:00Z'), currentPeriodEnd: new Date('2027-11-04T10:00:00Z'),
+        trialEnd: new Date('2027-11-04T10:00:00Z'), cancelAtPeriodEnd: false,
+        metadata: { workspace_id: '00000000-0000-4000-8000-000000000001', plan: 'pro', migrate_renewal_grant_id: 'grant-1' },
+      },
+    })
+    const result = await yearly.handleWebhook('{}', {})
+    expect(result).toMatchObject({ event: 'subscription.created', migrateRenewalGrantId: 'grant-1' })
+    expect(result.migrateGrantId).toBeUndefined()
+  })
+
   it('stripe: the trial length follows the grant, the default otherwise', async () => {
     const { stripePlugin } = await import('../../server/providers/payment/plugins/stripe')
     const stripe = stripePlugin.create({ stripe: { secretKey: 'sk', proPriceId: 'price_pro' } } as never)
@@ -98,5 +120,12 @@ describe('a grant\'s trial length reaches the provider checkout', () => {
 
     await stripe.createCheckoutSession(base)
     expect(stripeSessionsCreate.mock.calls[1]![0]).toMatchObject({ subscription_data: { trial_period_days: 14 } })
+  })
+
+  it('stripe: a yearly checkout is refused, never sold as the monthly price', async () => {
+    const { stripePlugin } = await import('../../server/providers/payment/plugins/stripe')
+    const stripe = stripePlugin.create({ stripe: { secretKey: 'sk', proPriceId: 'price_pro' } } as never)
+    await expect(stripe.createCheckoutSession({ ...base, interval: 'year' })).rejects.toThrow()
+    expect(stripeSessionsCreate).not.toHaveBeenCalled()
   })
 })
