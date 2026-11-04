@@ -316,5 +316,5 @@ If you run a modified version of the AGPL core as a network service, you must ma
 
 <div align="center">
   <p>Built with Nuxt, Vue, Radix Vue, and Git-native content workflows.</p>
-  <p>Copyright 2026 Contentrain, LLC.</p>
+  <p>Copyright 2026 Contentrain, Inc.</p>
 </div>

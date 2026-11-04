@@ -1,5 +1,5 @@
 Contentrain Studio — AGPL-3.0 Additional Terms
-Copyright (c) 2026 Contentrain, LLC.
+Copyright (c) 2026 Contentrain, Inc.
 
 The Contentrain Studio AGPL-3.0 core (every file EXCEPT those in the
 `ee/` directory) is distributed under the GNU Affero General Public
@@ -18,7 +18,7 @@ If you convey the AGPL-3.0 core, whether modified or unmodified, or
 make it available to the public over a network (AGPL-3.0 §13), you
 must preserve the following:
 
- (a) the copyright notice "Copyright (c) 2026 Contentrain, LLC.";
+ (a) the copyright notice "Copyright (c) 2026 Contentrain, Inc.";
  (b) a visible link or reference to the Corresponding Source as
      required by AGPL-3.0 §13, reachable by all interacting users
      (for example, in the application footer, an /about page, or an
@@ -38,7 +38,7 @@ beyond this attribution line.
 
 Per AGPL-3.0 §7(e), the names "Contentrain", "Contentrain Studio",
 "Contentrain Cloud", and all associated logos and icons are
-trademarks of Contentrain, LLC. This License grants no right to use
+trademarks of Contentrain, Inc. This License grants no right to use
 any of these trademarks, except:
 
  (a) as required for the attribution notice in §7(c) above;
