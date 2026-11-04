@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.4.23
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.22...v0.4.23)
+
+### ⚠️ Upgrade notes
+
+**No migrations, no new environment variables.**
+`supabase/` and `postgres/` are unchanged since v0.4.22, and the code reads no new `NUXT_*` or `process.env` key. Rolling back the image alone is safe.
+
+- Connector (OAuth) users connected before this deploy have no media scopes. They must reconnect once to get them. Only grants on media-eligible projects gain them (#541).
+
+### 🩹 Fixes
+
+- The connector now gets the media tools on projects that can use them (#541).
+  - Before, a new connection never asked for `media:read`/`media:write`. The media tools stayed hidden, so the client never called one and never got the prompt to add them.
+  - On deployments with the media stack, a new connection now asks for the media scopes. Consent grants them only when the chosen project can use media: plan with media, CDN delivery on, and a workspace owner. Otherwise the connection is granted without them, and the consent screen lists media permissions only for such a project.
+- The Migrate revoke route's 404 names its code, `grant_not_found` (#544).
+
+### 📖 Documentation
+
+- `CLAUDE.md`, `AGENTS.md` and `docs/REMOTE_MCP.md`: when OAuth asks for and grants the media scopes (#541).
+
 ## v0.4.22
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.21...v0.4.22)
