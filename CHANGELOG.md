@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.5.0
+
+[compare changes](https://github.com/Contentrain/studio/compare/v0.4.23...v0.5.0)
+
+### ⚠️ Upgrade notes
+
+**1. Migrations 055 and 056 run before the new image serves.**
+The Railway pre-deploy command (`node scripts/migrate-postgres.mjs`) runs them; on plain PostgreSQL, `pnpm db:migrate:pg`; on the Supabase pair, `supabase db push`. `postgres/` is unchanged; both files are in `supabase/migrations/`, which every runner applies. Nothing is backfilled and the previous image never reads the new columns, so rolling back the image alone is safe.
+- `055_migrate_bundle_prepaid.sql`:
+  - `migrate_grants` gains `collector` (`text NOT NULL DEFAULT 'studio_polar'`, CHECK `studio_polar`/`migrate`), and `payment_ref`, `prepaid_starts_at`, `prepaid_ends_at` and `renewal_subscription_id` (all nullable), plus the shape CHECK `migrate_grants_prepaid_shape`, which existing rows satisfy;
+  - `workspaces` gains `prepaid_until` and `prepaid_plan` (CHECK `starter`/`pro`, both null or both set);
+  - `migrate_grants_revoked_shape` is dropped and re-added with `studio_not_delivered` as an allowed reason. This is the one non-additive step: narrowing it back later fails only once a grant has been revoked with that reason.
+- `056_migrate_prepaid_reminders.sql`: `migrate_grants.prepaid_reminder_stage` (`smallint NOT NULL DEFAULT 0`, CHECK 0–3) and the partial index `migrate_grants_prepaid_ends_idx`.
+
+**2. No new environment variables, and no new flag.**
+`nuxt.config.ts` and `.env.example` are unchanged since v0.4.23. Keep Studio sells on the existing `NUXT_POLAR_STARTER_YEARLY_PRODUCT_ID` / `NUXT_POLAR_PRO_YEARLY_PRODUCT_ID`; Stripe has no yearly products, so Keep Studio is Polar only. The prepaid year is off by default: it starts only when Migrate provisions an order with `billing.collector: 'migrate'` and then calls `POST /api/migrate/grants/activate`. Every existing grant is `studio_polar`, and without `NUXT_MIGRATE_CLAIM_PUBLIC_KEY` there are no claim links at all. A deployment that never sees such an order behaves as before.
+
+**3. A new background job.** The `migrate-prepaid-sweep` Nitro plugin runs 90 seconds after start and then every 6 hours. With no prepaid grants it does nothing. Its mails (`prepaid-ending`, `prepaid-ended`, `prepaid-renewed`) are skipped when no email provider is configured; the end of a year still runs.
+
+**4. Dependencies.** `@contentrain/types` 1.79.2 → 1.80.0 (`billing.collector`, the activate contract) (#542).
+
+### 🚀 Enhancements
+
+- **migrate:** a prepaid Studio year when Migrate collects the bundle payment itself (#542)
+  - Provision with collector `migrate` reserves the grant with no Polar call, and the signed `POST /api/migrate/grants/activate` starts the year from the payment. No subscription is created and nothing renews by itself.
+  - During the year the billing state is `prepaid` and the plan is `prepaid_plan`; overage stays locked (reason `prepaid`) and an ordinary checkout is refused (`prepaid_active`). The Polar bundle path is unchanged.
+- **migrate:** the end of a prepaid year, and "Keep Studio" renewal (#545)
+  - The billing page shows "Prepaid through {date}". From 30 days before the end, an owner or admin can choose Starter or Pro yearly, with a trial that ends with the year, so nothing is charged before then.
+  - The sweep mails the owner at T−30 and T−7, takes the year off at the end and, without a renewal, the workspace falls back to free.
+  - Revoking a grant during the year also cancels its renewal; attach is refused in the last 30 days of a year with no renewal (`attach_prepaid_ending`).
+
+### 📖 Documentation
+
+- `docs/PAYMENT_PROVIDERS.md`: "Prepaid Studio year" (#542, #545).
+
 ## v0.4.23
 
 [compare changes](https://github.com/Contentrain/studio/compare/v0.4.22...v0.4.23)
