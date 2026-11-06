@@ -73,6 +73,12 @@ export interface MigrationMediaOriginFile {
 export interface MigrationMediaManifest {
   version: 1
   origin?: string
+  /**
+   * Where the old site keeps running after the domain moves (Migrate's delivery-time `legacyOrigin`, an https
+   * origin). The delivered tree names `onOrigin` files at this host instead of the origin's, path unchanged;
+   * `onOrigin[].url` stays the original address, the one fetched from the signed origin.
+   */
+  legacyOrigin?: string
   assets: MigrationMediaAsset[]
   /** Files still at the old site (`studioRecommended`); empty when Migrate committed everything. */
   onOrigin: MigrationMediaOriginFile[]
@@ -161,7 +167,22 @@ export function parseMigrationMediaManifest(raw: unknown): MigrationMediaManifes
     }
   })
 
-  return { version: 1, ...(typeof doc.origin === 'string' ? { origin: doc.origin } : {}), assets, onOrigin }
+  let legacyOrigin: string | undefined
+  if (doc.legacyOrigin !== undefined) {
+    const value = doc.legacyOrigin
+    if (typeof value !== 'string' || value.length > 2048 || !URL.canParse(value)) return fail('legacyOrigin')
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password) return fail('legacyOrigin')
+    legacyOrigin = url.origin
+  }
+
+  return {
+    version: 1,
+    ...(typeof doc.origin === 'string' ? { origin: doc.origin } : {}),
+    ...(legacyOrigin ? { legacyOrigin } : {}),
+    assets,
+    onOrigin,
+  }
 }
 
 /**

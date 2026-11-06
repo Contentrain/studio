@@ -246,4 +246,28 @@ describe('planMigrationMediaApply', () => {
     // The local files' own references all moved: they go, whatever happened to an old-site reference.
     expect(counts).toMatchObject({ keptBecause: null, deleted: 2 })
   })
+  it('a repository the delivery pointed at the legacy host: that spelling is rewritten too, not reported as drifted', async () => {
+    const OLD = 'https://old.example.com/wp-content/uploads/2024/big.mp4'
+    const LEGACY = 'https://wp.old.example.com/wp-content/uploads/2024/big.mp4'
+    const VIDEO = `${STUDIO}/big.mp4`
+    const m = parseMigrationMediaManifest({
+      version: 1,
+      origin: 'https://old.example.com',
+      legacyOrigin: 'https://wp.old.example.com/',
+      assets: manifest().assets,
+      studioRecommended: [{ url: OLD, reason: 'file-too-large', refs: [{ file: 'content/blog/en.json', pointer: '/post-1/video', match: 'exact' }, { file: 'content/blog/en.json', pointer: '/post-1/embed', match: 'contains' }] }],
+    })
+    expect(m.legacyOrigin).toBe('https://wp.old.example.com')
+    const post = { ...blog['post-1'], video: LEGACY, embed: `<!-- wp:video {"src":"${LEGACY.replace(/\//g, '\\/')}"} --><video src="${LEGACY}"></video>` }
+    const { changes, counts } = await plan({
+      m,
+      files: repo({ 'content/blog/en.json': canonicalStringify({ 'post-1': post }) }),
+      imported: new Map([...imported, [OLD, VIDEO]]),
+    })
+    const written = JSON.parse(contentOf(changes, 'content/blog/en.json')!)['post-1']
+    expect(written.video).toBe(VIDEO)
+    expect(written.embed).toBe(`<!-- wp:video {"src":"${VIDEO.replace(/\//g, '\\/')}"} --><video src="${VIDEO}"></video>`)
+    expect(counts.drifted).toEqual([])
+    expect(() => parseMigrationMediaManifest({ version: 1, assets: [], legacyOrigin: 'http://wp.old.example.com' })).toThrow()
+  })
 })
