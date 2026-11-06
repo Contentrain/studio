@@ -15,7 +15,10 @@
  *
  * Files Migrate left at the old site (`studioRecommended`) and the import
  * fetched are rewritten the same way, from their old address to the delivery
- * URL; one not imported keeps its old address and is listed.
+ * URL; one not imported keeps its old address and is listed. When the
+ * delivery pointed those files at the address the old site keeps after the
+ * domain move (`legacyOrigin`), the repository names them at that host, so
+ * that spelling is rewritten too; the import still fetched the original one.
  *
  * A value that no longer holds what the manifest says (edited since the
  * migration) is left alone and reported as drifted. `studio.json` at the
@@ -127,6 +130,9 @@ function replaceIn(text: string, from: string, to: string): { text: string, coun
   return { text: out, count }
 }
 
+/** The old-site address as the delivery wrote it for the host that keeps WordPress: scheme and host swapped, path kept as written. */
+const onLegacyHost = (url: string, legacyOrigin: string): string => url.replace(/^https?:\/\/[^/?#]+/i, legacyOrigin)
+
 const hasOccurrence = (text: string, url: string): boolean =>
   occurrence(url).test(text) || text.includes(url.replace(/\//g, '\\/'))
 
@@ -195,8 +201,12 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
     return opened
   }
 
-  /** Rewrite every recorded reference from `from` to `to`, walking to each value. */
-  const rewrite = async (from: string, to: string, refs: MigrationMediaRef[], key: string): Promise<void> => {
+  /** Rewrite every recorded reference from any of `froms` to `to`, walking to each value. */
+  const rewrite = async (froms: string[], to: string, refs: MigrationMediaRef[], key: string): Promise<void> => {
+    const replaceAll = (text: string): { text: string, count: number } => froms.reduce((acc, from) => {
+      const next = replaceIn(acc.text, from, to)
+      return { text: next.text, count: acc.count + next.count }
+    }, { text, count: 0 })
     for (const ref of refs) {
       if (ref.match === 'relation') {
         counts.relations++
@@ -215,7 +225,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
           drift()
           continue
         }
-        const { text, count } = replaceIn(file.text, from, to)
+        const { text, count } = replaceAll(file.text)
         if (count > 0) {
           file.text = text
           file.dirty = true
@@ -237,7 +247,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
         continue
       }
       if (ref.match === 'exact') {
-        if (value === from) {
+        if (froms.includes(value)) {
           (at.parent as Record<string, unknown>)[at.key] = to
           file.dirty = true
           counts.rewritten++
@@ -250,7 +260,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
         }
         continue
       }
-      const { text, count } = replaceIn(value, from, to)
+      const { text, count } = replaceAll(value)
       if (count > 0) {
         (at.parent as Record<string, unknown>)[at.key] = text
         file.dirty = true
@@ -277,7 +287,7 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
     }
     const localUrl = asset.localUrl ?? `/${asset.repoPath.replace(/^public\//, '')}`
     moved.push({ localUrl, deliveryUrl })
-    await rewrite(localUrl, deliveryUrl, asset.refs, asset.repoPath)
+    await rewrite([localUrl], deliveryUrl, asset.refs, asset.repoPath)
   }
   // Drift in a reference to a local file is what keeps local files; one in an old-site reference is not.
   const localDrifted = counts.drifted.length
@@ -288,7 +298,8 @@ export async function planMigrationMediaApply(input: MigrationMediaApplyInput): 
       counts.originNotImported.push(file.url)
       continue
     }
-    await rewrite(file.url, deliveryUrl, file.refs, file.url)
+    const legacyUrl = input.manifest.legacyOrigin ? onLegacyHost(file.url, input.manifest.legacyOrigin) : file.url
+    await rewrite(legacyUrl !== file.url ? [file.url, legacyUrl] : [file.url], deliveryUrl, file.refs, file.url)
   }
 
   const changes: FileChange[] = []
